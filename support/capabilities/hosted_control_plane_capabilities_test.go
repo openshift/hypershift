@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -69,6 +71,8 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				configv1.ClusterVersionCapabilityImageRegistry,
@@ -92,6 +96,8 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				// configv1.ClusterVersionCapabilityImageRegistry,
@@ -115,6 +121,8 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				configv1.ClusterVersionCapabilityImageRegistry,
@@ -144,6 +152,82 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				t.Logf("calculated enabled capabilities: %v", enabledCapabilities)
 				t.Fatalf("expected enabled capabilities differed from calculated enabled capabilities")
 			}
+		})
+	}
+}
+
+func TestFilterByKnownCapabilities(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		desired           []configv1.ClusterVersionCapability
+		knownCapabilities []configv1.ClusterVersionCapability
+		expectedFiltered  []configv1.ClusterVersionCapability
+	}{
+		{
+			name: "When knownCapabilities is empty, it should return all desired capabilities unfiltered",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+			knownCapabilities: nil,
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+		},
+		{
+			name: "When guest CVO does not know some capabilities, it should filter them out",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+			knownCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+		},
+		{
+			name: "When all desired capabilities are known, it should return all desired capabilities",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+			knownCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+				configv1.ClusterVersionCapabilityStorage,
+			},
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+		},
+		{
+			name: "When no desired capabilities are known, it should return nil",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
+			},
+			knownCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+			},
+			expectedFiltered: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			filtered := FilterByKnownCapabilities(test.desired, test.knownCapabilities)
+			g.Expect(filtered).To(Equal(test.expectedFiltered))
 		})
 	}
 }

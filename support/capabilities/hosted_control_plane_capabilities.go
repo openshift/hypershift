@@ -89,6 +89,24 @@ func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1
 	return sortedCapabilities(netCaps.UnsortedList())
 }
 
+// FilterByKnownCapabilities returns only the capabilities from desired that are
+// present in knownCapabilities. When knownCapabilities is empty (e.g. on first
+// reconcile before the CVO has reported status), all desired capabilities are
+// returned unfiltered.
+func FilterByKnownCapabilities(desired []configv1.ClusterVersionCapability, knownCapabilities []configv1.ClusterVersionCapability) []configv1.ClusterVersionCapability {
+	if len(knownCapabilities) == 0 {
+		return desired
+	}
+	known := sets.New[configv1.ClusterVersionCapability](knownCapabilities...)
+	var filtered []configv1.ClusterVersionCapability
+	for _, cap := range desired {
+		if known.Has(cap) {
+			filtered = append(filtered, cap)
+		}
+	}
+	return filtered
+}
+
 func sortedCapabilities(caps []configv1.ClusterVersionCapability) []configv1.ClusterVersionCapability {
 	slices.SortFunc(caps, func(a, b configv1.ClusterVersionCapability) int {
 		return strings.Compare(string(a), string(b))
