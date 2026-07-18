@@ -331,7 +331,7 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 		// 2. - Reconcile towards expected state of the world.
 		compressedConfig, err := t.CompressedAndEncoded()
 		if err != nil {
-			return fmt.Errorf("failed to compress and decode config: %w", err)
+			return fmt.Errorf("failed to compress and encode config: %w", err)
 		}
 
 		tokenSecret.Data = map[string][]byte{}

@@ -103,19 +103,6 @@ func CompressAndEncode(payload []byte) (*bytes.Buffer, error) {
 	return out, err
 }
 
-// Compress compresses a given byte array.
-func Compress(payload []byte) (*bytes.Buffer, error) {
-	in := bytes.NewBuffer(payload)
-	out := bytes.NewBuffer(nil)
-
-	if len(payload) == 0 {
-		return out, nil
-	}
-
-	err := compress(in, out)
-	return out, err
-}
-
 // DecodeAndDecompress decompresses and base-64 decodes a given byte array. Ideal for consuming a
 // gzipped / base64-encoded byte array from a ConfigMap or Secret.
 func DecodeAndDecompress(payload []byte) (*bytes.Buffer, error) {
