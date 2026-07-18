@@ -34,6 +34,11 @@ func (s *statefulSetProvider) LoadManifest(componentName string) (*appsv1.Statef
 	return assets.LoadStatefulSetManifest(componentName)
 }
 
+// LoadManifestTemplated implements WorkloadProvider.
+func (s *statefulSetProvider) LoadManifestTemplated(componentName string, templateData map[string]string) (*appsv1.StatefulSet, error) {
+	return assets.LoadStatefulSetManifestTemplated(componentName, templateData)
+}
+
 // PodTemplateSpec implements WorkloadProvider.
 func (s *statefulSetProvider) PodTemplateSpec(object *appsv1.StatefulSet) *corev1.PodTemplateSpec {
 	return &object.Spec.Template

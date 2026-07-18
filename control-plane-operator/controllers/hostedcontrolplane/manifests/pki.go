@@ -1,6 +1,8 @@
 package manifests
 
 import (
+	"fmt"
+
 	"github.com/openshift/api/annotations"
 
 	corev1 "k8s.io/api/core/v1"
@@ -198,6 +200,14 @@ func EtcdServerSecret(ns string) *corev1.Secret {
 
 func EtcdPeerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-peer-tls")
+}
+
+func EtcdShardServerSecret(ns, shardName string) *corev1.Secret {
+	return secretFor(ns, fmt.Sprintf("%s-server-tls", shardName))
+}
+
+func EtcdShardPeerSecret(ns, shardName string) *corev1.Secret {
+	return secretFor(ns, fmt.Sprintf("%s-peer-tls", shardName))
 }
 
 func EtcdMetricsSignerSecret(ns string) *corev1.Secret {

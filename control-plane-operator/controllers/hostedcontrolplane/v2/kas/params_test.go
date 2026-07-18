@@ -218,6 +218,75 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
+			name: "managed etcd with shards",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Etcd.ManagementType = hyperv1.Managed
+				hcp.Namespace = "test-namespace"
+				hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdStorage,
+					},
+					Shards: []hyperv1.ManagedEtcdShardSpec{
+						{
+							Name: "events",
+							Resources: []hyperv1.EtcdShardResource{
+								{APIGroup: ptr.To(""), Resource: "events"},
+							},
+							Replicas: 1,
+						},
+						{
+							Name: "leases",
+							Resources: []hyperv1.EtcdShardResource{
+								{APIGroup: ptr.To("coordination.k8s.io"), Resource: "leases"},
+							},
+							Replicas: 3,
+						},
+					},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EtcdURL = "https://etcd-client.test-namespace.svc:2379"
+				params.EtcdServersOverrides = []string{
+					"/events#https://etcd-client-events.test-namespace.svc:2379",
+					"coordination.k8s.io/leases#https://etcd-client-leases.test-namespace.svc:2379",
+				}
+				return params
+			},
+		},
+		{
+			name: "unmanaged etcd with shards",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Spec.Etcd.ManagementType = hyperv1.Unmanaged
+				hcp.Spec.Etcd.Unmanaged = &hyperv1.UnmanagedEtcdSpec{
+					Endpoint: "https://external-etcd:2379",
+					Shards: []hyperv1.UnmanagedEtcdShardSpec{
+						{
+							Name:     "events",
+							Endpoint: "https://external-etcd-events:2379",
+							Resources: []hyperv1.EtcdShardResource{
+								{APIGroup: ptr.To(""), Resource: "events"},
+							},
+						},
+					},
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EtcdURL = "https://external-etcd:2379"
+				params.EtcdServersOverrides = []string{
+					"/events#https://external-etcd-events:2379",
+				}
+				return params
+			},
+		},
+		{
 			name: "single replica controller availability policy",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()

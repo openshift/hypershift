@@ -211,6 +211,9 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("etcd-keyfile", cpath(etcdClientCertVolumeName, pki.EtcdClientKeyKey))
 	args.Set("etcd-prefix", "kubernetes.io")
 	args.Set("etcd-servers", p.EtcdURL)
+	if len(p.EtcdServersOverrides) > 0 {
+		args.Set("etcd-servers-overrides", p.EtcdServersOverrides...)
+	}
 	args.Set("event-ttl", "3h")
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)

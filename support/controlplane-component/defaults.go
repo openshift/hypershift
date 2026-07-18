@@ -138,7 +138,7 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 		podTemplateSpec.Spec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsUser: ptr.To[int64](uid),
 		}
-		if c.Name() == etcdComponentName {
+		if isEtcdComponent(c.Name()) {
 			podTemplateSpec.Spec.SecurityContext.FSGroup = ptr.To[int64](uid)
 		}
 	}
@@ -658,7 +658,7 @@ func priorityClass(componentName string, hcp *hyperv1.HostedControlPlane) string
 	priorityClass := config.DefaultPriorityClass
 	overrideAnnotation := hyperv1.ControlPlanePriorityClass
 
-	if componentName == etcdComponentName {
+	if isEtcdComponent(componentName) {
 		priorityClass = config.EtcdPriorityClass
 		overrideAnnotation = hyperv1.EtcdPriorityClass
 	} else if apiCriticalComponents.Has(componentName) {
@@ -682,7 +682,7 @@ func DefaultReplicas(hcp *hyperv1.HostedControlPlane, options ComponentOptions, 
 	if options.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
 		return 2
 	}
-	if name == etcdComponentName || apiCriticalComponents.Has(name) {
+	if isEtcdComponent(name) || apiCriticalComponents.Has(name) {
 		return 3
 	}
 	return 2

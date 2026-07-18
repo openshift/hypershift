@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: etcd
+  name: {{ .Name }}
 spec:
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: Retain
@@ -10,12 +10,12 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: etcd
-  serviceName: etcd-discovery
+      app: {{ .Name }}
+  serviceName: {{ .DiscoveryServiceName }}
   template:
     metadata:
       labels:
-        app: etcd
+        app: {{ .Name }}
     spec:
       containers:
       - command:

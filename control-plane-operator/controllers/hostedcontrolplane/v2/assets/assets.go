@@ -1,10 +1,12 @@
 package assets
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
 	"path"
+	"text/template"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
 
@@ -73,16 +75,69 @@ func LoadManifest(componentName string, fileName string) (client.Object, *schema
 // If 'into' is nil, it will generate and return a new object.
 func LoadManifestInto(componentName string, fileName string, into client.Object) (client.Object, *schema.GroupVersionKind, error) {
 	filePath := path.Join(componentName, fileName)
-	bytes, err := manifestsAssets.ReadFile(filePath)
+	raw, err := manifestsAssets.ReadFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	obj, gvk, err := hyperapi.AllMonitoringYamlSerializer.Decode(bytes, nil, into)
+	obj, gvk, err := hyperapi.AllMonitoringYamlSerializer.Decode(raw, nil, into)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load %s manifest: %w", filePath, err)
 	}
 	return obj.(client.Object), gvk, err
+}
+
+// LoadManifestTemplated reads the raw asset bytes, renders them as a Go text/template
+// with the given templateData, then decodes the resulting YAML.
+// If templateData is nil, it falls through to the standard LoadManifest path.
+//
+// Safety: templateData values are expected to be validated at the API level
+// (e.g., DNS1123 shard names via CEL). This function uses text/template rather
+// than html/template because the output is YAML, not HTML. Callers must not
+// pass unvalidated user input as template data.
+func LoadManifestTemplated(componentName, fileName string, templateData map[string]string) (client.Object, *schema.GroupVersionKind, error) {
+	if templateData == nil {
+		return LoadManifest(componentName, fileName)
+	}
+
+	filePath := path.Join(componentName, fileName)
+	raw, err := manifestsAssets.ReadFile(filePath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tmpl, err := template.New(filePath).Option("missingkey=error").Parse(string(raw))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse template %s: %w", filePath, err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, templateData); err != nil {
+		return nil, nil, fmt.Errorf("failed to execute template %s: %w", filePath, err)
+	}
+
+	obj, gvk, err := hyperapi.AllMonitoringYamlSerializer.Decode(buf.Bytes(), nil, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load templated %s manifest: %w", filePath, err)
+	}
+	return obj.(client.Object), gvk, err
+}
+
+// LoadStatefulSetManifestTemplated loads a statefulset manifest with template rendering.
+func LoadStatefulSetManifestTemplated(componentName string, templateData map[string]string) (*appsv1.StatefulSet, error) {
+	if templateData == nil {
+		return LoadStatefulSetManifest(componentName)
+	}
+
+	obj, _, err := LoadManifestTemplated(componentName, statefulSetManifest, templateData)
+	if err != nil {
+		return nil, err
+	}
+	sts, ok := obj.(*appsv1.StatefulSet)
+	if !ok {
+		return nil, fmt.Errorf("expected StatefulSet but got %T", obj)
+	}
+	return sts, nil
 }
 
 func ForEachManifest(componentName string, action func(manifestName string) error) error {

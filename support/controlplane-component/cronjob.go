@@ -1,6 +1,8 @@
 package controlplanecomponent
 
 import (
+	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 
@@ -26,6 +28,22 @@ func (d *cronJobProvider) SetReplicasAndStrategy(object *batchv1.CronJob, replic
 // LoadManifest implements WorkloadProvider.
 func (c *cronJobProvider) LoadManifest(componentName string) (*batchv1.CronJob, error) {
 	return assets.LoadCronJobManifest(componentName)
+}
+
+// LoadManifestTemplated implements WorkloadProvider.
+func (c *cronJobProvider) LoadManifestTemplated(componentName string, templateData map[string]string) (*batchv1.CronJob, error) {
+	if templateData == nil {
+		return c.LoadManifest(componentName)
+	}
+	obj, _, err := assets.LoadManifestTemplated(componentName, "cronjob.yaml", templateData)
+	if err != nil {
+		return nil, err
+	}
+	cronJob, ok := obj.(*batchv1.CronJob)
+	if !ok {
+		return nil, fmt.Errorf("expected CronJob but got %T", obj)
+	}
+	return cronJob, nil
 }
 
 // PodTemplateSpec implements WorkloadProvider.

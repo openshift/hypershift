@@ -32,6 +32,7 @@ func (e *etcd) NeedsManagementKASAccess() bool {
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewStatefulSetComponent(ComponentName, &etcd{}).
+		WithTemplateData(etcdTemplateData(ComponentName)).
 		WithAdaptFunction(adaptStatefulSet).
 		WithPredicate(isManagedETCD).
 		WithManifestAdapter(

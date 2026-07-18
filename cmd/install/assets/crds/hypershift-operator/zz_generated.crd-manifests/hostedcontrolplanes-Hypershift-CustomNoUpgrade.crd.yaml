@@ -3358,6 +3358,336 @@ spec:
                         - message: azure configuration is required when platform is
                             Azure, and forbidden otherwise
                           rule: 'self.platform == ''Azure'' ? has(self.azure) : !has(self.azure)'
+                      scheduling:
+                        description: scheduling specifies scheduling constraints for
+                          the default etcd shard pods.
+                        minProperties: 1
+                        properties:
+                          nodeSelector:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              nodeSelector constrains this shard's pods to nodes matching the
+                              specified labels, in addition to the framework's control plane node
+                              selector. Keys and values must be valid Kubernetes label key/value
+                              pairs. Maximum 16 entries.
+                            maxProperties: 16
+                            minProperties: 1
+                            type: object
+                          tolerations:
+                            description: |-
+                              tolerations allows this shard's pods to schedule on nodes with
+                              matching taints, in addition to the framework's control plane
+                              tolerations. Maximum 16 entries.
+                            items:
+                              description: |-
+                                The pod this Toleration is attached to tolerates any taint that matches
+                                the triple <key,value,effect> using the matching operator <operator>.
+                              properties:
+                                effect:
+                                  description: |-
+                                    Effect indicates the taint effect to match. Empty means match all taint effects.
+                                    When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                  type: string
+                                key:
+                                  description: |-
+                                    Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                    If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                  type: string
+                                operator:
+                                  description: |-
+                                    Operator represents a key's relationship to the value.
+                                    Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                                    Exists is equivalent to wildcard for value, so that a pod can
+                                    tolerate all taints of a particular category.
+                                    Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                                  type: string
+                                tolerationSeconds:
+                                  description: |-
+                                    TolerationSeconds represents the period of time the toleration (which must be
+                                    of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                    it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                    negative values will be treated as 0 (evict immediately) by the system.
+                                  format: int64
+                                  type: integer
+                                value:
+                                  description: |-
+                                    Value is the taint value the toleration matches to.
+                                    If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                  type: string
+                              type: object
+                            maxItems: 16
+                            minItems: 1
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        type: object
+                      shards:
+                        description: |-
+                          shards defines additional etcd shards for resource-level routing.
+                          The existing storage and scheduling fields above configure
+                          the default shard (catch-all for all resources not explicitly
+                          routed). Entries in this list define non-default shards,
+                          each deployed as an independent StatefulSet and ControlPlaneComponent.
+                          Minimum 1, maximum 10 entries. Resources must not overlap across
+                          shards. Immutable after creation: shards cannot be added, removed,
+                          or reordered.
+
+                          WARNING: In the current TechPreview implementation, shard data is NOT
+                          included in HCPEtcdBackup. Resources routed to shards will not be
+                          backed up. This will be addressed before promotion beyond TechPreview.
+                        items:
+                          description: |-
+                            ManagedEtcdShardSpec defines the configuration for a single etcd shard
+                            within a managed etcd deployment.
+                          properties:
+                            name:
+                              description: |-
+                                name is a unique identifier for this shard. It is used to derive
+                                resource names (e.g., StatefulSet "etcd-{name}", Service
+                                "etcd-client-{name}").
+                                Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
+                                starting and ending with an alphanumeric character), max 48 characters.
+                                Immutable once set.
+                              maxLength: 48
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: 'name must be a valid DNS1123 label: lowercase
+                                  alphanumeric with hyphens, starting and ending with
+                                  an alphanumeric character'
+                                rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                              - message: name is immutable
+                                rule: self == oldSelf
+                            replicas:
+                              description: |-
+                                replicas is the number of etcd replicas for this shard. Must be 1 or 3.
+                                Immutable once set.
+                              enum:
+                              - 1
+                              - 3
+                              format: int32
+                              minimum: 1
+                              type: integer
+                              x-kubernetes-validations:
+                              - message: replicas is immutable
+                                rule: self == oldSelf
+                            resources:
+                              description: |-
+                                resources is the list of Kubernetes resource types routed to this
+                                shard. Each entry identifies a resource by its API group and plural
+                                resource name. For example, events in the core group would be
+                                {apiGroup: "", resource: "events"}, and leases in the coordination group would be
+                                {apiGroup: "coordination.k8s.io", resource: "leases"}.
+                                Only resource types built into the kube-apiserver are routed; entries
+                                for CRD-backed or aggregated API resources have no effect (see
+                                EtcdShardResource).
+                                Minimum 1, maximum 20 entries. Immutable once set.
+                              items:
+                                description: |-
+                                  EtcdShardResource identifies a Kubernetes resource type to be routed to an
+                                  etcd shard. It is used to build the KAS --etcd-servers-overrides flag.
+                                  The combination of apiGroup and resource uniquely identifies a resource type.
+
+                                  Routing only takes effect for resource types compiled into the
+                                  kube-apiserver binary (built-in types such as events, pods, or
+                                  coordination.k8s.io/leases). This is a kube-apiserver limitation:
+                                  --etcd-servers-overrides does not apply to other resource types. In
+                                  particular, resources backed by CustomResourceDefinitions and resources
+                                  served by aggregated API servers (such as the openshift.io groups served
+                                  by openshift-apiserver and oauth-apiserver) are NOT routed: entries for
+                                  such resources are accepted but have no effect, and their data remains in
+                                  the default shard while the configured shard stays empty.
+                                properties:
+                                  apiGroup:
+                                    description: |-
+                                      apiGroup is the API group of the resource (e.g., "coordination.k8s.io"
+                                      for leases). An empty string designates the core API group (e.g.,
+                                      events, pods, configmaps). For core-group resources, specify
+                                      apiGroup: "" explicitly (e.g., {apiGroup: "", resource: "events"}).
+                                      When non-empty, must be at most 253 characters in length and consist
+                                      of only lowercase alphanumeric characters, hyphens and periods. Each
+                                      period separated segment must start and end with an alphanumeric
+                                      character.
+                                    maxLength: 253
+                                    minLength: 0
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: apiGroup must be a valid DNS subdomain
+                                        (lowercase alphanumeric, hyphens, dots)
+                                      rule: self == '' || self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)*$')
+                                  resource:
+                                    description: |-
+                                      resource is the plural resource name (e.g., "events", "leases",
+                                      "configmaps"). Must be a valid DNS label (RFC 1123): lowercase
+                                      alphanumeric characters or hyphens, starting and ending with an
+                                      alphanumeric character, max 63 characters.
+                                    maxLength: 63
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: resource must be a valid DNS label
+                                        (lowercase alphanumeric, hyphens)
+                                      rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+                                required:
+                                - apiGroup
+                                - resource
+                                type: object
+                              maxItems: 20
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - apiGroup
+                              - resource
+                              x-kubernetes-list-type: map
+                              x-kubernetes-validations:
+                              - message: resources are immutable
+                                rule: self == oldSelf
+                            scheduling:
+                              description: |-
+                                scheduling configures per-shard pod placement constraints. These
+                                constraints are merged with the framework's control plane node
+                                isolation settings (nodeSelector, tolerations, topology spread).
+                              minProperties: 1
+                              properties:
+                                nodeSelector:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    nodeSelector constrains this shard's pods to nodes matching the
+                                    specified labels, in addition to the framework's control plane node
+                                    selector. Keys and values must be valid Kubernetes label key/value
+                                    pairs. Maximum 16 entries.
+                                  maxProperties: 16
+                                  minProperties: 1
+                                  type: object
+                                tolerations:
+                                  description: |-
+                                    tolerations allows this shard's pods to schedule on nodes with
+                                    matching taints, in addition to the framework's control plane
+                                    tolerations. Maximum 16 entries.
+                                  items:
+                                    description: |-
+                                      The pod this Toleration is attached to tolerates any taint that matches
+                                      the triple <key,value,effect> using the matching operator <operator>.
+                                    properties:
+                                      effect:
+                                        description: |-
+                                          Effect indicates the taint effect to match. Empty means match all taint effects.
+                                          When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                        type: string
+                                      key:
+                                        description: |-
+                                          Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                          If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Operator represents a key's relationship to the value.
+                                          Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                                          Exists is equivalent to wildcard for value, so that a pod can
+                                          tolerate all taints of a particular category.
+                                          Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                                        type: string
+                                      tolerationSeconds:
+                                        description: |-
+                                          TolerationSeconds represents the period of time the toleration (which must be
+                                          of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                          it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                          negative values will be treated as 0 (evict immediately) by the system.
+                                        format: int64
+                                        type: integer
+                                      value:
+                                        description: |-
+                                          Value is the taint value the toleration matches to.
+                                          If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                        type: string
+                                    type: object
+                                  maxItems: 16
+                                  minItems: 1
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
+                            storage:
+                              description: |-
+                                storage configures the storage backend for this shard.
+                                If not specified, the shard inherits PersistentVolume storage from
+                                the parent ManagedEtcdSpec.Storage. Immutable once set.
+                              properties:
+                                persistentVolume:
+                                  description: |-
+                                    persistentVolume configures PVC-based storage for this shard.
+                                    Only valid when type is PersistentVolume.
+                                    When omitted and type is PersistentVolume, the shard inherits the
+                                    StorageClass and volume size from the parent
+                                    spec.etcd.managed.storage.persistentVolume configuration.
+                                  minProperties: 1
+                                  properties:
+                                    storageClassName:
+                                      description: |-
+                                        storageClassName overrides the StorageClass for this shard's PVCs.
+                                        If not specified, the parent ManagedEtcdSpec's storageClassName is used.
+                                        Must be a valid DNS1123 subdomain (lowercase alphanumeric, hyphens, or
+                                        dots, starting and ending with an alphanumeric character), max 253
+                                        characters.
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                      x-kubernetes-validations:
+                                      - message: storageClassName must be a valid
+                                          DNS1123 subdomain
+                                        rule: self.matches('^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$')
+                                  type: object
+                                type:
+                                  description: |-
+                                    type is the kind of storage backend to use for this shard.
+                                    Valid values are PersistentVolume and EmptyDir.
+                                    When set to PersistentVolume, a PersistentVolumeClaim is created for
+                                    each etcd replica via the StatefulSet volumeClaimTemplates. The
+                                    optional persistentVolume field can override the StorageClass for
+                                    this shard; when persistentVolume is omitted, the shard inherits
+                                    the StorageClass and size from the parent spec.etcd.managed.storage
+                                    configuration.
+                                    When set to EmptyDir, the shard uses memory-backed ephemeral
+                                    storage (tmpfs). Data is lost when the pod restarts. This is
+                                    suitable for shards holding expendable, high-churn data such as
+                                    events or leases.
+                                  enum:
+                                  - PersistentVolume
+                                  - EmptyDir
+                                  type: string
+                              required:
+                              - type
+                              type: object
+                              x-kubernetes-validations:
+                              - message: storage is immutable
+                                rule: self == oldSelf
+                              - message: persistentVolume is forbidden when type is
+                                  not PersistentVolume
+                                rule: 'self.type == ''PersistentVolume'' ? true :
+                                  !has(self.persistentVolume)'
+                          required:
+                          - name
+                          - replicas
+                          - resources
+                          type: object
+                          x-kubernetes-validations:
+                          - message: storage cannot be added or removed after creation
+                            rule: has(oldSelf.storage) == has(self.storage)
+                        maxItems: 10
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: resources must not overlap across shards
+                          rule: self.all(s1, self.all(s2, s1.name == s2.name || !s1.resources.exists(r,
+                            s2.resources.exists(q, r.apiGroup == q.apiGroup && r.resource
+                            == q.resource))))
+                        - message: shards cannot be added or removed after creation
+                          rule: self.size() == oldSelf.size()
+                        - message: existing shards cannot be replaced
+                          rule: oldSelf.all(old, self.exists(cur, cur.name == old.name))
                       storage:
                         description: storage specifies how etcd data is persisted.
                         properties:
@@ -3431,6 +3761,9 @@ spec:
                     required:
                     - storage
                     type: object
+                    x-kubernetes-validations:
+                    - message: shards cannot be added or removed after creation
+                      rule: has(oldSelf.shards) == has(self.shards)
                   managementType:
                     description: |-
                       managementType defines how the etcd cluster is managed.
@@ -3458,6 +3791,141 @@ spec:
                         maxLength: 255
                         pattern: ^https://
                         type: string
+                      shards:
+                        description: |-
+                          shards defines additional etcd shards for resource-level routing.
+                          The top-level endpoint and tls fields define the default shard
+                          (the catch-all for all resources not explicitly routed). Entries
+                          in this list define non-default shards, each with its own endpoint
+                          and TLS configuration.
+                          Minimum 1, maximum 10 entries. Resources must not overlap across
+                          shards. Immutable after creation: shards cannot be added, removed,
+                          or reordered.
+                        items:
+                          description: |-
+                            UnmanagedEtcdShardSpec defines the configuration for a single etcd shard
+                            within an unmanaged (externally operated) etcd deployment.
+                          properties:
+                            endpoint:
+                              description: |-
+                                endpoint is the full etcd client endpoint URL for this shard.
+                                Must be a valid HTTPS URL, max 267 characters. Immutable once set.
+                                All shards must share the same CA and client certificate as the
+                                top-level UnmanagedEtcdSpec.TLS, because kube-apiserver uses a
+                                single --etcd-cafile/--etcd-certfile/--etcd-keyfile for all etcd
+                                connections; --etcd-servers-overrides only overrides server URLs.
+                              maxLength: 267
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: endpoint must be a valid HTTPS URL
+                                rule: isURL(self) && url(self).getScheme() == 'https'
+                              - message: endpoint is immutable
+                                rule: self == oldSelf
+                            name:
+                              description: |-
+                                name is a unique identifier for this shard.
+                                Must be a valid DNS1123 label (lowercase alphanumeric with hyphens,
+                                starting and ending with an alphanumeric character), max 48 characters.
+                                Immutable once set.
+                              maxLength: 48
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: 'name must be a valid DNS1123 label: lowercase
+                                  alphanumeric with hyphens, starting and ending with
+                                  an alphanumeric character'
+                                rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                              - message: name is immutable
+                                rule: self == oldSelf
+                            resources:
+                              description: |-
+                                resources is the list of Kubernetes resource types routed to this
+                                shard. Uses the same format as ManagedEtcdShardSpec.Resources.
+                                Only resource types built into the kube-apiserver are routed; entries
+                                for CRD-backed or aggregated API resources have no effect (see
+                                EtcdShardResource).
+                                Minimum 1, maximum 20 entries. Immutable once set.
+                              items:
+                                description: |-
+                                  EtcdShardResource identifies a Kubernetes resource type to be routed to an
+                                  etcd shard. It is used to build the KAS --etcd-servers-overrides flag.
+                                  The combination of apiGroup and resource uniquely identifies a resource type.
+
+                                  Routing only takes effect for resource types compiled into the
+                                  kube-apiserver binary (built-in types such as events, pods, or
+                                  coordination.k8s.io/leases). This is a kube-apiserver limitation:
+                                  --etcd-servers-overrides does not apply to other resource types. In
+                                  particular, resources backed by CustomResourceDefinitions and resources
+                                  served by aggregated API servers (such as the openshift.io groups served
+                                  by openshift-apiserver and oauth-apiserver) are NOT routed: entries for
+                                  such resources are accepted but have no effect, and their data remains in
+                                  the default shard while the configured shard stays empty.
+                                properties:
+                                  apiGroup:
+                                    description: |-
+                                      apiGroup is the API group of the resource (e.g., "coordination.k8s.io"
+                                      for leases). An empty string designates the core API group (e.g.,
+                                      events, pods, configmaps). For core-group resources, specify
+                                      apiGroup: "" explicitly (e.g., {apiGroup: "", resource: "events"}).
+                                      When non-empty, must be at most 253 characters in length and consist
+                                      of only lowercase alphanumeric characters, hyphens and periods. Each
+                                      period separated segment must start and end with an alphanumeric
+                                      character.
+                                    maxLength: 253
+                                    minLength: 0
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: apiGroup must be a valid DNS subdomain
+                                        (lowercase alphanumeric, hyphens, dots)
+                                      rule: self == '' || self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)*$')
+                                  resource:
+                                    description: |-
+                                      resource is the plural resource name (e.g., "events", "leases",
+                                      "configmaps"). Must be a valid DNS label (RFC 1123): lowercase
+                                      alphanumeric characters or hyphens, starting and ending with an
+                                      alphanumeric character, max 63 characters.
+                                    maxLength: 63
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: resource must be a valid DNS label
+                                        (lowercase alphanumeric, hyphens)
+                                      rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+                                required:
+                                - apiGroup
+                                - resource
+                                type: object
+                              maxItems: 20
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - apiGroup
+                              - resource
+                              x-kubernetes-list-type: map
+                              x-kubernetes-validations:
+                              - message: resources are immutable
+                                rule: self == oldSelf
+                          required:
+                          - endpoint
+                          - name
+                          - resources
+                          type: object
+                        maxItems: 10
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                        x-kubernetes-validations:
+                        - message: resources must not overlap across shards
+                          rule: self.all(s1, self.all(s2, s1.name == s2.name || !s1.resources.exists(r,
+                            s2.resources.exists(q, r.apiGroup == q.apiGroup && r.resource
+                            == q.resource))))
+                        - message: shards cannot be added or removed after creation
+                          rule: self.size() == oldSelf.size()
+                        - message: existing shards cannot be replaced
+                          rule: oldSelf.all(old, self.exists(cur, cur.name == old.name))
                       tls:
                         description: tls specifies TLS configuration for HTTPS etcd
                           client endpoints.
@@ -3489,6 +3957,9 @@ spec:
                     - endpoint
                     - tls
                     type: object
+                    x-kubernetes-validations:
+                    - message: shards cannot be added or removed after creation
+                      rule: has(oldSelf.shards) == has(self.shards)
                 required:
                 - managementType
                 type: object

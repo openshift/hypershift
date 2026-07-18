@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	etcdutil "github.com/openshift/hypershift/support/etcd"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/util"
@@ -42,6 +43,7 @@ type KubeAPIServerConfigParams struct {
 	CloudProvider                    string
 	CloudProviderConfigRef           *corev1.LocalObjectReference
 	EtcdURL                          string
+	EtcdServersOverrides             []string
 	FeatureGates                     []string
 	NodePortRange                    string
 	AuditWebhookEnabled              bool
@@ -84,9 +86,30 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 	case hyperv1.Unmanaged:
 		if hcp.Spec.Etcd.Unmanaged != nil {
 			kasConfig.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
+			for _, shard := range etcdutil.UnmanagedEffectiveShards(hcp.Spec.Etcd.Unmanaged) {
+				if shard.IsDefault {
+					continue
+				}
+				for _, prefix := range shard.ResourcePrefixes {
+					kasConfig.EtcdServersOverrides = append(kasConfig.EtcdServersOverrides,
+						fmt.Sprintf("%s#%s", prefix, shard.Endpoint))
+				}
+			}
 		}
 	case hyperv1.Managed:
 		kasConfig.EtcdURL = fmt.Sprintf("https://etcd-client.%s.svc:2379", hcp.Namespace)
+		if hcp.Spec.Etcd.Managed != nil {
+			for _, shard := range etcdutil.EffectiveShards(hcp.Spec.Etcd.Managed) {
+				if shard.IsDefault {
+					continue
+				}
+				shardEndpoint := fmt.Sprintf("https://%s.%s.svc:2379", etcdutil.ClientServiceName(shard.Name), hcp.Namespace)
+				for _, prefix := range shard.ResourcePrefixes {
+					kasConfig.EtcdServersOverrides = append(kasConfig.EtcdServersOverrides,
+						fmt.Sprintf("%s#%s", prefix, shardEndpoint))
+				}
+			}
+		}
 	default:
 		kasConfig.EtcdURL = config.DefaultEtcdURL
 	}

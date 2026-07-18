@@ -2,8 +2,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: etcd
-  name: etcd-client
+    app: {{ .Name }}
+  name: {{ .ClientServiceName }}
 spec:
   ports:
   - name: etcd-client
@@ -15,5 +15,5 @@ spec:
     protocol: TCP
     targetPort: metrics
   selector:
-    app: etcd
+    app: {{ .Name }}
   type: ClusterIP

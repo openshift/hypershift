@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/support/config"
+	etcdutil "github.com/openshift/hypershift/support/etcd"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -51,4 +52,31 @@ func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef
 	ips := []string{"127.0.0.1", "::1"}
 
 	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, ips, "")
+}
+
+func ReconcileEtcdShardServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, shardName string) error {
+	clientService := etcdutil.ClientServiceName(shardName)
+	discoveryService := etcdutil.DiscoveryServiceName(shardName)
+	dnsNames := []string{
+		fmt.Sprintf("%s.%s.svc", clientService, secret.Namespace),
+		fmt.Sprintf("%s.%s.svc.cluster.local", clientService, secret.Namespace),
+		fmt.Sprintf("*.%s.%s.svc", discoveryService, secret.Namespace),
+		fmt.Sprintf("*.%s.%s.svc.cluster.local", discoveryService, secret.Namespace),
+		clientService,
+		"localhost",
+	}
+
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-server", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdServerCrtKey, EtcdServerKeyKey, "", dnsNames, nil, "")
+}
+
+func ReconcileEtcdShardPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, shardName string) error {
+	discoveryService := etcdutil.DiscoveryServiceName(shardName)
+	dnsNames := []string{
+		fmt.Sprintf("*.%s.%s.svc", discoveryService, secret.Namespace),
+		fmt.Sprintf("*.%s.%s.svc.cluster.local", discoveryService, secret.Namespace),
+		"127.0.0.1",
+		"::1",
+	}
+
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, discoveryService, []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, nil, "")
 }
