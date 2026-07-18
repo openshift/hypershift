@@ -164,6 +164,32 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		}
 	}
 
+	// Reconcile spot-specific MachineHealthCheck when spot instances are enabled.
+	// This is placed before the autoRepair gate because the spot MHC must exist
+	// independently of autoRepair — it serves as a safety net for spot instance
+	// failures even when the ignition endpoint has not been reached yet.
+	spotMHC := c.spotMachineHealthCheck()
+	if isSpotEnabled(nodePool) {
+		if result, err := ctrl.CreateOrUpdate(ctx, c.Client, spotMHC, func() error {
+			return c.reconcileSpotMachineHealthCheck(ctx, spotMHC)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile spot MachineHealthCheck %q: %w",
+				client.ObjectKeyFromObject(spotMHC).String(), err)
+		} else {
+			log.Info("Reconciled spot MachineHealthCheck", "result", result)
+		}
+	} else {
+		err := c.Get(ctx, client.ObjectKeyFromObject(spotMHC), spotMHC)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+		if err == nil {
+			if err := c.Delete(ctx, spotMHC); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+	}
+
 	mhc := c.machineHealthCheck()
 	if nodePool.Spec.Management.AutoRepair {
 		if c := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint); c == nil || c.Status != corev1.ConditionTrue {
@@ -201,30 +227,6 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
-	}
-
-	// Reconcile spot-specific MachineHealthCheck when spot instances are enabled
-	spotMHC := c.spotMachineHealthCheck()
-	if isSpotEnabled(nodePool) {
-		if result, err := ctrl.CreateOrUpdate(ctx, c.Client, spotMHC, func() error {
-			return c.reconcileSpotMachineHealthCheck(ctx, spotMHC)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile spot MachineHealthCheck %q: %w",
-				client.ObjectKeyFromObject(spotMHC).String(), err)
-		} else {
-			log.Info("Reconciled spot MachineHealthCheck", "result", result)
-		}
-	} else {
-		// Delete spot MHC if spot is not enabled
-		err := c.Get(ctx, client.ObjectKeyFromObject(spotMHC), spotMHC)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return err
-		}
-		if err == nil {
-			if err := c.Delete(ctx, spotMHC); err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
-		}
 	}
 
 	return nil
