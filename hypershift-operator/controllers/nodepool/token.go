@@ -334,15 +334,6 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 			return fmt.Errorf("failed to compress and decode config: %w", err)
 		}
 
-		// TODO (alberto): Drop this after dropping < 4.12 support.
-		// So all CPOs ign server will know to decompress and decode.
-		if !t.cpoCapabilities.DecompressAndDecodeConfig {
-			compressedConfig, err = t.Compressed()
-			if err != nil {
-				return fmt.Errorf("failed to compress config: %w", err)
-			}
-		}
-
 		tokenSecret.Data = map[string][]byte{}
 		tokenSecret.Annotations[TokenSecretTokenGenerationTime] = time.Now().Format(time.RFC3339Nano)
 		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())

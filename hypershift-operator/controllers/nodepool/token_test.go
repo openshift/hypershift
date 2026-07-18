@@ -627,9 +627,7 @@ func TestTokenReconcile(t *testing.T) {
 				additionalTrustBundle,
 				ignitionServerCACert,
 			},
-			cpoCapabilities: &CPOCapabilities{
-				DecompressAndDecodeConfig: true,
-			},
+			cpoCapabilities: &CPOCapabilities{},
 		},
 		{
 			name: "when HostedCluster is restored from backup it should set ignition-reached annotation on the token secret",
@@ -689,9 +687,7 @@ func TestTokenReconcile(t *testing.T) {
 				additionalTrustBundle,
 				ignitionServerCACert,
 			},
-			cpoCapabilities: &CPOCapabilities{
-				DecompressAndDecodeConfig: true,
-			},
+			cpoCapabilities: &CPOCapabilities{},
 		},
 	}
 

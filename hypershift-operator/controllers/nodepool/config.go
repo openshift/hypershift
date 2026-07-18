@@ -154,13 +154,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 	return cg, nil
 }
 
-// Compressed returns a gzipped artifact of the rawconfig.
-// Prefer CompressedAndEncoded unless the CPO/your decompressor doesn't know how to handle base64 encoded data.
-func (cg *ConfigGenerator) Compressed() (*bytes.Buffer, error) {
-	return supportutil.Compress([]byte(cg.mcoRawConfig))
-}
-
-// CompressedAndEncoded returns a gzipped and base-64 encodesd artifact of the raw config.
+// CompressedAndEncoded returns a gzipped and base-64 encoded artifact of the raw config.
 func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 	return supportutil.CompressAndEncode([]byte(cg.mcoRawConfig))
 }
