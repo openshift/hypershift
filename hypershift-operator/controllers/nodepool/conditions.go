@@ -987,6 +987,34 @@ func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, no
 	return nil, nil
 }
 
+// spotTerminationHandlerConfiguredCondition sets the SpotTerminationHandlerConfigured condition
+// on spot-enabled NodePools. It warns when the HostedCluster does not have terminationHandlerQueueURL
+// configured, which means NTH cannot be deployed and spot interruptions will not be gracefully handled.
+func (r *NodePoolReconciler) spotTerminationHandlerConfiguredCondition(_ context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	if !isSpotEnabled(nodePool) {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolSpotTerminationHandlerConfiguredConditionType)
+		return nil, nil
+	}
+
+	condition := hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolSpotTerminationHandlerConfiguredConditionType,
+		ObservedGeneration: nodePool.Generation,
+	}
+
+	if hc.Spec.Platform.AWS != nil && hc.Spec.Platform.AWS.TerminationHandlerQueueURL != "" {
+		condition.Status = corev1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = hyperv1.AllIsWellMessage
+	} else {
+		condition.Status = corev1.ConditionFalse
+		condition.Reason = hyperv1.TerminationHandlerQueueURLNotSetReason
+		condition.Message = "Spot instances require spec.platform.aws.terminationHandlerQueueURL on the HostedCluster to enable graceful handling of spot instance terminations."
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, condition)
+	return nil, nil
+}
+
 func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	if hcluster.Status.Version == nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
