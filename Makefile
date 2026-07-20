@@ -105,22 +105,28 @@ $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugi
 
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
+# Falls back through: upstream remote/main → local main → empty (lint all files).
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
-PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main), $(shell git rev-parse main))
+PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main 2>/dev/null),)
+PULL_BASE_SHA := $(if $(PULL_BASE_SHA),$(PULL_BASE_SHA),$(shell git rev-parse main 2>/dev/null))
 
 .PHONY: api-lint
 api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
 
 .PHONY: api-lint-fix
 api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
 
 .PHONY: lint
 lint: generate
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+
+.PHONY: main-lint-fix
+main-lint-fix: generate $(GOLANGCI_LINT)
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
 
 .PHONY: lint-fix
 lint-fix: generate
@@ -185,8 +191,6 @@ $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 
 .PHONY: generate
 generate: $(MOCKGEN)
-	@echo "Cleaning stale mock files..."
-	find . -name '*_mock.go' -not -path '*/vendor/*' -delete
 	$(GO) generate ./...
 
 # Compile all tests

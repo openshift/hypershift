@@ -1,5 +1,5 @@
 default_stages: [pre-commit, pre-push]
-default_install_hook_types: [pre-commit, pre-push]
+default_install_hook_types: [pre-commit, pre-push, post-checkout]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -34,18 +34,34 @@ repos:
           - Dockerfile.control-plane
         description: Ensures the CPO container files stay in sync
         stages: [pre-commit]
-      - id: make-lint-fix
-        name: Sort imports
-        description: Runs `make lint-fix` to sort imports.
-        entry: make lint-fix
+      - id: api-lint-fix
+        name: Sort API imports
+        description: Runs `make api-lint-fix` to sort imports in the api/ module.
+        entry: make api-lint-fix PULL_BASE_SHA=HEAD
         language: system
         stages: [pre-commit]
+        files: '^api/.*\.go$'
+      - id: main-lint-fix
+        name: Sort imports
+        description: Runs `make main-lint-fix` to sort imports in the main module.
+        entry: make main-lint-fix PULL_BASE_SHA=HEAD
+        language: system
+        stages: [pre-commit]
+        files: '\.go$'
+        exclude: '^api/'
       - id: run-gitlint
         name: Run gitlint
         description: Runs `make run-gitlint` to validate commit messages.
         entry: make run-gitlint
         language: system
         stages: [pre-commit]
+      - id: clean-stale-mocks
+        name: Clean stale mock files
+        description: Removes gitignored *_mock.go files that may be stale after a branch switch.
+        entry: find . -name '*_mock.go' -not -path '*/vendor/*' -delete
+        language: system
+        stages: [post-checkout]
+        always_run: true
       - id: make-verify
         name: Run make verify
         description: Runs `make verify`.
@@ -60,4 +76,4 @@ repos:
         language: system
         stages: [ pre-push ]
 exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
-fail_fast: true
+fail_fast: false
