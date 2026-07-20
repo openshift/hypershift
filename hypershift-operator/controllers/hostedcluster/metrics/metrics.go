@@ -96,6 +96,9 @@ const (
 
 	HostedClusterAzureInfoMetricName = "hosted_cluster_azure_info"
 	HostedClusterAzureInfoMetricHelp = "Reports Azure information about the given HostedCluster"
+
+	AcrPullIdentityConfiguredMetricName = "hypershift_cluster_acr_pull_identity_configured"
+	acrPullIdentityConfiguredMetricHelp = "Indicates whether a HostedCluster has an ACR pull managed identity configured (1=configured, 0=not configured). Only emitted for Azure platform clusters."
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -205,6 +208,10 @@ var (
 			"location",
 			"microsoft_subscription_id",
 			"microsoft_resource_group_name"), nil)
+
+	acrPullIdentityConfiguredMetricDesc = prometheus.NewDesc(
+		AcrPullIdentityConfiguredMetricName, acrPullIdentityConfiguredMetricHelp,
+		hclusterLabels, nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -369,6 +376,7 @@ func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prom
 	c.collectProxyMetrics(ch, hcluster, hclusterLabelValues)
 	collectRosaMetrics(ch, hcluster, hclusterLabelValues)
 	collectAzureInfoMetrics(ch, hcluster, hclusterLabelValues)
+	collectAcrPullIdentityMetric(ch, hcluster, hclusterLabelValues)
 	collectAwsCredsMetric(ch, hcluster, hclusterLabelValues)
 	collectDeletingMetrics(ch, c.clock, hcluster, hclusterLabelValues)
 }
@@ -561,6 +569,22 @@ func collectAzureInfoMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.Host
 				subID,
 				resGroup)...)
 	}
+}
+
+func collectAcrPullIdentityMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	if hcluster.Spec.Platform.Azure == nil {
+		return
+	}
+	var value float64
+	if hcluster.Spec.Platform.Azure.ContainerRegistry.Credentials.Type != "" {
+		value = 1
+	}
+	ch <- prometheus.MustNewConstMetric(
+		acrPullIdentityConfiguredMetricDesc,
+		prometheus.GaugeValue,
+		value,
+		hclusterLabelValues...,
+	)
 }
 
 // Use detailed credential status: 0=valid, 1=invalid, 2=unknown
