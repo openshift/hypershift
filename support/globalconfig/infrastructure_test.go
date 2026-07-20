@@ -11,6 +11,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -214,6 +215,82 @@ func TestReconcileInfrastructure(t *testing.T) {
 					{Key: "team", Value: "platform"},
 					{Key: "env", Value: "prod"},
 				}))
+			},
+		},
+
+		{
+			name:       "When AWS platform has additionalTrustBundle, it should set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{
+					Name: "user-ca-bundle",
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderConfigName))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(AWSProviderConfigKey))
+			},
+		},
+		{
+			name:       "When AWS platform has proxy TrustedCA, it should set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						TrustedCA: configv1.ConfigMapNameReference{
+							Name: "proxy-ca",
+						},
+					},
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderConfigName))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(AWSProviderConfigKey))
+			},
+		},
+		{
+			name:       "When AWS platform has no trust bundle, it should not set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(BeEmpty())
+				g.Expect(infra.Spec.CloudConfig.Key).To(BeEmpty())
+			},
+		},
+		{
+			name: "When AWS platform trust bundle is removed, it should clear CloudConfig",
+			inputInfra: func() *configv1.Infrastructure {
+				infra := InfrastructureConfig()
+				infra.Spec.CloudConfig.Name = CloudProviderConfigName
+				infra.Spec.CloudConfig.Key = AWSProviderConfigKey
+				return infra
+			}(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(BeEmpty())
+				g.Expect(infra.Spec.CloudConfig.Key).To(BeEmpty())
 			},
 		},
 

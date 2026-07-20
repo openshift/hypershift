@@ -13,6 +13,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	CloudProviderConfigName = "cloud-provider-config"
+	CABundleKey             = "ca-bundle.pem"
+	AWSProviderConfigKey    = "aws.conf"
+)
+
 func InfrastructureConfig() *configv1.Infrastructure {
 	infra := &configv1.Infrastructure{
 		ObjectMeta: metav1.ObjectMeta{
@@ -77,6 +83,13 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			})
 		}
 		infra.Status.PlatformStatus.AWS.ResourceTags = tags
+		if HasTrustBundle(hcp) {
+			infra.Spec.CloudConfig.Name = CloudProviderConfigName
+			infra.Spec.CloudConfig.Key = AWSProviderConfigKey
+		} else {
+			infra.Spec.CloudConfig.Name = ""
+			infra.Spec.CloudConfig.Key = ""
+		}
 	case hyperv1.AzurePlatform:
 		infra.Spec.CloudConfig.Name = "cloud.conf"
 		if infra.Status.PlatformStatus.Azure == nil {
@@ -129,4 +142,14 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		}
 		infra.Status.PlatformStatus.GCP.ResourceLabels = labels
 	}
+}
+
+func HasTrustBundle(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		return true
+	}
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		return true
+	}
+	return false
 }
