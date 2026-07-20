@@ -13537,7 +13537,7 @@ HyperShift uses AI-assisted CI jobs powered by Claude Code to help with developm
 
 | Job | Purpose | Schedule |
 |-----|---------|----------|
-| `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
+| `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Daily at 9:00 AM UTC |
 | `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
 | `periodic-hypershift-dependabot-triage` | Consolidates open dependabot PRs into a single weekly PR | Weekly on Fridays at 12:00 UTC |
 
@@ -13557,9 +13557,13 @@ These jobs process **internal Red Hat tickets only** from the following Jira pro
 The Jira Agent (`periodic-jira-agent`) automatically analyzes Jira issues and creates draft pull requests with proposed fixes.
 
 - **Job name**: `periodic-jira-agent`
-- **Schedule**: Weekly on Mondays at 8:30 AM UTC (`30 8 * * 1`)
+- **Schedule**: Daily at 9:00 AM UTC (`0 9 * * *`)
 - **Max issues per run**: 1 (configurable via `JIRA_AGENT_MAX_ISSUES`)
 - **Max agentic turns**: 100 per issue
+
+!!! tip "Want to set up a Jira Agent for your team?"
+    The Jira Agent is built on a generic, reusable step registry — any OpenShift team can onboard.
+    See the Jira Agent Onboarding Guide for step-by-step instructions.
 
 ### How It Works
 
@@ -13581,6 +13585,7 @@ project in (OCPBUGS, CNTRLPLANE)
   AND resolution = Unresolved
   AND status in (New, "To Do")
   AND labels = issue-for-agent
+  AND labels = ready-to-solve
   AND labels != agent-processed
 ```
 
@@ -13589,7 +13594,7 @@ project in (OCPBUGS, CNTRLPLANE)
 ```mermaid
 flowchart TD
     subgraph "Prow CI Environment"
-        A[Periodic Job Trigger<br/>Weekly Monday 8:30 UTC] --> B[Setup Step]
+        A[Periodic Job Trigger<br/>Daily 9:00 UTC] --> B[Setup Step]
         B --> C[Process Step]
 
         subgraph "Process Step"
@@ -13805,10 +13810,17 @@ To have an issue processed by the Jira Agent:
 1. Ensure the issue is in **OCPBUGS** or **CNTRLPLANE** project
 2. Set status to **New** or **To Do**
 3. Ensure resolution is **Unresolved**
-4. Add the label **`issue-for-agent`**
-5. Security set to none
+4. Validate the issue is well-groomed using `/jira:ready-to-solve <issue-key>` (use `--fix` to auto-fix)
+5. Add the label **`issue-for-agent`**
+6. Security set to none
 
-The issue will be picked up on the next weekly run (Mondays at 8:30 AM UTC).
+The issue will be picked up on the next daily run (9:00 AM UTC).
+
+!!! tip
+    The `/jira:ready-to-solve` skill checks that the issue description has the required sections
+    (Context, Acceptance Criteria, Technical Details) and runs qualitative assessments. Issues that
+    pass are labeled `ready-to-solve`. See the Jira Agent Onboarding Guide
+    for details on issue formatting.
 
 ### Viewing AI-Generated Output
 
@@ -13824,7 +13836,7 @@ PRs are created as **drafts** and require human review before merging.
 To have an issue reprocessed:
 
 1. Remove the **`agent-processed`** label from the Jira issue
-2. The issue will be picked up on the next weekly run
+2. The issue will be picked up on the next daily run
 
 ---
 
@@ -13832,7 +13844,7 @@ To have an issue reprocessed:
 
 - **AI may produce incorrect or incomplete solutions** - always review carefully
 - **Complex issues may not be fully addressed** - multi-faceted problems may need human intervention
-- **Rate limited**: 1 issue per weekly run (jira-agent), all non-k8s dependabot PRs per run (dependabot-triage)
+- **Rate limited**: 1 issue per daily run (jira-agent), all non-k8s dependabot PRs per run (dependabot-triage)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
 - **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
@@ -14221,6 +14233,275 @@ Callers reference the reusable workflow at `@main` (e.g., `uses: openshift/hyper
               persist-credentials: false
           - run: echo "Run your check here"
     ```
+
+
+---
+
+## Source: docs/content/how-to/ci/jira-agent-onboarding.md
+
+# :robot: Jira Agent Onboarding Guide
+
+This guide walks you through setting up the **jira-agent** periodic Prow job for your OpenShift team. The jira-agent automatically picks up Jira issues, solves them using Claude Code, runs code review, addresses findings, creates PRs, and sends Slack notifications.
+
+!!! info ":package: Generic Step Registry"
+    The Jira Agent is implemented as a generic, parameterized step registry in
+    `openshift/release` at `ci-operator/step-registry/jira-agent/`. Any team can
+    reuse it by creating a thin wrapper workflow with their own env vars and credentials.
+    **No bash scripting required.**
+
+    For the full setup guide — workflow templates, periodic job config, credentials,
+    environment variables, and credential overrides — see the
+    step registry ONBOARDING.md.
+
+---
+
+## :gear: How It Works
+
+```mermaid
+flowchart LR
+    A["🔍 Jira Query"] --> B["🛠️ Solve"]
+    B --> C["👀 Review"]
+    C --> D["✅ Fix"]
+    D --> E["🚀 Create PR"]
+    E --> F["💬 Slack Notify"]
+    E --> G["📊 HTML Report"]
+```
+
+The jira-agent runs as a periodic Prow job with three phases:
+
+| Phase | What happens |
+|-------|-------------|
+| :white_check_mark: **Setup** | Verifies Claude Code CLI and Vertex AI credentials |
+| :hammer_and_wrench: **Process** | For each Jira issue: solve :arrow_right: review :arrow_right: fix :arrow_right: PR creation |
+| :bar_chart: **Report** | Generates an HTML report with token usage, cost breakdown, and phase output |
+
+Your team creates a **thin workflow YAML** that sets team-specific env vars and references the generic step registry components.
+
+---
+
+## :clipboard: Prerequisites
+
+!!! abstract "Checklist"
+    - [x] :fontawesome-brands-github: **GitHub App** installed on both your fork org and upstream repo
+    - [x] :fork_and_knife: **Fork organization** on GitHub where the agent pushes branches
+    - [x] :closed_lock_with_key: **Vault secret** synced to OpenShift CI
+    - [x] :cloud: **Vertex AI access** via a Google Cloud service account
+    - [x] :label: **Jira labels** on issues you want the agent to process (e.g., `issue-for-agent`)
+    - [ ] :mega: **(Optional)** Slack incoming webhook for PR notifications
+
+### :fork_and_knife: Fork / Upstream Model
+
+The jira-agent pushes branches to a **fork** and creates PRs against the **upstream** repo.
+This is the same fork-based workflow developers use — it avoids needing write access to the upstream repo.
+
+```mermaid
+flowchart LR
+    A["🤖 Jira Agent"] -->|push branch| B["🍴 Fork Repo"]
+    B -->|create PR| C["🏠 Upstream Repo"]
+    C -->|review & merge| D["🎉 Merged!"]
+```
+
+!!! example "HyperShift Team Example"
+    | | Repo | Purpose |
+    |---|------|---------|
+    | :house: **Upstream** | `openshift/hypershift` | PRs are created against this repo |
+    | :fork_and_knife: **Fork** | `hypershift-community/hypershift` | Agent pushes branches here |
+
+!!! tip
+    For teams working on repos within the `openshift/` GitHub org, create a fork organization
+    (e.g., `my-team-bots/my-repo`) and install the GitHub App on both. The agent only needs
+    push access to the fork; PR creation to upstream is handled by the GitHub App's permissions.
+
+---
+
+## :rocket: Setup Steps
+
+Follow the step registry ONBOARDING.md for the complete setup instructions:
+
+1. **Create your wrapper workflow** — a thin YAML file referencing the generic step refs with your team's env vars
+2. **Create the periodic job config** — add the job to your CI config in `openshift/release`
+3. **Set up credentials** — store GitHub App, Jira, and Vertex AI credentials in a Vault secret
+4. **Submit a PR** to `openshift/release`
+
+!!! tip ":test_tube: Rehearsal Testing"
+    To test your job in a PR, trigger a rehearsal with the **full** job name:
+
+    ```
+    /pj-rehearse periodic-ci-openshift-<your-repo>-main-periodic-jira-agent
+    ```
+
+    :warning: Never run bare `/pj-rehearse` — always specify the full job name.
+
+---
+
+## :fontawesome-brands-jira: Jira Setup
+
+### :label: Labels
+
+The agent uses labels to track which issues have been processed:
+
+| Label | Who adds it | Purpose |
+|-------|:-----------:|---------|
+| `issue-for-agent` | :bust_in_silhouette: You | Marks issues for the agent to pick up |
+| `agent-processed` | :robot: Agent | Prevents re-processing on subsequent runs |
+
+Your JQL query should include `labels = issue-for-agent AND labels != agent-processed` to implement this pattern.
+
+### :lock: Security Level
+
+!!! warning
+    Make sure your Jira issues are accessible to the service account. If issues have
+    restricted security levels, the agent's API token must have access to that level.
+    Issues with security levels the agent can't see will **silently** be excluded from
+    JQL results.
+
+### :writing_hand: Issue Format
+
+For best results, structure Jira issue descriptions with these sections:
+
+=== ":red_circle: Required"
+
+    - **Context** — Background information about the problem
+    - **Acceptance criteria** — Clear criteria for what the fix should accomplish
+
+=== "🔵 Optional"
+
+    - **Steps to reproduce** — For bugs, numbered reproduction steps
+    - **Expected vs actual behavior** — What should happen vs what happens
+
+!!! tip "Validate issues with `/jira:ready-to-solve`"
+    The `/jira:ready-to-solve` skill validates that an issue's description
+    is well-groomed enough for the agent to produce a quality solution. It checks for required
+    sections (Context, Acceptance Criteria, Technical Details), runs AI qualitative assessments,
+    and can auto-fix failing checks with `--fix`. Run it before labeling issues for the agent:
+
+    ```bash
+    /jira:ready-to-solve OCPBUGS-12345        # validate
+    /jira:ready-to-solve OCPBUGS-12345 --fix  # validate and fix
+    ```
+
+    Issues that pass are labeled `ready-to-solve`; those that fail get `not-ready-to-solve`.
+
+??? example "Example Issue Description"
+
+    ```markdown
+    ## Context
+    The FooController does not handle the case where the bar field is nil,
+    causing a nil pointer dereference when reconciling resources created
+    before v4.15.
+
+    ## Acceptance Criteria
+    - The controller handles nil bar field gracefully
+    - Existing resources without the bar field continue to work
+    - Unit tests cover the nil case
+
+    ## Steps to Reproduce
+    1. Create a Foo resource without the bar field
+    2. Wait for reconciliation
+    3. Observe panic in controller logs
+    ```
+
+---
+
+## :mag: JQL Examples
+
+=== "Simple"
+
+    ```sql
+    project = OCPBUGS
+      AND labels = issue-for-agent
+      AND labels != agent-processed
+    ```
+
+=== "With status filter"
+
+    ```sql
+    project = OCPBUGS AND resolution = Unresolved
+      AND status in (New, "To Do")
+      AND labels = issue-for-agent
+      AND labels != agent-processed
+    ```
+
+=== "Multiple projects"
+
+    ```sql
+    project in (OCPBUGS, CNTRLPLANE) AND resolution = Unresolved
+      AND status in (New, "To Do")
+      AND labels = issue-for-agent
+      AND labels != agent-processed
+    ```
+
+=== "Priority filter"
+
+    ```sql
+    project = OCPBUGS AND priority in (High, Highest)
+      AND labels = issue-for-agent
+      AND labels != agent-processed
+    ```
+
+!!! example "HyperShift Team"
+    The HyperShift team uses this JQL to find agent-eligible bugs:
+
+    ```sql
+    project in (OCPBUGS, CNTRLPLANE)
+      AND resolution = Unresolved
+      AND status in (New, "To Do")
+      AND labels = issue-for-agent
+      AND labels = ready-to-solve
+      AND labels != agent-processed
+    ```
+
+    Note the `labels = ready-to-solve` filter — only issues validated by
+    `/jira:ready-to-solve` are picked up.
+
+---
+
+## :rotating_light: Troubleshooting
+
+??? failure "\"No issues found\""
+    - :mag: Check that your JQL query returns results in the Jira UI
+    - :closed_lock_with_key: Verify the Jira API token has access to the project and security level
+    - :label: Ensure issues have the `issue-for-agent` label (or whatever your JQL filters for)
+
+??? failure "\"Required credentials are missing\""
+    - :package: Verify your Vault secret is synced to the CI namespace
+    - :key: Check that the key names in your secret match `JIRA_AGENT_FORK_INSTALLATION_ID_KEY` and `JIRA_AGENT_UPSTREAM_INSTALLATION_ID_KEY`
+    - :white_check_mark: Required keys: `app-id`, `private-key`, fork installation ID, upstream installation ID
+
+??? failure "\"Failed to generate GitHub App token\""
+    - :fontawesome-brands-github: Verify the GitHub App is installed on the target org/repo
+    - :id: Check that the installation ID is correct (not the app ID)
+    - :key: Ensure the private key matches the app
+
+??? failure "Plugin installation fails"
+    - The process script forces HTTPS for git operations:
+      ```bash
+      git config --global url."https://github.com/".insteadOf "git@github.com:"
+      ```
+    - :warning: If you see SSH-related errors, check that this config is applied before plugin installs
+
+??? failure "PR creation fails"
+    - :shield: Verify the GitHub App has `Pull requests: Read & write` permission on the upstream repo
+    - :arrows_counterclockwise: Check that the fork is synced with upstream (the agent does this automatically)
+    - :no_entry_sign: Ensure the branch name doesn't conflict with an existing branch
+
+??? failure "Slack notification not sent"
+    - :link: Verify `slack-webhook-url` in the Vault secret is a valid incoming webhook URL
+    - :page_facing_up: Check job logs for webhook response errors
+
+---
+
+## :star: Reference Implementation
+
+See the HyperShift team's implementation for a complete working example:
+
+| Resource | Link |
+|----------|------|
+| :book: **Step registry onboarding guide** | `ONBOARDING.md` |
+| :page_facing_up: **Wrapper workflow** | `hypershift-jira-agent-workflow.yaml` |
+| :alarm_clock: **Periodic job config** | `openshift-hypershift-main.yaml` |
+| :package: **Generic steps** | `ci-operator/step-registry/jira-agent/` |
+| :books: **HyperShift CI docs** | AI-Assisted CI Jobs |
 
 
 ---

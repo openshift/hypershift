@@ -14,7 +14,7 @@ HyperShift uses AI-assisted CI jobs powered by Claude Code to help with developm
 
 | Job | Purpose | Schedule |
 |-----|---------|----------|
-| `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
+| `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Daily at 9:00 AM UTC |
 | `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
 | `periodic-hypershift-dependabot-triage` | Consolidates open dependabot PRs into a single weekly PR | Weekly on Fridays at 12:00 UTC |
 
@@ -34,9 +34,13 @@ These jobs process **internal Red Hat tickets only** from the following Jira pro
 The Jira Agent (`periodic-jira-agent`) automatically analyzes Jira issues and creates draft pull requests with proposed fixes.
 
 - **Job name**: `periodic-jira-agent`
-- **Schedule**: Weekly on Mondays at 8:30 AM UTC (`30 8 * * 1`)
+- **Schedule**: Daily at 9:00 AM UTC (`0 9 * * *`)
 - **Max issues per run**: 1 (configurable via `JIRA_AGENT_MAX_ISSUES`)
 - **Max agentic turns**: 100 per issue
+
+!!! tip "Want to set up a Jira Agent for your team?"
+    The Jira Agent is built on a generic, reusable step registry — any OpenShift team can onboard.
+    See the [Jira Agent Onboarding Guide](jira-agent-onboarding.md) for step-by-step instructions.
 
 ### How It Works
 
@@ -58,6 +62,7 @@ project in (OCPBUGS, CNTRLPLANE)
   AND resolution = Unresolved
   AND status in (New, "To Do")
   AND labels = issue-for-agent
+  AND labels = ready-to-solve
   AND labels != agent-processed
 ```
 
@@ -66,7 +71,7 @@ project in (OCPBUGS, CNTRLPLANE)
 ```mermaid
 flowchart TD
     subgraph "Prow CI Environment"
-        A[Periodic Job Trigger<br/>Weekly Monday 8:30 UTC] --> B[Setup Step]
+        A[Periodic Job Trigger<br/>Daily 9:00 UTC] --> B[Setup Step]
         B --> C[Process Step]
 
         subgraph "Process Step"
@@ -282,10 +287,17 @@ To have an issue processed by the Jira Agent:
 1. Ensure the issue is in **OCPBUGS** or **CNTRLPLANE** project
 2. Set status to **New** or **To Do**
 3. Ensure resolution is **Unresolved**
-4. Add the label **`issue-for-agent`**
-5. Security set to none
+4. Validate the issue is well-groomed using `/jira:ready-to-solve <issue-key>` (use `--fix` to auto-fix)
+5. Add the label **`issue-for-agent`**
+6. Security set to none
 
-The issue will be picked up on the next weekly run (Mondays at 8:30 AM UTC).
+The issue will be picked up on the next daily run (9:00 AM UTC).
+
+!!! tip
+    The `/jira:ready-to-solve` skill checks that the issue description has the required sections
+    (Context, Acceptance Criteria, Technical Details) and runs qualitative assessments. Issues that
+    pass are labeled `ready-to-solve`. See the [Jira Agent Onboarding Guide](jira-agent-onboarding.md#issue-format)
+    for details on issue formatting.
 
 ### Viewing AI-Generated Output
 
@@ -301,7 +313,7 @@ PRs are created as **drafts** and require human review before merging.
 To have an issue reprocessed:
 
 1. Remove the **`agent-processed`** label from the Jira issue
-2. The issue will be picked up on the next weekly run
+2. The issue will be picked up on the next daily run
 
 ---
 
@@ -309,7 +321,7 @@ To have an issue reprocessed:
 
 - **AI may produce incorrect or incomplete solutions** - always review carefully
 - **Complex issues may not be fully addressed** - multi-faceted problems may need human intervention
-- **Rate limited**: 1 issue per weekly run (jira-agent), all non-k8s dependabot PRs per run (dependabot-triage)
+- **Rate limited**: 1 issue per daily run (jira-agent), all non-k8s dependabot PRs per run (dependabot-triage)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
 - **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
