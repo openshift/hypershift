@@ -105,7 +105,7 @@ const (
 	ControllerName            = "resources"
 	ConfigNamespace           = "openshift-config"
 	ConfigManagedNamespace    = "openshift-config-managed"
-	CloudProviderCMName       = "cloud-provider-config"
+	CloudProviderCMName       = globalconfig.CloudProviderConfigName
 	maxConditionMessageLength = 1024
 	awsCredentialsTemplate    = `[default]
 role_arn = %s
@@ -2537,6 +2537,8 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
 		}
+	case hyperv1.AWSPlatform:
+		return r.reconcileAWSCloudConfig(ctx, hcp)
 	case hyperv1.OpenStackPlatform:
 		reference := cpomanifests.OpenStackProviderConfig(hcp.Namespace)
 		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
@@ -2578,6 +2580,81 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 		}
 	default:
 		return nil
+	}
+
+	return nil
+}
+
+func (r *reconciler) reconcileAWSCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
+	if !globalconfig.HasTrustBundle(hcp) {
+		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+		if deleted, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+			return fmt.Errorf("failed to delete unused %s/%s ConfigMap: %w", cm.Namespace, cm.Name, err)
+		} else if deleted {
+			log.Info("deleted unused cloud-provider-config ConfigMap", "name", cm.Name, "namespace", cm.Namespace)
+		}
+
+		cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+		if deleted, err := k8sutil.DeleteIfNeeded(ctx, r.client, cmKCC); err != nil {
+			return fmt.Errorf("failed to delete unused %s/%s ConfigMap: %w", cmKCC.Namespace, cmKCC.Name, err)
+		} else if deleted {
+			log.Info("deleted unused kube-cloud-config ConfigMap", "name", cmKCC.Name, "namespace", cmKCC.Namespace)
+		}
+		return nil
+	}
+
+	reference := cpomanifests.AWSProviderConfig(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+		return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
+	}
+
+	providerConfig, ok := reference.Data[globalconfig.AWSProviderConfigKey]
+	if !ok || strings.TrimSpace(providerConfig) == "" {
+		return fmt.Errorf("source configmap %s/%s is missing required key %q", reference.Namespace, reference.Name, globalconfig.AWSProviderConfigKey)
+	}
+
+	var caBundle string
+	trustedCABundleCM := cpomanifests.TrustedCABundleConfigMap(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(trustedCABundleCM), trustedCABundleCM); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch %s/%s configmap: %w", trustedCABundleCM.Namespace, trustedCABundleCM.Name, err)
+		}
+		log.Info("trusted-ca-bundle-managed configmap not found, syncing AWS cloud config without CA bundle")
+	} else if data, ok := trustedCABundleCM.Data["ca-bundle.crt"]; ok && data != "" {
+		caBundle = data
+	}
+
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+		if cm.Data == nil {
+			cm.Data = map[string]string{}
+		}
+		cm.Data[globalconfig.AWSProviderConfigKey] = providerConfig
+		if caBundle != "" {
+			cm.Data[globalconfig.CABundleKey] = caBundle
+		} else {
+			delete(cm.Data, globalconfig.CABundleKey)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+	}
+
+	cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+	if _, err := r.CreateOrUpdate(ctx, r.client, cmKCC, func() error {
+		if cmKCC.Data == nil {
+			cmKCC.Data = map[string]string{}
+		}
+		cmKCC.Data[globalconfig.AWSProviderConfigKey] = providerConfig
+		if caBundle != "" {
+			cmKCC.Data[globalconfig.CABundleKey] = caBundle
+		} else {
+			delete(cmKCC.Data, globalconfig.CABundleKey)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
 	}
 
 	return nil

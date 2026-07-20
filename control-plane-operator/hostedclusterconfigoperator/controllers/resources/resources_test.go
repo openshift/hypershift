@@ -726,6 +726,216 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 	}
 }
 
+func TestReconcileCloudConfigAWS(t *testing.T) {
+	t.Parallel()
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+
+	awsProviderConfig := &corev1.ConfigMap{
+		ObjectMeta: cpomanifests.AWSProviderConfig(testNamespace).ObjectMeta,
+		Data: map[string]string{
+			globalconfig.AWSProviderConfigKey: "[Global]\nZone = us-east-1a\nVPC = vpc-123\n",
+		},
+	}
+
+	trustedCABundle := &corev1.ConfigMap{
+		ObjectMeta: cpomanifests.TrustedCABundleConfigMap(testNamespace).ObjectMeta,
+		Data: map[string]string{
+			"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\nfakecertdata\n-----END CERTIFICATE-----\n",
+		},
+	}
+
+	tests := map[string]struct {
+		inputHCP                  *hyperv1.HostedControlPlane
+		inputObjects              []client.Object
+		existingGuestObjects      []client.Object
+		expectCloudProviderConfig bool
+		expectKubeCloudConfig     bool
+		expectCABundle            bool
+		expectAWSConf             bool
+		expectError               bool
+	}{
+		"When additionalTrustBundle is set, it should create cloud-provider-config and kube-cloud-config with CA bundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			inputObjects:              []client.Object{awsProviderConfig, trustedCABundle},
+			existingGuestObjects:      []client.Object{},
+			expectCloudProviderConfig: true,
+			expectKubeCloudConfig:     true,
+			expectCABundle:            true,
+			expectAWSConf:             true,
+		},
+		"When proxy TrustedCA is set, it should create cloud-provider-config with CA bundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "proxy-ca",
+							},
+						},
+					},
+				},
+			},
+			inputObjects:              []client.Object{awsProviderConfig, trustedCABundle},
+			existingGuestObjects:      []client.Object{},
+			expectCloudProviderConfig: true,
+			expectKubeCloudConfig:     true,
+			expectCABundle:            true,
+			expectAWSConf:             true,
+		},
+		"When no trust bundle is set, it should not create cloud-provider-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			inputObjects:              []client.Object{awsProviderConfig},
+			existingGuestObjects:      []client.Object{},
+			expectCloudProviderConfig: false,
+			expectKubeCloudConfig:     false,
+		},
+		"When trust bundle is removed, it should delete existing cloud-provider-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			inputObjects: []client.Object{awsProviderConfig},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName},
+					Data: map[string]string{
+						globalconfig.AWSProviderConfigKey: "old-config",
+						globalconfig.CABundleKey:          "old-ca-data",
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"},
+					Data: map[string]string{
+						globalconfig.AWSProviderConfigKey: "old-config",
+						globalconfig.CABundleKey:          "old-ca-data",
+					},
+				},
+			},
+			expectCloudProviderConfig: false,
+			expectKubeCloudConfig:     false,
+		},
+		"When trust bundle is set but trusted-ca-bundle-managed is not yet available, it should sync aws.conf without CA bundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			inputObjects:              []client.Object{awsProviderConfig},
+			existingGuestObjects:      []client.Object{},
+			expectCloudProviderConfig: true,
+			expectKubeCloudConfig:     true,
+			expectCABundle:            false,
+			expectAWSConf:             true,
+		},
+		"When trust bundle is set but aws-cloud-config is missing, it should return error": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			inputObjects:              []client.Object{},
+			existingGuestObjects:      []client.Object{},
+			expectCloudProviderConfig: false,
+			expectError:               true,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingGuestObjects...).Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+
+			ctx := controllerruntime.LoggerInto(t.Context(), logr.Discard())
+			err := r.reconcileCloudConfig(ctx, test.inputHCP)
+
+			if test.expectError {
+				g.Expect(err).ToNot(BeNil())
+				return
+			}
+			g.Expect(err).To(BeNil())
+
+			cloudProviderCM := &corev1.ConfigMap{}
+			cpErr := r.client.Get(ctx, client.ObjectKey{Namespace: ConfigNamespace, Name: CloudProviderCMName}, cloudProviderCM)
+			if test.expectCloudProviderConfig {
+				g.Expect(cpErr).To(BeNil())
+				if test.expectAWSConf {
+					g.Expect(cloudProviderCM.Data[globalconfig.AWSProviderConfigKey]).ToNot(BeEmpty())
+				}
+				if test.expectCABundle {
+					g.Expect(cloudProviderCM.Data[globalconfig.CABundleKey]).ToNot(BeEmpty())
+				} else {
+					g.Expect(cloudProviderCM.Data[globalconfig.CABundleKey]).To(BeEmpty())
+				}
+			} else {
+				g.Expect(apierrors.IsNotFound(cpErr)).To(BeTrue())
+			}
+
+			kubeCloudCM := &corev1.ConfigMap{}
+			kccErr := r.client.Get(ctx, client.ObjectKey{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}, kubeCloudCM)
+			if test.expectKubeCloudConfig {
+				g.Expect(kccErr).To(BeNil())
+				if test.expectAWSConf {
+					g.Expect(kubeCloudCM.Data[globalconfig.AWSProviderConfigKey]).ToNot(BeEmpty())
+				}
+				if test.expectCABundle {
+					g.Expect(kubeCloudCM.Data[globalconfig.CABundleKey]).ToNot(BeEmpty())
+				}
+			} else {
+				g.Expect(apierrors.IsNotFound(kccErr)).To(BeTrue())
+			}
+		})
+	}
+}
+
 var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
