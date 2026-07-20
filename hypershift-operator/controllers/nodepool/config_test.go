@@ -3,6 +3,7 @@ package nodepool
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -24,6 +26,7 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -1990,4 +1993,145 @@ func TestGlobalConfigString(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCloudConfigHash(t *testing.T) {
+	controlPlaneNamespace := "test-cp"
+	azureCloudConfig := cpomanifests.AzureProviderConfig(controlPlaneNamespace)
+	azureCloudConfig.Data = map[string]string{
+		"cloud.conf": `{"tenantId":"t1","subscriptionId":"s1"}`,
+	}
+
+	azureCloudConfigDifferent := cpomanifests.AzureProviderConfig(controlPlaneNamespace)
+	azureCloudConfigDifferent.Data = map[string]string{
+		"cloud.conf": `{"tenantId":"t1","subscriptionId":"s1","userAssignedIdentityID":"new-id"}`,
+	}
+
+	testCases := []struct {
+		name        string
+		platform    hyperv1.PlatformType
+		objects     []crclient.Object
+		expectEmpty bool
+	}{
+		{
+			name:     "When platform is Azure and cloud config exists it should return a hash",
+			platform: hyperv1.AzurePlatform,
+			objects:  []crclient.Object{azureCloudConfig.DeepCopy()},
+		},
+		{
+			name:        "When platform is Azure and cloud config is missing it should return empty",
+			platform:    hyperv1.AzurePlatform,
+			objects:     []crclient.Object{},
+			expectEmpty: true,
+		},
+		{
+			name:        "When platform is AWS it should return empty",
+			platform:    hyperv1.AWSPlatform,
+			objects:     []crclient.Object{},
+			expectEmpty: true,
+		},
+		{
+			name:     "When cloud config content changes it should produce a different hash",
+			platform: hyperv1.AzurePlatform,
+			objects:  []crclient.Object{azureCloudConfigDifferent.DeepCopy()},
+		},
+		{
+			name:     "When platform is OpenStack and cloud config exists it should return a hash",
+			platform: hyperv1.OpenStackPlatform,
+			objects: []crclient.Object{func() crclient.Object {
+				cm := cpomanifests.OpenStackProviderConfig(controlPlaneNamespace)
+				cm.Data = map[string]string{"cloud.conf": `[Global]\nauth-url=https://openstack.example.com`}
+				return cm
+			}()},
+		},
+		{
+			name:        "When platform is OpenStack and cloud config is missing it should return empty",
+			platform:    hyperv1.OpenStackPlatform,
+			objects:     []crclient.Object{},
+			expectEmpty: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build()
+
+			cg := &ConfigGenerator{
+				Client: fakeClient,
+				hostedCluster: &hyperv1.HostedCluster{
+					Spec: hyperv1.HostedClusterSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: tc.platform,
+						},
+					},
+				},
+				controlplaneNamespace: controlPlaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
+			}
+
+			hash, err := cg.GetCloudConfigHash(t.Context())
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectEmpty {
+				g.Expect(hash).To(BeEmpty())
+			} else {
+				g.Expect(hash).ToNot(BeEmpty())
+			}
+		})
+	}
+
+	t.Run("When content differs the hashes should differ", func(t *testing.T) {
+		g := NewWithT(t)
+
+		getHash := func(obj crclient.Object) string {
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(obj).Build()
+			cg := &ConfigGenerator{
+				Client: fakeClient,
+				hostedCluster: &hyperv1.HostedCluster{
+					Spec: hyperv1.HostedClusterSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.AzurePlatform,
+						},
+					},
+				},
+				controlplaneNamespace: controlPlaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
+			}
+			hash, err := cg.GetCloudConfigHash(t.Context())
+			g.Expect(err).ToNot(HaveOccurred())
+			return hash
+		}
+
+		hash1 := getHash(azureCloudConfig.DeepCopy())
+		hash2 := getHash(azureCloudConfigDifferent.DeepCopy())
+		g.Expect(hash1).ToNot(Equal(hash2))
+	})
+
+	t.Run("When a non-NotFound error occurs it should return the error", func(t *testing.T) {
+		g := NewWithT(t)
+		injectedErr := errors.New("connection refused")
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return injectedErr
+			},
+		}).Build()
+
+		cg := &ConfigGenerator{
+			Client: fakeClient,
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			controlplaneNamespace: controlPlaneNamespace,
+			rolloutConfig:         &rolloutConfig{},
+		}
+
+		_, err := cg.GetCloudConfigHash(t.Context())
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("connection refused"))
+	})
 }

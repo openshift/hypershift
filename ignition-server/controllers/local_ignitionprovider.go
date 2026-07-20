@@ -300,8 +300,10 @@ func (p *LocalIgnitionProvider) extractImageReferences(ctx context.Context, rele
 	return releaseImage, nil
 }
 
-// For Azure and OpenStack, extract the cloud provider config file as MCO input
-func (p *LocalIgnitionProvider) writeCloudProviderConfig(ctx context.Context, mcoDir string) error {
+// For Azure and OpenStack, extract the cloud provider config file as MCO input.
+// When cloudConfigHash is non-empty, the ConfigMap content is verified against the hash
+// before writing to ensure the ignition server does not serve stale cloud config.
+func (p *LocalIgnitionProvider) writeCloudProviderConfig(ctx context.Context, mcoDir, cloudConfigHash string) error {
 	if p.CloudProvider != hyperv1.AzurePlatform && p.CloudProvider != hyperv1.OpenStackPlatform {
 		return nil
 	}
@@ -314,6 +316,13 @@ func (p *LocalIgnitionProvider) writeCloudProviderConfig(ctx context.Context, mc
 	case hyperv1.OpenStackPlatform:
 		if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.OpenStackProviderConfig("").Name}, cloudConfigMap); err != nil {
 			return fmt.Errorf("failed to get cloud provider configmap: %w", err)
+		}
+	}
+	if cloudConfigHash != "" {
+		actualHash := util.HashConfigMapData(cloudConfigMap.Data)
+		if actualHash != cloudConfigHash {
+			return fmt.Errorf("cloud config %s/%s hash mismatch (expected %s, got %s), waiting for update",
+				cloudConfigMap.Namespace, cloudConfigMap.Name, cloudConfigHash, actualHash)
 		}
 	}
 	cloudConfYaml, err := yaml.Marshal(cloudConfigMap)
@@ -607,7 +616,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	return payload, err
 }
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -682,7 +691,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to extract image-references from image: %w", err)
 	}
 
-	if err := p.writeCloudProviderConfig(ctx, dirs.mcoDir); err != nil {
+	if err := p.writeCloudProviderConfig(ctx, dirs.mcoDir, cloudConfigHash); err != nil {
 		return nil, err
 	}
 

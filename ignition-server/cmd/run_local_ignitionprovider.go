@@ -112,7 +112,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 	}
 
 	osStream := string(token.Data[controllers.TokenSecretOSStreamKey])
-	payload, err := p.GetPayload(ctx, o.Image, config.String(), "", "", "", osStream)
+	payload, err := p.GetPayload(ctx, o.Image, config.String(), "", "", "", osStream, "")
 	if err != nil {
 		return err
 	}
