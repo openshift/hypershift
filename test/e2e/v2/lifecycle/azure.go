@@ -340,7 +340,7 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "private",
 				ClusterFile: "cluster-name-private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || nodepool-osimagestream",
 				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{

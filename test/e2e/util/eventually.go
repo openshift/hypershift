@@ -560,6 +560,18 @@ func (needle Condition) Matches(condition Condition) bool {
 		(needle.Message == "" || needle.Message == condition.Message)
 }
 
+// OSImageStreamPredicate returns a predicate that validates that a NodePool's
+// status.osImageStream.name matches the expected value.
+func OSImageStreamPredicate(expected string) Predicate[*hyperv1.NodePool] {
+	return func(pool *hyperv1.NodePool) (bool, string, error) {
+		actual := pool.Status.OSImageStream.Name
+		if actual == expected {
+			return true, fmt.Sprintf("status.osImageStream.name is %s", expected), nil
+		}
+		return false, fmt.Sprintf("status.osImageStream.name is %s, want %s", actual, expected), nil
+	}
+}
+
 // ConditionPredicate returns a predicate that validates that a particular condition type exists and has the requisite status, reason and/or message.
 func ConditionPredicate[T client.Object](needle Condition) Predicate[T] {
 	return func(item T) (bool, string, error) {
