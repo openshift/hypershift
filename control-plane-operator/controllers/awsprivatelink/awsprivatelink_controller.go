@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -194,6 +195,9 @@ type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
 	awsClientBuilder clientBuilder
+
+	subnetAZMu    sync.RWMutex
+	subnetAZCache map[string]string
 }
 
 type clientBuilder struct {
@@ -513,6 +517,93 @@ func diffIDs(desired []string, existing []*string) (added, removed []*string) {
 	return
 }
 
+// deduplicateSubnetsByAZ ensures at most one subnet per AZ is passed to
+// CreateVpcEndpoint/ModifyVpcEndpoint, since AWS rejects requests with
+// multiple subnets in the same AZ.
+func (r *AWSEndpointServiceReconciler) deduplicateSubnetsByAZ(ctx context.Context, ec2Client ec2iface.EC2API, subnetIDs []string) ([]string, error) {
+	if len(subnetIDs) <= 1 {
+		return subnetIDs, nil
+	}
+
+	// Read-only path: all subnets already cached, no AWS call needed.
+	r.subnetAZMu.RLock()
+	allCached := r.subnetAZCache != nil
+	if allCached {
+		for _, id := range subnetIDs {
+			if _, ok := r.subnetAZCache[id]; !ok {
+				allCached = false
+				break
+			}
+		}
+	}
+	if allCached {
+		azForSubnet := make(map[string]string, len(subnetIDs))
+		for _, id := range subnetIDs {
+			azForSubnet[id] = r.subnetAZCache[id]
+		}
+		r.subnetAZMu.RUnlock()
+		return pickOneSubnetPerAZ(subnetIDs, azForSubnet), nil
+	}
+	r.subnetAZMu.RUnlock()
+
+	// Write path: new subnets found, call DescribeSubnets to populate cache.
+	r.subnetAZMu.Lock()
+	if r.subnetAZCache == nil {
+		r.subnetAZCache = make(map[string]string)
+	}
+
+	// Re-check which subnets are uncached — between the RUnlock and Lock above,
+	// another reconcile may have already fetched them.
+	var uncached []string
+	for _, id := range subnetIDs {
+		if _, ok := r.subnetAZCache[id]; !ok {
+			uncached = append(uncached, id)
+		}
+	}
+
+	if len(uncached) > 0 {
+		output, err := ec2Client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
+			SubnetIds: aws.StringSlice(uncached),
+		})
+		if err != nil {
+			r.subnetAZMu.Unlock()
+			return nil, fmt.Errorf("failed to describe subnets for AZ deduplication: %w", err)
+		}
+		for _, subnet := range output.Subnets {
+			r.subnetAZCache[aws.StringValue(subnet.SubnetId)] = aws.StringValue(subnet.AvailabilityZone)
+		}
+	}
+
+	azForSubnet := make(map[string]string, len(subnetIDs))
+	for _, id := range subnetIDs {
+		azForSubnet[id] = r.subnetAZCache[id]
+	}
+	r.subnetAZMu.Unlock()
+
+	return pickOneSubnetPerAZ(subnetIDs, azForSubnet), nil
+}
+
+func pickOneSubnetPerAZ(subnetIDs []string, azForSubnet map[string]string) []string {
+	sorted := make([]string, len(subnetIDs))
+	copy(sorted, subnetIDs)
+	sort.Strings(sorted)
+
+	azToSubnet := make(map[string]string)
+	for _, id := range sorted {
+		az := azForSubnet[id]
+		if _, exists := azToSubnet[az]; !exists {
+			azToSubnet[az] = id
+		}
+	}
+
+	deduped := make([]string, 0, len(azToSubnet))
+	for _, id := range azToSubnet {
+		deduped = append(deduped, id)
+	}
+	sort.Strings(deduped)
+	return deduped
+}
+
 func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) error {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
@@ -526,6 +617,13 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 
 	if err := r.reconcileAWSEndpointSecurityGroup(ctx, ec2Client, awsEndpointService, hcp); err != nil {
 		return err
+	}
+
+	deduped, err := r.deduplicateSubnetsByAZ(ctx, ec2Client, awsEndpointService.Spec.SubnetIDs)
+	if err != nil {
+		log.Error(err, "failed to deduplicate subnets by AZ, proceeding with original list")
+	} else {
+		awsEndpointService.Spec.SubnetIDs = deduped
 	}
 
 	endpointID := awsEndpointService.Status.EndpointID
