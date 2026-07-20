@@ -8,6 +8,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -19,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
+	"github.com/google/go-cmp/cmp"
 )
 
 const (
@@ -415,4 +418,102 @@ func TestReconcileGCPClusterPreservesServerDefaultedFields(t *testing.T) {
 	g.Expect(gcpCluster.Spec.Network.Name).To(Equal(ptr.To("test-network")))
 	g.Expect(gcpCluster.Spec.Network.Subnets[0].Name).To(Equal("test-subnet"))
 	g.Expect(gcpCluster.Spec.Network.Subnets[0].Region).To(Equal("us-central1"))
+}
+
+// Helper function to create a HostedControlPlane with TLS profile for testing
+func buildGCPHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: tlsProfile,
+				},
+			},
+		},
+	}
+}
+
+func TestCAPIProviderDeploymentSpecWithTLS(t *testing.T) {
+	defaultArgs := []string{
+		"--namespace=$(MY_NAMESPACE)",
+		"--leader-elect=true",
+		"--feature-gates=MachinePool=false",
+		"--v=2",
+	}
+
+	defaultUtilitiesImage := "test-utilities-image"
+	defaultCapgImage := "test-capg-image"
+
+	customTLSProfile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-ECDSA-AES128-GCM-SHA256",
+					"ECDHE-RSA-AES128-GCM-SHA256",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name         string
+		hcp          *hyperv1.HostedControlPlane
+		expectedArgs []string
+	}{
+		{
+			name:         "When HostedControlPlane is nil it should not append TLS args",
+			expectedArgs: defaultArgs,
+		},
+		{
+			name: "When HostedControlPlane is provided with Modern TLS profile it should append min-version only",
+			hcp: buildGCPHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS13",
+			),
+		},
+		{
+			name: "When HostedControlPlane is provided with custom TLS profile it should append custom TLS args",
+			hcp:  buildGCPHostedControlPlane(customTLSProfile),
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			platform := New(defaultUtilitiesImage, defaultCapgImage, nil)
+			spec, err := platform.CAPIProviderDeploymentSpec(
+				&hyperv1.HostedCluster{
+					Spec: hyperv1.HostedClusterSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.GCPPlatform,
+							GCP:  &hyperv1.GCPPlatformSpec{},
+						},
+					},
+				},
+				tc.hcp,
+			)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if spec == nil {
+				t.Fatal("expected deployment spec, got nil")
+			}
+			if len(spec.Template.Spec.Containers) == 0 {
+				t.Fatal("expected at least 1 container, got 0")
+			}
+
+			// Verify args
+			if diff := cmp.Diff(spec.Template.Spec.Containers[0].Args, tc.expectedArgs); diff != "" {
+				t.Errorf("args differ (-got +want):\n%s", diff)
+			}
+		})
+	}
 }

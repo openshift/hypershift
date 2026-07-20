@@ -3,6 +3,7 @@ package powervs
 import (
 	"fmt"
 
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -19,6 +20,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	if hcp.Spec.Platform.PowerVS == nil {
 		return fmt.Errorf(".spec.platform.powervs is not defined")
 	}
+
+	podspec.UpdateContainer("cloud-controller-manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = config.AppendTLSArgs(c.Args, hcp.Spec.Configuration.GetTLSSecurityProfile())
+	})
 
 	podspec.UpdateVolume(cloudCredsVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 		v.Secret.SecretName = hcp.Spec.Platform.PowerVS.KubeCloudControllerCreds.Name

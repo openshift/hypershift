@@ -205,3 +205,98 @@ func TestSetCipherSuitesUsingAPIServer(t *testing.T) {
 		})
 	}
 }
+
+func TestAppendTLSArgs(t *testing.T) {
+	tests := []struct {
+		name         string
+		inputArgs    []string
+		profile      *configv1.TLSSecurityProfile
+		expectedArgs []string
+	}{
+		{
+			name:      "When profile is nil it should append intermediate defaults",
+			inputArgs: []string{"--namespace=test"},
+			profile:   nil,
+			expectedArgs: []string{
+				"--namespace=test",
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			},
+		},
+		{
+			name:      "When using Modern profile it should append only min-version",
+			inputArgs: []string{"--namespace=test"},
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedArgs: []string{
+				"--namespace=test",
+				"--tls-min-version=VersionTLS13",
+			},
+		},
+		{
+			name:      "When using Intermediate profile it should append min-version and cipher-suites",
+			inputArgs: []string{"--namespace=test"},
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expectedArgs: []string{
+				"--namespace=test",
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			},
+		},
+		{
+			name:      "When using Custom profile with specific ciphers it should append custom TLS args",
+			inputArgs: []string{"--namespace=test"},
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers: []string{
+							"ECDHE-ECDSA-AES128-GCM-SHA256",
+							"ECDHE-RSA-AES128-GCM-SHA256",
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--namespace=test",
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
+		},
+		{
+			name:      "When input args is empty it should work correctly",
+			inputArgs: []string{},
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedArgs: []string{
+				"--tls-min-version=VersionTLS13",
+			},
+		},
+		{
+			name:      "When using Old profile it should append min-version and cipher-suites",
+			inputArgs: []string{},
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileOldType,
+			},
+			expectedArgs: []string{
+				"--tls-min-version=VersionTLS10",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			result := AppendTLSArgs(test.inputArgs, test.profile)
+
+			g.Expect(result).To(Equal(test.expectedArgs))
+		})
+	}
+}

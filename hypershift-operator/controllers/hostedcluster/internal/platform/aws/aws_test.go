@@ -5,6 +5,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	configv1 "github.com/openshift/api/config/v1"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -245,6 +248,126 @@ region = us-east-1
 			}
 			if creds != tt.want {
 				t.Errorf("expected creds:\n%s, but got:\n%s", tt.want, creds)
+			}
+		})
+	}
+}
+
+// Helper function to create a HostedControlPlane with TLS profile for testing
+func buildAWSHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: tlsProfile,
+				},
+			},
+		},
+	}
+}
+
+func TestCAPIProviderDeploymentSpec(t *testing.T) {
+	defaultArgs := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--v=4",
+		"--leader-elect=true",
+		"--feature-gates=EKS=false",
+	}
+
+	defaultImage := "test-capi-image"
+
+	customTLSProfile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-ECDSA-AES128-GCM-SHA256",
+					"ECDHE-RSA-AES128-GCM-SHA256",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		hcp           *hyperv1.HostedControlPlane
+		expectedImage string
+		expectedArgs  []string
+	}{
+		{
+			name:          "When HostedControlPlane is nil it should not append TLS args",
+			expectedImage: defaultImage,
+			expectedArgs:  defaultArgs,
+		},
+		{
+			name: "When HostedControlPlane is provided with Modern TLS profile it should append min-version only",
+			hcp: buildAWSHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			expectedImage: defaultImage,
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS13",
+			),
+		},
+		{
+			name:          "When HostedControlPlane is provided with custom TLS profile it should append custom TLS args",
+			hcp:           buildAWSHostedControlPlane(customTLSProfile),
+			expectedImage: defaultImage,
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			platform := AWS{
+				capiProviderImage: tc.expectedImage,
+			}
+			spec, err := platform.CAPIProviderDeploymentSpec(&hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			}, tc.hcp)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if spec == nil {
+				t.Fatal("expected deployment spec, got nil")
+			}
+			if len(spec.Template.Spec.Containers) == 0 {
+				t.Fatal("expected at least 1 container, got 0")
+			}
+
+			// Find the manager container
+			var managerContainer *corev1.Container
+			for i := range spec.Template.Spec.Containers {
+				if spec.Template.Spec.Containers[i].Name == "manager" {
+					managerContainer = &spec.Template.Spec.Containers[i]
+					break
+				}
+			}
+			if managerContainer == nil {
+				t.Fatal("manager container not found")
+			}
+
+			// Verify image
+			if managerContainer.Image != tc.expectedImage {
+				t.Errorf("expected image %s, got %s", tc.expectedImage, managerContainer.Image)
+			}
+
+			// Verify args
+			if diff := cmp.Diff(managerContainer.Args, tc.expectedArgs); diff != "" {
+				t.Errorf("args differ (-got +want):\n%s", diff)
 			}
 		})
 	}

@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
@@ -63,7 +64,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	return agentCluster, nil
 }
 
-func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPAgent
 	if envImage := os.Getenv(images.AgentCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
@@ -71,6 +72,18 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAgentProviderImage]; ok {
 		providerImage = override
 	}
+
+	args := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--health-probe-bind-address=:8081",
+		"--metrics-bind-address=127.0.0.1:8080",
+		"--leader-elect",
+		"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
+	}
+	if hcp != nil {
+		args = config.AppendTLSArgs(args, hcp.Spec.Configuration.GetTLSSecurityProfile())
+	}
+
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
@@ -91,13 +104,7 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							},
 						},
 						Command: []string{"/manager"},
-						Args: []string{
-							"--namespace", "$(MY_NAMESPACE)",
-							"--health-probe-bind-address=:8081",
-							"--metrics-bind-address=127.0.0.1:8080",
-							"--leader-elect",
-							"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
-						},
+						Args:    args,
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -68,7 +69,7 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 	kubevirtCluster.Status.Ready = true
 }
 
-func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := ""
 	if envImage := os.Getenv(images.KubevirtCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
@@ -79,6 +80,16 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	if providerImage == "" {
 		return nil, fmt.Errorf("kubevirt CAPI provider image not specified by environment variable %s or annotation %s", images.KubevirtCAPIProviderEnvVar, hyperv1.ClusterAPIKubeVirtProviderImage)
 	}
+
+	args := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--v=4",
+		"--leader-elect=true",
+	}
+	if hcp != nil {
+		args = config.AppendTLSArgs(args, hcp.Spec.Configuration.GetTLSSecurityProfile())
+	}
+
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
@@ -131,11 +142,7 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 							},
 						},
 						Command: []string{"/manager"},
-						Args: []string{
-							"--namespace", "$(MY_NAMESPACE)",
-							"--v=4",
-							"--leader-elect=true",
-						},
+						Args:    args,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "healthz",

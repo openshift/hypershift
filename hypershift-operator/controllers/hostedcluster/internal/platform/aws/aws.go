@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -100,7 +101,7 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 	return awsCluster, nil
 }
 
-func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := p.capiProviderImage
 	if envImage := os.Getenv(images.AWSCAPIProviderEnvVar); len(envImage) > 0 {
 		// Only override CAPA image with env var if payload version < 4.12
@@ -117,6 +118,16 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 	}
 	if p.payloadVersion != nil && (p.payloadVersion.Major >= 5 || (p.payloadVersion.Major == 4 && p.payloadVersion.Minor > 15)) {
 		featureGates = append(featureGates, "ROSA=false")
+	}
+
+	args := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--v=4",
+		"--leader-elect=true",
+		fmt.Sprintf("--feature-gates=%s", strings.Join(featureGates, ",")),
+	}
+	if hcp != nil {
+		args = config.AppendTLSArgs(args, hcp.Spec.Configuration.GetTLSSecurityProfile())
 	}
 
 	defaultMode := int32(0640)
@@ -211,11 +222,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 								Value: "true",
 							},
 						},
-						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							"--v=4",
-							"--leader-elect=true",
-							fmt.Sprintf("--feature-gates=%s", strings.Join(featureGates, ",")),
-						},
+						Args: args,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "healthz",
