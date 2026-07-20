@@ -1,11 +1,8 @@
 package nodepool
 
 import (
-	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"io"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -522,56 +519,6 @@ func TestCompressedAndEncoded(t *testing.T) {
 			g.Expect(decodedAndDecompressed.String()).To(Equal(tc.mcoRawConfig))
 		})
 	}
-}
-
-func TestCompressed(t *testing.T) {
-	testCases := []struct {
-		name         string
-		mcoRawConfig string
-	}{
-		{
-			name:         "When mcoRawConfig has content it should be possible to decompress",
-			mcoRawConfig: "test config",
-		},
-		{
-			name:         "When mcoRawConfig is empty it should be possible to decompress",
-			mcoRawConfig: "",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			cg := &ConfigGenerator{
-				rolloutConfig: &rolloutConfig{
-					mcoRawConfig: tc.mcoRawConfig,
-				},
-			}
-
-			compressed, err := cg.Compressed()
-			g.Expect(err).ToNot(HaveOccurred())
-
-			decompressed, err := decompress(compressed.Bytes())
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(string(decompressed)).To(Equal(tc.mcoRawConfig))
-		})
-	}
-}
-
-func decompress(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, nil
-	}
-	gr, err := gzip.NewReader(bytes.NewBuffer(content))
-	if err != nil {
-		return nil, fmt.Errorf("failed to uncompress content: %w", err)
-	}
-	defer gr.Close()
-	data, err := io.ReadAll(gr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read content: %w", err)
-	}
-	return data, nil
 }
 
 func TestHash(t *testing.T) {

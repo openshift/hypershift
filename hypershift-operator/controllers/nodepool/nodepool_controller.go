@@ -82,15 +82,13 @@ const (
 	nodePoolAnnotationCanonicalDataPlaneImages = "hypershift.openshift.io/canonical-data-plane-images"
 	nodePoolCoreIgnitionConfigLabel            = "hypershift.openshift.io/core-ignition-config"
 
-	tuningConfigKey                                      = "tuning"
-	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"
-	nodeTuningGeneratedConfigLabel                       = "hypershift.openshift.io/nto-generated-machine-config"
-	PerformanceProfileConfigMapLabel                     = "hypershift.openshift.io/performanceprofile-config"
-	NodeTuningGeneratedPerformanceProfileStatusLabel     = "hypershift.openshift.io/nto-generated-performance-profile-status"
-	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
-	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
-	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
-
+	tuningConfigKey                                    = "tuning"
+	tunedConfigMapLabel                                = "hypershift.openshift.io/tuned-config"
+	nodeTuningGeneratedConfigLabel                     = "hypershift.openshift.io/nto-generated-machine-config"
+	PerformanceProfileConfigMapLabel                   = "hypershift.openshift.io/performanceprofile-config"
+	NodeTuningGeneratedPerformanceProfileStatusLabel   = "hypershift.openshift.io/nto-generated-performance-profile-status"
+	ContainerRuntimeConfigConfigMapLabel               = "hypershift.openshift.io/containerruntimeconfig-config"
+	KubeletConfigConfigMapLabel                        = "hypershift.openshift.io/kubeletconfig-config"
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
@@ -116,7 +114,6 @@ type NotReadyError struct {
 }
 
 type CPOCapabilities struct {
-	DecompressAndDecodeConfig     bool
 	CreateDefaultAWSSecurityGroup bool
 }
 
@@ -1051,7 +1048,6 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 
 	imageLabels := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)
 	result := &CPOCapabilities{}
-	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
 	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]
 
 	return result, nil

@@ -269,9 +269,7 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to build config generator: %w", err)
 	}
 
-	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
-		DecompressAndDecodeConfig: true,
-	})
+	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{})
 	if err != nil {
 		return fmt.Errorf("failed to create token: %w", err)
 	}
