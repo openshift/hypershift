@@ -127,13 +127,21 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			ExtraArgs: []string{
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-				"--oauth-publishing-strategy=LoadBalancer",
 			},
 		},
 		{
 			Variant:    "oauth-lb",
 			OutputFile: "cluster-name-oauth-lb",
 			ExtraArgs:  []string{"--oauth-publishing-strategy=LoadBalancer"},
+		},
+		{
+			Variant:    "oauth-lb-private",
+			OutputFile: "cluster-name-oauth-lb-private",
+			ExtraArgs: []string{
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
+			},
 		},
 		{
 			Variant:      "upgrade",
@@ -357,6 +365,18 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				JUnitFile:   "junit_nodepool_autoscaling.xml",
 			},
 			{
+				Name:        "private",
+				ClusterFile: "cluster-name-private",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+				JUnitFile:   "junit_self_managed_azure_private.xml",
+			},
+			{
+				Name:        "oauth-lb-private",
+				ClusterFile: "cluster-name-oauth-lb-private",
+				LabelFilter: "self-managed-azure-oauth-lb-private",
+				JUnitFile:   "junit_self_managed_azure_oauth_lb_private.xml",
+			},
+			{
 				Name:        "external-oidc",
 				ClusterFile: "cluster-name-external-oidc",
 				LabelFilter: "external-oidc",
@@ -364,25 +384,6 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			},
 		},
 		Sequential: []SequentialGroup{
-			{
-				// Read-only private tests run first; oauth-lb-private mutates cluster state
-				// (htpasswd IDP, kubeadmin secret removal) and must run after.
-				Name: "private-and-oauth",
-				Steps: []TestGroup{
-					{
-						Name:        "private",
-						ClusterFile: "cluster-name-private",
-						LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
-						JUnitFile:   "junit_self_managed_azure_private.xml",
-					},
-					{
-						Name:        "oauth-lb-private",
-						ClusterFile: "cluster-name-private",
-						LabelFilter: "self-managed-azure-oauth-lb-private",
-						JUnitFile:   "junit_self_managed_azure_oauth_lb_private.xml",
-					},
-				},
-			},
 			{
 				Name: "upgrade-and-chaos",
 				Steps: []TestGroup{
