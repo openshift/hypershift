@@ -136,6 +136,7 @@ lint-fix: generate
 
 .PHONY: verify-git-clean
 verify-git-clean:
+	git update-index --refresh
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
@@ -159,6 +160,10 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 
 .PHONY: verify-parallel
 verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav
+
+.PHONY: verify-ci
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav ## Run the same checks as the GHA verify workflow.
+	$(MAKE) verify-git-clean
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet
