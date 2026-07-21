@@ -456,6 +456,7 @@ spec:
                       - Console
                       - NodeTuning
                       - Ingress
+                      - CSISnapshot
                       type: string
                     maxItems: 25
                     type: array
@@ -481,6 +482,7 @@ spec:
                       - Console
                       - NodeTuning
                       - Ingress
+                      - CSISnapshot
                       type: string
                     maxItems: 25
                     type: array

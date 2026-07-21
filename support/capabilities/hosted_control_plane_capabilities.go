@@ -37,6 +37,19 @@ func IsIngressCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 	return true
 }
 
+// IsCSISnapshotCapabilityEnabled returns true if the CSISnapshot capability is enabled, or false if disabled.
+func IsCSISnapshotCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return true
+	}
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.CSISnapshotCapability {
+			return false
+		}
+	}
+	return true
+}
+
 // HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
 func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
 	if capabilities == nil {

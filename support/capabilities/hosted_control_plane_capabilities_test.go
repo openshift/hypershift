@@ -53,6 +53,46 @@ func TestIsImageRegistryCapabilityEnabled(t *testing.T) {
 	}
 }
 
+func TestIsCSISnapshotCapabilityEnabled(t *testing.T) {
+	tests := []struct {
+		name                     string
+		capabilities             *hyperv1.Capabilities
+		expectCSISnapshotEnabled bool
+	}{
+		{
+			name:                     "returns true when capabilities are nil",
+			capabilities:             nil,
+			expectCSISnapshotEnabled: true,
+		},
+		{
+			name: "returns false when CSISnapshot capability is disabled",
+			capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.CSISnapshotCapability},
+			},
+			expectCSISnapshotEnabled: false,
+		},
+		{
+			name: "returns true when CSISnapshot is not in disabled list",
+			capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+			},
+			expectCSISnapshotEnabled: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			enabled := IsCSISnapshotCapabilityEnabled(test.capabilities)
+			if test.expectCSISnapshotEnabled && !enabled {
+				t.Fatal("expected CSISnapshot to be enabled, but it wasn't")
+			}
+			if !test.expectCSISnapshotEnabled && enabled {
+				t.Fatal("expected CSISnapshot to not be enabled, but it was")
+			}
+		})
+	}
+}
+
 func TestCalculateEnabledCapabilities(t *testing.T) {
 	tests := []struct {
 		name                 string

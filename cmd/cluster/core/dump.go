@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -260,7 +261,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 
 	opts.Log.Info("Dumping guestcluster", "target", target)
-	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFileName, target); err != nil {
+	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFileName, target, hostedCluster.Spec.Capabilities); err != nil {
 		return fmt.Errorf("failed to dump guest cluster: %w", err)
 	}
 	opts.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
@@ -507,7 +508,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 // indicated by the provided kubeconfig. This function assumes that pods aren't
 // able to be scheduled and so can only gather information directly accessible
 // through the api server.
-func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, destDir string) error {
+func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, destDir string, hostedClusterCapabilities *hyperv1.Capabilities) error {
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
@@ -535,13 +536,16 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 		&storagev1.CSINode{},
 		&storagev1.StorageClass{},
 		&storagev1.VolumeAttachment{},
-		// TODO: Filter out when HostedCluster support capabilities && CSISnapshot capability is disabled in the guest cluster.
-		// https://github.com/openshift/api/blob/2bde012f248a5172dcde2f7104caf0726cf6d93a/config/v1/types_cluster_version.go#L266-L270
-		&snapshotv1.VolumeSnapshotClass{},
-		&snapshotv1.VolumeSnapshotContent{},
 		&admissionregistrationv1.ValidatingAdmissionPolicy{},
 		&admissionregistrationv1.ValidatingAdmissionPolicyBinding{},
 	)
+
+	if capabilities.IsCSISnapshotCapabilityEnabled(hostedClusterCapabilities) {
+		resources = append(resources,
+			&snapshotv1.VolumeSnapshotClass{},
+			&snapshotv1.VolumeSnapshotContent{},
+		)
+	}
 
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
