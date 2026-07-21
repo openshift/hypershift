@@ -72,3 +72,21 @@ export CCOCTL_BINARY_PATH="${CCOCTL_BINARY_PATH:-${HOME}/cloud-credential-operat
 export AZURE_CREDS="${AZURE_CREDS:-${HOME}/.azure/credentials}"
 export PULL_SECRET="${PULL_SECRET:-${HOME}/all-the-pull-secrets.json}"
 export WORKLOAD_IDENTITIES_FILE="${WORKLOAD_IDENTITIES_FILE:-./workload-identities.json}"
+
+# Etcd backup configuration
+_backup_prefix="${PREFIX//[^a-z0-9]/}"
+export BACKUP_STORAGE_ACCOUNT_NAME="${_backup_prefix:0:18}backup"
+if [[ ${#BACKUP_STORAGE_ACCOUNT_NAME} -lt 3 || ${#BACKUP_STORAGE_ACCOUNT_NAME} -gt 24 ]]; then
+    echo "Error: BACKUP_STORAGE_ACCOUNT_NAME '${BACKUP_STORAGE_ACCOUNT_NAME}' must be 3-24 lowercase alphanumeric characters" >&2
+    exit 1
+fi
+_backup_container_prefix="${PREFIX,,}"
+_backup_container_prefix="${_backup_container_prefix//[^a-z0-9-]/}"
+export BACKUP_CONTAINER_NAME="${_backup_container_prefix}-etcd-backups"
+if [[ ! "${BACKUP_CONTAINER_NAME}" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]]; then
+    echo "Error: BACKUP_CONTAINER_NAME '${BACKUP_CONTAINER_NAME}' must be 3-63 chars, lowercase alphanumeric and hyphens only" >&2
+    exit 1
+fi
+export BACKUP_MI_NAME="${PREFIX}-etcd-backup-mi"
+export BACKUP_SECRET_NAME="etcd-backup-azure-credentials"
+export HO_NAMESPACE="${HO_NAMESPACE:-hypershift}"
