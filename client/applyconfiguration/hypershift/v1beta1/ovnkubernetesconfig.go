@@ -20,9 +20,11 @@ package v1beta1
 // OVNKubernetesConfigApplyConfiguration represents a declarative configuration of the OVNKubernetesConfig type for use
 // with apply.
 type OVNKubernetesConfigApplyConfiguration struct {
-	IPv4 *OVNIPv4ConfigApplyConfiguration `json:"ipv4,omitempty"`
-	IPv6 *OVNIPv6ConfigApplyConfiguration `json:"ipv6,omitempty"`
-	MTU  *int32                           `json:"mtu,omitempty"`
+	IPv4             *OVNIPv4ConfigApplyConfiguration `json:"ipv4,omitempty"`
+	IPv6             *OVNIPv6ConfigApplyConfiguration `json:"ipv6,omitempty"`
+	MTU              *int32                           `json:"mtu,omitempty"`
+	V4InternalSubnet *string                          `json:"v4InternalSubnet,omitempty"`
+	V6InternalSubnet *string                          `json:"v6InternalSubnet,omitempty"`
 }
 
 // OVNKubernetesConfigApplyConfiguration constructs a declarative configuration of the OVNKubernetesConfig type for use with
@@ -52,5 +54,21 @@ func (b *OVNKubernetesConfigApplyConfiguration) WithIPv6(value *OVNIPv6ConfigApp
 // If called multiple times, the MTU field is set to the value of the last call.
 func (b *OVNKubernetesConfigApplyConfiguration) WithMTU(value int32) *OVNKubernetesConfigApplyConfiguration {
 	b.MTU = &value
+	return b
+}
+
+// WithV4InternalSubnet sets the V4InternalSubnet field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the V4InternalSubnet field is set to the value of the last call.
+func (b *OVNKubernetesConfigApplyConfiguration) WithV4InternalSubnet(value string) *OVNKubernetesConfigApplyConfiguration {
+	b.V4InternalSubnet = &value
+	return b
+}
+
+// WithV6InternalSubnet sets the V6InternalSubnet field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the V6InternalSubnet field is set to the value of the last call.
+func (b *OVNKubernetesConfigApplyConfiguration) WithV6InternalSubnet(value string) *OVNKubernetesConfigApplyConfiguration {
+	b.V6InternalSubnet = &value
 	return b
 }

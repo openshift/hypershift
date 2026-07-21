@@ -67,6 +67,7 @@ repos:
         description: Runs `make verify`.
         entry: make verify
         language: system
+        pass_filenames: false
         stages: [pre-push]
         require_serial: true
       - id: make-test
@@ -74,6 +75,7 @@ repos:
         description: Runs `make test` without race detection for faster hook feedback.
         entry: make test GO_TEST_FLAGS=
         language: system
+        pass_filenames: false
         stages: [ pre-push ]
 exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
 fail_fast: false
