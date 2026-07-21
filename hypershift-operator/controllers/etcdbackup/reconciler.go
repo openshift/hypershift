@@ -74,6 +74,19 @@ const (
 	mountPathAWSIAMToken = "/var/run/secrets/aws-iam-token"
 
 	requeueInterval = 10 * time.Second
+
+	// credentialWaitRequeueInterval is the requeue delay while waiting for the
+	// credential Secret to appear in the cache. This is the safety net that backs
+	// up the Secret watch in case the watch event is missed.
+	credentialWaitRequeueInterval = 30 * time.Second
+
+	// credentialWaitTimeout bounds how long a backup waits for its credential
+	// Secret to appear before it is marked terminally failed. Measured from the
+	// backup's CreationTimestamp. Set above the OADP plugin's 30s credential
+	// timeout plus cache lag and the exponential requeue backoff so the informer
+	// race is absorbed, while an orphaned waiter that will never resolve is
+	// eventually failed and cleaned up.
+	credentialWaitTimeout = 2 * time.Minute
 )
 
 // HCPEtcdBackupReconciler reconciles HCPEtcdBackup resources by orchestrating
@@ -105,6 +118,10 @@ func (r *HCPEtcdBackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}}
 			},
 		)).
+		// Watch credential Secrets in the operator namespace so a backup waiting
+		// for its credential Secret is re-reconciled as soon as the Secret lands
+		// in the cache, rather than only on the requeue interval.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.backupsForCredentialSecret)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 30*time.Second),
 		}).
@@ -124,6 +141,82 @@ func (r *HCPEtcdBackupReconciler) setFailedConditionAndUpdate(ctx context.Contex
 	return ctrl.Result{}, nil
 }
 
+// setWaitingConditionAndUpdate marks the backup as waiting (non-terminal) and
+// requeues so reconciliation resumes when the awaited resource appears. This is
+// used for transient preconditions like the credential Secret not yet being
+// visible in the cache, which must NOT be treated as a permanent failure.
+func (r *HCPEtcdBackupReconciler) setWaitingConditionAndUpdate(ctx context.Context, backup *hyperv1.HCPEtcdBackup, reason, message string) (ctrl.Result, error) {
+	r.setCondition(backup, metav1.Condition{
+		Type:    string(hyperv1.BackupCompleted),
+		Status:  metav1.ConditionFalse,
+		Reason:  reason,
+		Message: message,
+	})
+	if err := r.Status().Update(ctx, backup); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+	return ctrl.Result{RequeueAfter: credentialWaitRequeueInterval}, nil
+}
+
+// handleMissingCredentialSecret marks the backup as waiting for its credential
+// Secret, or, once the wait deadline (measured from CreationTimestamp) is
+// exceeded, as terminally failed so shared RBAC/NetworkPolicy resources are
+// cleaned up and retention can proceed instead of the CR being orphaned.
+func (r *HCPEtcdBackupReconciler) handleMissingCredentialSecret(ctx context.Context, backup *hyperv1.HCPEtcdBackup, credentialSecretName string) (ctrl.Result, error) {
+	if time.Since(backup.CreationTimestamp.Time) > credentialWaitTimeout {
+		return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
+			fmt.Sprintf("timed out after %s waiting for credential Secret %q in namespace %q",
+				credentialWaitTimeout, credentialSecretName, r.OperatorNamespace))
+	}
+	return r.setWaitingConditionAndUpdate(ctx, backup, hyperv1.BackupWaitingForCredentialsReason,
+		fmt.Sprintf("waiting for credential Secret %q in namespace %q", credentialSecretName, r.OperatorNamespace))
+}
+
+// getCredentialSecret looks up the credential Secret from the cache. The raw
+// error is returned so callers can distinguish NotFound (a transient cache miss
+// while waiting for the Secret to land) from other failures.
+func (r *HCPEtcdBackupReconciler) getCredentialSecret(ctx context.Context, name string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{Name: name, Namespace: r.OperatorNamespace}
+	if err := r.Get(ctx, key, secret); err != nil {
+		return nil, err
+	}
+	return secret, nil
+}
+
+// backupsForCredentialSecret maps a credential Secret in the operator namespace
+// to the non-terminal HCPEtcdBackup(s) that reference it, so those backups are
+// re-reconciled as soon as the Secret lands in the cache.
+func (r *HCPEtcdBackupReconciler) backupsForCredentialSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	if obj.GetNamespace() != r.OperatorNamespace {
+		return nil
+	}
+
+	backupList := &hyperv1.HCPEtcdBackupList{}
+	if err := r.List(ctx, backupList); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range backupList.Items {
+		backup := &backupList.Items[i]
+		if isTerminal(backup) {
+			continue
+		}
+		credentialSecretName, err := r.getCredentialSecretName(backup)
+		if err != nil || credentialSecretName != obj.GetName() {
+			continue
+		}
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      backup.Name,
+				Namespace: backup.Namespace,
+			},
+		})
+	}
+	return requests
+}
+
 func (r *HCPEtcdBackupReconciler) validatePrerequisites(ctx context.Context, backup *hyperv1.HCPEtcdBackup) (ctrl.Result, bool, error) {
 	credentialSecretName, err := r.getCredentialSecretName(backup)
 	if err != nil {
@@ -134,17 +227,18 @@ func (r *HCPEtcdBackupReconciler) validatePrerequisites(ctx context.Context, bac
 		return result, true, nil
 	}
 
-	credSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: credentialSecretName, Namespace: r.OperatorNamespace}, credSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			result, updateErr := r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
-				fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
-			if updateErr != nil {
-				return result, true, updateErr
-			}
-			return result, true, nil
+	if _, credErr := r.getCredentialSecret(ctx, credentialSecretName); apierrors.IsNotFound(credErr) {
+		// The Secret may not yet be visible in the cache (informer race). Mark the
+		// backup as waiting (non-terminal) and requeue; the Secret watch re-triggers
+		// reconciliation as soon as it lands. Once the wait deadline is exceeded the
+		// backup is failed terminally so shared resources are cleaned up.
+		result, updateErr := r.handleMissingCredentialSecret(ctx, backup, credentialSecretName)
+		if updateErr != nil {
+			return result, true, updateErr
 		}
-		return ctrl.Result{}, true, fmt.Errorf("failed to get credential Secret: %w", err)
+		return result, true, nil
+	} else if credErr != nil {
+		return ctrl.Result{}, true, fmt.Errorf("failed to get credential Secret: %w", credErr)
 	}
 	return ctrl.Result{}, false, nil
 }
@@ -156,12 +250,13 @@ func (r *HCPEtcdBackupReconciler) createResourcesAndJob(ctx context.Context, bac
 	if err != nil {
 		return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason, err.Error())
 	}
-	credSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: credentialSecretName, Namespace: r.OperatorNamespace}, credSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
-				fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
-		}
+	credSecret, err := r.getCredentialSecret(ctx, credentialSecretName)
+	if apierrors.IsNotFound(err) {
+		// Transient cache miss — wait for the Secret rather than failing terminally,
+		// up to the wait deadline, after which the backup is failed terminally.
+		return r.handleMissingCredentialSecret(ctx, backup, credentialSecretName)
+	}
+	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get credential Secret: %w", err)
 	}
 
