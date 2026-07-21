@@ -305,9 +305,6 @@ github.com/armon/go-socks5
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/asaskevich/govalidator/v11 v11.0.2-0.20250122183457-e11347878e23
-## explicit; go 1.13
-github.com/asaskevich/govalidator/v11
 # github.com/aws/aws-sdk-go-v2 v1.42.0
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/aws
@@ -328,7 +325,6 @@ github.com/aws/aws-sdk-go-v2/internal/auth/smithy
 github.com/aws/aws-sdk-go-v2/internal/context
 github.com/aws/aws-sdk-go-v2/internal/endpoints
 github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn
-github.com/aws/aws-sdk-go-v2/internal/middleware
 github.com/aws/aws-sdk-go-v2/internal/rand
 github.com/aws/aws-sdk-go-v2/internal/sdk
 github.com/aws/aws-sdk-go-v2/internal/sdkio
@@ -378,11 +374,6 @@ github.com/aws/aws-sdk-go-v2/internal/v4a/internal/v4
 github.com/aws/aws-sdk-go-v2/service/ec2
 github.com/aws/aws-sdk-go-v2/service/ec2/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/ec2/types
-# github.com/aws/aws-sdk-go-v2/service/eks v1.77.0
-## explicit; go 1.23
-github.com/aws/aws-sdk-go-v2/service/eks
-github.com/aws/aws-sdk-go-v2/service/eks/internal/endpoints
-github.com/aws/aws-sdk-go-v2/service/eks/types
 # github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.34.6
 ## explicit; go 1.24
 github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing
@@ -862,9 +853,6 @@ github.com/googleapis/gax-go/v2/callctx
 github.com/googleapis/gax-go/v2/internal
 github.com/googleapis/gax-go/v2/internallog
 github.com/googleapis/gax-go/v2/internallog/internal
-# github.com/gophercloud/gophercloud/v2 v2.12.0
-## explicit; go 1.25.0
-github.com/gophercloud/gophercloud/v2
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
@@ -1006,9 +994,6 @@ github.com/opencontainers/image-spec/specs-go/v1
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift-online/ocm-common v0.0.31
-## explicit; go 1.21
-github.com/openshift-online/ocm-common/pkg/resource/validations
 # github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
 ## explicit; go 1.25.0
 github.com/openshift/api
@@ -1115,9 +1100,8 @@ github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
 github.com/openshift/cloud-credential-operator/pkg/ibmcloud
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
-## explicit; go 1.25
-github.com/openshift/cluster-api-provider-agent/api/v1alpha1
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1 => ./pkg/capi/agent
+## explicit; go 1.25.7
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
 # github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 ## explicit; go 1.22.0
@@ -1449,7 +1433,6 @@ go.yaml.in/yaml/v3
 # golang.org/x/crypto v0.53.0
 ## explicit; go 1.25.0
 golang.org/x/crypto/bcrypt
-golang.org/x/crypto/blake2b
 golang.org/x/crypto/blowfish
 golang.org/x/crypto/chacha20
 golang.org/x/crypto/chacha20poly1305
@@ -2431,6 +2414,8 @@ k8s.io/client-go/util/workqueue
 # k8s.io/cloud-provider v0.35.0
 ## explicit; go 1.25.0
 k8s.io/cloud-provider/api
+# k8s.io/cluster-bootstrap v0.34.3
+## explicit; go 1.24.0
 # k8s.io/component-base v0.35.1
 ## explicit; go 1.25.0
 k8s.io/component-base/cli
@@ -2554,7 +2539,6 @@ k8s.io/utils/path
 k8s.io/utils/pointer
 k8s.io/utils/ptr
 k8s.io/utils/set
-k8s.io/utils/strings/slices
 k8s.io/utils/trace
 # kubevirt.io/api v1.8.4
 ## explicit; go 1.24.0
@@ -2583,9 +2567,7 @@ sigs.k8s.io/cluster-api/api/core/v1beta1
 sigs.k8s.io/cluster-api/api/core/v1beta2
 sigs.k8s.io/cluster-api/api/ipam/v1beta1
 sigs.k8s.io/cluster-api/api/ipam/v1beta2
-sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
 sigs.k8s.io/cluster-api/errors
-sigs.k8s.io/cluster-api/feature
 sigs.k8s.io/cluster-api/util
 sigs.k8s.io/cluster-api/util/annotations
 sigs.k8s.io/cluster-api/util/conditions
@@ -2593,38 +2575,24 @@ sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1
 sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
-sigs.k8s.io/cluster-api/util/topology
-# sigs.k8s.io/cluster-api-provider-aws/v2 v2.10.0
-## explicit; go 1.24.0
-sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
+# sigs.k8s.io/cluster-api-provider-aws/v2 v2.10.0 => ./pkg/capi/aws
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/rosa/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta1
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/feature
-sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1
-sigs.k8s.io/cluster-api-provider-aws/v2/pkg/eks
-sigs.k8s.io/cluster-api-provider-aws/v2/pkg/hash
-# sigs.k8s.io/cluster-api-provider-azure v1.22.0
-## explicit; go 1.24.6
+# sigs.k8s.io/cluster-api-provider-azure v1.22.0 => ./pkg/capi/azure
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
-sigs.k8s.io/cluster-api-provider-azure/feature
 sigs.k8s.io/cluster-api-provider-azure/util/azure
-sigs.k8s.io/cluster-api-provider-azure/util/ssh
-sigs.k8s.io/cluster-api-provider-azure/util/versions
-sigs.k8s.io/cluster-api-provider-azure/util/webhook
-# sigs.k8s.io/cluster-api-provider-gcp v1.11.0
-## explicit; go 1.24.0
+# sigs.k8s.io/cluster-api-provider-gcp v1.11.0 => ./pkg/capi/gcp
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1
-# sigs.k8s.io/cluster-api-provider-ibmcloud v0.12.0
-## explicit; go 1.24.0
-sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
+# sigs.k8s.io/cluster-api-provider-ibmcloud v0.12.0 => ./pkg/capi/ibmcloud
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
-# sigs.k8s.io/cluster-api-provider-kubevirt v0.11.1
-## explicit; go 1.24.0
+# sigs.k8s.io/cluster-api-provider-kubevirt v0.11.1 => ./pkg/capi/kubevirt
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
-# sigs.k8s.io/cluster-api-provider-openstack v0.14.4
-## explicit; go 1.24.0
+# sigs.k8s.io/cluster-api-provider-openstack v0.14.4 => ./pkg/capi/openstack
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
@@ -2810,5 +2778,14 @@ sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/kyaml
 # github.com/openshift/hypershift/api => ./api
+# github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+# sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+# sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+# sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+# sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+# sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+# sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack
+# github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32
+# github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 # github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf
 # sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5
