@@ -100,6 +100,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -131,6 +132,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -162,6 +164,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
 			},
 			fakeObjects: []crclient.Object{
 				additionalTrustBundle,
@@ -192,6 +195,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -222,6 +226,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -263,6 +268,7 @@ func TestNewToken(t *testing.T) {
 				},
 				nodePool:              &hyperv1.NodePool{},
 				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
 			},
 			fakeObjects: []crclient.Object{
 				pullSecret,
@@ -368,6 +374,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 						},
 					},
 					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
 				},
 			},
 			fakeObjects: []crclient.Object{
@@ -394,6 +401,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 						},
 					},
 					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
 				},
 			},
 			fakeObjects:   []crclient.Object{},
@@ -417,6 +425,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 						},
 					},
 					controlplaneNamespace: controlplaneNamespace,
+					rolloutConfig:         &rolloutConfig{},
 				},
 			},
 			fakeObjects: []crclient.Object{

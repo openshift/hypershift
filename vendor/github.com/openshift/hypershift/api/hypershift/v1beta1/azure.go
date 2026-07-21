@@ -933,7 +933,7 @@ type AzureKMSSpec struct {
 	// kms is a pre-existing managed identity used to authenticate with Azure KMS.
 	//
 	// +required
-	KMS ManagedIdentity `json:"kms,omitzero"`
+	KMS ManagedIdentity `json:"kms"`
 
 	// keyVaultAccess specifies how the Key Vault should be accessed.
 	// When set to "Private", the control plane routes Key Vault traffic through

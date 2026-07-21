@@ -3556,7 +3556,7 @@ The system automatically manages the previous key via the status field.</p>
 </tr>
 <tr>
 <td>
-<code>kms,omitzero</code></br>
+<code>kms</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
 ManagedIdentity

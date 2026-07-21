@@ -47,6 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/blang/semver"
@@ -135,6 +136,10 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		// We want to reconcile when cloud provider config ConfigMaps change in the control plane namespace.
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForCloudConfig), builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			return obj.GetName() == "azure-cloud-config" || obj.GetName() == "openstack-cloud-config"
+		}))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -894,6 +899,33 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 
 	}
 
+	return result
+}
+
+func (r *NodePoolReconciler) enqueueNodePoolsForCloudConfig(ctx context.Context, obj client.Object) []reconcile.Request {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, client.InNamespace(obj.GetNamespace())); err != nil || len(hcpList.Items) == 0 {
+		return nil
+	}
+	hcName, ok := hcpList.Items[0].Annotations[supportutil.HostedClusterAnnotation]
+	if !ok {
+		return nil
+	}
+	hc := supportutil.ParseNamespacedName(hcName)
+
+	nodePoolList := &hyperv1.NodePoolList{}
+	if err := r.List(ctx, nodePoolList, client.InNamespace(hc.Namespace)); err != nil {
+		return nil
+	}
+
+	var result []reconcile.Request
+	for i := range nodePoolList.Items {
+		if nodePoolList.Items[i].Spec.ClusterName == hc.Name {
+			result = append(result, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[i]),
+			})
+		}
+	}
 	return result
 }
 
