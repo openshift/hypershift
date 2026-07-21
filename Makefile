@@ -24,17 +24,14 @@ CRD_SCHEMA_CHECK := $(abspath $(TOOLS_BIN_DIR)/crd-schema-check)
 
 CODESPELL_VER := 2.4.1
 CODESPELL_BIN := codespell
-CODESPELL_DIST_DIR := codespell_dist
-CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
-
 GITLINT_VER := 0.19.1
-GITLINT_DIST_DIR := gitlint_dist
 GITLINT_BIN := gitlint
-GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin
-
 PYYAML_VER := 6.0.3
-PYYAML_DIST_DIR := pyyaml_dist
-PYYAML_STAMP := $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR)/.installed
+
+PYTHON_VENV := $(TOOLS_BIN_DIR)/python-venv
+PYTHON_VENV_STAMP := $(PYTHON_VENV)/.installed
+CODESPELL := $(PYTHON_VENV)/bin/$(CODESPELL_BIN)
+GITLINT := $(PYTHON_VENV)/bin/$(GITLINT_BIN)
 
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
@@ -163,6 +160,10 @@ verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-sche
 .PHONY: verify
 verify: generate update staticcheck fmt vet
 	$(MAKE) -j verify-parallel
+	$(MAKE) verify-git-clean
+
+.PHONY: verify-quick
+verify-quick: generate update
 	$(MAKE) verify-git-clean
 
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
@@ -381,6 +382,20 @@ GO_TEST_FLAGS ?= -race
 test: generate
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+
+# Run tests only for Go packages with changes relative to PULL_BASE_SHA.
+# Skips entirely if no .go files changed. No generate dependency (verify-quick handles it).
+.PHONY: test-changed
+test-changed:
+	@CHANGED_PKGS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
+		while IFS= read -r file; do dirname "$$file"; done | \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -v '^\./hack/tools/'); \
+	if [ -z "$$CHANGED_PKGS" ]; then \
+		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
+	else \
+		echo "Running tests for changed packages: $$CHANGED_PKGS"; \
+		$(GO) test -parallel=$(NUM_CORES) -count=1 -timeout=30m $$CHANGED_PKGS; \
+	fi
 
 # Run a subset of unit tests (used by CI sharding).
 # Usage: make test-shard TEST_PACKAGES="./cmd/... ./support/..." COVER_PROFILE="cover-shard.out"
@@ -611,12 +626,16 @@ run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
 
 .PHONY: verify-docs-nav
-verify-docs-nav: $(PYYAML_STAMP) ## Verify docs nav entries are sorted alphabetically.
-	PYTHONPATH=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) python3 hack/verify-docs-nav-order.py
+verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alphabetically.
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 hack/verify-docs-nav-order.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-docs-nav-order.py; \
+	fi
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
 
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
@@ -655,29 +674,33 @@ karpenter-upstream-e2e:
 ## Tooling Binaries
 ## --------------------------------------
 
-##@ pyyaml
-$(PYYAML_STAMP): ## Install pyyaml for verify-docs-nav.
-	rm -rf $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) && \
-	mkdir -p $(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) && \
-	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(PYYAML_DIST_DIR) pyyaml==$(PYYAML_VER) --upgrade && \
+##@ Python tooling (codespell, gitlint, pyyaml)
+$(PYTHON_VENV_STAMP):
+	rm -rf $(PYTHON_VENV) && \
+	if command -v uv >/dev/null 2>&1; then \
+		uv venv $(PYTHON_VENV) && \
+		uv pip install --python=$(PYTHON_VENV)/bin/python \
+			codespell==$(CODESPELL_VER) \
+			gitlint==$(GITLINT_VER) \
+			pyyaml==$(PYYAML_VER); \
+	else \
+		mkdir -p $(PYTHON_VENV) && \
+		python3 -m pip install --target=$(PYTHON_VENV) \
+			codespell==$(CODESPELL_VER) \
+			gitlint==$(GITLINT_VER) \
+			pyyaml==$(PYYAML_VER) --upgrade && \
+		for cmd in $(CODESPELL_BIN) $(GITLINT_BIN); do \
+			mv $(PYTHON_VENV)/bin/$$cmd $(PYTHON_VENV)/$$cmd.py && \
+			printf '#!/bin/sh\nexport PYTHONPATH="%s$${PYTHONPATH:+:$$PYTHONPATH}"\nexec python3 "%s/%s.py" "$$@"\n' \
+				$(abspath $(PYTHON_VENV)) $(abspath $(PYTHON_VENV)) "$$cmd" \
+				> $(PYTHON_VENV)/bin/$$cmd && \
+			chmod +x $(PYTHON_VENV)/bin/$$cmd; \
+		done; \
+	fi && \
 	touch $@
 
-##@ codespell
-codespell : $(CODESPELL) ## Build a local copy of codespell.
-$(CODESPELL): ## Build codespell from tools folder.
-		mkdir -p $(TOOLS_BIN_DIR); \
-		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
-		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin; \
-		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
-	 	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER) --upgrade; \
-		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
-		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
+codespell: $(CODESPELL) ## Build a local copy of codespell.
+$(CODESPELL): $(PYTHON_VENV_STAMP)
 
-##@ gitlint
-gitlint : $(GITLINT) ## Install local copy of gitlint
-$(GITLINT): $(TOOLS_DIR)/go.mod
-	mkdir -p $(TOOLS_BIN_DIR); \
-	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
-	python3 -m pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
-	cp $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/$(GITLINT_BIN) $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin; \
-	chmod +x $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin;
+gitlint: $(GITLINT) ## Install local copy of gitlint.
+$(GITLINT): $(PYTHON_VENV_STAMP)
