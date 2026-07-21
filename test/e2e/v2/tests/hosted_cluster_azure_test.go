@@ -664,8 +664,9 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 //   - The Service carries the Azure internal LoadBalancer annotation
 //   - The OAuth token flow (kubeadmin + htpasswd IDP) works through that endpoint
 //
-// The OAuth token flow test requires the test runner to have network connectivity
-// to the Azure VNet (e.g., running in the management cluster or via VPN/peering).
+// The OAuth token flow test uses a port-forward tunnel to the oauth-openshift pod
+// because the Azure internal LoadBalancer is not directly reachable from the CI
+// test runner.
 func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AzureOAuth] Azure OAuth LoadBalancer in Private Topology", Label("Azure", "self-managed-azure-oauth-lb-private"), Ordered, func() {
 		var testCtx *internal.TestContext
@@ -729,7 +730,8 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 		It("should complete OAuth token flow through LoadBalancer endpoint", func() {
 			ctx := testCtx.Context
 			oauthHost := e2eutil.WaitForOAuthLoadBalancerEndpoint(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
-			e2eutil.ValidateOAuthIdentityProviderFlow(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)
+			pfTransport := e2eutil.SetupOAuthPortForwardTransport(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)
+			e2eutil.ValidateOAuthIdentityProviderFlow(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost, e2eutil.WithTransport(pfTransport))
 		})
 	})
 }
