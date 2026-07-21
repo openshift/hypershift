@@ -1,8 +1,8 @@
-FROM registry.redhat.io/rhel9/go-toolset:1.24.6-1763548439 AS builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.24 AS builder
 
 WORKDIR /hypershift
 
-COPY --chown=default . .
+COPY . .
 
 RUN make product-cli-release && \
     # Create tar.gz files for Linux architectures \
@@ -16,9 +16,9 @@ RUN make product-cli-release && \
       done; \
     done
 
-FROM registry.redhat.io/ubi9/nginx-124:1-1767745334
+FROM registry.redhat.io/ubi9/nginx-124:latest
 
-COPY --from=builder /hypershift/bin/    /opt/app-root/src/
+COPY --chown=1001:0 --from=builder /hypershift/bin/    /opt/app-root/src/
 RUN find /opt/app-root/src/ -type f ! -name "*.tar.gz" -delete
 
 CMD ["nginx", "-g", "daemon off;"]
