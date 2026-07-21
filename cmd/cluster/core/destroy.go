@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -19,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -42,6 +45,7 @@ type DestroyOptions struct {
 	PowerVSPlatform       PowerVSPlatformDestroyOptions
 	InfraID               string
 	DestroyCloudResources bool
+	ForceCleanupOnTimeout bool
 	Log                   logr.Logger
 	CredentialSecretName  string
 	RedactBaseDomain      bool
@@ -105,12 +109,17 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 }
 
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
-	hostedClusterExists := hostedCluster != nil
-	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
 	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
 	if err != nil {
 		return err
 	}
+	return destroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics, c)
+}
+
+func destroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics, c client.Client) error {
+	hostedClusterExists := hostedCluster != nil
+	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
+	var forceCleanupErr error
 
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
@@ -139,7 +148,7 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		}
 
 		o.Log.Info("Deleting hosted cluster", "namespace", o.Namespace, "name", o.Name)
-		if err = c.Delete(ctx, hostedCluster); err != nil {
+		if err := c.Delete(ctx, hostedCluster); err != nil {
 			if apierrors.IsNotFound(err) {
 				o.Log.Info("Hosted not found, skipping delete", "namespace", o.Namespace, "name", o.Name)
 			} else {
@@ -148,30 +157,41 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		}
 
 		if shouldDestroyPlatformSpecifics {
-			if err = waitForRestOfFinalizers(ctx, hostedCluster, o, c); err != nil {
-				return err
+			if err := waitForRestOfFinalizers(ctx, hostedCluster, o, c); err != nil {
+				if o.ForceCleanupOnTimeout && errors.Is(err, context.DeadlineExceeded) {
+					o.Log.Info("Grace period expired, force-removing finalizers", "error", err)
+					forceCleanupErr = forceCleanupFinalizers(ctx, hostedCluster, o, c)
+					if forceCleanupErr != nil {
+						o.Log.Error(forceCleanupErr, "Force cleanup encountered errors, some resources may need manual cleanup")
+					}
+				} else {
+					return err
+				}
 			}
 		}
 	}
 
 	if shouldDestroyPlatformSpecifics {
-		// Destroy additional resources which are specific to the current platform
-		if err = destroyPlatformSpecifics(ctx, o); err != nil {
+		if err := destroyPlatformSpecifics(ctx, o); err != nil {
 			return err
 		}
-	} else if err = waitForClusterDeletion(ctx, hostedCluster, o, c); err != nil {
+	} else if err := waitForClusterDeletion(ctx, hostedCluster, o, c); err != nil {
 		return err
 	}
 
 	// clean up CLI generated secrets
-	if err = deleteCLISecrets(ctx, o, c); err != nil {
+	if err := deleteCLISecrets(ctx, o, c); err != nil {
 		return err
 	}
 
 	if shouldDestroyPlatformSpecifics && hostedClusterExists {
-		if err = removeFinalizer(ctx, hostedCluster, o, c); err != nil {
+		if err := removeFinalizer(ctx, hostedCluster, o, c); err != nil {
 			return err
 		}
+	}
+
+	if forceCleanupErr != nil {
+		return fmt.Errorf("force cleanup finalizers: %w", forceCleanupErr)
 	}
 
 	o.Log.Info("Successfully destroyed cluster and infrastructure", "namespace", o.Namespace, "name", o.Name, "infraID", o.InfraID)
@@ -242,6 +262,117 @@ func waitForRestOfFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedC
 		return fmt.Errorf("hostedcluster wasn't finalized, aborting delete: %w", err)
 	}
 	return nil
+}
+
+func forceCleanupFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+	cpNamespace := manifests.HostedControlPlaneNamespace(o.Namespace, o.Name)
+	o.Log.Info("Force-removing finalizers from HostedCluster and child resources",
+		"namespace", o.Namespace, "name", o.Name, "controlPlaneNamespace", cpNamespace)
+
+	var errs []error
+
+	// Preserve the CLI's destroyFinalizer on the HostedCluster so it is not
+	// garbage-collected before destroyPlatformSpecifics completes.
+	if err := removeFinalizersFromObject(ctx, o.Log, c, hostedCluster, destroyFinalizer); err != nil {
+		errs = append(errs, fmt.Errorf("HostedCluster %s/%s: %w", hostedCluster.GetNamespace(), hostedCluster.GetName(), err))
+	}
+
+	// Clean up NodePools in the management namespace — they carry
+	// hypershift.openshift.io/finalizer and are not in the CP namespace.
+	var nodePoolList hyperv1.NodePoolList
+	if err := c.List(ctx, &nodePoolList, client.InNamespace(o.Namespace)); err != nil {
+		o.Log.Error(err, "Failed to list NodePools for finalizer cleanup", "namespace", o.Namespace)
+		errs = append(errs, fmt.Errorf("listing NodePools: %w", err))
+	} else {
+		for i := range nodePoolList.Items {
+			if nodePoolList.Items[i].Spec.ClusterName == o.Name {
+				if err := removeFinalizersFromObject(ctx, o.Log, c, &nodePoolList.Items[i]); err != nil {
+					errs = append(errs, fmt.Errorf("NodePool %s/%s: %w", nodePoolList.Items[i].GetNamespace(), nodePoolList.Items[i].GetName(), err))
+				}
+			}
+		}
+	}
+
+	type listTarget struct {
+		list client.ObjectList
+		desc string
+	}
+	targets := []listTarget{
+		{&hyperv1.HostedControlPlaneList{}, "HostedControlPlanes"},
+		{&capiv1.ClusterList{}, "Clusters"},
+		{&capiv1.MachineDeploymentList{}, "MachineDeployments"},
+		{&capiv1.MachineSetList{}, "MachineSets"},
+		{&capiv1.MachineList{}, "Machines"},
+	}
+	for _, t := range targets {
+		if err := c.List(ctx, t.list, client.InNamespace(cpNamespace)); err != nil {
+			o.Log.Error(err, "Failed to list "+t.desc+" for finalizer cleanup", "namespace", cpNamespace)
+			errs = append(errs, fmt.Errorf("listing %s: %w", t.desc, err))
+			continue
+		}
+		items, _ := meta.ExtractList(t.list)
+		for _, item := range items {
+			obj := item.(client.Object)
+			if err := removeFinalizersFromObject(ctx, o.Log, c, obj); err != nil {
+				errs = append(errs, fmt.Errorf("%s %s/%s: %w", t.desc, obj.GetNamespace(), obj.GetName(), err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// removeFinalizersFromObject strips all finalizers from obj except those listed
+// in preserve. It re-fetches and retries on conflict to handle concurrent
+// controller updates.
+func removeFinalizersFromObject(ctx context.Context, log logr.Logger, c client.Client, obj client.Object, preserve ...string) error {
+	key := client.ObjectKeyFromObject(obj)
+	preserveSet := sets.New[string](preserve...)
+
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := c.Get(ctx, key, obj); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		if len(obj.GetFinalizers()) == 0 {
+			return nil
+		}
+
+		var kept []string
+		for _, f := range obj.GetFinalizers() {
+			if preserveSet.Has(f) {
+				kept = append(kept, f)
+			}
+		}
+		if len(kept) == len(obj.GetFinalizers()) {
+			return nil
+		}
+
+		gvk := obj.GetObjectKind().GroupVersionKind()
+		kind := gvk.Kind
+		if kind == "" {
+			kind = fmt.Sprintf("%T", obj)
+		}
+		log.Info("Force-removing finalizers",
+			"kind", kind,
+			"namespace", obj.GetNamespace(),
+			"name", obj.GetName(),
+			"finalizers", obj.GetFinalizers(),
+			"preserving", kept)
+
+		original := obj.DeepCopyObject().(client.Object)
+		obj.SetFinalizers(kept)
+		if err := c.Patch(ctx, obj, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
 }
 
 func setDestroyCloudResourcesAnnotation(hostedCluster *hyperv1.HostedCluster, o *DestroyOptions) {
