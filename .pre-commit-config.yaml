@@ -1,4 +1,4 @@
-default_stages: [pre-commit, pre-push]
+default_stages: [pre-commit]
 default_install_hook_types: [pre-commit, pre-push, post-checkout]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -62,20 +62,20 @@ repos:
         language: system
         stages: [post-checkout]
         always_run: true
-      - id: make-verify
-        name: Run make verify
-        description: Runs `make verify`.
-        entry: make verify
+      - id: make-verify-quick
+        name: Run make verify-quick
+        description: Regenerates code and checks for uncommitted diffs (lightweight push smoke check).
+        entry: make verify-quick
         language: system
         pass_filenames: false
         stages: [pre-push]
         require_serial: true
-      - id: make-test
-        name: Run make test
-        description: Runs `make test` without race detection for faster hook feedback.
-        entry: make test GO_TEST_FLAGS=
+      - id: make-test-changed
+        name: Run tests for changed packages
+        description: Runs unit tests only for Go packages with changes relative to upstream/main.
+        entry: make test-changed
         language: system
         pass_filenames: false
-        stages: [ pre-push ]
+        stages: [pre-push]
 exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
 fail_fast: false
