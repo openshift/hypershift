@@ -61044,7 +61044,9 @@ Changes to the following fields alter the configuration hash that the controller
 
 - **`HostedCluster.spec.pullSecret`** — a change in the **name** of the referenced Secret triggers a rollout. Changing the content of the Secret without changing the name does not trigger a rollout.
 
-- **`HostedCluster.spec.additionalTrustBundle`** — same behavior as `pullSecret`: only a change in the referenced ConfigMap **name** triggers a rollout.
+- **`HostedCluster.spec.additionalTrustBundle`** — changing the referenced ConfigMap **name** or the `ca-bundle.crt` content triggers a rollout across all NodePools.
+
+- **`HostedCluster.spec.configuration.proxy.trustedCA`** — changing the referenced ConfigMap **name** or the `ca-bundle.crt` content triggers a rollout across all NodePools.
 
 - **`HostedCluster.spec.imageContentSources`** — changes to image content source policies managed at the HostedCluster level produce an additional core ignition config that alters the configuration hash.
 
@@ -61181,7 +61183,8 @@ These conditions are set to `True` while the corresponding rollout is in progres
 | `NodePool.spec.config` | Yes | The changed NodePool |
 | `NodePool.spec.tuningConfig` | Yes | The changed NodePool |
 | `HostedCluster.spec.pullSecret` (name change) | Yes | All NodePools |
-| `HostedCluster.spec.additionalTrustBundle` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.additionalTrustBundle` (name or content change) | Yes | All NodePools |
+| `HostedCluster.spec.configuration.proxy.trustedCA` (name or content change) | Yes | All NodePools |
 | `HostedCluster.spec.imageContentSources` | Yes | All NodePools |
 | `HostedCluster.spec.configuration.proxy` | Yes | All NodePools |
 | `HostedCluster.spec.configuration.image` | Yes | All NodePools |

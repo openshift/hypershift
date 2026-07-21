@@ -961,6 +961,24 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 
 	}
 
+	// Reconcile NodePools when a ConfigMap referenced by the HostedCluster changes in place.
+	hcCache := map[string]*hyperv1.HostedCluster{}
+	for key := range nodePoolList.Items {
+		np := &nodePoolList.Items[key]
+		hc, ok := hcCache[np.Spec.ClusterName]
+		if !ok {
+			hc = &hyperv1.HostedCluster{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: np.Namespace, Name: np.Spec.ClusterName}, hc); err != nil {
+				continue
+			}
+			hcCache[np.Spec.ClusterName] = hc
+		}
+		if !hostedClusterReferencesConfigMap(hc, cm.Name) {
+			continue
+		}
+		result = append(result, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(np)})
+	}
+
 	return result
 }
 
