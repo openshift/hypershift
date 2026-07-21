@@ -861,6 +861,7 @@ func setupSupportControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterCa
 	if featuregate.Gate().Enabled(featuregate.HCPEtcdBackup) {
 		etcdBackupReconciler := &etcdbackup.HCPEtcdBackupReconciler{
 			Client:                  mgr.GetClient(),
+			APIReader:               mgr.GetAPIReader(),
 			OperatorNamespace:       opts.Namespace,
 			ReleaseProvider:         registryProvider.ReleaseProvider,
 			HypershiftOperatorImage: operatorImage,
