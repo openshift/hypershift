@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 19dc307e3b105d4460b54b1d741638a595ac034ca0dd232cbcc341c5
+        component.hypershift.openshift.io/config-hash: 19dc307e38e3ff753b105d4460b54b1d741638a5a0dd232cbcc341c5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: oauth-openshift
@@ -95,7 +95,7 @@ spec:
         - name: ALL_PROXY
           value: socks5://127.0.0.1:8090
         - name: NO_PROXY
-          value: kube-apiserver,audit-webhook
+          value: kube-apiserver,audit-webhook,oauth-openshift.hcp-namespace.svc.cluster.local
         image: oauth-server
         imagePullPolicy: IfNotPresent
         livenessProbe:

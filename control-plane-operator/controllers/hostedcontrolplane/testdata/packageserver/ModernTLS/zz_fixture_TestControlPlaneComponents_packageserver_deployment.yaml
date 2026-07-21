@@ -88,6 +88,7 @@ spec:
         - /etc/openshift/kubeconfig/kubeconfig
         - --authorization-kubeconfig
         - /etc/openshift/kubeconfig/kubeconfig
+        - --tls-min-version=VersionTLS13
         command:
         - /bin/package-server
         env:
