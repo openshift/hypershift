@@ -3,10 +3,12 @@ package ignitionserver
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -21,6 +23,9 @@ import (
 
 func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
+	profile := hcp.Spec.Configuration.GetTLSSecurityProfile()
+	ianaCiphers := config.CipherSuites(profile)
+	minVersionStr := config.MinTLSVersion(profile)
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.FeatureGate != nil {
 		featureGate := &configv1.FeatureGate{
@@ -53,6 +58,13 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetRegistryOverrides()),
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
+
+		if minVersionStr != "" {
+			c.Args = append(c.Args, "--tls-min-version", minVersionStr)
+		}
+		if len(ianaCiphers) > 0 {
+			c.Args = append(c.Args, "--tls-cipher-suites", strings.Join(ianaCiphers, ","))
+		}
 
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "OPENSHIFT_IMG_OVERRIDES",
