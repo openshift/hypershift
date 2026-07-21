@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: ho-release-gate-run
+spec:
+  timeouts:
+    pipeline: "7h0m0s"
+    tasks: "5h30m0s"
+    finally: "30m0s"
+  taskRunSpecs:
+    - pipelineTaskName: create-release
+      serviceAccountName: nightly-promotion-sa
+  workspaces:
+  - name: shared
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Mi
+  pipelineRef:
+    resolver: git
+    params:
+      - name: url
+        value: https://github.com/openshift/hypershift
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: .tekton/pipelines/ho-release-gate.yaml

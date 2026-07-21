@@ -1,0 +1,537 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ho-release-gate
+spec:
+  params:
+  - name: SNAPSHOT
+    type: string
+    description: JSON payload of the Konflux Snapshot (injected by Integration Service)
+  - name: e2e-blocking-job-names
+    type: string
+    description: JSON array of blocking Prow periodic job names (gate fails if any fail)
+    default: '[]'
+  - name: e2e-informing-job-names
+    type: string
+    description: JSON array of informing Prow periodic job names (reported but do not block the gate)
+    default: '[]'
+  - name: gate-label
+    type: string
+    description: Label identifying which service release gate this is (e.g. ARO HCP)
+    default: "ARO HCP"
+  - name: release-plan-name
+    type: string
+    description: Name of the ReleasePlan to reference when creating the Release CR
+  - name: stale-threshold-days
+    type: string
+    description: Number of consecutive failure days before triggering a stale promotion alert
+    default: "3"
+  - name: gangway-url
+    type: string
+    description: Base URL of the Gangway executions endpoint
+    default: "https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions"
+  - name: kubearchive-api-base
+    type: string
+    description: Base URL of the KubeArchive API server
+    default: "https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com"
+
+  workspaces:
+  - name: shared
+
+  tasks:
+  - name: clone-lib
+    taskSpec:
+      workspaces:
+      - name: shared
+      steps:
+      - name: clone
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          echo "=== clone-lib ==="
+          echo "Running as: $(oc whoami)"
+          REPO_URL="https://github.com/openshift/hypershift.git"
+          BRANCH="main"
+          DEST="$(workspaces.shared.path)"
+
+          git clone --depth 1 --filter=blob:none --sparse \
+            --branch "${BRANCH}" "${REPO_URL}" /tmp/repo
+          cd /tmp/repo
+          git sparse-checkout set .tekton/lib
+
+          cp -r .tekton/lib/* "${DEST}/"
+          echo "Library files copied to workspace:"
+          ls -la "${DEST}/"
+          echo "=== clone-lib: done ==="
+    workspaces:
+    - name: shared
+      workspace: shared
+
+  - name: extract-image
+    runAfter: [clone-lib]
+    taskSpec:
+      params:
+      - name: SNAPSHOT
+        type: string
+      workspaces:
+      - name: shared
+      results:
+      - name: ho-image
+        description: Validated HO image reference
+      - name: snapshot-name
+        description: Snapshot name (from PipelineRun label)
+      steps:
+      - name: validate
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        env:
+        - name: HOME
+          value: /tekton/home
+        - name: SNAPSHOT_JSON
+          value: $(params.SNAPSHOT)
+        - name: SNAPSHOT_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['appstudio.openshift.io/snapshot']
+        script: |
+          #!/usr/bin/env python3
+          import os, subprocess, sys
+
+          sys.path.insert(0, "$(workspaces.shared.path)")
+          from ho_release_gate import extract_component_image
+
+          with open("$(results.ho-image.path)", "w") as f:
+              f.write("unknown")
+          with open("$(results.snapshot-name.path)", "w") as f:
+              f.write("unknown")
+
+          print("=== extract-image ===", flush=True)
+          whoami = subprocess.run(["oc", "whoami"], capture_output=True, text=True)
+          print(f"Running as: {whoami.stdout.strip()}", flush=True)
+
+          snapshot_name = os.environ.get("SNAPSHOT_NAME", "")
+          if not snapshot_name:
+              print("ERROR: snapshot-name is empty", flush=True)
+              sys.exit(1)
+          print(f"Snapshot:  {snapshot_name}", flush=True)
+
+          result = extract_component_image(os.environ["SNAPSHOT_JSON"])
+          print(f"HO image:  {result['image']}", flush=True)
+          print(f"Digest:    {result['digest']}", flush=True)
+          print(f"Commit:    {result['revision']}", flush=True)
+          print("=== validation passed ===", flush=True)
+
+          with open("$(results.ho-image.path)", "w") as f:
+              f.write(result["image"])
+          with open("$(results.snapshot-name.path)", "w") as f:
+              f.write(snapshot_name)
+    params:
+    - name: SNAPSHOT
+      value: $(params.SNAPSHOT)
+    workspaces:
+    - name: shared
+      workspace: shared
+
+  - name: run-e2e
+    runAfter: [extract-image, clone-lib]
+    timeout: "5h30m0s"
+    taskSpec:
+      params:
+      - name: ho-image
+        type: string
+      - name: e2e-blocking-job-names
+        type: string
+      - name: e2e-informing-job-names
+        type: string
+      - name: gangway-url
+        type: string
+      workspaces:
+      - name: shared
+      steps:
+      - name: trigger-and-poll
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        env:
+        - name: GANGWAY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: gangway-token
+              key: token
+        - name: GANGWAY_URL
+          value: $(params.gangway-url)
+        - name: HO_IMAGE
+          value: $(params.ho-image)
+        - name: BLOCKING_JSON
+          value: $(params.e2e-blocking-job-names)
+        - name: INFORMING_JSON
+          value: $(params.e2e-informing-job-names)
+        script: |
+          #!/usr/bin/env python3
+          import json, os, subprocess, sys
+
+          sys.path.insert(0, "$(workspaces.shared.path)")
+          from ho_release_gate import (trigger_all_jobs, resolve_all_urls,
+                                       poll_until_complete, print_run_summary,
+                                       build_results_json)
+
+          print("=== run-e2e ===", flush=True)
+          whoami = subprocess.run(["oc", "whoami"], capture_output=True, text=True)
+          print(f"Running as: {whoami.stdout.strip()}", flush=True)
+
+          results_file = "$(workspaces.shared.path)/results.json"
+          with open(results_file, "w") as f:
+              f.write("[]")
+
+          gangway_url = os.environ["GANGWAY_URL"]
+          token = os.environ["GANGWAY_TOKEN"]
+          ho_image = os.environ["HO_IMAGE"]
+          blocking = json.loads(os.environ["BLOCKING_JSON"])
+          informing = json.loads(os.environ["INFORMING_JSON"])
+
+          if not blocking:
+              print("ERROR: e2e-blocking-job-names is empty - at least one blocking job is required", flush=True)
+              sys.exit(1)
+
+          print(f"HO image:       {ho_image}", flush=True)
+          print(f"Blocking jobs:  {blocking}", flush=True)
+          print(f"Informing jobs: {informing}", flush=True)
+
+          # :latest for hypershift-tests is intentional: the test image is built
+          # by OpenShift CI, not Konflux, so it is not part of the Snapshot and
+          # there is no straightforward way to extract a matching version.
+          env_overrides = {
+              "MULTISTAGE_PARAM_OVERRIDE_OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE": ho_image,
+              "OVERRIDE_IMAGE_HYPERSHIFT_TESTS": "registry.ci.openshift.org/hypershift/hypershift-tests:latest"
+          }
+
+          jobs = trigger_all_jobs(blocking, informing, gangway_url, token, env_overrides)
+          resolve_all_urls(jobs, gangway_url, token)
+          poll_until_complete(jobs, gangway_url, token)
+          print_run_summary(jobs)
+
+          print("\n=== run-e2e: building results JSON ===", flush=True)
+          results = build_results_json(jobs)
+          print(f"Results JSON: {results}", flush=True)
+          with open(results_file, "w") as f:
+              f.write(results)
+    params:
+    - name: ho-image
+      value: $(tasks.extract-image.results.ho-image)
+    - name: e2e-blocking-job-names
+      value: $(params.e2e-blocking-job-names)
+    - name: e2e-informing-job-names
+      value: $(params.e2e-informing-job-names)
+    - name: gangway-url
+      value: $(params.gangway-url)
+    workspaces:
+    - name: shared
+      workspace: shared
+
+  - name: evaluate-results
+    runAfter: [run-e2e]
+    taskSpec:
+      workspaces:
+      - name: shared
+      results:
+      - name: gate-passed
+        description: Whether the release gate passed (true/false)
+      steps:
+      - name: evaluate
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        script: |
+          #!/usr/bin/env python3
+          import subprocess, sys
+
+          sys.path.insert(0, "$(workspaces.shared.path)")
+          from ho_release_gate import evaluate_gate
+
+          with open("$(results.gate-passed.path)", "w") as f:
+              f.write("false")
+
+          print("=== evaluate-results ===", flush=True)
+          whoami = subprocess.run(["oc", "whoami"], capture_output=True, text=True)
+          print(f"Running as: {whoami.stdout.strip()}", flush=True)
+          print(flush=True)
+
+          with open("$(workspaces.shared.path)/results.json") as f:
+              results_json = f.read()
+          gate_passed = evaluate_gate(results_json)
+
+          with open("$(results.gate-passed.path)", "w") as f:
+              f.write("true" if gate_passed else "false")
+    workspaces:
+    - name: shared
+      workspace: shared
+
+  - name: create-release
+    runAfter: [evaluate-results]
+    taskSpec:
+      params:
+      - name: gate-passed
+        type: string
+      - name: snapshot-name
+        type: string
+      - name: release-plan-name
+        type: string
+      results:
+      - name: release-name
+        description: Name of the created Release CR (or N/A if gate failed)
+      steps:
+      - name: create
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo -n "N/A" > $(results.release-name.path)
+
+          GATE_PASSED="$(params.gate-passed)"
+          SNAPSHOT="$(params.snapshot-name)"
+          RELEASE_PLAN="$(params.release-plan-name)"
+
+          if [[ "${GATE_PASSED}" != "true" ]]; then
+            echo "=== create-release: gate did not pass - skipping ==="
+            echo -n "N/A" > $(results.release-name.path)
+            exit 1
+          fi
+
+          echo "=== create-release ==="
+          echo "Running as: $(oc whoami)"
+          echo "Snapshot:     ${SNAPSHOT}"
+          echo "ReleasePlan:  ${RELEASE_PLAN}"
+
+          set +e
+          RELEASE_NAME=$(oc create -f - -o jsonpath='{.metadata.name}' <<EOFRELEASE
+          apiVersion: appstudio.redhat.com/v1alpha1
+          kind: Release
+          metadata:
+            generateName: ${RELEASE_PLAN}-
+            labels:
+              release.appstudio.openshift.io/author: nightly-promotion-sa
+          spec:
+            releasePlan: ${RELEASE_PLAN}
+            snapshot: ${SNAPSHOT}
+          EOFRELEASE
+          )
+          CREATE_RC=$?
+          set -e
+
+          if [[ ${CREATE_RC} -ne 0 ]]; then
+            echo "ERROR: Failed to create Release CR (exit code ${CREATE_RC})"
+            echo -n "N/A" > $(results.release-name.path)
+            exit 1
+          fi
+
+          echo "Release created: ${RELEASE_NAME}"
+          echo -n "${RELEASE_NAME}" > $(results.release-name.path)
+    params:
+    - name: gate-passed
+      value: $(tasks.evaluate-results.results.gate-passed)
+    - name: snapshot-name
+      value: $(tasks.extract-image.results.snapshot-name)
+    - name: release-plan-name
+      value: $(params.release-plan-name)
+
+  # Finally tasks: notify-slack and notify-slack-error are mutually exclusive.
+  # Tekton skips a finally task whose param bindings reference results from
+  # a task that was skipped (unresolved results).
+  # - notify-slack binds params to results of create-release,
+  #   evaluate-results, and extract-image. It fires only when all ran.
+  # - notify-slack-error uses a when clause (create-release.status == None)
+  #   and fires when create-release was skipped, meaning a task before
+  #   evaluate-results failed.
+  finally:
+  - name: notify-slack
+    taskSpec:
+      params:
+      - name: snapshot-name
+        type: string
+      - name: gate-passed
+        type: string
+      - name: gate-label
+        type: string
+      - name: release-name
+        type: string
+      - name: stale-threshold-days
+        type: string
+      - name: kubearchive-api-base
+        type: string
+      workspaces:
+      - name: shared
+      steps:
+      - name: send-notification
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        env:
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhook
+              key: url
+        - name: KUBEARCHIVE_API_BASE
+          value: $(params.kubearchive-api-base)
+        - name: SNAPSHOT_NAME
+          value: $(params.snapshot-name)
+        - name: GATE_PASSED
+          value: $(params.gate-passed)
+        - name: GATE_LABEL
+          value: $(params.gate-label)
+        - name: RELEASE_NAME
+          value: $(params.release-name)
+        - name: STALE_THRESHOLD_DAYS
+          value: $(params.stale-threshold-days)
+        - name: ITS_SCENARIO
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['test.appstudio.openshift.io/scenario']
+        script: |
+          #!/usr/bin/env python3
+          import os, subprocess, sys
+
+          sys.path.insert(0, "$(workspaces.shared.path)")
+          from slack_utils import send_slack_message
+          from ho_release_gate import (build_gate_notification,
+                                       check_and_build_stale_payload)
+
+          snapshot = os.environ["SNAPSHOT_NAME"]
+          gate_passed = os.environ["GATE_PASSED"] == "true"
+          gate_label = os.environ["GATE_LABEL"]
+          release_name = os.environ["RELEASE_NAME"]
+          pipeline_run = "$(context.pipelineRun.name)"
+          with open("$(workspaces.shared.path)/results.json") as f:
+              results_json = f.read()
+          webhook_url = os.environ["SLACK_WEBHOOK_URL"]
+          konflux_base = "https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator"
+
+          print("=== notify-slack ===", flush=True)
+          whoami = subprocess.run(["oc", "whoami"], capture_output=True, text=True)
+          print(f"Running as: {whoami.stdout.strip()}", flush=True)
+          print(f"Snapshot:     {snapshot}", flush=True)
+          print(f"PipelineRun:  {pipeline_run}", flush=True)
+          print(f"Gate passed:  {gate_passed}", flush=True)
+          print(f"Gate label:   {gate_label}", flush=True)
+          print(f"Release:      {release_name}", flush=True)
+
+          if not gate_passed:
+              its_scenario = os.environ["ITS_SCENARIO"]
+              token_result = subprocess.run(
+                  ["oc", "whoami", "-t"], capture_output=True, text=True)
+              token = token_result.stdout.strip()
+              threshold = int(os.environ["STALE_THRESHOLD_DAYS"])
+              kubearchive_api_base = os.environ["KUBEARCHIVE_API_BASE"]
+              stale = check_and_build_stale_payload(
+                  token, its_scenario, threshold, pipeline_run,
+                  konflux_base, "crt-redhat-acm-tenant", gate_label,
+                  kubearchive_api_base)
+              if stale:
+                  payload = stale
+              else:
+                  payload = build_gate_notification(
+                      gate_passed, gate_label, results_json,
+                      release_name, snapshot, pipeline_run, konflux_base)
+          else:
+              payload = build_gate_notification(
+                  gate_passed, gate_label, results_json,
+                  release_name, snapshot, pipeline_run, konflux_base)
+
+          success = send_slack_message(webhook_url, payload)
+          if not success:
+              print("ERROR: Slack notification failed after all retries", flush=True)
+          print("=== notify-slack: done ===", flush=True)
+    params:
+    - name: snapshot-name
+      value: $(tasks.extract-image.results.snapshot-name)
+    - name: gate-passed
+      value: $(tasks.evaluate-results.results.gate-passed)
+    - name: gate-label
+      value: $(params.gate-label)
+    - name: release-name
+      value: $(tasks.create-release.results.release-name)
+    - name: stale-threshold-days
+      value: $(params.stale-threshold-days)
+    - name: kubearchive-api-base
+      value: $(params.kubearchive-api-base)
+    workspaces:
+    - name: shared
+      workspace: shared
+
+  - name: notify-slack-error
+    when:
+    - input: $(tasks.create-release.status)
+      operator: in
+      values: ["None"]
+    taskSpec:
+      params:
+      - name: gate-label
+        type: string
+      - name: stale-threshold-days
+        type: string
+      - name: kubearchive-api-base
+        type: string
+      workspaces:
+      - name: shared
+      steps:
+      - name: send-error-notification
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        env:
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhook
+              key: url
+        - name: KUBEARCHIVE_API_BASE
+          value: $(params.kubearchive-api-base)
+        - name: GATE_LABEL
+          value: $(params.gate-label)
+        - name: STALE_THRESHOLD_DAYS
+          value: $(params.stale-threshold-days)
+        - name: ITS_SCENARIO
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['test.appstudio.openshift.io/scenario']
+        script: |
+          #!/usr/bin/env python3
+          import os, subprocess, sys
+
+          sys.path.insert(0, "$(workspaces.shared.path)")
+          from slack_utils import send_slack_message
+          from ho_release_gate import (build_error_notification,
+                                       check_and_build_stale_payload)
+
+          pipeline_run = "$(context.pipelineRun.name)"
+          webhook_url = os.environ["SLACK_WEBHOOK_URL"]
+          gate_label = os.environ["GATE_LABEL"]
+          konflux_base = "https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator"
+
+          print("=== notify-slack-error ===", flush=True)
+          whoami = subprocess.run(["oc", "whoami"], capture_output=True, text=True)
+          print(f"Running as: {whoami.stdout.strip()}", flush=True)
+          print("Pipeline failed before reaching the release gate evaluation.", flush=True)
+          print(f"PipelineRun: {pipeline_run}", flush=True)
+          print(f"Gate label:  {gate_label}", flush=True)
+
+          its_scenario = os.environ["ITS_SCENARIO"]
+          token_result = subprocess.run(
+              ["oc", "whoami", "-t"], capture_output=True, text=True)
+          token = token_result.stdout.strip()
+          threshold = int(os.environ["STALE_THRESHOLD_DAYS"])
+          kubearchive_api_base = os.environ["KUBEARCHIVE_API_BASE"]
+          stale = check_and_build_stale_payload(
+              token, its_scenario, threshold, pipeline_run,
+              konflux_base, "crt-redhat-acm-tenant", gate_label,
+              kubearchive_api_base)
+          payload = stale if stale else build_error_notification(
+              pipeline_run, konflux_base, gate_label)
+
+          success = send_slack_message(webhook_url, payload)
+          if not success:
+              print("ERROR: Slack error notification failed after all retries", flush=True)
+          print("=== notify-slack-error: done ===", flush=True)
+    params:
+    - name: gate-label
+      value: $(params.gate-label)
+    - name: stale-threshold-days
+      value: $(params.stale-threshold-days)
+    - name: kubearchive-api-base
+      value: $(params.kubearchive-api-base)
+    workspaces:
+    - name: shared
+      workspace: shared
