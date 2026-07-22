@@ -81,6 +81,23 @@ func newStatefulSetComponentForTest() ControlPlaneComponent {
 		Build()
 }
 
+func newDeploymentComponentWithPostReconcileForTest(fn func(ControlPlaneContext) error) ControlPlaneComponent {
+	return NewDeploymentComponent(testComponentName, &testComponent{}).
+		InjectServiceAccountKubeConfig(
+			ServiceAccountKubeConfigOpts{
+				Name:      testComponentName,
+				Namespace: "sa-namespace",
+				MountPath: "/test",
+			},
+		).
+		WithManifestAdapter(
+			"serviceaccount.yaml",
+			SetHostedClusterAnnotation(),
+		).
+		WithPostReconcileFunc(fn).
+		Build()
+}
+
 // workloadResult holds the common fields extracted from a reconciled workload
 // so that validation logic can be shared across Deployment and StatefulSet test cases.
 type workloadResult struct {
@@ -386,4 +403,79 @@ func componentsFakeObjects() ([]client.Object, error) {
 		csrSigner,
 	}
 	return fakeObjects, nil
+}
+
+func TestReconcileWithPostReconcile(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	t.Run("When postReconcile succeeds, it should complete reconciliation without error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		postReconcileCalled := false
+		comp := newDeploymentComponentWithPostReconcileForTest(func(cpContext ControlPlaneContext) error {
+			postReconcileCalled = true
+			return nil
+		})
+
+		fakeObjects, err := componentsFakeObjects()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cpContext := ControlPlaneContext{
+			Context:                  t.Context(),
+			ApplyProvider:            upsert.NewApplyProvider(false),
+			ReleaseImageProvider:     testutil.FakeImageProvider(),
+			UserReleaseImageProvider: testutil.FakeImageProvider(),
+			ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result:   &dockerv1client.DockerImageConfig{},
+				Manifest: fakeimagemetadataprovider.FakeManifest{},
+			},
+			HCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testComponentNamespace,
+				},
+			},
+			Client: fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(fakeObjects...).Build(),
+		}
+
+		err = comp.Reconcile(cpContext)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(postReconcileCalled).To(BeTrue(), "postReconcile should have been called")
+	})
+
+	t.Run("When postReconcile returns an error, it should propagate the error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		expectedErr := fmt.Errorf("postReconcile failed")
+		comp := newDeploymentComponentWithPostReconcileForTest(func(cpContext ControlPlaneContext) error {
+			return expectedErr
+		})
+
+		fakeObjects, err := componentsFakeObjects()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cpContext := ControlPlaneContext{
+			Context:                  t.Context(),
+			ApplyProvider:            upsert.NewApplyProvider(false),
+			ReleaseImageProvider:     testutil.FakeImageProvider(),
+			UserReleaseImageProvider: testutil.FakeImageProvider(),
+			ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result:   &dockerv1client.DockerImageConfig{},
+				Manifest: fakeimagemetadataprovider.FakeManifest{},
+			},
+			HCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testComponentNamespace,
+				},
+			},
+			Client: fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(fakeObjects...).Build(),
+		}
+
+		err = comp.Reconcile(cpContext)
+		g.Expect(err).To(MatchError(expectedErr))
+	})
 }

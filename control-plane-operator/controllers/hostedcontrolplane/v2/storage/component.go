@@ -93,11 +93,10 @@ type operand struct {
 	ReleaseImageKey string
 }
 
-func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, error) {
-	var operandsDeploymentsList []operand
-	switch cpContext.HCP.Spec.Platform.Type {
+func storageOperands(platform hyperv1.PlatformType) []operand {
+	switch platform {
 	case hyperv1.AWSPlatform:
-		operandsDeploymentsList = []operand{
+		return []operand{
 			{
 				DeploymentName:  "aws-ebs-csi-driver-operator",
 				ContainerName:   "aws-ebs-csi-driver-operator",
@@ -110,7 +109,7 @@ func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, erro
 			},
 		}
 	case hyperv1.AzurePlatform:
-		operandsDeploymentsList = []operand{
+		return []operand{
 			{
 				DeploymentName:  "azure-disk-csi-driver-operator",
 				ContainerName:   "azure-disk-csi-driver-operator",
@@ -133,6 +132,13 @@ func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, erro
 			},
 		}
 	default:
+		return nil
+	}
+}
+
+func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, error) {
+	operandsDeploymentsList := storageOperands(cpContext.HCP.Spec.Platform.Type)
+	if len(operandsDeploymentsList) == 0 {
 		return true, nil
 	}
 

@@ -12,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
@@ -832,6 +833,79 @@ func TestSetDefaultOptions(t *testing.T) {
 			} else {
 				g.Expect(deployment.Spec.Template.Annotations).NotTo(HaveKey(hyperv1.RestartDateAnnotation))
 			}
+		})
+	}
+}
+
+func TestControlPlaneTolerations(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                string
+		hcpNamespace        string
+		userTolerations     []corev1.Toleration
+		expectedTolerations []corev1.Toleration
+	}{
+		{
+			name:         "When no user tolerations specified, it should return only base control plane tolerations",
+			hcpNamespace: "clusters-test",
+			expectedTolerations: []corev1.Toleration{
+				{Key: "hypershift.openshift.io/control-plane", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "hypershift.openshift.io/cluster", Operator: corev1.TolerationOpEqual, Value: "clusters-test", Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+		{
+			name:         "When user tolerations are specified, it should append them after base tolerations",
+			hcpNamespace: "clusters-user",
+			userTolerations: []corev1.Toleration{
+				{Key: "custom-key", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+			},
+			expectedTolerations: []corev1.Toleration{
+				{Key: "hypershift.openshift.io/control-plane", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "hypershift.openshift.io/cluster", Operator: corev1.TolerationOpEqual, Value: "clusters-user", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "custom-key", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+		{
+			name:         "When multiple user tolerations are specified, it should include all of them",
+			hcpNamespace: "clusters-multi",
+			userTolerations: []corev1.Toleration{
+				{Key: "taint-a", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+				{Key: "taint-b", Operator: corev1.TolerationOpEqual, Value: "val", Effect: corev1.TaintEffectNoExecute},
+			},
+			expectedTolerations: []corev1.Toleration{
+				{Key: "hypershift.openshift.io/control-plane", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "hypershift.openshift.io/cluster", Operator: corev1.TolerationOpEqual, Value: "clusters-multi", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "taint-a", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+				{Key: "taint-b", Operator: corev1.TolerationOpEqual, Value: "val", Effect: corev1.TaintEffectNoExecute},
+			},
+		},
+		{
+			name:         "When HCP namespace is used, it should use namespace as cluster key in toleration value",
+			hcpNamespace: "my-custom-namespace",
+			expectedTolerations: []corev1.Toleration{
+				{Key: "hypershift.openshift.io/control-plane", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "hypershift.openshift.io/cluster", Operator: corev1.TolerationOpEqual, Value: "my-custom-namespace", Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: tc.hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Tolerations: tc.userTolerations,
+				},
+			}
+
+			result := ControlPlaneTolerations(hcp)
+			g.Expect(result).To(Equal(tc.expectedTolerations))
 		})
 	}
 }

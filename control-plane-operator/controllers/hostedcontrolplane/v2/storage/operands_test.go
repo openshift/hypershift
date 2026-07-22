@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -16,6 +17,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestReconcileOperandTolerations(t *testing.T) {
@@ -54,7 +56,6 @@ func TestReconcileOperandTolerations(t *testing.T) {
 		userTolerations     []corev1.Toleration
 		existingDeployments []client.Object
 		expectedTolerations map[string][]corev1.Toleration
-		expectNoChange      map[string]bool
 	}{
 		{
 			name:         "When AWS platform with user tolerations, it should patch operand deployments",
@@ -242,4 +243,76 @@ func TestReconcileOperandTolerations(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When getting an operand deployment fails with a non-NotFound error, it should return the error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if key.Name == "aws-ebs-csi-driver-operator" {
+						return fmt.Errorf("internal server error")
+					}
+					return cl.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "clusters-get-err",
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+			},
+		}
+
+		cpContext := component.ControlPlaneContext{
+			Context: context.Background(),
+			Client:  fakeClient,
+			HCP:     hcp,
+		}
+
+		err := reconcileOperandTolerations(cpContext)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to get operand deployment"))
+	})
+
+	t.Run("When patching an operand deployment fails, it should return the error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(newDeployment("aws-ebs-csi-driver-operator", "clusters-patch-err")).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					return fmt.Errorf("patch conflict")
+				},
+			}).
+			Build()
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "clusters-patch-err",
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+			},
+		}
+
+		cpContext := component.ControlPlaneContext{
+			Context: context.Background(),
+			Client:  fakeClient,
+			HCP:     hcp,
+		}
+
+		err := reconcileOperandTolerations(cpContext)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to patch tolerations"))
+	})
 }
