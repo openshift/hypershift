@@ -14237,900 +14237,6 @@ Callers reference the reusable workflow at `@main` (e.g., `uses: openshift/hyper
 
 ---
 
-## Source: docs/content/how-to/ci/ho-release-gating/architecture.md
-
-# Architecture
-
-## End-to-End Flow
-
-All release gating resources run on the Konflux production cluster **stone-prd-rh01**. Two namespaces are involved:
-
-| Namespace | Owner | Resources |
-|-----------|-------|-----------|
-| `crt-redhat-acm-tenant` | HyperShift team | CronJob, ITS, Snapshot, PipelineRun, Release, ReleasePlan, ServiceAccounts, Secrets |
-| `rhtap-releng-tenant` | Release Engineering | ReleasePlanAdmission, managed pipeline |
-
-The following sequence diagram shows the complete nightly promotion cycle, from the CronJob trigger through image promotion to Quay.
-
-```mermaid
-sequenceDiagram
-    participant CJ as CronJob
-    participant IS as Integration Service
-    participant PR as PipelineRun
-    participant Prow as Prow CI (Gangway)
-    participant KA as KubeArchive
-    participant RS as Release Service
-    participant MP as Managed Pipeline
-    participant Quay as Quay.io
-    participant Slack as Slack
-
-    Note over CJ: Runs at 03:15 UTC nightly
-
-    CJ->>CJ: (1) Resolve latest Snapshot
-    CJ->>IS: (2) Label Snapshot with ITS trigger
-
-    IS->>IS: (3) Detect label, evaluate ITS
-    IS->>PR: (4) Create PipelineRun
-
-    PR->>PR: (5) clone-lib + extract-image
-    PR->>Prow: (6) Trigger blocking + informing jobs
-
-    Note over PR,Prow: Poll every 10 min (45 min initial delay, 4h timeout)
-
-    Prow-->>PR: (7) Job results
-
-    PR->>PR: (8) evaluate-results
-
-    alt
-        rect rgb(200, 230, 201)
-            Note over CJ,Slack: Gate passed
-            PR->>RS: (9) Create Release CR
-            RS->>MP: (10) Match ReleasePlan/Admission
-            MP->>Quay: (11) Push image
-            PR->>Slack: (12) Notify success
-        end
-    else
-        rect rgb(255, 205, 210)
-            Note over CJ,Slack: Gate failed
-            PR->>KA: (13) Fetch PipelineRun history
-            KA-->>PR: Historical runs for this ITS
-            PR->>PR: (14) Check failure streak
-            alt
-                Note over PR,Slack: Streak below threshold or no streak
-                PR->>Slack: (15a) Notify failure
-            else
-                rect rgb(239, 154, 154)
-                    Note over PR,Slack: Streak >= stale-threshold-days
-                    PR->>Slack: (15b) Stale promotion alert<br/>Includes failure history and streak duration
-                end
-            end
-        end
-    end
-```
-
-**Step-by-step:**
-
-1. The `CronJob` fires at 03:15 UTC and resolves the latest Snapshot for the `hypershift-operator` application.
-2. The CronJob iterates over the `ITS_NAMES` environment variable and labels the Snapshot for each service gate sequentially. This allows a single CronJob to trigger multiple gates (e.g. ARO HCP, ROSA).
-3. The Integration Service detects the label and matches it to the corresponding `IntegrationTestScenario` (ITS). The ITS has `contexts: disabled`, so it only triggers from explicit CronJob labels, not from every new Snapshot.
-4. The Integration Service creates a PipelineRun by resolving the `PipelineRun template` and the `Pipeline` via git resolver (see Pipeline Resolution below). The ITS parameters (blocking/informing job lists, gate label, release plan name) are injected into the PipelineRun.
-5. The pipeline starts with `clone-lib` (sparse git clone of the Python modules to a shared PVC workspace) followed by `extract-image` (validates the HO container image from the Snapshot JSON).
-6. `run-e2e` triggers all blocking and informing Prow periodic jobs via the Gangway REST API, with the HO image injected as an environment override.
-7. The task polls Gangway for job results (45 min initial delay, then every 10 min, up to 4h timeout).
-8. `evaluate-results` applies the gate verdict: all blocking tests must pass (AND logic). Informing tests are reported but do not affect the verdict.
-9. If the gate passed, `create-release` creates a Release CR referencing the validated Snapshot and the `ReleasePlan`.
-10. The Release Service matches the Release CR to a `ReleasePlanAdmission` in the `rhtap-releng-tenant` namespace and launches the `rh-push-to-external-registry` managed pipeline.
-11. The managed pipeline's `apply-mapping` task pushes the image to Quay with service-prefixed tags.
-12. If the gate passed, a Slack notification is sent with the pass verdict, per-job results, and links to the PipelineRun.
-13. If the gate failed (or the pipeline crashed before reaching evaluation), the `notify-slack` or `notify-slack-error` finally task queries the KubeArchive REST API to fetch historical PipelineRun data for the current ITS. The ITS name is used as a label selector, so each managed service's history is tracked independently with zero configuration.
-14. The pipeline checks whether consecutive recent failures form a streak meeting or exceeding the configurable `stale-threshold-days` parameter.
-15. If the streak meets the threshold, a stale promotion alert is sent to Slack with the failure history and links to each PipelineRun (15a). Otherwise, a standard failure notification is sent (15b).
-
-## RBAC and Service Accounts
-
-Two ServiceAccounts are involved in the release gating flow:
-
-| ServiceAccount | Used By | Purpose |
-|----------------|---------|---------|
-| `nightly-promotion-sa` | CronJob, `create-release` task | Resolves and labels Snapshots, creates Release CRs |
-| `konflux-integration-runner` | Integration Service | Evaluates ITS, creates PipelineRuns |
-
-```mermaid
-flowchart LR
-    subgraph ServiceAccounts
-        SA1[nightly-promotion-sa]
-        SA2[konflux-integration-runner]
-    end
-
-    subgraph ClusterRoles
-        CR1[konflux-tester-internalbot-actions<br/>Snapshot: get, watch, list, update, patch]
-        CR2[konflux-releaser-bot-actions<br/>Release: create]
-    end
-
-    subgraph RoleBindings
-        RB1[nightly-promotion-sa-snapshot-labeler-binding]
-        RB2[nightly-promotion-sa-releaser-binding]
-    end
-
-    subgraph Secrets
-        S1[gangway-token]
-        S2[slack-webhook]
-    end
-
-    SA1 --> RB1 --> CR1
-    SA1 --> RB2 --> CR2
-    SA1 -.->|mounted in tasks| S1
-    SA1 -.->|mounted in tasks| S2
-    SA2 -.->|managed by Konflux| CR1
-```
-
-Key RBAC details:
-
-- `nightly-promotion-sa` is used by the CronJob (to label Snapshots) and by the `create-release` task (to create Release CRs). The `create-release` task runs as this SA via a `taskRunSpecs` override in the PipelineRun template:
-
-    ```yaml
-    taskRunSpecs:
-      - pipelineTaskName: create-release
-        serviceAccountName: nightly-promotion-sa
-    ```
-
-- `konflux-integration-runner` is the default SA for all PipelineRun tasks. The Integration Service forces this SA on every integration test PipelineRun (KONFLUX-5207). It has no extra bindings beyond what Konflux manages internally. The `taskRunSpecs` override above is what allows `create-release` to run as a different SA.
-- `nightly-promotion-sa-snapshot-labeler-binding` binds the SA to `konflux-tester-internalbot-actions` (Snapshot: get, watch, list, update, patch). This ClusterRole was created by the Konflux infra team (infra-deployments#12810).
-- `nightly-promotion-sa-releaser-binding` binds the SA to `konflux-releaser-bot-actions` (Release and Snapshot: list, get, watch, create).
-- Secrets (`gangway-token`, `slack-webhook`) are managed manually, not via GitOps.
-
-## Tekton Pipeline Internals
-
-### Design Rationale
-
-The pipeline uses Python modules instead of inline bash scripts. This choice was driven by:
-
-- **Readability**: structured Python functions with clear inputs/outputs vs multi-hundred-line shell scripts with embedded `jq` and `curl` chains
-- **Reusability**: shared modules (`http_utils`, `prow_utils`, `slack_utils`) are used across multiple service gates without duplication
-- **Testability**: individual functions can be unit-tested outside of the pipeline context
-- **stdlib-only**: all modules use only the Python standard library (no `pip install`, no external dependencies). This is a hard constraint: tasks run on the Konflux-provided `appstudio-utils` container image, which we do not control and cannot install packages on
-
-### Task Dependency Graph
-
-```mermaid
-flowchart LR
-    CL[clone-lib] --> EI[extract-image] --> RE[run-e2e] --> EV[evaluate-results] --> CR[create-release]
-    CR -.-> NS[notify-slack]
-    CR -.-> NSE[notify-slack-error]
-    NS -.-> KA[KubeArchive]
-    NSE -.-> KA
-
-    style NS stroke-dasharray: 5 5
-    style NSE stroke-dasharray: 5 5
-    style KA stroke-dasharray: 5 5
-```
-
-`notify-slack` and `notify-slack-error` are `finally` tasks that are mutually exclusive. Tekton skips a finally task whose parameter bindings reference results from a task that was skipped (unresolved results). `notify-slack` binds parameters to results of `create-release`, `evaluate-results`, and `extract-image`, so it fires only when all of them ran. `notify-slack-error` uses a `when` clause (`create-release.status == None`) and fires when `create-release` was skipped or never reached (either because the gate failed and `create-release` exited non-zero, or because an earlier DAG task crashed before reaching it). Both finally tasks query KubeArchive for historical PipelineRun data and check for stale promotion streaks.
-
-The per-job results JSON produced by `run-e2e` is written to a file on the shared workspace (`results.json`) rather than to a Tekton task result. This is a deliberate choice: Tekton task results have a hard 4 KB size limit, which can be exceeded when the pipeline runs many blocking and informing jobs, each carrying a full Prow URL. Both `evaluate-results` and `notify-slack` read the results directly from the workspace file.
-
-### Python Module Dependency Graph
-
-```mermaid
-flowchart BT
-    HU[http_utils] --> PU[prow_utils]
-    HU --> SU[slack_utils]
-    HU --> KU[kubearchive_utils]
-    PU --> HO[ho_release_gate]
-    SU --> HO
-    KU --> HO
-```
-
-| Module | Reusable | Functions |
-|--------|----------|-----------|
-| `http_utils` | Yes | `http_request`, `http_request_with_retry` |
-| `prow_utils` | Yes | `trigger_prow_job`, `resolve_prow_url`, `get_prow_job_status`, `short_name` |
-| `slack_utils` | Yes | `send_slack_message`, `build_slack_payload`, `mrkdwn_section`, `fields_section`, `divider` |
-| `kubearchive_utils` | Yes | `fetch_pipelineruns`, `build_pipelinerun_url` |
-| `ho_release_gate` | Per-service | `extract_component_image`, `trigger_all_jobs`, `resolve_all_urls`, `poll_until_complete`, `evaluate_gate`, `build_gate_notification`, `build_error_notification`, `check_failure_streak`, `build_stale_notification`, `check_and_build_stale_payload` |
-
-The four reusable modules are service-agnostic. When extending to a new managed service, only `ho_release_gate` would need a service-specific counterpart (or the existing one can be reused if the gate logic is identical).
-
-### Workspace and Library Delivery
-
-The pipeline uses a PersistentVolumeClaim (PVC) workspace to deliver the Python modules to all tasks:
-
-1. The `clone-lib` task performs a **sparse git clone** of the repository, checking out only `.tekton/lib/`
-2. Library files are copied to the shared workspace root
-3. Each subsequent task adds the workspace path to `sys.path` and imports the modules directly
-
-This avoids embedding library code in the pipeline YAML and allows updating the modules independently of the pipeline definition.
-
-### Task Container Images
-
-All pipeline task steps use the `appstudio-utils` container image provided by Konflux. Container image references in the pipeline YAML must follow the **tag+digest** pinning convention:
-
-```text
-quay.io/konflux-ci/appstudio-utils:latest@sha256:<digest>
-```
-
-This format satisfies two requirements:
-
-- The **digest** ensures reproducible builds: the exact image layer set is locked regardless of tag mutations
-- The **tag** enables MintMaker (a Renovate-based service managed by the Konflux team) to detect when the tag points to a new digest and automatically open a pull request to bump it
-
-MintMaker scans all YAML files under `.tekton/` on a weekly schedule (Saturdays at 05:00 UTC). When it detects that the `latest` tag now resolves to a different digest, it opens a PR updating the `@sha256:...` suffix in every matching image reference. The pipeline maintainers only need to review and merge the PR.
-
-**Initial pinning is manual.** MintMaker will not convert a bare `:latest` tag to `tag+digest` format on its own. When adding a new task step or changing its base image, the author must look up the current digest (e.g. via the Quay API or `docker manifest inspect`) and write the full `tag@sha256:...` reference in the first commit. MintMaker takes over from that point forward.
-
-## Integration Points and Secrets
-
-| Integration | Protocol | Secret |
-|-------------|----------|--------|
-| **Integration Service** | Kubernetes label watch | None (cluster-internal) |
-| **Gangway (Prow CI)** | HTTPS REST API | `gangway-token` (Bearer token) |
-| **KubeArchive** | HTTPS REST API | SA projected token (cluster-internal) |
-| **Slack** | HTTPS webhook | `slack-webhook` (webhook URL) |
-| **Release Service** | Kubernetes CR creation | None (RBAC-based via `nightly-promotion-sa`) |
-
-### Integration Service and Pipeline Resolution
-
-The Integration Service watches for labeled Snapshots on the Konflux cluster. When the CronJob labels a Snapshot with `test.appstudio.openshift.io/scenario=<ITS_NAME>`, the Integration Service matches it to the corresponding IntegrationTestScenario and creates a PipelineRun with the ITS-defined parameters.
-
-The ITS has `contexts: disabled`, meaning it only triggers from explicit CronJob labels, not from every new Snapshot.
-
-The pipeline code is resolved at runtime through a two-step git resolver chain:
-
-```mermaid
-flowchart LR
-    ITS[IntegrationTestScenario] -->|"resolverRef (git)"| PRT[PipelineRun template<br/>ho-release-gate-run.yaml]
-    PRT -->|"pipelineRef (git resolver)"| P[Pipeline<br/>ho-release-gate.yaml]
-    P -->|"Gangway REST API"| Prow[Prow CI]
-
-    style ITS fill:#BBDEFB
-    style PRT fill:#E3F2FD
-    style P fill:#E3F2FD
-    style Prow fill:#FAFAFA
-```
-
-1. The ITS `resolverRef` points to the `PipelineRun template` in the GitHub repository
-2. The PipelineRun template's `pipelineRef` uses a git resolver to fetch the `Pipeline` definition
-3. Both are resolved and executed on the Konflux cluster (stone-prd-rh01), with no pipeline code stored on the cluster itself
-4. From within the pipeline, the `run-e2e` task calls out to the external Prow CI cluster via the Gangway REST API
-
-### Gangway (Prow CI)
-
-The `run-e2e` task uses the Gangway REST API to trigger Prow periodic jobs with custom environment overrides (HO image, test image). It then polls job status until all jobs complete or a 4-hour timeout is reached.
-
-#### Image Override Mechanism
-
-The candidate HO image is injected into the Prow job via `MULTISTAGE_PARAM_OVERRIDE_OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE`. This is a Gangway transport variable: the `MULTISTAGE_PARAM_OVERRIDE_` prefix tells Gangway to pass the value as a multi-stage step parameter (`OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE`) rather than as a ci-operator ImageStream override. The direct ImageStream mechanism (`OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR`) cannot be used here because ci-operator resolves ImageStream overrides during the `base-images` phase, which may race with steps that consume the image before the override is applied. The transport variable bypasses this by injecting the value directly into the step's environment.
-
-The receiving step (`hypershift-install-commands.sh`) reads this parameter and uses it to install the HO from the candidate image.
-
-The test image (`hypershift-tests`) is overridden separately via `OVERRIDE_IMAGE_HYPERSHIFT_TESTS` using `:latest`. This is intentional: the test image is built by OpenShift CI, not by Konflux, so it is not part of the Snapshot and there is no straightforward way to extract a matching version.
-
-Timing parameters can be adjusted by modifying the corresponding constants in the `run-e2e` task script:
-
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| `TRIGGER_DELAY` | 60s | Delay between triggering consecutive jobs |
-| `RATE_LIMIT_BACKOFF` | 120s | Backoff on HTTP 429/5xx responses |
-| `MAX_RETRIES` | 3 | Retry attempts per trigger |
-| `INITIAL_DELAY` | 2700s (45 min) | Wait before first poll (let jobs start) |
-| `POLL_INTERVAL` | 600s (10 min) | Time between poll cycles |
-| `POLL_STAGGER` | 30s | Delay between polling individual jobs |
-| `TIMEOUT` | 14400s (4h) | Maximum total polling time |
-
-The Gangway endpoint URL is exposed as a pipeline parameter (`gangway-url`) with the current production URL as default. This allows updating the endpoint without a code change if the CI cluster migrates (as happened in the `app.ci` to `build0x` migration).
-
-### KubeArchive
-
-Both `notify-slack` and `notify-slack-error` query the KubeArchive REST API to retrieve archived PipelineRun data for stale promotion detection. KubeArchive is a cluster-internal service on stone-prd-rh01 that archives Kubernetes resources after they are garbage-collected. The KubeArchive API URL is exposed as a pipeline parameter (`kubearchive-api-base`) with the current production URL as default, following the same rationale as `gangway-url`.
-
-The pipeline authenticates to KubeArchive using a projected ServiceAccount token (audience: `kubearchive`), which is automatically available to the PipelineRun's SA. No additional secrets or configuration are required.
-
-The query uses the ITS name as a label selector (`test.appstudio.openshift.io/scenario=<ITS_NAME>`), so each managed service's PipelineRun history is tracked independently. This means the stale check works automatically for every service gate with zero additional configuration beyond the optional `stale-threshold-days` parameter (see Stale Promotion Alerting).
-
-### Slack
-
-Both `notify-slack` and `notify-slack-error` send Block Kit payloads to a Slack webhook. Notifications are currently posted to `#forum-ocp-hypershift`. The target channel is determined by the webhook URL stored in the `slack-webhook` Secret in `crt-redhat-acm-tenant`.
-
-When the gate passes, a success notification is sent. When the gate fails, both finally tasks query KubeArchive to check for a failure streak. If the streak meets or exceeds `stale-threshold-days`, a stale promotion alert is sent instead of the standard failure notification. The stale alert includes the failure streak duration, a history of recent PipelineRuns with links and failure reasons, and the configurable threshold. If there is no streak or it is below the threshold, a standard failure notification is sent. See Stale Promotion Alerting for the rationale.
-
-### Release Service
-
-When the gate passes, the `create-release` task creates a Release CR referencing the validated Snapshot and the `ReleasePlan`. The Release Service matches this to a `ReleasePlanAdmission` (RPA) in the `rhtap-releng-tenant` namespace and launches the `rh-push-to-external-registry` managed pipeline. The managed pipeline's `apply-mapping` task pushes the image to Quay with service-prefixed tags. The tag mapping is defined in the RPA, so each service has its own set of tags. For example, the ARO HCP RPA produces:
-
-- `aro-hcp-latest`
-- `aro-hcp-latest-{{ timestamp }}`
-- `aro-hcp-{{ git_sha }}`
-- `aro-hcp-{{ git_short_sha }}`
-
-
----
-
-## Source: docs/content/how-to/ci/ho-release-gating/extending-services.md
-
-# Extending to Other Managed Services
-
-## Common and Reusable Components
-
-The following components are shared across all managed service gates and do not need to be duplicated:
-
-| Component | Location | Notes |
-|-----------|----------|-------|
-| Pipeline YAML | `.tekton/pipelines/ho-release-gate.yaml` | Fully parameterized, service-agnostic |
-| PipelineRun template | `.tekton/pipelines/ho-release-gate-run.yaml` | Referenced by all ITS resources via git resolver |
-| Python modules | `.tekton/lib/` | `http_utils`, `prow_utils`, `slack_utils`, `kubearchive_utils`, `ho_release_gate` |
-| CronJob | `nightly-promotion/cronjob.yaml` | Single CronJob triggers all service gates via `ITS_NAMES` env var; update it to add a new service |
-| Gangway token | `gangway-token` Secret | Shared across all service gates |
-| Slack webhook | `slack-webhook` Secret | Shared across all service gates |
-
-The pipeline accepts all service-specific values as parameters (gate label, test job lists, release plan name), which are injected by the IntegrationTestScenario at runtime.
-
-## Konflux Release Data
-
-The Konflux Release Data repository on GitLab CEE contains the tenant configuration that defines how releases are processed. For each managed service gate, the following manifests must be created:
-
-- **IntegrationTestScenario (ITS)**: defines which pipeline to run and with which parameters
-- **ReleasePlan**: created in the tenant namespace, references the application and target
-- **ReleasePlanAdmission**: created in the releng namespace, authorizes the release and configures the managed pipeline
-
-Some manifests are auto-generated from tenant config. After editing, regenerate them with `cd tenants-config && ./build-single.sh <tenant>` and include the regenerated output in the same MR.
-
-## What Needs to Be Created for a New Service
-
-All resources below are added to the Konflux Release Data repository. The ITS and ReleasePlan are added as new entries in existing YAML files, while the RPA requires its own file in a separate directory (see section 3). Follow the naming convention `hypershift-ho-release-gate-<service>` (or `hypershift-operator-ho-release-gate-<service>` for ReleasePlan) to stay consistent with existing resources.
-
-### 1. IntegrationTestScenario (ITS)
-
-Add a new ITS resource to the existing `its.yaml`. The new resource follows the same structure, changing only the service-specific fields:
-
-```yaml
----
-apiVersion: appstudio.redhat.com/v1beta2
-kind: IntegrationTestScenario
-metadata:
-  name: hypershift-ho-release-gate-<service>       # unique per service
-spec:
-  application: hypershift-operator
-  contexts:
-    - description: Only run via nightly CronJob trigger
-      name: disabled
-  params:
-    - name: e2e-blocking-job-names                  # service-specific Prow jobs
-      value: '["periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-<service-job>"]'
-    - name: e2e-informing-job-names
-      value: '[]'
-    - name: gate-label                              # shown in Slack notifications
-      value: "<SERVICE NAME>"
-    - name: release-plan-name                       # must match the ReleasePlan name
-      value: "hypershift-operator-ho-release-gate-<service>"
-    - name: stale-threshold-days                    # consecutive failure days before stale alert (default: 3)
-      value: "3"
-  resolverRef:                                      # same for all services
-    params:
-      - name: url
-        value: https://github.com/openshift/hypershift
-      - name: revision
-        value: main
-      - name: pathInRepo
-        value: .tekton/pipelines/ho-release-gate-run.yaml
-    resolver: git
-    resourceKind: pipelinerun
-```
-
-Fields to customize per service: `metadata.name`, `e2e-blocking-job-names`, `e2e-informing-job-names`, `gate-label`, `release-plan-name`. The `resolverRef` block is identical for all services.
-
-- `stale-threshold-days` (optional, default `3`): number of consecutive days of gate failures before a stale promotion alert is sent to Slack. Each managed service can set its own threshold based on how quickly a stale image becomes a concern. The stale check runs automatically using the ITS name as a label selector, so no additional configuration is needed. See Stale Promotion Alerting for details.
-
-### 2. ReleasePlan
-
-Add a new ReleasePlan resource to the existing `releaseplan.yaml`. This resource lives in the `crt-redhat-acm-tenant` namespace and links the application to the releng tenant:
-
-```yaml
----
-apiVersion: appstudio.redhat.com/v1alpha1
-kind: ReleasePlan
-metadata:
-  labels:
-    release.appstudio.openshift.io/auto-release: "false"
-    release.appstudio.openshift.io/releasePlanAdmission: redhat-hypershift-operator-ho-release-gate-<service>  # <- customize
-    release.appstudio.openshift.io/standing-attribution: "true"
-  name: hypershift-operator-ho-release-gate-<service>  # <- customize
-spec:
-  application: hypershift-operator
-  target: rhtap-releng-tenant
-```
-
-Fields to customize per service:
-
-- `metadata.name`: must match the `release-plan-name` param in the ITS
-- `releasePlanAdmission` label: must match the RPA name (see below)
-
-The remaining fields are the same for all services:
-
-- `auto-release: "false"`: releases are created explicitly by the pipeline, not automatically on every Snapshot
-- `standing-attribution: "true"`: allows the Release CR to be created by an attributed SA (`nightly-promotion-sa`)
-
-### 3. ReleasePlanAdmission (RPA)
-
-The RPA lives in a separate directory under the releng namespace configuration. This resource is managed by the releng team but the HyperShift team provides the content. Create a new file named `redhat-hypershift-operator-ho-release-gate-<service>.yaml` following the existing ARO HCP example:
-
-```yaml
----
-apiVersion: appstudio.redhat.com/v1alpha1
-kind: ReleasePlanAdmission
-metadata:
-  labels:
-    release.appstudio.openshift.io/block-releases: "false"
-    pp.engineering.redhat.com/business-unit: hybrid-cloud-experience
-  name: redhat-hypershift-operator-ho-release-gate-<service>  # <- customize
-  namespace: rhtap-releng-tenant
-spec:
-  applications:
-    - hypershift-operator
-  origin: crt-redhat-acm-tenant
-  policy: app-interface-standard
-  data:
-    mapping:
-      components:
-        - name: hypershift-operator-main
-          repositories:
-            - url: "quay.io/redhat-services-prod/crt-redhat-acm-tenant/hypershift/hypershift-operator-verified"
-      defaults:
-        tags:                                       # <- customize: service-specific tag prefixes
-          - "<service>-latest"
-          - "<service>-latest-{{ timestamp }}"
-          - "<service>-{{ git_sha }}"
-          - "<service>-{{ git_short_sha }}"
-        pushSourceContainer: false
-    releaseNotes:
-      product_name: ACM Prod Index
-      product_version: "0.1"
-    intention: production
-  pipeline:
-    pipelineRef:
-      resolver: git
-      params:
-        - name: url
-          value: "https://github.com/konflux-ci/release-service-catalog.git"
-        - name: revision
-          value: production
-        - name: pathInRepo
-          value: "pipelines/managed/rh-push-to-external-registry/rh-push-to-external-registry.yaml"
-    serviceAccountName: release-app-interface-prod
-    timeouts:
-      pipeline: "4h0m0s"
-      tasks: "4h0m0s"
-```
-
-Key fields to customize per service:
-
-- `metadata.name`: follows the convention `redhat-hypershift-operator-ho-release-gate-<service>`
-- `data.mapping.defaults.tags`: tag prefixes specific to the service (e.g. `aro-hcp-`, `rosa-`)
-- `data.mapping.components[].repositories[].url`: can point to a different Quay repo if needed. If the repository does not exist, it will be auto-created on the first successful run
-- The `pipeline` block is typically the same for all services (same managed pipeline)
-
-### 4. Register in the CronJob
-
-The CronJob is a shared component (see table above). To enable the new service gate, add the new ITS name to the `ITS_NAMES` environment variable in the existing `cronjob.yaml`:
-
-```yaml
-env:
-  - name: ITS_NAMES
-    value: "hypershift-ho-release-gate-aro-hcp,hypershift-ho-release-gate-<service>"
-```
-
-The value is a plain comma-separated string (no brackets, no quotes around individual names, no spaces). The CronJob iterates over the list and labels the Snapshot for each ITS sequentially.
-
-## Step-by-Step: From Zero to First Gated Release
-
-1. Identify the Prow periodic jobs for the new service
-2. Create a single MR on the Konflux Release Data repository containing:
-    - The new ITS resource (added to `its.yaml`)
-    - The new ReleasePlan (added to `releaseplan.yaml`)
-    - The new ReleasePlanAdmission (new file under the RPA directory)
-    - The CronJob update (new ITS name in `ITS_NAMES`)
-    - Regenerated manifests (`cd tenants-config && ./build-single.sh <tenant>`)
-3. If releng approval is required (e.g. for the RPA), the MR can be advertised in #konflux-users
-4. After merge, wait for the next nightly run or trigger manually (see Operations and Troubleshooting)
-5. Verify the Slack notification shows the new service gate results
-
-
----
-
-## Source: docs/content/how-to/ci/ho-release-gating/extending-tests.md
-
-# Adding or Modifying E2E Tests
-
-This page describes how to add, remove, or reclassify E2E tests for a specific managed service gate. Each managed service has its own IntegrationTestScenario (ITS) with independent test lists, so changes to one service gate do not affect the others.
-
-## Where the Job Lists Live
-
-The E2E test lists are defined as parameters in the ITS resource. Each ITS specifies two JSON arrays:
-
-- `e2e-blocking-job-names`: tests that must pass for the gate to succeed
-- `e2e-informing-job-names`: tests that are reported but do not block promotion
-
-These parameters are injected into the pipeline at runtime by the Integration Service.
-
-The ITS resources are managed via GitOps in the Konflux Release Data repository on GitLab CEE, under:
-
-```
-tenants-config/cluster/stone-prd-rh01/tenants/crt-redhat-acm-tenant/
-  hypershift-operator/nightly-promotion/its.yaml
-```
-
-Each managed service has its own ITS resource in this file, following a consistent naming convention (`hypershift-ho-release-gate-<service>`).
-
-### ITS Structure
-
-The ITS file contains one resource per managed service. Each ITS references the same pipeline but with different parameters:
-
-```yaml
-apiVersion: appstudio.redhat.com/v1beta2
-kind: IntegrationTestScenario
-metadata:
-  name: hypershift-ho-release-gate-aro-hcp       # per-service name
-  namespace: crt-redhat-acm-tenant
-spec:
-  application: hypershift-operator
-  contexts:
-    - name: disabled                              # CronJob-triggered only
-  resolverRef:
-    resolver: git
-    params:
-      - name: url
-        value: https://github.com/openshift/hypershift.git
-      - name: revision
-        value: main
-      - name: pathInRepo
-        value: .tekton/pipelines/ho-release-gate-run.yaml
-  params:
-    - name: e2e-blocking-job-names                # <-- edit these lists
-      value: '["periodic-ci-...-e2e-aks",
-               "periodic-ci-...-e2e-aks-upgrade-minor"]'
-    - name: e2e-informing-job-names
-      value: '["periodic-ci-...-e2e-aks-ovn-conformance"]'
-    - name: gate-label
-      value: "ARO HCP"
-    - name: release-plan-name
-      value: "hypershift-operator-ho-release-gate-aro-hcp"
-    - name: stale-threshold-days                    # <-- optional, default 3
-      value: "3"
-```
-
-- `stale-threshold-days` controls how many consecutive days of gate failures must occur before a stale promotion alert is sent. The default is `3`. Adjust per service if needed (e.g. a critical service may use `2`, while a less critical one may tolerate `5`). See Stale Promotion Alerting.
-
-When a new managed service is added, a second ITS resource with the same structure is appended to this file, with its own service-specific job lists, gate label, release plan name, and stale threshold.
-
-## Adding a New Job
-
-To add a new Prow periodic job to a service gate:
-
-1. Ensure the job exists as a Prow periodic in the openshift/release repository
-2. Decide whether the job should be **blocking** or **informing**
-3. Edit the ITS resource for the target service and add the full job name to the appropriate JSON array parameter
-
-## Moving a Job Between Categories
-
-To promote a job from informing to blocking (or demote from blocking to informing):
-
-1. Remove the job name from the source array
-2. Add it to the target array
-3. Submit the change as an MR to the Konflux Release Data repository
-
-## Job Naming Convention
-
-The pipeline expects full Prow periodic job names following the standard OpenShift CI naming convention:
-
-```
-periodic-ci-<org>-<repo>-<branch>-<variant>-<test-name>
-```
-
-For example:
-
-```
-periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-aks
-```
-
-The pipeline automatically strips the common prefix (`periodic-ci-openshift-hypershift-release-4.NN-periodics-`) when displaying results in logs and Slack notifications for readability.
-
-## Verifying the Change
-
-After modifying the test lists:
-
-1. Submit the MR to the Konflux Release Data repository
-2. Wait for the next nightly run, or trigger a manual run (see Operations and Troubleshooting)
-3. Check the Slack notification to verify the new job appears in the results
-4. Inspect the PipelineRun logs to confirm the job was triggered and polled correctly
-
-
----
-
-## Source: docs/content/how-to/ci/ho-release-gating/index.md
-
-# HyperShift Operator Konflux Release Gating
-
-The HyperShift Operator (HO) uses a Konflux-based release gating pipeline to validate nightly builds before promoting them to downstream consumers. A nightly CronJob selects the latest Snapshot, triggers Prow-hosted E2E tests against it, and only promotes the image when all blocking tests pass.
-
-## How It Works
-
-Every night, a CronJob triggers a new HO build in Konflux. Once the build completes and a Snapshot is created, the Integration Service evaluates an IntegrationTestScenario (ITS) that launches the release gating pipeline. The pipeline:
-
-1. Extracts the HO container image from the Snapshot
-2. Triggers blocking and informing E2E tests via Gangway (Prow CI)
-3. Evaluates the test results against the gate criteria
-4. Creates a Release CR if the gate passes, which triggers image promotion
-5. Sends a Slack notification with the outcome
-6. Checks for stale promotion (consecutive days of gate failures) and sends a dedicated alert if the threshold is exceeded
-
-## Documentation Pages
-
-| Page | Description |
-|------|-------------|
-| Release Strategy | Why release gating exists, blocking vs informing tests, gate verdict logic, stale promotion alerting |
-| Architecture | End-to-end flow, RBAC, Tekton pipeline internals, integration points |
-| Adding E2E Tests | How to add, remove, or reclassify E2E tests in the gate |
-| Extending to Other Services | How to set up release gating for a new managed service |
-| Operations and Troubleshooting | Manual triggers, inspecting runs, common failure scenarios |
-
-
----
-
-## Source: docs/content/how-to/ci/ho-release-gating/strategy.md
-
-# Release Strategy and Rationale
-
-## Why Release Gating Exists
-
-The HyperShift Operator is a core component for multiple managed OpenShift services (ARO HCP, ROSA, GCP). A broken operator image reaching production can cause widespread cluster provisioning and management failures.
-
-Release gating adds a validation step between the Konflux build and the downstream promotion: every nightly Snapshot must pass a defined set of E2E tests before the image is promoted to the staging registry. This ensures that only validated images reach managed service environments.
-
-<!-- TODO: add OCPSTRAT link when available -->
-
-## Blocking vs Informing Tests
-
-The pipeline supports two categories of E2E tests:
-
-| Category | Semantics | Effect on Gate |
-|----------|-----------|----------------|
-| **Blocking** | Must pass for promotion | Gate fails if any blocking test fails |
-| **Informing** | Advisory, monitored for trends | Reported in Slack but does not block promotion |
-
-This distinction allows the team to monitor new or experimental tests without risking promotion stability. A test typically starts as informing and graduates to blocking once it has proven stable.
-
-## Gate Verdict Logic
-
-The gate evaluates results as follows:
-
-- **Pass**: all blocking tests passed (informing results are reported but ignored for the verdict)
-- **Fail**: one or more blocking tests failed
-
-## What Happens When the Gate Passes
-
-1. The pipeline creates a **Release CR** referencing the validated Snapshot and the corresponding ReleasePlan
-2. The Konflux **Release Service** picks up the Release CR and triggers a **managed pipeline**
-3. The managed pipeline promotes the HO image to the Quay staging repository
-4. A **Slack notification** is sent with the pass verdict, test results summary, and links to the PipelineRun
-
-## What Happens When the Gate Fails
-
-1. **No Release CR** is created, so no promotion occurs
-2. The `create-release` task exits with a non-zero code, marking the PipelineRun as failed
-3. A **Slack notification** is sent with the failure verdict, identifying which blocking tests failed and including Prow job links for investigation
-
-## Stale Promotion Alerting
-
-A single nightly gate failure is normal and gets fixed quickly. However, if the gate keeps failing for multiple consecutive days, the last successfully promoted image becomes increasingly stale. This can go unnoticed because each individual failure notification looks the same as any other.
-
-Stale promotion alerting solves this by tracking the history of PipelineRun outcomes per managed service and sending a dedicated alert when the number of consecutive failure days reaches a configurable threshold.
-
-### How It Works
-
-When the gate fails, both `notify-slack` and `notify-slack-error` perform the following steps before sending the failure notification:
-
-1. Query the KubeArchive REST API for archived PipelineRuns matching the current ITS label selector
-2. Walk the history from most recent to oldest, counting consecutive failures (a "failure streak")
-3. If the streak spans a number of days equal to or greater than the `stale-threshold-days` parameter, send a stale promotion alert instead of the standard failure notification
-
-The stale alert replaces the normal failure notification. It includes the streak duration in days, a list of recent failed PipelineRuns with dates, failure reasons, and links, and the current threshold value. If there is no streak or the streak is below the threshold, a standard failure notification is sent.
-
-### Per-Service Independence
-
-The stale check is performed independently for each managed service. The pipeline uses the ITS name as a Kubernetes label selector when querying KubeArchive, so each service's PipelineRun history is isolated. This means:
-
-- ARO HCP and ROSA (or any future service) each have their own failure streak, tracked automatically
-- A failure streak in one service does not affect or trigger alerts for another
-- No additional configuration is needed beyond adding the `stale-threshold-days` parameter to the ITS
-
-### Configuration
-
-The stale threshold is configured per service via the `stale-threshold-days` parameter in the IntegrationTestScenario. The default value is `3` (alert after 3 consecutive days of failures). Each service can set its own threshold based on its tolerance for stale images.
-
-See Adding or Modifying E2E Tests and Extending to Other Services for how to configure this parameter in the ITS.
-
-
----
-
-## Source: docs/content/how-to/ci/ho-release-gating/troubleshooting.md
-
-# Operations and Troubleshooting
-
-## Manual Trigger Strategies
-
-There are two ways to manually trigger the release gating pipeline, each with different scope.
-
-### Full CronJob Run (All Service Gates)
-
-This re-runs the entire nightly flow, triggering all managed service gates defined in `ITS_NAMES`:
-
-```bash
-oc create job --from=cronjob/hypershift-operator-nightly-promotion \
-  ho-release-gate-manual-$(date +%s) -n crt-redhat-acm-tenant
-```
-
-Use this when you need to re-validate all services (e.g. after a shared infrastructure fix).
-
-### Snapshot Label (Single Service Gate)
-
-This triggers only one specific ITS, useful for re-testing a single service without affecting others:
-
-```bash
-SNAPSHOT_NAME=$(oc get snapshot -n crt-redhat-acm-tenant \
-  --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}')
-
-oc label snapshot "$SNAPSHOT_NAME" \
-  test.appstudio.openshift.io/scenario=<its-name> \
-  -n crt-redhat-acm-tenant --overwrite
-```
-
-Replace `<its-name>` with the target ITS name, for example `hypershift-ho-release-gate-aro-hcp`. The Integration Service will detect the label and create a new PipelineRun for that ITS only.
-
-### When to Use Which
-
-| Scenario | Strategy |
-|----------|----------|
-| Re-validate all services after an infrastructure change | CronJob |
-| Re-test a single service after fixing a service-specific issue | Snapshot label |
-| Test a new ITS configuration | Snapshot label |
-| Nightly run failed due to a transient error | Snapshot label (for the affected gate) |
-
-## Inspecting a PipelineRun
-
-### Fetching the PipelineRun
-
-List recent release gating PipelineRuns:
-
-```bash
-oc get pipelineruns -n crt-redhat-acm-tenant \
-  --sort-by=.metadata.creationTimestamp | tail -5
-```
-
-### Reading Task Logs
-
-Find the pods for a specific PipelineRun, then read the logs for a specific task step:
-
-```bash
-oc get pods -n crt-redhat-acm-tenant -l tekton.dev/pipelineRun=<pipelinerun-name>
-
-oc logs pod/<pod-name> -c step-<step-name> -n crt-redhat-acm-tenant
-```
-
-!!! warning
-
-    PipelineRun pods are subject to aggressive garbage collection on the Konflux cluster. If the pods have already been deleted, use the Konflux UI instead (see below), where logs are persisted, centralized, and aggregated across all tasks of the pipeline.
-
-### Konflux UI
-
-PipelineRun logs and Release CR status are available in the Konflux PipelineRuns view.
-
-!!! tip
-
-    Use the PipelineRun name from the `oc get pipelineruns` command above to filter the list in the UI.
-
-### Historical PipelineRun Data (KubeArchive)
-
-The `oc get pipelineruns` command only returns PipelineRuns that still exist on the cluster. Due to aggressive garbage collection on stone-prd-rh01, PipelineRuns are deleted shortly after completion. For historical data (e.g. investigating a stale promotion streak or reviewing failures beyond what the Slack notification displays), query the KubeArchive REST API directly:
-
-```bash
-curl -s -H "Authorization: Bearer $(oc whoami -t)" \
-  "https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/apis/tekton.dev/v1/namespaces/crt-redhat-acm-tenant/pipelineruns?labelSelector=test.appstudio.openshift.io/scenario=<ITS_NAME>" \
-  | python3 -c "
-import json,sys
-data=json.load(sys.stdin)
-for item in data.get('items',[]):
-    name=item['metadata']['name']
-    conds=item.get('status',{}).get('conditions',[])
-    if conds:
-        c=conds[-1]
-        print(f\"{name:50s} status={c.get('status','?'):6s} reason={c.get('reason','?')}\")
-"
-```
-
-!!! note
-
-    The KubeArchive URL in the curl command above corresponds to the default value of the `kubearchive-api-base` pipeline parameter. If the pipeline has been reconfigured to point at a different KubeArchive instance, use that URL instead.
-
-Replace `<ITS_NAME>` with the target service gate name (e.g. `hypershift-ho-release-gate-aro-hcp`). You must be logged in to the stone-prd-rh01 cluster (`oc login`).
-
-The output lists all archived PipelineRuns for that ITS with their completion status and reason. To inspect a specific PipelineRun from the results, build the Konflux UI URL from its name:
-
-```
-https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/<pipelinerun-name>/
-```
-
-This URL provides the full task logs, results, and pipeline visualization even after the PipelineRun has been garbage-collected from the cluster.
-
-## Common Failure Scenarios
-
-### Gangway Token Expired
-
-**Symptom**: `run-e2e` task fails with HTTP 401 errors when triggering Prow jobs.
-
-**Fix**: rotate the `gangway-token` Secret in `crt-redhat-acm-tenant`. The token is a Prow CI cluster OAuth token.
-
-### Slack Webhook 4xx
-
-**Symptom**: `notify-slack` logs show repeated 4xx errors after 3 retries.
-
-**Fix**: verify the webhook URL in the `slack-webhook` Secret is still valid. Slack webhooks can be revoked if the app is reinstalled.
-
-### clone-lib Failure
-
-**Symptom**: `clone-lib` task fails with git errors.
-
-**Common causes**:
-
-- Repository URL or branch changed
-- GitHub rate limiting on unauthenticated git clones
-- Network connectivity from the Konflux cluster
-
-### PVC Issues
-
-**Symptom**: tasks fail with workspace mount errors or permission denied on shared files.
-
-**Common causes**:
-
-- PVC quota exceeded in the tenant namespace
-- Storage class unavailable
-- Stale PVCs from previous failed runs (Konflux garbage-collects these, but delays can occur)
-
-### Prow Job Timeout
-
-**Symptom**: `run-e2e` task reaches its 4-hour polling timeout with jobs still pending.
-
-**Common causes**:
-
-- Prow cluster capacity issues (jobs queued but not scheduled)
-- The E2E test itself is stuck or abnormally slow
-- Gangway API returning stale status
-
-**Mitigation**: check the Prow job directly in the Prow UI using the URL from the `run-e2e` task logs. If the job is stuck, it may need to be manually cancelled in Prow before re-triggering the gate.
-
-### KubeArchive Unreachable
-
-**Symptom**: `notify-slack` or `notify-slack-error` logs show warnings about failing to fetch PipelineRun history from KubeArchive. The gate result notification is still sent, but no stale promotion alert appears.
-
-**Common causes**:
-
-- KubeArchive service is down or restarting on stone-prd-rh01
-- The projected ServiceAccount token has expired or the audience (`kubearchive`) is misconfigured
-- Network policy changes blocking cluster-internal traffic
-
-**Impact**: the stale check is a non-blocking operation. If KubeArchive is unreachable, the pipeline logs a warning and skips the stale alert. The gate verdict and notification are not affected. The stale check will resume automatically on the next run when KubeArchive becomes available again.
-
-### Unexpected Stale Alert
-
-**Symptom**: a stale promotion alert is sent even though the gate has not been failing for long, or the streak count seems wrong.
-
-**Common causes**:
-
-- `stale-threshold-days` is set too low in the ITS (e.g. `1` would alert on the first failure)
-- Test PipelineRuns from integration testing contribute to the real streak history because they are archived with the same ITS label. The streak resets automatically on the first successful nightly run
-- KubeArchive returned incomplete data (e.g. after a data migration or cleanup)
-
-
----
-
 ## Source: docs/content/how-to/ci/jira-agent-onboarding.md
 
 # :robot: Jira Agent Onboarding Guide
@@ -58562,6 +57668,900 @@ These are desired project goals which drive the design invariants stated below. 
 - On AWS, the reason both `api` and `*.apps` records exist in the `.hypershift.local` zone is historical: originally there was support for KAS having its own LB, which would have required two separate private endpoints and therefore two distinct domain resolutions. A similar pattern may be needed in the future for Azure if OAuth gets its own LB, but that is a separate concern from guest cluster traffic routing.
 
 - PRs modifying private DNS should validate traffic flow, not just DNS records. E2e tests should demonstrate that a traffic journey previously blocked is now enabled by the change, rather than simply asserting that DNS records exist in infrastructure.
+
+---
+
+## Source: docs/content/reference/ho-release-gating/architecture.md
+
+# Architecture
+
+## End-to-End Flow
+
+All release gating resources run on the Konflux production cluster **stone-prd-rh01**. Two namespaces are involved:
+
+| Namespace | Owner | Resources |
+|-----------|-------|-----------|
+| `crt-redhat-acm-tenant` | HyperShift team | CronJob, ITS, Snapshot, PipelineRun, Release, ReleasePlan, ServiceAccounts, Secrets |
+| `rhtap-releng-tenant` | Release Engineering | ReleasePlanAdmission, managed pipeline |
+
+The following sequence diagram shows the complete nightly promotion cycle, from the CronJob trigger through image promotion to Quay.
+
+```mermaid
+sequenceDiagram
+    participant CJ as CronJob
+    participant IS as Integration Service
+    participant PR as PipelineRun
+    participant Prow as Prow CI (Gangway)
+    participant KA as KubeArchive
+    participant RS as Release Service
+    participant MP as Managed Pipeline
+    participant Quay as Quay.io
+    participant Slack as Slack
+
+    Note over CJ: Runs at 03:15 UTC nightly
+
+    CJ->>CJ: (1) Resolve latest Snapshot
+    CJ->>IS: (2) Label Snapshot with ITS trigger
+
+    IS->>IS: (3) Detect label, evaluate ITS
+    IS->>PR: (4) Create PipelineRun
+
+    PR->>PR: (5) clone-lib + extract-image
+    PR->>Prow: (6) Trigger blocking + informing jobs
+
+    Note over PR,Prow: Poll every 10 min (45 min initial delay, 4h timeout)
+
+    Prow-->>PR: (7) Job results
+
+    PR->>PR: (8) evaluate-results
+
+    alt
+        rect rgb(200, 230, 201)
+            Note over CJ,Slack: Gate passed
+            PR->>RS: (9) Create Release CR
+            RS->>MP: (10) Match ReleasePlan/Admission
+            MP->>Quay: (11) Push image
+            PR->>Slack: (12) Notify success
+        end
+    else
+        rect rgb(255, 205, 210)
+            Note over CJ,Slack: Gate failed
+            PR->>KA: (13) Fetch PipelineRun history
+            KA-->>PR: Historical runs for this ITS
+            PR->>PR: (14) Check failure streak
+            alt
+                Note over PR,Slack: Streak below threshold or no streak
+                PR->>Slack: (15a) Notify failure
+            else
+                rect rgb(239, 154, 154)
+                    Note over PR,Slack: Streak >= stale-threshold-days
+                    PR->>Slack: (15b) Stale promotion alert<br/>Includes failure history and streak duration
+                end
+            end
+        end
+    end
+```
+
+**Step-by-step:**
+
+1. The `CronJob` fires at 03:15 UTC and resolves the latest Snapshot for the `hypershift-operator` application.
+2. The CronJob iterates over the `ITS_NAMES` environment variable and labels the Snapshot for each service gate sequentially. This allows a single CronJob to trigger multiple gates (e.g. ARO HCP, ROSA).
+3. The Integration Service detects the label and matches it to the corresponding `IntegrationTestScenario` (ITS). The ITS has `contexts: disabled`, so it only triggers from explicit CronJob labels, not from every new Snapshot.
+4. The Integration Service creates a PipelineRun by resolving the `PipelineRun template` and the `Pipeline` via git resolver (see Pipeline Resolution below). The ITS parameters (blocking/informing job lists, gate label, release plan name) are injected into the PipelineRun.
+5. The pipeline starts with `clone-lib` (sparse git clone of the Python modules to a shared PVC workspace) followed by `extract-image` (validates the HO container image from the Snapshot JSON).
+6. `run-e2e` triggers all blocking and informing Prow periodic jobs via the Gangway REST API, with the HO image injected as an environment override.
+7. The task polls Gangway for job results (45 min initial delay, then every 10 min, up to 4h timeout).
+8. `evaluate-results` applies the gate verdict: all blocking tests must pass (AND logic). Informing tests are reported but do not affect the verdict.
+9. If the gate passed, `create-release` creates a Release CR referencing the validated Snapshot and the `ReleasePlan`.
+10. The Release Service matches the Release CR to a `ReleasePlanAdmission` in the `rhtap-releng-tenant` namespace and launches the `rh-push-to-external-registry` managed pipeline.
+11. The managed pipeline's `apply-mapping` task pushes the image to Quay with service-prefixed tags.
+12. If the gate passed, a Slack notification is sent with the pass verdict, per-job results, and links to the PipelineRun.
+13. If the gate failed (or the pipeline crashed before reaching evaluation), the `notify-slack` or `notify-slack-error` finally task queries the KubeArchive REST API to fetch historical PipelineRun data for the current ITS. The ITS name is used as a label selector, so each managed service's history is tracked independently with zero configuration.
+14. The pipeline checks whether consecutive recent failures form a streak meeting or exceeding the configurable `stale-threshold-days` parameter.
+15. If the streak meets the threshold, a stale promotion alert is sent to Slack with the failure history and links to each PipelineRun (15a). Otherwise, a standard failure notification is sent (15b).
+
+## RBAC and Service Accounts
+
+Two ServiceAccounts are involved in the release gating flow:
+
+| ServiceAccount | Used By | Purpose |
+|----------------|---------|---------|
+| `nightly-promotion-sa` | CronJob, `create-release` task | Resolves and labels Snapshots, creates Release CRs |
+| `konflux-integration-runner` | Integration Service | Evaluates ITS, creates PipelineRuns |
+
+```mermaid
+flowchart LR
+    subgraph ServiceAccounts
+        SA1[nightly-promotion-sa]
+        SA2[konflux-integration-runner]
+    end
+
+    subgraph ClusterRoles
+        CR1[konflux-tester-internalbot-actions<br/>Snapshot: get, watch, list, update, patch]
+        CR2[konflux-releaser-bot-actions<br/>Release: create]
+    end
+
+    subgraph RoleBindings
+        RB1[nightly-promotion-sa-snapshot-labeler-binding]
+        RB2[nightly-promotion-sa-releaser-binding]
+    end
+
+    subgraph Secrets
+        S1[gangway-token]
+        S2[slack-webhook]
+    end
+
+    SA1 --> RB1 --> CR1
+    SA1 --> RB2 --> CR2
+    SA1 -.->|mounted in tasks| S1
+    SA1 -.->|mounted in tasks| S2
+    SA2 -.->|managed by Konflux| CR1
+```
+
+Key RBAC details:
+
+- `nightly-promotion-sa` is used by the CronJob (to label Snapshots) and by the `create-release` task (to create Release CRs). The `create-release` task runs as this SA via a `taskRunSpecs` override in the PipelineRun template:
+
+    ```yaml
+    taskRunSpecs:
+      - pipelineTaskName: create-release
+        serviceAccountName: nightly-promotion-sa
+    ```
+
+- `konflux-integration-runner` is the default SA for all PipelineRun tasks. The Integration Service forces this SA on every integration test PipelineRun (KONFLUX-5207). It has no extra bindings beyond what Konflux manages internally. The `taskRunSpecs` override above is what allows `create-release` to run as a different SA.
+- `nightly-promotion-sa-snapshot-labeler-binding` binds the SA to `konflux-tester-internalbot-actions` (Snapshot: get, watch, list, update, patch). This ClusterRole was created by the Konflux infra team (infra-deployments#12810).
+- `nightly-promotion-sa-releaser-binding` binds the SA to `konflux-releaser-bot-actions` (Release and Snapshot: list, get, watch, create).
+- Secrets (`gangway-token`, `slack-webhook`) are managed manually, not via GitOps.
+
+## Tekton Pipeline Internals
+
+### Design Rationale
+
+The pipeline uses Python modules instead of inline bash scripts. This choice was driven by:
+
+- **Readability**: structured Python functions with clear inputs/outputs vs multi-hundred-line shell scripts with embedded `jq` and `curl` chains
+- **Reusability**: shared modules (`http_utils`, `prow_utils`, `slack_utils`) are used across multiple service gates without duplication
+- **Testability**: individual functions can be unit-tested outside of the pipeline context
+- **stdlib-only**: all modules use only the Python standard library (no `pip install`, no external dependencies). This is a hard constraint: tasks run on the Konflux-provided `appstudio-utils` container image, which we do not control and cannot install packages on
+
+### Task Dependency Graph
+
+```mermaid
+flowchart LR
+    CL[clone-lib] --> EI[extract-image] --> RE[run-e2e] --> EV[evaluate-results] --> CR[create-release]
+    CR -.-> NS[notify-slack]
+    CR -.-> NSE[notify-slack-error]
+    NS -.-> KA[KubeArchive]
+    NSE -.-> KA
+
+    style NS stroke-dasharray: 5 5
+    style NSE stroke-dasharray: 5 5
+    style KA stroke-dasharray: 5 5
+```
+
+`notify-slack` and `notify-slack-error` are `finally` tasks that are mutually exclusive. Tekton skips a finally task whose parameter bindings reference results from a task that was skipped (unresolved results). `notify-slack` binds parameters to results of `create-release`, `evaluate-results`, and `extract-image`, so it fires only when all of them ran. `notify-slack-error` uses a `when` clause (`create-release.status == None`) and fires when `create-release` was skipped or never reached (either because the gate failed and `create-release` exited non-zero, or because an earlier DAG task crashed before reaching it). Both finally tasks query KubeArchive for historical PipelineRun data and check for stale promotion streaks.
+
+The per-job results JSON produced by `run-e2e` is written to a file on the shared workspace (`results.json`) rather than to a Tekton task result. This is a deliberate choice: Tekton task results have a hard 4 KB size limit, which can be exceeded when the pipeline runs many blocking and informing jobs, each carrying a full Prow URL. Both `evaluate-results` and `notify-slack` read the results directly from the workspace file.
+
+### Python Module Dependency Graph
+
+```mermaid
+flowchart BT
+    HU[http_utils] --> PU[prow_utils]
+    HU --> SU[slack_utils]
+    HU --> KU[kubearchive_utils]
+    PU --> HO[ho_release_gate]
+    SU --> HO
+    KU --> HO
+```
+
+| Module | Reusable | Functions |
+|--------|----------|-----------|
+| `http_utils` | Yes | `http_request`, `http_request_with_retry` |
+| `prow_utils` | Yes | `trigger_prow_job`, `resolve_prow_url`, `get_prow_job_status`, `short_name` |
+| `slack_utils` | Yes | `send_slack_message`, `build_slack_payload`, `mrkdwn_section`, `fields_section`, `divider` |
+| `kubearchive_utils` | Yes | `fetch_pipelineruns`, `build_pipelinerun_url` |
+| `ho_release_gate` | Per-service | `extract_component_image`, `trigger_all_jobs`, `resolve_all_urls`, `poll_until_complete`, `evaluate_gate`, `build_gate_notification`, `build_error_notification`, `check_failure_streak`, `build_stale_notification`, `check_and_build_stale_payload` |
+
+The four reusable modules are service-agnostic. When extending to a new managed service, only `ho_release_gate` would need a service-specific counterpart (or the existing one can be reused if the gate logic is identical).
+
+### Workspace and Library Delivery
+
+The pipeline uses a PersistentVolumeClaim (PVC) workspace to deliver the Python modules to all tasks:
+
+1. The `clone-lib` task performs a **sparse git clone** of the repository, checking out only `.tekton/lib/`
+2. Library files are copied to the shared workspace root
+3. Each subsequent task adds the workspace path to `sys.path` and imports the modules directly
+
+This avoids embedding library code in the pipeline YAML and allows updating the modules independently of the pipeline definition.
+
+### Task Container Images
+
+All pipeline task steps use the `appstudio-utils` container image provided by Konflux. Container image references in the pipeline YAML must follow the **tag+digest** pinning convention:
+
+```text
+quay.io/konflux-ci/appstudio-utils:latest@sha256:<digest>
+```
+
+This format satisfies two requirements:
+
+- The **digest** ensures reproducible builds: the exact image layer set is locked regardless of tag mutations
+- The **tag** enables MintMaker (a Renovate-based service managed by the Konflux team) to detect when the tag points to a new digest and automatically open a pull request to bump it
+
+MintMaker scans all YAML files under `.tekton/` on a weekly schedule (Saturdays at 05:00 UTC). When it detects that the `latest` tag now resolves to a different digest, it opens a PR updating the `@sha256:...` suffix in every matching image reference. The pipeline maintainers only need to review and merge the PR.
+
+**Initial pinning is manual.** MintMaker will not convert a bare `:latest` tag to `tag+digest` format on its own. When adding a new task step or changing its base image, the author must look up the current digest (e.g. via the Quay API or `docker manifest inspect`) and write the full `tag@sha256:...` reference in the first commit. MintMaker takes over from that point forward.
+
+## Integration Points and Secrets
+
+| Integration | Protocol | Secret |
+|-------------|----------|--------|
+| **Integration Service** | Kubernetes label watch | None (cluster-internal) |
+| **Gangway (Prow CI)** | HTTPS REST API | `gangway-token` (Bearer token) |
+| **KubeArchive** | HTTPS REST API | SA projected token (cluster-internal) |
+| **Slack** | HTTPS webhook | `slack-webhook` (webhook URL) |
+| **Release Service** | Kubernetes CR creation | None (RBAC-based via `nightly-promotion-sa`) |
+
+### Integration Service and Pipeline Resolution
+
+The Integration Service watches for labeled Snapshots on the Konflux cluster. When the CronJob labels a Snapshot with `test.appstudio.openshift.io/scenario=<ITS_NAME>`, the Integration Service matches it to the corresponding IntegrationTestScenario and creates a PipelineRun with the ITS-defined parameters.
+
+The ITS has `contexts: disabled`, meaning it only triggers from explicit CronJob labels, not from every new Snapshot.
+
+The pipeline code is resolved at runtime through a two-step git resolver chain:
+
+```mermaid
+flowchart LR
+    ITS[IntegrationTestScenario] -->|"resolverRef (git)"| PRT[PipelineRun template<br/>ho-release-gate-run.yaml]
+    PRT -->|"pipelineRef (git resolver)"| P[Pipeline<br/>ho-release-gate.yaml]
+    P -->|"Gangway REST API"| Prow[Prow CI]
+
+    style ITS fill:#BBDEFB
+    style PRT fill:#E3F2FD
+    style P fill:#E3F2FD
+    style Prow fill:#FAFAFA
+```
+
+1. The ITS `resolverRef` points to the `PipelineRun template` in the GitHub repository
+2. The PipelineRun template's `pipelineRef` uses a git resolver to fetch the `Pipeline` definition
+3. Both are resolved and executed on the Konflux cluster (stone-prd-rh01), with no pipeline code stored on the cluster itself
+4. From within the pipeline, the `run-e2e` task calls out to the external Prow CI cluster via the Gangway REST API
+
+### Gangway (Prow CI)
+
+The `run-e2e` task uses the Gangway REST API to trigger Prow periodic jobs with custom environment overrides (HO image, test image). It then polls job status until all jobs complete or a 4-hour timeout is reached.
+
+#### Image Override Mechanism
+
+The candidate HO image is injected into the Prow job via `MULTISTAGE_PARAM_OVERRIDE_OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE`. This is a Gangway transport variable: the `MULTISTAGE_PARAM_OVERRIDE_` prefix tells Gangway to pass the value as a multi-stage step parameter (`OVERRIDE_HYPERSHIFT_OPERATOR_IMAGE`) rather than as a ci-operator ImageStream override. The direct ImageStream mechanism (`OVERRIDE_IMAGE_HYPERSHIFT_OPERATOR`) cannot be used here because ci-operator resolves ImageStream overrides during the `base-images` phase, which may race with steps that consume the image before the override is applied. The transport variable bypasses this by injecting the value directly into the step's environment.
+
+The receiving step (`hypershift-install-commands.sh`) reads this parameter and uses it to install the HO from the candidate image.
+
+The test image (`hypershift-tests`) is overridden separately via `OVERRIDE_IMAGE_HYPERSHIFT_TESTS` using `:latest`. This is intentional: the test image is built by OpenShift CI, not by Konflux, so it is not part of the Snapshot and there is no straightforward way to extract a matching version.
+
+Timing parameters can be adjusted by modifying the corresponding constants in the `run-e2e` task script:
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `TRIGGER_DELAY` | 60s | Delay between triggering consecutive jobs |
+| `RATE_LIMIT_BACKOFF` | 120s | Backoff on HTTP 429/5xx responses |
+| `MAX_RETRIES` | 3 | Retry attempts per trigger |
+| `INITIAL_DELAY` | 2700s (45 min) | Wait before first poll (let jobs start) |
+| `POLL_INTERVAL` | 600s (10 min) | Time between poll cycles |
+| `POLL_STAGGER` | 30s | Delay between polling individual jobs |
+| `TIMEOUT` | 14400s (4h) | Maximum total polling time |
+
+The Gangway endpoint URL is exposed as a pipeline parameter (`gangway-url`) with the current production URL as default. This allows updating the endpoint without a code change if the CI cluster migrates (as happened in the `app.ci` to `build0x` migration).
+
+### KubeArchive
+
+Both `notify-slack` and `notify-slack-error` query the KubeArchive REST API to retrieve archived PipelineRun data for stale promotion detection. KubeArchive is a cluster-internal service on stone-prd-rh01 that archives Kubernetes resources after they are garbage-collected. The KubeArchive API URL is exposed as a pipeline parameter (`kubearchive-api-base`) with the current production URL as default, following the same rationale as `gangway-url`.
+
+The pipeline authenticates to KubeArchive using a projected ServiceAccount token (audience: `kubearchive`), which is automatically available to the PipelineRun's SA. No additional secrets or configuration are required.
+
+The query uses the ITS name as a label selector (`test.appstudio.openshift.io/scenario=<ITS_NAME>`), so each managed service's PipelineRun history is tracked independently. This means the stale check works automatically for every service gate with zero additional configuration beyond the optional `stale-threshold-days` parameter (see Stale Promotion Alerting).
+
+### Slack
+
+Both `notify-slack` and `notify-slack-error` send Block Kit payloads to a Slack webhook. Notifications are currently posted to `#forum-ocp-hypershift`. The target channel is determined by the webhook URL stored in the `slack-webhook` Secret in `crt-redhat-acm-tenant`.
+
+When the gate passes, a success notification is sent. When the gate fails, both finally tasks query KubeArchive to check for a failure streak. If the streak meets or exceeds `stale-threshold-days`, a stale promotion alert is sent instead of the standard failure notification. The stale alert includes the failure streak duration, a history of recent PipelineRuns with links and failure reasons, and the configurable threshold. If there is no streak or it is below the threshold, a standard failure notification is sent. See Stale Promotion Alerting for the rationale.
+
+### Release Service
+
+When the gate passes, the `create-release` task creates a Release CR referencing the validated Snapshot and the `ReleasePlan`. The Release Service matches this to a `ReleasePlanAdmission` (RPA) in the `rhtap-releng-tenant` namespace and launches the `rh-push-to-external-registry` managed pipeline. The managed pipeline's `apply-mapping` task pushes the image to Quay with service-prefixed tags. The tag mapping is defined in the RPA, so each service has its own set of tags. For example, the ARO HCP RPA produces:
+
+- `aro-hcp-latest`
+- `aro-hcp-latest-{{ timestamp }}`
+- `aro-hcp-{{ git_sha }}`
+- `aro-hcp-{{ git_short_sha }}`
+
+
+---
+
+## Source: docs/content/reference/ho-release-gating/extending-services.md
+
+# Extending to Other Managed Services
+
+## Common and Reusable Components
+
+The following components are shared across all managed service gates and do not need to be duplicated:
+
+| Component | Location | Notes |
+|-----------|----------|-------|
+| Pipeline YAML | `.tekton/pipelines/ho-release-gate.yaml` | Fully parameterized, service-agnostic |
+| PipelineRun template | `.tekton/pipelines/ho-release-gate-run.yaml` | Referenced by all ITS resources via git resolver |
+| Python modules | `.tekton/lib/` | `http_utils`, `prow_utils`, `slack_utils`, `kubearchive_utils`, `ho_release_gate` |
+| CronJob | `nightly-promotion/cronjob.yaml` | Single CronJob triggers all service gates via `ITS_NAMES` env var; update it to add a new service |
+| Gangway token | `gangway-token` Secret | Shared across all service gates |
+| Slack webhook | `slack-webhook` Secret | Shared across all service gates |
+
+The pipeline accepts all service-specific values as parameters (gate label, test job lists, release plan name), which are injected by the IntegrationTestScenario at runtime.
+
+## Konflux Release Data
+
+The Konflux Release Data repository on GitLab CEE contains the tenant configuration that defines how releases are processed. For each managed service gate, the following manifests must be created:
+
+- **IntegrationTestScenario (ITS)**: defines which pipeline to run and with which parameters
+- **ReleasePlan**: created in the tenant namespace, references the application and target
+- **ReleasePlanAdmission**: created in the releng namespace, authorizes the release and configures the managed pipeline
+
+Some manifests are auto-generated from tenant config. After editing, regenerate them with `cd tenants-config && ./build-single.sh <tenant>` and include the regenerated output in the same MR.
+
+## What Needs to Be Created for a New Service
+
+All resources below are added to the Konflux Release Data repository. The ITS and ReleasePlan are added as new entries in existing YAML files, while the RPA requires its own file in a separate directory (see section 3). Follow the naming convention `hypershift-ho-release-gate-<service>` (or `hypershift-operator-ho-release-gate-<service>` for ReleasePlan) to stay consistent with existing resources.
+
+### 1. IntegrationTestScenario (ITS)
+
+Add a new ITS resource to the existing `its.yaml`. The new resource follows the same structure, changing only the service-specific fields:
+
+```yaml
+---
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  name: hypershift-ho-release-gate-<service>       # unique per service
+spec:
+  application: hypershift-operator
+  contexts:
+    - description: Only run via nightly CronJob trigger
+      name: disabled
+  params:
+    - name: e2e-blocking-job-names                  # service-specific Prow jobs
+      value: '["periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-<service-job>"]'
+    - name: e2e-informing-job-names
+      value: '[]'
+    - name: gate-label                              # shown in Slack notifications
+      value: "<SERVICE NAME>"
+    - name: release-plan-name                       # must match the ReleasePlan name
+      value: "hypershift-operator-ho-release-gate-<service>"
+    - name: stale-threshold-days                    # consecutive failure days before stale alert (default: 3)
+      value: "3"
+  resolverRef:                                      # same for all services
+    params:
+      - name: url
+        value: https://github.com/openshift/hypershift
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: .tekton/pipelines/ho-release-gate-run.yaml
+    resolver: git
+    resourceKind: pipelinerun
+```
+
+Fields to customize per service: `metadata.name`, `e2e-blocking-job-names`, `e2e-informing-job-names`, `gate-label`, `release-plan-name`. The `resolverRef` block is identical for all services.
+
+- `stale-threshold-days` (optional, default `3`): number of consecutive days of gate failures before a stale promotion alert is sent to Slack. Each managed service can set its own threshold based on how quickly a stale image becomes a concern. The stale check runs automatically using the ITS name as a label selector, so no additional configuration is needed. See Stale Promotion Alerting for details.
+
+### 2. ReleasePlan
+
+Add a new ReleasePlan resource to the existing `releaseplan.yaml`. This resource lives in the `crt-redhat-acm-tenant` namespace and links the application to the releng tenant:
+
+```yaml
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlan
+metadata:
+  labels:
+    release.appstudio.openshift.io/auto-release: "false"
+    release.appstudio.openshift.io/releasePlanAdmission: redhat-hypershift-operator-ho-release-gate-<service>  # <- customize
+    release.appstudio.openshift.io/standing-attribution: "true"
+  name: hypershift-operator-ho-release-gate-<service>  # <- customize
+spec:
+  application: hypershift-operator
+  target: rhtap-releng-tenant
+```
+
+Fields to customize per service:
+
+- `metadata.name`: must match the `release-plan-name` param in the ITS
+- `releasePlanAdmission` label: must match the RPA name (see below)
+
+The remaining fields are the same for all services:
+
+- `auto-release: "false"`: releases are created explicitly by the pipeline, not automatically on every Snapshot
+- `standing-attribution: "true"`: allows the Release CR to be created by an attributed SA (`nightly-promotion-sa`)
+
+### 3. ReleasePlanAdmission (RPA)
+
+The RPA lives in a separate directory under the releng namespace configuration. This resource is managed by the releng team but the HyperShift team provides the content. Create a new file named `redhat-hypershift-operator-ho-release-gate-<service>.yaml` following the existing ARO HCP example:
+
+```yaml
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  labels:
+    release.appstudio.openshift.io/block-releases: "false"
+    pp.engineering.redhat.com/business-unit: hybrid-cloud-experience
+  name: redhat-hypershift-operator-ho-release-gate-<service>  # <- customize
+  namespace: rhtap-releng-tenant
+spec:
+  applications:
+    - hypershift-operator
+  origin: crt-redhat-acm-tenant
+  policy: app-interface-standard
+  data:
+    mapping:
+      components:
+        - name: hypershift-operator-main
+          repositories:
+            - url: "quay.io/redhat-services-prod/crt-redhat-acm-tenant/hypershift/hypershift-operator-verified"
+      defaults:
+        tags:                                       # <- customize: service-specific tag prefixes
+          - "<service>-latest"
+          - "<service>-latest-{{ timestamp }}"
+          - "<service>-{{ git_sha }}"
+          - "<service>-{{ git_short_sha }}"
+        pushSourceContainer: false
+    releaseNotes:
+      product_name: ACM Prod Index
+      product_version: "0.1"
+    intention: production
+  pipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: "https://github.com/konflux-ci/release-service-catalog.git"
+        - name: revision
+          value: production
+        - name: pathInRepo
+          value: "pipelines/managed/rh-push-to-external-registry/rh-push-to-external-registry.yaml"
+    serviceAccountName: release-app-interface-prod
+    timeouts:
+      pipeline: "4h0m0s"
+      tasks: "4h0m0s"
+```
+
+Key fields to customize per service:
+
+- `metadata.name`: follows the convention `redhat-hypershift-operator-ho-release-gate-<service>`
+- `data.mapping.defaults.tags`: tag prefixes specific to the service (e.g. `aro-hcp-`, `rosa-`)
+- `data.mapping.components[].repositories[].url`: can point to a different Quay repo if needed. If the repository does not exist, it will be auto-created on the first successful run
+- The `pipeline` block is typically the same for all services (same managed pipeline)
+
+### 4. Register in the CronJob
+
+The CronJob is a shared component (see table above). To enable the new service gate, add the new ITS name to the `ITS_NAMES` environment variable in the existing `cronjob.yaml`:
+
+```yaml
+env:
+  - name: ITS_NAMES
+    value: "hypershift-ho-release-gate-aro-hcp,hypershift-ho-release-gate-<service>"
+```
+
+The value is a plain comma-separated string (no brackets, no quotes around individual names, no spaces). The CronJob iterates over the list and labels the Snapshot for each ITS sequentially.
+
+## Step-by-Step: From Zero to First Gated Release
+
+1. Identify the Prow periodic jobs for the new service
+2. Create a single MR on the Konflux Release Data repository containing:
+    - The new ITS resource (added to `its.yaml`)
+    - The new ReleasePlan (added to `releaseplan.yaml`)
+    - The new ReleasePlanAdmission (new file under the RPA directory)
+    - The CronJob update (new ITS name in `ITS_NAMES`)
+    - Regenerated manifests (`cd tenants-config && ./build-single.sh <tenant>`)
+3. If releng approval is required (e.g. for the RPA), the MR can be advertised in #konflux-users
+4. After merge, wait for the next nightly run or trigger manually (see Operations and Troubleshooting)
+5. Verify the Slack notification shows the new service gate results
+
+
+---
+
+## Source: docs/content/reference/ho-release-gating/extending-tests.md
+
+# Adding or Modifying E2E Tests
+
+This page describes how to add, remove, or reclassify E2E tests for a specific managed service gate. Each managed service has its own IntegrationTestScenario (ITS) with independent test lists, so changes to one service gate do not affect the others.
+
+## Where the Job Lists Live
+
+The E2E test lists are defined as parameters in the ITS resource. Each ITS specifies two JSON arrays:
+
+- `e2e-blocking-job-names`: tests that must pass for the gate to succeed
+- `e2e-informing-job-names`: tests that are reported but do not block promotion
+
+These parameters are injected into the pipeline at runtime by the Integration Service.
+
+The ITS resources are managed via GitOps in the Konflux Release Data repository on GitLab CEE, under:
+
+```
+tenants-config/cluster/stone-prd-rh01/tenants/crt-redhat-acm-tenant/
+  hypershift-operator/nightly-promotion/its.yaml
+```
+
+Each managed service has its own ITS resource in this file, following a consistent naming convention (`hypershift-ho-release-gate-<service>`).
+
+### ITS Structure
+
+The ITS file contains one resource per managed service. Each ITS references the same pipeline but with different parameters:
+
+```yaml
+apiVersion: appstudio.redhat.com/v1beta2
+kind: IntegrationTestScenario
+metadata:
+  name: hypershift-ho-release-gate-aro-hcp       # per-service name
+  namespace: crt-redhat-acm-tenant
+spec:
+  application: hypershift-operator
+  contexts:
+    - name: disabled                              # CronJob-triggered only
+  resolverRef:
+    resolver: git
+    params:
+      - name: url
+        value: https://github.com/openshift/hypershift.git
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: .tekton/pipelines/ho-release-gate-run.yaml
+  params:
+    - name: e2e-blocking-job-names                # <-- edit these lists
+      value: '["periodic-ci-...-e2e-aks",
+               "periodic-ci-...-e2e-aks-upgrade-minor"]'
+    - name: e2e-informing-job-names
+      value: '["periodic-ci-...-e2e-aks-ovn-conformance"]'
+    - name: gate-label
+      value: "ARO HCP"
+    - name: release-plan-name
+      value: "hypershift-operator-ho-release-gate-aro-hcp"
+    - name: stale-threshold-days                    # <-- optional, default 3
+      value: "3"
+```
+
+- `stale-threshold-days` controls how many consecutive days of gate failures must occur before a stale promotion alert is sent. The default is `3`. Adjust per service if needed (e.g. a critical service may use `2`, while a less critical one may tolerate `5`). See Stale Promotion Alerting.
+
+When a new managed service is added, a second ITS resource with the same structure is appended to this file, with its own service-specific job lists, gate label, release plan name, and stale threshold.
+
+## Adding a New Job
+
+To add a new Prow periodic job to a service gate:
+
+1. Ensure the job exists as a Prow periodic in the openshift/release repository
+2. Decide whether the job should be **blocking** or **informing**
+3. Edit the ITS resource for the target service and add the full job name to the appropriate JSON array parameter
+
+## Moving a Job Between Categories
+
+To promote a job from informing to blocking (or demote from blocking to informing):
+
+1. Remove the job name from the source array
+2. Add it to the target array
+3. Submit the change as an MR to the Konflux Release Data repository
+
+## Job Naming Convention
+
+The pipeline expects full Prow periodic job names following the standard OpenShift CI naming convention:
+
+```
+periodic-ci-<org>-<repo>-<branch>-<variant>-<test-name>
+```
+
+For example:
+
+```
+periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-aks
+```
+
+The pipeline automatically strips the common prefix (`periodic-ci-openshift-hypershift-release-4.NN-periodics-`) when displaying results in logs and Slack notifications for readability.
+
+## Verifying the Change
+
+After modifying the test lists:
+
+1. Submit the MR to the Konflux Release Data repository
+2. Wait for the next nightly run, or trigger a manual run (see Operations and Troubleshooting)
+3. Check the Slack notification to verify the new job appears in the results
+4. Inspect the PipelineRun logs to confirm the job was triggered and polled correctly
+
+
+---
+
+## Source: docs/content/reference/ho-release-gating/index.md
+
+# HyperShift Operator Konflux Release Gating
+
+The HyperShift Operator (HO) uses a Konflux-based release gating pipeline to validate nightly builds before promoting them to downstream consumers. A nightly CronJob selects the latest Snapshot, triggers Prow-hosted E2E tests against it, and only promotes the image when all blocking tests pass.
+
+## How It Works
+
+Every night, a CronJob triggers a new HO build in Konflux. Once the build completes and a Snapshot is created, the Integration Service evaluates an IntegrationTestScenario (ITS) that launches the release gating pipeline. The pipeline:
+
+1. Extracts the HO container image from the Snapshot
+2. Triggers blocking and informing E2E tests via Gangway (Prow CI)
+3. Evaluates the test results against the gate criteria
+4. Creates a Release CR if the gate passes, which triggers image promotion
+5. Sends a Slack notification with the outcome
+6. Checks for stale promotion (consecutive days of gate failures) and sends a dedicated alert if the threshold is exceeded
+
+## Documentation Pages
+
+| Page | Description |
+|------|-------------|
+| Release Strategy | Why release gating exists, blocking vs informing tests, gate verdict logic, stale promotion alerting |
+| Architecture | End-to-end flow, RBAC, Tekton pipeline internals, integration points |
+| Adding E2E Tests | How to add, remove, or reclassify E2E tests in the gate |
+| Extending to Other Services | How to set up release gating for a new managed service |
+| Operations and Troubleshooting | Manual triggers, inspecting runs, common failure scenarios |
+
+
+---
+
+## Source: docs/content/reference/ho-release-gating/strategy.md
+
+# Release Strategy and Rationale
+
+## Why Release Gating Exists
+
+The HyperShift Operator is a core component for multiple managed OpenShift services (ARO HCP, ROSA, GCP). A broken operator image reaching production can cause widespread cluster provisioning and management failures.
+
+Release gating adds a validation step between the Konflux build and the downstream promotion: every nightly Snapshot must pass a defined set of E2E tests before the image is promoted to the staging registry. This ensures that only validated images reach managed service environments.
+
+<!-- TODO: add OCPSTRAT link when available -->
+
+## Blocking vs Informing Tests
+
+The pipeline supports two categories of E2E tests:
+
+| Category | Semantics | Effect on Gate |
+|----------|-----------|----------------|
+| **Blocking** | Must pass for promotion | Gate fails if any blocking test fails |
+| **Informing** | Advisory, monitored for trends | Reported in Slack but does not block promotion |
+
+This distinction allows the team to monitor new or experimental tests without risking promotion stability. A test typically starts as informing and graduates to blocking once it has proven stable.
+
+## Gate Verdict Logic
+
+The gate evaluates results as follows:
+
+- **Pass**: all blocking tests passed (informing results are reported but ignored for the verdict)
+- **Fail**: one or more blocking tests failed
+
+## What Happens When the Gate Passes
+
+1. The pipeline creates a **Release CR** referencing the validated Snapshot and the corresponding ReleasePlan
+2. The Konflux **Release Service** picks up the Release CR and triggers a **managed pipeline**
+3. The managed pipeline promotes the HO image to the Quay staging repository
+4. A **Slack notification** is sent with the pass verdict, test results summary, and links to the PipelineRun
+
+## What Happens When the Gate Fails
+
+1. **No Release CR** is created, so no promotion occurs
+2. The `create-release` task exits with a non-zero code, marking the PipelineRun as failed
+3. A **Slack notification** is sent with the failure verdict, identifying which blocking tests failed and including Prow job links for investigation
+
+## Stale Promotion Alerting
+
+A single nightly gate failure is normal and gets fixed quickly. However, if the gate keeps failing for multiple consecutive days, the last successfully promoted image becomes increasingly stale. This can go unnoticed because each individual failure notification looks the same as any other.
+
+Stale promotion alerting solves this by tracking the history of PipelineRun outcomes per managed service and sending a dedicated alert when the number of consecutive failure days reaches a configurable threshold.
+
+### How It Works
+
+When the gate fails, both `notify-slack` and `notify-slack-error` perform the following steps before sending the failure notification:
+
+1. Query the KubeArchive REST API for archived PipelineRuns matching the current ITS label selector
+2. Walk the history from most recent to oldest, counting consecutive failures (a "failure streak")
+3. If the streak spans a number of days equal to or greater than the `stale-threshold-days` parameter, send a stale promotion alert instead of the standard failure notification
+
+The stale alert replaces the normal failure notification. It includes the streak duration in days, a list of recent failed PipelineRuns with dates, failure reasons, and links, and the current threshold value. If there is no streak or the streak is below the threshold, a standard failure notification is sent.
+
+### Per-Service Independence
+
+The stale check is performed independently for each managed service. The pipeline uses the ITS name as a Kubernetes label selector when querying KubeArchive, so each service's PipelineRun history is isolated. This means:
+
+- ARO HCP and ROSA (or any future service) each have their own failure streak, tracked automatically
+- A failure streak in one service does not affect or trigger alerts for another
+- No additional configuration is needed beyond adding the `stale-threshold-days` parameter to the ITS
+
+### Configuration
+
+The stale threshold is configured per service via the `stale-threshold-days` parameter in the IntegrationTestScenario. The default value is `3` (alert after 3 consecutive days of failures). Each service can set its own threshold based on its tolerance for stale images.
+
+See Adding or Modifying E2E Tests and Extending to Other Services for how to configure this parameter in the ITS.
+
+
+---
+
+## Source: docs/content/reference/ho-release-gating/troubleshooting.md
+
+# Operations and Troubleshooting
+
+## Manual Trigger Strategies
+
+There are two ways to manually trigger the release gating pipeline, each with different scope.
+
+### Full CronJob Run (All Service Gates)
+
+This re-runs the entire nightly flow, triggering all managed service gates defined in `ITS_NAMES`:
+
+```bash
+oc create job --from=cronjob/hypershift-operator-nightly-promotion \
+  ho-release-gate-manual-$(date +%s) -n crt-redhat-acm-tenant
+```
+
+Use this when you need to re-validate all services (e.g. after a shared infrastructure fix).
+
+### Snapshot Label (Single Service Gate)
+
+This triggers only one specific ITS, useful for re-testing a single service without affecting others:
+
+```bash
+SNAPSHOT_NAME=$(oc get snapshot -n crt-redhat-acm-tenant \
+  --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}')
+
+oc label snapshot "$SNAPSHOT_NAME" \
+  test.appstudio.openshift.io/scenario=<its-name> \
+  -n crt-redhat-acm-tenant --overwrite
+```
+
+Replace `<its-name>` with the target ITS name, for example `hypershift-ho-release-gate-aro-hcp`. The Integration Service will detect the label and create a new PipelineRun for that ITS only.
+
+### When to Use Which
+
+| Scenario | Strategy |
+|----------|----------|
+| Re-validate all services after an infrastructure change | CronJob |
+| Re-test a single service after fixing a service-specific issue | Snapshot label |
+| Test a new ITS configuration | Snapshot label |
+| Nightly run failed due to a transient error | Snapshot label (for the affected gate) |
+
+## Inspecting a PipelineRun
+
+### Fetching the PipelineRun
+
+List recent release gating PipelineRuns:
+
+```bash
+oc get pipelineruns -n crt-redhat-acm-tenant \
+  --sort-by=.metadata.creationTimestamp | tail -5
+```
+
+### Reading Task Logs
+
+Find the pods for a specific PipelineRun, then read the logs for a specific task step:
+
+```bash
+oc get pods -n crt-redhat-acm-tenant -l tekton.dev/pipelineRun=<pipelinerun-name>
+
+oc logs pod/<pod-name> -c step-<step-name> -n crt-redhat-acm-tenant
+```
+
+!!! warning
+
+    PipelineRun pods are subject to aggressive garbage collection on the Konflux cluster. If the pods have already been deleted, use the Konflux UI instead (see below), where logs are persisted, centralized, and aggregated across all tasks of the pipeline.
+
+### Konflux UI
+
+PipelineRun logs and Release CR status are available in the Konflux PipelineRuns view.
+
+!!! tip
+
+    Use the PipelineRun name from the `oc get pipelineruns` command above to filter the list in the UI.
+
+### Historical PipelineRun Data (KubeArchive)
+
+The `oc get pipelineruns` command only returns PipelineRuns that still exist on the cluster. Due to aggressive garbage collection on stone-prd-rh01, PipelineRuns are deleted shortly after completion. For historical data (e.g. investigating a stale promotion streak or reviewing failures beyond what the Slack notification displays), query the KubeArchive REST API directly:
+
+```bash
+curl -s -H "Authorization: Bearer $(oc whoami -t)" \
+  "https://kubearchive-api-server-product-kubearchive.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/apis/tekton.dev/v1/namespaces/crt-redhat-acm-tenant/pipelineruns?labelSelector=test.appstudio.openshift.io/scenario=<ITS_NAME>" \
+  | python3 -c "
+import json,sys
+data=json.load(sys.stdin)
+for item in data.get('items',[]):
+    name=item['metadata']['name']
+    conds=item.get('status',{}).get('conditions',[])
+    if conds:
+        c=conds[-1]
+        print(f\"{name:50s} status={c.get('status','?'):6s} reason={c.get('reason','?')}\")
+"
+```
+
+!!! note
+
+    The KubeArchive URL in the curl command above corresponds to the default value of the `kubearchive-api-base` pipeline parameter. If the pipeline has been reconfigured to point at a different KubeArchive instance, use that URL instead.
+
+Replace `<ITS_NAME>` with the target service gate name (e.g. `hypershift-ho-release-gate-aro-hcp`). You must be logged in to the stone-prd-rh01 cluster (`oc login`).
+
+The output lists all archived PipelineRuns for that ITS with their completion status and reason. To inspect a specific PipelineRun from the results, build the Konflux UI URL from its name:
+
+```
+https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/<pipelinerun-name>/
+```
+
+This URL provides the full task logs, results, and pipeline visualization even after the PipelineRun has been garbage-collected from the cluster.
+
+## Common Failure Scenarios
+
+### Gangway Token Expired
+
+**Symptom**: `run-e2e` task fails with HTTP 401 errors when triggering Prow jobs.
+
+**Fix**: rotate the `gangway-token` Secret in `crt-redhat-acm-tenant`. The token is a Prow CI cluster OAuth token.
+
+### Slack Webhook 4xx
+
+**Symptom**: `notify-slack` logs show repeated 4xx errors after 3 retries.
+
+**Fix**: verify the webhook URL in the `slack-webhook` Secret is still valid. Slack webhooks can be revoked if the app is reinstalled.
+
+### clone-lib Failure
+
+**Symptom**: `clone-lib` task fails with git errors.
+
+**Common causes**:
+
+- Repository URL or branch changed
+- GitHub rate limiting on unauthenticated git clones
+- Network connectivity from the Konflux cluster
+
+### PVC Issues
+
+**Symptom**: tasks fail with workspace mount errors or permission denied on shared files.
+
+**Common causes**:
+
+- PVC quota exceeded in the tenant namespace
+- Storage class unavailable
+- Stale PVCs from previous failed runs (Konflux garbage-collects these, but delays can occur)
+
+### Prow Job Timeout
+
+**Symptom**: `run-e2e` task reaches its 4-hour polling timeout with jobs still pending.
+
+**Common causes**:
+
+- Prow cluster capacity issues (jobs queued but not scheduled)
+- The E2E test itself is stuck or abnormally slow
+- Gangway API returning stale status
+
+**Mitigation**: check the Prow job directly in the Prow UI using the URL from the `run-e2e` task logs. If the job is stuck, it may need to be manually cancelled in Prow before re-triggering the gate.
+
+### KubeArchive Unreachable
+
+**Symptom**: `notify-slack` or `notify-slack-error` logs show warnings about failing to fetch PipelineRun history from KubeArchive. The gate result notification is still sent, but no stale promotion alert appears.
+
+**Common causes**:
+
+- KubeArchive service is down or restarting on stone-prd-rh01
+- The projected ServiceAccount token has expired or the audience (`kubearchive`) is misconfigured
+- Network policy changes blocking cluster-internal traffic
+
+**Impact**: the stale check is a non-blocking operation. If KubeArchive is unreachable, the pipeline logs a warning and skips the stale alert. The gate verdict and notification are not affected. The stale check will resume automatically on the next run when KubeArchive becomes available again.
+
+### Unexpected Stale Alert
+
+**Symptom**: a stale promotion alert is sent even though the gate has not been failing for long, or the streak count seems wrong.
+
+**Common causes**:
+
+- `stale-threshold-days` is set too low in the ITS (e.g. `1` would alert on the first failure)
+- Test PipelineRuns from integration testing contribute to the real streak history because they are archived with the same ITS label. The streak resets automatically on the first successful nightly run
+- KubeArchive returned incomplete data (e.g. after a data migration or cleanup)
+
 
 ---
 

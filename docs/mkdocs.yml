@@ -97,13 +97,6 @@ nav:
     - 'Documentation Preview': how-to/ci/docs-preview.md
     - 'GitHub Actions Workflows': how-to/ci/github-actions.md
     - 'Sync Community Fork': how-to/ci/sync-community-fork.md
-    - 'HO Konflux Release Gating':
-      - how-to/ci/ho-release-gating/index.md
-      - 'Release Strategy': how-to/ci/ho-release-gating/strategy.md
-      - 'Architecture': how-to/ci/ho-release-gating/architecture.md
-      - 'Adding E2E Tests': how-to/ci/ho-release-gating/extending-tests.md
-      - 'Extending to Other Services': how-to/ci/ho-release-gating/extending-services.md
-      - 'Operations and Troubleshooting': how-to/ci/ho-release-gating/troubleshooting.md
     - 'Triage':
       - how-to/ci/triage/index.md
       - 'Presubmit Failures': how-to/ci/triage/presubmit-failures.md
@@ -406,6 +399,13 @@ nav:
       - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
     - 'GCP / GKE e2e (v2)':
       - reference/test-information-debugging/GCP/test-artifacts-directory-structure.md
+  - 'HO Konflux Release Gating':
+    - reference/ho-release-gating/index.md
+    - 'Release Strategy': reference/ho-release-gating/strategy.md
+    - 'Architecture': reference/ho-release-gating/architecture.md
+    - 'Adding E2E Tests': reference/ho-release-gating/extending-tests.md
+    - 'Extending to Other Services': reference/ho-release-gating/extending-services.md
+    - 'Operations and Troubleshooting': reference/ho-release-gating/troubleshooting.md
   - reference/SLOs.md
   - reference/versioning-support.md
   - reference/service-publishing-strategies.md
