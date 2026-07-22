@@ -159,9 +159,6 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		if port := opts.HTTPSOptions.KonnectivityPort; port != 0 {
 			args = append(args, fmt.Sprintf("--konnectivity-port=%d", port))
 		}
-		if servingPort := opts.HTTPSOptions.ServingPort; servingPort != 0 {
-			args = append(args, fmt.Sprintf("--serving-port=%d", servingPort))
-		}
 		if value := opts.HTTPSOptions.ConnectDirectlyToCloudAPIs; value != nil {
 			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
 		}
@@ -175,9 +172,6 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		}
 		if port := opts.Socks5Options.KonnectivityPort; port != 0 {
 			args = append(args, fmt.Sprintf("--konnectivity-port=%d", port))
-		}
-		if servingPort := opts.Socks5Options.ServingPort; servingPort != 0 {
-			args = append(args, fmt.Sprintf("--serving-port=%d", servingPort))
 		}
 		if value := opts.Socks5Options.ConnectDirectlyToCloudAPIs; value != nil {
 			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
@@ -195,6 +189,8 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 			args = append(args, fmt.Sprintf("--prefer-ipv4=%t", *value))
 		}
 	}
+
+	args = append(args, fmt.Sprintf("--serving-port=%d", opts.servingPort()))
 
 	kubeconfingVolumeName := opts.KubeconfingVolumeName
 	if kubeconfingVolumeName == "" {
@@ -274,6 +270,8 @@ func (opts KonnectivityContainerOptions) servingPort() uint32 {
 		if opts.Socks5Options.ServingPort != 0 {
 			return opts.Socks5Options.ServingPort
 		}
+	default:
+		return defaultKonnectivityServingPort
 	}
 	return defaultKonnectivityServingPort
 }
