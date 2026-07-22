@@ -835,3 +835,88 @@ func TestSetDefaultOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestSetDefaultOptionsNodeSelector(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	tests := []struct {
+		name                 string
+		hcpNodeSelector      map[string]string
+		templateNodeSelector map[string]string
+		expectedNodeSelector map[string]string
+	}{
+		{
+			name:                 "When HCP nodeSelector is set and template has no nodeSelector, it should apply HCP nodeSelector",
+			hcpNodeSelector:      map[string]string{"node-role": "infra"},
+			expectedNodeSelector: map[string]string{"node-role": "infra"},
+		},
+		{
+			name:                 "When HCP nodeSelector is nil and template has a nodeSelector, it should preserve the template nodeSelector",
+			hcpNodeSelector:      nil,
+			templateNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+			expectedNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+		},
+		{
+			name:                 "When HCP nodeSelector is nil and template has no nodeSelector, it should remain nil",
+			hcpNodeSelector:      nil,
+			templateNodeSelector: nil,
+			expectedNodeSelector: nil,
+		},
+		{
+			name:                 "When HCP nodeSelector is an empty map and template has a nodeSelector, it should preserve the template nodeSelector",
+			hcpNodeSelector:      map[string]string{},
+			templateNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+			expectedNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+		},
+		{
+			name:                 "When both HCP and template have nodeSelectors, it should merge them with HCP entries added",
+			hcpNodeSelector:      map[string]string{"node-role": "infra"},
+			templateNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+			expectedNodeSelector: map[string]string{"kubernetes.io/os": "linux", "node-role": "infra"},
+		},
+		{
+			name:                 "When HCP and template have overlapping keys, HCP value should take precedence",
+			hcpNodeSelector:      map[string]string{"kubernetes.io/os": "windows"},
+			templateNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+			expectedNodeSelector: map[string]string{"kubernetes.io/os": "windows"},
+		},
+		{
+			name:                 "When HCP nodeSelector is removed after being set, template nodeSelector should be preserved",
+			hcpNodeSelector:      nil,
+			templateNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+			expectedNodeSelector: map[string]string{"kubernetes.io/os": "linux"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			cpw := &controlPlaneWorkload[*appsv1.Deployment]{
+				name:             "test-component",
+				workloadProvider: &deploymentProvider{},
+				ComponentOptions: &testComponent{},
+			}
+			dep := &appsv1.Deployment{}
+			dep.Spec.Template.Spec.NodeSelector = tt.templateNodeSelector
+
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					NodeSelector: tt.hcpNodeSelector,
+				},
+			}
+			err := cpw.setDefaultOptions(ControlPlaneContext{
+				HCP:    hcp,
+				Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
+			}, dep, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			if tt.expectedNodeSelector == nil {
+				g.Expect(dep.Spec.Template.Spec.NodeSelector).To(BeNil())
+			} else {
+				g.Expect(dep.Spec.Template.Spec.NodeSelector).To(Equal(tt.expectedNodeSelector))
+			}
+		})
+	}
+}

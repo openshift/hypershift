@@ -165,10 +165,18 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 
 	// set PriorityClassName
 	podTemplateSpec.Spec.PriorityClassName = priorityClass(c.Name(), hcp)
-	// setNodeSelector sets a nodeSelector passed through the API.
-	// This is useful to e.g ensure control plane pods land in management cluster Infra Nodes.
+	// Merge HCP nodeSelector on top of the template's existing nodeSelector.
+	// This preserves entries from component YAML templates (e.g., kubernetes.io/os: linux)
+	// while allowing the HCP spec to add additional selectors. When hcp.Spec.NodeSelector
+	// is nil, only the template entries remain, so removing nodeSelector from the HCP
+	// correctly removes HCP-added entries without wiping template-defined entries.
+	// Removal is detected by ApplyManifest via getNodeSelectorCount, because the template
+	// is loaded fresh each reconciliation.
 	if hcp.Spec.NodeSelector != nil {
-		podTemplateSpec.Spec.NodeSelector = hcp.Spec.NodeSelector
+		if podTemplateSpec.Spec.NodeSelector == nil {
+			podTemplateSpec.Spec.NodeSelector = make(map[string]string)
+		}
+		maps.Copy(podTemplateSpec.Spec.NodeSelector, hcp.Spec.NodeSelector)
 	}
 
 	c.setLabels(podTemplateSpec, hcp)
