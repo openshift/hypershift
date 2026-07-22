@@ -413,8 +413,8 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
 
-	targetConfigHash := token.HashWithoutVersion()
-	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	targetConfigHash := token.RolloutHashWithoutVersion()
+	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		reason := hyperv1.AsExpectedReason
