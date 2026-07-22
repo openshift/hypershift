@@ -191,12 +191,12 @@ func (r *Reconciler) AdmitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.Hos
 				return fmt.Errorf("failed to update route %s status: %w", route.Name, err)
 			}
 		}
-		if route.Annotations[netutil.RouteStatusWriterAnnotation] != "hcp-router" {
+		if route.Annotations[util.RouteStatusWriterAnnotation] != "hcp-router" {
 			routeBeforeAnnotation := route.DeepCopy()
 			if route.Annotations == nil {
 				route.Annotations = map[string]string{}
 			}
-			route.Annotations[netutil.RouteStatusWriterAnnotation] = "hcp-router"
+			route.Annotations[util.RouteStatusWriterAnnotation] = "hcp-router"
 			if err := r.Client.Patch(ctx, route, client.MergeFrom(routeBeforeAnnotation)); err != nil {
 				return fmt.Errorf("failed to update route %s status-writer annotation: %w", route.Name, err)
 			}

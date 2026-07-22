@@ -15,7 +15,7 @@ import (
 
 // GetHealthcheckEndpoint determines the appropriate endpoint and port for healthcheck based on the route and configuration
 func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.HostedControlPlane) (endpoint string, port int, err error) {
-	statusWriter := externalRoute.Annotations[netutil.RouteStatusWriterAnnotation]
+	statusWriter := externalRoute.Annotations[util.RouteStatusWriterAnnotation]
 	if statusWriter == "" {
 		statusWriter = "(none)"
 	}
