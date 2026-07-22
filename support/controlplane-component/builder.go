@@ -118,6 +118,14 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts Ser
 	return b
 }
 
+// WithPostReconcileFunc sets a function that runs after the main workload reconciliation.
+// Unlike adapt functions which receive a read-only WorkloadContext, this receives a ControlPlaneContext
+// with a write-capable client. Use for managing operand resources created by the component's operator at runtime.
+func (b *controlPlaneWorkloadBuilder[T]) WithPostReconcileFunc(fn func(cpContext ControlPlaneContext) error) *controlPlaneWorkloadBuilder[T] {
+	b.workload.postReconcile = fn
+	return b
+}
+
 // WithCustomOperandsRolloutCheckFunc allows to set a custom function to check the rollout status of operands.
 // This function should return true if the operands are ready, false otherwise.
 // TODO: This is a temporary solution, should be replaced by MonitorOperandsRolloutStatus() once we enforce a common label/annotation on all operands to provide more generic rollout check.

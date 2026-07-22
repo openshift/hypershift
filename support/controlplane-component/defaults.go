@@ -222,15 +222,11 @@ func (c *controlPlaneWorkload[T]) setLabels(podTemplate *corev1.PodTemplateSpec,
 	maps.Copy(podTemplate.Labels, hcp.Spec.Labels)
 }
 
-// setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.
-func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
-	isolateAsRequestServing := false
-	if c.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
-		isolateAsRequestServing = true
-	}
-
-	// set Tolerations
-	podTemplate.Spec.Tolerations = []corev1.Toleration{
+// ControlPlaneTolerations returns the base control plane tolerations for an HCP plus any
+// user-specified tolerations from hcp.Spec.Tolerations. Use this for operand deployments
+// that run in the HCP namespace but are not directly managed by the CPOv2 framework.
+func ControlPlaneTolerations(hcp *hyperv1.HostedControlPlane) []corev1.Toleration {
+	tolerations := []corev1.Toleration{
 		{
 			Key:      controlPlaneLabelTolerationKey,
 			Operator: corev1.TolerationOpEqual,
@@ -244,6 +240,21 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
 	}
+	if len(hcp.Spec.Tolerations) != 0 {
+		tolerations = append(tolerations, hcp.Spec.Tolerations...)
+	}
+	return tolerations
+}
+
+// setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.
+func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
+	isolateAsRequestServing := false
+	if c.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
+		isolateAsRequestServing = true
+	}
+
+	// set Tolerations
+	podTemplate.Spec.Tolerations = ControlPlaneTolerations(hcp)
 	if isolateAsRequestServing {
 		podTemplate.Spec.Tolerations = append(podTemplate.Spec.Tolerations, corev1.Toleration{
 			Key:      hyperv1.RequestServingComponentLabel,
@@ -251,10 +262,6 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 			Value:    "true",
 			Effect:   corev1.TaintEffectNoSchedule,
 		})
-	}
-	// set additional Tolerations
-	if len(hcp.Spec.Tolerations) != 0 {
-		podTemplate.Spec.Tolerations = append(podTemplate.Spec.Tolerations, hcp.Spec.Tolerations...)
 	}
 
 	// set Affinity

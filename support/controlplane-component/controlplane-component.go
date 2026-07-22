@@ -159,6 +159,10 @@ type controlPlaneWorkload[T client.Object] struct {
 
 	customOperandsRolloutCheck   func(cpContext WorkloadContext) (bool, error)
 	monitorOperandsRolloutStatus bool
+
+	// postReconcile runs after the main workload reconciliation with a write-capable client.
+	// Use for patching operand resources that are created by the component's operator at runtime.
+	postReconcile func(cpContext ControlPlaneContext) error
 }
 
 // AssetDirName returns the asset directory name for loading manifests.
@@ -330,7 +334,14 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 		}
 	}
 
-	return c.reconcileWorkload(cpContext)
+	if err := c.reconcileWorkload(cpContext); err != nil {
+		return err
+	}
+
+	if c.postReconcile != nil {
+		return c.postReconcile(cpContext)
+	}
+	return nil
 }
 
 func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContext) error {
