@@ -1903,11 +1903,16 @@ func (r *HostedControlPlaneReconciler) getRootCATrustSources(ctx context.Context
 
 	var namedCertSecrets []*corev1.Secret
 	for _, namedCert := range hcp.Spec.Configuration.GetNamedCertificates() {
+		if namedCert.ServingCertificate.Name == "" {
+			continue
+		}
 		secret := &corev1.Secret{}
 		if err := r.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: namedCert.ServingCertificate.Name}, secret); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return nil, nil, fmt.Errorf("failed to get named certificate secret %s: %w", namedCert.ServingCertificate.Name, err)
 			}
+			log := ctrl.LoggerFrom(ctx)
+			log.Info("Named certificate secret not found, skipping for root CA trust bundle", "secret", namedCert.ServingCertificate.Name)
 			continue
 		}
 		namedCertSecrets = append(namedCertSecrets, secret)
@@ -1928,7 +1933,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 
 	observedDefaultIngressCert, namedCertSecrets, err := r.getRootCATrustSources(ctx, hcp)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get root CA trust sources: %w", err)
 	}
 
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)

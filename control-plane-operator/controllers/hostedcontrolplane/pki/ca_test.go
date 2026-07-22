@@ -3,6 +3,8 @@ package pki
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 
@@ -11,6 +13,8 @@ import (
 )
 
 func TestReconcileRootCAConfigMap(t *testing.T) {
+	t.Parallel()
+
 	ownerRef := config.OwnerRef{}
 
 	rootCASecret := &corev1.Secret{
@@ -86,6 +90,22 @@ func TestReconcileRootCAConfigMap(t *testing.T) {
 			expectedCACert: "root-ca-cert\nnamed-cert-1",
 		},
 		{
+			name: "When a named cert has no tls.crt key, it should skip it",
+			namedCertSecrets: []*corev1.Secret{
+				{
+					Data: map[string][]byte{
+						corev1.TLSCertKey: []byte("named-cert-1"),
+					},
+				},
+				{
+					Data: map[string][]byte{
+						"other-key": []byte("some-data"),
+					},
+				},
+			},
+			expectedCACert: "root-ca-cert\nnamed-cert-1",
+		},
+		{
 			name: "When ingress cert and named certs are both configured, it should include all",
 			observedDefaultIngressCert: &corev1.ConfigMap{
 				Data: map[string]string{
@@ -105,6 +125,9 @@ func TestReconcileRootCAConfigMap(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "root-ca",
@@ -113,14 +136,8 @@ func TestReconcileRootCAConfigMap(t *testing.T) {
 			}
 
 			err := ReconcileRootCAConfigMap(cm, ownerRef, rootCASecret, tc.observedDefaultIngressCert, tc.namedCertSecrets)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			got := cm.Data[certs.CASignerCertMapKey]
-			if got != tc.expectedCACert {
-				t.Errorf("expected ca.crt:\n%q\ngot:\n%q", tc.expectedCACert, got)
-			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(cm.Data[certs.CASignerCertMapKey]).To(Equal(tc.expectedCACert))
 		})
 	}
 }
