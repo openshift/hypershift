@@ -2169,10 +2169,10 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		})
 
 		t.Run("Wait for critical DaemonSets to be ready - first check", func(t *testing.T) {
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)
+			waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)
 			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
+			waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)
 		})
 
 		// Create a pod which uses the restricted image, should fail
@@ -2211,10 +2211,10 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		})
 
 		t.Run("Wait for critical DaemonSets to be ready - second check", func(t *testing.T) {
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)
+			waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)
 			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
+			waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)
 		})
 
 		// Check if we can run a pod with the restricted image
@@ -2249,7 +2249,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		// Wait for all DaemonSets to be ready after nodes stabilize
 		t.Run("Wait for pull secret synchronization to stabilize across all nodes", func(t *testing.T) {
 			t.Log("Waiting for GlobalPullSecretDaemonSet to process the deletion and stabilize all nodes")
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)
 		})
 
 		// Check if the config.json is updated in all of the nodes
@@ -2280,54 +2280,54 @@ func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client
 
 // waitForDaemonSetReady waits for a DaemonSet to have all pods ready.
 // minExpected is a sanity check to ensure we don't succeed when DesiredNumberScheduled is temporarily 0.
-func waitForDaemonSetReady(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32) error {
-	t.Logf("Waiting for %s DaemonSet to be ready (min expected: %d)", name, minExpected)
+func waitForDaemonSetReady(t *testing.T, ctx context.Context, c crclient.Client, name, namespace string, minExpected int32) {
+	t.Helper()
+	EventuallyObject(t, ctx, fmt.Sprintf("DaemonSet %s/%s to be ready", namespace, name),
+		func(ctx context.Context) (*appsv1.DaemonSet, error) {
+			ds := &appsv1.DaemonSet{}
+			err := c.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds)
+			return ds, err
+		},
+		[]Predicate[*appsv1.DaemonSet]{
+			daemonSetGenerationObserved(),
+			daemonSetDesiredScheduled(minExpected),
+			daemonSetAllUpdatedAndReady(),
+		},
+		WithTimeout(20*time.Minute),
+	)
+}
 
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		daemonSet := &appsv1.DaemonSet{}
-		err = client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, daemonSet)
-		if err != nil {
-			t.Logf("Failed to get DaemonSet %s: %v", name, err)
-			return false, nil
+// daemonSetGenerationObserved checks that the DaemonSet status has observed the current generation.
+func daemonSetGenerationObserved() Predicate[*appsv1.DaemonSet] {
+	return func(ds *appsv1.DaemonSet) (bool, string, error) {
+		if ds.Status.ObservedGeneration < ds.Generation {
+			return false, fmt.Sprintf("generation %d not yet observed (current %d)", ds.Generation, ds.Status.ObservedGeneration), nil
 		}
-
-		if daemonSet.Status.ObservedGeneration < daemonSet.Generation {
-			t.Logf("DaemonSet %s status has not observed generation %d yet (current %d)", name, daemonSet.Generation, daemonSet.Status.ObservedGeneration)
-			return false, nil
-		}
-
-		desired := daemonSet.Status.DesiredNumberScheduled
-		ready := daemonSet.Status.NumberReady
-
-		// Ensure we have at least the minimum expected nodes
-		if desired < minExpected {
-			t.Logf("DaemonSet %s: desired=%d < minExpected=%d, waiting for nodes", name, desired, minExpected)
-			return false, nil
-		}
-
-		// Wait for rollout to complete (all pods updated with latest template)
-		updated := daemonSet.Status.UpdatedNumberScheduled
-		if updated != desired {
-			t.Logf("DaemonSet %s rollout in progress: %d/%d pods updated", name, updated, desired)
-			return false, nil
-		}
-
-		// Wait for all desired pods to be ready
-		if ready != desired {
-			t.Logf("DaemonSet %s not ready: %d/%d pods ready", name, ready, desired)
-			return false, nil
-		}
-
-		t.Logf("DaemonSet %s ready: %d/%d pods (all updated)", name, ready, desired)
-		return true, nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", name, err)
+		return true, "", nil
 	}
+}
 
-	t.Logf("✓ %s DaemonSet is ready", name)
-	return nil
+// daemonSetDesiredScheduled checks that at least minExpected pods are desired.
+func daemonSetDesiredScheduled(minExpected int32) Predicate[*appsv1.DaemonSet] {
+	return func(ds *appsv1.DaemonSet) (bool, string, error) {
+		if ds.Status.DesiredNumberScheduled < minExpected {
+			return false, fmt.Sprintf("desired=%d < minExpected=%d", ds.Status.DesiredNumberScheduled, minExpected), nil
+		}
+		return true, "", nil
+	}
+}
+
+// daemonSetAllUpdatedAndReady checks that all pods are updated and ready.
+func daemonSetAllUpdatedAndReady() Predicate[*appsv1.DaemonSet] {
+	return func(ds *appsv1.DaemonSet) (bool, string, error) {
+		desired := ds.Status.DesiredNumberScheduled
+		updated := ds.Status.UpdatedNumberScheduled
+		ready := ds.Status.NumberReady
+		if updated != desired || ready != desired {
+			return false, fmt.Sprintf("%d/%d updated, %d/%d ready", updated, desired, ready, desired), nil
+		}
+		return true, "", nil
+	}
 }
 
 func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
