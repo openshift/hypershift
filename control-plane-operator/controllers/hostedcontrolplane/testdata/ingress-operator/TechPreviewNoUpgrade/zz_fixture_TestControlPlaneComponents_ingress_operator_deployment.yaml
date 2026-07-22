@@ -113,6 +113,7 @@ spec:
       - args:
         - run
         - --connect-directly-to-cloud-apis=true
+        - --serving-port=8090
         command:
         - /usr/bin/control-plane-operator
         - konnectivity-https-proxy
@@ -121,6 +122,11 @@ spec:
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
         name: konnectivity-proxy-https
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          tcpSocket:
+            port: 8090
         resources:
           requests:
             cpu: 10m
