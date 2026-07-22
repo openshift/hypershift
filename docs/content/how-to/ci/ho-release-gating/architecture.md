@@ -164,7 +164,7 @@ flowchart LR
     style KA stroke-dasharray: 5 5
 ```
 
-`notify-slack` and `notify-slack-error` are `finally` tasks that are mutually exclusive. Tekton skips a finally task whose parameter bindings reference results from a task that was skipped (unresolved results). `notify-slack` binds parameters to results of `create-release`, `evaluate-results`, and `extract-image`, so it fires only when all of them ran. `notify-slack-error` uses a `when` clause (`create-release.status == None`) and fires when `create-release` was skipped, meaning a task before `evaluate-results` failed. Both finally tasks query KubeArchive for historical PipelineRun data and check for stale promotion streaks.
+`notify-slack` and `notify-slack-error` are `finally` tasks that are mutually exclusive. Tekton skips a finally task whose parameter bindings reference results from a task that was skipped (unresolved results). `notify-slack` binds parameters to results of `create-release`, `evaluate-results`, and `extract-image`, so it fires only when all of them ran. `notify-slack-error` uses a `when` clause (`create-release.status == None`) and fires when `create-release` was skipped or never reached (either because the gate failed and `create-release` exited non-zero, or because an earlier DAG task crashed before reaching it). Both finally tasks query KubeArchive for historical PipelineRun data and check for stale promotion streaks.
 
 The per-job results JSON produced by `run-e2e` is written to a file on the shared workspace (`results.json`) rather than to a Tekton task result. This is a deliberate choice: Tekton task results have a hard 4 KB size limit, which can be exceeded when the pipeline runs many blocking and informing jobs, each carrying a full Prow URL. Both `evaluate-results` and `notify-slack` read the results directly from the workspace file.
 
@@ -204,7 +204,7 @@ This avoids embedding library code in the pipeline YAML and allows updating the 
 
 All pipeline task steps use the `appstudio-utils` container image provided by Konflux. Container image references in the pipeline YAML must follow the **tag+digest** pinning convention:
 
-```
+```text
 quay.io/konflux-ci/appstudio-utils:latest@sha256:<digest>
 ```
 

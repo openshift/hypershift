@@ -27,7 +27,7 @@ Some manifests are auto-generated from tenant config. After editing, regenerate 
 
 ## What Needs to Be Created for a New Service
 
-All resources below are added to existing YAML files in the [Konflux Release Data](https://gitlab.cee.redhat.com/releng/konflux-release-data) repository, not created as new files. Follow the naming convention `hypershift-ho-release-gate-<service>` (or `hypershift-operator-ho-release-gate-<service>` for ReleasePlan) to stay consistent with existing resources.
+All resources below are added to the [Konflux Release Data](https://gitlab.cee.redhat.com/releng/konflux-release-data) repository. The ITS and ReleasePlan are added as new entries in existing YAML files, while the RPA requires its own file in a separate directory (see section 3). Follow the naming convention `hypershift-ho-release-gate-<service>` (or `hypershift-operator-ho-release-gate-<service>` for ReleasePlan) to stay consistent with existing resources.
 
 ### 1. IntegrationTestScenario (ITS)
 
