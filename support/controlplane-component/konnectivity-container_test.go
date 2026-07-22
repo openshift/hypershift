@@ -149,18 +149,18 @@ func TestBuildContainerReadinessProbe(t *testing.T) {
 		expectedPort int32
 	}{
 		{
-			name: "When HTTPS mode uses default serving port, it should set readiness probe on port 8090",
+			name: "When HTTPS mode uses default serving port, it should set readiness probe on default port",
 			opts: KonnectivityContainerOptions{
 				Mode: HTTPS,
 			},
-			expectedPort: 8090,
+			expectedPort: int32(defaultKonnectivityServingPort),
 		},
 		{
-			name: "When Socks5 mode uses default serving port, it should set readiness probe on port 8090",
+			name: "When Socks5 mode uses default serving port, it should set readiness probe on default port",
 			opts: KonnectivityContainerOptions{
 				Mode: Socks5,
 			},
-			expectedPort: 8090,
+			expectedPort: int32(defaultKonnectivityServingPort),
 		},
 		{
 			name: "When HTTPS mode uses custom serving port, it should set readiness probe on that port",
@@ -232,4 +232,40 @@ func TestBuildContainerDualMode(t *testing.T) {
 		"Socks5 container should not have HTTP_PROXY because ConnectDirectlyToCloudAPIs is not set on Socks5Options")
 	g.Expect(findEnvVar(socks5Container.Env, "HTTPS_PROXY")).To(BeNil(),
 		"Socks5 container should not have HTTPS_PROXY")
+
+	g.Expect(httpsContainer.ReadinessProbe).NotTo(BeNil(), "HTTPS container should have ReadinessProbe")
+	g.Expect(httpsContainer.ReadinessProbe.TCPSocket).NotTo(BeNil())
+	g.Expect(httpsContainer.ReadinessProbe.TCPSocket.Port).To(Equal(intstr.FromInt32(int32(defaultKonnectivityServingPort))),
+		"HTTPS container should probe default port when no ServingPort is set on HTTPSOptions")
+
+	g.Expect(socks5Container.ReadinessProbe).NotTo(BeNil(), "Socks5 container should have ReadinessProbe")
+	g.Expect(socks5Container.ReadinessProbe.TCPSocket).NotTo(BeNil())
+	g.Expect(socks5Container.ReadinessProbe.TCPSocket.Port).To(Equal(intstr.FromInt32(int32(defaultKonnectivityServingPort))),
+		"Socks5 container should probe default port when no ServingPort is set on Socks5Options")
+}
+
+func TestBuildContainerDualModeCustomPorts(t *testing.T) {
+	g := NewGomegaWithT(t)
+	hcp := &hyperv1.HostedControlPlane{}
+
+	opts := KonnectivityContainerOptions{
+		Mode: Dual,
+		HTTPSOptions: HTTPSOptions{
+			ServingPort: 8092,
+		},
+	}
+
+	opts.Mode = HTTPS
+	httpsContainer := opts.buildContainer(hcp, "test-image:latest", nil)
+
+	opts.Mode = Socks5
+	socks5Container := opts.buildContainer(hcp, "test-image:latest", nil)
+
+	g.Expect(httpsContainer.ReadinessProbe).NotTo(BeNil())
+	g.Expect(httpsContainer.ReadinessProbe.TCPSocket.Port).To(Equal(intstr.FromInt32(8092)),
+		"HTTPS container should probe custom port")
+
+	g.Expect(socks5Container.ReadinessProbe).NotTo(BeNil())
+	g.Expect(socks5Container.ReadinessProbe.TCPSocket.Port).To(Equal(intstr.FromInt32(int32(defaultKonnectivityServingPort))),
+		"Socks5 container should probe default port when no custom port is set")
 }
