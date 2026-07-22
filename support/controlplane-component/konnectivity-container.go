@@ -14,6 +14,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
@@ -25,6 +26,8 @@ const (
 
 	// Dual mode will inject 2 konnectivity containers, one using HTTPS mode and the other using Socks5 mode.
 	Dual ProxyMode = "dual"
+
+	defaultKonnectivityServingPort uint32 = 8090
 )
 
 type KonnectivityContainerOptions struct {
@@ -210,6 +213,15 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 				corev1.ResourceMemory: resource.MustParse("30Mi"),
 			},
 		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt32(int32(opts.servingPort())),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       5,
+		},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
 			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",
@@ -250,6 +262,20 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 	}
 
 	return container
+}
+
+func (opts KonnectivityContainerOptions) servingPort() uint32 {
+	switch opts.Mode {
+	case HTTPS:
+		if opts.HTTPSOptions.ServingPort != 0 {
+			return opts.HTTPSOptions.ServingPort
+		}
+	case Socks5:
+		if opts.Socks5Options.ServingPort != 0 {
+			return opts.Socks5Options.ServingPort
+		}
+	}
+	return defaultKonnectivityServingPort
 }
 
 func (opts KonnectivityContainerOptions) connectsDirectlyToCloudAPIs() bool {
