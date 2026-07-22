@@ -22,26 +22,26 @@ func TestDoesServiceHaveServiceCAAnnotation(t *testing.T) {
 		expected    bool
 	}{
 		{
-			name:        "no annotations",
+			name:        "When service has no annotations, it should return false",
 			annotations: nil,
 			expected:    false,
 		},
 		{
-			name: "beta annotation present, no error",
+			name: "When beta cert annotation is present without error, it should return true",
 			annotations: map[string]string{
 				servingCertSecretNameBeta: "my-cert",
 			},
 			expected: true,
 		},
 		{
-			name: "alpha annotation present, no error",
+			name: "When alpha cert annotation is present without error, it should return true",
 			annotations: map[string]string{
 				servingCertSecretNameAlpha: "my-cert",
 			},
 			expected: true,
 		},
 		{
-			name: "beta annotation present with beta generation error",
+			name: "When beta cert annotation is present with beta generation error, it should return false",
 			annotations: map[string]string{
 				servingCertSecretNameBeta: "my-cert",
 				servingCertGenErrorBeta:   "secret does not have corresponding service UID",
@@ -49,7 +49,7 @@ func TestDoesServiceHaveServiceCAAnnotation(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "alpha annotation present with alpha generation error",
+			name: "When alpha cert annotation is present with alpha generation error, it should return false",
 			annotations: map[string]string{
 				servingCertSecretNameAlpha: "my-cert",
 				servingCertGenErrorAlpha:   "secret does not have corresponding service UID",
@@ -57,7 +57,7 @@ func TestDoesServiceHaveServiceCAAnnotation(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "beta annotation present with alpha generation error",
+			name: "When beta cert annotation is present with alpha generation error, it should return false",
 			annotations: map[string]string{
 				servingCertSecretNameBeta: "my-cert",
 				servingCertGenErrorAlpha:  "UID mismatch",
@@ -65,21 +65,21 @@ func TestDoesServiceHaveServiceCAAnnotation(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "only generation error, no cert annotation",
+			name: "When only generation error annotation is present without cert annotation, it should return false",
 			annotations: map[string]string{
 				servingCertGenErrorBeta: "some error",
 			},
 			expected: false,
 		},
 		{
-			name: "unrelated annotations only",
+			name: "When service has only unrelated annotations, it should return false",
 			annotations: map[string]string{
 				"app.kubernetes.io/name": "test",
 			},
 			expected: false,
 		},
 		{
-			name: "generation error num only triggers false",
+			name: "When beta cert annotation is present with generation error num only, it should return false",
 			annotations: map[string]string{
 				servingCertSecretNameBeta:   "my-cert",
 				servingCertGenErrorNumAlpha: "3",
@@ -125,7 +125,7 @@ func TestRemoveServiceCAAnnotationAndSecret(t *testing.T) {
 		wantSecretDeleted        bool
 	}{
 		{
-			name: "removes all service-ca annotations in one batch",
+			name: "When all service-ca annotations are present, it should remove them in one batch",
 			serviceAnnotations: map[string]string{
 				servingCertSecretNameBeta:   "my-cert",
 				servingCertGenErrorBeta:     "UID mismatch",
@@ -153,7 +153,7 @@ func TestRemoveServiceCAAnnotationAndSecret(t *testing.T) {
 			wantSecretDeleted: true,
 		},
 		{
-			name: "no annotations to remove, no secret",
+			name: "When service has no service-ca annotations and no secret, it should leave annotations unchanged",
 			serviceAnnotations: map[string]string{
 				"app.kubernetes.io/name": "keep-me",
 			},
@@ -164,7 +164,7 @@ func TestRemoveServiceCAAnnotationAndSecret(t *testing.T) {
 			wantSecretDeleted: false,
 		},
 		{
-			name: "only error annotations present",
+			name: "When only error annotations are present, it should remove them",
 			serviceAnnotations: map[string]string{
 				servingCertGenErrorBeta:    "some error",
 				servingCertGenErrorNumBeta: "3",
@@ -177,7 +177,7 @@ func TestRemoveServiceCAAnnotationAndSecret(t *testing.T) {
 			wantSecretDeleted: false,
 		},
 		{
-			name: "secret without originating-service annotation is not deleted",
+			name: "When secret lacks originating-service annotation, it should not delete the secret",
 			serviceAnnotations: map[string]string{
 				servingCertSecretNameBeta: "my-cert",
 			},
