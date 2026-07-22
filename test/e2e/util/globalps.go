@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -14,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,30 +27,17 @@ const (
 	NodePullSecretPath                 = "/var/lib/kubelet/config.json"
 )
 
-// CreateKubeletConfigVerifierDaemonSet creates a DaemonSet that verifies the config.json file
-// on all nodes of the cluster, comparing it with the cluster's pull secret.
+// CreateKubeletConfigVerifierDaemonSet creates a DaemonSet that mounts the
+// kubelet config directory on each node and uses a readiness probe to compare
+// the on-disk pull secret against the cluster's original-pull-secret.
+// The DS mounts kube-system/original-pull-secret — the same secret the
+// global-pull-secret-syncer uses as its source — so it tracks the live
+// feature state instead of a point-in-time snapshot.
 // Stale resources from a previous failed run are cleaned up before creation.
 func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crclient.Client, dsImage string) error {
-	// Get the cluster's pull secret for comparison
-	pullSecret := &corev1.Secret{}
-	if err := guestClient.Get(ctx, crclient.ObjectKey{Name: "pull-secret", Namespace: "openshift-config"}, pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret: %w", err)
-	}
-
-	newPullSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pull-secret",
-			Namespace: KubeletConfigVerifierNamespace,
-		},
-		Type: corev1.SecretTypeDockerConfigJson,
-		Data: pullSecret.Data,
-	}
-
-	// replicate pull secret in kube-system namespace
-	if err := guestClient.Create(ctx, newPullSecret); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return fmt.Errorf("failed to create pull secret: %w", err)
-		}
+	originalPS := hccomanifests.OriginalPullSecret()
+	if err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(originalPS), originalPS); err != nil {
+		return fmt.Errorf("failed to get %s/%s: %w", originalPS.Namespace, originalPS.Name, err)
 	}
 
 	// Clean up any stale DaemonSet left by a previous failed run
@@ -88,73 +77,24 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 							Name:            KubeletConfigVerifierDaemonSetName,
 							Image:           dsImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							Command: []string{
-								"/bin/sh", "-c",
-							},
-							Args: []string{
-								fmt.Sprintf(`
-									echo "Starting pull secret verification..."
-									echo "Checking node path: %s"
-									echo "Checking cluster pull secret path: /etc/pull-secret/config.json"
-
-									# Check 1: Verify that the pull secret exists on the node
-									if [ ! -f %s ]; then
-										echo "ERROR: Pull secret does not exist at %s"
-										exit 1
-									fi
-
-									echo "SUCCESS: Pull secret file exists at %s"
-									echo "File size: $(stat -c%%s %s 2>/dev/null || stat -f%%z %s 2>/dev/null) bytes"
-
-									# Verify that the file contains valid JSON structure (basic check)
-									if ! grep -q '"auths"' %s; then
-										echo "ERROR: config.json does not contain 'auths' field"
-										echo "File content (first 500 chars):"
-										head -c 500 %s || echo "Cannot read file"
-										exit 1
-									fi
-
-									echo "SUCCESS: config.json contains 'auths' field"
-
-									# Check 2: Compare if both pull secrets are equal
-									if [ -f /etc/pull-secret/config.json ]; then
-										echo "Cluster pull secret exists, comparing files..."
-
-										# Get MD5 hashes of both files
-										node_hash=$(md5sum %s 2>/dev/null | cut -d' ' -f1 || echo "FAILED")
-										cluster_hash=$(md5sum /etc/pull-secret/config.json 2>/dev/null | cut -d' ' -f1 || echo "FAILED")
-
-										if [ "$node_hash" = "FAILED" ] || [ "$cluster_hash" = "FAILED" ]; then
-											echo "ERROR: Failed to calculate hashes"
-											echo "Node file readable: $(test -r %s && echo "YES" || echo "NO")"
-											echo "Cluster file readable: $(test -r /etc/pull-secret/config.json && echo "YES" || echo "NO")"
-											exit 1
-										fi
-
-										if [ "$node_hash" = "$cluster_hash" ]; then
-											echo "SUCCESS: Pull secrets are identical (MD5: $node_hash)"
-										else
-											echo "ERROR: Pull secrets are different"
-											echo "Node pull secret MD5: $node_hash"
-											echo "Cluster pull secret MD5: $cluster_hash"
-											exit 1
-										fi
-									else
-										echo "ERROR: Cluster pull secret not available for comparison"
-										echo "Files in /etc/pull-secret:"
-										ls -la /etc/pull-secret/ || echo "Cannot list /etc/pull-secret"
-										exit 1
-									fi
-
-									echo "SUCCESS: Pull secret verification completed"
-
-									# Keep the pod running with infinite loop
-									echo "Starting infinite loop to keep pod running..."
-									while true; do
-										echo "Pod is still running... $(date)"
-										sleep 30
-									done
-								`, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath, NodePullSecretPath),
+							Command: []string{"/bin/sh", "-c", fmt.Sprintf(
+								`while true; do `+
+									`node=$(printf '%%s' "$(cat %s 2>/dev/null)" | md5sum | cut -d' ' -f1 || echo UNAVAILABLE) && `+
+									`cluster=$(printf '%%s' "$(cat /etc/pull-secret/config.json 2>/dev/null)" | md5sum | cut -d' ' -f1 || echo UNAVAILABLE) && `+
+									`echo "$(date -u +%%H:%%M:%%S) node=$node cluster=$cluster match=$([ "$node" = "$cluster" ] && echo yes || echo no)"; `+
+									`sleep 10; `+
+									`done`, NodePullSecretPath)},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"/bin/sh", "-c",
+											fmt.Sprintf(`test "$(printf '%%s' "$(cat %s 2>/dev/null)" | md5sum | cut -d' ' -f1 || echo FAIL_NODE)" = "$(printf '%%s' "$(cat /etc/pull-secret/config.json 2>/dev/null)" | md5sum | cut -d' ' -f1 || echo FAIL_CLUSTER)"`,
+												NodePullSecretPath)},
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       10,
+								FailureThreshold:    30,
 							},
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: ptr.To(true),
@@ -193,7 +133,7 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 							Name: "pull-secret",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: "pull-secret",
+									SecretName: originalPS.Name,
 									Items: []corev1.KeyToPath{
 										{
 											Key:  corev1.DockerConfigJsonKey,
@@ -212,14 +152,21 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 	return guestClient.Create(ctx, daemonSet)
 }
 
-// VerifyKubeletConfigWithDaemonSet implements complete verification using DaemonSet.
-// expectedNodeCount should be the NodePool replicas
+// VerifyKubeletConfigWithDaemonSet deploys a DaemonSet on every node whose
+// readiness probe compares the on-disk kubelet config.json against the cluster
+// pull secret. Pods only become Ready when the hashes match, so waiting for
+// DaemonSet readiness IS the assertion that secrets are consistent on all nodes.
+//
+// Before deploying the verifier, waits for the global-pull-secret-syncer DS to
+// complete its rollout. When HCCO updates original-pull-secret, it recalculates
+// the configSeed hash and triggers a syncer pod restart. Without this wait, the
+// verifier could start comparing hashes while the syncer is still restarting and
+// the on-disk config.json has stale content.
 func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestClient crclient.Client, dsImage string, expectedNodeCount int32) {
 	g := NewWithT(t)
 
-	// Register cleanup first so it runs even if the test fails or times out
 	t.Cleanup(func() {
-		t.Log("Cleaning up kubelet config verifier resources")
+		t.Log("Cleaning up kubelet config verifier DaemonSet")
 		ds := &appsv1.DaemonSet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      KubeletConfigVerifierDaemonSetName,
@@ -229,28 +176,58 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 		if err := guestClient.Delete(ctx, ds); err != nil && !apierrors.IsNotFound(err) {
 			t.Logf("Warning: failed to clean up DaemonSet: %v", err)
 		}
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pull-secret",
-				Namespace: KubeletConfigVerifierNamespace,
-			},
-		}
-		if err := guestClient.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
-			t.Logf("Warning: failed to clean up pull secret: %v", err)
-		}
 	})
 
-	// Create the DaemonSet
+	t.Log("Waiting for syncer DS rollout to complete before deploying verifier")
+	g.Expect(waitForDaemonSetRollout(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)).To(Succeed())
+
 	t.Log("Creating kubelet config verifier DaemonSet")
 	err := CreateKubeletConfigVerifierDaemonSet(ctx, guestClient, dsImage)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create kubelet config verifier DaemonSet")
 
-	// Wait for all DaemonSets to be ready using NodePool replicas as authoritative source
 	t.Log("Waiting for OVN, GlobalPullSecret, Konnectivity and kubelet config verifier DaemonSets to be ready")
-
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", expectedNodeCount)).To(Succeed())
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)).To(Succeed())
 	konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, expectedNodeCount)).To(Succeed())
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, KubeletConfigVerifierDaemonSetName, KubeletConfigVerifierNamespace, expectedNodeCount)).To(Succeed())
+	t.Log("All verifier pods are Ready — on-disk kubelet config.json matches cluster pull secret on all nodes")
+}
+
+// waitForDaemonSetRollout waits for a DaemonSet to complete its rollout: all pods
+// must be updated with the latest template AND ready. This catches the case where
+// HCCO updates the pod template (e.g. new configSeed) and the DS controller is
+// still replacing pods.
+func waitForDaemonSetRollout(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32) error {
+	t.Logf("Waiting for %s DaemonSet rollout to complete (min expected: %d)", name, minExpected)
+
+	return wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		ds := &appsv1.DaemonSet{}
+		if err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds); err != nil {
+			t.Logf("Failed to get DaemonSet %s: %v", name, err)
+			return false, nil
+		}
+
+		if ds.Status.ObservedGeneration < ds.Generation {
+			t.Logf("DaemonSet %s generation %d not yet observed (current %d)", name, ds.Generation, ds.Status.ObservedGeneration)
+			return false, nil
+		}
+
+		desired := ds.Status.DesiredNumberScheduled
+		if desired < minExpected {
+			t.Logf("DaemonSet %s: desired=%d < minExpected=%d", name, desired, minExpected)
+			return false, nil
+		}
+
+		updated := ds.Status.UpdatedNumberScheduled
+		ready := ds.Status.NumberReady
+
+		if updated != desired || ready != desired {
+			t.Logf("DaemonSet %s rollout: %d/%d updated, %d/%d ready", name, updated, desired, ready, desired)
+			return false, nil
+		}
+
+		t.Logf("DaemonSet %s rollout complete: %d/%d pods updated and ready", name, ready, desired)
+		return true, nil
+	})
 }
