@@ -245,7 +245,7 @@ spec:
 // (no osImageStream set) reports rhel-9 in status.osImageStream.
 // This is a non-lifecycle test: it reads existing state without mutation.
 //
-// TODO(OSStreams): The default OS stream is currently hardcoded to rhel-9 for all
+// TODO(CNTRLPLANE-3032): The default OS stream is currently hardcoded to rhel-9 for all
 // OCP versions. When the hardcoding is removed and OCP >= 5.0 defaults to rhel-10,
 // this test must be updated to expect rhel-10 on OCP >= 5.0:
 //
@@ -271,7 +271,7 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 		}
 
 		// The default OS stream is currently hardcoded to rhel-9 for all OCP versions.
-		// TODO(OSStreams): When the hardcoding is removed, change this to expect rhel-10
+		// TODO(CNTRLPLANE-3032): When the hardcoding is removed, change this to expect rhel-10
 		// on OCP >= 5.0.
 		expectedStream := hyperv1.OSImageStreamRHEL9
 

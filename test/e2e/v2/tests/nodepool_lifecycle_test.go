@@ -1467,7 +1467,7 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 // on the NodePool after an upgrade completes. If the OSStreams feature gate is not
 // enabled, the assertion is skipped (the upgrade test itself still passes).
 //
-// TODO(OSStreams): The default OS stream is currently hardcoded to rhel-9 for all
+// TODO(CNTRLPLANE-3032): The default OS stream is currently hardcoded to rhel-9 for all
 // OCP versions. When the hardcoding is removed and OCP >= 5.0 defaults to rhel-10,
 // update expectedStream to use rhel-10 on >= 5.0.
 func verifyOSImageStreamAfterUpgrade(ctx context.Context, testCtx *internal.TestContext, np *hyperv1.NodePool) {
