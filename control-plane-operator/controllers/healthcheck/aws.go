@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/smithy-go"
@@ -33,6 +34,10 @@ func awsHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 	}
 
 	ec2Client, _ := hostedcontrolplane.GetEC2Client(ctx)
+	return validateAWSIdentityProvider(ctx, hcp, ec2Client)
+}
+
+func validateAWSIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane, ec2Client awsapi.EC2API) error {
 	if ec2Client == nil {
 		// EC2 client is not available (token minting may have failed)
 		condition := metav1.Condition{
