@@ -88,6 +88,10 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		}
 		infra.Status.PlatformStatus.Azure.CloudName = cloudName
 		infra.Status.PlatformStatus.Azure.ResourceGroupName = hcp.Spec.Platform.Azure.ResourceGroupName
+	case hyperv1.IBMCloudPlatform:
+		infra.Status.PlatformStatus.IBMCloud = &configv1.IBMCloudPlatformStatus{
+			ProviderType: hcp.Spec.Platform.IBMCloud.ProviderType,
+		}
 	case hyperv1.PowerVSPlatform:
 		infra.Status.PlatformStatus.PowerVS = &configv1.PowerVSPlatformStatus{
 			Region:         hcp.Spec.Platform.PowerVS.Region,
