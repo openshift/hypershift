@@ -61,20 +61,18 @@ func osImageStreamBeforeEach(testCtx **internal.TestContext) {
 	*testCtx = internal.GetTestContext()
 	Expect(*testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 
-	// TODO(sdminonne): remove this skip once status.osImageStream is populated on
-	// GCP/GKE. Currently the CAPI Machine NodeInfo.OSImage string on GKE does not
-	// match the RHCOS pattern the controller uses to infer the OS stream, so the
-	// status field is never set and all OSImageStream tests time out.
-	hc := (*testCtx).GetHostedCluster()
-	if hc != nil && hc.Spec.Platform.Type == hyperv1.GCPPlatform {
-		Skip("OSImageStream tests are temporarily skipped on GCP platform")
-	}
-
-	hasOSStream, err := e2eutil.HasFieldInCRDSchema((*testCtx).Context, (*testCtx).MgmtClient,
+	hasSpecField, err := e2eutil.HasFieldInCRDSchema((*testCtx).Context, (*testCtx).MgmtClient,
 		"nodepools.hypershift.openshift.io", "spec.osImageStream")
 	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for spec.osImageStream")
-	if !hasOSStream {
+	if !hasSpecField {
 		Skip("OSStreams feature gate is not enabled: spec.osImageStream field not present in NodePool CRD")
+	}
+
+	hasStatusField, err := e2eutil.HasFieldInCRDSchema((*testCtx).Context, (*testCtx).MgmtClient,
+		"nodepools.hypershift.openshift.io", "status.osImageStream")
+	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for status.osImageStream")
+	if !hasStatusField {
+		Skip("OSStreams feature gate is not enabled: status.osImageStream field not present in NodePool CRD")
 	}
 }
 
@@ -270,11 +268,34 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			Skip("default NodePool explicitly sets osImageStream=" + defaultNP.Spec.OSImageStream.Name + "; skipping default-resolution test")
 		}
 
+		// Wait for the NodePool to have nodesInfo populated, which confirms CAPI
+		// Machines have NodeInfo (including OSImage). The controller uses Machine
+		// NodeInfo.OSImage to infer status.osImageStream, so without it the field
+		// will never be set.
+		GinkgoWriter.Printf("Waiting for NodePool %s/%s to have nodesInfo with node versions populated\n",
+			defaultNP.Namespace, defaultNP.Name)
+		e2eutil.EventuallyObject[*hyperv1.NodePool](
+			GinkgoTB(), ctx,
+			fmt.Sprintf("NodePool %s/%s to have nodesInfo.nodeVersions populated", defaultNP.Namespace, defaultNP.Name),
+			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				nodesInfoPopulatedPredicate(),
+			},
+			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
+		)
+
 		// The default OS stream is currently hardcoded to rhel-9 for all OCP versions.
 		// TODO(CNTRLPLANE-3032): When the hardcoding is removed, change this to expect rhel-10
 		// on OCP >= 5.0.
 		expectedStream := hyperv1.OSImageStreamRHEL9
 
+		GinkgoWriter.Printf("Waiting for NodePool %s/%s status.osImageStream.name to be %s\n",
+			defaultNP.Namespace, defaultNP.Name, expectedStream)
 		e2eutil.EventuallyObject[*hyperv1.NodePool](
 			GinkgoTB(), ctx,
 			"default NodePool status to report osImageStream="+expectedStream,
@@ -286,10 +307,33 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			[]e2eutil.Predicate[*hyperv1.NodePool]{
 				e2eutil.OSImageStreamPredicate(expectedStream),
 			},
-			e2eutil.WithTimeout(5*time.Minute),
-			e2eutil.WithInterval(10*time.Second),
+			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
 		)
 	})
+}
+
+// nodesInfoPopulatedPredicate returns a predicate that validates that a NodePool's
+// status.nodesInfo.nodeVersions has at least one entry with a non-zero ready count.
+// This confirms that CAPI Machines have NodeInfo populated (the controller uses
+// the same Machine list and NodeInfo check for both nodesInfo and osImageStream).
+func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+	return func(pool *hyperv1.NodePool) (bool, string, error) {
+		versions := pool.Status.NodesInfo.NodeVersions
+		if len(versions) == 0 {
+			return false, "status.nodesInfo.nodeVersions is empty (CAPI Machines may not have NodeInfo populated yet)", nil
+		}
+		var totalReady int32
+		for _, v := range versions {
+			if v.ReadyNodeCount != nil {
+				totalReady += *v.ReadyNodeCount
+			}
+		}
+		if totalReady == 0 {
+			return false, fmt.Sprintf("status.nodesInfo has %d version entries but 0 ready nodes", len(versions)), nil
+		}
+		return true, fmt.Sprintf("status.nodesInfo has %d ready nodes across %d version entries", totalReady, len(versions)), nil
+	}
 }
 
 // conditionMessageContains returns a predicate that checks whether a NodePool

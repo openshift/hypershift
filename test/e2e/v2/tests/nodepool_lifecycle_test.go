@@ -1473,11 +1473,19 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 func verifyOSImageStreamAfterUpgrade(ctx context.Context, testCtx *internal.TestContext, np *hyperv1.NodePool) {
 	GinkgoHelper()
 
-	hasOSStream, err := e2eutil.HasFieldInCRDSchema(ctx, testCtx.MgmtClient,
+	hasSpecField, err := e2eutil.HasFieldInCRDSchema(ctx, testCtx.MgmtClient,
 		"nodepools.hypershift.openshift.io", "spec.osImageStream")
 	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for spec.osImageStream")
-	if !hasOSStream {
+	if !hasSpecField {
 		GinkgoWriter.Println("OSStreams feature gate is not enabled; skipping osImageStream assertion")
+		return
+	}
+
+	hasStatusField, err := e2eutil.HasFieldInCRDSchema(ctx, testCtx.MgmtClient,
+		"nodepools.hypershift.openshift.io", "status.osImageStream")
+	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for status.osImageStream")
+	if !hasStatusField {
+		GinkgoWriter.Println("OSStreams feature gate is not enabled for status; skipping osImageStream assertion")
 		return
 	}
 
@@ -1494,8 +1502,8 @@ func verifyOSImageStreamAfterUpgrade(ctx context.Context, testCtx *internal.Test
 		[]e2eutil.Predicate[*hyperv1.NodePool]{
 			e2eutil.OSImageStreamPredicate(expectedStream),
 		},
-		e2eutil.WithTimeout(5*time.Minute),
-		e2eutil.WithInterval(10*time.Second),
+		e2eutil.WithTimeout(10*time.Minute),
+		e2eutil.WithInterval(15*time.Second),
 	)
 }
 
