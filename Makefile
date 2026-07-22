@@ -109,11 +109,11 @@ PULL_BASE_SHA := $(if $(PULL_BASE_SHA),$(PULL_BASE_SHA),$(shell git rev-parse ma
 
 .PHONY: api-lint
 api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
 
 .PHONY: api-lint-fix
 api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: lint
 lint: generate
