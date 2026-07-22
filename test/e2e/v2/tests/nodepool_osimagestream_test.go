@@ -61,6 +61,15 @@ func osImageStreamBeforeEach(testCtx **internal.TestContext) {
 	*testCtx = internal.GetTestContext()
 	Expect(*testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 
+	// TODO(sdminonne): remove this skip once status.osImageStream is populated on
+	// GCP/GKE. Currently the CAPI Machine NodeInfo.OSImage string on GKE does not
+	// match the RHCOS pattern the controller uses to infer the OS stream, so the
+	// status field is never set and all OSImageStream tests time out.
+	hc := (*testCtx).GetHostedCluster()
+	if hc != nil && hc.Spec.Platform.Type == hyperv1.GCPPlatform {
+		Skip("OSImageStream tests are temporarily skipped on GCP platform")
+	}
+
 	hasOSStream, err := e2eutil.HasFieldInCRDSchema((*testCtx).Context, (*testCtx).MgmtClient,
 		"nodepools.hypershift.openshift.io", "spec.osImageStream")
 	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for spec.osImageStream")
