@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -11,7 +12,9 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -1260,4 +1263,89 @@ type fakeManager struct {
 
 func (m *fakeManager) GetLogger() logr.Logger {
 	return logr.Discard()
+}
+
+func TestLbNotActiveRequeueDelay(t *testing.T) {
+	g := NewWithT(t)
+	min := lbNotActiveRequeueBase + 1*time.Second
+	max := lbNotActiveRequeueBase + time.Duration(lbNotActiveJitterMax)*time.Second
+
+	for i := 0; i < 50; i++ {
+		d := lbNotActiveRequeueDelay()
+		g.Expect(d).To(And(
+			BeNumerically(">=", min),
+			BeNumerically("<=", max),
+		), "iteration %d returned %s", i, d)
+	}
+}
+
+func TestReconcileRequeuesWithJitter(t *testing.T) {
+	g := NewWithT(t)
+	min := lbNotActiveRequeueBase + 1*time.Second
+	max := lbNotActiveRequeueBase + time.Duration(lbNotActiveJitterMax)*time.Second
+
+	mockCtrl := gomock.NewController(t)
+	elbClient := awsapi.NewMockELBV2API(mockCtrl)
+	ec2Client := awsapi.NewMockEC2API(mockCtrl)
+
+	elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(
+		&elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{}}, nil,
+	).AnyTimes()
+
+	hcpNs := "test-ns-test-hc"
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-hc",
+			Namespace:   hcpNs,
+			Annotations: map[string]string{k8sutil.HostedClusterAnnotation: "test-ns/test-hc"},
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{
+					RolesRef: hyperv1.AWSRolesRef{ControlPlaneOperatorARN: "arn:aws:iam::role/fake"},
+				},
+			},
+		},
+	}
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-hc", Namespace: "test-ns",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{
+					RolesRef: hyperv1.AWSRolesRef{ControlPlaneOperatorARN: "arn:aws:iam::role/fake"},
+				},
+			},
+		},
+	}
+	awsES := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-ep", Namespace: hcpNs},
+		Spec:       hyperv1.AWSEndpointServiceSpec{NetworkLoadBalancerName: "test-nlb"},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(hyperapi.Scheme).
+		WithObjects(hcp, hc, awsES).
+		WithStatusSubresource(awsES).
+		Build()
+
+	r := &AWSEndpointServiceReconciler{
+		Client:                        fakeClient,
+		CreateOrUpdateProvider:        upsert.New(false),
+		ec2Client:                     ec2Client,
+		elbv2Client:                   elbClient,
+		ManagementClusterCapabilities: &capabilities.ManagementClusterCapabilities{},
+	}
+
+	ctx := log.IntoContext(context.Background(), testr.New(t))
+	result, err := r.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(awsES),
+	})
+
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.RequeueAfter).To(And(
+		BeNumerically(">=", min),
+		BeNumerically("<=", max),
+	))
 }
