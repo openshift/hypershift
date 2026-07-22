@@ -90,9 +90,9 @@ func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1
 }
 
 // baseCapabilities is the set of capabilities accepted by the ClusterVersion CRD
-// without any feature gates enabled. Feature-gated capabilities (e.g. ClusterAPI,
-// CompatibilityRequirements) are only valid when the corresponding feature gates
-// are active on the guest cluster.
+// without any feature gates enabled. This must match the featureGate="" enum from
+// the +openshift:validation:FeatureGateAwareEnum annotation on ClusterVersionCapability
+// in vendor/github.com/openshift/api/config/v1/types_cluster_version.go.
 var baseCapabilities = sets.New[configv1.ClusterVersionCapability](
 	configv1.ClusterVersionCapabilityOpenShiftSamples,
 	configv1.ClusterVersionCapabilityBaremetal,
@@ -114,20 +114,21 @@ var baseCapabilities = sets.New[configv1.ClusterVersionCapability](
 )
 
 // FilterByBaseCapabilities removes capabilities that require feature gates on the
-// guest cluster's ClusterVersion CRD. When featureSet is TechPreviewNoUpgrade or
-// DevPreviewNoUpgrade, all capabilities are accepted. For Default feature set,
-// only capabilities from the base CRD enum (no feature gates) are kept.
+// guest cluster's ClusterVersion CRD. For Default feature set, only capabilities
+// from the base CRD enum (no feature gates) are kept. All other feature sets
+// (TechPreviewNoUpgrade, DevPreviewNoUpgrade, CustomNoUpgrade) enable feature
+// gates that make the full enum valid, so all capabilities pass through.
 func FilterByBaseCapabilities(caps []configv1.ClusterVersionCapability, featureSet configv1.FeatureSet) []configv1.ClusterVersionCapability {
-	if featureSet == configv1.TechPreviewNoUpgrade || featureSet == configv1.DevPreviewNoUpgrade {
-		return caps
-	}
-	var filtered []configv1.ClusterVersionCapability
-	for _, cap := range caps {
-		if baseCapabilities.Has(cap) {
-			filtered = append(filtered, cap)
+	if featureSet == configv1.Default || featureSet == "Default" {
+		var filtered []configv1.ClusterVersionCapability
+		for _, cap := range caps {
+			if baseCapabilities.Has(cap) {
+				filtered = append(filtered, cap)
+			}
 		}
+		return filtered
 	}
-	return filtered
+	return caps
 }
 
 // FilterByKnownCapabilities returns only the capabilities from desired that are
