@@ -44,6 +44,7 @@ func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &clusterStorageOperator{}).
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(isStorageAndCSIManaged).
+		WithPostReconcileFunc(reconcileOperandTolerations).
 		WithManifestAdapter(
 			"azure-disk-csi-config.yaml",
 			component.WithAdaptFunction(adaptAzureCSIDiskSecret),
