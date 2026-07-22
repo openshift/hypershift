@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
@@ -135,6 +136,66 @@ func TestBuildContainer(t *testing.T) {
 				g.Expect(findEnvVar(container.Env, "HTTPS_PROXY")).To(BeNil(), "HTTPS_PROXY should not be set")
 				g.Expect(findEnvVar(container.Env, "NO_PROXY")).To(BeNil(), "NO_PROXY should not be set")
 			}
+		})
+	}
+}
+
+func TestBuildContainerReadinessProbe(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{}
+
+	tests := []struct {
+		name         string
+		opts         KonnectivityContainerOptions
+		expectedPort int32
+	}{
+		{
+			name: "When HTTPS mode uses default serving port, it should set readiness probe on port 8090",
+			opts: KonnectivityContainerOptions{
+				Mode: HTTPS,
+			},
+			expectedPort: 8090,
+		},
+		{
+			name: "When Socks5 mode uses default serving port, it should set readiness probe on port 8090",
+			opts: KonnectivityContainerOptions{
+				Mode: Socks5,
+			},
+			expectedPort: 8090,
+		},
+		{
+			name: "When HTTPS mode uses custom serving port, it should set readiness probe on that port",
+			opts: KonnectivityContainerOptions{
+				Mode: HTTPS,
+				HTTPSOptions: HTTPSOptions{
+					ServingPort: 8092,
+				},
+			},
+			expectedPort: 8092,
+		},
+		{
+			name: "When Socks5 mode uses custom serving port, it should set readiness probe on that port",
+			opts: KonnectivityContainerOptions{
+				Mode: Socks5,
+				Socks5Options: Socks5Options{
+					ServingPort: 9090,
+				},
+			},
+			expectedPort: 9090,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			container := tt.opts.buildContainer(hcp, "test-image:latest", nil)
+
+			g.Expect(container.ReadinessProbe).NotTo(BeNil(), "ReadinessProbe should be set")
+			g.Expect(container.ReadinessProbe.TCPSocket).NotTo(BeNil(), "ReadinessProbe should use TCPSocket")
+			g.Expect(container.ReadinessProbe.TCPSocket.Port).To(Equal(intstr.FromInt32(tt.expectedPort)),
+				"ReadinessProbe should check the serving port")
+			g.Expect(container.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(5)))
+			g.Expect(container.ReadinessProbe.PeriodSeconds).To(Equal(int32(5)))
 		})
 	}
 }
