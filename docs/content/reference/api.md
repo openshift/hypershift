@@ -2433,24 +2433,116 @@ string
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
 &ldquo;Statement&rdquo;: [
 {
+&ldquo;Sid&rdquo;: &ldquo;ReadOnlyDescribeOperations&rdquo;,
 &ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
 &ldquo;Action&rdquo;: [
-&ldquo;ec2:AttachVolume&rdquo;,
-&ldquo;ec2:CreateSnapshot&rdquo;,
-&ldquo;ec2:CreateTags&rdquo;,
-&ldquo;ec2:CreateVolume&rdquo;,
-&ldquo;ec2:DeleteSnapshot&rdquo;,
-&ldquo;ec2:DeleteTags&rdquo;,
-&ldquo;ec2:DeleteVolume&rdquo;,
+&ldquo;ec2:DescribeAvailabilityZones&rdquo;,
 &ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
 &ldquo;ec2:DescribeSnapshots&rdquo;,
-&ldquo;ec2:DescribeTags&rdquo;,
 &ldquo;ec2:DescribeVolumes&rdquo;,
 &ldquo;ec2:DescribeVolumesModifications&rdquo;,
-&ldquo;ec2:DetachVolume&rdquo;,
-&ldquo;ec2:ModifyVolume&rdquo;
+&ldquo;ec2:DescribeVolumeStatus&rdquo;
 ],
-&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;CreateAndCopyVolumesWithManagedTag&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CreateVolume&rdquo;, &ldquo;ec2:CopyVolumes&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:</em>:<em>:volume/</em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;aws:RequestTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;CopyManagedVolumes&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CopyVolumes&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:<em>:</em>:volume/vol-<em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;ec2:ResourceTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;CopyCSIMigratedVolumes&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CopyVolumes&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:</em>:<em>:volume/vol-</em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringLike&rdquo;: {&ldquo;ec2:ResourceTag/kubernetes.io/created-for/pvc/name&rdquo;: &ldquo;<em>&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;CreateSnapshotsWithManagedTag&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CreateSnapshot&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:</em>:<em>:snapshot/</em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;aws:RequestTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;CreateSnapshotsFromManagedVolumes&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CreateSnapshot&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:<em>:</em>:volume/<em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;ec2:ResourceTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;ManageManagedVolumes&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:ModifyVolume&rdquo;, &ldquo;ec2:AttachVolume&rdquo;, &ldquo;ec2:DetachVolume&rdquo;, &ldquo;ec2:DeleteVolume&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:</em>:<em>:volume/</em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;ec2:ResourceTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;ManageCSIMigratedVolumes&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:ModifyVolume&rdquo;, &ldquo;ec2:AttachVolume&rdquo;, &ldquo;ec2:DetachVolume&rdquo;, &ldquo;ec2:DeleteVolume&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:<em>:</em>:volume/<em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringLike&rdquo;: {&ldquo;ec2:ResourceTag/kubernetes.io/created-for/pvc/name&rdquo;: &ldquo;</em>&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;CreateVolumesFromAndEnableFSROnManagedSnapshots&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CreateVolume&rdquo;, &ldquo;ec2:EnableFastSnapshotRestores&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:<em>:</em>:snapshot/<em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;ec2:ResourceTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AttachDetachVolumesToAnyInstance&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:AttachVolume&rdquo;, &ldquo;ec2:DetachVolume&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:</em>:<em>:instance/</em>&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;DeleteAndLockManagedSnapshots&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:DeleteSnapshot&rdquo;, &ldquo;ec2:LockSnapshot&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:<em>:</em>:snapshot/<em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;ec2:ResourceTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;TagResourcesOnCreation&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CreateTags&rdquo;],
+&ldquo;Resource&rdquo;: [&ldquo;arn:aws:ec2:</em>:<em>:volume/</em>&rdquo;, &ldquo;arn:aws:ec2:<em>:</em>:snapshot/<em>&rdquo;],
+&ldquo;Condition&rdquo;: {&ldquo;StringEquals&rdquo;: {&ldquo;ec2:CreateAction&rdquo;: [&ldquo;CreateVolume&rdquo;, &ldquo;CreateSnapshot&rdquo;, &ldquo;CopyVolumes&rdquo;]}}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;ModifyTagsOnManagedVolumes&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;ec2:CreateTags&rdquo;, &ldquo;ec2:DeleteTags&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:ec2:</em>:<em>:volume/</em>&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {&ldquo;ec2:ResourceTag/ebs.csi.aws.com/cluster&rdquo;: &ldquo;true&rdquo;},
+&ldquo;Null&rdquo;: {&ldquo;aws:TagKeys&rdquo;: &ldquo;false&rdquo;},
+&ldquo;ForAllValues:StringNotEquals&rdquo;: {&ldquo;aws:TagKeys&rdquo;: [&ldquo;ebs.csi.aws.com/cluster&rdquo;, &ldquo;ebs.csi.aws.com/cluster-name&rdquo;, &ldquo;kubernetes.io/created-for/pvc/name&rdquo;]}
+}
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;kms:Decrypt&rdquo;, &ldquo;kms:GenerateDataKeyWithoutPlaintext&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:kms:<em>:</em>:key/<em>&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [&ldquo;kms:CreateGrant&rdquo;],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:kms:</em>:<em>:key/</em>&rdquo;,
+&ldquo;Condition&rdquo;: {&ldquo;Bool&rdquo;: {&ldquo;kms:GrantIsForAWSResource&rdquo;: &ldquo;true&rdquo;}}
 }
 ]
 }</p>
