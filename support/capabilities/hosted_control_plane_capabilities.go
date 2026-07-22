@@ -89,6 +89,47 @@ func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1
 	return sortedCapabilities(netCaps.UnsortedList())
 }
 
+// baseCapabilities is the set of capabilities accepted by the ClusterVersion CRD
+// without any feature gates enabled. Feature-gated capabilities (e.g. ClusterAPI,
+// CompatibilityRequirements) are only valid when the corresponding feature gates
+// are active on the guest cluster.
+var baseCapabilities = sets.New[configv1.ClusterVersionCapability](
+	configv1.ClusterVersionCapabilityOpenShiftSamples,
+	configv1.ClusterVersionCapabilityBaremetal,
+	configv1.ClusterVersionCapabilityMarketplace,
+	configv1.ClusterVersionCapabilityConsole,
+	configv1.ClusterVersionCapabilityInsights,
+	configv1.ClusterVersionCapabilityStorage,
+	configv1.ClusterVersionCapabilityCSISnapshot,
+	configv1.ClusterVersionCapabilityNodeTuning,
+	configv1.ClusterVersionCapabilityMachineAPI,
+	configv1.ClusterVersionCapabilityBuild,
+	configv1.ClusterVersionCapabilityDeploymentConfig,
+	configv1.ClusterVersionCapabilityImageRegistry,
+	configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+	configv1.ClusterVersionCapabilityCloudCredential,
+	configv1.ClusterVersionCapabilityIngress,
+	configv1.ClusterVersionCapabilityCloudControllerManager,
+	configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+)
+
+// FilterByBaseCapabilities removes capabilities that require feature gates on the
+// guest cluster's ClusterVersion CRD. When featureSet is TechPreviewNoUpgrade or
+// DevPreviewNoUpgrade, all capabilities are accepted. For Default feature set,
+// only capabilities from the base CRD enum (no feature gates) are kept.
+func FilterByBaseCapabilities(caps []configv1.ClusterVersionCapability, featureSet configv1.FeatureSet) []configv1.ClusterVersionCapability {
+	if featureSet == configv1.TechPreviewNoUpgrade || featureSet == configv1.DevPreviewNoUpgrade {
+		return caps
+	}
+	var filtered []configv1.ClusterVersionCapability
+	for _, cap := range caps {
+		if baseCapabilities.Has(cap) {
+			filtered = append(filtered, cap)
+		}
+	}
+	return filtered
+}
+
 // FilterByKnownCapabilities returns only the capabilities from desired that are
 // present in knownCapabilities. When knownCapabilities is empty (e.g. on first
 // reconcile before the CVO has reported status), all desired capabilities are
