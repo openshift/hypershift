@@ -42,6 +42,9 @@ func run() error {
 	// Build the aggregated content
 	var builder strings.Builder
 
+	// Write front matter to exclude from MkDocs search results
+	builder.WriteString("---\nsearch:\n  exclude: true\n---\n\n")
+
 	// Write header
 	builder.WriteString("# HyperShift Documentation (Aggregated)\n\n")
 	builder.WriteString("This file contains all HyperShift documentation aggregated into a single file\n")

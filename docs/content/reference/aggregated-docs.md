@@ -1,3 +1,8 @@
+---
+search:
+  exclude: true
+---
+
 # HyperShift Documentation (Aggregated)
 
 This file contains all HyperShift documentation aggregated into a single file
