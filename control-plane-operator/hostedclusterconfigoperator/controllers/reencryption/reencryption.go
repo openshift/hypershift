@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/secretencryption"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/util"
 
 	"github.com/openshift/library-go/pkg/operator/encryption/controllers/migrators"
@@ -62,24 +63,45 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, fmt.Errorf("failed to get HCP: %w", err)
 	}
 
-	originalHCP := hcp.DeepCopy()
+	// Snapshot pre-reconcile encryption state for metrics comparison.
+	previousEncryption := *hcp.Status.SecretEncryption.DeepCopy()
+
 	result, err := r.reconcile(ctx, log, hcp)
 	if err != nil {
 		return result, err
 	}
 
-	if !equality.Semantic.DeepEqual(hcp.Status, originalHCP.Status) {
-		log.Info("Patching HCP status with secret encryption changes")
-		patch := crclient.MergeFrom(originalHCP)
-		if err := r.cpClient.Status().Patch(ctx, hcp, patch); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to patch HCP status: %w", err)
+	// Capture desired status changes computed by reconcile().
+	// Copy by value — PatchStatus re-fetches hcp, which replaces the backing slice.
+	desiredEncryption := *hcp.Status.SecretEncryption.DeepCopy()
+	var desiredCondition metav1.Condition
+	hasCondition := false
+	if c := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate)); c != nil {
+		desiredCondition = *c
+		hasCondition = true
+	}
+
+	if patchErr := statuspatching.PatchStatus(ctx, r.cpClient, hcp, func() error {
+		hcp.Status.SecretEncryption = desiredEncryption
+		if hasCondition {
+			meta.SetStatusCondition(&hcp.Status.Conditions, desiredCondition)
+		} else {
+			meta.RemoveStatusCondition(&hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
 		}
-		log.Info("Successfully patched HCP status")
-		recordMigrationState(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
-		previousState := encryptionHistoryState(originalHCP.Status.SecretEncryption)
-		currentState := encryptionHistoryState(hcp.Status.SecretEncryption)
+		return nil
+	}); patchErr != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to patch HCP status: %w", patchErr)
+	}
+
+	// Always re-emit the current migration state gauge so it survives pod restarts.
+	recordMigrationState(r.hcpNamespace, r.hcpName, desiredEncryption)
+
+	// Record duration only on actual state transitions.
+	if !equality.Semantic.DeepEqual(previousEncryption, desiredEncryption) {
+		previousState := encryptionHistoryState(previousEncryption)
+		currentState := encryptionHistoryState(desiredEncryption)
 		if currentState == hyperv1.EncryptionMigrationStateCompleted && previousState != currentState {
-			recordMigrationDuration(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
+			recordMigrationDuration(r.hcpNamespace, r.hcpName, desiredEncryption)
 		}
 	}
 
