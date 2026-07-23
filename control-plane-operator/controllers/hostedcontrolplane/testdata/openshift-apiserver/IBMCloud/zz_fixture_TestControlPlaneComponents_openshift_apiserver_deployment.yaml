@@ -236,6 +236,13 @@ spec:
             memory: 30Mi
         securityContext:
           readOnlyRootFilesystem: true
+        startupProbe:
+          failureThreshold: 30
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          tcpSocket:
+            port: 8090
+          timeoutSeconds: 1
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
