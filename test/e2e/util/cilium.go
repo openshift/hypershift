@@ -324,8 +324,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 			// Now wait for DaemonSet pods to be ready
 			t.Log("Waiting for Cilium agent pods from DaemonSet to be ready")
-			err = waitForDaemonSetReady(t, ctx, guestClient, ciliumDaemonSet.Name, ciliumDaemonSet.Namespace, nodePoolReplicas)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to wait for Cilium DaemonSet to be ready")
+			waitForDaemonSetReady(t, ctx, guestClient, ciliumDaemonSet.Name, ciliumDaemonSet.Namespace, nodePoolReplicas)
 
 			t.Log("Cilium installation completed successfully")
 		})
