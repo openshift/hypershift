@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -95,7 +96,6 @@ type PlatformConfig interface {
 	// DestroyArgs returns platform-specific args for
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
-
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -110,6 +110,33 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	}
 }
 
+// FilterSpecs returns only the specs for which the predicate returns true.
+func FilterSpecs(specs []ClusterSpec, pred func(ClusterSpec) bool) []ClusterSpec {
+	var out []ClusterSpec
+	for _, s := range specs {
+		if pred(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// VariantFilter parses a comma-separated allowlist and returns a
+// predicate that matches specs whose Variant is in the list. Returns
+// nil when the input is empty, so callers can skip filtering.
+func VariantFilter(csv string) func(ClusterSpec) bool {
+	if csv == "" {
+		return nil
+	}
+	allowed := make(map[string]bool)
+	for _, v := range strings.Split(csv, ",") {
+		if t := strings.TrimSpace(v); t != "" {
+			allowed[t] = true
+		}
+	}
+	return func(s ClusterSpec) bool { return allowed[s.Variant] }
+}
+
 // DeriveClusterName builds a human-readable, deterministic cluster name
 // from the prow job ID and cluster variant. The format is
 // "{variant}-{hash10}" where hash10 is the first 10 hex characters of
@@ -119,4 +146,3 @@ func DeriveClusterName(prowJobID, variant string) string {
 	hash := sha256.Sum256([]byte(prowJobID))
 	return variant + "-" + fmt.Sprintf("%x", hash)[:10]
 }
-

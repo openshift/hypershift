@@ -144,9 +144,25 @@ func (tc *TestContext) GetHostedClusterRESTConfig() *rest.Config {
 	return tc.hostedClusterRESTConfig
 }
 
-var testCtx *TestContext
+var (
+	testCtx     *TestContext
+	testCtxInit sync.Once
+)
 
+// GetTestContext returns the global test context. On first call, if no context
+// was set via SetTestContext (e.g. in OTE mode where BeforeSuite is stripped),
+// it lazy-initializes from environment variables.
 func GetTestContext() *TestContext {
+	testCtxInit.Do(func() {
+		if testCtx != nil {
+			return
+		}
+		tc, err := SetupTestContextFromEnv(context.Background())
+		if err != nil {
+			panic(fmt.Sprintf("lazy-init test context from env: %v", err))
+		}
+		testCtx = tc
+	})
 	return testCtx
 }
 

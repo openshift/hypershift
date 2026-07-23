@@ -48,6 +48,8 @@ type AzurePlatformConfig struct {
 	marketplaceSKU       string
 	marketplaceVersion   string
 
+	clusterVariants string
+
 	keycloakConfig *v2util.KeycloakConfig
 }
 
@@ -68,6 +70,8 @@ func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 		marketplaceSKU:       os.Getenv("HYPERSHIFT_AZURE_MARKETPLACE_IMAGE_SKU"),
 		marketplaceVersion:   os.Getenv("HYPERSHIFT_AZURE_MARKETPLACE_IMAGE_VERSION"),
 	}
+
+	cfg.clusterVariants = os.Getenv("HYPERSHIFT_CLUSTER_VARIANTS")
 
 	cfg.privateNATSubnetID = os.Getenv("AZURE_PRIVATE_NAT_SUBNET_ID")
 	if cfg.privateNATSubnetID == "" && sharedDir != "" {
@@ -115,7 +119,7 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
 	}
 
-	return []ClusterSpec{
+	all := []ClusterSpec{
 		{
 			Variant:    "public",
 			OutputFile: "cluster-name-public",
@@ -149,6 +153,11 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			OutputFile: "cluster-name-external-oidc",
 		},
 	}
+
+	if f := VariantFilter(a.clusterVariants); f != nil {
+		return FilterSpecs(all, f)
+	}
+	return all
 }
 
 func (a *AzurePlatformConfig) CreateArgs() []string {
