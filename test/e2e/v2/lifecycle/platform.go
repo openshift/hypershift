@@ -6,9 +6,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// DefaultNamespace is the default namespace for hosted clusters.
+const DefaultNamespace = "clusters"
 
 // ClusterSpec describes a single cluster to create for lifecycle tests.
 type ClusterSpec struct {
@@ -95,7 +99,6 @@ type PlatformConfig interface {
 	// DestroyArgs returns platform-specific args for
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
-
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -110,6 +113,54 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	}
 }
 
+// FilterClusterSpecs returns only the specs whose Variant is in the
+// comma-separated variants string. If variants is empty, all specs
+// are returned.
+func FilterClusterSpecs(specs []ClusterSpec, variants string) []ClusterSpec {
+	if variants == "" {
+		return specs
+	}
+	allowed := make(map[string]bool)
+	for _, v := range strings.Split(variants, ",") {
+		allowed[strings.TrimSpace(v)] = true
+	}
+	var filtered []ClusterSpec
+	for _, s := range specs {
+		if allowed[s.Variant] {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
+// FilterTestMatrix removes test groups that reference cluster files
+// not present in the given specs.
+func FilterTestMatrix(matrix TestMatrix, specs []ClusterSpec) TestMatrix {
+	clusterFiles := make(map[string]bool)
+	for _, s := range specs {
+		clusterFiles[s.OutputFile] = true
+	}
+	var parallel []TestGroup
+	for _, g := range matrix.Parallel {
+		if clusterFiles[g.ClusterFile] {
+			parallel = append(parallel, g)
+		}
+	}
+	var sequential []SequentialGroup
+	for _, sg := range matrix.Sequential {
+		var steps []TestGroup
+		for _, step := range sg.Steps {
+			if clusterFiles[step.ClusterFile] {
+				steps = append(steps, step)
+			}
+		}
+		if len(steps) > 0 {
+			sequential = append(sequential, SequentialGroup{Name: sg.Name, Steps: steps})
+		}
+	}
+	return TestMatrix{Parallel: parallel, Sequential: sequential}
+}
+
 // DeriveClusterName builds a human-readable, deterministic cluster name
 // from the prow job ID and cluster variant. The format is
 // "{variant}-{hash10}" where hash10 is the first 10 hex characters of
@@ -119,4 +170,3 @@ func DeriveClusterName(prowJobID, variant string) string {
 	hash := sha256.Sum256([]byte(prowJobID))
 	return variant + "-" + fmt.Sprintf("%x", hash)[:10]
 }
-

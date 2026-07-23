@@ -62,8 +62,6 @@ func init() {
 	utilruntime.Must(routev1.AddToScheme(scheme))
 }
 
-const defaultNamespace = "clusters"
-
 // envConfig captures the common environment configuration.
 type envConfig struct {
 	prowJobID    string
@@ -78,6 +76,9 @@ type envConfig struct {
 	externalDNS string
 	etcdSC      string
 	pullSecret  string
+
+	variants        string
+	infraIDFromName bool
 
 	platform         lifecycle.PlatformConfig
 	hypershiftBinary string
@@ -112,10 +113,13 @@ func loadEnvConfig() envConfig {
 
 		baseDomain:  envOrDefault("HYPERSHIFT_BASE_DOMAIN", platform.DefaultBaseDomain()),
 		nodeCount:   envOrDefaultInt("HYPERSHIFT_NODE_COUNT", 3),
-		namespace:   envOrDefault("HYPERSHIFT_NAMESPACE", defaultNamespace),
+		namespace:   envOrDefault("HYPERSHIFT_NAMESPACE", lifecycle.DefaultNamespace),
 		externalDNS: os.Getenv("HYPERSHIFT_EXTERNAL_DNS_DOMAIN"),
 		etcdSC:      os.Getenv("HYPERSHIFT_ETCD_STORAGE_CLASS"),
 		pullSecret:  envOrDefault("PULL_SECRET", "/etc/ci-pull-credentials/.dockerconfigjson"),
+
+		variants:        os.Getenv("HYPERSHIFT_VARIANTS"),
+		infraIDFromName: os.Getenv("HYPERSHIFT_INFRA_ID_FROM_NAME") == "true",
 
 		platform:         platform,
 		hypershiftBinary: envOrDefault("HYPERSHIFT_BINARY", "hypershift"),
@@ -130,7 +134,7 @@ func loadEnvConfig() envConfig {
 }
 
 func run(ctx context.Context, cfg envConfig) error {
-	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	specs := lifecycle.FilterClusterSpecs(cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image), cfg.variants)
 
 	// Derive cluster names and build the name map.
 	named := make([]namedSpec, len(specs))
@@ -251,6 +255,7 @@ func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []s
 	args := []string{
 		"create", "cluster", cfg.platform.Name(),
 		"--name=" + name,
+		"--namespace=" + cfg.namespace,
 		"--node-pool-replicas=" + strconv.Itoa(cfg.nodeCount),
 		"--base-domain=" + cfg.baseDomain,
 		"--pull-secret=" + cfg.pullSecret,
@@ -258,6 +263,9 @@ func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []s
 		"--generate-ssh",
 	}
 
+	if cfg.infraIDFromName {
+		args = append(args, "--infra-id="+name)
+	}
 	if cfg.externalDNS != "" {
 		args = append(args, "--external-dns-domain="+cfg.externalDNS)
 	}

@@ -34,7 +34,11 @@ import (
 )
 
 func main() {
-	hypershiftBinary := flag.String("hypershift-binary", "hypershift", "Path to the hypershift CLI binary")
+	defaultBinary := "hypershift"
+	if v := os.Getenv("HYPERSHIFT_BINARY"); v != "" {
+		defaultBinary = v
+	}
+	hypershiftBinary := flag.String("hypershift-binary", defaultBinary, "Path to the hypershift CLI binary")
 	flag.Parse()
 
 	prowJobID := os.Getenv("PROW_JOB_ID")
@@ -52,7 +56,8 @@ func main() {
 		log.Fatalf("Failed to initialize platform config: %v", err)
 	}
 
-	specs := platform.ClusterSpecs("", "")
+	variants := os.Getenv("HYPERSHIFT_VARIANTS")
+	specs := lifecycle.FilterClusterSpecs(platform.ClusterSpecs("", ""), variants)
 	log.Printf("Dumping %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
 
 	var wg sync.WaitGroup
