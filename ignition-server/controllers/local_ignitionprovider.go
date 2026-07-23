@@ -97,6 +97,66 @@ var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 // at which we regenerate a new certificate. This ensures we never serve an expired cert.
 const mcsCertRefreshMargin = 1 * time.Hour
 
+const maxMCSLogBytes = 8 << 10 // 8 KiB
+
+// syncBuffer is a thread-safe buffer for capturing MCS process stdout/stderr
+// while the polling loop reads snapshots for error logging.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return truncateTail(b.buf.String(), maxMCSLogBytes)
+}
+
+func truncateTail(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[len(s)-max:]
+}
+
+// fetchMCSIgnitionPayload performs a single HTTP request to the MCS endpoint.
+// It returns the payload on HTTP 200, nil with done=false for retryable failures,
+// or a non-nil error for fatal errors that should stop polling.
+func fetchMCSIgnitionPayload(ctx context.Context, httpclient *http.Client, url string, mcsOutput *syncBuffer) (payload []byte, done bool, err error) {
+	log := ctrl.Log.WithName("get-payload")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("error building http request: %w", err)
+	}
+	req.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
+	res, err := httpclient.Do(req)
+	if err != nil {
+		log.Error(err, "mcs request failed")
+		return nil, false, nil
+	}
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			log.Error(err, "failed to close mcs response body")
+		}
+	}()
+	if res.StatusCode != http.StatusOK {
+		log.Error(fmt.Errorf("unexpected status code %d", res.StatusCode), "mcs returned unexpected response code", "code", res.StatusCode, "mcsOutput", mcsOutput.String())
+		return nil, false, nil
+	}
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Error(err, "failed to read mcs response body")
+		return nil, false, nil
+	}
+	return body, true, nil
+}
+
 // getOrGenerateMCSCert returns cached PEM-encoded MCS TLS certificate and key,
 // generating a new self-signed certificate if the cache is empty, partially
 // populated, or the cached certificate is about to expire. This avoids redundant
@@ -565,55 +625,54 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 		)
 	}
 
-	// Spin up the MCS process and ensure it's signaled to terminate when the function returns
+	// Spin up the MCS process and ensure it's signaled to terminate when the function returns.
+	// Output is captured in a buffer so it can be included in error messages for troubleshooting.
 	mcsCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(mcsCtx, filepath.Join(dirs.binDir, "machine-config-server"), args...)
+	cmd.WaitDelay = 10 * time.Second
+
+	var mcsOutput syncBuffer
+	cmd.Stdout = &mcsOutput
+	cmd.Stderr = &mcsOutput
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start machine-config-server: %w", err)
+	}
+
+	mcsDone := make(chan error, 1)
 	go func() {
-		out, err := cmd.CombinedOutput()
-		log.Info("machine-config-server process exited", "output", string(out), "error", err)
+		mcsDone <- cmd.Wait()
 	}()
 
 	httpclient := &http.Client{
 		Timeout: 5 * time.Second,
 	}
 	var payload []byte
-	// Try connecting to the server until we get a response or the context is closed
+	// Try connecting to the server until we get a response or the context is closed.
+	// We pass expected Headers to return the right config version.
+	// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
+	// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
+	// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
 	err = wait.PollUntilContextCancel(ctx, 1*time.Second, true, func(ctx context.Context) (bool, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:22626/config/master", nil)
-		if err != nil {
-			return false, fmt.Errorf("error building http request: %w", err)
+		body, done, pollErr := fetchMCSIgnitionPayload(ctx, httpclient, "http://localhost:22626/config/master", &mcsOutput)
+		if done {
+			payload = body
+			log.Info("got mcs payload", "time", time.Since(start).Round(time.Second).String())
 		}
-		// We pass expected Headers to return the right config version.
-		// https://www.iana.org/assignments/media-types/application/vnd.coreos.ignition+json
-		// https://github.com/coreos/ignition/blob/0cbe33fee45d012515479a88f0fe94ef58d5102b/internal/resource/url.go#L61-L64
-		// https://github.com/openshift/machine-config-operator/blob/9c6c2bfd7ed498bfbc296d530d1839bd6a177b0b/pkg/server/api.go#L269
-		req.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
-		res, err := httpclient.Do(req)
-		if err != nil {
-			log.Error(err, "mcs request failed")
-			return false, nil
-		}
-		if res.StatusCode != http.StatusOK {
-			log.Error(err, "mcs returned unexpected response code", "code", res.StatusCode)
-			return false, nil
-		}
-
-		defer func() {
-			if err := res.Body.Close(); err != nil {
-				log.Error(err, "failed to close mcs response body")
-			}
-		}()
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			log.Error(err, "failed to read mcs response body")
-			return false, nil
-		}
-		payload = body
-		log.Info("got mcs payload", "time", time.Since(start).Round(time.Second).String())
-		return true, nil
+		return done, pollErr
 	})
-	return payload, err
+
+	// Stop MCS and wait for process exit so all output is flushed to the buffer.
+	cancel()
+	mcsErr := <-mcsDone
+	log.Info("machine-config-server process exited", "output", mcsOutput.String(), "error", mcsErr)
+
+	if err != nil {
+		return nil, fmt.Errorf("mcs logs: %s: %w", mcsOutput.String(), err)
+	}
+
+	return payload, nil
 }
 
 func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash string) ([]byte, error) {

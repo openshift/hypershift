@@ -6,6 +6,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -1420,6 +1422,314 @@ func TestWriteOSImageStreamManifest(t *testing.T) {
 			g.Expect(spec["defaultStream"]).To(Equal(tt.expectedDefaultStream))
 		})
 	}
+}
+
+func TestTruncateTail(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		input  string
+		max    int
+		expect string
+	}{
+		{
+			name:   "When input is shorter than max, it should return the full string",
+			input:  "short",
+			max:    100,
+			expect: "short",
+		},
+		{
+			name:   "When input is exactly max length, it should return the full string",
+			input:  "exact",
+			max:    5,
+			expect: "exact",
+		},
+		{
+			name:   "When input is longer than max, it should return the tail",
+			input:  "abcdefghij",
+			max:    4,
+			expect: "ghij",
+		},
+		{
+			name:   "When input is empty, it should return empty string",
+			input:  "",
+			max:    10,
+			expect: "",
+		},
+		{
+			name:   "When max is zero, it should return empty string",
+			input:  "anything",
+			max:    0,
+			expect: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(truncateTail(tt.input, tt.max)).To(Equal(tt.expect))
+		})
+	}
+}
+
+func TestSyncBuffer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When writing data, it should be readable via String", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var b syncBuffer
+		n, err := b.Write([]byte("hello "))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(n).To(Equal(6))
+
+		n, err = b.Write([]byte("world"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(n).To(Equal(5))
+
+		g.Expect(b.String()).To(Equal("hello world"))
+	})
+
+	t.Run("When data exceeds maxMCSLogBytes, String should return truncated tail", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var b syncBuffer
+		// Write more than maxMCSLogBytes (8 KiB)
+		large := make([]byte, maxMCSLogBytes+100)
+		for i := range large {
+			large[i] = byte('a' + (i % 26))
+		}
+		_, err := b.Write(large)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		result := b.String()
+		g.Expect(len(result)).To(Equal(maxMCSLogBytes))
+		g.Expect(result).To(Equal(string(large[100:])))
+	})
+
+	t.Run("When writing from multiple goroutines, it should not panic", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var b syncBuffer
+		done := make(chan struct{})
+		for i := 0; i < 10; i++ {
+			go func() {
+				defer func() { done <- struct{}{} }()
+				for j := 0; j < 100; j++ {
+					_, _ = b.Write([]byte("x"))
+					_ = b.String()
+				}
+			}()
+		}
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+		g.Expect(len(b.String())).To(BeNumerically("<=", maxMCSLogBytes))
+	})
+}
+
+func TestFetchMCSIgnitionPayload(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		handler       http.HandlerFunc
+		mcsOutputData string
+		overrideURL   string
+		expectPayload []byte
+		expectDone    bool
+		expectError   bool
+	}{
+		{
+			name: "When MCS returns 200 with payload, it should return the payload",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"ignition":{"version":"3.2.0"}}`))
+			},
+			expectPayload: []byte(`{"ignition":{"version":"3.2.0"}}`),
+			expectDone:    true,
+		},
+		{
+			name: "When MCS returns non-200 status, it should signal retry",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			},
+			mcsOutputData: "mcs startup log line",
+			expectDone:    false,
+		},
+		{
+			name: "When MCS returns 500, it should signal retry",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("internal error"))
+			},
+			expectDone: false,
+		},
+		{
+			name: "When request succeeds, the correct Accept header should be sent",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Accept") != "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1" {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("payload"))
+			},
+			expectPayload: []byte("payload"),
+			expectDone:    true,
+		},
+		{
+			name:        "When URL contains invalid characters, it should return a fatal error",
+			handler:     func(w http.ResponseWriter, r *http.Request) {},
+			overrideURL: "http://local\x00host/config/master",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
+
+			httpclient := server.Client()
+			var mcsOutput syncBuffer
+			if tt.mcsOutputData != "" {
+				_, _ = mcsOutput.Write([]byte(tt.mcsOutputData))
+			}
+
+			targetURL := server.URL
+			if tt.overrideURL != "" {
+				targetURL = tt.overrideURL
+			}
+
+			payload, done, err := fetchMCSIgnitionPayload(t.Context(), httpclient, targetURL, &mcsOutput)
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(done).To(Equal(tt.expectDone))
+			if tt.expectPayload != nil {
+				g.Expect(payload).To(Equal(tt.expectPayload))
+			} else {
+				g.Expect(payload).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestFetchMCSIgnitionPayloadConnectionError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When MCS connection fails, it should signal retry without error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		serverURL := server.URL
+		server.Close()
+
+		httpclient := &http.Client{Timeout: 1 * time.Second}
+		var mcsOutput syncBuffer
+
+		payload, done, err := fetchMCSIgnitionPayload(t.Context(), httpclient, serverURL, &mcsOutput)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(done).To(BeFalse())
+		g.Expect(payload).To(BeNil())
+	})
+}
+
+func TestFetchMCSIgnitionPayloadMCSOutputIncludedInLog(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When MCS returns non-200, the syncBuffer output should be readable for logging", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+
+		httpclient := server.Client()
+		var mcsOutput syncBuffer
+		_, _ = mcsOutput.Write([]byte("starting MCS process...\nlistening on port 22626"))
+
+		payload, done, err := fetchMCSIgnitionPayload(t.Context(), httpclient, server.URL, &mcsOutput)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(done).To(BeFalse())
+		g.Expect(payload).To(BeNil())
+
+		// Verify the buffer is still readable after the call (not consumed)
+		g.Expect(mcsOutput.String()).To(ContainSubstring("starting MCS process"))
+	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestFetchMCSIgnitionPayloadBodyReadError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When response body cannot be read, it should signal retry without error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		httpclient := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(errReader{err: fmt.Errorf("simulated body read failure")}),
+					Header:     make(http.Header),
+				}, nil
+			}),
+		}
+		var mcsOutput syncBuffer
+
+		payload, done, err := fetchMCSIgnitionPayload(t.Context(), httpclient, "http://localhost:22626/config/master", &mcsOutput)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(done).To(BeFalse())
+		g.Expect(payload).To(BeNil())
+	})
+}
+
+func TestFetchMCSIgnitionPayloadContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When context is canceled before request completes, it should signal retry without error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("payload"))
+		}))
+		defer server.Close()
+
+		httpclient := server.Client()
+		var mcsOutput syncBuffer
+
+		payload, done, err := fetchMCSIgnitionPayload(ctx, httpclient, server.URL, &mcsOutput)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(done).To(BeFalse())
+		g.Expect(payload).To(BeNil())
+	})
 }
 
 func TestCopyMCOOutputToMCCMixedContent(t *testing.T) {
