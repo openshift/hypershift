@@ -1,7 +1,11 @@
 package openstack
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -20,6 +24,7 @@ const (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	hcp := cpContext.HCP
 	credentialsSecret, err := getCredentialsSecret(cpContext)
 	if err != nil {
 		return err
@@ -35,6 +40,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			Name:  "OCP_INFRASTRUCTURE_NAME",
 			Value: cpContext.HCP.Spec.InfraID,
 		})
+
+		// Add TLS configuration based on cluster TLS security profile
+		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+		}
+		if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
 
 		if hasCACert {
 			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{

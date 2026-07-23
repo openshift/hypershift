@@ -21,6 +21,8 @@ spec:
       - args:
         - start
         - -v=2
+        - --config=/var/run/configmaps/config/config.yaml
+        - --terminate-on-files=/var/run/configmaps/config/config.yaml
         - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
         env:
         - name: OPERAND_IMAGE
@@ -49,6 +51,9 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
+        - mountPath: /var/run/configmaps/config
+          name: config
+          readOnly: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -58,3 +63,6 @@ spec:
       - name: guest-kubeconfig
         secret:
           secretName: service-network-admin-kubeconfig
+      - configMap:
+          name: csi-snapshot-controller-operator-config
+        name: config

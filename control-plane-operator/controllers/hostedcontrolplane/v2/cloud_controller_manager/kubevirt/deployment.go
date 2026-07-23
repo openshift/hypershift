@@ -2,8 +2,10 @@ package kubevirt
 
 import (
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -37,6 +39,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-name=%s", clusterName),
 		)
+
+		// Add TLS configuration based on cluster TLS security profile
+		if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+		}
+		if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		}
 
 		if isExternalInfra {
 			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{

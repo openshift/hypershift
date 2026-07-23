@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: ""
+        component.hypershift.openshift.io/config-hash: ea88d9fc
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: ignition-server-proxy
@@ -85,21 +85,7 @@ spec:
           #!/bin/bash
           set -e
           cat /etc/ssl/serving-cert/tls.crt /etc/ssl/serving-cert/tls.key > /tmp/tls.pem
-          cat <<EOF > /tmp/haproxy.conf
-          defaults
-            mode http
-            timeout connect 5s
-            timeout client 30s
-            timeout server 30s
-
-          frontend ignition-server
-            bind :::8443 v4v6 ssl crt /tmp/tls.pem alpn http/1.1
-            default_backend ignition_servers
-
-          backend ignition_servers
-            server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt alpn http/1.1
-          EOF
-          haproxy -f /tmp/haproxy.conf
+          haproxy -f /etc/haproxy/haproxy.conf
         command:
         - /bin/bash
         image: haproxy-router
@@ -124,6 +110,9 @@ spec:
           name: serving-cert
         - mountPath: /etc/ssl/root-ca
           name: root-ca
+        - mountPath: /etc/haproxy
+          name: haproxy-config
+          readOnly: true
         - mountPath: /tmp
           name: tmp-dir
       priorityClassName: hypershift-control-plane
@@ -145,6 +134,10 @@ spec:
           defaultMode: 420
           name: root-ca
         name: root-ca
+      - configMap:
+          defaultMode: 420
+          name: ignition-server-proxy-config
+        name: haproxy-config
       - emptyDir: {}
         name: tmp-dir
 status: {}
