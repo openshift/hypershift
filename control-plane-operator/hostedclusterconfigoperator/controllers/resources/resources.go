@@ -916,7 +916,7 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 	if _, disabled := hcp.Annotations[hyperv1.DisableMonitoringServices]; disabled {
 		return util.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
 	}
-	if _, enabled := hcp.Annotations[hyperv1.EnableMetricsForwarding]; !enabled {
+	if hcp.Spec.Monitoring.MetricsForwarding.Mode != hyperv1.MetricsForwardingModeForward {
 		return util.DeleteAllIfNeeded(ctx, r.client, deployment, cm, servingCA, podMonitor)
 	}
 
