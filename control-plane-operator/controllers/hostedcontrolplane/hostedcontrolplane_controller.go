@@ -1889,6 +1889,38 @@ func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.C
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) getRootCATrustSources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*corev1.ConfigMap, []*corev1.Secret, error) {
+	var observedDefaultIngressCert *corev1.ConfigMap
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		observedDefaultIngressCert = manifests.IngressObservedDefaultIngressCertCA(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(observedDefaultIngressCert), observedDefaultIngressCert); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return nil, nil, fmt.Errorf("failed to get observed default ingress cert: %w", err)
+			}
+			observedDefaultIngressCert = nil
+		}
+	}
+
+	var namedCertSecrets []*corev1.Secret
+	for _, namedCert := range hcp.Spec.Configuration.GetNamedCertificates() {
+		if namedCert.ServingCertificate.Name == "" {
+			continue
+		}
+		secret := &corev1.Secret{}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: namedCert.ServingCertificate.Name}, secret); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return nil, nil, fmt.Errorf("failed to get named certificate secret %s: %w", namedCert.ServingCertificate.Name, err)
+			}
+			log := ctrl.LoggerFrom(ctx)
+			log.Info("Named certificate secret not found, skipping for root CA trust bundle", "secret", namedCert.ServingCertificate.Name)
+			continue
+		}
+		namedCertSecrets = append(namedCertSecrets, secret)
+	}
+
+	return observedDefaultIngressCert, namedCertSecrets, nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := pki.NewPKIParams(hcp, infraStatus.APIHost, infraStatus.OAuthHost, infraStatus.KonnectivityHost)
 
@@ -1899,19 +1931,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA: %w", err)
 	}
 
-	var observedDefaultIngressCert *corev1.ConfigMap
-	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-		observedDefaultIngressCert = manifests.IngressObservedDefaultIngressCertCA(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(observedDefaultIngressCert), observedDefaultIngressCert); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to get observed default ingress cert: %w", err)
-			}
-			observedDefaultIngressCert = nil
-		}
+	observedDefaultIngressCert, namedCertSecrets, err := r.getRootCATrustSources(ctx, hcp)
+	if err != nil {
+		return fmt.Errorf("failed to get root CA trust sources: %w", err)
 	}
+
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCAConfigMap, func() error {
-		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert)
+		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert, namedCertSecrets)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
@@ -3305,33 +3332,4 @@ func setKASCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedContro
 	}
 
 	return nil
-}
-
-// includeServingCertificates includes additional serving certificates into the provided root CA ConfigMap.
-// It retrieves the named certificates specified in the HostedControlPlane's APIServer configuration and appends
-// their contents to the "ca.crt" entry in the root CA ConfigMap.
-func includeServingCertificates(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, rootCA *corev1.ConfigMap) (*corev1.ConfigMap, error) {
-	var tlsCRT string
-	newRootCA := rootCA.DeepCopy()
-
-	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.APIServer != nil && len(hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates) > 0 {
-		for _, servingCert := range hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
-			newCRT := &corev1.Secret{}
-			if err := c.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: servingCert.ServingCertificate.Name}, newCRT); err != nil {
-				return nil, fmt.Errorf("failed to get serving certificate secret: %w", err)
-			}
-
-			if len(tlsCRT) <= 0 {
-				tlsCRT = newRootCA.Data["ca.crt"]
-			}
-
-			tlsCRT = fmt.Sprintf("%s\n%s", tlsCRT, string(newCRT.Data["tls.crt"]))
-		}
-
-		if len(tlsCRT) > 0 {
-			newRootCA.Data["ca.crt"] = tlsCRT
-		}
-	}
-
-	return newRootCA, nil
 }
