@@ -518,7 +518,6 @@ type Capabilities struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
-	// +kubebuilder:validation:XValidation:rule="!self.exists(cap, cap == 'Ingress') || self.exists(cap, cap == 'Console')",message="Ingress capability can only be disabled if Console capability is also disabled"
 	Disabled []OptionalCapability `json:"disabled,omitempty"`
 }
 
