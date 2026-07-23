@@ -538,6 +538,56 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
+			name: "Eviction strategy is set explicitly",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							evictionStrategyNPOption(hyperv1.EvictionStrategyExternal),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							evictionStrategyTmpltOpt(kubevirtv1.EvictionStrategyExternal),
+						),
+					},
+				},
+			},
+		},
+		{
 			name: "Host Devices count has an invalid value",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1290,6 +1340,12 @@ func hostDevicesOption(hostDevices []hyperv1.KubevirtHostDevice) nodePoolOption 
 	}
 }
 
+func evictionStrategyNPOption(strategy hyperv1.KubevirtEvictionStrategy) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		kvNodePool.EvictionStrategy = strategy
+	}
+}
+
 func generateKubevirtPlatform(options ...nodePoolOption) *hyperv1.KubevirtNodePoolPlatform {
 	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{}
 
@@ -1383,6 +1439,12 @@ func addNetworkOpt(nw kubevirtv1.Network) nodeTemplateOption {
 	}
 }
 
+func evictionStrategyTmpltOpt(strategy kubevirtv1.EvictionStrategy) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.EvictionStrategy = &strategy
+	}
+}
+
 func annotationsTmpltOpt(annotations map[string]string) nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.ObjectMeta.Annotations = annotations
@@ -1453,8 +1515,6 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 							},
 						},
 					},
-
-					EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
 
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
