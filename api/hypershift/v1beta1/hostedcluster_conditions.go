@@ -208,6 +208,14 @@ const (
 	// connectivity issues between the control plane and the hosted cluster.
 	ConfigOperatorReconciliationSucceeded ConditionType = "ConfigOperatorReconciliationSucceeded"
 
+	// DataPlaneStatusSynced indicates whether status information propagated
+	// from the hosted cluster (e.g. ConsoleURL from the console operator) has
+	// been successfully synced to the control plane. A False value means the
+	// hosted cluster reported data that could not be propagated — for example,
+	// a ConsoleURL that exceeds the maximum allowed length. This condition is
+	// set by HCCO and bubbled up to the HostedCluster.
+	DataPlaneStatusSynced ConditionType = "DataPlaneStatusSynced"
+
 	// EtcdRecoveryActive indicates that the Etcd cluster is failing and the
 	// recovery job was triggered.
 	EtcdRecoveryActive ConditionType = "EtcdRecoveryActive"
@@ -357,6 +365,8 @@ const (
 	ControlPlaneConnectionConfigMapNotFoundReason = "ConfigMapNotFound"
 
 	ControlPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
+
+	DataPlaneStatusSyncFailedReason = "DataPlaneStatusSyncFailed"
 
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
 

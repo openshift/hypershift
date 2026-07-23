@@ -3161,6 +3161,15 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
 	}
 
+	if IsLessThan(Version424) {
+		delete(expectedConditions, hyperv1.DataPlaneStatusSynced)
+	}
+	// Exclude DataPlaneStatusSynced during upgrade tests as the old HCCO
+	// won't set this condition, causing the HC controller to synthesize Unknown.
+	if upgradeContext != nil {
+		delete(expectedConditions, hyperv1.DataPlaneStatusSynced)
+	}
+
 	var predicates []Predicate[*hyperv1.HostedCluster]
 	for conditionType, conditionStatus := range expectedConditions {
 		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{

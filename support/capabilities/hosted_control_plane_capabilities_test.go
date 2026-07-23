@@ -148,6 +148,53 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 	}
 }
 
+func TestIsConsoleCapabilityEnabled(t *testing.T) {
+	tests := []struct {
+		name         string
+		capabilities *hyperv1.Capabilities
+		expectResult bool
+	}{
+		{
+			name:         "When capabilities is nil, it should return true",
+			capabilities: nil,
+			expectResult: true,
+		},
+		{
+			name: "When Console is not in the disabled list, it should return true",
+			capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.NodeTuningCapability},
+			},
+			expectResult: true,
+		},
+		{
+			name: "When Console is explicitly disabled, it should return false",
+			capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.ConsoleCapability},
+			},
+			expectResult: false,
+		},
+		{
+			name: "When Console is enabled and not disabled, it should return true",
+			capabilities: &hyperv1.Capabilities{
+				Enabled: []hyperv1.OptionalCapability{hyperv1.ConsoleCapability},
+			},
+			expectResult: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := IsConsoleCapabilityEnabled(test.capabilities)
+			if test.expectResult && !result {
+				t.Fatal("expected Console capability to be enabled, but it wasn't")
+			}
+			if !test.expectResult && result {
+				t.Fatal("expected Console capability to be disabled, but it wasn't")
+			}
+		})
+	}
+}
+
 func TestHasDisabledCapabilities(t *testing.T) {
 	tests := []struct {
 		name                 string

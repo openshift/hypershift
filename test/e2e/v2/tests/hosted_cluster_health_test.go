@@ -24,6 +24,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/conditions"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -45,6 +46,7 @@ func RegisterHostedClusterHealthTests(getTestCtx internal.TestContextGetter) {
 	EnsureFeatureGateStatusTest(getTestCtx)
 	EnsurePayloadArchSetCorrectlyTest(getTestCtx)
 	ValidateConfigurationStatusTest(getTestCtx)
+	ValidateConsoleURLTest(getTestCtx)
 }
 
 func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) {
@@ -62,9 +64,12 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 				delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 				delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 			}
-			if e2eutil.IsLessThan(e2eutil.Version423) {
-				delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-			}
+		if e2eutil.IsLessThan(e2eutil.Version423) {
+			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+		}
+		if e2eutil.IsLessThan(e2eutil.Version424) {
+			delete(expectedConditions, hyperv1.DataPlaneStatusSynced)
+		}
 
 			Eventually(func(g Gomega) {
 				hc := &hyperv1.HostedCluster{}
@@ -184,6 +189,45 @@ func ValidateConfigurationStatusTest(getTestCtx internal.TestContextGetter) {
 					"HC authentication status should match hosted cluster Authentication resource")
 				g.Expect(hcp.Status.Configuration.Authentication).To(Equal(hc.Status.Configuration.Authentication),
 					"HCP and HC authentication status should be consistent")
+			}, 10*time.Minute, 10*time.Second).Should(Succeed())
+		})
+	})
+}
+
+func ValidateConsoleURLTest(getTestCtx internal.TestContextGetter) {
+	When("hosted cluster console is enabled", func() {
+		It("should propagate console URL to HCP and HC status", func() {
+			tc := getTestCtx()
+			hostedCluster := tc.GetHostedCluster()
+			if !capabilities.IsConsoleCapabilityEnabled(hostedCluster.Spec.Capabilities) {
+				Skip("Console capability is disabled")
+			}
+			tc.ValidateHostedClusterClient()
+			hcClient := tc.GetHostedClusterClient()
+
+			Eventually(func(g Gomega) {
+				var hostedClusterConsole configv1.Console
+				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, &hostedClusterConsole)).To(Succeed())
+				g.Expect(hostedClusterConsole.Status.ConsoleURL).NotTo(BeEmpty(), "hosted cluster Console resource should have a URL")
+
+				var hcp hyperv1.HostedControlPlane
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Name:      hostedCluster.Name,
+					Namespace: tc.ControlPlaneNamespace,
+				}, &hcp)).To(Succeed(), "failed to get HostedControlPlane %s/%s", tc.ControlPlaneNamespace, hostedCluster.Name)
+				g.Expect(hcp.Status.ConsoleURL).NotTo(BeEmpty(), "HCP console URL should be set")
+
+				var hc hyperv1.HostedCluster
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), &hc)).To(Succeed(),
+					"failed to get HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
+				g.Expect(hc.Status.ConsoleURL).NotTo(BeEmpty(), "HC console URL should be set")
+
+				g.Expect(hcp.Status.ConsoleURL).To(Equal(hostedClusterConsole.Status.ConsoleURL),
+					"HCP console URL should match hosted cluster Console resource")
+				g.Expect(hc.Status.ConsoleURL).To(Equal(hostedClusterConsole.Status.ConsoleURL),
+					"HC console URL should match hosted cluster Console resource")
+				g.Expect(hc.Status.ConsoleURL).To(Equal(hcp.Status.ConsoleURL),
+					"HC and HCP console URL should be consistent")
 			}, 10*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})

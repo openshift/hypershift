@@ -43899,6 +43899,14 @@ firewall rules, missing data plane nodes, or problems with infrastructure
 components like the konnectivity-agent workload.
 <strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
 </td>
+</tr><tr><td><p>&#34;DataPlaneStatusSynced&#34;</p></td>
+<td><p>DataPlaneStatusSynced indicates whether status information propagated
+from the hosted cluster (e.g. ConsoleURL from the console operator) has
+been successfully synced to the control plane. A False value means the
+hosted cluster reported data that could not be propagated — for example,
+a ConsoleURL that exceeds the maximum allowed length. This condition is
+set by HCCO and bubbled up to the HostedCluster.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
 A failure here often means a software bug or a non-stable cluster.</p>
@@ -47819,6 +47827,20 @@ This is populated after the infrastructure is ready.</p>
 </tr>
 <tr>
 <td>
+<code>consoleURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>consoleURL is the URL of the OpenShift web console for this hosted cluster.
+This is populated from the console.config.openshift.io/cluster resource
+in the guest cluster once the console operator has reconciled.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>payloadArch</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.PayloadArchType">
@@ -48527,6 +48549,20 @@ string
 for identity providers. The [identity-provider-name] placeholder must be replaced
 with the name of an identity provider defined on the HostedCluster.
 This is populated after the infrastructure is ready.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>consoleURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>consoleURL is the URL of the OpenShift web console for this hosted cluster.
+This is populated from the console.config.openshift.io/cluster resource
+in the guest cluster once the console operator has reconciled.</p>
 </td>
 </tr>
 <tr>
