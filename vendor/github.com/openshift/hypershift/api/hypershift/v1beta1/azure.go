@@ -130,8 +130,9 @@ type AzureVMImage struct {
 	// +unionDiscriminator
 	Type AzureVMImageType `json:"type"`
 
-	// imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
 	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+
+	// imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
 	//
 	// +optional
 	// +unionMember
@@ -165,10 +166,11 @@ type AzureMarketplaceImage struct {
 	// +kubebuilder:default=Gen2
 	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 
+	// TODO: Can we explain where a user might find this value, or provide an example of one they might want to use
+
 	// publisher is the name of the organization that created the image.
 	// It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
 	// It must start with a lowercase letter or a number.
-	// TODO: Can we explain where a user might find this value, or provide an example of one they might want to use
 	//
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-_]{2,49}$`
 	// +kubebuilder:validation:MinLength=3
@@ -176,18 +178,20 @@ type AzureMarketplaceImage struct {
 	// +optional
 	Publisher string `json:"publisher,omitempty"`
 
-	// offer specifies the name of a group of related images created by the publisher.
 	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+
+	// offer specifies the name of a group of related images created by the publisher.
 	//
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +optional
 	Offer string `json:"offer,omitempty"`
 
+	// TODO: What about length limits?
+
 	// sku specifies an instance of an offer, such as a major release of a distribution.
 	// For example, 22_04-lts-gen2, 8-lvm-gen2.
 	// The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (_).
-	// TODO: What about length limits?
 	//
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-_]+$`
 	// +kubebuilder:validation:MinLength=1
@@ -321,6 +325,8 @@ type AzureNodePoolOSDisk struct {
 	// +optional
 	DiskStorageAccountType AzureDiskStorageAccountType `json:"diskStorageAccountType,omitempty"`
 
+	// TODO: Are there other encryption related options we may want to expose, should this be in a struct as well?
+
 	// encryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
 	// Configuring a DiskEncyptionSet allows greater control over the encryption of the VM OS disk at rest.
 	// Can be used with either platform (Azure) managed, or customer managed encryption keys.
@@ -331,7 +337,6 @@ type AzureNodePoolOSDisk struct {
 	// The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 	// The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
 	// The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.
-	// TODO: Are there other encryption related options we may want to expose, should this be in a struct as well?
 	//
 	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/diskEncryptionSets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{resourceName}`"
 	// +kubebuilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
