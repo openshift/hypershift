@@ -18,9 +18,22 @@ import (
 const (
 	gcsBaseURL = "https://storage.googleapis.com/test-platform-results"
 	gcsBucket  = "test-platform-results"
-	jobPrefix  = "logs/periodic-ci-openshift-hypershift-main-periodic-jira-agent/"
-	stepPath   = "artifacts/periodic-jira-agent/hypershift-jira-agent-process/"
 )
+
+// JobConfig defines a periodic job's GCS layout.
+type JobConfig struct {
+	Name      string // e.g. "hypershift", "installer"
+	JobPrefix string // GCS directory prefix under the bucket
+	StepPath  string // step artifact path within each build
+}
+
+// DefaultJobConfigs returns the set of jira-agent periodic jobs to scrape.
+func DefaultJobConfigs() []JobConfig {
+	return []JobConfig{
+		{Name: "hypershift", JobPrefix: "logs/periodic-ci-openshift-hypershift-main-periodic-jira-agent/", StepPath: "artifacts/periodic-jira-agent/hypershift-jira-agent-process/"},
+		{Name: "installer", JobPrefix: "logs/periodic-ci-openshift-installer-main-periodic-jira-agent/", StepPath: "artifacts/periodic-jira-agent/jira-agent-process/"},
+	}
+}
 
 // GCSClient abstracts access to GCS so it can be mocked in tests.
 type GCSClient interface {
@@ -53,7 +66,9 @@ type BuildLogResult struct {
 
 // HTTPGCSClient implements GCSClient using the public GCS HTTP endpoints.
 type HTTPGCSClient struct {
-	Client *http.Client
+	Client    *http.Client
+	JobPrefix string
+	StepPath  string
 }
 
 // gcsListResponse is the JSON structure returned by the GCS JSON API for object listing.
@@ -61,13 +76,13 @@ type gcsListResponse struct {
 	Prefixes []string `json:"prefixes"`
 }
 
-// NewHTTPGCSClient creates an HTTPGCSClient with the given http.Client.
+// NewHTTPGCSClient creates an HTTPGCSClient configured for a specific job.
 // If client is nil, a client with a 30-second timeout is used.
-func NewHTTPGCSClient(client *http.Client) *HTTPGCSClient {
+func NewHTTPGCSClient(client *http.Client, jobPrefix, stepPath string) *HTTPGCSClient {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	return &HTTPGCSClient{Client: client}
+	return &HTTPGCSClient{Client: client, JobPrefix: jobPrefix, StepPath: stepPath}
 }
 
 // ListBuilds returns build IDs by listing directory prefixes under the job path
@@ -75,7 +90,7 @@ func NewHTTPGCSClient(client *http.Client) *HTTPGCSClient {
 func (c *HTTPGCSClient) ListBuilds(ctx context.Context) ([]string, error) {
 	url := fmt.Sprintf(
 		"https://storage.googleapis.com/storage/v1/b/%s/o?prefix=%s&delimiter=/",
-		gcsBucket, jobPrefix,
+		gcsBucket, c.JobPrefix,
 	)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -101,7 +116,7 @@ func (c *HTTPGCSClient) ListBuilds(ctx context.Context) ([]string, error) {
 	var builds []string
 	for _, prefix := range listResp.Prefixes {
 		// Prefixes look like "logs/periodic-ci-openshift-hypershift-main-periodic-jira-agent/1234567890/"
-		trimmed := strings.TrimPrefix(prefix, jobPrefix)
+		trimmed := strings.TrimPrefix(prefix, c.JobPrefix)
 		trimmed = strings.TrimSuffix(trimmed, "/")
 		if trimmed != "" {
 			builds = append(builds, trimmed)
@@ -114,7 +129,7 @@ func (c *HTTPGCSClient) ListBuilds(ctx context.Context) ([]string, error) {
 // For example, path="build-log.txt" reads the build log, and path="artifacts/foo.txt"
 // reads from the artifacts subdirectory.
 func (c *HTTPGCSClient) ReadFile(ctx context.Context, buildID, path string) ([]byte, error) {
-	url := fmt.Sprintf("%s/%s%s/%s%s", gcsBaseURL, jobPrefix, buildID, stepPath, path)
+	url := fmt.Sprintf("%s/%s%s/%s%s", gcsBaseURL, c.JobPrefix, buildID, c.StepPath, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -159,7 +174,7 @@ func maybeGunzip(data []byte) []byte {
 
 // ReadBuildFile fetches a file at the build root level (e.g., started.json, finished.json).
 func (c *HTTPGCSClient) ReadBuildFile(ctx context.Context, buildID, path string) ([]byte, error) {
-	url := fmt.Sprintf("%s/%s%s/%s", gcsBaseURL, jobPrefix, buildID, path)
+	url := fmt.Sprintf("%s/%s%s/%s", gcsBaseURL, c.JobPrefix, buildID, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -185,7 +200,7 @@ func (c *HTTPGCSClient) ReadBuildFile(ctx context.Context, buildID, path string)
 
 // ListBuildArtifacts returns filenames in the step artifacts subdirectory for a build.
 func (c *HTTPGCSClient) ListBuildArtifacts(ctx context.Context, buildID string) ([]string, error) {
-	prefix := fmt.Sprintf("%s%s/%sartifacts/", jobPrefix, buildID, stepPath)
+	prefix := fmt.Sprintf("%s%s/%sartifacts/", c.JobPrefix, buildID, c.StepPath)
 	listURL := fmt.Sprintf("https://storage.googleapis.com/storage/v1/b/%s/o?prefix=%s&delimiter=", gcsBucket, prefix)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)

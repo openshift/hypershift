@@ -172,7 +172,7 @@ Failed: 0
 	gh := &mockGitHubAPI{prs: map[int]*PRInfo{}, comments: map[int][]CommentInfo{}}
 	ca := &mockComplexityAnalyzer{result: &ComplexityResult{CyclomaticDelta: 1.0, CognitiveDelta: 2.0}}
 
-	orch := NewOrchestrator(store, gcs, gh, ca)
+	orch := NewOrchestrator(store, map[string]GCSClient{"test": gcs}, gh, ca)
 	err := orch.scrapeNewJobRuns(context.Background())
 	if err != nil {
 		t.Fatalf("scrapeNewJobRuns: %v", err)
@@ -260,7 +260,7 @@ func TestRefreshOpenPRs(t *testing.T) {
 	ca := &mockComplexityAnalyzer{result: &ComplexityResult{CyclomaticDelta: 0.5, CognitiveDelta: 1.5}}
 	gcs := &mockGCSClient{builds: map[string]map[string][]byte{}}
 
-	orch := NewOrchestrator(store, gcs, gh, ca)
+	orch := NewOrchestrator(store, map[string]GCSClient{"test": gcs}, gh, ca)
 	err := orch.refreshOpenPRs(context.Background())
 	if err != nil {
 		t.Fatalf("refreshOpenPRs: %v", err)
@@ -327,7 +327,7 @@ func TestSkipAlreadyScrapedBuilds(t *testing.T) {
 	gh := &mockGitHubAPI{prs: map[int]*PRInfo{}, comments: map[int][]CommentInfo{}}
 	ca := &mockComplexityAnalyzer{result: &ComplexityResult{}}
 
-	orch := NewOrchestrator(store, gcs, gh, ca)
+	orch := NewOrchestrator(store, map[string]GCSClient{"test": gcs}, gh, ca)
 	err := orch.scrapeNewJobRuns(context.Background())
 	if err != nil {
 		t.Fatalf("scrapeNewJobRuns: %v", err)
@@ -383,7 +383,7 @@ func TestStopRefreshingMergedPRs(t *testing.T) {
 	ca := &mockComplexityAnalyzer{result: &ComplexityResult{CyclomaticDelta: 99, CognitiveDelta: 99}}
 	gcs := &mockGCSClient{builds: map[string]map[string][]byte{}}
 
-	orch := NewOrchestrator(store, gcs, gh, ca)
+	orch := NewOrchestrator(store, map[string]GCSClient{"test": gcs}, gh, ca)
 	err := orch.refreshOpenPRs(context.Background())
 	if err != nil {
 		t.Fatalf("refreshOpenPRs: %v", err)

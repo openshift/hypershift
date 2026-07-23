@@ -52,9 +52,9 @@ func NewStore(db *sql.DB) *Store {
 // InsertJobRun inserts a new job run and returns its ID.
 func (s *Store) InsertJobRun(run *JobRun) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO job_runs (prow_job_id, build_id, started_at, finished_at, status, artifact_url)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		run.ProwJobID, run.BuildID, run.StartedAt, run.FinishedAt, run.Status, run.ArtifactURL,
+		`INSERT INTO job_runs (prow_job_id, build_id, started_at, finished_at, status, artifact_url, job_name)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		run.ProwJobID, run.BuildID, run.StartedAt, run.FinishedAt, run.Status, run.ArtifactURL, run.JobName,
 	)
 	if err != nil {
 		return 0, err
@@ -65,11 +65,11 @@ func (s *Store) InsertJobRun(run *JobRun) (int64, error) {
 // GetJobRunByBuildID retrieves a job run by its build ID.
 func (s *Store) GetJobRunByBuildID(buildID string) (*JobRun, error) {
 	row := s.db.QueryRow(
-		`SELECT id, prow_job_id, build_id, started_at, finished_at, status, artifact_url
+		`SELECT id, prow_job_id, build_id, started_at, finished_at, status, artifact_url, job_name
 		 FROM job_runs WHERE build_id = ?`, buildID,
 	)
 	var run JobRun
-	err := row.Scan(&run.ID, &run.ProwJobID, &run.BuildID, &run.StartedAt, &run.FinishedAt, &run.Status, &run.ArtifactURL)
+	err := row.Scan(&run.ID, &run.ProwJobID, &run.BuildID, &run.StartedAt, &run.FinishedAt, &run.Status, &run.ArtifactURL, &run.JobName)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (s *Store) UpdateJobRunTimestamps(id int64, startedAt, finishedAt time.Time
 
 // ListAllJobRuns returns all job runs.
 func (s *Store) ListAllJobRuns() ([]JobRun, error) {
-	rows, err := s.db.Query(`SELECT id, prow_job_id, build_id, started_at, finished_at, status, artifact_url FROM job_runs`)
+	rows, err := s.db.Query(`SELECT id, prow_job_id, build_id, started_at, finished_at, status, artifact_url, job_name FROM job_runs`)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *Store) ListAllJobRuns() ([]JobRun, error) {
 	var runs []JobRun
 	for rows.Next() {
 		var r JobRun
-		if err := rows.Scan(&r.ID, &r.ProwJobID, &r.BuildID, &r.StartedAt, &r.FinishedAt, &r.Status, &r.ArtifactURL); err != nil {
+		if err := rows.Scan(&r.ID, &r.ProwJobID, &r.BuildID, &r.StartedAt, &r.FinishedAt, &r.Status, &r.ArtifactURL, &r.JobName); err != nil {
 			return nil, err
 		}
 		runs = append(runs, r)
@@ -585,7 +585,7 @@ func (s *Store) GetIssuesNeedingPRData() ([]Issue, error) {
 // GetIssuesMissingPR returns issues with pr_number=0 along with their build_id for re-parsing.
 func (s *Store) GetIssuesMissingPR() ([]IssueWithBuildID, error) {
 	rows, err := s.db.Query(
-		`SELECT i.id, i.jira_key, j.build_id
+		`SELECT i.id, i.jira_key, j.build_id, j.job_name
 		 FROM issues i
 		 JOIN job_runs j ON i.job_run_id = j.id
 		 WHERE i.pr_number = 0 OR i.pr_url = ''`,
@@ -598,7 +598,7 @@ func (s *Store) GetIssuesMissingPR() ([]IssueWithBuildID, error) {
 	var results []IssueWithBuildID
 	for rows.Next() {
 		var r IssueWithBuildID
-		if err := rows.Scan(&r.IssueID, &r.JiraKey, &r.BuildID); err != nil {
+		if err := rows.Scan(&r.IssueID, &r.JiraKey, &r.BuildID, &r.JobName); err != nil {
 			return nil, err
 		}
 		results = append(results, r)

@@ -10,6 +10,7 @@ type JobRun struct {
 	FinishedAt  time.Time
 	Status      string // success / failure
 	ArtifactURL string
+	JobName     string // hypershift / installer
 }
 
 type Issue struct {
@@ -79,6 +80,7 @@ type IssueWithBuildID struct {
 	IssueID int64
 	JiraKey string
 	BuildID string
+	JobName string
 }
 
 type ScraperRun struct {
@@ -91,38 +93,38 @@ type ScraperRun struct {
 }
 
 type SessionTelemetry struct {
-	ID                        int64
-	JobRunID                  int64
-	IssueKey                  string
-	Phase                     string
-	SessionID                 string
-	Result                    string
-	Model                     string
-	ClaudeCodeVersion         string
-	Prompt                    string
-	DurationMs                int64
-	DurationAPIMs             int64
-	TTFTMs                    int64
-	NumTurns                  int64
-	TotalCostUSD              float64
-	InputTokens               int64
-	OutputTokens              int64
-	CacheReadInputTokens      int64
-	CacheCreationInputTokens  int64
-	CacheHitRatePct           float64
-	TotalToolCalls            int64
-	ToolCallBreakdown         string
-	SkillsInvoked             string
-	FilesWritten              int64
-	NumThinkingBlocks         int64
-	NumSubagents              int64
-	SubagentTotalToolUses     int64
-	SubagentTotalDurationMs   int64
-	IsError                   int64
-	TerminalReason            string
-	StopReason                string
-	AnalyzedAt                *time.Time
-	StartedAt                 *time.Time // from job_runs join, populated by list queries
+	ID                       int64
+	JobRunID                 int64
+	IssueKey                 string
+	Phase                    string
+	SessionID                string
+	Result                   string
+	Model                    string
+	ClaudeCodeVersion        string
+	Prompt                   string
+	DurationMs               int64
+	DurationAPIMs            int64
+	TTFTMs                   int64
+	NumTurns                 int64
+	TotalCostUSD             float64
+	InputTokens              int64
+	OutputTokens             int64
+	CacheReadInputTokens     int64
+	CacheCreationInputTokens int64
+	CacheHitRatePct          float64
+	TotalToolCalls           int64
+	ToolCallBreakdown        string
+	SkillsInvoked            string
+	FilesWritten             int64
+	NumThinkingBlocks        int64
+	NumSubagents             int64
+	SubagentTotalToolUses    int64
+	SubagentTotalDurationMs  int64
+	IsError                  int64
+	TerminalReason           string
+	StopReason               string
+	AnalyzedAt               *time.Time
+	StartedAt                *time.Time // from job_runs join, populated by list queries
 }
 
 type TelemetrySummary struct {
@@ -137,25 +139,25 @@ type TelemetrySummary struct {
 }
 
 type OtelEvent struct {
-	ID               int64
-	JobRunID         int64
-	SessionID        string
-	EventType        string
-	TimestampMs      int64
-	Model            string
-	InputTokens      int64
-	OutputTokens     int64
-	CacheReadTokens  int64
+	ID                int64
+	JobRunID          int64
+	SessionID         string
+	EventType         string
+	TimestampMs       int64
+	Model             string
+	InputTokens       int64
+	OutputTokens      int64
+	CacheReadTokens   int64
 	CacheCreateTokens int64
-	CostUSD          float64
-	DurationMs       int64
-	ToolName         string
-	ToolSuccess      int64
-	ToolInputSize    int64
-	ToolResultSize   int64
-	AgentType        string
-	TotalTokens      int64
-	TotalToolUses    int64
+	CostUSD           float64
+	DurationMs        int64
+	ToolName          string
+	ToolSuccess       int64
+	ToolInputSize     int64
+	ToolResultSize    int64
+	AgentType         string
+	TotalTokens       int64
+	TotalToolUses     int64
 }
 
 type ToolStat struct {

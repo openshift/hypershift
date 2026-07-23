@@ -34,10 +34,10 @@ type ComplexityAnalyzerAPI interface {
 // Orchestrator coordinates scraping GCS artifacts, refreshing GitHub PR state,
 // and classifying review comments.
 type Orchestrator struct {
-	store      *db.Store
-	gcs        GCSClient
-	gh         GitHubAPI
-	complexity ComplexityAnalyzerAPI
+	store           *db.Store
+	gcs             map[string]GCSClient
+	gh              GitHubAPI
+	complexity      ComplexityAnalyzerAPI
 	outputPath      string
 	inputPath       string
 	skillConfigPath string
@@ -46,7 +46,8 @@ type Orchestrator struct {
 }
 
 // NewOrchestrator creates an Orchestrator with the given dependencies.
-func NewOrchestrator(store *db.Store, gcs GCSClient, gh GitHubAPI, ca ComplexityAnalyzerAPI) *Orchestrator {
+// gcs is a map of job name to GCSClient (e.g. {"hypershift": client1, "installer": client2}).
+func NewOrchestrator(store *db.Store, gcs map[string]GCSClient, gh GitHubAPI, ca ComplexityAnalyzerAPI) *Orchestrator {
 	return &Orchestrator{
 		store:      store,
 		gcs:        gcs,
@@ -161,15 +162,24 @@ func (o *Orchestrator) runAndRecord(_ context.Context, step string, fn func() er
 	return err
 }
 
-// scrapeNewJobRuns lists builds from GCS and imports any that are not yet in the DB.
+// scrapeNewJobRuns lists builds from GCS for each configured job and imports any not yet in the DB.
 func (o *Orchestrator) scrapeNewJobRuns(ctx context.Context) error {
-	builds, err := o.gcs.ListBuilds(ctx)
+	for jobName, client := range o.gcs {
+		log.Printf("Scraping builds for job %s...", jobName)
+		if err := o.scrapeJobBuilds(ctx, jobName, client); err != nil {
+			return fmt.Errorf("scraping %s builds: %w", jobName, err)
+		}
+	}
+	return nil
+}
+
+func (o *Orchestrator) scrapeJobBuilds(ctx context.Context, jobName string, client GCSClient) error {
+	builds, err := client.ListBuilds(ctx)
 	if err != nil {
 		return fmt.Errorf("listing builds: %w", err)
 	}
 
 	for _, buildID := range builds {
-		// Check if already scraped
 		_, err := o.store.GetJobRunByBuildID(buildID)
 		if err == nil {
 			log.Printf("Skipping already-scraped build %s", buildID)
@@ -179,8 +189,7 @@ func (o *Orchestrator) scrapeNewJobRuns(ctx context.Context) error {
 			return fmt.Errorf("checking build %s: %w", buildID, err)
 		}
 
-		// Read build-log.txt from the step directory
-		data, err := o.gcs.ReadFile(ctx, buildID, "build-log.txt")
+		data, err := client.ReadFile(ctx, buildID, "build-log.txt")
 		if err != nil {
 			log.Printf("Warning: could not read build-log.txt for build %s: %v", buildID, err)
 			continue
@@ -192,35 +201,40 @@ func (o *Orchestrator) scrapeNewJobRuns(ctx context.Context) error {
 			continue
 		}
 
-		// Read real start/finish times from Prow metadata
 		var startedAt, finishedAt time.Time
-		if data, err := o.gcs.ReadBuildFile(ctx, buildID, "started.json"); err == nil {
+		if data, err := client.ReadBuildFile(ctx, buildID, "started.json"); err == nil {
 			var ts prowTimestamp
 			if json.Unmarshal(data, &ts) == nil && ts.Timestamp > 0 {
 				startedAt = time.Unix(ts.Timestamp, 0).UTC()
 			}
 		}
-		if data, err := o.gcs.ReadBuildFile(ctx, buildID, "finished.json"); err == nil {
+		if data, err := client.ReadBuildFile(ctx, buildID, "finished.json"); err == nil {
 			var ts prowTimestamp
 			if json.Unmarshal(data, &ts) == nil && ts.Timestamp > 0 {
 				finishedAt = time.Unix(ts.Timestamp, 0).UTC()
 			}
 		}
 
-		// Insert job_run
+		// Derive artifact URL from the client's JobPrefix
+		artifactPrefix := jobName
+		if gc, ok := client.(*HTTPGCSClient); ok {
+			artifactPrefix = strings.TrimSuffix(strings.TrimPrefix(gc.JobPrefix, "logs/"), "/")
+		}
+		artifactURL := fmt.Sprintf("https://prow.ci.openshift.org/view/gs/test-platform-results/logs/%s/%s", artifactPrefix, buildID)
+
 		jobRunID, err := o.store.InsertJobRun(&db.JobRun{
 			ProwJobID:   buildID,
 			BuildID:     buildID,
 			StartedAt:   startedAt,
 			FinishedAt:  finishedAt,
 			Status:      "success",
-			ArtifactURL: fmt.Sprintf("https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-main-periodic-jira-agent/%s", buildID),
+			ArtifactURL: artifactURL,
+			JobName:     jobName,
 		})
 		if err != nil {
 			return fmt.Errorf("inserting job run %s: %w", buildID, err)
 		}
 
-		// Insert the issue
 		prNumber := extractPRNumber(result.PRURL)
 		issueID, err := o.store.InsertIssue(&db.Issue{
 			JobRunID: jobRunID,
@@ -235,7 +249,6 @@ func (o *Orchestrator) scrapeNewJobRuns(ctx context.Context) error {
 			continue
 		}
 
-		// Insert phase metrics from the parsed token blocks
 		for _, phase := range result.Phases {
 			_, err = o.store.InsertPhaseMetric(&db.PhaseMetric{
 				IssueID:             issueID,
@@ -255,7 +268,7 @@ func (o *Orchestrator) scrapeNewJobRuns(ctx context.Context) error {
 			}
 		}
 
-		log.Printf("Scraped build %s: issue=%s, phases=%d, pr=%s", buildID, result.IssueKey, len(result.Phases), result.PRURL)
+		log.Printf("Scraped build %s [%s]: issue=%s, phases=%d, pr=%s", buildID, jobName, result.IssueKey, len(result.Phases), result.PRURL)
 	}
 
 	return nil
@@ -450,6 +463,17 @@ func (o *Orchestrator) analyzeComplexity(ctx context.Context) error {
 	return nil
 }
 
+// gcsClientForJob returns the GCS client for a job name, falling back to the first available client.
+func (o *Orchestrator) gcsClientForJob(jobName string) GCSClient {
+	if c, ok := o.gcs[jobName]; ok {
+		return c
+	}
+	for _, c := range o.gcs {
+		return c
+	}
+	return nil
+}
+
 // fixTimestamps re-reads started.json/finished.json from GCS for all existing
 // job runs and updates their timestamps. This is a one-time fix for runs that
 // were initially scraped with time.Now() instead of actual Prow timestamps.
@@ -461,17 +485,21 @@ func (o *Orchestrator) fixTimestamps(ctx context.Context) error {
 
 	fixed := 0
 	for _, run := range runs {
+		client := o.gcsClientForJob(run.JobName)
+		if client == nil {
+			continue
+		}
 		var startedAt, finishedAt time.Time
 		updated := false
 
-		if data, err := o.gcs.ReadBuildFile(ctx, run.BuildID, "started.json"); err == nil {
+		if data, err := client.ReadBuildFile(ctx, run.BuildID, "started.json"); err == nil {
 			var ts prowTimestamp
 			if json.Unmarshal(data, &ts) == nil && ts.Timestamp > 0 {
 				startedAt = time.Unix(ts.Timestamp, 0).UTC()
 				updated = true
 			}
 		}
-		if data, err := o.gcs.ReadBuildFile(ctx, run.BuildID, "finished.json"); err == nil {
+		if data, err := client.ReadBuildFile(ctx, run.BuildID, "finished.json"); err == nil {
 			var ts prowTimestamp
 			if json.Unmarshal(data, &ts) == nil && ts.Timestamp > 0 {
 				finishedAt = time.Unix(ts.Timestamp, 0).UTC()
@@ -559,7 +587,11 @@ func (o *Orchestrator) backfillPRURLs(ctx context.Context) error {
 
 	fixed := 0
 	for _, issue := range issues {
-		data, err := o.gcs.ReadFile(ctx, issue.BuildID, "build-log.txt")
+		client := o.gcsClientForJob(issue.JobName)
+		if client == nil {
+			continue
+		}
+		data, err := client.ReadFile(ctx, issue.BuildID, "build-log.txt")
 		if err != nil {
 			log.Printf("Warning: could not read build-log.txt for build %s: %v", issue.BuildID, err)
 			continue
@@ -854,169 +886,172 @@ func (o *Orchestrator) ImportClassifications(_ context.Context, inputPath string
 	return nil
 }
 
-// scrapeTelemetry lists builds from GCS and imports autodl session metrics
-// and jira-agent records for any builds that don't already have telemetry data.
+// scrapeTelemetry lists builds from GCS for each configured job and imports
+// autodl session metrics and jira-agent records for any builds that don't
+// already have telemetry data.
 func (o *Orchestrator) scrapeTelemetry(ctx context.Context) error {
-	builds, err := o.gcs.ListBuilds(ctx)
-	if err != nil {
-		return fmt.Errorf("listing builds: %w", err)
-	}
-
 	imported := 0
-	for _, buildID := range builds {
-		run, err := o.store.GetJobRunByBuildID(buildID)
+	otelImported := 0
+
+	for jobName, client := range o.gcs {
+		builds, err := client.ListBuilds(ctx)
 		if err != nil {
-			continue
+			return fmt.Errorf("listing builds for %s: %w", jobName, err)
 		}
 
-		has, err := o.store.HasTelemetryForBuild(run.ID)
-		if err != nil {
-			log.Printf("Warning: could not check telemetry for build %s: %v", buildID, err)
-			continue
-		}
-		if has {
-			continue
-		}
-
-		artifacts, err := o.gcs.ListBuildArtifacts(ctx, buildID)
-		if err != nil {
-			log.Printf("Warning: could not list artifacts for build %s: %v", buildID, err)
-			continue
-		}
-		if len(artifacts) == 0 {
-			continue
-		}
-
-		// Collect session metrics and jira-agent rows keyed by (issueKey, phase)
-		type telemetryKey struct{ issue, phase string }
-		metricsMap := make(map[telemetryKey]*SessionMetricsRow)
-		agentMap := make(map[telemetryKey]*JiraAgentRow)
-
-		for _, filename := range artifacts {
-			issueKey, phase, isMetrics, ok := ParseAutodlFilename(filename)
-			if !ok {
-				continue
-			}
-			key := telemetryKey{issueKey, phase}
-
-			data, err := o.gcs.ReadFile(ctx, buildID, "artifacts/"+filename)
+		for _, buildID := range builds {
+			run, err := o.store.GetJobRunByBuildID(buildID)
 			if err != nil {
-				log.Printf("Warning: could not read %s for build %s: %v", filename, buildID, err)
 				continue
 			}
 
-			if isMetrics {
-				row, err := ParseSessionMetrics(data)
-				if err != nil {
-					log.Printf("Warning: could not parse %s for build %s: %v", filename, buildID, err)
-					continue
-				}
-				metricsMap[key] = row
-			} else {
-				row, err := ParseJiraAgentRow(data)
-				if err != nil {
-					log.Printf("Warning: could not parse %s for build %s: %v", filename, buildID, err)
-					continue
-				}
-				agentMap[key] = row
-			}
-		}
-
-		// Merge and upsert
-		seen := make(map[telemetryKey]bool)
-		for key := range metricsMap {
-			seen[key] = true
-		}
-		for key := range agentMap {
-			seen[key] = true
-		}
-
-		for key := range seen {
-			t := &db.SessionTelemetry{
-				JobRunID: run.ID,
-				IssueKey: key.issue,
-				Phase:    key.phase,
-			}
-
-			if m, ok := metricsMap[key]; ok {
-				t.SessionID = m.SessionID
-				t.Model = m.Model
-				t.ClaudeCodeVersion = m.ClaudeCodeVersion
-				t.Prompt = m.Prompt
-				t.DurationMs = atoi64(m.DurationMs)
-				t.DurationAPIMs = atoi64(m.DurationAPIMs)
-				t.TTFTMs = atoi64(m.TTFTMs)
-				t.NumTurns = atoi64(m.NumTurns)
-				t.TotalCostUSD = atof64(m.TotalCostUSD)
-				t.InputTokens = atoi64(m.InputTokens)
-				t.OutputTokens = atoi64(m.OutputTokens)
-				t.CacheReadInputTokens = atoi64(m.CacheReadInputTokens)
-				t.CacheCreationInputTokens = atoi64(m.CacheCreationInputTokens)
-				t.CacheHitRatePct = atof64(m.CacheHitRatePct)
-				t.TotalToolCalls = atoi64(m.TotalToolCalls)
-				t.ToolCallBreakdown = m.ToolCallBreakdown
-				t.SkillsInvoked = m.SkillsInvoked
-				t.FilesWritten = atoi64(m.FilesWritten)
-				t.NumThinkingBlocks = atoi64(m.NumThinkingBlocks)
-				t.NumSubagents = atoi64(m.NumSubagents)
-				t.SubagentTotalToolUses = atoi64(m.SubagentTotalToolUses)
-				t.SubagentTotalDurationMs = atoi64(m.SubagentTotalDurationMs)
-				t.IsError = atoi64(m.IsError)
-				t.TerminalReason = m.TerminalReason
-				t.StopReason = m.StopReason
-			}
-
-			if a, ok := agentMap[key]; ok {
-				if t.SessionID == "" {
-					t.SessionID = a.SessionID
-				}
-				t.Result = a.Result
-			}
-
-			if err := o.store.UpsertSessionTelemetry(t); err != nil {
-				log.Printf("Warning: could not upsert telemetry for %s/%s in build %s: %v",
-					key.issue, key.phase, buildID, err)
+			has, err := o.store.HasTelemetryForBuild(run.ID)
+			if err != nil {
+				log.Printf("Warning: could not check telemetry for build %s: %v", buildID, err)
 				continue
 			}
-			imported++
+			if has {
+				continue
+			}
+
+			artifacts, err := client.ListBuildArtifacts(ctx, buildID)
+			if err != nil {
+				log.Printf("Warning: could not list artifacts for build %s: %v", buildID, err)
+				continue
+			}
+			if len(artifacts) == 0 {
+				continue
+			}
+
+			type telemetryKey struct{ issue, phase string }
+			metricsMap := make(map[telemetryKey]*SessionMetricsRow)
+			agentMap := make(map[telemetryKey]*JiraAgentRow)
+
+			for _, filename := range artifacts {
+				issueKey, phase, isMetrics, ok := ParseAutodlFilename(filename)
+				if !ok {
+					continue
+				}
+				key := telemetryKey{issueKey, phase}
+
+				data, err := client.ReadFile(ctx, buildID, "artifacts/"+filename)
+				if err != nil {
+					log.Printf("Warning: could not read %s for build %s: %v", filename, buildID, err)
+					continue
+				}
+
+				if isMetrics {
+					row, err := ParseSessionMetrics(data)
+					if err != nil {
+						log.Printf("Warning: could not parse %s for build %s: %v", filename, buildID, err)
+						continue
+					}
+					metricsMap[key] = row
+				} else {
+					row, err := ParseJiraAgentRow(data)
+					if err != nil {
+						log.Printf("Warning: could not parse %s for build %s: %v", filename, buildID, err)
+						continue
+					}
+					agentMap[key] = row
+				}
+			}
+
+			seen := make(map[telemetryKey]bool)
+			for key := range metricsMap {
+				seen[key] = true
+			}
+			for key := range agentMap {
+				seen[key] = true
+			}
+
+			for key := range seen {
+				t := &db.SessionTelemetry{
+					JobRunID: run.ID,
+					IssueKey: key.issue,
+					Phase:    key.phase,
+				}
+
+				if m, ok := metricsMap[key]; ok {
+					t.SessionID = m.SessionID
+					t.Model = m.Model
+					t.ClaudeCodeVersion = m.ClaudeCodeVersion
+					t.Prompt = m.Prompt
+					t.DurationMs = atoi64(m.DurationMs)
+					t.DurationAPIMs = atoi64(m.DurationAPIMs)
+					t.TTFTMs = atoi64(m.TTFTMs)
+					t.NumTurns = atoi64(m.NumTurns)
+					t.TotalCostUSD = atof64(m.TotalCostUSD)
+					t.InputTokens = atoi64(m.InputTokens)
+					t.OutputTokens = atoi64(m.OutputTokens)
+					t.CacheReadInputTokens = atoi64(m.CacheReadInputTokens)
+					t.CacheCreationInputTokens = atoi64(m.CacheCreationInputTokens)
+					t.CacheHitRatePct = atof64(m.CacheHitRatePct)
+					t.TotalToolCalls = atoi64(m.TotalToolCalls)
+					t.ToolCallBreakdown = m.ToolCallBreakdown
+					t.SkillsInvoked = m.SkillsInvoked
+					t.FilesWritten = atoi64(m.FilesWritten)
+					t.NumThinkingBlocks = atoi64(m.NumThinkingBlocks)
+					t.NumSubagents = atoi64(m.NumSubagents)
+					t.SubagentTotalToolUses = atoi64(m.SubagentTotalToolUses)
+					t.SubagentTotalDurationMs = atoi64(m.SubagentTotalDurationMs)
+					t.IsError = atoi64(m.IsError)
+					t.TerminalReason = m.TerminalReason
+					t.StopReason = m.StopReason
+				}
+
+				if a, ok := agentMap[key]; ok {
+					if t.SessionID == "" {
+						t.SessionID = a.SessionID
+					}
+					t.Result = a.Result
+				}
+
+				if err := o.store.UpsertSessionTelemetry(t); err != nil {
+					log.Printf("Warning: could not upsert telemetry for %s/%s in build %s: %v",
+						key.issue, key.phase, buildID, err)
+					continue
+				}
+				imported++
+			}
+
+			if len(seen) > 0 {
+				log.Printf("Imported %d telemetry records for build %s", len(seen), buildID)
+			}
 		}
 
-		if len(seen) > 0 {
-			log.Printf("Imported %d telemetry records for build %s", len(seen), buildID)
+		// OTel events
+		for _, buildID := range builds {
+			run, err := o.store.GetJobRunByBuildID(buildID)
+			if err != nil {
+				continue
+			}
+			hasOtel, _ := o.store.HasOtelForBuild(run.ID)
+			if hasOtel {
+				continue
+			}
+			otelData, err := client.ReadFile(ctx, buildID, "artifacts/claude-otel.jsonl")
+			if err != nil || len(otelData) == 0 {
+				continue
+			}
+			events, err := ParseOtelEvents(otelData)
+			if err != nil {
+				log.Printf("Warning: could not parse otel events for build %s: %v", buildID, err)
+				continue
+			}
+			for i := range events {
+				events[i].JobRunID = run.ID
+			}
+			if err := o.store.InsertOtelEvents(events); err != nil {
+				log.Printf("Warning: could not insert otel events for build %s: %v", buildID, err)
+				continue
+			}
+			otelImported += len(events)
+			log.Printf("Imported %d otel events for build %s", len(events), buildID)
 		}
 	}
 
 	log.Printf("Total telemetry records imported: %d", imported)
-
-	otelImported := 0
-	for _, buildID := range builds {
-		run, err := o.store.GetJobRunByBuildID(buildID)
-		if err != nil {
-			continue
-		}
-		hasOtel, _ := o.store.HasOtelForBuild(run.ID)
-		if hasOtel {
-			continue
-		}
-		otelData, err := o.gcs.ReadFile(ctx, buildID, "artifacts/claude-otel.jsonl")
-		if err != nil || len(otelData) == 0 {
-			continue
-		}
-		events, err := ParseOtelEvents(otelData)
-		if err != nil {
-			log.Printf("Warning: could not parse otel events for build %s: %v", buildID, err)
-			continue
-		}
-		for i := range events {
-			events[i].JobRunID = run.ID
-		}
-		if err := o.store.InsertOtelEvents(events); err != nil {
-			log.Printf("Warning: could not insert otel events for build %s: %v", buildID, err)
-			continue
-		}
-		otelImported += len(events)
-		log.Printf("Imported %d otel events for build %s", len(events), buildID)
-	}
 	if otelImported > 0 {
 		log.Printf("Total otel events imported: %d", otelImported)
 	}

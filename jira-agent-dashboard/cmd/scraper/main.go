@@ -69,12 +69,15 @@ func main() {
 		log.Println("Warning: No GitHub authentication configured, API rate limits will be very low")
 	}
 
-	// Create remaining clients
-	gcsClient := scraper.NewHTTPGCSClient(nil)
+	// Create GCS clients for each configured job
+	gcsClients := make(map[string]scraper.GCSClient)
+	for _, cfg := range scraper.DefaultJobConfigs() {
+		gcsClients[cfg.Name] = scraper.NewHTTPGCSClient(nil, cfg.JobPrefix, cfg.StepPath)
+	}
 	complexityAnalyzer := scraper.NewComplexityAnalyzer(os.TempDir())
 
 	// Create orchestrator and run
-	orch := scraper.NewOrchestrator(store, gcsClient, githubClient, complexityAnalyzer)
+	orch := scraper.NewOrchestrator(store, gcsClients, githubClient, complexityAnalyzer)
 	orch.SetIOPaths(*output, *input, *skillConfig)
 	orch.SetRecordParams(*recordStep, *recordStatus)
 

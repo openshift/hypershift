@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS job_runs (
 	started_at DATETIME,
 	finished_at DATETIME,
 	status TEXT NOT NULL,
-	artifact_url TEXT NOT NULL
+	artifact_url TEXT NOT NULL,
+	job_name TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS issues (
@@ -157,6 +158,7 @@ CREATE INDEX IF NOT EXISTS idx_otel_events_type ON otel_events(event_type);
 		"ALTER TABLE issues ADD COLUMN closed_at DATETIME",
 		"ALTER TABLE review_comments ADD COLUMN confidence REAL",
 		"ALTER TABLE pr_complexity ADD COLUMN complexity_analyzed INTEGER DEFAULT 0",
+		"ALTER TABLE job_runs ADD COLUMN job_name TEXT NOT NULL DEFAULT ''",
 	}
 	for _, m := range migrations {
 		_, err := db.Exec(m)
