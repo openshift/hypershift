@@ -45,13 +45,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"registry.redhat.io/redhat/community-operator-index:v4.19",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -61,13 +59,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"registry.redhat.io/redhat/community-operator-index:v4.17",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.18",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.17",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.18",
 			},
 		},
@@ -78,7 +74,6 @@ func TestComputeCatalogImages(t *testing.T) {
 				"example.org/test/certified-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.18",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 			registryOverrides: map[string][]string{
@@ -90,7 +85,6 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.19",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -100,7 +94,6 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.18",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.17",
 			},
 			registryOverrides: map[string][]string{
@@ -112,7 +105,6 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.18",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.17",
 			},
 		},
@@ -123,7 +115,6 @@ func TestComputeCatalogImages(t *testing.T) {
 				"example.org/test/certified-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.18",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 			registryOverrides: map[string][]string{
@@ -135,7 +126,6 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.19",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -145,13 +135,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"registry.redhat.io/redhat/community-operator-index:v4.22",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.22",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 		},
@@ -161,13 +149,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"registry.redhat.io/redhat/community-operator-index:v4.22",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.22",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 		},
@@ -177,13 +163,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"registry.redhat.io/redhat/community-operator-index:v4.19",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -193,13 +177,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"registry.redhat.io/redhat/community-operator-index:v4.22",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.22",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 		},
@@ -212,7 +194,6 @@ func TestComputeCatalogImages(t *testing.T) {
 				"example.org/test/community-operator-index:v4.18",
 				"example.org/redhat/certified-operator-index:v4.19",
 				"example.org/redhat/community-operator-index:v4.19",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 			registryOverrides: map[string][]string{
@@ -224,7 +205,6 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/redhat/certified-operator-index:v4.19",
 				"community-operators": "example.org/redhat/community-operator-index:v4.19",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -337,7 +317,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		imgs := []string{
 			"registry.redhat.io/redhat/certified-operator-index:v4.17",
 			"registry.redhat.io/redhat/community-operator-index:v4.17",
-			"registry.redhat.io/redhat/redhat-marketplace-index:v4.17",
 			"registry.redhat.io/redhat/redhat-operator-index:v4.17",
 		}
 		return slices.Contains(imgs, img), nil
@@ -352,7 +331,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		map[string]string{
 			"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 			"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-			"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 			"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 		},
 	))
@@ -364,7 +342,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		map[string]string{
 			"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 			"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-			"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 			"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 		},
 	))
@@ -377,7 +354,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		map[string]string{
 			"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.17",
 			"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.17",
-			"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.17",
 			"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.17",
 		},
 	))

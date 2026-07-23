@@ -57,6 +57,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -108,6 +109,7 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
 
+	&operatorsv1alpha1.CatalogSource{ObjectMeta: metav1.ObjectMeta{Name: "redhat-marketplace", Namespace: "openshift-marketplace"}},
 	fakeOperatorHub(),
 	manifests.KASConnectionCheckerDeployment(),
 	manifests.KASConnectionCheckerServiceAccount(),

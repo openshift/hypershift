@@ -71,7 +71,7 @@ spec:
             - name: GRPC_PROXY
               value: socks5://127.0.0.1:8090
             - name: NO_PROXY
-              value: kube-apiserver,redhat-operators,certified-operators,community-operators,redhat-marketplace
+              value: kube-apiserver,redhat-operators,certified-operators,community-operators
           resources:
             requests:
               cpu: 10m

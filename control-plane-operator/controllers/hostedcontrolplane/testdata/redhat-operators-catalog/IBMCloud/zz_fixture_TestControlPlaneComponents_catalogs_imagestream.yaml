@@ -40,17 +40,6 @@ spec:
   - annotations: null
     from:
       kind: DockerImage
-      name: registry.redhat.io/redhat/redhat-marketplace-index:v4.16
-    generation: null
-    importPolicy:
-      importMode: PreserveOriginal
-      scheduled: true
-    name: redhat-marketplace
-    referencePolicy:
-      type: Local
-  - annotations: null
-    from:
-      kind: DockerImage
       name: registry.redhat.io/redhat/redhat-operator-index:v4.16
     generation: null
     importPolicy:
