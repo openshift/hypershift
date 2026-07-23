@@ -100,3 +100,33 @@ updates:
     labels:
       - "area/ci-tooling"
       - "ok-to-test"
+  # UI test dependencies (npm)
+  - package-ecosystem: "npm"
+    directory: "/test/ui"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "01:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "build(deps)"
+    labels:
+      - "area/ci-tooling"
+      - "area/ui-tests"
+      - "ok-to-test"
+    groups:
+      playwright-dependencies:
+        patterns:
+          - "@playwright/*"
+          - "playwright*"
+      typescript-dependencies:
+        patterns:
+          - "typescript*"
+          - "@types/*"
+      eslint-dependencies:
+        patterns:
+          - "eslint*"
+          - "@eslint/*"
+      misc-dependencies:
+        patterns:
+          - "*"

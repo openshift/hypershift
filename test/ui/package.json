@@ -1,0 +1,39 @@
+{
+  "name": "hypershift-ui-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright-based UI E2E tests for HyperShift MCE console integration",
+  "scripts": {
+    "test": "playwright test",
+    "test:common": "playwright test --project=common",
+    "test:agent": "playwright test --project=agent --pass-with-no-tests",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "lint:check": "prettier --check \"**/*.{md,json,yml,yaml,ts}\" --ignore-path .prettierignore && eslint . && npm run typecheck",
+    "lint:fix": "prettier --write \"**/*.{md,json,yml,yaml,ts}\" --ignore-path .prettierignore && eslint . --fix",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "@faker-js/faker": "^9.9.0",
+    "@playwright/test": "^1.58.2",
+    "@stolostron/console-e2e": "github:stolostron/console-e2e#main",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.19.27",
+    "dotenv": "^17.2.3",
+    "eslint": "^9.30.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-playwright": "^2.4.0",
+    "fs-extra": "^11.3.3",
+    "prettier": "^3.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.35.0",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
