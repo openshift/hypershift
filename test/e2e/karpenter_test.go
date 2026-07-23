@@ -1641,6 +1641,43 @@ func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.
 	)
 }
 
+// assertNodeClaimsNotDrifted starts a background goroutine that polls NodeClaims every
+// 10 seconds and fails the test if any NodeClaim has the Drifted condition set to True.
+// Returns a cancel function to stop polling and a channel that closes when the goroutine exits.
+func assertNodeClaimsNotDrifted(t *testing.T, ctx context.Context, client crclient.Client, nodeClaims *karpenterv1.NodeClaimList) (context.CancelFunc, <-chan struct{}) {
+	noDriftCtx, noDriftCancel := context.WithCancel(ctx)
+	noDriftDone := make(chan struct{})
+	go func() {
+		defer close(noDriftDone)
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-noDriftCtx.Done():
+				return
+			case <-ticker.C:
+				for i := range nodeClaims.Items {
+					current := &karpenterv1.NodeClaim{}
+					if err := client.Get(noDriftCtx, crclient.ObjectKeyFromObject(&nodeClaims.Items[i]), current); err != nil {
+						continue
+					}
+					conditions, err := e2eutil.Conditions(current)
+					if err != nil {
+						continue
+					}
+					for _, c := range conditions {
+						if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
+							t.Errorf("NodeClaim %s detected drift BEFORE CP upgrade completed", nodeClaims.Items[i].Name)
+							return
+						}
+					}
+				}
+			}
+		}
+	}()
+	return noDriftCancel, noDriftDone
+}
+
 // waitForAutoNodeStatusVCPUs polls until HostedCluster.Status.AutoNode.VCPUs
 // converges to the expected value. This checks only the status field (Karpenter-only vCPUs),
 // not the billing metric.
