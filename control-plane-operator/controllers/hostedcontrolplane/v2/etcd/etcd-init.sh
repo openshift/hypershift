@@ -28,7 +28,8 @@ if [ -x /usr/bin/etcdutl ]; then
     --name "${HOSTNAME}" \
     --initial-advertise-peer-urls "${PEER_URL}" \
     --initial-cluster "${ETCD_INITIAL_CLUSTER}" \
-    --initial-cluster-token "${HCP_NAMESPACE}"
+    --initial-cluster-token "${HCP_NAMESPACE}" \
+    --bump-revision 1000000000 --mark-compacted
 elif [ -x /usr/bin/etcdctl ]; then
   echo "INFO: using etcdctl (etcd 3.5.x)"
   env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /tmp/snapshot
@@ -37,7 +38,8 @@ elif [ -x /usr/bin/etcdctl ]; then
     --name "${HOSTNAME}" \
     --initial-advertise-peer-urls "${PEER_URL}" \
     --initial-cluster "${ETCD_INITIAL_CLUSTER}" \
-    --initial-cluster-token "${HCP_NAMESPACE}"
+    --initial-cluster-token "${HCP_NAMESPACE}" \
+    --bump-revision 1000000000 --mark-compacted
 else
   echo "ERROR: neither etcdutl nor etcdctl found in the container image"
   exit 1
