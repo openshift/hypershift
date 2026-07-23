@@ -5,14 +5,12 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
+	"regexp"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,17 +54,6 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 
 		t.Logf("Starting Karpenter control plane upgrade. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
-		releaseProvider := &releaseinfo.RegistryClientProvider{}
-		pullSecret, err := os.ReadFile(clusterOpts.PullSecretFile)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		latestReleaseImage, err := releaseProvider.Lookup(ctx, globalOpts.LatestReleaseImage, pullSecret)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		expectedRHCOSVersions := machineOSVersions(latestReleaseImage)
-		g.Expect(expectedRHCOSVersions).NotTo(BeEmpty())
-		t.Logf("machine-os version(s) in latest release: %v", expectedRHCOSVersions)
-
 		defer guestClient.Delete(ctx, karpenterNodePool)
 		defer guestClient.Delete(ctx, workLoads)
 		g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
@@ -82,7 +69,7 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		t.Logf("Pre-upgrade node: %s, OS image: %s", nodes[0].Name, preUpgradeOSImage)
 
 		t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
-		err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		err := e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Release.Image = globalOpts.LatestReleaseImage
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)
@@ -109,6 +96,9 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		<-driftChan
 		t.Logf("Karpenter Nodes drifted")
 
+		preUpgradeRHCOSVersion := extractRHCOSVersion(preUpgradeOSImage)
+		t.Logf("Pre-upgrade RHCOS version: %s", preUpgradeRHCOSVersion)
+
 		nodes = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
 			e2eutil.WithClientOptions(
 				crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))},
@@ -119,15 +109,14 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 					Status: metav1.ConditionTrue,
 				}),
 				e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
-					fullOSImageString := node.Status.NodeInfo.OSImage
-
-					for _, v := range expectedRHCOSVersions {
-						if strings.Contains(fullOSImageString, v) {
-							return true, fmt.Sprintf("node OS image %q contains expected version %q", fullOSImageString, v), nil
-						}
+					postVersion := extractRHCOSVersion(node.Status.NodeInfo.OSImage)
+					if postVersion == "" {
+						return false, fmt.Sprintf("could not extract RHCOS version from %q", node.Status.NodeInfo.OSImage), nil
 					}
-
-					return false, fmt.Sprintf("expected node OS image %q to contain one of %v", fullOSImageString, expectedRHCOSVersions), nil
+					if postVersion < preUpgradeRHCOSVersion {
+						return false, fmt.Sprintf("post-upgrade RHCOS %q is older than pre-upgrade %q", postVersion, preUpgradeRHCOSVersion), nil
+					}
+					return true, fmt.Sprintf("post-upgrade RHCOS %q is not older than pre-upgrade %q", postVersion, preUpgradeRHCOSVersion), nil
 				}),
 			),
 		)
@@ -170,4 +159,14 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		t.Logf("Waiting for Karpenter Nodes to disappear")
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 	}).WithUpgradeTarget(globalOpts.LatestReleaseImage).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter-upgrade-control-plane", globalOpts.ServiceAccountSigningKey)
+}
+
+var rhcosVersionRe = regexp.MustCompile(`Red Hat Enterprise Linux CoreOS (\d+\.\d+\.\d{8}-\d+)`)
+
+func extractRHCOSVersion(osImage string) string {
+	matches := rhcosVersionRe.FindStringSubmatch(osImage)
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
 }

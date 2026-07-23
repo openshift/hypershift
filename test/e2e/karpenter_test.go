@@ -1852,23 +1852,3 @@ func getNodeNames(nodes []corev1.Node) []string {
 	}
 	return nodeNames
 }
-
-// machineOSVersions extracts all machine-os version strings from a release image's ImageStream.
-// The release payload may ship multiple RHCOS variants (e.g. rhel-coreos 9.8 and rhel-coreos-10 10.2),
-// so ComponentVersions() can't be used — it either errors or picks only one.
-func machineOSVersions(releaseImage *releaseinfo.ReleaseImage) []string {
-	var versions []string
-	for _, tag := range releaseImage.ImageStream.Spec.Tags {
-		buildVersions, ok := tag.Annotations["io.openshift.build.versions"]
-		if !ok {
-			continue
-		}
-		for _, pair := range strings.Split(buildVersions, ",") {
-			parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
-			if len(parts) == 2 && parts[0] == "machine-os" {
-				versions = append(versions, parts[1])
-			}
-		}
-	}
-	return versions
-}
