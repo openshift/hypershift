@@ -209,15 +209,15 @@ func parseFeatureGateV1(objBytes []byte) (*configv1.FeatureGate, error) {
 // The current controller-runtime version has a bug that prevents testing server side apply with the fake.Client.
 // This bug was fixed in version 0.22.
 type Apply interface {
-	Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error
+	Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.ApplyOption) error
 }
 
 type applyClient struct {
 	client client.Client
 }
 
-func (c *applyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
-	return c.client.Patch(ctx, obj, client.Apply, opts...)
+func (c *applyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.ApplyOption) error {
+	return c.client.Apply(ctx, client.ApplyConfigurationFromUnstructured(obj), opts...)
 }
 
 func applyManifest(ctx context.Context, applyClient Apply, path string) error {

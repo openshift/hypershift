@@ -386,7 +386,7 @@ func newFakeApplyClient() *fakeApplyClient {
 	return &fakeApplyClient{Client: c}
 }
 
-func (c *fakeApplyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
+func (c *fakeApplyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.ApplyOption) error {
 	return c.Client.Create(ctx, obj)
 }
 
@@ -395,7 +395,7 @@ type errorApplyClient struct {
 	err error
 }
 
-func (c *errorApplyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
+func (c *errorApplyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.ApplyOption) error {
 	return c.err
 }
 

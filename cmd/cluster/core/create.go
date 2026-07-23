@@ -29,6 +29,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -646,7 +648,11 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 			hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}
 			err = client.Create(ctx, object)
 		} else {
-			err = client.Patch(ctx, object, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
+			u, convErr := toUnstructured(object)
+			if convErr != nil {
+				return fmt.Errorf("failed to convert object to unstructured: %w", convErr)
+			}
+			err = client.Apply(ctx, crclient.ApplyConfigurationFromUnstructured(u), crclient.ForceOwnership, crclient.FieldOwner("hypershift-cli"))
 		}
 		if err != nil {
 			return fmt.Errorf("failed to apply object %q: %w", key, err)
@@ -1292,4 +1298,12 @@ func validateVersion(ctx context.Context, versionCLI string, client crclient.Cli
 		return fmt.Errorf("version mismatch detected, CLI: %s, Operator: %s", versionCLI, operatorVersion)
 	}
 	return nil
+}
+
+func toUnstructured(obj crclient.Object) (*unstructured.Unstructured, error) {
+	data, err := k8sruntime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return nil, err
+	}
+	return &unstructured.Unstructured{Object: data}, nil
 }

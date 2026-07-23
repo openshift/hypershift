@@ -59,14 +59,12 @@ spec:
                   An empty allowedNamespaces object indicates that AzureClusters can use this identity from any namespace.
                   If this object is nil, no namespaces will be allowed (default behaviour, if this field is not provided)
                   A namespace should be either in the NamespaceList or match with Selector to use the identity.
-                nullable: true
                 properties:
                   list:
-                    description: A nil or empty list indicates that AzureCluster cannot
+                    description: An empty list indicates that AzureCluster cannot
                       use the identity from any namespace.
                     items:
                       type: string
-                    nullable: true
                     type: array
                   selector:
                     description: |-

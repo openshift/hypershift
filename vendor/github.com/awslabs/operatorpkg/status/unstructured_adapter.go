@@ -83,9 +83,9 @@ func (u *UnstructuredAdapter[T]) SetConditions(conditions []Condition) {
 	}), "status", "conditions")
 }
 
-func (u *UnstructuredAdapter[T]) StatusConditions() ConditionSet {
+func (u *UnstructuredAdapter[T]) StatusConditions(opts ...ForOption) ConditionSet {
 	conditionTypes := lo.Map(u.GetConditions(), func(condition Condition, _ int) string {
 		return condition.Type
 	})
-	return NewReadyConditions(conditionTypes...).For(u)
+	return NewReadyConditions(conditionTypes...).For(u, opts...)
 }

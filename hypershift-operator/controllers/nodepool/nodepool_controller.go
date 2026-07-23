@@ -35,7 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 
@@ -101,7 +101,7 @@ const (
 
 type NodePoolReconciler struct {
 	client.Client
-	recorder        record.EventRecorder
+	recorder        events.EventRecorder
 	ReleaseProvider releaseinfo.Provider
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
@@ -171,7 +171,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
 
-	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
+	r.recorder = mgr.GetEventRecorder("nodepool-controller")
 
 	return nil
 }
@@ -248,7 +248,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	result, err := r.reconcile(ctx, hcluster, nodePool)
 	if err != nil {
 		log.Error(err, "Failed to reconcile NodePool")
-		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
+		r.recorder.Eventf(nodePool, nil, corev1.EventTypeWarning, "ReconcileError", "Reconcile", "%v", err)
 		if err := patchHelper.Patch(ctx, nodePool); err != nil {
 			log.Error(err, "failed to patch")
 			return ctrl.Result{}, fmt.Errorf("failed to patch: %w", err)

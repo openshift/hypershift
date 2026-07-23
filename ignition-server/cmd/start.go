@@ -213,7 +213,7 @@ func run(ctx context.Context, opts Options) error {
 	}()
 
 	mgr.GetLogger().Info("Using opts", "opts", fmt.Sprintf("%+v", opts))
-	eventRecorder := mgr.GetEventRecorderFor("ignition-server")
+	eventRecorder := mgr.GetEventRecorder("ignition-server")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +237,7 @@ func run(ctx context.Context, opts Options) error {
 		if len(auth) < n || auth[:n] != bearerPrefix {
 			log.Printf("Invalid Authorization header value prefix")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			eventRecorder.Event(tokenSecret, corev1.EventTypeWarning, "GetPayloadFailed", "Bad header")
+			eventRecorder.Eventf(tokenSecret, nil, corev1.EventTypeWarning, "GetPayloadFailed", "GetPayload", "Bad header")
 			return
 		}
 		encodedToken := auth[n:]
@@ -245,7 +245,7 @@ func run(ctx context.Context, opts Options) error {
 		if err != nil {
 			log.Printf("Invalid token value")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			eventRecorder.Event(tokenSecret, corev1.EventTypeWarning, "GetPayloadFailed", "Token invalid")
+			eventRecorder.Eventf(tokenSecret, nil, corev1.EventTypeWarning, "GetPayloadFailed", "GetPayload", "Token invalid")
 			return
 		}
 
@@ -256,7 +256,7 @@ func run(ctx context.Context, opts Options) error {
 			// https://coreos.github.io/ignition/operator-notes/#http-backoff-and-retry
 			log.Printf("Token not found")
 			http.Error(w, "Token not found", http.StatusNetworkAuthenticationRequired)
-			eventRecorder.Event(tokenSecret, corev1.EventTypeWarning, "GetPayloadFailed", "Token not found in cache")
+			eventRecorder.Eventf(tokenSecret, nil, corev1.EventTypeWarning, "GetPayloadFailed", "GetPayload", "Token not found in cache")
 			return
 		}
 
@@ -270,7 +270,7 @@ func run(ctx context.Context, opts Options) error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(value.Payload)
 
-		eventRecorder.Event(tokenSecret, corev1.EventTypeNormal, "GetPayload", "")
+		eventRecorder.Eventf(tokenSecret, nil, corev1.EventTypeNormal, "GetPayload", "GetPayload", "")
 		getRequestsPerNodePool.WithLabelValues(r.Header.Get("NodePool")).Inc()
 
 		// Annotate tokenSecret so NodePool controller can set a conditions based on it.
