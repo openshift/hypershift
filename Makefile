@@ -1,3 +1,4 @@
+SHELL := /bin/bash
 DIR := ${CURDIR}
 
 # Image URL to use all building/pushing image targets
@@ -34,6 +35,7 @@ CODESPELL := $(PYTHON_VENV)/bin/$(CODESPELL_BIN)
 GITLINT := $(PYTHON_VENV)/bin/$(GITLINT_BIN)
 
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
+GOTESTSUM := $(abspath $(TOOLS_BIN_DIR)/gotestsum)
 
 # Setup envtest for running tests that require a Kubernetes API server
 # SETUP_ENVTEST_VER is the version of setup-envtest to use, matching the version in hack/tools/go.mod
@@ -158,9 +160,94 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 .PHONY: verify-parallel
 verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav
 
+FAILURES_FILE := $(shell mktemp)
+SNAPSHOT_FILE := $(shell mktemp)
+
+ifdef GITHUB_ACTIONS
+define run-step
+	@git diff --name-only HEAD 2>/dev/null | while read f; do echo "$$f $$(git hash-object "$$f" 2>/dev/null)"; done > $(SNAPSHOT_FILE); \
+	git ls-files --others --exclude-standard 2>/dev/null | while read f; do echo "$$f $$(git hash-object "$$f" 2>/dev/null)"; done >> $(SNAPSHOT_FILE); \
+	echo "::group::$(1)"; \
+	$(MAKE) $(1) 2>&1; rc=$$?; \
+	new_dirty=""; \
+	for f in $$(git diff --name-only HEAD 2>/dev/null) $$(git ls-files --others --exclude-standard 2>/dev/null); do \
+		cur_hash=$$(git hash-object "$$f" 2>/dev/null); \
+		prev_hash=$$(grep "^$$f " $(SNAPSHOT_FILE) 2>/dev/null | awk '{print $$2}'); \
+		if [ "$$cur_hash" != "$$prev_hash" ]; then \
+			new_dirty="$$new_dirty $$f"; \
+		fi; \
+	done; \
+	if [ $$rc -ne 0 ]; then \
+		echo "::error::Step '$(1)' failed"; \
+		echo "$(1)" >> $(FAILURES_FILE); \
+	fi; \
+	if [ -n "$$new_dirty" ]; then \
+		for f in $$new_dirty; do \
+			diff_hunks=$$(git diff HEAD -- "$$f" 2>/dev/null | sed -n 's/^@@ .* +\([0-9,]*\) @@.*/\1/p'); \
+			if [ -n "$$diff_hunks" ]; then \
+				echo "$$diff_hunks" | while IFS=, read start count; do \
+					count=$${count:-1}; \
+					[ "$$count" -eq 0 ] && count=1; \
+					end=$$((start + count - 1)); \
+					echo "::error file=$$f,line=$$start,endLine=$$end,title=make $(1)::Not up to date. Run 'make $(1)' locally and commit the result."; \
+				done; \
+			else \
+				echo "::error file=$$f,title=make $(1)::Not up to date. Run 'make $(1)' locally and commit the result."; \
+			fi; \
+		done; \
+		echo "$(1):dirty" >> $(FAILURES_FILE); \
+	fi; \
+	echo "::endgroup::"
+endef
+else
+define run-step
+	@git diff --name-only HEAD 2>/dev/null | while read f; do echo "$$f $$(git hash-object "$$f" 2>/dev/null)"; done > $(SNAPSHOT_FILE); \
+	git ls-files --others --exclude-standard 2>/dev/null | while read f; do echo "$$f $$(git hash-object "$$f" 2>/dev/null)"; done >> $(SNAPSHOT_FILE); \
+	$(MAKE) $(1) 2>&1; rc=$$?; \
+	new_dirty=""; \
+	for f in $$(git diff --name-only HEAD 2>/dev/null) $$(git ls-files --others --exclude-standard 2>/dev/null); do \
+		cur_hash=$$(git hash-object "$$f" 2>/dev/null); \
+		prev_hash=$$(grep "^$$f " $(SNAPSHOT_FILE) 2>/dev/null | awk '{print $$2}'); \
+		if [ "$$cur_hash" != "$$prev_hash" ]; then \
+			new_dirty="$$new_dirty $$f"; \
+		fi; \
+	done; \
+	if [ $$rc -ne 0 ]; then \
+		echo "Step '$(1)' failed"; \
+		echo "$(1)" >> $(FAILURES_FILE); \
+	fi; \
+	if [ -n "$$new_dirty" ]; then \
+		echo "Files changed during '$(1)'. Run 'make $(1)' locally:"; \
+		echo "$$new_dirty" | tr ' ' '\n' | grep -v '^$$'; \
+		echo "$(1):dirty" >> $(FAILURES_FILE); \
+	fi
+endef
+endif
+
+define check-failures
+	@if [ -s $(FAILURES_FILE) ]; then \
+		echo ""; \
+		echo "Failed steps:"; \
+		cat $(FAILURES_FILE); \
+		rm -f $(FAILURES_FILE); \
+		exit 1; \
+	else \
+		rm -f $(FAILURES_FILE); \
+	fi
+endef
+
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav ## Run the same checks as the GHA verify workflow.
-	$(MAKE) verify-git-clean
+verify-ci: ## Run the same checks as the GHA verify workflow.
+	@truncate -s0 $(FAILURES_FILE)
+	$(call run-step,generate)
+	$(call run-step,update)
+	$(call run-step,staticcheck)
+	$(call run-step,fmt)
+	$(call run-step,vet)
+	$(call run-step,verify-api-deps)
+	$(call run-step,verify-crd-schema)
+	$(call run-step,verify-docs-nav)
+	$(call check-failures)
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet
@@ -191,6 +278,9 @@ $(MOCKGEN): ${TOOLS_DIR}/go.mod
 
 $(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/verify-api-deps ./verify-api-deps
+
+$(GOTESTSUM): $(TOOLS_DIR)/go.mod # Build gotestsum from tools folder.
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/gotestsum gotest.tools/gotestsum
 
 $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/crd-schema-check ./crd-schema-check
@@ -406,10 +496,22 @@ test-changed:
 # Usage: make test-shard TEST_PACKAGES="./cmd/... ./support/..." COVER_PROFILE="cover-shard.out"
 TEST_PACKAGES ?= ./...
 COVER_PROFILE ?= cover.out
+ifdef GITHUB_ACTIONS
+GOTESTSUM_FORMAT ?= github-actions
+else
+GOTESTSUM_FORMAT ?= pkgname
+endif
+
+.PHONY: run-tests
+run-tests: $(GOTESTSUM)
+	GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor $(GOTESTSUM) --format=$(GOTESTSUM_FORMAT) -- $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
+
 .PHONY: test-shard
-test-shard: generate
-	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
-	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
+test-shard:
+	@truncate -s0 $(FAILURES_FILE)
+	$(call run-step,generate)
+	$(call run-step,run-tests)
+	$(call check-failures)
 
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
