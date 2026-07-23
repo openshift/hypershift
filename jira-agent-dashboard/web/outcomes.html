@@ -38,6 +38,13 @@
         <button id="range-3m">Last 90 Days</button>
         <button id="range-ytd">Year to Date</button>
         <span>|</span>
+        <label for="component-filter">Component:</label>
+        <select id="component-filter">
+          <option value="">All</option>
+          <option value="hypershift">hypershift</option>
+          <option value="installer">installer</option>
+        </select>
+        <span>|</span>
         <label for="date-from">From:</label>
         <input type="date" id="date-from">
         <label for="date-to">To:</label>
@@ -52,6 +59,7 @@
           <thead>
             <tr>
               <th class="sortable" data-column="jira_key">Jira Key <span class="info-tip" data-tip="The Jira ticket the agent attempted to solve">i</span></th>
+              <th class="sortable" data-column="component">Component <span class="info-tip" data-tip="Which team's jira-agent job processed this issue">i</span></th>
               <th>Prow Job <span class="info-tip" data-tip="Link to the Prow CI job run that processed this issue">i</span></th>
               <th class="sortable" data-column="pr_number">PR <span class="info-tip" data-tip="GitHub pull request created by the agent">i</span></th>
               <th class="sortable" data-column="status">Status <span class="info-tip" data-tip="PR outcome: merged (accepted), open (under review), or closed (rejected)">i</span></th>
@@ -70,7 +78,7 @@
             </tr>
           </thead>
           <tbody id="issues-tbody">
-            <tr><td colspan="15" style="text-align:center;">Loading...</td></tr>
+            <tr><td colspan="17" style="text-align:center;">Loading...</td></tr>
           </tbody>
         </table>
       </div>

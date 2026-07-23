@@ -633,6 +633,7 @@ func buildIssueSummary(issue db.Issue, comments []db.ReviewComment, complexity *
 		ReviewCycles:       reviewCycles,
 		CreatedAt:          formatOptionalTime(issue.StartedAt),
 		ArtifactURL:        issue.ArtifactURL,
+		Component:          issue.JobName,
 	}
 }
 

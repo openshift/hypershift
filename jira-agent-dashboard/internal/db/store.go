@@ -184,7 +184,7 @@ func activityWindowParams(from, to time.Time) []any {
 
 func (s *Store) ListIssues(from, to time.Time) ([]Issue, error) {
 	rows, err := s.db.Query(
-		`SELECT i.id, i.job_run_id, i.jira_key, i.jira_url, i.pr_number, i.pr_url, i.pr_state, i.pr_created_at, i.merged_at, i.closed_at, i.merge_duration_hours, jr.started_at, jr.artifact_url
+		`SELECT i.id, i.job_run_id, i.jira_key, i.jira_url, i.pr_number, i.pr_url, i.pr_state, i.pr_created_at, i.merged_at, i.closed_at, i.merge_duration_hours, jr.started_at, jr.artifact_url, jr.job_name
 		 FROM issues i
 		 JOIN job_runs jr ON i.job_run_id = jr.id
 		 WHERE `+activityWindowSQL()+`
@@ -206,10 +206,11 @@ func (s *Store) scanIssuesWithStartedAt(rows *sql.Rows) ([]Issue, error) {
 		var prNumber sql.NullInt64
 		var startedAt time.Time
 		var artifactURL sql.NullString
+		var jobName sql.NullString
 		err := rows.Scan(
 			&issue.ID, &issue.JobRunID, &issue.JiraKey, &issue.JiraURL,
 			&prNumber, &prURL, &prState,
-			&issue.PRCreatedAt, &issue.MergedAt, &issue.ClosedAt, &issue.MergeDurationHours, &startedAt, &artifactURL,
+			&issue.PRCreatedAt, &issue.MergedAt, &issue.ClosedAt, &issue.MergeDurationHours, &startedAt, &artifactURL, &jobName,
 		)
 		if err != nil {
 			return nil, err
@@ -226,6 +227,11 @@ func (s *Store) scanIssuesWithStartedAt(rows *sql.Rows) ([]Issue, error) {
 		issue.StartedAt = &startedAt
 		if artifactURL.Valid {
 			issue.ArtifactURL = artifactURL.String
+		}
+		if jobName.Valid && jobName.String != "" {
+			issue.JobName = jobName.String
+		} else {
+			issue.JobName = "hypershift"
 		}
 		issues = append(issues, issue)
 	}

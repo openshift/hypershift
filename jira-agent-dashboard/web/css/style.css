@@ -546,6 +546,16 @@ td a:hover {
   color: #721c24;
 }
 
+.badge.component-hypershift {
+  background: #cce5ff;
+  color: #004085;
+}
+
+.badge.component-installer {
+  background: #e8daef;
+  color: #4a235a;
+}
+
 /* Collapsible Issue Groups */
 .group-toggle {
   cursor: pointer;

@@ -1,6 +1,7 @@
 // Issues table page logic
 
 let issuesData = [];
+let componentFilter = '';
 let sortColumn = null;
 let sortDirection = 'asc';
 let activeLoadId = 0;
@@ -21,9 +22,14 @@ async function loadIssues(from, to) {
   }
 }
 
+function getFilteredIssues() {
+  if (!componentFilter) return issuesData;
+  return issuesData.filter(i => (i.component || 'hypershift') === componentFilter);
+}
+
 function updateResultsCount() {
   const el = document.getElementById('results-count');
-  const groups = groupByJiraKey(issuesData);
+  const groups = groupByJiraKey(getFilteredIssues());
   const totalIssues = groups.length;
   const totalSessions = issuesData.length;
   const merged = groups.filter(g => g.best.pr_merged).length;
@@ -37,11 +43,11 @@ function renderIssuesTable() {
   tbody.innerHTML = '';
 
   if (!issuesData || issuesData.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;">No issues found for this date range.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;">No issues found for this date range.</td></tr>';
     return;
   }
 
-  const groups = groupByJiraKey(issuesData);
+  const groups = groupByJiraKey(getFilteredIssues());
 
   groups.forEach(group => {
     const issue = group.best;
@@ -77,8 +83,10 @@ function renderIssuesTable() {
         ? `<td><a href="${escapeHTML(issue.artifact_url)}" target="_blank" onclick="event.stopPropagation()">logs</a></td>`
         : '<td></td>');
 
+    const comp = issue.component || 'hypershift';
     row.innerHTML = `
       <td>${expandCell}<a href="${escapeHTML(issue.jira_url)}" target="_blank" onclick="event.stopPropagation()">${escapeHTML(issue.jira_key)}</a></td>
+      <td><span class="badge component-${comp}">${comp}</span></td>
       ${prowJobCell}
       <td>${prCell}</td>
       <td><span class="badge ${statusClass}">${statusClass}</span></td>
@@ -132,8 +140,10 @@ function renderIssuesTable() {
 
         const connector = idx < group.sessions.length - 1 ? '├─' : '└─';
 
+        const childComp = session.component || 'hypershift';
         childRow.innerHTML = `
           <td class="child-label"><span class="child-connector">${connector}</span> session ${idx + 1}</td>
+          <td><span class="badge component-${childComp}">${childComp}</span></td>
           ${childProwCell}
           <td>${childPrCell}</td>
           <td><span class="badge ${childStatus}">${childStatus}</span></td>
@@ -200,6 +210,10 @@ function setupSortHandlers() {
     sortTable('jira_key', issue => issue.jira_key);
   });
 
+  document.querySelector('[data-column="component"]').addEventListener('click', () => {
+    sortTable('component', issue => issue.component || 'hypershift');
+  });
+
   document.querySelector('[data-column="pr_number"]').addEventListener('click', () => {
     sortTable('pr_number', issue => issue.pr_number);
   });
@@ -260,6 +274,12 @@ function setupSortHandlers() {
 document.addEventListener('DOMContentLoaded', () => {
   initTimeRange(loadIssues);
   setupSortHandlers();
+
+  document.getElementById('component-filter').addEventListener('change', (e) => {
+    componentFilter = e.target.value;
+    updateResultsCount();
+    renderIssuesTable();
+  });
 
   document.querySelectorAll('.info-tip').forEach(tip => {
     tip.addEventListener('click', e => e.stopPropagation());

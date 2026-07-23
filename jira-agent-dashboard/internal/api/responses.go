@@ -38,6 +38,7 @@ type IssueSummary struct {
 	ReviewCycles       int      `json:"review_cycles"`
 	CreatedAt          string   `json:"created_at"`
 	ArtifactURL        string   `json:"artifact_url"`
+	Component          string   `json:"component"`
 }
 
 // IssueDetail represents the full detail view of an issue.

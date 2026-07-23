@@ -27,6 +27,7 @@ type Issue struct {
 	MergeDurationHours *float64
 	StartedAt          *time.Time // from job_runs, populated by ListIssues
 	ArtifactURL        string     // from job_runs, populated by ListIssues
+	JobName            string     // from job_runs, populated by ListIssues
 }
 
 type PhaseMetric struct {
