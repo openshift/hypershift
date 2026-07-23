@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
@@ -30,9 +28,23 @@ func TestReconcileApiUsageRule(t *testing.T) {
 			},
 		},
 		{
+			name: "When reconciling api usage rule, it should set correct alert names",
+			validateRule: func(t *testing.T, rule *prometheusoperatorv1.PrometheusRule) {
+				requireTwoRules(t, rule)
+				rules := rule.Spec.Groups[0].Rules
+				if rules[0].Alert != "APIRemovedInNextReleaseInUse" {
+					t.Errorf("expected first alert name 'APIRemovedInNextReleaseInUse', got %q", rules[0].Alert)
+				}
+				if rules[1].Alert != "APIRemovedInNextEUSReleaseInUse" {
+					t.Errorf("expected second alert name 'APIRemovedInNextEUSReleaseInUse', got %q", rules[1].Alert)
+				}
+			},
+		},
+		{
 			name: "When reconciling api usage rule, it should reference k8s 1.37 in APIRemovedInNextReleaseInUse",
 			validateRule: func(t *testing.T, rule *prometheusoperatorv1.PrometheusRule) {
-				expr := string(rule.Spec.Groups[0].Rules[0].Expr.StrVal)
+				requireTwoRules(t, rule)
+				expr := rule.Spec.Groups[0].Rules[0].Expr.StrVal
 				if !strings.Contains(expr, `removed_release="1.37"`) {
 					t.Errorf("APIRemovedInNextReleaseInUse should filter on removed_release 1.37, got expr: %s", expr)
 				}
@@ -41,9 +53,22 @@ func TestReconcileApiUsageRule(t *testing.T) {
 		{
 			name: "When reconciling api usage rule, it should reference k8s 1.37 and 1.38 in APIRemovedInNextEUSReleaseInUse",
 			validateRule: func(t *testing.T, rule *prometheusoperatorv1.PrometheusRule) {
-				expr := string(rule.Spec.Groups[0].Rules[1].Expr.StrVal)
+				requireTwoRules(t, rule)
+				expr := rule.Spec.Groups[0].Rules[1].Expr.StrVal
 				if !strings.Contains(expr, `removed_release=~"1.3[78]"`) {
 					t.Errorf("APIRemovedInNextEUSReleaseInUse should filter on removed_release 1.37 and 1.38, got expr: %s", expr)
+				}
+			},
+		},
+		{
+			name: "When reconciling api usage rule, it should use label-propagating join operator",
+			validateRule: func(t *testing.T, rule *prometheusoperatorv1.PrometheusRule) {
+				requireTwoRules(t, rule)
+				for i, alertRule := range rule.Spec.Groups[0].Rules {
+					expr := alertRule.Expr.StrVal
+					if !strings.Contains(expr, "* on (group,version,resource) group_left ()") {
+						t.Errorf("rule %d (%s) should use label-propagating join operator, got expr: %s", i, alertRule.Alert, expr)
+					}
 				}
 			},
 		},
@@ -51,7 +76,7 @@ func TestReconcileApiUsageRule(t *testing.T) {
 			name: "When reconciling api usage rule, it should include removed_release label in group by clause",
 			validateRule: func(t *testing.T, rule *prometheusoperatorv1.PrometheusRule) {
 				for i, alertRule := range rule.Spec.Groups[0].Rules {
-					expr := string(alertRule.Expr.StrVal)
+					expr := alertRule.Expr.StrVal
 					if !strings.Contains(expr, "group by (group,version,resource,removed_release)") {
 						t.Errorf("rule %d (%s) should include removed_release in group by clause, got expr: %s", i, alertRule.Alert, expr)
 					}
@@ -73,16 +98,18 @@ func TestReconcileApiUsageRule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rule := &prometheusoperatorv1.PrometheusRule{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "api-usage",
-					Namespace: "openshift-kube-apiserver",
-				},
-			}
+			rule := &prometheusoperatorv1.PrometheusRule{}
 			if err := ReconcileApiUsageRule(rule); err != nil {
 				t.Fatalf("ReconcileApiUsageRule returned error: %v", err)
 			}
 			tt.validateRule(t, rule)
 		})
+	}
+}
+
+func requireTwoRules(t *testing.T, rule *prometheusoperatorv1.PrometheusRule) {
+	t.Helper()
+	if len(rule.Spec.Groups) == 0 || len(rule.Spec.Groups[0].Rules) < 2 {
+		t.Fatal("expected at least 1 group with 2 rules")
 	}
 }
