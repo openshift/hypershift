@@ -34,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
 )
@@ -185,6 +187,20 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
+
+		// When MHC RemediationAllowed is False, override the Ready condition to signal
+		// that auto-repair is blocked because too many machines are unhealthy.
+		if remediationAllowed := findMHCRemediationAllowedCondition(mhc.Status.Conditions); remediationAllowed != nil {
+			if remediationAllowed.Status == corev1.ConditionFalse {
+				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolReadyConditionType,
+					Status:             corev1.ConditionFalse,
+					Reason:             remediationAllowed.Reason,
+					Message:            remediationAllowed.Message,
+					ObservedGeneration: nodePool.Generation,
+				})
+			}
+		}
 	} else {
 		err := c.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
 		if err != nil && !apierrors.IsNotFound(err) {
@@ -736,6 +752,13 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 		}
 	}
 
+	// Set the nodePoolAnnotation so the enqueueParentNodePool watch handler
+	// can map MHC changes back to the parent NodePool.
+	if mhc.Annotations == nil {
+		mhc.Annotations = map[string]string{}
+	}
+	mhc.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: capiClusterName,
@@ -1178,6 +1201,15 @@ func (c *CAPI) spotMachineHealthCheck() *capiv1.MachineHealthCheck {
 // reconcileSpotMachineHealthCheck reconciles a MachineHealthCheck specifically for spot instances.
 // This MHC selects machines with the interruptibleInstanceLabel.
 func (c *CAPI) reconcileSpotMachineHealthCheck(_ context.Context, mhc *capiv1.MachineHealthCheck) error {
+	nodePool := c.nodePool
+
+	// Set the nodePoolAnnotation so the enqueueParentNodePool watch handler
+	// can map MHC changes back to the parent NodePool.
+	if mhc.Annotations == nil {
+		mhc.Annotations = map[string]string{}
+	}
+	mhc.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+
 	// Spot instances need shorter timeouts for faster response to interruption
 	maxUnhealthy := intstr.FromString("100%")
 	timeOut := 8 * time.Minute
@@ -1404,4 +1436,45 @@ func (r *NodePoolReconciler) getMachinesForNodePool(ctx context.Context, nodePoo
 	}
 
 	return sortedByCreationTimestamp(machinesForNodePool), nil
+}
+
+// findMHCRemediationAllowedCondition finds the RemediationAllowed condition in a CAPI Conditions slice.
+func findMHCRemediationAllowedCondition(conditions capiv1.Conditions) *capiv1.Condition {
+	for i := range conditions {
+		if conditions[i].Type == capiv1.RemediationAllowedCondition {
+			return &conditions[i]
+		}
+	}
+	return nil
+}
+
+// mhcRemediationAllowedChangedPredicate returns a predicate that filters MHC events
+// to only pass through when the RemediationAllowed condition has changed. Create and
+// Delete events always pass through; Update events are filtered to avoid unnecessary
+// NodePool reconciliations from unrelated MHC status field changes (e.g. CurrentHealthy,
+// Targets) that are already covered by MachineDeployment/MachineSet/Machine watches.
+func mhcRemediationAllowedChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldMHC, ok := e.ObjectOld.(*capiv1.MachineHealthCheck)
+			if !ok {
+				return true
+			}
+			newMHC, ok := e.ObjectNew.(*capiv1.MachineHealthCheck)
+			if !ok {
+				return true
+			}
+			oldCond := findMHCRemediationAllowedCondition(oldMHC.Status.Conditions)
+			newCond := findMHCRemediationAllowedCondition(newMHC.Status.Conditions)
+			if oldCond == nil && newCond == nil {
+				return false
+			}
+			if oldCond == nil || newCond == nil {
+				return true
+			}
+			return oldCond.Status != newCond.Status ||
+				oldCond.Reason != newCond.Reason ||
+				oldCond.Message != newCond.Message
+		},
+	}
 }

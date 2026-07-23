@@ -49,6 +49,9 @@ const (
 	NodePoolUpdatingPlatformMachineTemplateConditionType = "UpdatingPlatformMachineTemplate"
 	// NodePoolReadyConditionType bubbles up CAPI MachineDeployment/MachineSet Ready condition.
 	// This is true when all replicas are ready Nodes.
+	// This may also be set to false when the MachineHealthCheck RemediationAllowed
+	// condition is false (reason TooManyUnhealthy), indicating that auto-repair is
+	// blocked because too many machines are unhealthy.
 	// When this is false for too long, NodePoolAllMachinesReadyConditionType and NodePoolAllNodesHealthyConditionType might provide more context.
 	NodePoolReadyConditionType = "Ready"
 	// NodePoolAllMachinesReadyConditionType bubbles up and aggregates CAPI Machine Ready condition.

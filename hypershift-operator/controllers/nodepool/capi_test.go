@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/go-logr/logr"
 )
@@ -3721,6 +3722,377 @@ func TestMachineDeploymentComplete(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(MachineDeploymentComplete(tc.md)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestReconcileMachineHealthCheckAnnotation(t *testing.T) {
+	t.Parallel()
+	t.Run("When reconcileMachineHealthCheck is called, it should set the nodePoolAnnotation on the MHC", func(t *testing.T) {
+		g := NewWithT(t)
+		np := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nodepool"},
+			Spec:       hyperv1.NodePoolSpec{ClusterName: "cluster"},
+		}
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cluster"}}
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: hc,
+					nodePool:      np,
+				},
+			},
+			capiClusterName: "cluster",
+		}
+		mhc := &capiv1.MachineHealthCheck{}
+		err := capi.reconcileMachineHealthCheck(t.Context(), mhc)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(mhc.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "ns/nodepool"))
+	})
+	t.Run("When reconcileSpotMachineHealthCheck is called, it should set the nodePoolAnnotation on the spot MHC", func(t *testing.T) {
+		g := NewWithT(t)
+		np := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nodepool"},
+			Spec:       hyperv1.NodePoolSpec{ClusterName: "cluster"},
+		}
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cluster"}}
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: hc,
+					nodePool:      np,
+				},
+			},
+			capiClusterName: "cluster",
+		}
+		mhc := &capiv1.MachineHealthCheck{}
+		err := capi.reconcileSpotMachineHealthCheck(t.Context(), mhc)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(mhc.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "ns/nodepool"))
+	})
+}
+
+func TestMHCRemediationAllowedBubbledUpToReady(t *testing.T) {
+	t.Parallel()
+
+	mhcMessage := "Remediation is not allowed, the number of not started or unhealthy machines exceeds maxUnhealthy (total: 5, unhealthy: 3, maxUnhealthy: 2)"
+	maxUnavailable := intstr.FromInt(0)
+	maxSurge := intstr.FromInt(1)
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
+	capiClusterName := "infra-id"
+
+	tests := []struct {
+		name                string
+		mhcConditions       capiv1.Conditions
+		expectedReadyStatus corev1.ConditionStatus
+		expectedReadyReason string
+		expectedMessage     string
+	}{
+		{
+			name: "When MHC RemediationAllowed is False, it should set Ready to False with TooManyUnhealthy reason",
+			mhcConditions: capiv1.Conditions{
+				{
+					Type:    capiv1.RemediationAllowedCondition,
+					Status:  corev1.ConditionFalse,
+					Reason:  capiv1.TooManyUnhealthyReason,
+					Message: mhcMessage,
+				},
+			},
+			expectedReadyStatus: corev1.ConditionFalse,
+			expectedReadyReason: capiv1.TooManyUnhealthyReason,
+			expectedMessage:     mhcMessage,
+		},
+		{
+			name: "When MHC RemediationAllowed is True, it should not override Ready",
+			mhcConditions: capiv1.Conditions{
+				{
+					Type:   capiv1.RemediationAllowedCondition,
+					Status: corev1.ConditionTrue,
+				},
+			},
+			expectedReadyStatus: corev1.ConditionTrue,
+			expectedReadyReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:                "When MHC has no RemediationAllowed condition, it should not override Ready",
+			mhcConditions:       capiv1.Conditions{},
+			expectedReadyStatus: corev1.ConditionTrue,
+			expectedReadyReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name: "When MHC RemediationAllowed is Unknown, it should not override Ready",
+			mhcConditions: capiv1.Conditions{
+				{
+					Type:   capiv1.RemediationAllowedCondition,
+					Status: corev1.ConditionUnknown,
+				},
+			},
+			expectedReadyStatus: corev1.ConditionTrue,
+			expectedReadyReason: hyperv1.AsExpectedReason,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+						AutoRepair: true,
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Conditions: []hyperv1.NodePoolCondition{
+						{
+							Type:   hyperv1.NodePoolReachedIgnitionEndpoint,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							AdditionalAllowedPrincipals: []string{},
+						},
+					},
+				},
+			}
+
+			controlplaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+			// Build the CAPI struct first (without a client) so we can compute the
+			// UserDataSecret name and pre-populate the MachineDeployment with matching
+			// values. This prevents propagateVersionAndTemplate from returning early
+			// and skipping reconcileMachineDeploymentStatus.
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						hostedCluster:         hostedCluster,
+						nodePool:              nodePool,
+						controlplaneNamespace: controlplaneNamespace,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "target-version",
+									},
+								},
+							},
+						},
+					},
+					cpoCapabilities:        &CPOCapabilities{},
+					CreateOrUpdateProvider: upsert.New(false),
+				},
+				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
+			}
+
+			// Pre-create the MHC with the desired RemediationAllowed status condition.
+			// CreateOrUpdate in Reconcile() will Get this object (loading the status),
+			// then Update spec/annotations while preserving the status.
+			existingMHC := &capiv1.MachineHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nodePool.GetName(),
+					Namespace: controlplaneNamespace,
+				},
+				Status: capiv1.MachineHealthCheckStatus{
+					Conditions: tt.mhcConditions,
+				},
+			}
+
+			// Pre-create a MachineDeployment with Ready=True in status and matching
+			// DataSecretName/InfrastructureRef so that reconcileMachineDeploymentStatus
+			// runs (propagateVersionAndTemplate returns false) and sets Ready=True on
+			// the NodePool. This lets us verify that the RemediationAllowed check
+			// either overrides Ready or leaves it intact.
+			existingMD := &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nodePool.GetName(),
+					Namespace: controlplaneNamespace,
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							Bootstrap: capiv1.Bootstrap{
+								DataSecretName: ptr.To(capi.UserDataSecret().Name),
+							},
+							InfrastructureRef: corev1.ObjectReference{
+								Name: awsMachineTemplateName,
+							},
+						},
+					},
+				},
+				Status: capiv1.MachineDeploymentStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(nodePool, existingMHC, existingMD).
+				WithObjects(
+					&capiv1.MachineSet{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-machineset",
+							Namespace: controlplaneNamespace,
+							Annotations: map[string]string{
+								nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+							},
+						},
+						Spec: capiv1.MachineSetSpec{
+							Template: capiv1.MachineTemplateSpec{
+								Spec: capiv1.MachineSpec{
+									InfrastructureRef: corev1.ObjectReference{
+										Kind:       "AWSMachineTemplate",
+										APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+										Namespace:  controlplaneNamespace,
+										Name:       awsMachineTemplateName,
+									},
+								},
+							},
+						},
+					},
+					&capiaws.AWSMachineTemplate{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      awsMachineTemplateName,
+							Namespace: controlplaneNamespace,
+							Annotations: map[string]string{
+								nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+							},
+						},
+					},
+				).
+				Build()
+
+			// Now set the client on the CAPI struct.
+			capi.Client = c
+
+			ctx := ctrl.LoggerInto(t.Context(), logr.Discard())
+			err := capi.Reconcile(ctx)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			readyCond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReadyConditionType)
+			g.Expect(readyCond).NotTo(BeNil())
+			g.Expect(readyCond.Status).To(Equal(tt.expectedReadyStatus))
+			g.Expect(readyCond.Reason).To(Equal(tt.expectedReadyReason))
+			if tt.expectedMessage != "" {
+				g.Expect(readyCond.Message).To(Equal(tt.expectedMessage))
+			}
+		})
+	}
+}
+
+func TestMHCRemediationAllowedChangedPredicate(t *testing.T) {
+	t.Parallel()
+
+	pred := mhcRemediationAllowedChangedPredicate()
+
+	tests := []struct {
+		name     string
+		oldConds capiv1.Conditions
+		newConds capiv1.Conditions
+		expected bool
+	}{
+		{
+			name:     "When RemediationAllowed changes from True to False, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed changes from False to True, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed appears for the first time, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed is removed, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			newConds: capiv1.Conditions{},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed status is unchanged but Reason changes, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "ReasonA"}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "ReasonB"}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed status is unchanged but Message changes, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "TooManyUnhealthy", Message: "unhealthy: 3, maxUnhealthy: 2"}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "TooManyUnhealthy", Message: "unhealthy: 4, maxUnhealthy: 2"}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed status and Reason and Message are all unchanged, it should not trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			expected: false,
+		},
+		{
+			name:     "When neither old nor new has RemediationAllowed, it should not trigger reconciliation",
+			oldConds: capiv1.Conditions{},
+			newConds: capiv1.Conditions{},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			e := event.UpdateEvent{
+				ObjectOld: &capiv1.MachineHealthCheck{
+					Status: capiv1.MachineHealthCheckStatus{Conditions: tt.oldConds},
+				},
+				ObjectNew: &capiv1.MachineHealthCheck{
+					Status: capiv1.MachineHealthCheckStatus{Conditions: tt.newConds},
+				},
+			}
+			g.Expect(pred.Update(e)).To(Equal(tt.expected))
 		})
 	}
 }
