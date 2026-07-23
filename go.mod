@@ -63,6 +63,7 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
+	github.com/openshift-eng/openshift-tests-extension v0.0.0-20260707142426-572a3e9deb7a
 	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
 	github.com/openshift/client-go v0.0.0-20260416131737-a19e91702ab5
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
@@ -316,3 +317,6 @@ replace github.com/openshift/hypershift/api => ./api
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf
 
 replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5
+
+// OTE requires internal Ginkgo methods (BuildTree, WalkTests, RunSpec) only in the OpenShift fork
+replace github.com/onsi/ginkgo/v2 => github.com/openshift/onsi-ginkgo/v2 v2.6.1-0.20260303184444-1cc650aa0565
