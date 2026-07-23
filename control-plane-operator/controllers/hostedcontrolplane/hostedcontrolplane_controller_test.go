@@ -57,6 +57,8 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -4620,3 +4622,149 @@ var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 
 // Compile-time assertion for clock interface used by tests.
 var _ clock.Clock = &testingclock.FakeClock{}
+
+func TestShouldSkipAzureResourceGroupLocationValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "When condition is absent, it should not skip validation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+			},
+			expected: false,
+		},
+		{
+			name: "When condition is True for the current generation, it should skip validation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{{
+						Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: 2,
+					}},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When condition is True for a stale generation, it should not skip validation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{{
+						Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
+						Status:             metav1.ConditionTrue,
+						ObservedGeneration: 2,
+					}},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When condition is False, it should not skip validation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{{
+						Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
+						Status:             metav1.ConditionFalse,
+						ObservedGeneration: 1,
+					}},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When condition is Unknown, it should not skip validation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{{
+						Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
+						Status:             metav1.ConditionUnknown,
+						ObservedGeneration: 1,
+					}},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(shouldSkipAzureResourceGroupLocationValidation(tt.hcp)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestRequeueOnAzureAPIError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		err                error
+		expectRequeue      bool
+		expectedRequeueFor time.Duration
+	}{
+		{
+			name:          "When error is nil, it should not requeue",
+			err:           nil,
+			expectRequeue: false,
+		},
+		{
+			name:          "When error is a permanent validation failure, it should not requeue",
+			err:           fmt.Errorf("the locations of the resource groups do not match"),
+			expectRequeue: false,
+		},
+		{
+			name: "When Azure returns 429 with Retry-After, it should requeue using that duration",
+			err: fmt.Errorf("failed to get vnet info: %w", &azcore.ResponseError{
+				StatusCode: http.StatusTooManyRequests,
+				RawResponse: &http.Response{
+					Header: http.Header{"Retry-After": {"120"}},
+				},
+			}),
+			expectRequeue:      true,
+			expectedRequeueFor: 120 * time.Second,
+		},
+		{
+			name: "When Azure returns 429 without Retry-After, it should requeue after the default 5 minutes",
+			err: fmt.Errorf("failed to get vnet info: %w", &azcore.ResponseError{
+				StatusCode:  http.StatusTooManyRequests,
+				RawResponse: &http.Response{Header: http.Header{}},
+			}),
+			expectRequeue:      true,
+			expectedRequeueFor: 5 * time.Minute,
+		},
+		{
+			name: "When Azure returns 403, it should requeue after 10 minutes",
+			err: fmt.Errorf("failed to get vnet info: %w", &azcore.ResponseError{
+				StatusCode: http.StatusForbidden,
+			}),
+			expectRequeue:      true,
+			expectedRequeueFor: 10 * time.Minute,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			result, shouldRequeue := requeueOnAzureAPIError(tt.err)
+			g.Expect(shouldRequeue).To(Equal(tt.expectRequeue))
+			if tt.expectRequeue {
+				g.Expect(result.RequeueAfter).To(Equal(tt.expectedRequeueFor))
+			} else {
+				g.Expect(result).To(Equal(ctrl.Result{}))
+			}
+		})
+	}
+}

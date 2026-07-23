@@ -614,12 +614,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	var configValidationErr error
 	{
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
 		if err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
+			configValidationErr = err
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
@@ -709,6 +711,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	{
 		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
+			// Transient Azure API failures (e.g. 429 rate limiting) should requeue
+			// respecting Retry-After rather than hard-blocking until an unrelated watch event.
+			if result, shouldRequeue := requeueOnAzureAPIError(configValidationErr); shouldRequeue {
+				r.Log.Info("Configuration validation hit a transient Azure API error, requeueing", "requeueAfter", result.RequeueAfter)
+				return result, nil
+			}
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
 			return reconcile.Result{}, nil
 		}
@@ -3226,8 +3234,36 @@ func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Con
 	return nil
 }
 
+// shouldSkipAzureResourceGroupLocationValidation reports whether Azure ARM calls to
+// verify VNet/NSG/RG locations can be skipped because validation already succeeded for
+// the current generation. Locations are immutable for a given set of Azure resource IDs,
+// so re-checking on every reconcile is unnecessary and contributes to ARM throttling.
+func shouldSkipAzureResourceGroupLocationValidation(hcp *hyperv1.HostedControlPlane) bool {
+	validConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
+	return validConfig != nil &&
+		validConfig.Status == metav1.ConditionTrue &&
+		validConfig.ObservedGeneration == hcp.Generation
+}
+
+// requeueOnAzureAPIError returns a RequeueAfter result when err wraps an Azure API
+// ResponseError (e.g. 429), using ClassifyAzureError for differentiated backoff that
+// respects the Retry-After header. Permanent validation failures that are not Azure
+// API errors return false so reconciliation remains hard-gated.
+func requeueOnAzureAPIError(err error) (ctrl.Result, bool) {
+	var respErr *azcore.ResponseError
+	if err == nil || !errors.As(err, &respErr) {
+		return ctrl.Result{}, false
+	}
+	requeueAfter, _ := hyperazureutil.ClassifyAzureError(err)
+	return ctrl.Result{RequeueAfter: requeueAfter}, true
+}
+
 // verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
 func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if shouldSkipAzureResourceGroupLocationValidation(hcp) {
+		return nil
+	}
+
 	var (
 		creds     azcore.TokenCredential
 		found, ok bool
