@@ -13,7 +13,7 @@ This is a Ginkgo v2 BDD test suite for validating hosted cluster control planes.
 
 The framework is organized into the following packages under `test/e2e/v2/`:
 
-- `internal/` — Framework internals (test context, workload registry, fail handler, env var management). Do not add tests here.
+- `internal/` — Framework internals (test context, workload registry, fail handler, env var management). Do not add e2e tests here; standard Go unit tests (`func TestXxx(t *testing.T)`) for internal functions are fine.
 - `tests/` — All standard v2 test files. Each file is feature-scoped with a top-level `Describe` and `Label`. The suite entry point is `suite_test.go`.
 - `util/` — Shared test utilities (pod exec helpers, metrics fetching) consumed by test files. Unlike `internal/`, these are importable by other packages.
 - `lifecycle/` — Platform-specific lifecycle helpers (e.g., Azure platform hooks).
