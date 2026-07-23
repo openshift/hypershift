@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -63,14 +62,6 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 				Skip("global pull secret test is only supported on public clusters")
 			}
 
-			additionalPullSecretFile := internal.GetEnvVarValue("E2E_ADDITIONAL_PULL_SECRET_FILE")
-			if additionalPullSecretFile == "" {
-				Skip("E2E_ADDITIONAL_PULL_SECRET_FILE not set, skipping global pull secret test")
-			}
-
-			additionalPullSecretData, err := os.ReadFile(additionalPullSecretFile)
-			Expect(err).NotTo(HaveOccurred(), "failed to read additional pull secret file %s", additionalPullSecretFile)
-
 			tc.ValidateHostedClusterClient()
 			hcClient := tc.GetHostedClusterClient()
 
@@ -95,6 +86,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			nodeCount := *np.Spec.Replicas
 
 			var dummyPullSecretData = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
+			var updatedPullSecretData = []byte(`{"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNzd29yZA=="}}}`)
 
 			By("verifying in-place management-cluster pull secret propagation without rollout")
 			if !e2eutil.IsLessThan(e2eutil.Version422) {
@@ -132,7 +124,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			additionalPS := hccomanifests.AdditionalPullSecret()
 			Expect(hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(additionalPS), additionalPS)).To(Succeed(),
 				"failed to get additional-pull-secret")
-			additionalPS.Data[corev1.DockerConfigJsonKey] = additionalPullSecretData
+			additionalPS.Data[corev1.DockerConfigJsonKey] = updatedPullSecretData
 			Expect(hcClient.Update(tc.Context, additionalPS)).To(Succeed(),
 				"failed to update additional-pull-secret with valid data")
 
