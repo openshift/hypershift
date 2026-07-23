@@ -11,13 +11,20 @@
 # This mirrors the policy used in openshift/api: adding new enum values
 # is technically a breaking change but is allowed in practice because
 # clients should tolerate unknown enum values.
-# Match openshift/api policy: crdify doesn't have comparators for all schema
-# fields yet (e.g. XValidations/CEL rules), so unhandled diffs are warnings
-# rather than errors. Reviewers catch actual breaking changes.
-unhandledEnforcement: Warn
-
+#
+# OCPBUGS-87991 (KubevirtNetwork.Name) needs the overrides below because
+# crdify defaults description and unhandledEnforcement to Error:
+#   - description: None — Name godoc expanded for oc explain
+#   - maxLength: Warn — MaxLength tightened 255 → 55
+#   - unhandledEnforcement: Warn — new XValidation + listType=map have no
+#     dedicated crdify validators and would otherwise fail checkUnhandled
 validations:
   - name: enum
     enforcement: Error
     configuration:
       additionPolicy: Allow
+  - name: description
+    enforcement: None
+  - name: maxLength
+    enforcement: Warn
+unhandledEnforcement: Warn
