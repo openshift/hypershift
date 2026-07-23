@@ -102,18 +102,16 @@ $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugi
 
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
-# Falls back through: upstream remote/main → local main → empty (lint all files).
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
-PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main 2>/dev/null),)
-PULL_BASE_SHA := $(if $(PULL_BASE_SHA),$(PULL_BASE_SHA),$(shell git rev-parse main 2>/dev/null))
+PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main), $(shell git rev-parse main))
 
 .PHONY: api-lint
 api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: api-lint-fix
 api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: lint
 lint: generate
