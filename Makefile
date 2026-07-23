@@ -187,10 +187,10 @@ $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 $(MOCKGEN): ${TOOLS_DIR}/go.mod
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
 
-$(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
+$(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod $(wildcard $(TOOLS_DIR)/verify-api-deps/*.go) # Build verify-api-deps tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/verify-api-deps ./verify-api-deps
 
-$(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
+$(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod $(wildcard $(TOOLS_DIR)/crd-schema-check/*.go) # Build crd-schema-check tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/crd-schema-check ./crd-schema-check
 
 .PHONY: generate
