@@ -328,6 +328,21 @@ func TestRhcosStreamFromOSImage(t *testing.T) {
 			osImage:  "Red Hat Enterprise Linux CoreOS 300.97.202505081234-0 (Plow)",
 			expected: "",
 		},
+		{
+			name:     "When OSImage uses new OCP 5.0 format with RHEL 9 it should return rhel-9",
+			osImage:  "Red Hat Enterprise Linux CoreOS 9.8.20260721-0 (Plow)",
+			expected: StreamRHEL9,
+		},
+		{
+			name:     "When OSImage uses new OCP 5.0 format with RHEL 10 it should return rhel-10",
+			osImage:  "Red Hat Enterprise Linux CoreOS 10.2.20260801-0 (Plow)",
+			expected: StreamRHEL10,
+		},
+		{
+			name:     "When OSImage uses new format with unknown major it should return empty string",
+			osImage:  "Red Hat Enterprise Linux CoreOS 8.5.20260101-0 (Plow)",
+			expected: "",
+		},
 	}
 
 	for _, tc := range testCases {

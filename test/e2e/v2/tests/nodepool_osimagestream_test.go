@@ -56,7 +56,8 @@ func RegisterNodePoolOSImageStreamStatusTests(getTestCtx internal.TestContextGet
 }
 
 // osImageStreamBeforeEach is the shared BeforeEach for all OSImageStream test suites.
-// It initializes the test context and skips when the OSStreams feature gate is disabled.
+// It initializes the test context and skips when the OSStreams feature gate is disabled
+// or the platform does not use RHCOS nodes.
 func osImageStreamBeforeEach(testCtx **internal.TestContext) {
 	*testCtx = internal.GetTestContext()
 	Expect(*testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
