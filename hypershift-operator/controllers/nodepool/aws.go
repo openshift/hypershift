@@ -109,7 +109,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 		},
 	}
 
-	applyAWSPlacementOptions(nodePool, awsMachineTemplateSpec)
+	applyAWSMachineOptions(nodePool, awsMachineTemplateSpec)
 
 	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
 		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
@@ -204,7 +204,15 @@ func buildAWSSecurityGroups(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.H
 	return securityGroups, nil
 }
 
-func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+func applyAWSMachineOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if nodePool.Spec.Platform.AWS == nil {
+		return
+	}
+
+	if cpuOptions := nodePool.Spec.Platform.AWS.CpuOptions; cpuOptions.NestedVirtualization != "" {
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicy(cpuOptions.NestedVirtualization)
+	}
+
 	placement := nodePool.Spec.Platform.AWS.Placement
 	if placement == nil {
 		return
@@ -246,6 +254,7 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 		spec.Template.Spec.CapacityReservationID = capacityReservation.ID
 		spec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 	}
+
 }
 
 func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {

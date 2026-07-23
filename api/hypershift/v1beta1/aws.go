@@ -68,6 +68,12 @@ type AWSNodePoolPlatform struct {
 	//
 	// +optional
 	Placement *PlacementOptions `json:"placement,omitempty"`
+
+	// cpuOptions specifies CPU configuration for EC2 instances.
+	// Supported on C8i, M8i, and R8i instance families.
+	//
+	// +optional
+	CpuOptions CpuOptions `json:"cpuOptions,omitzero"`
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
@@ -150,6 +156,30 @@ type SpotOptions struct {
 	// +kubebuilder:validation:MaxLength=20
 	MaxPrice string `json:"maxPrice,omitempty"`
 }
+
+// CpuOptions specifies CPU configuration for EC2 instances.
+// At least one field must be specified when cpuOptions is present.
+//
+// +kubebuilder:validation:MinProperties=1
+type CpuOptions struct {
+	// nestedVirtualization indicates whether to enable nested virtualization on the instance.
+	// Supported on C8i, M8i, and R8i instance families.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=enabled;disabled
+	NestedVirtualization NestedVirtualizationPolicy `json:"nestedVirtualization,omitempty"`
+}
+
+// NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.
+type NestedVirtualizationPolicy string
+
+const (
+	// NestedVirtualizationEnabled enables nested virtualization on the instance.
+	NestedVirtualizationEnabled NestedVirtualizationPolicy = "enabled"
+
+	// NestedVirtualizationDisabled disables nested virtualization on the instance.
+	NestedVirtualizationDisabled NestedVirtualizationPolicy = "disabled"
+)
 
 // MarketType describes the market type for EC2 instances.
 type MarketType string

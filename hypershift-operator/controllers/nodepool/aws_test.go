@@ -1772,12 +1772,13 @@ func TestBuildAWSSecurityGroups(t *testing.T) {
 	}
 }
 
-func TestApplyAWSPlacementOptions(t *testing.T) {
+func TestApplyAWSMachineOptions(t *testing.T) {
 	capacityReservationID := "cr-0123456789abcdef0"
 
 	testCases := []struct {
 		name                             string
 		nodePool                         *hyperv1.NodePool
+		expectedNestedVirtualization     capiaws.NestedVirtualizationPolicy
 		expectedSpotMarketOptions        *capiaws.SpotMarketOptions
 		expectedMarketType               capiaws.MarketType
 		expectedTenancy                  string
@@ -1792,6 +1793,46 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 						AWS: &hyperv1.AWSNodePoolPlatform{
 							Placement: nil,
 						},
+					},
+				},
+			},
+		},
+		{
+			name: "When nested virtualization is enabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CpuOptions: hyperv1.CpuOptions{
+								NestedVirtualization: hyperv1.NestedVirtualizationEnabled,
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyEnabled,
+		},
+		{
+			name: "When nested virtualization is disabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CpuOptions: hyperv1.CpuOptions{
+								NestedVirtualization: hyperv1.NestedVirtualizationDisabled,
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyDisabled,
+		},
+		{
+			name: "When AWS platform is nil, it should not modify spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: nil,
 					},
 				},
 			},
@@ -1940,13 +1981,14 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			spec := &capiaws.AWSMachineTemplateSpec{}
-			applyAWSPlacementOptions(tc.nodePool, spec)
+			applyAWSMachineOptions(tc.nodePool, spec)
 
-			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions))
-			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType))
-			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy))
-			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID))
-			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference))
+			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization), "CPUOptions.NestedVirtualization mismatch")
+			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions), "SpotMarketOptions mismatch")
+			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType), "MarketType mismatch")
+			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy), "Tenancy mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID), "CapacityReservationID mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference), "CapacityReservationPreference mismatch")
 		})
 	}
 }
