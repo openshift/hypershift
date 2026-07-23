@@ -3,6 +3,7 @@ package etcd
 import (
 	_ "embed"
 	"fmt"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -49,17 +50,19 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	tlsMinVersion := minTLSVersion(profile)
 	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, config.CipherSuites(profile))
 
+	replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
+	var members []string
+	for i := range replicas {
+		name := fmt.Sprintf("etcd-%d", i)
+		members = append(members, fmt.Sprintf("%s=https://%s.etcd-discovery.%s.svc:2380", name, name, hcp.Namespace))
+	}
+	initialCluster := strings.Join(members, ",")
+
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
-		var members []string
-		for i := range replicas {
-			name := fmt.Sprintf("etcd-%d", i)
-			members = append(members, fmt.Sprintf("%s=https://%s.etcd-discovery.%s.svc:2380", name, name, hcp.Namespace))
-		}
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "ETCD_INITIAL_CLUSTER",
-				Value: strings.Join(members, ","),
+				Value: initialCluster,
 			},
 		)
 
@@ -131,9 +134,15 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 
 	snapshotRestored := meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 	if managedEtcdSpec != nil && len(managedEtcdSpec.Storage.RestoreSnapshotURL) > 0 && !snapshotRestored {
-		sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
-			buildEtcdInitContainer(managedEtcdSpec.Storage.RestoreSnapshotURL[0]), // RestoreSnapshotURL can only have 1 entry
-		)
+		etcdInit := buildEtcdInitContainer(managedEtcdSpec.Storage.RestoreSnapshotURL[0], hcp.Namespace, initialCluster) // RestoreSnapshotURL can only have 1 entry
+		insertIdx := len(sts.Spec.Template.Spec.InitContainers)
+		for i, c := range sts.Spec.Template.Spec.InitContainers {
+			if c.Name == "reset-member" {
+				insertIdx = i
+				break
+			}
+		}
+		sts.Spec.Template.Spec.InitContainers = slices.Insert(sts.Spec.Template.Spec.InitContainers, insertIdx, etcdInit)
 	}
 
 	// adapt PersistentVolume
@@ -156,14 +165,28 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 //go:embed etcd-init.sh
 var etcdInitScript string
 
-func buildEtcdInitContainer(restoreUrl string) corev1.Container {
+func buildEtcdInitContainer(restoreUrl, namespace, initialCluster string) corev1.Container {
 	c := corev1.Container{
 		Name: "etcd-init",
 	}
 	c.Env = []corev1.EnvVar{
 		{
+			Name: "HOSTNAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+		{
 			Name:  "RESTORE_URL_ETCD",
 			Value: restoreUrl,
+		},
+		{
+			Name:  "HCP_NAMESPACE",
+			Value: namespace,
+		},
+		{
+			Name:  "ETCD_INITIAL_CLUSTER",
+			Value: initialCluster,
 		},
 	}
 	c.Image = "etcd"

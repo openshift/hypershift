@@ -1153,6 +1153,19 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 			subDirSuffix: "ModernTLS",
 		},
+		{
+			name:         "When etcd snapshot restore is configured, it should reconcile expected components",
+			featureSet:   configv1.Default,
+			subDirSuffix: "EtcdRestore",
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type:               hyperv1.PersistentVolumeEtcdStorage,
+						RestoreSnapshotURL: []string{"https://etcd-backup-bucket.s3.us-east-1.amazonaws.com/backups/etcd-snapshot-2024-01-15.db"},
+					},
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
