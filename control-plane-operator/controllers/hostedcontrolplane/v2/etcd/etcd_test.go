@@ -1,6 +1,7 @@
 package etcd
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -22,6 +23,11 @@ import (
 func TestBuildEtcdInitContainer(t *testing.T) {
 	t.Parallel()
 
+	const (
+		testNamespace      = "test-hcp-namespace"
+		testInitialCluster = "etcd-0=https://etcd-0.etcd-discovery.test-hcp-namespace.svc:2380,etcd-1=https://etcd-1.etcd-discovery.test-hcp-namespace.svc:2380,etcd-2=https://etcd-2.etcd-discovery.test-hcp-namespace.svc:2380"
+	)
+
 	testCases := []struct {
 		name       string
 		restoreUrl string
@@ -34,6 +40,38 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
 					Name:  "RESTORE_URL_ETCD",
 					Value: "https://example.com/snapshot.db",
+				}))
+			},
+		},
+		{
+			name:       "When called, it should set HOSTNAME from pod metadata.name via downward API",
+			restoreUrl: "",
+			validate: func(g Gomega, c corev1.Container) {
+				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
+					Name: "HOSTNAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+					},
+				}))
+			},
+		},
+		{
+			name:       "When called, it should set HCP_NAMESPACE env var",
+			restoreUrl: "",
+			validate: func(g Gomega, c corev1.Container) {
+				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
+					Name:  "HCP_NAMESPACE",
+					Value: testNamespace,
+				}))
+			},
+		},
+		{
+			name:       "When called, it should set ETCD_INITIAL_CLUSTER env var",
+			restoreUrl: "",
+			validate: func(g Gomega, c corev1.Container) {
+				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
+					Name:  "ETCD_INITIAL_CLUSTER",
+					Value: testInitialCluster,
 				}))
 			},
 		},
@@ -74,7 +112,7 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
-			c := buildEtcdInitContainer(tc.restoreUrl)
+			c := buildEtcdInitContainer(tc.restoreUrl, testNamespace, testInitialCluster)
 			tc.validate(g, c)
 		})
 	}
@@ -180,6 +218,76 @@ func TestIsManagedETCD(t *testing.T) {
 			result, err := isManagedETCD(cpContext)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestAdaptStatefulSet_InitContainerOrdering(t *testing.T) {
+	t.Parallel()
+
+	baseInitContainers := []corev1.Container{
+		{Name: "ensure-dns"},
+		{Name: "reset-member"},
+	}
+
+	testCases := []struct {
+		name          string
+		restoreURL    string
+		expectedOrder []string
+	}{
+		{
+			name:          "When restoreSnapshotURL is set, it should place etcd-init before reset-member",
+			restoreURL:    "https://example.com/snapshot.db",
+			expectedOrder: []string{"ensure-dns", "etcd-init", "reset-member"},
+		},
+		{
+			name:          "When restoreSnapshotURL is not set, it should not add etcd-init",
+			restoreURL:    "",
+			expectedOrder: []string{"ensure-dns", "reset-member"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								Type: hyperv1.PersistentVolumeEtcdStorage,
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{CIDR: *ipnet.MustParseCIDR("10.0.0.0/16")},
+						},
+					},
+					ControllerAvailabilityPolicy: hyperv1.SingleReplica,
+				},
+			}
+			if tc.restoreURL != "" {
+				hcp.Spec.Etcd.Managed.Storage.RestoreSnapshotURL = []string{tc.restoreURL}
+			}
+
+			containers := make([]corev1.Container, len(baseInitContainers))
+			copy(containers, baseInitContainers)
+			sts := &appsv1.StatefulSet{}
+			sts.Spec.Template.Spec.InitContainers = containers
+			sts.Spec.Template.Spec.Containers = []corev1.Container{{Name: ComponentName}, {Name: "etcd-metrics"}}
+
+			err := adaptStatefulSet(component.WorkloadContext{Context: context.Background(), HCP: hcp}, sts)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			names := make([]string, len(sts.Spec.Template.Spec.InitContainers))
+			for i, c := range sts.Spec.Template.Spec.InitContainers {
+				names[i] = c.Name
+			}
+			g.Expect(names).To(Equal(tc.expectedOrder))
 		})
 	}
 }

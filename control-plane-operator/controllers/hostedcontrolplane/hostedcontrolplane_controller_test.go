@@ -1153,6 +1153,19 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 			subDirSuffix: "ModernTLS",
 		},
+		{
+			name:         "Default feature set, etcd snapshot restore",
+			featureSet:   configv1.Default,
+			subDirSuffix: "EtcdRestore",
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type:               hyperv1.PersistentVolumeEtcdStorage,
+						RestoreSnapshotURL: []string{"https://example.com/etcd-snapshot.db"},
+					},
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
