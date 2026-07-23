@@ -1016,7 +1016,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx con
 		machineCIDRs[i] = mNet.CIDR.String()
 	}
 	ingressPermissions := supportawsutil.VPCEndpointSecurityGroupRules(machineCIDRs, vpcEndpointPort(awsEndpointService))
-	missingPermissions := diffPermissions(sg.IpPermissions, ingressPermissions)
+	missingPermissions := supportawsutil.DiffPermissions(sg.IpPermissions, ingressPermissions)
 	if len(missingPermissions) > 0 {
 		if _, err = ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId:       aws.String(sgID),
@@ -1328,37 +1328,3 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 	return nil
 }
 
-func diffPermissions(actual, required []ec2types.IpPermission) []ec2types.IpPermission {
-	var result []ec2types.IpPermission
-	for _, req := range required {
-		if !isPermissionPresent(req, actual) {
-			result = append(result, req)
-		}
-	}
-	return result
-}
-
-func isPermissionPresent(perm ec2types.IpPermission, list []ec2types.IpPermission) bool {
-	for _, existing := range list {
-		if aws.ToInt32(existing.FromPort) == aws.ToInt32(perm.FromPort) &&
-			aws.ToInt32(existing.ToPort) == aws.ToInt32(perm.ToPort) &&
-			aws.ToString(existing.IpProtocol) == aws.ToString(perm.IpProtocol) &&
-			equalIPRanges(existing.IpRanges, perm.IpRanges) {
-			return true
-		}
-	}
-	return false
-}
-
-func equalIPRanges(a, b []ec2types.IpRange) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if aws.ToString(a[i].Description) != aws.ToString(b[i].Description) ||
-			aws.ToString(a[i].CidrIp) != aws.ToString(b[i].CidrIp) {
-			return false
-		}
-	}
-	return true
-}

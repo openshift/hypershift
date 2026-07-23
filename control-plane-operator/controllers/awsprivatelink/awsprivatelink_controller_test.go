@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/awsapi"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -333,7 +334,7 @@ func TestDiffPermissions(t *testing.T) {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			result := diffPermissions(test.actual, test.required)
+			result := supportawsutil.DiffPermissions(test.actual, test.required)
 			g.Expect(result).To(Equal(test.expected))
 		})
 	}
