@@ -107,6 +107,7 @@ const (
 	ConfigManagedNamespace    = "openshift-config-managed"
 	CloudProviderCMName       = "cloud-provider-config"
 	maxConditionMessageLength = 1024
+	oidcConfigResourceLabel   = "hypershift.openshift.io/oidc-config-resource"
 	awsCredentialsTemplate    = `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
@@ -1500,7 +1501,12 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 }
 
 func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
 	var errs []error
+
+	desiredConfigMaps := sets.New[string]()
+	desiredSecrets := sets.New[string]()
+
 	if !util.HCPOAuthEnabled(hcp) &&
 		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
 
@@ -1508,6 +1514,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 		provider := hcp.Spec.Configuration.Authentication.OIDCProviders[0]
 		if provider.Issuer.CertificateAuthority.Name != "" {
 			name := provider.Issuer.CertificateAuthority.Name
+			desiredConfigMaps.Insert(name)
 			var src corev1.ConfigMap
 			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: name}, &src)
 			if err != nil {
@@ -1520,6 +1527,10 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 					},
 				}
 				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+					if dest.Labels == nil {
+						dest.Labels = map[string]string{}
+					}
+					dest.Labels[oidcConfigResourceLabel] = "true"
 					if dest.Data == nil {
 						dest.Data = map[string]string{}
 					}
@@ -1539,13 +1550,17 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 					var src corev1.Secret
 					err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
 					if err != nil {
+						if !apierrors.IsNotFound(err) {
+							desiredSecrets.Insert(oidcClient.ClientSecret.Name)
+						}
 						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
 						continue
 					}
+					// ARO HCP day-2 secrets are provided by the end-user on the hosted cluster, not copied by HCCO.
 					if azureutil.IsAroHCPByHCP(hcp) && k8sutil.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
-						// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
 						continue
 					}
+					desiredSecrets.Insert(oidcClient.ClientSecret.Name)
 					dest := corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      oidcClient.ClientSecret.Name,
@@ -1553,6 +1568,10 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 						},
 					}
 					_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+						if dest.Labels == nil {
+							dest.Labels = map[string]string{}
+						}
+						dest.Labels[oidcConfigResourceLabel] = "true"
 						if dest.Data == nil {
 							dest.Data = map[string][]byte{}
 						}
@@ -1561,12 +1580,54 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 					})
 					if err != nil {
 						errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
-
 					}
 				}
 			}
 		}
 	}
+
+	// Clean up OIDC resources that are no longer in the desired set.
+	// When OIDCProviders is empty, the desired sets are empty and all labeled resources are removed.
+	var cmList corev1.ConfigMapList
+	if err := r.client.List(ctx, &cmList,
+		client.InNamespace(ConfigNamespace),
+		client.MatchingLabels{oidcConfigResourceLabel: "true"},
+	); err != nil {
+		errs = append(errs, fmt.Errorf("failed to list OIDC configmaps: %w", err))
+	} else {
+		for i := range cmList.Items {
+			if !desiredConfigMaps.Has(cmList.Items[i].Name) {
+				if err := r.client.Delete(ctx, &cmList.Items[i]); err != nil {
+					if !apierrors.IsNotFound(err) {
+						errs = append(errs, fmt.Errorf("failed to delete stale OIDC configmap %s: %w", cmList.Items[i].Name, err))
+					}
+				} else {
+					log.Info("deleted stale OIDC configmap", "name", cmList.Items[i].Name, "namespace", cmList.Items[i].Namespace)
+				}
+			}
+		}
+	}
+
+	var secretList corev1.SecretList
+	if err := r.client.List(ctx, &secretList,
+		client.InNamespace(ConfigNamespace),
+		client.MatchingLabels{oidcConfigResourceLabel: "true"},
+	); err != nil {
+		errs = append(errs, fmt.Errorf("failed to list OIDC secrets: %w", err))
+	} else {
+		for i := range secretList.Items {
+			if !desiredSecrets.Has(secretList.Items[i].Name) {
+				if err := r.client.Delete(ctx, &secretList.Items[i]); err != nil {
+					if !apierrors.IsNotFound(err) {
+						errs = append(errs, fmt.Errorf("failed to delete stale OIDC secret %s: %w", secretList.Items[i].Name, err))
+					}
+				} else {
+					log.Info("deleted stale OIDC secret", "name", secretList.Items[i].Name, "namespace", secretList.Items[i].Namespace)
+				}
+			}
+		}
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
