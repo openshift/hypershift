@@ -208,6 +208,8 @@ spec:
         - /etc/konnectivity/cluster/tls.crt
         - --cluster-key
         - /etc/konnectivity/cluster/tls.key
+        - --cluster-ca-cert
+        - /etc/konnectivity/ca/ca.crt
         - --server-cert
         - /etc/konnectivity/server/tls.crt
         - --server-key
