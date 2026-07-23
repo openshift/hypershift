@@ -672,7 +672,7 @@ cpo-container-sync:
 # - current context to be set to a hosted cluster with AutoNode enabled.
 # - an annotation to be applied to the HCP to stop reconcillation (hypershift.openshift.io/karpenter-core-e2e-override=true)
 .PHONY: karpenter-upstream-e2e
-karpenter-upstream-e2e:
+karpenter-upstream-e2e: $(YQ)
 	./karpenter-operator/e2e/upstream-e2e.sh
 
 ## --------------------------------------
