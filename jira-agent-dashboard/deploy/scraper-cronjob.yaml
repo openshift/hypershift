@@ -1,0 +1,276 @@
+# Four independent CronJobs for scraping different data sources.
+# They share the same PVC (SQLite WAL mode supports concurrent readers).
+# Stagger schedules to avoid write contention on the single-writer SQLite lock.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scraper-prow
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: scraper
+    scraper-step: prow
+spec:
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: jira-agent-dashboard
+                      component: dashboard
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: scraper
+              image: quay.io/rh_ee_brcox/jira-agent-dashboard:latest
+              command: ["/usr/local/bin/scraper", "--step=prow"]
+              env:
+                - name: DB_PATH
+                  value: /data/dashboard.db
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: dashboard-db
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scraper-github
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: scraper
+    scraper-step: github
+spec:
+  schedule: "10 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: jira-agent-dashboard
+                      component: dashboard
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: scraper
+              image: quay.io/rh_ee_brcox/jira-agent-dashboard:latest
+              command: ["/usr/local/bin/scraper", "--step=github"]
+              env:
+                - name: DB_PATH
+                  value: /data/dashboard.db
+                - name: GITHUB_APP_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: dashboard-secrets
+                      key: GITHUB_APP_ID
+                - name: GITHUB_APP_INSTALLATION_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: dashboard-secrets
+                      key: GITHUB_APP_INSTALLATION_ID
+                - name: GITHUB_APP_PRIVATE_KEY_PATH
+                  value: /etc/github-app/private-key.pem
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+                - name: github-app-key
+                  mountPath: /etc/github-app
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: dashboard-db
+            - name: github-app-key
+              secret:
+                secretName: github-app-key
+                defaultMode: 0400
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scraper-classify
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: scraper
+    scraper-step: classify
+spec:
+  schedule: "30 7 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: dashboard
+          automountServiceAccountToken: true
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: jira-agent-dashboard
+                      component: dashboard
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: classify
+              image: quay.io/rh_ee_brcox/jira-agent-dashboard:classify
+              imagePullPolicy: Always
+              env:
+                - name: DB_PATH
+                  value: /data/dashboard.db
+                - name: GOOGLE_APPLICATION_CREDENTIALS
+                  value: /etc/gcp-wif/credential-config.json
+                - name: CLAUDE_CODE_USE_VERTEX
+                  value: "1"
+                - name: CLOUD_ML_REGION
+                  value: global
+                - name: ANTHROPIC_VERTEX_PROJECT_ID
+                  value: hosted-control-planes
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+                - name: gcp-wif-config
+                  mountPath: /etc/gcp-wif
+                  readOnly: true
+                - name: gcp-wif-token
+                  mountPath: /var/run/secrets/gcp-wif
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: dashboard-db
+            - name: gcp-wif-config
+              configMap:
+                name: gcp-wif-config
+            - name: gcp-wif-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: "//iam.googleapis.com/projects/482048258650/locations/global/workloadIdentityPools/k8s-dashboard-pool/providers/k8s-jira-dashboard"
+                      expirationSeconds: 3600
+                      path: token
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scraper-telemetry
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: scraper
+    scraper-step: telemetry
+spec:
+  schedule: "20 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: jira-agent-dashboard
+                      component: dashboard
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: scraper
+              image: quay.io/rh_ee_brcox/jira-agent-dashboard:latest
+              command: ["/usr/local/bin/scraper", "--step=telemetry"]
+              env:
+                - name: DB_PATH
+                  value: /data/dashboard.db
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: dashboard-db
