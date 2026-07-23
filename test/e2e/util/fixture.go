@@ -402,12 +402,14 @@ func clusterTag(infraID string) string {
 // a cluster based on the cluster's platform. The output directory will be named
 // according to the test name. So, the returned dump function should be called
 // at most once per unique test name.
-func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, artifactDir string) func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
-	return func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
+func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, artifactDir string) func(ctx context.Context, t *testing.T, isDumpingGuestCluster bool) error {
+	return func(ctx context.Context, t *testing.T, isDumpingGuestCluster bool) error {
 		if len(artifactDir) == 0 {
 			t.Logf("Skipping cluster dump because no artifact directory was provided")
 			return nil
 		}
+
+		noDumpGuestClusterPolicies := make(map[core.DumpGuestClusterPolicy]struct{})
 
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
@@ -416,7 +418,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
+			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, &noDumpGuestClusterPolicies, artifactDir)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -426,7 +428,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:
-			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
+			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, &noDumpGuestClusterPolicies, artifactDir)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}
