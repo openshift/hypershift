@@ -1,4 +1,10 @@
 aliases:
+  acm-hypershift-approvers:
+    - yiraeChristineKim
+    - kurwang
+  acm-hypershift-reviewers:
+    - yiraeChristineKim
+    - kurwang
   api-approvers:
     - enxebre
     - csrwng
