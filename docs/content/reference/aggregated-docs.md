@@ -1206,6 +1206,58 @@ hack/tools/scripts/find_task_version_by_digest.sh clair-scan \
 
 Prerequisites: `skopeo`, `jq`
 
+## Track post-merge build and release pipelines
+
+Your PR just merged and you need to know: did the push build complete?
+Have the images been released to acm-d or registry.redhat.io? Which
+PipelineRuns are still in progress?
+
+**Tool:** `hack/tools/find-push-pipelinerun/`
+
+Finds the on-push PipelineRuns triggered by a merged PR's commit SHA.
+Falls back to KubeArchive when the PipelineRuns have already been
+archived (which happens quickly). Optionally tracks the downstream
+release pipeline across both `crt-redhat-acm-tenant` (Releases) and
+`rhtap-releng-tenant` (release PipelineRuns).
+
+```bash
+# Build:
+make find-push-pipelinerun
+
+# Show push PipelineRuns for a merged PR:
+hack/tools/bin/find-push-pipelinerun 8908
+
+# Filter to a specific Konflux Component (the appstudio.openshift.io/component
+# label on PipelineRuns and Releases — e.g., hypershift-operator-main,
+# hypershift-release-mce-50, hypershift-cli-mce-50):
+hack/tools/bin/find-push-pipelinerun 8908 hypershift-operator
+
+# Also show release pipeline status and destination images:
+hack/tools/bin/find-push-pipelinerun --release 8908
+
+# Poll until everything completes:
+hack/tools/bin/find-push-pipelinerun --release --watch 8908
+
+# Works with full URLs and owner/repo#number syntax too:
+hack/tools/bin/find-push-pipelinerun --release https://github.com/openshift/hypershift/pull/8908
+
+# Or run directly without pre-building:
+(cd hack/tools && go run ./find-push-pipelinerun/ --release 8908)
+```
+
+The `--release` flag shows:
+
+- **Releases** — the Release resources created from the build Snapshot,
+  with their release plan, status, and expected destination image
+  (`repo@sha256:digest` derived from the ReleasePlan mapping and the
+  Snapshot's source digest).
+- **Release PipelineRuns** — the `managed-*` PipelineRuns in the
+  `rhtap-releng-tenant` namespace that execute the release (push to
+  registry, sign, create advisory, etc.).
+
+Prerequisites: valid kubeconfig for the Konflux cluster. Set `GITHUB_TOKEN` for
+private repos or to avoid GitHub API rate limits.
+
 ## Test tag pipeline changes
 
 You're modifying the tag pipeline definition in `.tekton/` (e.g., adding a
