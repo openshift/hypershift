@@ -394,7 +394,7 @@ test: generate
 test-changed:
 	@CHANGED_PKGS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
-		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -v '^\./hack/tools/'); \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -v '^\./api/vendor/' | grep -v '^\./hack/tools/'); \
 	if [ -z "$$CHANGED_PKGS" ]; then \
 		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
 	else \
