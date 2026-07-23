@@ -80,6 +80,7 @@ const (
 // etcd snapshot and upload Jobs in the HyperShift Operator namespace.
 type HCPEtcdBackupReconciler struct {
 	client.Client
+	APIReader               client.Reader
 	OperatorNamespace       string
 	ReleaseProvider         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	HypershiftOperatorImage string
@@ -124,6 +125,22 @@ func (r *HCPEtcdBackupReconciler) setFailedConditionAndUpdate(ctx context.Contex
 	return ctrl.Result{}, nil
 }
 
+func (r *HCPEtcdBackupReconciler) getCredentialSecret(ctx context.Context, name string) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{Name: name, Namespace: r.OperatorNamespace}
+	err := r.Get(ctx, key, secret)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to get credential Secret: %w", err)
+	}
+	if apierrors.IsNotFound(err) {
+		err = r.APIReader.Get(ctx, key, secret)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get credential Secret: %w", err)
+		}
+	}
+	return secret, err
+}
+
 func (r *HCPEtcdBackupReconciler) validatePrerequisites(ctx context.Context, backup *hyperv1.HCPEtcdBackup) (ctrl.Result, bool, error) {
 	credentialSecretName, err := r.getCredentialSecretName(backup)
 	if err != nil {
@@ -134,17 +151,15 @@ func (r *HCPEtcdBackupReconciler) validatePrerequisites(ctx context.Context, bac
 		return result, true, nil
 	}
 
-	credSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: credentialSecretName, Namespace: r.OperatorNamespace}, credSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			result, updateErr := r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
-				fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
-			if updateErr != nil {
-				return result, true, updateErr
-			}
-			return result, true, nil
+	if _, credErr := r.getCredentialSecret(ctx, credentialSecretName); apierrors.IsNotFound(credErr) {
+		result, updateErr := r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
+			fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
+		if updateErr != nil {
+			return result, true, updateErr
 		}
-		return ctrl.Result{}, true, fmt.Errorf("failed to get credential Secret: %w", err)
+		return result, true, nil
+	} else if credErr != nil {
+		return ctrl.Result{}, true, credErr
 	}
 	return ctrl.Result{}, false, nil
 }
@@ -156,13 +171,13 @@ func (r *HCPEtcdBackupReconciler) createResourcesAndJob(ctx context.Context, bac
 	if err != nil {
 		return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason, err.Error())
 	}
-	credSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: credentialSecretName, Namespace: r.OperatorNamespace}, credSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
-				fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to get credential Secret: %w", err)
+	credSecret, err := r.getCredentialSecret(ctx, credentialSecretName)
+	if apierrors.IsNotFound(err) {
+		return r.setFailedConditionAndUpdate(ctx, backup, hyperv1.BackupFailedReason,
+			fmt.Sprintf("credential Secret %q not found in namespace %q", credentialSecretName, r.OperatorNamespace))
+	}
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	creds := resolveCredentials(backup.Spec.Storage.StorageType, credSecret)
