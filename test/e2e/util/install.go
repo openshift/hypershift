@@ -66,6 +66,7 @@ func getInstallOptions(opts HyperShiftOperatorInstallOptions) install.Options {
 	installOpts.EnableDedicatedRequestServingIsolation = opts.EnableDedicatedRequestServingIsolation
 	installOpts.EnableCPOOverrides = opts.EnableCPOOverrides
 	installOpts.EnableEtcdRecovery = opts.EnableEtcdRecovery
+	installOpts.DisableCAPIMigration = opts.DisableCAPIMigration
 
 	return installOpts
 }

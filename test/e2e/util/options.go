@@ -83,6 +83,8 @@ type Options struct {
 	HOInstallationOptions HyperShiftOperatorInstallOptions
 	// RunUpgradeTest is set to run HyperShift Operator upgrade test
 	RunUpgradeTest bool
+	// RunCAPIMigrationTest is set to run CAPI storage version migration test
+	RunCAPIMigrationTest bool
 
 	// external oidc for authentication in spec.configurations
 	ExternalOIDCProvider        string
@@ -119,6 +121,7 @@ type HyperShiftOperatorInstallOptions struct {
 	EnableDedicatedRequestServingIsolation bool
 	EnableCPOOverrides                     bool
 	EnableEtcdRecovery                     bool
+	DisableCAPIMigration                   bool
 	DryRun                                 bool
 	DryRunDir                              string
 }
