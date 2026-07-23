@@ -41,6 +41,46 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(noProxy.Value).To(ContainSubstring("localhost"))
 				g.Expect(noProxy.Value).To(ContainSubstring("127.0.0.1"))
 				g.Expect(noProxy.Value).To(ContainSubstring("kube-apiserver"))
+
+				g.Expect(podspec.FindEnvVar("AWS_SHARED_CREDENTIALS_FILE", container.Env)).ToNot(BeNil())
+				g.Expect(podspec.FindEnvVar("AWS_SDK_LOAD_CONFIG", container.Env)).ToNot(BeNil())
+				g.Expect(podspec.FindEnvVar("AWS_EC2_METADATA_DISABLED", container.Env)).ToNot(BeNil())
+			},
+		},
+		{
+			name:      "When only HTTP_PROXY is set, it should add HTTP_PROXY and NO_PROXY but not HTTPS_PROXY",
+			httpProxy: "http://proxy.example.com:8080",
+			noProxy:   "localhost,127.0.0.1",
+			validate: func(g *WithT, container *corev1.Container) {
+				httpProxy := podspec.FindEnvVar("HTTP_PROXY", container.Env)
+				g.Expect(httpProxy).ToNot(BeNil())
+				g.Expect(httpProxy.Value).To(Equal("http://proxy.example.com:8080"))
+
+				g.Expect(podspec.FindEnvVar("HTTPS_PROXY", container.Env)).To(BeNil())
+
+				noProxy := podspec.FindEnvVar("NO_PROXY", container.Env)
+				g.Expect(noProxy).ToNot(BeNil())
+				g.Expect(noProxy.Value).To(ContainSubstring("localhost"))
+				g.Expect(noProxy.Value).To(ContainSubstring("127.0.0.1"))
+				g.Expect(noProxy.Value).To(ContainSubstring("kube-apiserver"))
+			},
+		},
+		{
+			name:       "When only HTTPS_PROXY is set, it should add HTTPS_PROXY and NO_PROXY but not HTTP_PROXY",
+			httpsProxy: "https://proxy.example.com:8443",
+			noProxy:    "localhost,127.0.0.1",
+			validate: func(g *WithT, container *corev1.Container) {
+				g.Expect(podspec.FindEnvVar("HTTP_PROXY", container.Env)).To(BeNil())
+
+				httpsProxy := podspec.FindEnvVar("HTTPS_PROXY", container.Env)
+				g.Expect(httpsProxy).ToNot(BeNil())
+				g.Expect(httpsProxy.Value).To(Equal("https://proxy.example.com:8443"))
+
+				noProxy := podspec.FindEnvVar("NO_PROXY", container.Env)
+				g.Expect(noProxy).ToNot(BeNil())
+				g.Expect(noProxy.Value).To(ContainSubstring("localhost"))
+				g.Expect(noProxy.Value).To(ContainSubstring("127.0.0.1"))
+				g.Expect(noProxy.Value).To(ContainSubstring("kube-apiserver"))
 			},
 		},
 		{
