@@ -643,12 +643,10 @@ func (r *NodePoolReconciler) deleteNodePoolSecrets(ctx context.Context, nodePool
 // validateManagement does additional backend validation. API validation/default should
 // prevent this from ever fail.
 func validateManagement(nodePool *hyperv1.NodePool) error {
-	// TODO actually validate the inplace upgrade type
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
 		return nil
 	}
 
-	// Only upgradeType "Replace" is supported atm.
 	if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace ||
 		nodePool.Spec.Management.Replace == nil {
 		return fmt.Errorf("this is unsupported. %q upgrade type and a strategy: %q or %q are required",
@@ -661,7 +659,6 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 			hyperv1.UpgradeTypeReplace, hyperv1.UpgradeStrategyOnDelete, hyperv1.UpgradeStrategyRollingUpdate)
 	}
 
-	// RollingUpdate strategy requires MaxUnavailable and MaxSurge
 	if nodePool.Spec.Management.Replace.Strategy == hyperv1.UpgradeStrategyRollingUpdate &&
 		nodePool.Spec.Management.Replace.RollingUpdate == nil {
 		return fmt.Errorf("this is unsupported. %q upgrade type with strategy %q require a MaxUnavailable and MaxSurge",
