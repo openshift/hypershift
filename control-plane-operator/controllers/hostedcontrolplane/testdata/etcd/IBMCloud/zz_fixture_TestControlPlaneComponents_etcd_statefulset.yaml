@@ -134,10 +134,6 @@ spec:
           value: "true"
         - name: ETCD_INITIAL_CLUSTER
           value: etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380,etcd-1=https://etcd-1.etcd-discovery.hcp-namespace.svc:2380,etcd-2=https://etcd-2.etcd-discovery.hcp-namespace.svc:2380
-        - name: ETCD_TLS_MIN_VERSION
-          value: TLS1.2
-        - name: ETCD_CIPHER_SUITES
-          value: TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         image: etcd
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -210,8 +206,6 @@ spec:
         - --listen-addr=127.0.0.1:2383
         - --metrics-addr=https://0.0.0.0:2381
         - --advertise-client-url=
-        - --tls-min-version=TLS1.2
-        - --listen-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - etcd
         image: etcd
@@ -248,8 +242,6 @@ spec:
         - --client-cert-file=/etc/etcd/tls/client/etcd-client.crt
         - --client-key-file=/etc/etcd/tls/client/etcd-client.key
         - --client-cacert-file=/etc/etcd/tls/etcd-ca/ca.crt
-        - --listen-tls-min-version=TLS1.2
-        - --listen-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - cluster-etcd-operator
         image: cluster-etcd-operator

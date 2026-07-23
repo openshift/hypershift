@@ -7,47 +7,24 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
-
-	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
-
-// minTLSVersion assesses what is the minimum TLS version we should use. This
-// function takes into account that etcd supports only 1.2 and 1.3.
-func minTLSVersion(profile *configv1.TLSSecurityProfile) tlsutil.TLSVersion {
-	switch config.MinTLSVersion(profile) {
-	case string(configv1.VersionTLS13):
-		return tlsutil.TLSVersion13
-	default:
-		return tlsutil.TLSVersion12
-	}
-}
 
 func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulSet) error {
 	hcp := cpContext.HCP
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
-	profile := cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()
 
 	ipv4, err := netutil.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return fmt.Errorf("error checking the ClusterNetworkCIDR: %w", err)
 	}
-
-	// assess what is the min tls version to be used and also the list of
-	// cipher suites. if the cipher list is empty then the go default's
-	// cipher will be used.
-	tlsMinVersion := minTLSVersion(profile)
-	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, config.CipherSuites(profile))
 
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
@@ -62,18 +39,6 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 				Value: strings.Join(members, ","),
 			},
 		)
-
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name:  "ETCD_TLS_MIN_VERSION",
-			Value: string(tlsMinVersion),
-		})
-
-		if len(cipherSuites) > 0 {
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_CIPHER_SUITES",
-				Value: strings.Join(cipherSuites, ","),
-			})
-		}
 
 		if !ipv4 {
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
@@ -104,19 +69,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 			fmt.Sprintf("--listen-addr=%s:2383", loInterface),
 			fmt.Sprintf("--metrics-addr=https://%s:2381", allInterfaces),
 			"--advertise-client-url=",
-			fmt.Sprintf("--tls-min-version=%s", tlsMinVersion),
 		)
-
-		if len(cipherSuites) > 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cipherSuites, ",")))
-		}
-	})
-
-	podspec.UpdateContainer("healthz", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		c.Args = append(c.Args, fmt.Sprintf("--listen-tls-min-version=%s", tlsMinVersion))
-		if len(cipherSuites) > 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--listen-cipher-suites=%s", strings.Join(cipherSuites, ",")))
-		}
 	})
 
 	// Use etcd SA for self-registration (all topologies) or etcd-defrag-controller SA for defrag (HA-only).
