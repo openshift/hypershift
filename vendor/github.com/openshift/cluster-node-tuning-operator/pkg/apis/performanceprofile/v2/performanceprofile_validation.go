@@ -29,7 +29,6 @@ import (
 	"github.com/openshift/cluster-node-tuning-operator/pkg/performanceprofile/controller/performanceprofile/components"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -81,26 +80,18 @@ var x86ValidKernelPageSizes = []string{
 
 var validatorContext = context.TODO()
 
-// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type
-func (r *PerformanceProfile) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	profile, ok := obj.(*PerformanceProfile)
-	if !ok {
-		return admission.Warnings{}, fmt.Errorf("expected PerformanceProfile, got %T", obj)
-	}
-	klog.Infof("Create validation for the performance profile %q", profile.Name)
+// ValidateCreate implements admission.Validator so a webhook will be registered for the type
+func (r *PerformanceProfile) ValidateCreate(ctx context.Context, obj *PerformanceProfile) (admission.Warnings, error) {
+	klog.Infof("Create validation for the performance profile %q", obj.Name)
 
-	return profile.validateCreateOrUpdate()
+	return obj.validateCreateOrUpdate()
 }
 
-// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type
-func (r *PerformanceProfile) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	profile, ok := newObj.(*PerformanceProfile)
-	if !ok {
-		return admission.Warnings{}, fmt.Errorf("expected PerformanceProfile, got %T", newObj)
-	}
-	klog.Infof("Update validation for the performance profile %q", profile.Name)
+// ValidateUpdate implements admission.Validator so a webhook will be registered for the type
+func (r *PerformanceProfile) ValidateUpdate(ctx context.Context, oldObj, newObj *PerformanceProfile) (admission.Warnings, error) {
+	klog.Infof("Update validation for the performance profile %q", newObj.Name)
 
-	return profile.validateCreateOrUpdate()
+	return newObj.validateCreateOrUpdate()
 }
 
 func (r *PerformanceProfile) validateCreateOrUpdate() (admission.Warnings, error) {
@@ -126,13 +117,9 @@ func (r *PerformanceProfile) validateCreateOrUpdate() (admission.Warnings, error
 		r.Name, allErrs)
 }
 
-// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type
-func (r *PerformanceProfile) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	profile, ok := obj.(*PerformanceProfile)
-	if !ok {
-		return admission.Warnings{}, fmt.Errorf("expected PerformanceProfile, got %T", obj)
-	}
-	klog.Infof("Delete validation for the performance profile %q", profile.Name)
+// ValidateDelete implements admission.Validator so a webhook will be registered for the type
+func (r *PerformanceProfile) ValidateDelete(ctx context.Context, obj *PerformanceProfile) (admission.Warnings, error) {
+	klog.Infof("Delete validation for the performance profile %q", obj.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return admission.Warnings{}, nil
@@ -379,6 +366,13 @@ func (r *PerformanceProfile) validateHugePages(nodes corev1.NodeList) field.Erro
 
 	if r.Spec.HugePages == nil {
 		return allErrs
+	}
+
+	// Validate that if hugepages are configured, defaultHugepagesSize must be provided
+	if len(r.Spec.HugePages.Pages) > 0 && r.Spec.HugePages.DefaultHugePagesSize == nil {
+		allErrs = append(allErrs, field.Required(
+			field.NewPath("spec.hugepages.defaultHugepagesSize"),
+			"defaultHugepagesSize must be specified when hugepages are configured"))
 	}
 
 	// We can only partially validate this if we have no nodes

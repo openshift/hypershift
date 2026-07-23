@@ -26,9 +26,21 @@ const (
 	// calculated by TuneD for the current profile applied to that Node.
 	TunedBootcmdlineAnnotationKey string = "tuned.openshift.io/bootcmdline"
 
+	// TunedBootcmdlineDepsAnnotationKey is a Node-specific annotation containing the RELEASE_VERSION and
+	// a list of all Tuned CR names and generations in the format:
+	// <version>,<name1>:<generation1>,<name2>:<generation2>,...<nameN>:<generationN>
+	// out of which the current Tuned Profile was calculated from.  This is used to detect whether all nodes
+	// in a MachineConfigPool have the same bootcmdline parameters calculated from the same set of Tuned CRs
+	// and the same operand version.
+	TunedBootcmdlineDepsAnnotationKey string = "tuned.openshift.io/bootcmdline-deps"
+
 	// TunedDeferredUpdate request the tuned daemons to defer the update of the rendered profile
 	// until the next restart.
 	TunedDeferredUpdate string = "tuned.openshift.io/deferred"
+
+	// StableGenerationAnnotationName is tuned daemonset annotation used to determine ClusterOperator
+	// progressing status.
+	StableGenerationAnnotationName = "tuned.openshift.io/last-stable-daemonset-generation"
 )
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +96,7 @@ type TunedRecommend struct {
 
 	// Tuned profile priority. Highest priority is 0.
 	// +kubebuilder:validation:Minimum=0
-	Priority *uint64 `json:"priority"`
+	Priority *int64 `json:"priority"`
 	// Rules governing application of a Tuned profile connected by logical OR operator.
 	Match []TunedMatch `json:"match,omitempty"`
 	// MachineConfigLabels specifies the labels for a MachineConfig. The MachineConfig is created

@@ -339,7 +339,7 @@ func (in *TunedRecommend) DeepCopyInto(out *TunedRecommend) {
 	}
 	if in.Priority != nil {
 		in, out := &in.Priority, &out.Priority
-		*out = new(uint64)
+		*out = new(int64)
 		**out = **in
 	}
 	if in.Match != nil {

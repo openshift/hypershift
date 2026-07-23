@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -44,7 +44,7 @@ const (
 type Reconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
-	record.EventRecorder
+	events.EventRecorder
 	errorHandler func(client.Object, error) error
 	Namespace    string
 }
@@ -56,7 +56,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(mapRequestTo(manifests.OperatorDeployment(r.Namespace))),
 			builder.WithPredicates(predicateForNames(monitoring.MonitoringNamespace().Name, monitoring.UWMNamespace().Name))).
 		Build(r)
-	r.EventRecorder = mgr.GetEventRecorderFor("uwm-telemetry")
+	r.EventRecorder = mgr.GetEventRecorder("uwm-telemetry")
 	r.errorHandler = r.handleReconcileError
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
@@ -392,7 +392,7 @@ type RemoteWriteSpec struct {
 }
 
 func (r *Reconciler) handleReconcileError(obj client.Object, err error) error {
-	r.Eventf(obj, corev1.EventTypeWarning, "ReconcileError", "Failed to ensure UWM telemetry remote write: %v", err)
+	r.Eventf(obj, nil, corev1.EventTypeWarning, "ReconcileError", "Reconcile", "Failed to ensure UWM telemetry remote write: %v", err)
 	return err
 }
 

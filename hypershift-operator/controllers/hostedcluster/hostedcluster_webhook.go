@@ -9,9 +9,7 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
@@ -32,12 +30,7 @@ type nodePoolDefaulter struct {
 	client client.Client
 }
 
-func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtime.Object) error {
-	hcluster, ok := obj.(*hyperv1.HostedCluster)
-	if !ok {
-		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", obj))
-	}
-
+func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	if hcluster.Spec.Release.Image == "" {
 		pullSpec, err := supportedversion.LookupLatestSupportedRelease(ctx, hcluster)
 		if err != nil {
@@ -87,12 +80,7 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtim
 	return nil
 }
 
-func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Object) error {
-	np, ok := obj.(*hyperv1.NodePool)
-	if !ok {
-		return apierrors.NewBadRequest(fmt.Sprintf("expected a NodePool but got a %T", obj))
-	}
-
+func (defaulter *nodePoolDefaulter) Default(ctx context.Context, np *hyperv1.NodePool) error {
 	if np.Spec.Release.Image == "" {
 		if np.Spec.ClusterName == "" {
 			return fmt.Errorf("nodePool.Spec.ClusterName is a required field")
@@ -131,24 +119,21 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
 func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.RegistryClientImageMetadataProvider, logger logr.Logger) error {
-	err := ctrl.NewWebhookManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}).
+	err := ctrl.NewWebhookManagedBy(mgr, &hyperv1.HostedCluster{}).
 		WithDefaulter(&hostedClusterDefaulter{}).
 		WithValidator(&hostedClusterValidator{}).
 		Complete()
 	if err != nil {
 		return fmt.Errorf("unable to register hostedcluster webhook: %w", err)
 	}
-	err = ctrl.NewWebhookManagedBy(mgr).
-		For(&hyperv1.NodePool{}).
+	err = ctrl.NewWebhookManagedBy(mgr, &hyperv1.NodePool{}).
 		WithDefaulter(&nodePoolDefaulter{client: mgr.GetClient()}).
 		WithValidator(newNodePoolValidator(logger)).
 		Complete()
 	if err != nil {
 		return fmt.Errorf("unable to register nodepool webhook: %w", err)
 	}
-	err = ctrl.NewWebhookManagedBy(mgr).
-		For(&hyperv1.HostedControlPlane{}).
+	err = ctrl.NewWebhookManagedBy(mgr, &hyperv1.HostedControlPlane{}).
 		Complete()
 	if err != nil {
 		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
@@ -167,21 +152,16 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 	})
 
 	// Register conversion webhook handler for CRD version conversions (HyperShift and CAPI types)
-	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
+	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme(), mgr.GetConverterRegistry()))
 
 	return nil
 }
 
-var _ admission.CustomValidator = (*hostedClusterValidator)(nil)
+var _ admission.Validator[*hyperv1.HostedCluster] = (*hostedClusterValidator)(nil)
 
 type hostedClusterValidator struct{}
 
-func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	hc, ok := obj.(*hyperv1.HostedCluster)
-	if !ok {
-		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", obj)
-	}
-
+func (v hostedClusterValidator) ValidateCreate(ctx context.Context, hc *hyperv1.HostedCluster) (admission.Warnings, error) {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtHostedCluster(ctx, hc)
@@ -190,17 +170,7 @@ func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.
 	}
 }
 
-func (v hostedClusterValidator) ValidateUpdate(ctx context.Context, oldHC, newHC runtime.Object) (admission.Warnings, error) {
-	hc, ok := newHC.(*hyperv1.HostedCluster)
-	if !ok {
-		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", newHC)
-	}
-
-	hcOld, ok := oldHC.(*hyperv1.HostedCluster)
-	if !ok {
-		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", oldHC)
-	}
-
+func (v hostedClusterValidator) ValidateUpdate(ctx context.Context, hcOld, hc *hyperv1.HostedCluster) (admission.Warnings, error) {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		err := v.validateUpdateKubevirtHostedCluster(ctx, hcOld, hc)
@@ -211,7 +181,7 @@ func (v hostedClusterValidator) ValidateUpdate(ctx context.Context, oldHC, newHC
 	return nil, nil
 }
 
-func (v hostedClusterValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+func (v hostedClusterValidator) ValidateDelete(_ context.Context, _ *hyperv1.HostedCluster) (admission.Warnings, error) {
 	return nil, nil
 }
 
@@ -243,12 +213,7 @@ func newNodePoolValidator(logger logr.Logger) *nodePoolValidator {
 	}
 }
 
-func (v nodePoolValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	np, ok := obj.(*hyperv1.NodePool)
-	if !ok {
-		return nil, fmt.Errorf("wrong type %T for validation, instead of NodePool", obj)
-	}
-
+func (v nodePoolValidator) ValidateCreate(ctx context.Context, np *hyperv1.NodePool) (admission.Warnings, error) {
 	switch np.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtNodePool(ctx, np)
@@ -257,17 +222,7 @@ func (v nodePoolValidator) ValidateCreate(ctx context.Context, obj runtime.Objec
 	}
 }
 
-func (v nodePoolValidator) ValidateUpdate(ctx context.Context, oldNP, newNP runtime.Object) (admission.Warnings, error) {
-	npNew, ok := newNP.(*hyperv1.NodePool)
-	if !ok {
-		return nil, fmt.Errorf("wrong type %T for validation, instead of NodePool", newNP)
-	}
-
-	npOld, ok := oldNP.(*hyperv1.NodePool)
-	if !ok {
-		return nil, fmt.Errorf("wrong type %T for validation, instead of NodePool", npOld)
-	}
-
+func (v nodePoolValidator) ValidateUpdate(ctx context.Context, npOld, npNew *hyperv1.NodePool) (admission.Warnings, error) {
 	switch npNew.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		err := v.validateUpdateKubevirtNodePool(ctx, npOld, npNew)
@@ -279,7 +234,7 @@ func (v nodePoolValidator) ValidateUpdate(ctx context.Context, oldNP, newNP runt
 	return nil, nil
 }
 
-func (v nodePoolValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+func (v nodePoolValidator) ValidateDelete(_ context.Context, _ *hyperv1.NodePool) (admission.Warnings, error) {
 	return nil, nil
 }
 

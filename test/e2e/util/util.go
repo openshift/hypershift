@@ -4586,7 +4586,7 @@ func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, 
 		}
 
 		// Apply the resource
-		if err := c.Patch(ctx, obj, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-e2e")); err != nil {
+		if err := c.Apply(ctx, crclient.ApplyConfigurationFromUnstructured(obj), crclient.ForceOwnership, crclient.FieldOwner("hypershift-e2e")); err != nil {
 			return fmt.Errorf("failed to apply %s %s/%s: %w", obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
 		}
 	}
