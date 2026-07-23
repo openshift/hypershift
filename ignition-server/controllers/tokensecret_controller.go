@@ -35,7 +35,9 @@ const (
 	TokenSecretPullSecretHashKey            = "pull-secret-hash"
 	TokenSecretHCConfigurationHashKey       = "hc-configuration-hash"
 	TokenSecretAdditionalTrustBundleHashKey = "additional-trust-bundle-hash"
+	TokenSecretCloudConfigHashKey           = "cloud-config-hash"
 	InvalidConfigReason                     = "InvalidConfig"
+	CloudConfigPendingReason                = "CloudConfigPending"
 	TokenSecretReasonKey                    = "reason"
 	TokenSecretAnnotation                   = "hypershift.openshift.io/ignition-config"
 	TokenSecretNodePoolUpgradeType          = "hypershift.openshift.io/node-pool-upgrade-type"
@@ -83,7 +85,7 @@ func NewPayloadStore() *ExpiringCache {
 type IgnitionProvider interface {
 	// GetPayload returns the ignition payload content for
 	// the provided release image and a config string containing 0..N MachineConfig yaml definitions.
-	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error)
+	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, cloudConfigHash string) ([]byte, error)
 }
 
 // TokenSecretReconciler watches token Secrets
@@ -226,25 +228,35 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	token := string(tokenSecret.Data[TokenSecretTokenKey])
+	cloudConfigHash := string(tokenSecret.Data[TokenSecretCloudConfigHashKey])
 	if value, ok := r.PayloadStore.Get(token); ok {
-		log.Info("Payload found in cache")
+		if value.CloudConfigHash != cloudConfigHash {
+			log.Info("Cloud config hash changed, invalidating cached payload")
+			r.PayloadStore.Delete(token)
+		} else {
+			log.Info("Payload found in cache")
 
-		if tokenNeedRotation(timeLived) {
-			log.Info("Rotating token ID")
-			if err := r.rotateToken(ctx, tokenSecret, value, now); err != nil {
-				return ctrl.Result{}, err
+			if tokenNeedRotation(timeLived) {
+				log.Info("Rotating token ID")
+				if err := r.rotateToken(ctx, tokenSecret, value, now); err != nil {
+					return ctrl.Result{}, err
+				}
+				TokenRotationTotal.Inc()
 			}
-			TokenRotationTotal.Inc()
+			return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 		}
-		return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 	}
 
 	// If something else rotated the token (e.g. running in HA), we fall back to set the cache value from the old one.
 	oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
 		if value, ok := r.PayloadStore.Get(string(oldToken)); ok {
-			r.PayloadStore.Set(token, value)
-			return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
+			if value.CloudConfigHash == cloudConfigHash {
+				r.PayloadStore.Set(token, value)
+				return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
+			}
+			log.Info("Cloud config hash changed, invalidating old token cached payload")
+			r.PayloadStore.Delete(string(oldToken))
 		}
 	}
 
@@ -273,7 +285,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	additionalTrustBundleHash := string(tokenSecret.Data[TokenSecretAdditionalTrustBundleHashKey])
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
-		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash)
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, cloudConfigHash)
 		if err != nil {
 			return nil, fmt.Errorf("error getting ignition payload: %v", err)
 		}
@@ -286,12 +298,16 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// This patch could flood the API server, so we should only do it when the reason or message is different from the current one.
 		// More info here: https://issues.redhat.com/browse/OCPBUGS-42320.
 		errWithFullMsg := fmt.Errorf("failed to generate payload: %w", err)
-		if hasSameReasonAndMessage(tokenSecret, InvalidConfigReason, errWithFullMsg) {
+		reason := InvalidConfigReason
+		if strings.Contains(err.Error(), "hash mismatch") {
+			reason = CloudConfigPendingReason
+		}
+		if hasSameReasonAndMessage(tokenSecret, reason, errWithFullMsg) {
 			return ctrl.Result{}, errWithFullMsg
 		}
 
 		patch := tokenSecret.DeepCopy()
-		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
+		patch.Data[TokenSecretReasonKey] = []byte(reason)
 		patch.Data[TokenSecretMessageKey] = []byte(errWithFullMsg.Error())
 		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
@@ -301,12 +317,13 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	log.Info("IgnitionProvider generated payload")
-	r.PayloadStore.Set(token, CacheValue{Payload: payload, SecretName: tokenSecret.Name})
+	cacheValue := CacheValue{Payload: payload, SecretName: tokenSecret.Name, CloudConfigHash: cloudConfigHash}
+	r.PayloadStore.Set(token, cacheValue)
 	oldToken, ok = tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
 		// If we got here and there's an old token e.g. ignition server pod was restarted, then we set it as well
 		// So Machines that were given that token right before the restart can succeed.
-		r.PayloadStore.Set(string(oldToken), CacheValue{Payload: payload, SecretName: tokenSecret.Name})
+		r.PayloadStore.Set(string(oldToken), cacheValue)
 	}
 
 	patch := tokenSecret.DeepCopy()

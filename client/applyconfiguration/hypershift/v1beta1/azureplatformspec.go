@@ -33,6 +33,7 @@ type AzurePlatformSpecApplyConfiguration struct {
 	SecurityGroupID           *string                                             `json:"securityGroupID,omitempty"`
 	AzureAuthenticationConfig *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
 	TenantID                  *string                                             `json:"tenantID,omitempty"`
+	ContainerRegistry         *AzureContainerRegistryConfigApplyConfiguration     `json:"containerRegistry,omitempty"`
 	Topology                  *hypershiftv1beta1.AzureTopologyType                `json:"topology,omitempty"`
 	Private                   *AzurePrivateSpecApplyConfiguration                 `json:"private,omitempty"`
 }
@@ -112,6 +113,14 @@ func (b *AzurePlatformSpecApplyConfiguration) WithAzureAuthenticationConfig(valu
 // If called multiple times, the TenantID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithTenantID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.TenantID = &value
+	return b
+}
+
+// WithContainerRegistry sets the ContainerRegistry field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ContainerRegistry field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithContainerRegistry(value *AzureContainerRegistryConfigApplyConfiguration) *AzurePlatformSpecApplyConfiguration {
+	b.ContainerRegistry = value
 	return b
 }
 

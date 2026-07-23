@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -131,7 +132,7 @@ const (
 	managedTrustBundleName    = "trusted-ca-bundle-managed"
 )
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, cloudConfigHash string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -350,6 +351,25 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		case hyperv1.OpenStackPlatform:
 			if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.OpenStackProviderConfig("").Name}, cloudConfigMap); err != nil {
 				return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
+			}
+		}
+		if cloudConfigHash != "" {
+			keys := make([]string, 0, len(cloudConfigMap.Data))
+			for k := range cloudConfigMap.Data {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			var b strings.Builder
+			for _, k := range keys {
+				b.WriteString(k)
+				b.WriteByte(0)
+				b.WriteString(cloudConfigMap.Data[k])
+				b.WriteByte(0)
+			}
+			actualHash := util.HashSimple(b.String())
+			if actualHash != cloudConfigHash {
+				return nil, fmt.Errorf("cloud config %s/%s hash mismatch (expected %s, got %s), waiting for update",
+					cloudConfigMap.Namespace, cloudConfigMap.Name, cloudConfigHash, actualHash)
 			}
 		}
 		cloudConfYaml, err := yaml.Marshal(cloudConfigMap)
