@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
@@ -53,6 +54,9 @@ func main() {
 	}
 
 	specs := platform.ClusterSpecs("", "")
+	if v := strings.TrimSpace(os.Getenv("HYPERSHIFT_CLUSTER_VARIANTS")); v != "" {
+		specs = lifecycle.FilterSpecs(specs, lifecycle.VariantEquals(v))
+	}
 	log.Printf("Dumping %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
 
 	var wg sync.WaitGroup

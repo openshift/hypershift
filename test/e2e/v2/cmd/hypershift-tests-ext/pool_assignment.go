@@ -67,6 +67,17 @@ var platformPools = map[string]poolMapping{
 			"upgrade":       1,
 		},
 	},
+	"aws": {
+		LabelToPool: map[string]string{
+			"hosted-cluster-health":         "public",
+			"control-plane-workloads":       "public",
+			"hosted-cluster-metrics":        "public",
+			"hosted-cluster-image-registry": "public",
+		},
+		PoolCapacity: map[string]int{
+			"public": 1,
+		},
+	},
 }
 
 func assignPoolsFromLabels(specs et.ExtensionTestSpecs, platform string) {

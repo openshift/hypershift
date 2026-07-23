@@ -131,6 +131,9 @@ func loadEnvConfig() envConfig {
 
 func run(ctx context.Context, cfg envConfig) error {
 	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	if v := strings.TrimSpace(os.Getenv("HYPERSHIFT_CLUSTER_VARIANTS")); v != "" {
+		specs = lifecycle.FilterSpecs(specs, lifecycle.VariantEquals(v))
+	}
 
 	// Derive cluster names and build the name map.
 	named := make([]namedSpec, len(specs))

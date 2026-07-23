@@ -112,6 +112,21 @@ var platformConfigs = map[string]platformConfig{
 			"hypershift/azure/oauth-lb": "cluster-name-oauth-lb",
 		},
 	},
+	"aws": {
+		Suites: []e.Suite{
+			{
+				Name:        "hypershift/aws/public",
+				Description: "AWS public cluster non-mutating tests",
+				Qualifiers:  []string{`labels.exists(l, l=="hosted-cluster-health") || labels.exists(l, l=="control-plane-workloads") || labels.exists(l, l=="hosted-cluster-metrics") || labels.exists(l, l=="hosted-cluster-image-registry")`},
+			},
+		},
+		TestPlan: testPlan{
+			Parallel: []string{"hypershift/aws/public"},
+		},
+		ClusterFiles: map[string]string{
+			"hypershift/aws/public": "cluster-name-public",
+		},
+	},
 }
 
 func registerPlatformSuites(ext *e.Extension) {

@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -105,12 +104,17 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	switch platform {
 	case "azure", "":
 		return NewAzurePlatformConfig(sharedDir), nil
+	case "aws":
+		return NewAWSPlatformConfig(AWSPlatformOptions{
+			Region: envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
+			Zones:  envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+		}, sharedDir), nil
 	default:
-		return nil, fmt.Errorf("unsupported platform %q (supported: azure)", platform)
+		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
 	}
 }
 
-// FilterSpecs returns only the specs for which the predicate returns true.
+// FilterSpecs returns the specs for which pred returns true.
 func FilterSpecs(specs []ClusterSpec, pred func(ClusterSpec) bool) []ClusterSpec {
 	var out []ClusterSpec
 	for _, s := range specs {
@@ -121,20 +125,9 @@ func FilterSpecs(specs []ClusterSpec, pred func(ClusterSpec) bool) []ClusterSpec
 	return out
 }
 
-// VariantFilter parses a comma-separated allowlist and returns a
-// predicate that matches specs whose Variant is in the list. Returns
-// nil when the input is empty, so callers can skip filtering.
-func VariantFilter(csv string) func(ClusterSpec) bool {
-	if csv == "" {
-		return nil
-	}
-	allowed := make(map[string]bool)
-	for _, v := range strings.Split(csv, ",") {
-		if t := strings.TrimSpace(v); t != "" {
-			allowed[t] = true
-		}
-	}
-	return func(s ClusterSpec) bool { return allowed[s.Variant] }
+// VariantEquals returns a predicate that matches specs with the given variant name.
+func VariantEquals(name string) func(ClusterSpec) bool {
+	return func(s ClusterSpec) bool { return s.Variant == name }
 }
 
 // DeriveClusterName builds a human-readable, deterministic cluster name
