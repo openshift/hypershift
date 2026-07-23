@@ -21,7 +21,7 @@ The backup and restore tests validate the ability to:
 5. **Volume Snapshot Location**: Configured snapshot location
 6. **DataProtectionApplication**: This resource brings Velero pod that handles the backups
 7. **HyperShift CLI**: The `hypershift` binary must be available in your PATH
-8. **Platform**: Currently supports AWS platform only
+8. **Platform**: Supports AWS, Agent, and KubeVirt platforms
 
 #### Platform-specific Prerequisites
 
@@ -148,6 +148,166 @@ spec:
 EOF
 ```
 
+##### Agent and KubeVirt
+
+Agent and KubeVirt platforms might use MinIO as an S3-compatible object store instead of AWS S3. Both platforms use the same OADP setup. In CI, MinIO runs on the virthost at `192.168.111.1:9000`.
+
+* MinIO deployment
+
+Deploy MinIO as a container (adjust credentials and bucket name as needed):
+
+```bash
+minio_user="admin"
+minio_password="admin123"
+bucket_name="oadp-backup"
+
+mkdir -p /opt/minio/data
+podman network create minio-net
+podman run -d --name minio --network minio-net \
+  -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=$minio_user \
+  -e MINIO_ROOT_PASSWORD=$minio_password \
+  -v /opt/minio/data:/data:z \
+  quay.io/minio/minio server /data --console-address ":9001"
+# Note: The `:z` volume label is required on SELinux-enabled systems (RHEL, Fedora).
+
+# Create the backup bucket
+podman run --rm --network minio-net --entrypoint=/bin/sh quay.io/minio/mc -c "\
+  mc alias set myminio http://minio:9000 ${minio_user} ${minio_password} --api s3v4 && \
+  mc mb myminio/${bucket_name}"
+```
+
+The MinIO endpoint accessible from the management cluster depends on your environment. In CI, it is `192.168.111.1:9000` (the virthost IP). When running locally, use the host IP reachable from the cluster.
+
+* Secret
+
+Create an AWS-format credentials file for MinIO and apply the secret:
+
+```bash
+minio_user="admin"
+minio_password="admin123"
+
+cat <<EOF > /tmp/minio-credentials
+[default]
+aws_access_key_id = $minio_user
+aws_secret_access_key = $minio_password
+EOF
+
+secret_data="$(base64 -w 0 /tmp/minio-credentials)"
+
+cat <<EOF | oc apply -f -
+apiVersion: v1
+data:
+  credentials: $secret_data
+kind: Secret
+metadata:
+  name: cloud-credentials
+  namespace: openshift-adp
+type: Opaque
+EOF
+```
+
+* DataProtectionApplication
+
+The `aws` plugin is used even with MinIO since MinIO is S3-compatible.
+
+```bash
+cat <<EOF | oc apply -f -
+apiVersion: oadp.openshift.io/v1alpha1
+kind: DataProtectionApplication
+metadata:
+  name: dpa-sample
+  namespace: openshift-adp
+spec:
+  backupImages: false
+  configuration:
+    nodeAgent:
+      enable: true
+      uploaderType: kopia
+    velero:
+      customPlugins:
+        - name: hypershift-oadp-plugin
+          image: quay.io/redhat-user-workloads/ocp-art-tenant/oadp-hypershift-oadp-plugin-main:main
+      defaultPlugins:
+        - openshift
+        - aws
+        - kubevirt
+        - csi
+      noDefaultBackupLocation: true
+      logLevel: debug
+EOF
+```
+
+Note: For OpenShift ADP 1.5+, the customPlugins might be left out. Instead, the hypershift plugin can be listed directly under defaultPlugins as follows:
+```
+      defaultPlugins:
+        - openshift
+        - aws
+        - kubevirt
+        - csi
+        - hypershift
+```
+
+* BackupStorageLocation
+
+Key differences from AWS: `s3ForcePathStyle` is required for MinIO, and `s3Url` must point to the MinIO endpoint.
+
+```bash
+minio_endpoint="<minio_host_ip>"
+cluster_name="<cluster_name>"
+bucket_name="oadp-backup"
+
+cat <<EOF | oc apply -f -
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: $cluster_name
+  namespace: openshift-adp
+spec:
+  provider: aws
+  objectStorage:
+    bucket: $bucket_name
+    prefix: hcp
+  credential:
+    name: cloud-credentials
+    key: credentials
+  config:
+    region: minio
+    s3ForcePathStyle: "true"
+    s3Url: http://${minio_endpoint}:9000
+    insecureSkipTLSVerify: "true"
+EOF
+```
+
+* VolumeSnapshotLocation
+
+```bash
+cluster_name="<cluster_name>"
+
+cat <<EOF | oc apply -f -
+apiVersion: velero.io/v1
+kind: VolumeSnapshotLocation
+metadata:
+  name: $cluster_name
+  namespace: openshift-adp
+spec:
+  provider: aws
+  credential:
+    name: cloud-credentials
+    key: credentials
+  config:
+    region: minio
+EOF
+```
+
+##### Agent Platform Notes
+
+The backup/restore test framework handles these Agent-specific steps automatically:
+
+- **Before backup**: AgentMachine and AgentCluster resources are paused with the `cluster.x-k8s.io/paused` annotation to prevent CAPI reconciliation during the backup.
+- **Before breaking the control plane**: Agents are annotated with `agent-install.openshift.io/skip-spoke-cleanup` and ClusterDeployment is set with `preserveOnDelete` to prevent agents from being unbound and hosts from being rebooted.
+- **After restore**: CAPI resources are unpaused so reconciliation resumes.
+
 ## Test Structure
 
 The tests follow an ordered, serial execution flow:
@@ -228,7 +388,7 @@ Test artifacts are stored in the `ARTIFACT_DIR`:
 
 ## Known Limitations
 
-1. **Platform Support**: Currently only supports AWS platform
+1. **Platform Support**: Supports AWS, Agent, and KubeVirt platforms. The etcd snapshot test (`BackupRestoreEtcdSnapshot`) is AWS-only
 2. **Guest Cluster Validation**: Guest cluster health checks are skipped due to OCPBUGS-59876
 3. **Continual Operations**: Continual operation verification is skipped until CNTRLPLANE-2676 is implemented
 4. **Serial Execution**: Tests must run serially as it breaks the cluster
