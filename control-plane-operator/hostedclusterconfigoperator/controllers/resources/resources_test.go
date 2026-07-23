@@ -726,6 +726,238 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 	}
 }
 
+func TestReconcileProxyTrustedCAConfigMap(t *testing.T) {
+	const (
+		testNamespace = "master-cluster1"
+		testHCPName   = "cluster1"
+		proxyCAName   = "my-proxy-ca"
+	)
+
+	proxyCAData := "-----BEGIN CERTIFICATE-----\nMIIBfakeProxyCACert==\n-----END CERTIFICATE-----\n"
+	atbCAData := "-----BEGIN CERTIFICATE-----\nMIIBfakeAdditionalTrustBundleCert==\n-----END CERTIFICATE-----\n"
+
+	proxyCAConfigMap := func() *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: proxyCAName, Namespace: testNamespace},
+			Data:       map[string]string{"ca-bundle.crt": proxyCAData},
+		}
+	}
+	additionalTrustBundleCM := func() *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "user-ca-bundle", Namespace: testNamespace},
+			Data:       map[string]string{"ca-bundle.crt": atbCAData},
+		}
+	}
+	guestProxyObj := func() *configv1.Proxy {
+		return globalconfig.ProxyConfig()
+	}
+
+	tests := map[string]struct {
+		inputHCP         *hyperv1.HostedControlPlane
+		mgmtObjects      []client.Object
+		guestObjects     []client.Object
+		wantErr          bool
+		wantDestCMExists bool
+		wantDestCMData   string
+	}{
+		"When neither proxy.trustedCA nor additionalTrustBundle is set, it should not create a dest ConfigMap": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+			},
+			mgmtObjects:      []client.Object{},
+			guestObjects:     []client.Object{guestProxyObj()},
+			wantErr:          false,
+			wantDestCMExists: false,
+		},
+		"When only proxy.trustedCA is set, it should create dest ConfigMap with proxy CA data only": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: proxyCAName}},
+					},
+				},
+			},
+			mgmtObjects:      []client.Object{proxyCAConfigMap()},
+			guestObjects:     []client.Object{guestProxyObj()},
+			wantErr:          false,
+			wantDestCMExists: true,
+			wantDestCMData:   proxyCAData,
+		},
+		"When both proxy.trustedCA and additionalTrustBundle are set, it should merge both CA bundles": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: proxyCAName}},
+					},
+				},
+			},
+			mgmtObjects:      []client.Object{proxyCAConfigMap(), additionalTrustBundleCM()},
+			guestObjects:     []client.Object{guestProxyObj()},
+			wantErr:          false,
+			wantDestCMExists: true,
+			wantDestCMData:   proxyCAData + atbCAData,
+		},
+		"When only additionalTrustBundle is set, it should return early without creating dest ConfigMap": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+				},
+			},
+			mgmtObjects:      []client.Object{additionalTrustBundleCM()},
+			guestObjects:     []client.Object{guestProxyObj()},
+			wantErr:          false,
+			wantDestCMExists: false,
+		},
+		"When additionalTrustBundle ConfigMap does not exist on management cluster, it should return error": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: proxyCAName}},
+					},
+				},
+			},
+			mgmtObjects:      []client.Object{proxyCAConfigMap()},
+			guestObjects:     []client.Object{guestProxyObj()},
+			wantErr:          true,
+			wantDestCMExists: false,
+		},
+		"When proxy data has no trailing newline and ATB is set, it should insert newline separator": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: proxyCAName}},
+					},
+				},
+			},
+			mgmtObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: proxyCAName, Namespace: testNamespace},
+					Data:       map[string]string{"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\nnotrailingnewline\n-----END CERTIFICATE-----"},
+				},
+				additionalTrustBundleCM(),
+			},
+			guestObjects:     []client.Object{guestProxyObj()},
+			wantErr:          false,
+			wantDestCMExists: true,
+			wantDestCMData:   "-----BEGIN CERTIFICATE-----\nnotrailingnewline\n-----END CERTIFICATE-----\n" + atbCAData,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.guestObjects...).Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.mgmtObjects...).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+			err := r.reconcileProxyTrustedCAConfigMap(t.Context(), tc.inputHCP)
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tc.wantDestCMExists {
+				destCM := manifests.ProxyTrustedCAConfigMap(proxyCAName)
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(destCM), destCM)).To(Succeed())
+				g.Expect(destCM.Data["ca-bundle.crt"]).To(Equal(tc.wantDestCMData))
+			} else {
+				destCM := manifests.ProxyTrustedCAConfigMap(proxyCAName)
+				getErr := r.client.Get(t.Context(), client.ObjectKeyFromObject(destCM), destCM)
+				g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue())
+			}
+		})
+	}
+}
+
+func TestReconcileConfigProxyTrustedCA(t *testing.T) {
+	const (
+		testNamespace = "master-cluster1"
+		testHCPName   = "cluster1"
+		proxyCAName   = "my-proxy-ca"
+	)
+
+	tests := map[string]struct {
+		inputHCP          *hyperv1.HostedControlPlane
+		guestObjects      []client.Object
+		wantTrustedCAName string
+	}{
+		"When ATB is set and no proxy config, it should set trustedCA.name to user-ca-bundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneEndpoint: hyperv1.APIEndpoint{Host: "api.example.com"},
+				},
+			},
+			guestObjects:      []client.Object{globalconfig.ProxyConfig()},
+			wantTrustedCAName: manifests.UserCABundle().Name,
+		},
+		"When both ATB and proxy trustedCA are set, it should preserve the proxy trustedCA name": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: proxyCAName}},
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneEndpoint: hyperv1.APIEndpoint{Host: "api.example.com"},
+				},
+			},
+			guestObjects:      []client.Object{globalconfig.ProxyConfig()},
+			wantTrustedCAName: proxyCAName,
+		},
+		"When neither ATB nor proxy trustedCA is set, it should leave trustedCA.name empty": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: testHCPName, Namespace: testNamespace},
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneEndpoint: hyperv1.APIEndpoint{Host: "api.example.com"},
+				},
+			},
+			guestObjects:      []client.Object{globalconfig.ProxyConfig()},
+			wantTrustedCAName: "",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.guestObjects...).Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.inputHCP).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+			// reconcileConfig will produce errors for other resources (infra, dns, etc.)
+			// that aren't seeded, but we only care about the Proxy mutation.
+			_ = r.reconcileConfig(t.Context(), tc.inputHCP)
+
+			proxy := globalconfig.ProxyConfig()
+			err := r.client.Get(t.Context(), client.ObjectKeyFromObject(proxy), proxy)
+			g.Expect(err).To(BeNil())
+			g.Expect(proxy.Spec.TrustedCA.Name).To(Equal(tc.wantTrustedCAName))
+		})
+	}
+}
+
 var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
