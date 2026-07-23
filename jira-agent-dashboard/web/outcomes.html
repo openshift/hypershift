@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Outcomes</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="outcomes.html">Outcomes</a></li>
+        <li><a href="failures.html">Failure Analysis</a></li>
+        <li><a href="reviews.html">Review Quality</a></li>
+        <li><a href="internals.html">Internals</a></li>
+        <li><a href="glossary.html">Glossary</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Outcomes</h2>
+      </div>
+
+      <div class="page-about">
+        <p>Every issue the agent attempts is listed here with its PR outcome, cost, quality score, and review history. Use this table to spot patterns — which issues took multiple runs, which cost the most, and how review cycles correlate with merge success. Click any row to drill into phase breakdowns and individual review comments.</p>
+      </div>
+
+      <div id="header-bar-anchor"></div>
+
+      <div class="results-count" id="results-count"></div>
+
+      <!-- Issues Table -->
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" data-column="jira_key">Jira Key <span class="info-tip" data-tip="The Jira ticket the agent attempted to solve">i</span></th>
+              <th class="sortable" data-column="component">Component <span class="info-tip" data-tip="Which team's jira-agent job processed this issue">i</span></th>
+              <th>Prow Job <span class="info-tip" data-tip="Link to the Prow CI job run that processed this issue">i</span></th>
+              <th class="sortable" data-column="pr_number">PR <span class="info-tip" data-tip="GitHub pull request created by the agent">i</span></th>
+              <th class="sortable" data-column="status">Status <span class="info-tip" data-tip="PR outcome: merged (accepted), open (under review), or closed (rejected)">i</span></th>
+              <th class="sortable" data-column="pr_created_at">PR Opened <span class="info-tip" data-tip="Date the agent opened the pull request">i</span></th>
+              <th class="sortable" data-column="resolved_at">Merged/Closed <span class="info-tip" data-tip="Date the PR was merged or closed">i</span></th>
+              <th class="sortable" data-column="review_comments">Comments <span class="info-tip" data-tip="Number of review and conversation comments on the PR from human reviewers">i</span></th>
+              <th class="sortable" data-column="review_cycles">Cycles <span class="info-tip" data-tip="Number of review→fix loops. Each fix phase counts as one cycle.">i</span></th>
+              <th class="sortable" data-column="lines_added">+Lines <span class="info-tip" data-tip="Lines added in the PR">i</span></th>
+              <th class="sortable" data-column="lines_deleted">-Lines <span class="info-tip" data-tip="Lines deleted in the PR">i</span></th>
+              <th class="sortable" data-column="files_changed">Files <span class="info-tip" data-tip="Number of files modified in the PR">i</span></th>
+              <th class="sortable" data-column="cost">Cost <span class="info-tip" data-tip="Total Claude API cost (USD) across all agent phases">i</span></th>
+              <th class="sortable" data-column="quality_score">Quality <span class="info-tip" data-tip="0–100 score based on PR outcome (40pts), comment severity (35pts), review density (15pts), and topic penalties (10pts). Higher = better.">i</span></th>
+              <th class="sortable" data-column="duration">Duration <span class="info-tip" data-tip="Time from PR creation to merge or close (wall clock time)">i</span></th>
+              <th class="sortable" data-column="runs">Runs <span class="info-tip" data-tip="Number of CI sessions that worked on this Jira issue">i</span></th>
+              <th class="row-action-header"></th>
+            </tr>
+          </thead>
+          <tbody id="issues-tbody">
+            <tr><td colspan="17" style="text-align:center;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script src="js/outcomes.js"></script>
+</body>
+</html>

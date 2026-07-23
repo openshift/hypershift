@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Internals</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="outcomes.html">Outcomes</a></li>
+        <li><a href="failures.html">Failure Analysis</a></li>
+        <li><a href="reviews.html">Review Quality</a></li>
+        <li><a href="internals.html">Internals</a></li>
+        <li><a href="glossary.html">Glossary</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Internals</h2>
+      </div>
+
+      <div class="page-about">
+        <p>Under-the-hood metrics from Claude Code sessions — cost per session, cache hit rates, token usage, tool call counts, and per-phase success rates. Use this to monitor agent efficiency, spot regressions in API costs or cache performance, and identify which pipeline phases fail most often or cost the most.</p>
+      </div>
+
+      <div id="header-bar-anchor"></div>
+
+      <!-- Summary Cards -->
+      <div class="summary-cards telemetry-cards" id="summary-cards">
+        <div class="card"><h3>Total Sessions <span class="info-tip" data-tip="Number of Claude Code sessions across all phases in the selected time range">i</span></h3><p id="stat-sessions">--</p></div>
+        <div class="card"><h3>Avg Cost <span class="info-tip" data-tip="Average Claude API cost per session in USD">i</span></h3><p id="stat-cost">--</p></div>
+        <div class="card"><h3>Avg Cache Hit <span class="info-tip" data-tip="Average prompt cache hit rate — higher means more tokens served from cache, reducing cost and latency">i</span></h3><p id="stat-cache">--</p></div>
+        <div class="card"><h3>Avg TTFT <span class="info-tip" data-tip="Average time to first token — how long before the model starts responding">i</span></h3><p id="stat-ttft">--</p></div>
+        <div class="card"><h3>Avg Tool Calls <span class="info-tip" data-tip="Average number of tool invocations (Read, Edit, Bash, etc.) per session">i</span></h3><p id="stat-tools">--</p></div>
+        <div class="card"><h3>Avg Subagents <span class="info-tip" data-tip="Average number of subagent spawns per session">i</span></h3><p id="stat-subagents">--</p></div>
+        <div class="card"><h3>Avg Duration <span class="info-tip" data-tip="Average wall-clock duration per session">i</span></h3><p id="stat-duration">--</p></div>
+        <div class="card"><h3>Avg Turns <span class="info-tip" data-tip="Average number of conversation turns per session">i</span></h3><p id="stat-turns">--</p></div>
+      </div>
+
+      <!-- Phase Effectiveness -->
+      <h3 class="card-row-label">Phase Effectiveness</h3>
+      <div class="charts">
+        <div class="chart-container">
+          <h3>Success Rate by Phase <span class="info-tip" data-tip="Per-phase success vs error rate. Shows which pipeline phase fails most often.">i</span></h3>
+          <canvas id="phase-success-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Phase Efficiency Summary <span class="info-tip" data-tip="Aggregated metrics per pipeline phase: session count, success rate, average cost, and average duration.">i</span></h3>
+          <div class="table-container" style="margin: 0; border: none; box-shadow: none;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Phase</th>
+                  <th>Sessions</th>
+                  <th>Success Rate</th>
+                  <th>Avg Cost</th>
+                  <th>Avg Duration</th>
+                  <th>Total Cost</th>
+                </tr>
+              </thead>
+              <tbody id="phase-efficiency-tbody">
+                <tr><td colspan="6" style="text-align:center;">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts telemetry-charts">
+        <div class="chart-container">
+          <h3>Cost by Phase</h3>
+          <canvas id="cost-phase-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Token Usage by Phase</h3>
+          <canvas id="token-phase-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Cache Hit Rate Over Time</h3>
+          <canvas id="cache-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Duration by Phase</h3>
+          <canvas id="duration-phase-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Success / Failure Rate</h3>
+          <canvas id="success-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Top Tool Usage</h3>
+          <canvas id="tool-usage-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>API Request Latency Distribution</h3>
+          <canvas id="api-latency-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Tool Success Rate (OTel)</h3>
+          <canvas id="otel-tool-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Sessions Table (collapsible) -->
+      <div class="table-container">
+        <div class="collapsible-header" id="sessions-toggle">
+          <h3>Sessions <span id="session-count" class="results-count" style="font-weight: normal; font-size: 0.85em;"></span></h3>
+          <span class="collapse-icon">&#9660;</span>
+        </div>
+        <div class="collapsible-body" id="sessions-panel">
+          <div class="comment-filters" style="padding: 0 20px;">
+            <input type="text" id="filter-search" placeholder="Search by issue key..." style="flex: 1; min-width: 180px;">
+            <select id="filter-phase">
+              <option value="">All Phases</option>
+              <option value="solve">Solve</option>
+              <option value="review">Review</option>
+              <option value="fix">Fix</option>
+              <option value="pr-creation">PR Creation</option>
+            </select>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="started_at">Build</th>
+                <th class="sortable" data-sort="issue_key">Issue</th>
+                <th class="sortable" data-sort="phase">Phase</th>
+                <th class="sortable" data-sort="model">Model</th>
+                <th class="sortable" data-sort="total_cost_usd">Cost</th>
+                <th class="sortable" data-sort="duration_ms">Duration</th>
+                <th class="sortable" data-sort="num_turns">Turns</th>
+                <th class="sortable" data-sort="cache_hit_rate_pct">Cache %</th>
+                <th class="sortable" data-sort="total_tool_calls">Tools</th>
+                <th class="sortable" data-sort="num_subagents">Subagents</th>
+                <th class="sortable" data-sort="ttft_ms">TTFT</th>
+                <th class="sortable" data-sort="result">Result</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-tbody">
+              <tr><td colspan="12" style="text-align:center;">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/internals.js"></script>
+</body>
+</html>

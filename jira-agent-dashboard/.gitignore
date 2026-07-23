@@ -1,0 +1,7 @@
+/scraper
+/dashboard
+/vendor
+deploy/secrets.yaml
+*.db
+*.db-shm
+*.db-wal

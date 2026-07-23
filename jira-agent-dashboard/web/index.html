@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Overview</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="outcomes.html">Outcomes</a></li>
+        <li><a href="failures.html">Failure Analysis</a></li>
+        <li><a href="reviews.html">Review Quality</a></li>
+        <li><a href="internals.html">Internals</a></li>
+        <li><a href="glossary.html">Glossary</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Dashboard Overview</h2>
+      </div>
+
+      <!-- About + Pipeline Status -->
+      <div class="overview-hero">
+        <div class="overview-about">
+          <p>This dashboard tracks the <strong>HyperShift JIRA Agent</strong> — an automated system that picks up Jira issues, generates code fixes with Claude, opens pull requests, and responds to reviewer feedback. It scrapes Prow CI artifacts and GitHub to surface issue outcomes, cost breakdowns, merge timelines, and review comment analysis across every agent run.</p>
+        </div>
+        <div class="overview-pipeline">
+          <h4>Pipeline Status</h4>
+          <div id="scraper-status" class="scraper-status-list"></div>
+        </div>
+      </div>
+
+      <!-- Business Impact Hero -->
+      <div class="impact-hero">
+        <div class="impact-stats">
+          <div class="impact-stat primary">
+            <div class="impact-number" id="hero-solved">-</div>
+            <div class="impact-label">Tickets Solved</div>
+            <div class="impact-sublabel" id="hero-solved-range"></div>
+          </div>
+          <div class="impact-stat">
+            <div class="impact-number" id="hero-merged">-</div>
+            <div class="impact-label">PRs Merged</div>
+          </div>
+          <div class="impact-stat">
+            <div class="impact-number" id="hero-open">-</div>
+            <div class="impact-label">In Progress</div>
+          </div>
+        </div>
+        <div class="impact-chart">
+          <canvas id="impact-trend"></canvas>
+        </div>
+      </div>
+
+      <div id="header-bar-anchor"></div>
+
+      <!-- Summary Cards -->
+      <h3 class="card-row-label">Health</h3>
+      <div class="summary-cards">
+        <div class="card">
+          <h3>Merge Rate <span class="info-tip" data-tip="Percentage of agent-created PRs that were merged">i</span></h3>
+          <div class="value" id="merge-rate">-</div>
+        </div>
+        <div class="card">
+          <h3>Avg Quality <span class="info-tip" data-tip="Average quality score (0-100) across all issues">i</span></h3>
+          <div class="value" id="avg-quality">-</div>
+        </div>
+        <div class="card">
+          <h3>First-Pass Rate <span class="info-tip" data-tip="Percentage of merged PRs with no required_change comments">i</span></h3>
+          <div class="value" id="first-pass-rate">-</div>
+        </div>
+        <div class="card">
+          <h3>Avg Time-to-Merge <span class="info-tip" data-tip="Average time from PR creation to merge">i</span></h3>
+          <div class="value" id="avg-time-to-merge">-</div>
+        </div>
+        <div class="card">
+          <h3>Avg Review Cycles <span class="info-tip" data-tip="Average number of review→fix loops per issue. Lower is better — means the agent addresses feedback in fewer rounds.">i</span></h3>
+          <div class="value" id="avg-review-cycles">-</div>
+        </div>
+      </div>
+
+      <h3 class="card-row-label">Cost &amp; Efficiency</h3>
+      <div class="summary-cards">
+        <div class="card">
+          <h3>Total Cost <span class="info-tip" data-tip="Total Claude API cost (USD) across all phases">i</span></h3>
+          <div class="value" id="total-cost">-</div>
+        </div>
+        <div class="card">
+          <h3>Avg Cost / Merged <span class="info-tip" data-tip="Average Claude API cost per merged PR">i</span></h3>
+          <div class="value" id="avg-cost-merged">-</div>
+        </div>
+        <div class="card">
+          <h3>Wasted Cost <span class="info-tip" data-tip="Total cost spent on PRs that were closed without merging">i</span></h3>
+          <div class="value" id="wasted-cost">-</div>
+        </div>
+        <div class="card">
+          <h3>Cache Hit Rate <span class="info-tip" data-tip="Average prompt cache hit rate across all sessions">i</span></h3>
+          <div class="value" id="cache-hit-rate">-</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts">
+        <div class="chart-container">
+          <h3>Issues by Status <span class="info-tip" data-tip="Breakdown of PRs by outcome: Merged (accepted), Open (still under review), Closed (rejected)">i</span></h3>
+          <canvas id="status-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Cost per Issue <span class="info-tip" data-tip="Total Claude API cost per issue across all phases. Green=merged, blue=open, red=closed. Only issues with cost data shown.">i</span></h3>
+          <canvas id="cost-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>PR Time - Creation to Merge <span class="info-tip" data-tip="Elapsed time from PR creation to merge/close. Bar color indicates PR status: green=merged, red=closed, blue=open.">i</span></h3>
+          <canvas id="duration-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Top Reviewers <span class="info-tip" data-tip="Authors with the most review comments across all PRs in this time range.">i</span></h3>
+          <canvas id="reviewers-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Comment Severity <span class="info-tip" data-tip="Distribution of review comment severities: nitpick, suggestion, required change, question, and unclassified.">i</span></h3>
+          <canvas id="severity-chart"></canvas>
+        </div>
+        <div class="chart-container activity-feed">
+          <h3>Recent Activity <span class="info-tip" data-tip="M (green) = PR merged, C (red) = PR closed, R (blue) = review comment. Click comment links to go directly to the GitHub comment.">i</span></h3>
+          <div id="activity-list" class="loading">Loading</div>
+          <div class="activity-pagination" id="activity-pagination"></div>
+        </div>
+      </div>
+
+      <!-- Trend Charts -->
+      <div class="trend-section">
+        <div class="trend-header">
+          <h2>Trends</h2>
+          <div class="trend-range">
+            <button id="trend-3m" class="active">3 months</button>
+            <button id="trend-6m">6 months</button>
+            <button id="trend-ytd">YTD</button>
+          </div>
+        </div>
+        <div class="charts trend-charts">
+          <div class="chart-container">
+            <h3>Merge Rate <span class="info-tip" data-tip="Weekly merge rate over time">i</span></h3>
+            <canvas id="trend-merge-rate"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Quality Score <span class="info-tip" data-tip="Weekly average quality score over time">i</span></h3>
+            <canvas id="trend-quality"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Avg Cost <span class="info-tip" data-tip="Weekly average cost per issue over time">i</span></h3>
+            <canvas id="trend-cost"></canvas>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/trends.js"></script>
+</body>
+</html>

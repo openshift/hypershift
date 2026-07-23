@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Failure Analysis</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="outcomes.html">Outcomes</a></li>
+        <li><a href="failures.html">Failure Analysis</a></li>
+        <li><a href="reviews.html">Review Quality</a></li>
+        <li><a href="internals.html">Internals</a></li>
+        <li><a href="glossary.html">Glossary</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Failure Analysis</h2>
+      </div>
+
+      <div class="page-about">
+        <p>Focuses on PRs that were closed without merging. See which review topics most often lead to rejection, how topic distribution differs between merged and closed PRs, and how much cost was spent on work that didn't land. Use this to identify the agent's weakest areas and prioritize prompt or workflow improvements.</p>
+      </div>
+
+      <div id="header-bar-anchor"></div>
+
+      <!-- Summary Cards -->
+      <div class="summary-cards">
+        <div class="card">
+          <h3>Rejected PRs <span class="info-tip" data-tip="PRs closed without merging — rejected by reviewers or superseded">i</span></h3>
+          <div class="value" id="rejected-count">-</div>
+        </div>
+        <div class="card">
+          <h3>Rejection Rate <span class="info-tip" data-tip="Percentage of agent PRs that were closed without merging">i</span></h3>
+          <div class="value" id="rejection-rate">-</div>
+        </div>
+        <div class="card">
+          <h3>Wasted Cost <span class="info-tip" data-tip="Total Claude API cost spent on PRs that never merged">i</span></h3>
+          <div class="value" id="wasted-cost">-</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts">
+        <div class="chart-container">
+          <h3>Top Rejection Reasons <span class="info-tip" data-tip="Most common required-change comment topics on rejected PRs. Shows which review issues most often lead to PR rejection.">i</span></h3>
+          <canvas id="rejection-reasons-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Topic x Outcome <span class="info-tip" data-tip="Comment topics split by PR outcome. Green = appeared on merged PRs, Red = appeared on closed PRs. Shows which topics correlate with rejection vs success.">i</span></h3>
+          <canvas id="topic-outcome-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Rejected PRs Table -->
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Jira Key</th>
+              <th>PR</th>
+              <th>Cost</th>
+              <th>Quality Score</th>
+              <th>Comments</th>
+              <th>Top Issues</th>
+            </tr>
+          </thead>
+          <tbody id="rejected-tbody">
+            <tr><td colspan="6" class="loading">Loading</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/failures.js"></script>
+</body>
+</html>

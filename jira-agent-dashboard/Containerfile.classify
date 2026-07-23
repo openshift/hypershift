@@ -1,0 +1,36 @@
+# Build stage — compile the scraper binary
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.22 AS builder
+WORKDIR /build
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux go build -o scraper ./cmd/scraper
+
+# Runtime stage — Node.js (required by Claude Code) + Claude Code CLI + ai-helpers
+FROM node:22-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates jq git sqlite3 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    cp /root/.local/bin/claude /usr/local/bin/claude
+
+# Clone ai-helpers plugin (only code-review plugin is needed)
+RUN git clone --depth 1 https://github.com/openshift-eng/ai-helpers.git /opt/ai-helpers
+
+# Copy scraper binary from builder
+COPY --from=builder /build/scraper /usr/local/bin/scraper
+
+# Copy entrypoint script
+COPY scripts/classify-entrypoint.sh /usr/local/bin/classify-entrypoint.sh
+
+# Writable dirs for Claude Code and data
+RUN mkdir -p /data /home/claude && \
+    chown -R 1001:0 /data /home/claude && \
+    chmod 775 /data
+
+ENV HOME=/home/claude
+USER 1001
+WORKDIR /home/claude
+
+ENTRYPOINT ["/usr/local/bin/classify-entrypoint.sh"]
