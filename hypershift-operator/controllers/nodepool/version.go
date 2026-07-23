@@ -93,24 +93,45 @@ func (r *NodePoolReconciler) setNodesInfoStatus(nodePool *hyperv1.NodePool, mach
 	}
 }
 
-// rhcosOSImageRe matches the RHCOS version from the NodeInfo.OSImage string.
-// The first capture group is the leading digit of the RHCOS version (e.g. "4"
-// in "419.97…"), which determines the RHEL generation (4xx → RHEL 9, 5xx → RHEL 10).
-var rhcosOSImageRe = regexp.MustCompile(`Red Hat Enterprise Linux CoreOS (\d)\d{2}\.`)
+// rhcosOSImageRe matches two RHCOS version formats from NodeInfo.OSImage:
+//   - Legacy (OCP ≤ 4.x): "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"
+//     The leading digit of the 3-digit version determines the RHEL generation
+//     (4xx → RHEL 9, 5xx → RHEL 10).
+//   - New (OCP 5.0+):     "Red Hat Enterprise Linux CoreOS 9.8.20260721-0 (Plow)"
+//     The major version directly encodes the RHEL generation (9 → RHEL 9, 10 → RHEL 10).
+//
+// Capture group 1: the legacy leading digit (e.g. "4" from "419.")
+// Capture group 2: the new major version (e.g. "9" from "9.", or "10" from "10.")
+var rhcosOSImageRe = regexp.MustCompile(`Red Hat Enterprise Linux CoreOS (?:(\d)\d{2}\.|(9|10)\.)`)
 
 // rhcosStreamFromOSImage parses a Machine's NodeInfo.OSImage string and
-// returns the corresponding RHEL stream name. RHCOS versions starting with
-// 4xx map to RHEL 9 and 5xx to RHEL 10.
+// returns the corresponding RHEL stream name.
+// Legacy format: 4xx → RHEL 9, 5xx → RHEL 10.
+// New format: 9 → RHEL 9, 10 → RHEL 10.
 // Returns empty string if the OS image string is unrecognized.
 func rhcosStreamFromOSImage(osImage string) string {
 	matches := rhcosOSImageRe.FindStringSubmatch(osImage)
-	if len(matches) < 2 {
+	if len(matches) < 3 {
 		return ""
 	}
-	switch matches[1] {
-	case "4":
+
+	// Legacy format matched (capture group 1).
+	if matches[1] != "" {
+		switch matches[1] {
+		case "4":
+			return StreamRHEL9
+		case "5":
+			return StreamRHEL10
+		default:
+			return ""
+		}
+	}
+
+	// New format matched (capture group 2).
+	switch matches[2] {
+	case "9":
 		return StreamRHEL9
-	case "5":
+	case "10":
 		return StreamRHEL10
 	default:
 		return ""

@@ -408,6 +408,9 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
+		// Verify osImageStream status after upgrade, if the OSStreams feature gate is enabled.
+		verifyOSImageStreamAfterUpgrade(ctx, testCtx, np)
+
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
 }
@@ -487,6 +490,9 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 		)
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+
+		// Verify osImageStream status after upgrade, if the OSStreams feature gate is enabled.
+		verifyOSImageStreamAfterUpgrade(ctx, testCtx, np)
 
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
@@ -1454,6 +1460,50 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 		}, nil,
 		e2eutil.WithTimeout(timeout),
 		e2eutil.WithInterval(5*time.Second),
+	)
+}
+
+// verifyOSImageStreamAfterUpgrade checks that status.osImageStream is set correctly
+// on the NodePool after an upgrade completes. If the OSStreams feature gate is not
+// enabled, the assertion is skipped (the upgrade test itself still passes).
+//
+// TODO(CNTRLPLANE-3032): The default OS stream is currently hardcoded to rhel-9 for all
+// OCP versions. When the hardcoding is removed and OCP >= 5.0 defaults to rhel-10,
+// update expectedStream to use rhel-10 on >= 5.0.
+func verifyOSImageStreamAfterUpgrade(ctx context.Context, testCtx *internal.TestContext, np *hyperv1.NodePool) {
+	GinkgoHelper()
+
+	hasSpecField, err := e2eutil.HasFieldInCRDSchema(ctx, testCtx.MgmtClient,
+		"nodepools.hypershift.openshift.io", "spec.osImageStream")
+	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for spec.osImageStream")
+	if !hasSpecField {
+		GinkgoWriter.Println("OSStreams feature gate is not enabled; skipping osImageStream assertion")
+		return
+	}
+
+	hasStatusField, err := e2eutil.HasFieldInCRDSchema(ctx, testCtx.MgmtClient,
+		"nodepools.hypershift.openshift.io", "status.osImageStream")
+	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for status.osImageStream")
+	if !hasStatusField {
+		GinkgoWriter.Println("OSStreams feature gate is not enabled for status; skipping osImageStream assertion")
+		return
+	}
+
+	expectedStream := hyperv1.OSImageStreamRHEL9
+
+	e2eutil.EventuallyObject[*hyperv1.NodePool](
+		GinkgoTB(), ctx,
+		fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s after upgrade", np.Namespace, np.Name, expectedStream),
+		func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+			pool := &hyperv1.NodePool{}
+			err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
+			return pool, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.OSImageStreamPredicate(expectedStream),
+		},
+		e2eutil.WithTimeout(10*time.Minute),
+		e2eutil.WithInterval(15*time.Second),
 	)
 }
 
