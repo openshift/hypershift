@@ -1102,7 +1102,7 @@ type NodePortPublishingStrategy struct {
 	// port is the port of the NodePort service. If <=0, the port is dynamically
 	// assigned when the service is created.
 	// +optional
-	Port int32 `json:"port,omitempty"`
+	Port *int32 `json:"port,omitempty"`
 }
 
 // LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.
