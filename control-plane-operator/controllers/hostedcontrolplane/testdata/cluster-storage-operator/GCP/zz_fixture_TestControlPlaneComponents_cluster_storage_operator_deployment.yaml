@@ -24,7 +24,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: ""
+        component.hypershift.openshift.io/config-hash: a0010a21
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         openshift.io/required-scc: restricted-v2
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
@@ -65,8 +65,10 @@ spec:
       - args:
         - start
         - -v=2
+        - --config=/var/run/configmaps/config/config.yaml
         - --terminate-on-files=/var/run/secrets/serving-cert/tls.crt
         - --terminate-on-files=/var/run/secrets/serving-cert/tls.key
+        - --terminate-on-files=/var/run/configmaps/config/config.yaml
         - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
         command:
         - cluster-storage-operator
@@ -179,6 +181,11 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
+        - mountPath: /var/run/secrets/serving-cert
+          name: cluster-storage-operator-serving-cert
+        - mountPath: /var/run/configmaps/config
+          name: config
+          readOnly: true
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
@@ -223,6 +230,14 @@ spec:
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
+      - name: cluster-storage-operator-serving-cert
+        secret:
+          defaultMode: 416
+          secretName: cluster-storage-operator-serving-cert
+      - configMap:
+          defaultMode: 420
+          name: cluster-storage-operator-config
+        name: config
       - emptyDir: {}
         name: tmp-dir
 status: {}

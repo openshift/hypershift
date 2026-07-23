@@ -21,6 +21,10 @@ spec:
       - args:
         - start
         - -v=2
+        - --config=/var/run/configmaps/config/config.yaml
+        - --terminate-on-files=/var/run/configmaps/config/config.yaml
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.crt
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.key
         - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
         env:
         - name: OPERAND_IMAGE
@@ -49,6 +53,11 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
+        - mountPath: /var/run/secrets/serving-cert
+          name: serving-cert
+        - mountPath: /var/run/configmaps/config
+          name: config
+          readOnly: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -58,3 +67,9 @@ spec:
       - name: guest-kubeconfig
         secret:
           secretName: service-network-admin-kubeconfig
+      - name: serving-cert
+        secret:
+          secretName: serving-cert
+      - configMap:
+          name: csi-snapshot-controller-operator-config
+        name: config
