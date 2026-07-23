@@ -11,6 +11,8 @@ import (
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
 	g "github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
+
+	_ "github.com/openshift/hypershift/test/e2e/v2/tests"
 )
 
 func main() {

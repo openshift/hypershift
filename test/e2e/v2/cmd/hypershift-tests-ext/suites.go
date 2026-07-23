@@ -66,50 +66,56 @@ var platformConfigs = map[string]platformConfig{
 	},
 	"azure": {
 		Suites: []e.Suite{
-			// OTE prototype: only oauth-lb cluster. Uncomment others when porting tests.
-			// {
-			// 	Name:        "hypershift/azure/public",
-			// 	Description: "Azure public cluster tests",
-			// 	Qualifiers:  []string{`labels.exists(l, l=="self-managed-azure-public") || labels.exists(l, l=="nodepool-lifecycle") || labels.exists(l, l=="secret-encryption") || labels.exists(l, l=="control-plane-workloads") || labels.exists(l, l=="hosted-cluster-security")`},
-			// },
-			// {
-			// 	Name:        "hypershift/azure/private",
-			// 	Description: "Azure private cluster tests",
-			// 	Qualifiers:  []string{`labels.exists(l, l=="self-managed-azure-private") || labels.exists(l, l=="hosted-cluster-compliance")`},
-			// },
+			{
+				Name:        "hypershift/azure/public",
+				Description: "Azure public cluster tests",
+				Qualifiers:  []string{`labels.exists(l, l=="self-managed-azure-public") || labels.exists(l, l=="nodepool-lifecycle") || labels.exists(l, l=="secret-encryption") || labels.exists(l, l=="control-plane-workloads") || labels.exists(l, l=="hosted-cluster-security")`},
+			},
+			{
+				Name:        "hypershift/azure/private",
+				Description: "Azure private cluster tests",
+				Qualifiers:  []string{`labels.exists(l, l=="self-managed-azure-private") || labels.exists(l, l=="hosted-cluster-compliance")`},
+			},
 			{
 				Name:        "hypershift/azure/oauth-lb",
 				Description: "Azure OAuth LB cluster tests",
 				Qualifiers:  []string{`labels.exists(l, l=="self-managed-azure-oauth-lb") || labels.exists(l, l=="hosted-cluster-health") || labels.exists(l, l=="hosted-cluster-metrics") || labels.exists(l, l=="hosted-cluster-image-registry")`},
 			},
-			// {
-			// 	Name:        "hypershift/azure/autoscaling",
-			// 	Description: "Azure autoscaling cluster tests",
-			// 	Qualifiers:  []string{`labels.exists(l, l=="nodepool-autoscaling")`},
-			// },
-			// {
-			// 	Name:        "hypershift/azure/external-oidc",
-			// 	Description: "Azure external OIDC cluster tests",
-			// 	Qualifiers:  []string{`labels.exists(l, l=="external-oidc")`},
-			// },
-			// {
-			// 	Name:        "hypershift/azure/upgrade",
-			// 	Description: "Sequential control plane upgrade tests",
-			// 	Parallelism: 1,
-			// 	Qualifiers:  []string{`labels.exists(l, l=="control-plane-upgrade")`},
-			// },
-			// {
-			// 	Name:        "hypershift/azure/chaos",
-			// 	Description: "Sequential etcd chaos tests (runs after upgrade)",
-			// 	Parallelism: 1,
-			// 	Qualifiers:  []string{`labels.exists(l, l=="etcd-chaos")`},
-			// },
+			{
+				Name:        "hypershift/azure/autoscaling",
+				Description: "Azure autoscaling cluster tests",
+				Qualifiers:  []string{`labels.exists(l, l=="nodepool-autoscaling")`},
+			},
+			{
+				Name:        "hypershift/azure/external-oidc",
+				Description: "Azure external OIDC cluster tests",
+				Qualifiers:  []string{`labels.exists(l, l=="external-oidc")`},
+			},
+			{
+				Name:        "hypershift/azure/upgrade",
+				Description: "Sequential control plane upgrade tests",
+				Parallelism: 1,
+				Qualifiers:  []string{`labels.exists(l, l=="control-plane-upgrade")`},
+			},
+			{
+				Name:        "hypershift/azure/chaos",
+				Description: "Sequential etcd chaos tests (runs after upgrade)",
+				Parallelism: 1,
+				Qualifiers:  []string{`labels.exists(l, l=="etcd-chaos")`},
+			},
 		},
 		TestPlan: testPlan{
-			Parallel: []string{"hypershift/azure/oauth-lb"},
+			Parallel:   []string{"hypershift/azure/public", "hypershift/azure/private", "hypershift/azure/oauth-lb", "hypershift/azure/autoscaling", "hypershift/azure/external-oidc"},
+			Sequential: [][]string{{"hypershift/azure/upgrade", "hypershift/azure/chaos"}},
 		},
 		ClusterFiles: map[string]string{
-			"hypershift/azure/oauth-lb": "cluster-name-oauth-lb",
+			"hypershift/azure/public":        "cluster-name-public",
+			"hypershift/azure/private":       "cluster-name-private",
+			"hypershift/azure/oauth-lb":      "cluster-name-oauth-lb",
+			"hypershift/azure/autoscaling":   "cluster-name-autoscaling",
+			"hypershift/azure/external-oidc": "cluster-name-external-oidc",
+			"hypershift/azure/upgrade":       "cluster-name-upgrade",
+			"hypershift/azure/chaos":         "cluster-name-upgrade",
 		},
 	},
 	"aws": {
