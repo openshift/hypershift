@@ -74,6 +74,9 @@ spec:
                   type: object
                 maxItems: 25
                 type: array
+                x-kubernetes-list-map-keys:
+                - key
+                x-kubernetes-list-type: map
               subnetIDs:
                 description: subnetIDs is the list of subnet IDs to which guest nodes
                   can attach
