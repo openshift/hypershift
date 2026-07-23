@@ -48,6 +48,8 @@ type oauthTokenConfig struct {
 type OAuthTokenOption func(*oauthTokenConfig)
 
 // WithTransport overrides the default HTTP transport used for OAuth requests.
+// Use this with SetupOAuthPortForwardTransport to route requests through a
+// port-forward tunnel to the OAuth server in private topology clusters.
 func WithTransport(rt http.RoundTripper) OAuthTokenOption {
 	return func(c *oauthTokenConfig) { c.transport = rt }
 }
@@ -535,10 +537,14 @@ func EnsureOAuthWithIdentityProviderViaLoadBalancer(t *testing.T, ctx context.Co
 	})
 }
 
-// SetupOAuthPortForwardTransport creates a port-forward tunnel to the oauth-openshift pod
-// and returns an http.RoundTripper that routes requests through it. The transport handles
-// TLS correctly by using the guest cluster Root CA with ServerName set to the real OAuth
-// hostname. The port-forward is cleaned up automatically via t.Cleanup.
+// SetupOAuthPortForwardTransport creates a SPDY port-forward tunnel from a random local
+// port to the oauth-openshift pod (port 6443) in the hosted control plane namespace.
+// It returns an http.RoundTripper that routes requests through the tunnel while preserving
+// correct TLS verification: the guest cluster Root CA validates the certificate, and
+// ServerName is set to oauthHost so the certificate SAN check passes even though the
+// actual TCP connection goes to localhost. Pass the returned transport to
+// ValidateOAuthIdentityProviderFlow via WithTransport.
+// The port-forward is cleaned up automatically via t.Cleanup.
 // After establishing the tunnel, it verifies connectivity by polling the /healthz endpoint.
 func SetupOAuthPortForwardTransport(
 	t testing.TB, ctx context.Context,
