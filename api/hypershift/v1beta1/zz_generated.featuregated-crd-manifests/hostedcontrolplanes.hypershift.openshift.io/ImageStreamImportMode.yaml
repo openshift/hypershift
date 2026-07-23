@@ -4034,6 +4034,25 @@ spec:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
                     type: object
+                  kubeAPIServer:
+                    description: kubeAPIServer configures the log verbosity of the
+                      kube-apiserver component.
+                    minProperties: 1
+                    properties:
+                      logLevel:
+                        default: Normal
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          Defaults to "Normal".
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
                 type: object
               pausedUntil:
                 description: |-

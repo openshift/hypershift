@@ -16,7 +16,128 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestResolveKASVerbosity(t *testing.T) {
+	logLevel := func(l hyperv1.LogLevel) hyperv1.ComponentLogLevelSpec {
+		return hyperv1.ComponentLogLevelSpec{LogLevel: &l}
+	}
+
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected int
+	}{
+		{
+			name: "When no operatorConfiguration is set it should default to verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: 2,
+		},
+		{
+			name: "When operatorConfiguration exists but kubeAPIServer is nil it should default to verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+				},
+			},
+			expected: 2,
+		},
+		{
+			name: "When kubeAPIServer logLevel is Normal it should return verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.Normal),
+					},
+				},
+			},
+			expected: 2,
+		},
+		{
+			name: "When kubeAPIServer logLevel is Debug it should return verbosity 4",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.Debug),
+					},
+				},
+			},
+			expected: 4,
+		},
+		{
+			name: "When kubeAPIServer logLevel is Trace it should return verbosity 6",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.Trace),
+					},
+				},
+			},
+			expected: 6,
+		},
+		{
+			name: "When kubeAPIServer logLevel is TraceAll it should return verbosity 8",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.TraceAll),
+					},
+				},
+			},
+			expected: 8,
+		},
+		{
+			name: "When only annotation is set it should honor the annotation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "5",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: 5,
+		},
+		{
+			name: "When both annotation and API field are set it should prefer API field",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "5",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.TraceAll),
+					},
+				},
+			},
+			expected: 8,
+		},
+		{
+			name: "When annotation has invalid value it should default to verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "not-a-number",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(resolveKASVerbosity(tt.hcp)).To(Equal(tt.expected))
+		})
+	}
+}
 
 // findContainerByNameInPod finds a container by name in a PodSpec and returns a pointer to it.
 // Returns nil if the container is not found.

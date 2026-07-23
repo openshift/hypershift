@@ -23,6 +23,7 @@ type OperatorConfigurationApplyConfiguration struct {
 	ClusterVersionOperator *ClusterVersionOperatorSpecApplyConfiguration `json:"clusterVersionOperator,omitempty"`
 	ClusterNetworkOperator *ClusterNetworkOperatorSpecApplyConfiguration `json:"clusterNetworkOperator,omitempty"`
 	IngressOperator        *IngressOperatorSpecApplyConfiguration        `json:"ingressOperator,omitempty"`
+	KubeAPIServer          *ComponentLogLevelSpecApplyConfiguration      `json:"kubeAPIServer,omitempty"`
 }
 
 // OperatorConfigurationApplyConfiguration constructs a declarative configuration of the OperatorConfiguration type for use with
@@ -52,5 +53,13 @@ func (b *OperatorConfigurationApplyConfiguration) WithClusterNetworkOperator(val
 // If called multiple times, the IngressOperator field is set to the value of the last call.
 func (b *OperatorConfigurationApplyConfiguration) WithIngressOperator(value *IngressOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
 	b.IngressOperator = value
+	return b
+}
+
+// WithKubeAPIServer sets the KubeAPIServer field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeAPIServer field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithKubeAPIServer(value *ComponentLogLevelSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.KubeAPIServer = value
 	return b
 }
