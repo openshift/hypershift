@@ -230,6 +230,10 @@ function initTimeRange(loadFn) {
     document.getElementById('date-from').value = from;
     document.getElementById('date-to').value = to;
 
+    localStorage.setItem('dashboard-time-range', rangeKey);
+    localStorage.setItem('dashboard-date-from', from);
+    localStorage.setItem('dashboard-date-to', to);
+
     loadFn(from, to);
   }
 
@@ -238,6 +242,9 @@ function initTimeRange(loadFn) {
     const to = document.getElementById('date-to').value;
     if (from && to) {
       document.querySelectorAll('.time-range button').forEach(btn => btn.classList.remove('active'));
+      localStorage.setItem('dashboard-time-range', 'custom');
+      localStorage.setItem('dashboard-date-from', from);
+      localStorage.setItem('dashboard-date-to', to);
       loadFn(from, to);
     }
   }
@@ -251,7 +258,23 @@ function initTimeRange(loadFn) {
   document.getElementById('date-from').addEventListener('change', applyCustomDateRange);
   document.getElementById('date-to').addEventListener('change', applyCustomDateRange);
 
-  applyRange('7d');
+  const savedRange = localStorage.getItem('dashboard-time-range');
+  if (savedRange && savedRange !== 'custom' && getTimeRanges()[savedRange]) {
+    applyRange(savedRange);
+  } else if (savedRange === 'custom') {
+    const from = localStorage.getItem('dashboard-date-from');
+    const to = localStorage.getItem('dashboard-date-to');
+    if (from && to) {
+      document.getElementById('date-from').value = from;
+      document.getElementById('date-to').value = to;
+      document.querySelectorAll('.time-range button').forEach(btn => btn.classList.remove('active'));
+      loadFn(from, to);
+    } else {
+      applyRange('7d');
+    }
+  } else {
+    applyRange('7d');
+  }
 }
 
 // Build a map of issue.id → {merged, closed, jiraKey, component} for outcome cross-referencing
@@ -297,6 +320,12 @@ function _defaultColor(name) {
 
 function initComponentFilter(reloadFn) {
   _componentState.reloadFn = reloadFn;
+  const stored = localStorage.getItem('dashboard-components-active');
+  if (stored) {
+    try {
+      _componentState._pendingRestore = new Set(JSON.parse(stored));
+    } catch (e) { /* ignore bad data */ }
+  }
 }
 
 function updateComponentChips(components) {
@@ -305,7 +334,14 @@ function updateComponentChips(components) {
 
   const newAll = new Set(components);
   if (_componentState.all.size === 0) {
-    _componentState.active = new Set(newAll);
+    if (_componentState._pendingRestore) {
+      _componentState.active = new Set(
+        [...newAll].filter(c => _componentState._pendingRestore.has(c))
+      );
+      _componentState._pendingRestore = null;
+    } else {
+      _componentState.active = new Set(newAll);
+    }
   } else {
     for (const c of newAll) {
       if (!_componentState.all.has(c)) _componentState.active.add(c);
@@ -357,10 +393,12 @@ function updateComponentChips(components) {
     });
     container.appendChild(chip);
   }
+
+  localStorage.setItem('dashboard-components-active', JSON.stringify([..._componentState.active]));
 }
 
 function getActiveComponents() {
-  if (_componentState.active.size === 0 || _componentState.active.size === _componentState.all.size) {
+  if (_componentState.active.size === _componentState.all.size) {
     return null;
   }
   return _componentState.active;
@@ -395,8 +433,38 @@ function resetChart(chart) {
   return null;
 }
 
-// Initialize navigation highlighting and toggle
+// --- Header Bar Injection ---
+
+function buildHeaderBar() {
+  const bar = document.createElement('div');
+  bar.className = 'time-range';
+  bar.innerHTML = `
+    <label>Time Range:</label>
+    <button id="range-7d" class="active">Last 7 Days</button>
+    <button id="range-this-month">This Month</button>
+    <button id="range-last-month">Last Month</button>
+    <button id="range-3m">Last 90 Days</button>
+    <button id="range-ytd">Year to Date</button>
+    <span>|</span>
+    <label for="date-from">From:</label>
+    <input type="date" id="date-from">
+    <label for="date-to">To:</label>
+    <input type="date" id="date-to">
+    <span>|</span>
+    <div id="component-filter-container"></div>
+  `;
+  return bar;
+}
+
+function injectHeaderBar() {
+  const anchor = document.getElementById('header-bar-anchor');
+  if (!anchor) return;
+  anchor.appendChild(buildHeaderBar());
+}
+
+// Initialize navigation highlighting, toggle, and header bar
 document.addEventListener('DOMContentLoaded', () => {
+  injectHeaderBar();
   highlightCurrentPage();
   setupNavToggle();
 });

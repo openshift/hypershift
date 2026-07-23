@@ -29,22 +29,7 @@
         <p>Under-the-hood metrics from Claude Code sessions — cost per session, cache hit rates, token usage, tool call counts, and per-phase success rates. Use this to monitor agent efficiency, spot regressions in API costs or cache performance, and identify which pipeline phases fail most often or cost the most.</p>
       </div>
 
-      <!-- Time Range Selector -->
-      <div class="time-range">
-        <label>Time Range:</label>
-        <button id="range-7d" class="active">Last 7 Days</button>
-        <button id="range-this-month">This Month</button>
-        <button id="range-last-month">Last Month</button>
-        <button id="range-3m">Last 90 Days</button>
-        <button id="range-ytd">Year to Date</button>
-        <span>|</span>
-        <label for="date-from">From:</label>
-        <input type="date" id="date-from">
-        <label for="date-to">To:</label>
-        <input type="date" id="date-to">
-        <span>|</span>
-        <div id="component-filter-container"></div>
-      </div>
+      <div id="header-bar-anchor"></div>
 
       <!-- Summary Cards -->
       <div class="summary-cards telemetry-cards" id="summary-cards">

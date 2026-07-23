@@ -29,22 +29,7 @@
         <p>Every issue the agent attempts is listed here with its PR outcome, cost, quality score, and review history. Use this table to spot patterns — which issues took multiple runs, which cost the most, and how review cycles correlate with merge success. Click any row to drill into phase breakdowns and individual review comments.</p>
       </div>
 
-      <!-- Time Range Selector -->
-      <div class="time-range">
-        <label>Time Range:</label>
-        <button id="range-7d" class="active">Last 7 Days</button>
-        <button id="range-this-month">This Month</button>
-        <button id="range-last-month">Last Month</button>
-        <button id="range-3m">Last 90 Days</button>
-        <button id="range-ytd">Year to Date</button>
-        <span>|</span>
-        <div id="component-filter-container"></div>
-        <span>|</span>
-        <label for="date-from">From:</label>
-        <input type="date" id="date-from">
-        <label for="date-to">To:</label>
-        <input type="date" id="date-to">
-      </div>
+      <div id="header-bar-anchor"></div>
 
       <div class="results-count" id="results-count"></div>
 
