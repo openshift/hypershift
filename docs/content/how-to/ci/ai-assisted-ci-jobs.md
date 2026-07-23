@@ -104,7 +104,13 @@ flowchart TD
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `JIRA_AGENT_MAX_ISSUES` | 1 | Maximum issues to process per run |
+| `JIRA_AGENT_ISSUE_KEY` | *(none)* | Process a single specific Jira issue instead of running the JQL query |
 | Rate limit | 60 seconds | Delay between processing issues |
+
+!!! tip ":zap: Trigger on demand"
+    You don't have to wait for the daily cron — trigger the jira-agent for a specific issue
+    immediately via the Gangway API or Claude Code. See
+    [Triggering Jobs On Demand](triggering-jobs-on-demand.md) for instructions.
 
 ---
 
