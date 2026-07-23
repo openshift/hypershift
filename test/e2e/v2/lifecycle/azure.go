@@ -148,6 +148,10 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			Variant:    "external-oidc",
 			OutputFile: "cluster-name-external-oidc",
 		},
+		{
+			Variant:    "global-pull-secret",
+			OutputFile: "cluster-name-global-pull-secret",
+		},
 	}
 }
 
@@ -353,13 +357,19 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				Name:        "autoscaling",
 				ClusterFile: "cluster-name-autoscaling",
 				LabelFilter: "nodepool-autoscaling",
-				JUnitFile:   "junit_nodepool_autoscaling.xml",
+				JUnitFile:   "junit_self_managed_azure_nodepool_autoscaling.xml",
 			},
 			{
 				Name:        "external-oidc",
 				ClusterFile: "cluster-name-external-oidc",
 				LabelFilter: "external-oidc",
 				JUnitFile:   "junit_self_managed_azure_external_oidc.xml",
+			},
+			{
+				Name:        "global-pull-secret",
+				ClusterFile: "cluster-name-global-pull-secret",
+				LabelFilter: "global-pull-secret",
+				JUnitFile:   "junit_self_managed_azure_global_pull_secret.xml",
 			},
 		},
 		Sequential: []SequentialGroup{
