@@ -670,7 +670,7 @@ func TestSetDefaultOptions(t *testing.T) {
 			SetDefaultSecurityContext: true,
 			DefaultSecurityContextUID: int64(1002),
 			Client:                    fake.NewClientBuilder().WithScheme(scheme).Build(),
-		}, workloadObject, nil)
+		}, workloadObject, nil, nil)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(1002))))
 		g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(1002))))
@@ -688,7 +688,7 @@ func TestSetDefaultOptions(t *testing.T) {
 		expectedResources  corev1.ResourceRequirements
 	}{
 		{
-			name: "When existing resources have both requests and limits it should fully preserve them",
+			name: "When existing resources have both requests and limits it should fully preserve them for non-capi-provider components",
 			containerResources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -770,7 +770,7 @@ func TestSetDefaultOptions(t *testing.T) {
 				HCP:                  hcp,
 				Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
 				ReleaseImageProvider: releaseProvider,
-			}, deployment, test.existingResources)
+			}, deployment, test.existingResources, nil)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Resources).To(Equal(test.expectedResources))
@@ -823,7 +823,7 @@ func TestSetDefaultOptions(t *testing.T) {
 				HCP:                  hcp,
 				Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
 				ReleaseImageProvider: releaseProvider,
-			}, deployment, nil)
+			}, deployment, nil, nil)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			if test.expectSet {
@@ -834,4 +834,543 @@ func TestSetDefaultOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLimitsAlreadyRemoved(t *testing.T) {
+	tests := []struct {
+		name          string
+		annotations   map[string]string
+		containerName string
+		expected      bool
+	}{
+		{
+			name:          "When annotations are nil it should return false",
+			annotations:   nil,
+			containerName: "kube-apiserver",
+			expected:      false,
+		},
+		{
+			name:          "When annotation is empty it should return false",
+			annotations:   map[string]string{limitsRemovedAnnotation: ""},
+			containerName: "kube-apiserver",
+			expected:      false,
+		},
+		{
+			name:          "When container is listed it should return true",
+			annotations:   map[string]string{limitsRemovedAnnotation: "kube-apiserver"},
+			containerName: "kube-apiserver",
+			expected:      true,
+		},
+		{
+			name:          "When container is listed among others it should return true",
+			annotations:   map[string]string{limitsRemovedAnnotation: "sidecar,kube-apiserver,another"},
+			containerName: "kube-apiserver",
+			expected:      true,
+		},
+		{
+			name:          "When container is not listed it should return false",
+			annotations:   map[string]string{limitsRemovedAnnotation: "sidecar,another"},
+			containerName: "kube-apiserver",
+			expected:      false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := limitsAlreadyRemoved(test.annotations, test.containerName)
+			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestMarkLimitsRemoved(t *testing.T) {
+	tests := []struct {
+		name               string
+		existingAnnotation string
+		containerName      string
+		expectedAnnotation string
+	}{
+		{
+			name:               "When annotations are empty it should add the container",
+			existingAnnotation: "",
+			containerName:      "kube-apiserver",
+			expectedAnnotation: "kube-apiserver",
+		},
+		{
+			name:               "When a container already exists it should append the new container",
+			existingAnnotation: "sidecar",
+			containerName:      "kube-apiserver",
+			expectedAnnotation: "sidecar,kube-apiserver",
+		},
+		{
+			name:               "When container is already listed it should not duplicate",
+			existingAnnotation: "kube-apiserver",
+			containerName:      "kube-apiserver",
+			expectedAnnotation: "kube-apiserver",
+		},
+		{
+			name:               "When container is already in a multi-item list it should not duplicate",
+			existingAnnotation: "sidecar,kube-apiserver",
+			containerName:      "kube-apiserver",
+			expectedAnnotation: "sidecar,kube-apiserver",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			deployment := &appsv1.Deployment{}
+			if test.existingAnnotation != "" {
+				deployment.SetAnnotations(map[string]string{
+					limitsRemovedAnnotation: test.existingAnnotation,
+				})
+			}
+			markLimitsRemoved(deployment, test.containerName)
+			g.Expect(deployment.GetAnnotations()[limitsRemovedAnnotation]).To(Equal(test.expectedAnnotation))
+		})
+	}
+}
+
+func TestComputeContainerResourcesHash(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	containers := []corev1.Container{
+		{
+			Name: "kube-apiserver",
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("256Mi"),
+				},
+			},
+		},
+	}
+
+	// Same input should produce the same hash.
+	hash1 := computeContainerResourcesHash(containers)
+	hash2 := computeContainerResourcesHash(containers)
+	g.Expect(hash1).To(Equal(hash2))
+	g.Expect(hash1).NotTo(BeEmpty())
+
+	// Different input should produce a different hash.
+	containersWithLimits := []corev1.Container{
+		{
+			Name: "kube-apiserver",
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("256Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		},
+	}
+	hash3 := computeContainerResourcesHash(containersWithLimits)
+	g.Expect(hash3).NotTo(Equal(hash1))
+
+	// Order independence: containers sorted by name.
+	containersA := []corev1.Container{
+		{Name: "a", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}}},
+		{Name: "b", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")}}},
+	}
+	containersB := []corev1.Container{
+		{Name: "b", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")}}},
+		{Name: "a", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}}},
+	}
+	g.Expect(computeContainerResourcesHash(containersA)).To(Equal(computeContainerResourcesHash(containersB)))
+}
+
+func TestLimitRemovalAndPreservation(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := hyperv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add hyperv1 to scheme: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add appsv1 to scheme: %v", err)
+	}
+
+	releaseProvider := imageprovider.NewFromImages(map[string]string{
+		"hyperkube":     "quay.io/test/hyperkube:latest",
+		"capi-provider": "quay.io/test/capi-provider:latest",
+	})
+
+	t.Run("When capi-provider manifest has no limits and existing has limits with no annotation it should remove limits and set annotation", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "capi-provider",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "capi-provider",
+								Image: "capi-provider",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("100m"),
+										corev1.ResourceMemory: resource.MustParse("256Mi"),
+									},
+									// No limits in manifest.
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		existingResources := map[string]corev1.ResourceRequirements{
+			"capi-provider": {
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("200m"),
+					corev1.ResourceMemory: resource.MustParse("512Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, existingResources, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Limits should be removed (manifest resources used).
+		container := deployment.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Resources.Limits).To(BeNil())
+		g.Expect(container.Resources.Requests).To(Equal(corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("256Mi"),
+		}))
+
+		// Annotation should be set on the deployment.
+		g.Expect(deployment.GetAnnotations()[limitsRemovedAnnotation]).To(Equal("capi-provider"))
+	})
+
+	t.Run("When capi-provider manifest has no limits and existing has limits with annotation set it should preserve user override", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "capi-provider",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "capi-provider",
+								Image: "capi-provider",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("100m"),
+										corev1.ResourceMemory: resource.MustParse("256Mi"),
+									},
+									// No limits in manifest.
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		existingResources := map[string]corev1.ResourceRequirements{
+			"capi-provider": {
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+			},
+		}
+
+		// Simulate that limits were already removed before (user re-added them).
+		oldAnnotations := map[string]string{
+			limitsRemovedAnnotation: "capi-provider",
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, existingResources, oldAnnotations)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// User's override should be preserved.
+		container := deployment.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Resources).To(Equal(existingResources["capi-provider"]))
+	})
+
+	t.Run("When non-capi-provider manifest has no limits and existing has limits it should always preserve existing resources", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "kube-apiserver",
+								Image: "hyperkube",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("100m"),
+										corev1.ResourceMemory: resource.MustParse("256Mi"),
+									},
+									// No limits in manifest.
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		existingResources := map[string]corev1.ResourceRequirements{
+			"kube-apiserver": {
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("200m"),
+					corev1.ResourceMemory: resource.MustParse("512Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, existingResources, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Non-capi-provider components always preserve existing resources.
+		container := deployment.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Resources).To(Equal(existingResources["kube-apiserver"]))
+	})
+
+	t.Run("When capi-provider manifest has no limits and existing has no limits it should preserve existing resources", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "capi-provider",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "capi-provider",
+								Image: "capi-provider",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("100m"),
+										corev1.ResourceMemory: resource.MustParse("256Mi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		existingResources := map[string]corev1.ResourceRequirements{
+			"capi-provider": {
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("200m"),
+					corev1.ResourceMemory: resource.MustParse("512Mi"),
+				},
+				// No limits on existing either.
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, existingResources, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Neither has limits, so existing resources are preserved.
+		container := deployment.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Resources).To(Equal(existingResources["capi-provider"]))
+	})
+
+	t.Run("When capi-provider manifest has limits and existing has limits it should preserve existing resources", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "capi-provider",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "capi-provider",
+								Image: "capi-provider",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("100m"),
+										corev1.ResourceMemory: resource.MustParse("256Mi"),
+									},
+									Limits: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),
+										corev1.ResourceMemory: resource.MustParse("2Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		existingResources := map[string]corev1.ResourceRequirements{
+			"capi-provider": {
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, existingResources, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Both have limits — existing resources should be preserved (current contract).
+		container := deployment.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Resources).To(Equal(existingResources["capi-provider"]))
+	})
+
+	t.Run("When there is no existing deployment it should use manifest resources as-is", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "capi-provider",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		manifestResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:      "capi-provider",
+								Image:     "capi-provider",
+								Resources: manifestResources,
+							},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		container := deployment.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Resources).To(Equal(manifestResources))
+	})
+
+	t.Run("When reconciling it should set container resources hash annotation on pod template", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "capi-provider",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "capi-provider",
+								Image: "capi-provider",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU: resource.MustParse("100m"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		g.Expect(deployment.Spec.Template.Annotations).To(HaveKey(containerResourcesHashAnnotation))
+		g.Expect(deployment.Spec.Template.Annotations[containerResourcesHashAnnotation]).NotTo(BeEmpty())
+	})
 }

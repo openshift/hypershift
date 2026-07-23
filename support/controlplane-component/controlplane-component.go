@@ -367,7 +367,8 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		existingResources[container.Name] = container.Resources
 	}
 
-	if err := c.setDefaultOptions(cpContext, workloadObj, existingResources); err != nil {
+	oldWorkloadAnnotations := oldWorkloadObj.GetAnnotations()
+	if err := c.setDefaultOptions(cpContext, workloadObj, existingResources, oldWorkloadAnnotations); err != nil {
 		return err
 	}
 
