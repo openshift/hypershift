@@ -1922,6 +1922,188 @@ spec:
 	}
 }
 
+func TestGetPlatformConfigs(t *testing.T) {
+	ipv4Networking := hyperv1.ClusterNetworking{
+		ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+		ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+	}
+	dualStackNetworking := hyperv1.ClusterNetworking{
+		ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+			{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")},
+			{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+		},
+		ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+			{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")},
+			{CIDR: *ipnet.MustParseCIDR("fd02::/112")},
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		nodePool      *hyperv1.NodePool
+		networking    hyperv1.ClusterNetworking
+		expectConfigs bool
+		expectError   bool
+	}{
+		{
+			// No config may ever be generated for default-network NodePools:
+			// anything emitted here becomes part of the NodePool config hash and
+			// would trigger a fleet-wide rollout when the HyperShift operator is
+			// upgraded.
+			name: "When platform is KubeVirt with default network on a dual-stack cluster it should return no configs to keep the config hash unchanged",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							// AttachDefaultNetwork defaults to true when nil
+						},
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: false,
+		},
+		{
+			name: "When platform is KubeVirt with multus primary network on an IPv4-only cluster it should return no configs to keep the config hash unchanged",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AttachDefaultNetwork: boolPtr(false),
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "ns1/localnet-net"},
+							},
+						},
+					},
+				},
+			},
+			networking:    ipv4Networking,
+			expectConfigs: false,
+		},
+		{
+			name: "When platform is KubeVirt with multus primary network on a dual-stack cluster it should return the override config",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AttachDefaultNetwork: boolPtr(false),
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "ns1/localnet-net"},
+							},
+						},
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: true,
+		},
+		{
+			name: "When platform is AWS it should return no configs",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: false,
+		},
+		{
+			name: "When platform is KubeVirt with nil Kubevirt spec it should return no configs",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cg := &ConfigGenerator{
+				nodePool: tc.nodePool,
+				hostedCluster: &hyperv1.HostedCluster{
+					Spec: hyperv1.HostedClusterSpec{
+						Networking: tc.networking,
+					},
+				},
+			}
+
+			configs, err := cg.getPlatformConfigs()
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectConfigs {
+				g.Expect(configs).ToNot(BeNil())
+				g.Expect(configs).To(HaveLen(1))
+				g.Expect(configs[0].Data).To(HaveKey(TokenSecretConfigKey))
+				g.Expect(configs[0].Data[TokenSecretConfigKey]).ToNot(BeEmpty())
+			} else {
+				g.Expect(configs).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestKubevirtPlatformConfig(t *testing.T) {
+	// The generation matrix (multus/default network, IPv4/dual-stack, non-KubeVirt,
+	// nil spec) is covered by network_test.go's TestGenerateNetworkOverrideMachineConfig,
+	// and the ConfigMap wiring is covered by TestGetPlatformConfigs (which calls this
+	// method). This test only asserts the wiring: the HostedCluster networking is passed
+	// through, so a multus NodePool on a dual-stack cluster yields the no-op override.
+	g := NewWithT(t)
+
+	cg := &ConfigGenerator{
+		nodePool: &hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.KubevirtPlatform,
+					Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+						AttachDefaultNetwork: boolPtr(false),
+						AdditionalNetworks: []hyperv1.KubevirtNetwork{
+							{Name: "ns1/localnet-net"},
+						},
+					},
+				},
+			},
+		},
+		hostedCluster: &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Networking: hyperv1.ClusterNetworking{
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+						{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")},
+						{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := cg.kubevirtPlatformConfig()
+	g.Expect(err).ToNot(HaveOccurred())
+	// The override MachineConfig replacing the MCO-rendered nmstate files is generated.
+	g.Expect(result).To(ContainSubstring("01-kubevirt-network"))
+	g.Expect(result).To(ContainSubstring("001-nmstate-disable-ipv6-autoconf"))
+	g.Expect(result).To(ContainSubstring("002-nmstate-arp-proxy-ipv6-gw"))
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 func TestGlobalConfigString(t *testing.T) {
 	expectedGlobalConfigStringWhenEmpty := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
