@@ -1,25 +1,44 @@
 // Overview page logic — per-issue charts driven by /api/issues
 
 let chartsInstances = {};
+let _overviewIssues = [];
+let _overviewComments = [];
+let _overviewTelemetrySummary = null;
+let _overviewFrom = '';
+let _overviewTo = '';
 
 async function loadOverview(from, to) {
+  _overviewFrom = from;
+  _overviewTo = to;
   try {
     const [issues, comments, telemetrySummary] = await Promise.all([
       fetchAPI(`/api/issues?from=${from}&to=${to}`),
       fetchAPI(`/api/comments/summary?from=${from}&to=${to}`),
       fetchAPI(`/api/telemetry/summary?from=${from}&to=${to}`)
     ]);
-    updateImpactHero(issues, from, to);
-    updateSummaryCards(issues, comments, telemetrySummary);
-    renderStatusChart(issues);
-    renderCostChart(issues);
-    renderDurationChart(issues);
-    renderReviewersChart(comments);
-    renderSeverityChart(comments);
-    renderActivityFeed(issues, comments);
+    _overviewIssues = issues;
+    _overviewComments = comments;
+    _overviewTelemetrySummary = telemetrySummary;
+    updateComponentChips(extractComponents(issues, i => i.component || 'hypershift'));
+    renderOverview();
   } catch (error) {
     showError('Failed to load overview data: ' + error.message);
   }
+}
+
+function renderOverview() {
+  const issues = filterByComponent(_overviewIssues, i => i.component || 'hypershift');
+  const iMap = buildIssueMap(issues);
+  const comments = filterCommentsByIssueMap(_overviewComments, buildIssueMap(_overviewIssues));
+
+  updateImpactHero(issues, _overviewFrom, _overviewTo);
+  updateSummaryCards(issues, comments, _overviewTelemetrySummary);
+  renderStatusChart(issues);
+  renderCostChart(issues);
+  renderDurationChart(issues);
+  renderReviewersChart(comments);
+  renderSeverityChart(comments);
+  renderActivityFeed(issues, comments);
 }
 
 async function loadTrends(rangeKey) {
@@ -669,6 +688,7 @@ function renderImpactTrend(data) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initComponentFilter(renderOverview);
   initTimeRange(loadOverview);
 
   document.getElementById('trend-3m').addEventListener('click', () => loadTrends('3m'));

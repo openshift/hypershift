@@ -1,7 +1,6 @@
 // Issues table page logic
 
 let issuesData = [];
-let componentFilter = '';
 let sortColumn = null;
 let sortDirection = 'asc';
 let activeLoadId = 0;
@@ -14,6 +13,7 @@ async function loadIssues(from, to) {
     const data = await fetchAPI(`/api/issues?from=${from}&to=${to}`);
     if (loadId !== activeLoadId) return;
     issuesData = data;
+    updateComponentChips(extractComponents(data, i => i.component || 'hypershift'));
     updateResultsCount();
     renderIssuesTable();
   } catch (error) {
@@ -23,8 +23,7 @@ async function loadIssues(from, to) {
 }
 
 function getFilteredIssues() {
-  if (!componentFilter) return issuesData;
-  return issuesData.filter(i => (i.component || 'hypershift') === componentFilter);
+  return filterByComponent(issuesData, i => i.component || 'hypershift');
 }
 
 function updateResultsCount() {
@@ -272,14 +271,12 @@ function setupSortHandlers() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initTimeRange(loadIssues);
-  setupSortHandlers();
-
-  document.getElementById('component-filter').addEventListener('change', (e) => {
-    componentFilter = e.target.value;
+  initComponentFilter(() => {
     updateResultsCount();
     renderIssuesTable();
   });
+  initTimeRange(loadIssues);
+  setupSortHandlers();
 
   document.querySelectorAll('.info-tip').forEach(tip => {
     tip.addEventListener('click', e => e.stopPropagation());

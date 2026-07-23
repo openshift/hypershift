@@ -556,6 +556,48 @@ td a:hover {
   color: #4a235a;
 }
 
+/* Component Filter Chips */
+#component-filter-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.component-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.78em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.component-chip.active {
+  border-color: transparent;
+}
+
+.component-chip.inactive {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.component-chip.all-active {
+  background: var(--accent-blue);
+  color: #fff;
+  border-color: transparent;
+}
+
+.component-chip:not(.all-active):not(.active):not(.inactive) {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
 /* Collapsible Issue Groups */
 .group-toggle {
   cursor: pointer;

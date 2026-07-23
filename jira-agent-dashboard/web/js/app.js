@@ -254,7 +254,7 @@ function initTimeRange(loadFn) {
   applyRange('7d');
 }
 
-// Build a map of issue.id → {merged, closed, jiraKey} for outcome cross-referencing
+// Build a map of issue.id → {merged, closed, jiraKey, component} for outcome cross-referencing
 function buildIssueMap(issues) {
   const map = {};
   for (const issue of issues) {
@@ -262,9 +262,131 @@ function buildIssueMap(issues) {
       merged: issue.pr_merged,
       closed: issue.pr_closed,
       jiraKey: issue.jira_key,
+      component: issue.component || 'hypershift',
     };
   }
   return map;
+}
+
+// Build a map of jiraKey → component for telemetry cross-referencing
+function buildKeyComponentMap(issues) {
+  const map = {};
+  for (const issue of issues) {
+    map[issue.jira_key] = issue.component || 'hypershift';
+  }
+  return map;
+}
+
+// --- Component Filter ---
+
+const _componentState = {
+  active: new Set(),
+  all: new Set(),
+  reloadFn: null,
+};
+
+const COMPONENT_COLORS = {
+  hypershift: { bg: '#cce5ff', color: '#004085' },
+  installer:  { bg: '#e8daef', color: '#4a235a' },
+};
+
+function _defaultColor(name) {
+  const hue = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0);
+  return { bg: `hsl(${hue}, 40%, 90%)`, color: `hsl(${hue}, 50%, 25%)` };
+}
+
+function initComponentFilter(reloadFn) {
+  _componentState.reloadFn = reloadFn;
+}
+
+function updateComponentChips(components) {
+  const container = document.getElementById('component-filter-container');
+  if (!container) return;
+
+  const newAll = new Set(components);
+  if (_componentState.all.size === 0) {
+    _componentState.active = new Set(newAll);
+  } else {
+    for (const c of newAll) {
+      if (!_componentState.all.has(c)) _componentState.active.add(c);
+    }
+    for (const c of _componentState.active) {
+      if (!newAll.has(c)) _componentState.active.delete(c);
+    }
+  }
+  _componentState.all = newAll;
+
+  container.innerHTML = '';
+
+  if (newAll.size <= 1) return;
+
+  const allActive = _componentState.active.size === _componentState.all.size;
+  const toggleAll = document.createElement('button');
+  toggleAll.className = 'component-chip' + (allActive ? ' all-active' : '');
+  toggleAll.textContent = 'All';
+  toggleAll.addEventListener('click', () => {
+    if (_componentState.active.size === _componentState.all.size) {
+      _componentState.active.clear();
+    } else {
+      _componentState.active = new Set(_componentState.all);
+    }
+    updateComponentChips([..._componentState.all]);
+    if (_componentState.reloadFn) _componentState.reloadFn();
+  });
+  container.appendChild(toggleAll);
+
+  for (const name of [...newAll].sort()) {
+    const active = _componentState.active.has(name);
+    const colors = COMPONENT_COLORS[name] || _defaultColor(name);
+
+    const chip = document.createElement('button');
+    chip.className = 'component-chip' + (active ? ' active' : ' inactive');
+    chip.textContent = name;
+    if (active) {
+      chip.style.background = colors.bg;
+      chip.style.color = colors.color;
+    }
+    chip.addEventListener('click', () => {
+      if (_componentState.active.has(name)) {
+        _componentState.active.delete(name);
+      } else {
+        _componentState.active.add(name);
+      }
+      updateComponentChips([..._componentState.all]);
+      if (_componentState.reloadFn) _componentState.reloadFn();
+    });
+    container.appendChild(chip);
+  }
+}
+
+function getActiveComponents() {
+  if (_componentState.active.size === 0 || _componentState.active.size === _componentState.all.size) {
+    return null;
+  }
+  return _componentState.active;
+}
+
+function filterByComponent(items, getComp) {
+  const active = getActiveComponents();
+  if (!active) return items;
+  return items.filter(item => active.has(getComp(item)));
+}
+
+function filterCommentsByIssueMap(comments, issueMap) {
+  const active = getActiveComponents();
+  if (!active) return comments;
+  return comments.filter(c => {
+    const info = issueMap[c.issue_id];
+    return info && active.has(info.component);
+  });
+}
+
+function extractComponents(items, getComp) {
+  const set = new Set();
+  for (const item of items) {
+    set.add(getComp(item));
+  }
+  return [...set];
 }
 
 // Safely destroy and nullify a Chart.js instance

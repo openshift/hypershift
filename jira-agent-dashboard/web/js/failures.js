@@ -1,6 +1,8 @@
 // Failure Analysis page logic
 
 let chartsInstances = {};
+let _failIssues = [];
+let _failComments = [];
 
 async function loadFailures(from, to) {
   try {
@@ -9,16 +11,25 @@ async function loadFailures(from, to) {
       fetchAPI(`/api/comments/summary?from=${from}&to=${to}`)
     ]);
 
-    const issueMap = buildIssueMap(issues);
-
-    const groups = groupByJiraKey(issues);
-    updateSummaryCards(groups);
-    renderRejectionReasonsChart(comments, issueMap);
-    renderTopicOutcomeChart(comments, issueMap);
-    renderRejectedTable(groups, comments, issueMap);
+    _failIssues = issues;
+    _failComments = comments;
+    updateComponentChips(extractComponents(issues, i => i.component || 'hypershift'));
+    renderFailures();
   } catch (error) {
     showError('Failed to load failure analysis data: ' + error.message);
   }
+}
+
+function renderFailures() {
+  const issues = filterByComponent(_failIssues, i => i.component || 'hypershift');
+  const issueMap = buildIssueMap(issues);
+  const comments = filterCommentsByIssueMap(_failComments, buildIssueMap(_failIssues));
+
+  const groups = groupByJiraKey(issues);
+  updateSummaryCards(groups);
+  renderRejectionReasonsChart(comments, issueMap);
+  renderTopicOutcomeChart(comments, issueMap);
+  renderRejectedTable(groups, comments, issueMap);
 }
 
 // --- Summary Cards ---
@@ -193,5 +204,6 @@ function renderRejectedTable(groups, comments, issueMap) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initComponentFilter(renderFailures);
   initTimeRange(loadFailures);
 });

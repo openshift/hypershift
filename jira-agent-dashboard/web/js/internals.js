@@ -10,13 +10,18 @@ let apiLatencyChart = null;
 let otelToolChart = null;
 let phaseSuccessChart = null;
 let allSessions = [];
+let _telKeyComponentMap = {};
+let _telSummary = null;
+let _telToolStats = [];
+let _telApiLatency = [];
 let currentSort = { key: 'started_at', asc: false };
 
 async function loadTelemetry(from, to) {
   try {
-    const [sessions, summary] = await Promise.all([
+    const [sessions, summary, issues] = await Promise.all([
       fetchAPI(`/api/telemetry?from=${from}&to=${to}`),
-      fetchAPI(`/api/telemetry/summary?from=${from}&to=${to}`)
+      fetchAPI(`/api/telemetry/summary?from=${from}&to=${to}`),
+      fetchAPI(`/api/issues?from=${from}&to=${to}`)
     ]);
 
     const [toolStats, apiLatency] = await Promise.all([
@@ -25,21 +30,31 @@ async function loadTelemetry(from, to) {
     ]);
 
     allSessions = sessions || [];
-    renderSummaryCards(summary);
-    renderPhaseSuccessChart(allSessions);
-    renderPhaseEfficiencyTable(allSessions);
-    renderCostPhaseChart(allSessions);
-    renderTokenPhaseChart(allSessions);
-    renderCacheChart(allSessions);
-    renderDurationPhaseChart(allSessions);
-    renderSuccessChart(allSessions);
-    renderToolUsageChart(allSessions);
-    renderAPILatencyChart(apiLatency || []);
-    renderOtelToolChart(toolStats || []);
-    applyFilters();
+    _telSummary = summary;
+    _telToolStats = toolStats || [];
+    _telApiLatency = apiLatency || [];
+    _telKeyComponentMap = buildKeyComponentMap(issues);
+    updateComponentChips(extractComponents(issues, i => i.component || 'hypershift'));
+    renderTelemetry();
   } catch (error) {
     showError('Failed to load telemetry data: ' + error.message);
   }
+}
+
+function renderTelemetry() {
+  const sessions = filterByComponent(allSessions, s => _telKeyComponentMap[s.issue_key] || 'hypershift');
+  renderSummaryCardsFromSessions(sessions);
+  renderPhaseSuccessChart(sessions);
+  renderPhaseEfficiencyTable(sessions);
+  renderCostPhaseChart(sessions);
+  renderTokenPhaseChart(sessions);
+  renderCacheChart(sessions);
+  renderDurationPhaseChart(sessions);
+  renderSuccessChart(sessions);
+  renderToolUsageChart(sessions);
+  renderAPILatencyChart(_telApiLatency);
+  renderOtelToolChart(_telToolStats);
+  applyFilters();
 }
 
 function renderSummaryCards(s) {
@@ -51,6 +66,29 @@ function renderSummaryCards(s) {
   document.getElementById('stat-subagents').textContent = s.avg_subagents.toFixed(1);
   document.getElementById('stat-duration').textContent = formatMs(s.avg_duration_ms);
   document.getElementById('stat-turns').textContent = s.avg_num_turns.toFixed(1);
+}
+
+function renderSummaryCardsFromSessions(sessions) {
+  const n = sessions.length;
+  if (n === 0) {
+    renderSummaryCards({
+      total_sessions: 0, avg_cost_usd: 0, avg_cache_hit_rate_pct: 0,
+      avg_ttft_ms: 0, avg_tool_calls: 0, avg_subagents: 0,
+      avg_duration_ms: 0, avg_num_turns: 0
+    });
+    return;
+  }
+  const avg = (arr, fn) => arr.reduce((s, x) => s + fn(x), 0) / arr.length;
+  renderSummaryCards({
+    total_sessions: n,
+    avg_cost_usd: avg(sessions, s => s.total_cost_usd || 0),
+    avg_cache_hit_rate_pct: avg(sessions, s => s.cache_hit_rate_pct || 0),
+    avg_ttft_ms: avg(sessions, s => s.ttft_ms || 0),
+    avg_tool_calls: avg(sessions, s => s.total_tool_calls || 0),
+    avg_subagents: avg(sessions, s => s.num_subagents || 0),
+    avg_duration_ms: avg(sessions, s => s.duration_ms || 0),
+    avg_num_turns: avg(sessions, s => s.num_turns || 0),
+  });
 }
 
 function phaseLabel(p) {
@@ -469,13 +507,14 @@ function applyFilters() {
   const search = (document.getElementById('filter-search').value || '').toLowerCase().trim();
   const phase = document.getElementById('filter-phase').value;
 
-  const filtered = allSessions.filter(s => {
+  const componentFiltered = filterByComponent(allSessions, s => _telKeyComponentMap[s.issue_key] || 'hypershift');
+  const filtered = componentFiltered.filter(s => {
     if (search && !(s.issue_key || '').toLowerCase().includes(search)) return false;
     if (phase && s.phase !== phase) return false;
     return true;
   });
 
-  document.getElementById('session-count').textContent = `${filtered.length} of ${allSessions.length} sessions`;
+  document.getElementById('session-count').textContent = `${filtered.length} of ${componentFiltered.length} sessions`;
 
   const sorted = sortSessions(filtered);
   renderSessionsTable(sorted);
@@ -524,6 +563,7 @@ function renderSessionsTable(sessions) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initComponentFilter(renderTelemetry);
   initTimeRange(loadTelemetry);
 
   document.getElementById('filter-search').addEventListener('input', applyFilters);

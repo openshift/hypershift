@@ -6,6 +6,7 @@ let topicMergeRateChart = null;
 let allComments = []; // stored for filtering
 let filteredComments = []; // current filtered view
 let issueMap = {};
+let _reviewIssues = [];
 
 // Load comments data and render charts
 async function loadComments(from, to) {
@@ -16,18 +17,27 @@ async function loadComments(from, to) {
     ]);
 
     allComments = comments;
+    _reviewIssues = issues;
     issueMap = buildIssueMap(issues);
-
-    renderOutcomeSummaryCards(allComments, issueMap);
-    renderTopicMergeRateChart(allComments, issueMap);
-    renderSeverityChart(allComments);
-    renderTopicChart(allComments);
-    renderPatternTable(allComments, issueMap);
-    populateAuthorFilter(allComments);
-    applyCommentFilters();
+    updateComponentChips(extractComponents(issues, i => i.component || 'hypershift'));
+    renderReviews();
   } catch (error) {
     showError('Failed to load comments data: ' + error.message);
   }
+}
+
+function renderReviews() {
+  const filteredIssues = filterByComponent(_reviewIssues, i => i.component || 'hypershift');
+  issueMap = buildIssueMap(filteredIssues);
+  const comments = filterCommentsByIssueMap(allComments, buildIssueMap(_reviewIssues));
+
+  renderOutcomeSummaryCards(comments, issueMap);
+  renderTopicMergeRateChart(comments, issueMap);
+  renderSeverityChart(comments);
+  renderTopicChart(comments);
+  renderPatternTable(comments, issueMap);
+  populateAuthorFilter(comments);
+  applyCommentFilters();
 }
 
 function renderOutcomeSummaryCards(comments, issueMap) {
@@ -142,7 +152,8 @@ function applyCommentFilters() {
   const author = document.getElementById('filter-author').value;
   const search = document.getElementById('filter-search').value.toLowerCase().trim();
 
-  const filtered = allComments.filter(c => {
+  const componentFiltered = filterCommentsByIssueMap(allComments, buildIssueMap(_reviewIssues));
+  const filtered = componentFiltered.filter(c => {
     if (severity && (c.severity || 'unclassified') !== severity) return false;
     if (topic && (c.topic || 'unclassified') !== topic) return false;
     if (author && c.author !== author) return false;
@@ -151,7 +162,7 @@ function applyCommentFilters() {
   });
 
   filteredComments = filtered;
-  document.getElementById('comment-count').textContent = `${filtered.length} of ${allComments.length} comments`;
+  document.getElementById('comment-count').textContent = `${filtered.length} of ${componentFiltered.length} comments`;
   renderCommentList(filtered);
 }
 
@@ -477,6 +488,7 @@ function downloadReport() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initComponentFilter(renderReviews);
   initTimeRange(loadComments);
 
   document.getElementById('filter-severity').addEventListener('change', applyCommentFilters);
