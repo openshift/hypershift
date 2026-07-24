@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 69a84f9aa93fa69ce8b04c428df7133453d393f06dca09e75d63a7d764811b7c
   labels:
     app: olm-operator
   name: olm-operator-metrics

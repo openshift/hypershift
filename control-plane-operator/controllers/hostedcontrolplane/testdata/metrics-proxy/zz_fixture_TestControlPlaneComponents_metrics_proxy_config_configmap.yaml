@@ -7,6 +7,8 @@ data:
       url: https://endpoint-resolver.hcp-namespace.svc
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 8bd6cc43aeac683678c5a67883546251318f0b9bc61f23841cc2109eb5827fdb
   name: metrics-proxy-config
   namespace: hcp-namespace
   ownerReferences:

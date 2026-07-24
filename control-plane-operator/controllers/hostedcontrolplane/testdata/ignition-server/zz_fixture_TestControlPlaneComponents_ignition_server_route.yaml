@@ -1,6 +1,8 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: e960e4dbfb8dfb1e1b49a28487941293cc38455ac5dd95f3621ac3c67e5a09bd
   labels:
     hypershift.openshift.io/hosted-control-plane: hcp-namespace
   name: ignition-server

@@ -1,6 +1,8 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 61cbbf0d763c3740794fcdeeb4c1a8e4e4a795bfa7b46cdd69791d25b80df875
   name: oauth-openshift
   namespace: hcp-namespace
   ownerReferences:

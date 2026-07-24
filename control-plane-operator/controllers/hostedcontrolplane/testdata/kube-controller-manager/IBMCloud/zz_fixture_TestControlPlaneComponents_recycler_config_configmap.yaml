@@ -34,6 +34,8 @@ data:
         - name: vol
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: e6b1f93fd96f17ec646e2b727d7fe04b1960ad30a84defb4946323869fa76f5a
   name: recycler-config
   namespace: hcp-namespace
   ownerReferences:

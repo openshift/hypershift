@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: bcf700567eb7688d0b0effd529aaa6063d10c9b5d999c8bba158abffd6b4792a
   labels:
     app: catalog-operator
   name: catalog-operator-metrics

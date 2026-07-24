@@ -1,6 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 2e422124cec7f3ffb41c4524b33d62d7f91736d290d78aeac5c2db22b14a45be
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: featuregate-generator

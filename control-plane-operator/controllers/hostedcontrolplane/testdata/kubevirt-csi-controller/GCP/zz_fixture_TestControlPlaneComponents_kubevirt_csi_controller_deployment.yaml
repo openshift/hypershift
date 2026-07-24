@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 1b8f65839d50f1c859729bfbbe61a85b2d78f784d05334116c8826402efa61e7
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kubevirt-csi-controller

@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 4b8d3be7c103d8a2beed516fdd7cacbab987d86857fd0c9da2f80a8d90c85b5f
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-storage-version-migrator
