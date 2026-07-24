@@ -912,6 +912,8 @@ func buildKonnectivityServerContainer(image string, serverCount int, cipherSuite
 			cpath(konnectivityVolumeServerCerts().Name, corev1.TLSPrivateKeyKey),
 			"--server-ca-cert",
 			cpath(kasVolumeKonnectivityCA().Name, certs.CASignerCertMapKey),
+			"--cluster-ca-cert",
+			cpath(kasVolumeKonnectivityCA().Name, certs.CASignerCertMapKey),
 			"--server-port",
 			strconv.Itoa(KonnectivityServerLocalPort),
 			"--agent-port",
