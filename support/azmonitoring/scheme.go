@@ -35,6 +35,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&prometheusoperatorv1.ServiceMonitorList{},
 		&prometheusoperatorv1.PodMonitor{},
 		&prometheusoperatorv1.PodMonitorList{},
+		&prometheusoperatorv1.PrometheusRule{},
+		&prometheusoperatorv1.PrometheusRuleList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil
