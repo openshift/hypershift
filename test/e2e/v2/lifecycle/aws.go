@@ -120,16 +120,7 @@ func (a *AWSPlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.
 }
 
 func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
-	return TestMatrix{
-		Parallel: []TestGroup{
-			{
-				Name:        "public",
-				ClusterFile: "cluster-name-public",
-				LabelFilter: "hosted-cluster-health || control-plane-workloads || hosted-cluster-metrics || hosted-cluster-image-registry || hosted-cluster-compliance || hosted-cluster-ingress || hosted-cluster-dns || hosted-cluster-security || control-plane-pki-operator || hosted-cluster-cpo || hosted-cluster-node-communication",
-				JUnitFile:   "junit_aws_public.xml",
-			},
-		},
-	}
+	panic("do not implement, use OTE")
 }
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {}
