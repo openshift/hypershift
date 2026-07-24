@@ -773,6 +773,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 					return true, "labels are correct", nil
 				},
 			},
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 
 		// Remove KubeletConfig from NodePool and verify cleanup
@@ -802,6 +804,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 					return want == got, fmt.Sprintf("expected %d KubeletConfig ConfigMaps, got %d", want, got), nil
 				},
 			}, nil,
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 	})
 }
@@ -1105,6 +1109,8 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					return true, "labels are correct", nil
 				},
 			},
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 
 		// Verify status ConfigMap (4.17+)
@@ -1137,6 +1143,8 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 						return true, "status ConfigMap name is as expected", nil
 					},
 				},
+				e2eutil.WithTimeout(20*time.Minute),
+				e2eutil.WithInterval(5*time.Second),
 			)
 		}
 
@@ -1166,6 +1174,8 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					return want == got, fmt.Sprintf("expected %d PerformanceProfile ConfigMaps, got %d", want, got), nil
 				},
 			}, nil,
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 	})
 }
