@@ -40,7 +40,7 @@ func init() {
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:TestPlatform] Test Platform Pool A",
-	Label("test-pool-a"), func() {
+	Label("test-pool-a", "taint:test-exclusive"), func() {
 
 		It("pool-a spec 1 should pass", func() {
 			time.Sleep(100 * time.Millisecond)

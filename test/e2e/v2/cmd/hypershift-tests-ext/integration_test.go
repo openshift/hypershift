@@ -45,6 +45,9 @@ type listedSpec struct {
 	Labels    map[string]json.RawMessage `json:"labels"`
 	Lifecycle string                     `json:"lifecycle"`
 	Resources struct {
+		Isolation struct {
+			Taint []string `json:"taint"`
+		} `json:"isolation"`
 		ResourcePools map[string]int `json:"resourcePools"`
 	} `json:"resources"`
 }
@@ -266,6 +269,90 @@ func TestReleaseImageEnv(t *testing.T) {
 	_, stderr, err := run(t, env, "run-suite", "hypershift/test/step-1", "--output", "jsonl")
 	if err != nil {
 		t.Fatalf("step-1 suite should pass with release image env: %v\nstderr:\n%s", err, stderr)
+	}
+}
+
+func TestRunSubcommandRegistered(t *testing.T) {
+	stdout, _, err := run(t, testEnv, "run", "--help")
+	if err != nil {
+		t.Fatalf("run --help should succeed: %v", err)
+	}
+	if !strings.Contains(stdout, "Discovers hosted clusters") {
+		t.Errorf("run --help output should mention cluster discovery, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "--shared-dir") {
+		t.Errorf("run --help output should mention --shared-dir flag")
+	}
+	if !strings.Contains(stdout, "--artifact-dir") {
+		t.Errorf("run --help output should mention --artifact-dir flag")
+	}
+}
+
+func TestDiscoverClusters(t *testing.T) {
+	dir := t.TempDir()
+
+	os.WriteFile(filepath.Join(dir, "cluster-name-public"), []byte("my-public-cluster\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "cluster-name-private"), []byte("my-private-cluster\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "cluster-name-upgrade"), []byte("my-upgrade-cluster\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "cluster-name-empty"), []byte("  \n"), 0644)
+	os.WriteFile(filepath.Join(dir, "other-file"), []byte("ignored\n"), 0644)
+
+	clusters, err := discoverClusters(dir)
+	if err != nil {
+		t.Fatalf("discoverClusters failed: %v", err)
+	}
+	if len(clusters) != 3 {
+		t.Fatalf("expected 3 clusters, got %d: %+v", len(clusters), clusters)
+	}
+
+	variantMap := make(map[string]string)
+	for _, c := range clusters {
+		variantMap[c.variant] = c.name
+	}
+	for _, tc := range []struct {
+		variant, name string
+	}{
+		{"public", "my-public-cluster"},
+		{"private", "my-private-cluster"},
+		{"upgrade", "my-upgrade-cluster"},
+	} {
+		if got, ok := variantMap[tc.variant]; !ok {
+			t.Errorf("missing variant %s", tc.variant)
+		} else if got != tc.name {
+			t.Errorf("variant %s: expected name %q, got %q", tc.variant, tc.name, got)
+		}
+	}
+}
+
+func TestTaintLabelConvention(t *testing.T) {
+	specs := listSpecs(t, testEnv)
+
+	var found bool
+	for _, s := range specs {
+		if strings.Contains(s.Name, "Test Platform Pool A") {
+			found = true
+			if len(s.Resources.Isolation.Taint) != 1 || s.Resources.Isolation.Taint[0] != "test-exclusive" {
+				t.Errorf("Pool A spec %q should have taint [test-exclusive], got %v", s.Name, s.Resources.Isolation.Taint)
+			}
+		}
+	}
+	if !found {
+		t.Error("no Test Platform Pool A specs found")
+	}
+}
+
+func TestConformanceSuiteExcludesLifecycle(t *testing.T) {
+	suites := listSuites(t, testEnv)
+
+	suiteMap := make(map[string]bool)
+	for _, s := range suites {
+		suiteMap[s.Name] = true
+	}
+
+	for _, name := range []string{"hypershift/conformance", "hypershift/upgrade", "hypershift/chaos"} {
+		if !suiteMap[name] {
+			t.Errorf("expected suite %s to be registered", name)
+		}
 	}
 }
 

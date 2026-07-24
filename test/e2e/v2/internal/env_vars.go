@@ -166,7 +166,7 @@ func init() {
 	// Register environment variables used by the test suite
 	RegisterEnvVar(
 		"SHARED_DIR",
-		"Directory shared between CI steps, containing cluster name files and cluster-map.json for filesystem-based cluster resolution.",
+		"Directory shared between CI steps, containing cluster name files and management cluster kubeconfig.",
 		false,
 	)
 	RegisterEnvVar(

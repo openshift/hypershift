@@ -36,7 +36,12 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 		hc := testCtx.GetHostedCluster()
 
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
-		Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
+		if latestImage == "" {
+			Skip("E2E_LATEST_RELEASE_IMAGE is not set")
+		}
+		if hc.Spec.Release.Image == latestImage {
+			Skip("cluster is already running the target release image")
+		}
 
 		var startingVersion string
 		if hc.Status.Version != nil && len(hc.Status.Version.History) > 0 {
