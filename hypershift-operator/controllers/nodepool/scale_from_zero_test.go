@@ -148,6 +148,10 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 						cpuKey:           "4",
 						memoryKey:        "16384",
 						gpuKey:           "1",
+						capiCPUKey:       "4",
+						capiMemoryKey:    "16384Mi",
+						capiGPUCountKey:  "1",
+						capiGPUTypeKey:   "nvidia.com/gpu",
 						labelsKey:        "kubernetes.io/arch=amd64",
 						taintsKey:        "dedicated=gpu:NoSchedule",
 						"custom.io/keep": "preserved",
@@ -169,7 +173,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			expectErr: false,
 			validate: func(g Gomega, md *capiv1.MachineDeployment) {
 				a := md.GetAnnotations()
-				for _, k := range []string{cpuKey, memoryKey, gpuKey, labelsKey, taintsKey} {
+				for _, k := range []string{cpuKey, memoryKey, gpuKey, capiCPUKey, capiMemoryKey, capiGPUCountKey, capiGPUTypeKey, labelsKey, taintsKey} {
 					g.Expect(a).ToNot(HaveKey(k))
 				}
 				g.Expect(a).To(HaveKeyWithValue("custom.io/keep", "preserved"))
@@ -195,8 +199,9 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			object: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						gpuKey:    "2",
-						taintsKey: "old=stale:NoSchedule",
+						gpuKey:          "2",
+						capiGPUCountKey: "2",
+						taintsKey:       "old=stale:NoSchedule",
 					},
 				},
 			},
@@ -205,9 +210,13 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			validate: func(g Gomega, md *capiv1.MachineDeployment) {
 				a := md.GetAnnotations()
 				g.Expect(a).To(HaveKeyWithValue(cpuKey, "2"))
+				g.Expect(a).To(HaveKeyWithValue(capiCPUKey, "2"))
 				g.Expect(a).To(HaveKeyWithValue(memoryKey, "8192"))
+				g.Expect(a).To(HaveKeyWithValue(capiMemoryKey, "8192Mi"))
 				g.Expect(a).To(HaveKeyWithValue(labelsKey, "kubernetes.io/arch=amd64"))
 				g.Expect(a).ToNot(HaveKey(gpuKey))
+				g.Expect(a).ToNot(HaveKey(capiGPUCountKey))
+				g.Expect(a).ToNot(HaveKey(capiGPUTypeKey))
 				g.Expect(a).ToNot(HaveKey(taintsKey))
 			},
 		},
@@ -223,9 +232,13 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			validate: func(g Gomega, md *capiv1.MachineDeployment) {
 				a := md.GetAnnotations()
 				g.Expect(a).To(HaveKeyWithValue(cpuKey, "4"))
+				g.Expect(a).To(HaveKeyWithValue(capiCPUKey, "4"))
 				g.Expect(a).To(HaveKeyWithValue(memoryKey, "16384"))
+				g.Expect(a).To(HaveKeyWithValue(capiMemoryKey, "16384Mi"))
 				g.Expect(a).To(HaveKeyWithValue(labelsKey, "kubernetes.io/arch=amd64"))
 				g.Expect(a).ToNot(HaveKey(gpuKey))
+				g.Expect(a).ToNot(HaveKey(capiGPUCountKey))
+				g.Expect(a).ToNot(HaveKey(capiGPUTypeKey))
 			},
 		},
 		{
@@ -266,8 +279,12 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			validate: func(g Gomega, md *capiv1.MachineDeployment) {
 				a := md.GetAnnotations()
 				g.Expect(a).To(HaveKeyWithValue(cpuKey, "6"))
+				g.Expect(a).To(HaveKeyWithValue(capiCPUKey, "6"))
 				g.Expect(a).To(HaveKeyWithValue(memoryKey, "114688"))
+				g.Expect(a).To(HaveKeyWithValue(capiMemoryKey, "114688Mi"))
 				g.Expect(a).To(HaveKeyWithValue(gpuKey, "1"))
+				g.Expect(a).To(HaveKeyWithValue(capiGPUCountKey, "1"))
+				g.Expect(a).To(HaveKeyWithValue(capiGPUTypeKey, "nvidia.com/gpu"))
 				g.Expect(a).To(HaveKeyWithValue(taintsKey, "dedicated=gpu:NoSchedule"))
 			},
 		},
@@ -297,8 +314,12 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			validate: func(g Gomega, md *capiv1.MachineDeployment) {
 				a := md.GetAnnotations()
 				g.Expect(a).To(HaveKeyWithValue(cpuKey, "8"))
+				g.Expect(a).To(HaveKeyWithValue(capiCPUKey, "8"))
 				g.Expect(a).To(HaveKeyWithValue(memoryKey, "61440"))
+				g.Expect(a).To(HaveKeyWithValue(capiMemoryKey, "61440Mi"))
 				g.Expect(a).To(HaveKeyWithValue(gpuKey, "1"))
+				g.Expect(a).To(HaveKeyWithValue(capiGPUCountKey, "1"))
+				g.Expect(a).To(HaveKeyWithValue(capiGPUTypeKey, "nvidia.com/gpu"))
 				g.Expect(a).To(HaveKeyWithValue(labelsKey, "env=production,kubernetes.io/arch=arm64"))
 				g.Expect(a).To(HaveKeyWithValue(taintsKey, "dedicated=gpu:NoSchedule"))
 				g.Expect(a).To(HaveKeyWithValue("custom.io/keep", "preserved"))
