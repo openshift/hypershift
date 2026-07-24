@@ -362,14 +362,8 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "external-oidc",
 				ClusterFile: "cluster-name-external-oidc",
-				LabelFilter: "external-oidc",
+				LabelFilter: "external-oidc ||global-pull-secret",
 				JUnitFile:   "junit_self_managed_azure_external_oidc.xml",
-			},
-			{
-				Name:        "global-pull-secret",
-				ClusterFile: "cluster-name-global-pull-secret",
-				LabelFilter: "global-pull-secret",
-				JUnitFile:   "junit_self_managed_azure_global_pull_secret.xml",
 			},
 		},
 		Sequential: []SequentialGroup{
