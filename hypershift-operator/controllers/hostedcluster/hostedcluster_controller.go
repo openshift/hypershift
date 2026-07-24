@@ -29,7 +29,6 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -246,7 +245,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
 	bldr := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hostedClusterPrimaryPredicate(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -1192,13 +1191,22 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// This check can be expensive looking up release image versions
 		// (hopefully they are cached).  Skip if we have already observed for
 		// this generation.
-		if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
+		if shouldValidateReleaseImage(hcluster, condition) {
 			condition := metav1.Condition{
 				Type:               string(hyperv1.ValidReleaseImage),
 				ObservedGeneration: hcluster.Generation,
 			}
-			err := r.validateReleaseImage(ctx, hcluster, releaseProvider)
-			if err != nil {
+			skipReleaseImageValidation := hasSkipReleaseImageValidationAnnotation(hcluster)
+			var err error
+			if !skipReleaseImageValidation {
+				err = r.validateReleaseImage(ctx, hcluster, releaseProvider)
+			}
+			switch {
+			case skipReleaseImageValidation:
+				condition.Status = metav1.ConditionTrue
+				condition.Message = "Release image validation is skipped by annotation"
+				condition.Reason = hyperv1.ReleaseImageValidationSkippedReason
+			case err != nil:
 				condition.Status = metav1.ConditionFalse
 				condition.Message = err.Error()
 
@@ -1207,7 +1215,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				} else {
 					condition.Reason = hyperv1.InvalidImageReason
 				}
-			} else {
+			default:
 				condition.Status = metav1.ConditionTrue
 				condition.Message = "Release image is valid"
 				condition.Reason = hyperv1.AsExpectedReason
@@ -2589,57 +2597,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 	hcp.Annotations[k8sutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
 
 	// These annotations are copied from the HostedCluster
-	mirroredAnnotations := []string{
-		hyperv1.DisablePKIReconciliationAnnotation,
-		hyperv1.OauthLoginURLOverrideAnnotation,
-		hyperv1.KonnectivityAgentImageAnnotation,
-		hyperv1.KonnectivityServerImageAnnotation,
-		hyperv1.ClusterAutoscalerImage,
-		hyperv1.IBMCloudKMSProviderImage,
-		hyperv1.AWSKMSProviderImage,
-		hyperv1.PortierisImageAnnotation,
-		k8sutil.DebugDeploymentsAnnotation,
-		hyperv1.DisableProfilingAnnotation,
-		hyperv1.PrivateIngressControllerAnnotation,
-		hyperv1.IngressControllerLoadBalancerScope,
-		hyperv1.CleanupCloudResourcesAnnotation,
-		hyperv1.ControlPlanePriorityClass,
-		hyperv1.APICriticalPriorityClass,
-		hyperv1.EtcdPriorityClass,
-		hyperv1.EnsureExistsPullSecretReconciliation,
-		hyperv1.TopologyAnnotation,
-		hyperv1.DisableMachineManagement,
-		hyperv1.CertifiedOperatorsCatalogImageAnnotation,
-		hyperv1.CommunityOperatorsCatalogImageAnnotation,
-		hyperv1.RedHatMarketplaceCatalogImageAnnotation,
-		hyperv1.RedHatOperatorsCatalogImageAnnotation,
-		hyperv1.OLMCatalogsISRegistryOverridesAnnotation,
-		hyperv1.KubeAPIServerGOGCAnnotation,
-		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
-		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
-		hyperv1.AWSLoadBalancerSubnetsAnnotation,
-		hyperv1.AWSLoadBalancerTargetNodesAnnotation,
-		hyperv1.AWSLoadBalancerHealthProbeModeAnnotation,
-		hyperv1.AzureLoadBalancerHealthProbeModeAnnotation,
-		hyperv1.SharedLoadBalancerHealthProbePathAnnotation,
-		hyperv1.SharedLoadBalancerHealthProbePortAnnotation,
-		hyperv1.ManagementPlatformAnnotation,
-		hyperv1.KubeAPIServerVerbosityLevelAnnotation,
-		hyperv1.KubeAPIServerMaximumRequestsInFlight,
-		hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight,
-		hyperv1.DisableIgnitionServerAnnotation,
-		hyperv1.AWSMachinePublicIPs,
-		hyperv1.AWSKarpenterDefaultInstanceProfile,
-		hyperkarpenterv1.KarpenterProviderAWSImage,
-		hyperv1.KubeAPIServerGoAwayChance,
-		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
-		hyperv1.HostedClusterRestoredFromBackupAnnotation,
-		// TODO: Remove this once the input is in the HostedCluster AWS API.
-		"hypershift.openshift.io/aws-termination-handler-queue-url",
-		hyperv1.SwiftPodNetworkInstanceAnnotation,
-		hyperv1.EnableMetricsForwarding,
-	}
-	for _, key := range mirroredAnnotations {
+	for _, key := range hostedClusterMirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
 		if hasVal {
 			hcp.Annotations[key] = val
@@ -2648,22 +2606,17 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		}
 	}
 
-	prefixesToSync := []string{
-		hyperv1.IdentityProviderOverridesAnnotationPrefix,
-		hyperv1.ResourceRequestOverrideAnnotationPrefix,
-	}
-
 	// All annotations on the HostedCluster with prefixes to sync
 	// should be synced
 	for key := range hcp.Annotations {
-		for _, prefix := range prefixesToSync {
+		for _, prefix := range hostedClusterActionableAnnotationPrefixes {
 			if strings.HasPrefix(key, prefix) {
 				delete(hcp.Annotations, key)
 			}
 		}
 	}
 	for key, val := range hcluster.Annotations {
-		for _, prefix := range prefixesToSync {
+		for _, prefix := range hostedClusterActionableAnnotationPrefixes {
 			if strings.HasPrefix(key, prefix) {
 				hcp.Annotations[key] = val
 			}
@@ -2717,15 +2670,19 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// These labels are managed by OCM. Delete-then-copy ensures removals
 	// on the HostedCluster (e.g., clearing limited-support) propagate to the HCP.
 	for key := range hcp.Labels {
-		if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
-			if _, exists := hcluster.Labels[key]; !exists {
+		for _, prefix := range hostedClusterActionableLabelPrefixes {
+			if strings.HasPrefix(key, prefix) {
 				delete(hcp.Labels, key)
+				break
 			}
 		}
 	}
 	for key, val := range hcluster.Labels {
-		if strings.HasPrefix(key, apiOpenShiftComLabelPrefix) {
-			hcp.Labels[key] = val
+		for _, prefix := range hostedClusterActionableLabelPrefixes {
+			if strings.HasPrefix(key, prefix) {
+				hcp.Labels[key] = val
+				break
+			}
 		}
 	}
 
@@ -4177,7 +4134,7 @@ func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
-	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
+	if hasSkipReleaseImageValidationAnnotation(hc) {
 		return nil
 	}
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hc)
@@ -4210,6 +4167,24 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
+}
+
+func shouldValidateReleaseImage(hcluster *hyperv1.HostedCluster, condition *metav1.Condition) bool {
+	if condition == nil || condition.ObservedGeneration != hcluster.Generation || condition.Status != metav1.ConditionTrue {
+		return true
+	}
+
+	skipReleaseImageValidation := hasSkipReleaseImageValidationAnnotation(hcluster)
+	if skipReleaseImageValidation {
+		return condition.Reason != hyperv1.ReleaseImageValidationSkippedReason
+	}
+
+	return condition.Reason == hyperv1.ReleaseImageValidationSkippedReason
+}
+
+func hasSkipReleaseImageValidationAnnotation(hcluster *hyperv1.HostedCluster) bool {
+	_, exists := hcluster.Annotations[hyperv1.SkipReleaseImageValidation]
+	return exists
 }
 
 func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, refWithDigest func() (string, error)) (bool, error) {
