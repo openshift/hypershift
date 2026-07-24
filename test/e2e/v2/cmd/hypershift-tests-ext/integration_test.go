@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
 
 var binaryPath string
@@ -277,8 +279,8 @@ func TestRunSubcommandRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run --help should succeed: %v", err)
 	}
-	if !strings.Contains(stdout, "Discovers hosted clusters") {
-		t.Errorf("run --help output should mention cluster discovery, got:\n%s", stdout)
+	if !strings.Contains(stdout, "clusters.json") {
+		t.Errorf("run --help output should mention clusters.json, got:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "--shared-dir") {
 		t.Errorf("run --help output should mention --shared-dir flag")
@@ -288,38 +290,30 @@ func TestRunSubcommandRegistered(t *testing.T) {
 	}
 }
 
-func TestDiscoverClusters(t *testing.T) {
+func TestClusterManifestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
+	path := filepath.Join(dir, "clusters.json")
 
-	os.WriteFile(filepath.Join(dir, "cluster-name-public"), []byte("my-public-cluster\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "cluster-name-private"), []byte("my-private-cluster\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "cluster-name-upgrade"), []byte("my-upgrade-cluster\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "cluster-name-empty"), []byte("  \n"), 0644)
-	os.WriteFile(filepath.Join(dir, "other-file"), []byte("ignored\n"), 0644)
+	want := []lifecycle.ClusterManifest{
+		{Name: "public-a1b2c3d4e5", Namespace: "clusters", Variant: "public", ReleaseImage: "quay.io/ocp/release:latest", Platform: "aws"},
+		{Name: "upgrade-a1b2c3d4e5", Namespace: "clusters", Variant: "upgrade", ReleaseImage: "quay.io/ocp/release:n-1", Platform: "aws"},
+	}
 
-	clusters, err := discoverClusters(dir)
+	if err := lifecycle.WriteClusterManifest(path, want); err != nil {
+		t.Fatalf("WriteClusterManifest failed: %v", err)
+	}
+
+	got, err := lifecycle.ReadClusterManifest(path)
 	if err != nil {
-		t.Fatalf("discoverClusters failed: %v", err)
-	}
-	if len(clusters) != 3 {
-		t.Fatalf("expected 3 clusters, got %d: %+v", len(clusters), clusters)
+		t.Fatalf("ReadClusterManifest failed: %v", err)
 	}
 
-	variantMap := make(map[string]string)
-	for _, c := range clusters {
-		variantMap[c.variant] = c.name
+	if len(got) != len(want) {
+		t.Fatalf("expected %d clusters, got %d", len(want), len(got))
 	}
-	for _, tc := range []struct {
-		variant, name string
-	}{
-		{"public", "my-public-cluster"},
-		{"private", "my-private-cluster"},
-		{"upgrade", "my-upgrade-cluster"},
-	} {
-		if got, ok := variantMap[tc.variant]; !ok {
-			t.Errorf("missing variant %s", tc.variant)
-		} else if got != tc.name {
-			t.Errorf("variant %s: expected name %q, got %q", tc.variant, tc.name, got)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("cluster %d: got %+v, want %+v", i, got[i], want[i])
 		}
 	}
 }

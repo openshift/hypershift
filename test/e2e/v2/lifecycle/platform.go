@@ -5,10 +5,43 @@ package lifecycle
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ClusterManifest describes a created cluster for inter-step communication.
+// Written to SHARED_DIR/clusters.json by create-guests, consumed by
+// downstream steps (run, destroy-guests, dump-guests).
+type ClusterManifest struct {
+	Name         string `json:"name"`
+	Namespace    string `json:"namespace"`
+	Variant      string `json:"variant"`
+	ReleaseImage string `json:"releaseImage"`
+	Platform     string `json:"platform"`
+}
+
+func WriteClusterManifest(path string, clusters []ClusterManifest) error {
+	data, err := json.MarshalIndent(clusters, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling cluster manifest: %w", err)
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+func ReadClusterManifest(path string) ([]ClusterManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading cluster manifest: %w", err)
+	}
+	var clusters []ClusterManifest
+	if err := json.Unmarshal(data, &clusters); err != nil {
+		return nil, fmt.Errorf("unmarshaling cluster manifest: %w", err)
+	}
+	return clusters, nil
+}
 
 // ClusterSpec describes a single cluster to create for lifecycle tests.
 type ClusterSpec struct {

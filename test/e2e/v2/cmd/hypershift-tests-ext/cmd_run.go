@@ -14,10 +14,9 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 	"github.com/spf13/cobra"
 )
-
-const defaultClusterNamespace = "clusters"
 
 var orderedSuites = []string{
 	"hypershift/conformance",
@@ -37,7 +36,7 @@ func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Discover clusters and run OTE suites against them",
-		Long: `Discovers hosted clusters from SHARED_DIR cluster name files and runs
+		Long: `Discovers hosted clusters from SHARED_DIR/clusters.json and runs
 all test suites sequentially against each cluster. Clusters are tested in
 parallel. Tests self-select against compatible clusters using skip guards.`,
 		SilenceUsage: true,
@@ -67,12 +66,16 @@ func runTests(ctx context.Context, sharedDir, artifactDir string) error {
 		os.Setenv("KUBECONFIG", kubeconfig)
 	}
 
-	clusters, err := discoverClusters(sharedDir)
+	manifestPath := filepath.Join(sharedDir, "clusters.json")
+	clusters, err := lifecycle.ReadClusterManifest(manifestPath)
 	if err != nil {
-		return fmt.Errorf("discovering clusters: %w", err)
+		return fmt.Errorf("reading cluster manifest: %w", err)
 	}
 	if len(clusters) == 0 {
-		return fmt.Errorf("no cluster-name-* files found in %s", sharedDir)
+		return fmt.Errorf("no clusters in %s", manifestPath)
+	}
+	for _, c := range clusters {
+		log.Printf("Discovered cluster: %s → %s/%s", c.Variant, c.Namespace, c.Name)
 	}
 
 	var (
@@ -89,21 +92,21 @@ func runTests(ctx context.Context, sharedDir, artifactDir string) error {
 			for _, suite := range orderedSuites {
 				if ctx.Err() != nil {
 					mu.Lock()
-					results = append(results, runResult{cluster: c.variant, suite: suite, err: ctx.Err()})
+					results = append(results, runResult{cluster: c.Variant, suite: suite, err: ctx.Err()})
 					mu.Unlock()
 					return
 				}
 				suiteSuffix := suite[strings.LastIndex(suite, "/")+1:]
-				junitPath := filepath.Join(artifactDir, fmt.Sprintf("junit_%s_%s.xml", c.variant, suiteSuffix))
-				log.Printf("Running %s against %s cluster: %s", suite, c.variant, c.name)
-				err := runSuite(ctx, suite, c.name, junitPath)
+				junitPath := filepath.Join(artifactDir, fmt.Sprintf("junit_%s_%s.xml", c.Variant, suiteSuffix))
+				log.Printf("Running %s against %s cluster: %s", suite, c.Variant, c.Name)
+				err := runSuite(ctx, suite, c, junitPath)
 				mu.Lock()
-				results = append(results, runResult{cluster: c.variant, suite: suite, err: err})
+				results = append(results, runResult{cluster: c.Variant, suite: suite, err: err})
 				mu.Unlock()
 				if err != nil {
-					log.Printf("%s FAILED for %s: %v", suite, c.variant, err)
+					log.Printf("%s FAILED for %s: %v", suite, c.Variant, err)
 				} else {
-					log.Printf("%s PASSED for %s", suite, c.variant)
+					log.Printf("%s PASSED for %s", suite, c.Variant)
 				}
 			}
 		}()
@@ -128,34 +131,7 @@ func runTests(ctx context.Context, sharedDir, artifactDir string) error {
 	return nil
 }
 
-type clusterInfo struct {
-	variant string
-	name    string
-}
-
-func discoverClusters(sharedDir string) ([]clusterInfo, error) {
-	matches, err := filepath.Glob(filepath.Join(sharedDir, "cluster-name-*"))
-	if err != nil {
-		return nil, err
-	}
-	var clusters []clusterInfo
-	for _, path := range matches {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", path, err)
-		}
-		name := strings.TrimSpace(string(data))
-		if name == "" {
-			continue
-		}
-		variant := strings.TrimPrefix(filepath.Base(path), "cluster-name-")
-		clusters = append(clusters, clusterInfo{variant: variant, name: name})
-		log.Printf("Discovered cluster: %s → %s", variant, name)
-	}
-	return clusters, nil
-}
-
-func runSuite(ctx context.Context, suite, clusterName, junitPath string) error {
+func runSuite(ctx context.Context, suite string, cluster lifecycle.ClusterManifest, junitPath string) error {
 	args := []string{"run-suite", suite, "--junit-path=" + junitPath}
 	cmd := exec.CommandContext(ctx, os.Args[0], args...)
 	cmd.Stdout = os.Stdout
@@ -164,8 +140,8 @@ func runSuite(ctx context.Context, suite, clusterName, junitPath string) error {
 		return cmd.Process.Signal(syscall.SIGTERM)
 	}
 	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAME=%s", clusterName),
-		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAMESPACE=%s", defaultClusterNamespace),
+		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAME=%s", cluster.Name),
+		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAMESPACE=%s", cluster.Namespace),
 	)
 	return cmd.Run()
 }
