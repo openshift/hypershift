@@ -374,6 +374,13 @@ nav:
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/goals-and-design-invariants.md
+  - 'HO Konflux Release Gating':
+    - reference/ho-release-gating/index.md
+    - 'Release Strategy': reference/ho-release-gating/strategy.md
+    - 'Architecture': reference/ho-release-gating/architecture.md
+    - 'Adding E2E Tests': reference/ho-release-gating/extending-tests.md
+    - 'Extending to Other Services': reference/ho-release-gating/extending-services.md
+    - 'Operations and Troubleshooting': reference/ho-release-gating/troubleshooting.md
   - "Infrastructure":
     - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
