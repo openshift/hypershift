@@ -314,6 +314,22 @@ func KonnectivitySignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "konnectivity-signer")
 }
 
+func KonnectivityServerServingSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-server-serving-signer")
+}
+
+func KonnectivityClusterServingSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-cluster-serving-signer")
+}
+
+func KonnectivityServerAuthSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-server-auth-signer")
+}
+
+func KonnectivityClientAuthSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-client-auth-signer")
+}
+
 func KonnectivityServerSecret(ns string) *corev1.Secret { return secretFor(ns, "konnectivity-server") }
 
 func KonnectivityClusterSecret(ns string) *corev1.Secret {
