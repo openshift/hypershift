@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -28,10 +27,9 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,kms-socket,tmp-dir
-        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e2360eec7552ebd36a741638a5741638a5741638a5741638a58a2366b599376ce0a7ac042dc825c12fe7e69167
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2312ad2fb360eec758b110e88a2a4098ca2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
@@ -85,7 +83,6 @@ spec:
         - kube-apiserver
         - --openshift-config=/etc/kubernetes/config/config.json
         - --v=2
-        - --encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml
         command:
         - hyperkube
         env:
@@ -125,7 +122,12 @@ spec:
             cpu: 350m
             memory: 2Gi
         securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
           readOnlyRootFilesystem: true
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-ca
@@ -166,10 +168,6 @@ spec:
           name: server-private-crt
         - mountPath: /etc/kubernetes/secrets/svcacct-key
           name: svcacct-key
-        - mountPath: /etc/kubernetes/secret-encryption
-          name: kas-secret-encryption-config
-        - mountPath: /opt
-          name: kms-socket
         - mountPath: /tmp
           name: tmp-dir
         workingDir: /var/log/kube-apiserver
@@ -180,6 +178,8 @@ spec:
         - /work
         env:
         - name: KUBECONFIG
+          value: /var/secrets/kas-bootstrap-container-kubeconfig/kubeconfig
+        - name: KUBECONFIG_ADMIN
           value: /var/secrets/localhost-kubeconfig/kubeconfig
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
@@ -189,13 +189,20 @@ spec:
             cpu: 10m
             memory: 10Mi
         securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
           readOnlyRootFilesystem: true
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
         - mountPath: /var/secrets/localhost-kubeconfig
           name: localhost-kubeconfig
+        - mountPath: /var/secrets/kas-bootstrap-container-kubeconfig
+          name: kas-bootstrap-container-kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       - args:
@@ -265,7 +272,12 @@ spec:
             cpu: 10m
             memory: 50Mi
         securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
           readOnlyRootFilesystem: true
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/konnectivity/cluster
@@ -302,121 +314,34 @@ spec:
             cpu: 5m
             memory: 10Mi
         securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
           readOnlyRootFilesystem: true
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/log/kube-apiserver
           name: logs
         - mountPath: /tmp
           name: tmp-dir
-      - args:
-        - |
-          set -u
-          until curl -kfsS "https://localhost:6443/version" >/dev/null; do
-            echo "waiting for kube-apiserver /version endpoint to become available"
-            sleep 2
-          done
-          exec /usr/bin/azure-workload-identity-webhook \
-            --webhook-cert-dir=/var/run/app/certs \
-            --health-addr=:9440 \
-            --audience=api://AzureADTokenExchange \
-            --kubeconfig=/var/run/app/kubeconfig/kubeconfig \
-            --metrics-addr=:9441 \
-            --log-level=info \
-            --disable-cert-rotation
-        command:
-        - /bin/sh
-        - -ec
-        env:
-        - name: AZURE_TENANT_ID
-        - name: AZURE_ENVIRONMENT
-          value: AzurePublicCloud
-        image: azure-workload-identity-webhook
-        imagePullPolicy: IfNotPresent
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 9440
-            scheme: HTTP
-          periodSeconds: 20
-        name: azure-workload-identity-webhook
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 9440
-            scheme: HTTP
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        resources:
-          requests:
-            cpu: 10m
-            memory: 25Mi
-        securityContext:
-          readOnlyRootFilesystem: true
-        startupProbe:
-          failureThreshold: 30
-          httpGet:
-            path: /healthz
-            port: 9440
-            scheme: HTTP
-          periodSeconds: 10
-        terminationMessagePolicy: FallbackToLogsOnError
-        volumeMounts:
-        - mountPath: /var/run/app/certs
-          name: azure-wi-webhook-serving-certs
-        - mountPath: /var/run/app/kubeconfig
-          name: azure-wi-webhook-kubeconfig
-        - mountPath: /tmp
-          name: tmp-dir
-      - args:
-        - --keyvault-name=test-kms-keyvault
-        - --key-name=test-key
-        - --key-version=1
-        - --listen-addr=unix:///opt/azurekmsactive.socket
-        - --healthz-port=8787
-        - --metrics-addr=8095
-        - --healthz-path=/healthz
-        - --config-file-path=/etc/kubernetes/azure.json
-        - -v=1
-        image: azure-kms-encryption-provider
-        imagePullPolicy: IfNotPresent
-        livenessProbe:
-          failureThreshold: 3
-          httpGet:
-            path: /healthz
-            port: 8787
-            scheme: HTTP
-          initialDelaySeconds: 120
-          periodSeconds: 300
-          successThreshold: 1
-          timeoutSeconds: 160
-        name: azure-kms-provider-active
-        ports:
-        - containerPort: 8787
-          name: http
-          protocol: TCP
-        resources:
-          requests:
-            cpu: 10m
-            memory: 10Mi
-        securityContext:
-          readOnlyRootFilesystem: true
-        terminationMessagePolicy: FallbackToLogsOnError
-        volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: azure-kms-credentials
-        - mountPath: /opt
-          name: kms-socket
-        - mountPath: /mnt/certs
-          name: kms-cert
-          readOnly: true
-        - mountPath: /tmp
-          name: tmp-dir
-      hostAliases:
-      - hostnames:
-        - test-kms-keyvault.vault.azure.net
-        ip: 172.30.0.100
       initContainers:
+      - command:
+        - /bin/sh
+        - -c
+        - 'echo ''Image for kube-apiserver pre-pulled: hyperkube''; exit 0'
+        image: hyperkube
+        imagePullPolicy: IfNotPresent
+        name: pre-pull-image-kube-apiserver
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        terminationMessagePolicy: FallbackToLogsOnError
       - args:
         - -c
         - |
@@ -445,6 +370,22 @@ spec:
             name: system:hosted-cluster-config
           EOF
 
+          touch /tmp/manifests/00_kas-bootstrap-container-rolebinding.yaml
+          cat <<EOF >/tmp/manifests/00_kas-bootstrap-container-rolebinding.yaml
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: kas-bootstrap-container-cluster-admin
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+          - apiGroup: rbac.authorization.k8s.io
+            kind: User
+            name: system:kas-bootstrap-container
+          EOF
+
           /usr/bin/render \
              --asset-output-dir /tmp/output \
              --rendered-manifest-dir=/tmp/manifests \
@@ -462,9 +403,9 @@ spec:
             apiVersion: config.openshift.io/v1
             kind: FeatureGate
             metadata:
-              creationTimestamp: null
               name: cluster
-            spec: {}
+            spec:
+              featureSet: TechPreviewNoUpgrade
             status:
               featureGates: null
         image: cluster-config-api
@@ -474,6 +415,12 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
@@ -502,9 +449,9 @@ spec:
             apiVersion: config.openshift.io/v1
             kind: FeatureGate
             metadata:
-              creationTimestamp: null
               name: cluster
-            spec: {}
+            spec:
+              featureSet: TechPreviewNoUpgrade
             status:
               featureGates: null
         image: cluster-authentication-operator
@@ -514,6 +461,12 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
@@ -535,6 +488,12 @@ spec:
         imagePullPolicy: IfNotPresent
         name: wait-for-etcd
         resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
@@ -555,6 +514,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: localhost-kubeconfig
+      - name: kas-bootstrap-container-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: kas-bootstrap-container-kubeconfig
       - emptyDir: {}
         name: logs
       - configMap:
@@ -641,33 +604,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: konnectivity-cluster
-      - name: azure-wi-webhook-serving-certs
-        secret:
-          defaultMode: 416
-          secretName: azure-workload-identity-webhook-serving-cert
-      - name: azure-wi-webhook-kubeconfig
-        secret:
-          defaultMode: 416
-          secretName: azure-workload-identity-webhook-kubeconfig
-      - name: kas-secret-encryption-config
-        secret:
-          defaultMode: 416
-          secretName: kas-secret-encryption-config
-      - name: azure-kms-credentials
-        secret:
-          defaultMode: 416
-          items:
-          - key: cloud.conf
-            path: azure.json
-          secretName: azure-kms-config
-      - emptyDir: {}
-        name: kms-socket
-      - csi:
-          driver: secrets-store.csi.k8s.io
-          readOnly: true
-          volumeAttributes:
-            secretProviderClass: managed-azure-kms
-        name: kms-cert
       - emptyDir: {}
         name: tmp-dir
 status: {}
