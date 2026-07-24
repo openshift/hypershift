@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift/hack/tools
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
@@ -16,10 +16,10 @@ require (
 	gotest.tools/gotestsum v1.13.0
 	honnef.co/go/tools v0.7.0
 	k8s.io/apiextensions-apiserver v0.34.2
-	k8s.io/apimachinery v0.34.3
+	k8s.io/apimachinery v0.36.0
 	k8s.io/code-generator v0.34.2
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
-	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20260125163108-a19ec76a3c5d
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.24.1
 	sigs.k8s.io/crdify v0.6.0
 	sigs.k8s.io/kube-api-linter v0.0.0-20260206102632-39e3d06a2850
 	sigs.k8s.io/yaml v1.6.0
@@ -304,7 +304,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260217215200-42d3e9bedb6d // indirect
 	google.golang.org/grpc v1.79.3 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

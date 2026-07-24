@@ -805,8 +805,8 @@ google.golang.org/genproto/googleapis/rpc v0.0.0-20260217215200-42d3e9bedb6d h1:
 google.golang.org/genproto/googleapis/rpc v0.0.0-20260217215200-42d3e9bedb6d/go.mod h1:4Hqkh8ycfw05ld/3BWL7rJOSfebL2Q+DVDeRgYgxUU8=
 google.golang.org/grpc v1.79.3 h1:sybAEdRIEtvcD68Gx7dmnwjZKlyfuc61Dyo9pGXXkKE=
 google.golang.org/grpc v1.79.3/go.mod h1:KmT0Kjez+0dde/v2j9vzwoAScgEPx/Bw1CYChhHLrHQ=
-google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
-google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
+google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af h1:+5/Sw3GsDNlEmu7TfklWKPdQ0Ykja5VEmq2i817+jbI=
+google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
@@ -869,8 +869,8 @@ mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15 h1:ssMzja7PDPJV8FStj7hq9IKiu
 mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15/go.mod h1:4M5MMXl2kW6fivUT6yRGpLLPNfuGtU2Z0cPvFquGDYU=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 h1:qPrZsv1cwQiFeieFlRqT627fVZ+tyfou/+S5S0H5ua0=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0/go.mod h1:Ve9uj1L+deCXFrPOk1LpFXqTg7LCFzFso6PA48q/XZw=
-sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20260125163108-a19ec76a3c5d h1:6T4i0BkeMiYtoW7vbOUcStoSK9GYghRaXGPgpBWVj9k=
-sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20260125163108-a19ec76a3c5d/go.mod h1:ps7VOLAkxwg0wlBVhTgPru3FFcrV23/AIPpRoRFpgSo=
+sigs.k8s.io/controller-runtime/tools/setup-envtest v0.24.1 h1:l2AjyGE/PWub6EB165ij4/bpCK0TlY5NlhzIHfmGvmg=
+sigs.k8s.io/controller-runtime/tools/setup-envtest v0.24.1/go.mod h1:wpkYufRHTSw9ABET21/PkEL7kdGnmiZJ6o72t9p/1I8=
 sigs.k8s.io/crdify v0.6.0 h1:1id5uhODipmEvmMC8jlr7IbpHTnepySWmBNEiwv23WQ=
 sigs.k8s.io/crdify v0.6.0/go.mod h1:ZIFxaYNgKYmFtZCLPysncXQ8oqwnNlHQbRUfxJHZwzU=
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 h1:IpInykpT6ceI+QxKBbEflcR5EXP7sU1kvOlxwZh5txg=
