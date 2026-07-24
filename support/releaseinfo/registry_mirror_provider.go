@@ -28,7 +28,12 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	releaseImage, err := p.Delegate.Lookup(ctx, image, pullSecret)
+	// Apply registry overrides to the release image pullspec itself before
+	// fetching. Without this, non-OpenShift management clusters (which lack
+	// IDMS/ICSP) cannot redirect the initial registry pull to a mirror.
+	overriddenImage := registryoverride.Replace(image, p.RegistryOverrides)
+
+	releaseImage, err := p.Delegate.Lookup(ctx, overriddenImage, pullSecret)
 	if err != nil {
 		return nil, err
 	}
