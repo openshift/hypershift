@@ -1164,14 +1164,24 @@ func TestSetAWSConditions(t *testing.T) {
 			expectedCondType:  string(hyperv1.NodePoolValidPlatformImageType),
 			expectedCondValue: corev1.ConditionFalse,
 		},
-		// TODO(CNTRLPLANE-3553): re-enable once getRHELStreamForBootImage is
-		// wired back into setAWSConditions after MCO rhel-10 support lands.
-		// Currently the stream is hardcoded to rhel-9 so this validation
-		// path is not exercised.
-		// {
-		// 	name: "When osImageStream is invalid for the release version it should set ValidPlatformImage to false",
-		// 	...
-		// },
+		{
+			name: "When osImageStream is invalid for the release version it should return error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch:          hyperv1.ArchitectureAMD64,
+					Platform:      hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSNodePoolPlatform{}},
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
+					Release:       hyperv1.Release{Image: "quay.io/test:4.17"},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+			},
+			releaseImage: releaseImageWithStreams,
+			expectError:  true,
+		},
 		{
 			name: "When HostedCluster has no AWS platform it should return error",
 			nodePool: &hyperv1.NodePool{
@@ -1195,8 +1205,20 @@ func TestSetAWSConditions(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			r := &NodePoolReconciler{}
-			err := r.setAWSConditions(t.Context(), tc.nodePool, tc.hostedCluster, "", tc.releaseImage)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			resolvedStream := StreamRHEL9
+			if tc.releaseImage != nil {
+				var resolveErr error
+				resolvedStream, resolveErr = GetRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage)
+				if resolveErr != nil {
+					if tc.expectError {
+						return
+					}
+					t.Fatalf("failed to resolve RHEL stream: %v", resolveErr)
+				}
+			}
+			r := &NodePoolReconciler{Client: fakeClient}
+			err := r.setAWSConditions(t.Context(), tc.nodePool, tc.hostedCluster, "", tc.releaseImage, resolvedStream)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

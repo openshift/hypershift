@@ -79,7 +79,7 @@ func usesRuncRuntime(ctx context.Context, c client.Client, nodePool *hyperv1.Nod
 	return false, nil
 }
 
-// getRHELStreamForBootImage returns the RHEL stream name to pass to
+// GetRHELStreamForBootImage returns the RHEL stream name to pass to
 // StreamForName when resolving platform-specific boot images (AMIs, VHDs,
 // GCE images, etc.).
 //
@@ -94,7 +94,7 @@ func usesRuncRuntime(ctx context.Context, c client.Client, nodePool *hyperv1.Nod
 // spec.osImageStream will transition from rhel-9 to rhel-10 boot
 // images. This is the intended behavior per the enhancement:
 // implicit-stream NodePools automatically adopt the new default.
-func getRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func GetRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	version, err := semver.Parse(releaseImage.Version())
 	if err != nil {
 		return "", fmt.Errorf("failed to parse release image version %q: %w", releaseImage.Version(), err)
@@ -116,6 +116,6 @@ func validateOSImageStream(ctx context.Context, c client.Client, nodePool *hyper
 	if nodePool.Spec.OSImageStream.Name == "" {
 		return nil
 	}
-	_, err := getRHELStreamForBootImage(ctx, c, nodePool, releaseImage)
+	_, err := GetRHELStreamForBootImage(ctx, c, nodePool, releaseImage)
 	return err
 }

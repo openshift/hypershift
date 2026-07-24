@@ -255,7 +255,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
-			stream, err := getRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage)
+			stream, err := GetRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				return
