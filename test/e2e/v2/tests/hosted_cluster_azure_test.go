@@ -731,7 +731,9 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 			ctx := testCtx.Context
 			oauthHost := e2eutil.WaitForOAuthLoadBalancerEndpoint(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
 			pfTransport := e2eutil.SetupOAuthPortForwardTransport(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)
-			e2eutil.ValidateOAuthIdentityProviderFlow(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost, e2eutil.WithTransport(pfTransport))
+			kasConfig := e2eutil.SetupGuestKASPortForwardConfig(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
+			e2eutil.ValidateOAuthIdentityProviderFlow(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost,
+				e2eutil.WithTransport(pfTransport), e2eutil.WithGuestConfig(kasConfig))
 		})
 	})
 }

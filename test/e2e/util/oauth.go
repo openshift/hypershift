@@ -41,7 +41,8 @@ import (
 )
 
 type oauthTokenConfig struct {
-	transport http.RoundTripper
+	transport   http.RoundTripper
+	guestConfig *restclient.Config
 }
 
 // OAuthTokenOption configures how OAuth token requests are performed.
@@ -52,6 +53,14 @@ type OAuthTokenOption func(*oauthTokenConfig)
 // port-forward tunnel to the OAuth server in private topology clusters.
 func WithTransport(rt http.RoundTripper) OAuthTokenOption {
 	return func(c *oauthTokenConfig) { c.transport = rt }
+}
+
+// WithGuestConfig overrides the guest cluster REST config used for API calls
+// (e.g. GetUserForToken) in ValidateOAuthIdentityProviderFlow. Use this with
+// SetupGuestKASPortForwardConfig to route guest KAS calls through a port-forward
+// tunnel in private topology clusters where the KAS is behind an ILB.
+func WithGuestConfig(cfg *restclient.Config) OAuthTokenOption {
+	return func(c *oauthTokenConfig) { c.guestConfig = cfg }
 }
 
 func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -432,8 +441,19 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 // validates kubeadmin secret removal) and should only be used in lifecycle tests.
 func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, oauthHost string, opts ...OAuthTokenOption) {
 	g := NewWithT(t)
+
+	cfg := &oauthTokenConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
 	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).ToNot(HaveOccurred())
+
+	kasConfig := guestConfig
+	if cfg.guestConfig != nil {
+		kasConfig = cfg.guestConfig
+	}
 
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
@@ -442,7 +462,7 @@ func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client
 	password := string(kubeadminPasswordSecret.Data["password"])
 	accessToken := WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "kubeadmin", password, opts...)
 
-	user, err := GetUserForToken(guestConfig, accessToken)
+	user, err := GetUserForToken(kasConfig, accessToken)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(user.Name).To(Equal("kube:admin"))
 
@@ -508,7 +528,7 @@ func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client
 
 	accessToken = WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "testuser", "password", opts...)
 
-	user, err = GetUserForToken(guestConfig, accessToken)
+	user, err = GetUserForToken(kasConfig, accessToken)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(user.Name).To(Equal("testuser"))
 
@@ -649,6 +669,106 @@ func SetupOAuthPortForwardTransport(
 	})
 
 	return oauthTransport
+}
+
+// SetupGuestKASPortForwardConfig creates a SPDY port-forward tunnel from a random local
+// port to the kube-apiserver pod (port 6443) in the hosted control plane namespace.
+// It returns a *restclient.Config that routes guest API calls through the tunnel while
+// preserving correct TLS verification: the guest cluster CA validates the certificate,
+// and ServerName is set to the original KAS hostname so the certificate SAN check passes.
+// Pass the returned config to ValidateOAuthIdentityProviderFlow via WithGuestConfig to
+// enable GetUserForToken calls in private topology clusters where the guest KAS is behind
+// an Azure Internal Load Balancer.
+// The port-forward is cleaned up automatically via t.Cleanup.
+func SetupGuestKASPortForwardConfig(
+	t testing.TB, ctx context.Context,
+	mgmtClient crclient.Client,
+	hostedCluster *hyperv1.HostedCluster,
+) *restclient.Config {
+	g := NewWithT(t)
+
+	mgmtConfig, err := GetConfig()
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get management cluster REST config")
+	kubeClient, err := kubernetes.NewForConfig(mgmtConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create kubernetes client")
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	podList := &corev1.PodList{}
+	err = mgmtClient.List(ctx, podList,
+		crclient.InNamespace(hcpNamespace),
+		crclient.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponentLabel: "kube-apiserver"},
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to list kube-apiserver pods")
+
+	var kasPod *corev1.Pod
+	for i := range podList.Items {
+		if podList.Items[i].Status.Phase == corev1.PodRunning {
+			kasPod = &podList.Items[i]
+			break
+		}
+	}
+	g.Expect(kasPod).ToNot(BeNil(), "no running kube-apiserver pod found in namespace %s", hcpNamespace)
+	t.Logf("Found running kube-apiserver pod %s/%s", kasPod.Namespace, kasPod.Name)
+
+	pfReq := kubeClient.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(kasPod.Namespace).
+		Name(kasPod.Name).
+		SubResource("portforward")
+
+	spdyTransport, upgrader, err := spdy.RoundTripperFor(mgmtConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create SPDY round tripper")
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: spdyTransport}, "POST", pfReq.URL())
+
+	stopCh := make(chan struct{})
+	readyCh := make(chan struct{})
+	fw, err := portforward.New(dialer, []string{"0:6443"}, stopCh, readyCh, io.Discard, io.Discard)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create port forwarder")
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- fw.ForwardPorts() }()
+	select {
+	case <-readyCh:
+	case err = <-errCh:
+		g.Expect(err).ToNot(HaveOccurred(), "KAS port-forward failed to start")
+	}
+
+	ports, err := fw.GetPorts()
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get forwarded ports")
+	g.Expect(ports).ToNot(BeEmpty(), "no forwarded ports found")
+	localPort := ports[0].Local
+	t.Logf("KAS port-forward established: localhost:%d -> %s:6443", localPort, kasPod.Name)
+
+	guestConfig, err := guestRestConfig(t, ctx, mgmtClient, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get guest REST config")
+
+	originalHost := guestConfig.Host
+	u, err := url.Parse(originalHost)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to parse guest config host URL")
+	serverName := u.Hostname()
+
+	guestConfig.Host = fmt.Sprintf("https://localhost:%d", localPort)
+	guestConfig.TLSClientConfig.ServerName = serverName
+
+	testClient, err := kubernetes.NewForConfig(guestConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create test client for KAS port-forward")
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		_, err = testClient.Discovery().ServerVersion()
+		if err != nil {
+			t.Logf("Waiting for guest KAS connectivity via port-forward: %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed guest KAS connectivity check via port-forward")
+	t.Logf("Guest KAS reachable via port-forward at localhost:%d (ServerName=%s)", localPort, serverName)
+
+	t.Cleanup(func() {
+		close(stopCh)
+	})
+
+	return guestConfig
 }
 
 func validateClusterPostIDP(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
