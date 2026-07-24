@@ -3,13 +3,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -39,7 +42,9 @@ all test suites sequentially against each cluster. Clusters are tested in
 parallel. Tests self-select against compatible clusters using skip guards.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTests(sharedDir, artifactDir)
+			ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+			return runTests(ctx, sharedDir, artifactDir)
 		},
 	}
 
@@ -49,7 +54,7 @@ parallel. Tests self-select against compatible clusters using skip guards.`,
 	return cmd
 }
 
-func runTests(sharedDir, artifactDir string) error {
+func runTests(ctx context.Context, sharedDir, artifactDir string) error {
 	if sharedDir == "" {
 		return fmt.Errorf("--shared-dir is required")
 	}
@@ -82,10 +87,16 @@ func runTests(sharedDir, artifactDir string) error {
 		go func() {
 			defer wg.Done()
 			for _, suite := range orderedSuites {
+				if ctx.Err() != nil {
+					mu.Lock()
+					results = append(results, runResult{cluster: c.variant, suite: suite, err: ctx.Err()})
+					mu.Unlock()
+					return
+				}
 				suiteSuffix := suite[strings.LastIndex(suite, "/")+1:]
 				junitPath := filepath.Join(artifactDir, fmt.Sprintf("junit_%s_%s.xml", c.variant, suiteSuffix))
 				log.Printf("Running %s against %s cluster: %s", suite, c.variant, c.name)
-				err := runSuite(suite, c.name, junitPath)
+				err := runSuite(ctx, suite, c.name, junitPath)
 				mu.Lock()
 				results = append(results, runResult{cluster: c.variant, suite: suite, err: err})
 				mu.Unlock()
@@ -144,11 +155,14 @@ func discoverClusters(sharedDir string) ([]clusterInfo, error) {
 	return clusters, nil
 }
 
-func runSuite(suite, clusterName, junitPath string) error {
+func runSuite(ctx context.Context, suite, clusterName, junitPath string) error {
 	args := []string{"run-suite", suite, "--junit-path=" + junitPath}
-	cmd := exec.Command(os.Args[0], args...)
+	cmd := exec.CommandContext(ctx, os.Args[0], args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Cancel = func() error {
+		return cmd.Process.Signal(syscall.SIGTERM)
+	}
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAME=%s", clusterName),
 		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAMESPACE=%s", defaultClusterNamespace),
