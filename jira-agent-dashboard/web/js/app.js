@@ -216,6 +216,10 @@ function getTimeRanges() {
 }
 
 function initTimeRange(loadFn) {
+  const select = document.getElementById('range-select');
+  const dateFrom = document.getElementById('date-from');
+  const dateTo = document.getElementById('date-to');
+
   function applyRange(rangeKey) {
     const ranges = getTimeRanges();
     const range = ranges[rangeKey];
@@ -224,11 +228,9 @@ function initTimeRange(loadFn) {
     const from = dateStr(range.from);
     const to = dateStr(range.to);
 
-    document.querySelectorAll('.time-range button').forEach(btn => btn.classList.remove('active'));
-    document.getElementById('range-' + rangeKey).classList.add('active');
-
-    document.getElementById('date-from').value = from;
-    document.getElementById('date-to').value = to;
+    select.value = rangeKey;
+    dateFrom.value = from;
+    dateTo.value = to;
 
     localStorage.setItem('dashboard-time-range', rangeKey);
     localStorage.setItem('dashboard-date-from', from);
@@ -238,10 +240,10 @@ function initTimeRange(loadFn) {
   }
 
   function applyCustomDateRange() {
-    const from = document.getElementById('date-from').value;
-    const to = document.getElementById('date-to').value;
+    const from = dateFrom.value;
+    const to = dateTo.value;
     if (from && to) {
-      document.querySelectorAll('.time-range button').forEach(btn => btn.classList.remove('active'));
+      select.value = 'custom';
       localStorage.setItem('dashboard-time-range', 'custom');
       localStorage.setItem('dashboard-date-from', from);
       localStorage.setItem('dashboard-date-to', to);
@@ -249,14 +251,14 @@ function initTimeRange(loadFn) {
     }
   }
 
-  document.getElementById('range-7d').addEventListener('click', () => applyRange('7d'));
-  document.getElementById('range-this-month').addEventListener('click', () => applyRange('this-month'));
-  document.getElementById('range-last-month').addEventListener('click', () => applyRange('last-month'));
-  document.getElementById('range-3m').addEventListener('click', () => applyRange('3m'));
-  document.getElementById('range-ytd').addEventListener('click', () => applyRange('ytd'));
+  select.addEventListener('change', () => {
+    if (select.value !== 'custom') {
+      applyRange(select.value);
+    }
+  });
 
-  document.getElementById('date-from').addEventListener('change', applyCustomDateRange);
-  document.getElementById('date-to').addEventListener('change', applyCustomDateRange);
+  dateFrom.addEventListener('change', applyCustomDateRange);
+  dateTo.addEventListener('change', applyCustomDateRange);
 
   const savedRange = localStorage.getItem('dashboard-time-range');
   if (savedRange && savedRange !== 'custom' && getTimeRanges()[savedRange]) {
@@ -265,9 +267,9 @@ function initTimeRange(loadFn) {
     const from = localStorage.getItem('dashboard-date-from');
     const to = localStorage.getItem('dashboard-date-to');
     if (from && to) {
-      document.getElementById('date-from').value = from;
-      document.getElementById('date-to').value = to;
-      document.querySelectorAll('.time-range button').forEach(btn => btn.classList.remove('active'));
+      select.value = 'custom';
+      dateFrom.value = from;
+      dateTo.value = to;
       loadFn(from, to);
     } else {
       applyRange('7d');
@@ -326,22 +328,65 @@ function initComponentFilter(reloadFn) {
       _componentState._pendingRestore = new Set(JSON.parse(stored));
     } catch (e) { /* ignore bad data */ }
   }
+  const allStored = localStorage.getItem('dashboard-components-all');
+  if (allStored) {
+    try {
+      const allList = JSON.parse(allStored);
+      if (allList.length > 0) updateComponentChips(allList);
+    } catch (e) { /* ignore bad data */ }
+  }
+}
+
+function _populateComponentMenu(toggle, menu) {
+  menu.innerHTML = '';
+
+  const allActive = _componentState.active.size === _componentState.all.size;
+  const allItem = _buildCheckItem('All', allActive, () => {
+    if (_componentState.active.size === _componentState.all.size) {
+      _componentState.active.clear();
+    } else {
+      _componentState.active = new Set(_componentState.all);
+    }
+    _rerenderComponentMenu(menu);
+    _updateComponentToggleLabel(toggle);
+    localStorage.setItem('dashboard-components-active', JSON.stringify([..._componentState.active]));
+    if (_componentState.reloadFn) _componentState.reloadFn();
+  });
+  allItem.classList.add('dropdown-divider');
+  menu.appendChild(allItem);
+
+  for (const name of [..._componentState.all].sort()) {
+    const item = _buildCheckItem(name, _componentState.active.has(name), () => {
+      if (_componentState.active.has(name)) {
+        _componentState.active.delete(name);
+      } else {
+        _componentState.active.add(name);
+      }
+      _rerenderComponentMenu(menu);
+      _updateComponentToggleLabel(toggle);
+      localStorage.setItem('dashboard-components-active', JSON.stringify([..._componentState.active]));
+      if (_componentState.reloadFn) _componentState.reloadFn();
+    });
+    menu.appendChild(item);
+  }
+
+  _updateComponentToggleLabel(toggle);
+  localStorage.setItem('dashboard-components-active', JSON.stringify([..._componentState.active]));
 }
 
 function updateComponentChips(components) {
-  const container = document.getElementById('component-filter-container');
-  if (!container) return;
+  const toggle = document.getElementById('component-toggle');
+  const menu = document.getElementById('component-menu');
+  if (!toggle || !menu) return;
 
   const newAll = new Set(components);
-  if (_componentState.all.size === 0) {
-    if (_componentState._pendingRestore) {
-      _componentState.active = new Set(
-        [...newAll].filter(c => _componentState._pendingRestore.has(c))
-      );
-      _componentState._pendingRestore = null;
-    } else {
-      _componentState.active = new Set(newAll);
-    }
+  if (_componentState._pendingRestore) {
+    _componentState.active = new Set(
+      [...newAll].filter(c => _componentState._pendingRestore.has(c))
+    );
+    _componentState._pendingRestore = null;
+  } else if (_componentState.active.size === 0 && _componentState.all.size === 0) {
+    _componentState.active = new Set(newAll);
   } else {
     for (const c of newAll) {
       if (!_componentState.all.has(c)) _componentState.active.add(c);
@@ -351,50 +396,51 @@ function updateComponentChips(components) {
     }
   }
   _componentState.all = newAll;
+  if (newAll.size === 0) return;
 
-  container.innerHTML = '';
+  _populateComponentMenu(toggle, menu);
+}
 
-  if (newAll.size <= 1) return;
+function _buildCheckItem(label, checked, onChange) {
+  const item = document.createElement('label');
+  item.className = 'dropdown-item';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = checked;
+  cb.addEventListener('change', (e) => { e.stopPropagation(); onChange(); });
+  item.appendChild(cb);
+  item.appendChild(document.createTextNode(' ' + label));
+  item.addEventListener('click', (e) => e.stopPropagation());
+  return item;
+}
 
-  const allActive = _componentState.active.size === _componentState.all.size;
-  const toggleAll = document.createElement('button');
-  toggleAll.className = 'component-chip' + (allActive ? ' all-active' : '');
-  toggleAll.textContent = 'All';
-  toggleAll.addEventListener('click', () => {
-    if (_componentState.active.size === _componentState.all.size) {
-      _componentState.active.clear();
-    } else {
-      _componentState.active = new Set(_componentState.all);
-    }
-    updateComponentChips([..._componentState.all]);
-    if (_componentState.reloadFn) _componentState.reloadFn();
-  });
-  container.appendChild(toggleAll);
-
-  for (const name of [...newAll].sort()) {
-    const active = _componentState.active.has(name);
-    const colors = COMPONENT_COLORS[name] || _defaultColor(name);
-
-    const chip = document.createElement('button');
-    chip.className = 'component-chip' + (active ? ' active' : ' inactive');
-    chip.textContent = name;
-    if (active) {
-      chip.style.background = colors.bg;
-      chip.style.color = colors.color;
-    }
-    chip.addEventListener('click', () => {
-      if (_componentState.active.has(name)) {
-        _componentState.active.delete(name);
-      } else {
-        _componentState.active.add(name);
-      }
-      updateComponentChips([..._componentState.all]);
-      if (_componentState.reloadFn) _componentState.reloadFn();
-    });
-    container.appendChild(chip);
+function _updateComponentToggleLabel(toggle) {
+  const total = _componentState.all.size;
+  const active = _componentState.active.size;
+  if (active === total) {
+    toggle.textContent = 'All';
+  } else if (active === 0) {
+    toggle.textContent = 'None';
+  } else if (active === 1) {
+    toggle.textContent = [..._componentState.active][0];
+  } else {
+    toggle.textContent = active + ' selected';
   }
+}
 
-  localStorage.setItem('dashboard-components-active', JSON.stringify([..._componentState.active]));
+function _rerenderComponentMenu(menu) {
+  const items = menu.querySelectorAll('.dropdown-item input[type="checkbox"]');
+  const allActive = _componentState.active.size === _componentState.all.size;
+  let i = 0;
+  items.forEach(cb => {
+    if (i === 0) {
+      cb.checked = allActive;
+    } else {
+      const name = cb.parentElement.textContent.trim();
+      cb.checked = _componentState.active.has(name);
+    }
+    i++;
+  });
 }
 
 function getActiveComponents() {
@@ -437,29 +483,60 @@ function resetChart(chart) {
 
 function buildHeaderBar() {
   const bar = document.createElement('div');
-  bar.className = 'time-range';
+  bar.className = 'filter-bar';
   bar.innerHTML = `
-    <label>Time Range:</label>
-    <button id="range-7d" class="active">Last 7 Days</button>
-    <button id="range-this-month">This Month</button>
-    <button id="range-last-month">Last Month</button>
-    <button id="range-3m">Last 90 Days</button>
-    <button id="range-ytd">Year to Date</button>
-    <span>|</span>
+    <div id="component-filter-container" class="component-dropdown-wrapper">
+      <label for="component-toggle">Components:</label>
+      <button id="component-toggle" class="dropdown-toggle">All</button>
+      <div class="dropdown-menu" id="component-menu"></div>
+    </div>
+    <label for="range-select">Time Range:</label>
+    <select id="range-select">
+      <option value="7d">Last 7 Days</option>
+      <option value="this-month">This Month</option>
+      <option value="last-month">Last Month</option>
+      <option value="3m">Last 90 Days</option>
+      <option value="ytd">Year to Date</option>
+      <option value="custom">Custom</option>
+    </select>
     <label for="date-from">From:</label>
     <input type="date" id="date-from">
     <label for="date-to">To:</label>
     <input type="date" id="date-to">
-    <span>|</span>
-    <div id="component-filter-container"></div>
   `;
+
+  const toggle = bar.querySelector('#component-toggle');
+  const menu = bar.querySelector('#component-menu');
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.classList.toggle('open');
+  });
+  document.addEventListener('click', () => menu.classList.remove('open'));
+
+  const seed = Object.keys(COMPONENT_COLORS);
+  if (seed.length > 0) {
+    _componentState.all = new Set(seed);
+    const stored = localStorage.getItem('dashboard-components-active');
+    if (stored) {
+      try {
+        const parsed = new Set(JSON.parse(stored));
+        _componentState.active = new Set(seed.filter(c => parsed.has(c)));
+      } catch { _componentState.active = new Set(seed); }
+    } else {
+      _componentState.active = new Set(seed);
+    }
+    _populateComponentMenu(toggle, menu);
+  }
+
   return bar;
 }
 
 function injectHeaderBar() {
-  const anchor = document.getElementById('header-bar-anchor');
-  if (!anchor) return;
-  anchor.appendChild(buildHeaderBar());
+  const main = document.querySelector('main');
+  if (!main) return;
+  const bar = buildHeaderBar();
+  bar.id = 'content-filter-bar';
+  main.prepend(bar);
 }
 
 // Initialize navigation highlighting, toggle, and header bar
