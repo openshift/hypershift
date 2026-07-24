@@ -39,3 +39,15 @@ func testAWSStreamWithRelease(arch, region, ami, release string) *stream.Stream 
 		},
 	}
 }
+
+func testOpenStackStream(release string) *stream.Stream {
+	return &stream.Stream{
+		Architectures: map[string]stream.Arch{
+			"x86_64": {
+				Artifacts: map[string]stream.PlatformArtifacts{
+					"openstack": {Release: release},
+				},
+			},
+		},
+	}
+}

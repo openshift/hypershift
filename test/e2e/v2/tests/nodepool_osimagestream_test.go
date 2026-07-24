@@ -31,7 +31,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -87,7 +89,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStrea
 	RegisterNodePoolOSImageStreamLifecycleTests(func() *internal.TestContext { return testCtx })
 })
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStream] NodePool OSImageStream Status", Label("nodepool-osimagestream"), func() {
+// TODO(jparrill): Remove "lifecycle" label after OSStreams FG graduates to Default (openshift/api#2950)
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStream] NodePool OSImageStream Status", Label("lifecycle", "nodepool-osimagestream"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
@@ -439,10 +442,10 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 		// so both hashes should be identical — no rollout would be triggered.
 		e2eutil.EventuallyObject[*hyperv1.NodePool](
 			GinkgoTB(), ctx,
-			fmt.Sprintf("NodePool %s config hash to match baseline (explicit default == implicit default)", np.Name),
+			fmt.Sprintf("NodePool %s config hash to match baseline (explicit default == implicit default)", defaultNP.Name),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
+				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
 			[]e2eutil.Predicate[*hyperv1.NodePool]{
@@ -451,8 +454,8 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 					if !ok || hash == "" {
 						return false, "config hash annotation not yet set", nil
 					}
-					if hash != baselineHash {
-						return false, fmt.Sprintf("config hash %s != baseline %s", hash, baselineHash), nil
+					if hash != originalConfigHash {
+						return false, fmt.Sprintf("config hash %s != baseline %s", hash, originalConfigHash), nil
 					}
 					return true, "config hash matches baseline", nil
 				},
