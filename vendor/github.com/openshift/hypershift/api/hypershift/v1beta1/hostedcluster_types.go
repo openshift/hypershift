@@ -535,6 +535,8 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.infraID) || has(self.infraID)",message="infraID cannot be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterID) || has(self.clusterID)",message="clusterID cannot be removed once set"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.

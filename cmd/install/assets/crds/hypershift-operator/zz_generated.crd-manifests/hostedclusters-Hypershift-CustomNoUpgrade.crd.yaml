@@ -9165,6 +9165,10 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
             - message: secretEncryption cannot be removed once configured
               rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
+            - message: infraID cannot be removed once set
+              rule: '!has(oldSelf.infraID) || has(self.infraID)'
+            - message: clusterID cannot be removed once set
+              rule: '!has(oldSelf.clusterID) || has(self.clusterID)'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:
