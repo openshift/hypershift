@@ -114,22 +114,6 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	}
 }
 
-// FilterSpecs returns the specs for which pred returns true.
-func FilterSpecs(specs []ClusterSpec, pred func(ClusterSpec) bool) []ClusterSpec {
-	var out []ClusterSpec
-	for _, s := range specs {
-		if pred(s) {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// VariantEquals returns a predicate that matches specs with the given variant name.
-func VariantEquals(name string) func(ClusterSpec) bool {
-	return func(s ClusterSpec) bool { return s.Variant == name }
-}
-
 // DeriveClusterName builds a human-readable, deterministic cluster name
 // from the prow job ID and cluster variant. The format is
 // "{variant}-{hash10}" where hash10 is the first 10 hex characters of
