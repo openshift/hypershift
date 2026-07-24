@@ -46,6 +46,12 @@ const (
 	globalPSNodeLabel = "hypershift.openshift.io/nodepool-globalps-enabled"
 )
 
+// CAPIResult holds condition information computed during CAPI reconciliation.
+// The caller is responsible for setting these on the NodePool status.
+type CAPIResult struct {
+	Conditions []hyperv1.NodePoolCondition
+}
+
 // CAPI Knows how to reconcile all the CAPI resources for a unique token.
 // TODO(alberto): consider stronger decoupling from Token by making it an interface
 // and let nodepool, hostedcluster, and client be fields of CAPI / interface methods.
@@ -54,6 +60,7 @@ type CAPI struct {
 	capiClusterName       string
 	scaleFromZeroPlatform hyperv1.PlatformType
 	upsert.ApplyProvider
+	conditions []hyperv1.NodePoolCondition
 }
 
 // hasStatusCapacity checks if a machine template has Status.Capacity populated
@@ -84,28 +91,28 @@ func newCAPI(token *Token, capiClusterName string) (*CAPI, error) {
 	}, nil
 }
 
-func (c *CAPI) Reconcile(ctx context.Context) error {
+func (c *CAPI) Reconcile(ctx context.Context) (*CAPIResult, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	nodePool := c.nodePool
 	if err := c.cleanupMachineTemplates(ctx, log, nodePool, c.controlplaneNamespace); err != nil {
-		return err
+		return nil, err
 	}
 
 	if c.nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if err := c.reconcileAWSMachines(ctx); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	//  Reconcile (Platform)MachineTemplate.
 	template, err := c.machineTemplateBuilders(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if result, err := c.ApplyManifest(ctx, c.Client, template); err != nil {
-		return err
+		return nil, err
 	} else {
 		log.Info("Reconciled Machine template", "result", result)
 	}
@@ -113,8 +120,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 	// Check if platform machine template needs to be updated.
 	targetMachineTemplate := template.GetName()
 	if isUpdatingMachineTemplate(nodePool, targetMachineTemplate) {
-		// TODO (alberto): deocuple all conditions handling from this file into nodepool_controller.go dedicated function.
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		c.conditions = append(c.conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
@@ -125,7 +131,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 			"current", nodePool.GetAnnotations()[nodePoolAnnotationPlatformMachineTemplate],
 			"target", targetMachineTemplate)
 	} else {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		c.conditions = append(c.conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.AsExpectedReason,
@@ -141,7 +147,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 				ms,
 				template)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile MachineSet %q: %w",
+			return nil, fmt.Errorf("failed to reconcile MachineSet %q: %w",
 				client.ObjectKeyFromObject(ms).String(), err)
 		} else {
 			log.Info("Reconciled MachineSet", "result", result)
@@ -157,7 +163,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 				md,
 				template)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
+			return nil, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
 				client.ObjectKeyFromObject(md).String(), err)
 		} else {
 			log.Info("Reconciled MachineDeployment", "result", result)
@@ -166,20 +172,20 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 
 	mhc := c.machineHealthCheck()
 	if nodePool.Spec.Management.AutoRepair {
-		if c := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint); c == nil || c.Status != corev1.ConditionTrue {
+		if cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint); cond == nil || cond.Status != corev1.ConditionTrue {
 			log.Info("ReachedIgnitionEndpoint is false, MachineHealthCheck won't be created until this is true")
-			return nil
+			return &CAPIResult{Conditions: c.conditions}, nil
 		}
 
 		if result, err := ctrl.CreateOrUpdate(ctx, c.Client, mhc, func() error {
 			return c.reconcileMachineHealthCheck(ctx, mhc)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
+			return nil, fmt.Errorf("failed to reconcile MachineHealthCheck %q: %w",
 				client.ObjectKeyFromObject(mhc).String(), err)
 		} else {
 			log.Info("Reconciled MachineHealthCheck", "result", result)
 		}
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		c.conditions = append(c.conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
@@ -188,14 +194,14 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 	} else {
 		err := c.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return err
+			return nil, err
 		}
 		if err == nil {
 			if err := c.Delete(ctx, mhc); err != nil && !apierrors.IsNotFound(err) {
-				return err
+				return nil, err
 			}
 		}
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		c.conditions = append(c.conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.AsExpectedReason,
@@ -209,7 +215,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		if result, err := ctrl.CreateOrUpdate(ctx, c.Client, spotMHC, func() error {
 			return c.reconcileSpotMachineHealthCheck(ctx, spotMHC)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile spot MachineHealthCheck %q: %w",
+			return nil, fmt.Errorf("failed to reconcile spot MachineHealthCheck %q: %w",
 				client.ObjectKeyFromObject(spotMHC).String(), err)
 		} else {
 			log.Info("Reconciled spot MachineHealthCheck", "result", result)
@@ -218,16 +224,16 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		// Delete spot MHC if spot is not enabled
 		err := c.Get(ctx, client.ObjectKeyFromObject(spotMHC), spotMHC)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return err
+			return nil, err
 		}
 		if err == nil {
 			if err := c.Delete(ctx, spotMHC); err != nil && !apierrors.IsNotFound(err) {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return nil
+	return &CAPIResult{Conditions: c.conditions}, nil
 }
 
 func (c *CAPI) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
@@ -653,7 +659,7 @@ func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployme
 			if cond.Reason != "" {
 				reason = cond.Reason
 			}
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			c.conditions = append(c.conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReadyConditionType,
 				Status:             cond.Status,
 				ObservedGeneration: nodePool.Generation,
@@ -1047,22 +1053,22 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 
 	// Bubble up AvailableReplicas and Ready condition from MachineSet.
 	nodePool.Status.Replicas = machineSet.Status.AvailableReplicas
-	for _, c := range machineSet.Status.Conditions {
+	for _, cond := range machineSet.Status.Conditions {
 		// This condition should aggregate and summarize readiness from underlying MachineSets and Machines
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
-		if c.Type == capiv1.ReadyCondition {
+		if cond.Type == capiv1.ReadyCondition {
 			// this is so api server does not complain
 			// invalid value: \"\": status.conditions.reason in body should be at least 1 chars long"
 			reason := hyperv1.AsExpectedReason
-			if c.Reason != "" {
-				reason = c.Reason
+			if cond.Reason != "" {
+				reason = cond.Reason
 			}
 
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			c.conditions = append(c.conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReadyConditionType,
-				Status:             c.Status,
+				Status:             cond.Status,
 				ObservedGeneration: nodePool.Generation,
-				Message:            c.Message,
+				Message:            cond.Message,
 				Reason:             reason,
 			})
 			break
