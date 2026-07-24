@@ -1526,6 +1526,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenshiftCerts(ctx context.Conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN) error {
+	// Legacy signer preserved for backward compatibility during cert rotation.
 	konnectivitySigner := manifests.KonnectivitySignerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivitySigner, func() error {
 		return pki.ReconcileKonnectivitySignerSecret(konnectivitySigner, p.OwnerRef)
@@ -1533,37 +1534,68 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityCerts(ctx context.Co
 		return fmt.Errorf("failed to reconcile konnectivity signer secret: %w", err)
 	}
 
+	// Dedicated signers — one per cert type for independent rotation/revocation.
+	serverServingSigner := manifests.KonnectivityServerServingSignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, serverServingSigner, func() error {
+		return pki.ReconcileKonnectivityServerServingSignerSecret(serverServingSigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity server serving signer secret: %w", err)
+	}
+
+	clusterServingSigner := manifests.KonnectivityClusterServingSignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, clusterServingSigner, func() error {
+		return pki.ReconcileKonnectivityClusterServingSignerSecret(clusterServingSigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity cluster serving signer secret: %w", err)
+	}
+
+	serverAuthSigner := manifests.KonnectivityServerAuthSignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, serverAuthSigner, func() error {
+		return pki.ReconcileKonnectivityServerAuthSignerSecret(serverAuthSigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity server auth signer secret: %w", err)
+	}
+
+	clientAuthSigner := manifests.KonnectivityClientAuthSignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, clientAuthSigner, func() error {
+		return pki.ReconcileKonnectivityClientAuthSignerSecret(clientAuthSigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity client auth signer secret: %w", err)
+	}
+
+	// Aggregate CA bundle includes legacy signer (for certs not yet rotated) plus all dedicated signers.
 	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
-		return pki.ReconcileKonnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner)
+		return pki.ReconcileKonnectivityConfigMap(konnectivityCACM, p.OwnerRef,
+			konnectivitySigner, serverServingSigner, clusterServingSigner, serverAuthSigner, clientAuthSigner)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity CA config map: %w", err)
 	}
 
 	konnectivityServerSecret := manifests.KonnectivityServerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityServerSecret, func() error {
-		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, konnectivitySigner, p.OwnerRef)
+		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, serverServingSigner, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server cert: %w", err)
 	}
 
 	konnectivityClusterSecret := manifests.KonnectivityClusterSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityClusterSecret, func() error {
-		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, konnectivitySigner, p.OwnerRef, p.ExternalKconnectivityAddress)
+		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, clusterServingSigner, p.OwnerRef, p.ExternalKconnectivityAddress)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
 	}
 
 	konnectivityClientSecret := manifests.KonnectivityClientSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityClientSecret, func() error {
-		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, konnectivitySigner, p.OwnerRef)
+		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, serverAuthSigner, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity client cert: %w", err)
 	}
 
 	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
-		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, konnectivitySigner, p.OwnerRef)
+		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, clientAuthSigner, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
 	}
