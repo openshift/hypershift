@@ -2851,19 +2851,27 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		}
 	}
 
-	log.Info("Ensuring load balancers are removed")
-	removed, err := r.ensureServiceLoadBalancersRemoved(ctx)
-	if err != nil {
-		if isConnectionError(err) {
-			hasConnectionError = true
-			log.Info("Connection error while removing load balancers", "error", err.Error())
-		}
-		errs = append(errs, err)
-	}
-	if !removed {
-		remaining.Insert("loadbalancers")
+	// On AWS, NLBs/ELBs are cleaned up directly via the AWS API in the
+	// infrastructure destroy flow rather than waiting for the cloud controller
+	// to process Service deletions, which is async and non-deterministic.
+	var removed bool
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		log.Info("Skipping load balancer Service deletion for AWS; NLBs are cleaned up directly by the infrastructure destroy flow")
 	} else {
-		log.Info("Load balancers are removed")
+		log.Info("Ensuring load balancers are removed")
+		removed, err = r.ensureServiceLoadBalancersRemoved(ctx)
+		if err != nil {
+			if isConnectionError(err) {
+				hasConnectionError = true
+				log.Info("Connection error while removing load balancers", "error", err.Error())
+			}
+			errs = append(errs, err)
+		}
+		if !removed {
+			remaining.Insert("loadbalancers")
+		} else {
+			log.Info("Load balancers are removed")
+		}
 	}
 
 	log.Info("Ensuring persistent volumes are removed")
