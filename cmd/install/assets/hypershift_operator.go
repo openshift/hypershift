@@ -15,6 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
@@ -539,6 +540,7 @@ type HyperShiftOperatorDeployment struct {
 	IncludeVersion                          bool
 	UWMTelemetry                            bool
 	RHOBSMonitoring                         bool
+	AZMonitoring                            bool
 	CVOPrometheusURL                        string
 	MonitoringDashboards                    bool
 	CertRotationScale                       time.Duration
@@ -870,6 +872,9 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	}
 	if o.RHOBSMonitoring {
 		envVars = append(envVars, corev1.EnvVar{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"})
+	}
+	if o.AZMonitoring {
+		envVars = append(envVars, corev1.EnvVar{Name: azmonitoring.EnvironmentVariable, Value: "1"})
 	}
 	if o.CVOPrometheusURL != "" {
 		envVars = append(envVars, corev1.EnvVar{Name: config.CVOPrometheusURLEnvVar, Value: o.CVOPrometheusURL})
@@ -1230,6 +1235,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 type HyperShiftOperatorClusterRole struct {
 	EnableCVOManagementClusterMetricsAccess bool
 	RHOBSMonitoring                         bool
+	AZMonitoring                            bool
 	ManagedService                          string
 	EnableAuditLogPersistence               bool
 }
@@ -1303,6 +1309,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"cluster.x-k8s.io",
 					"monitoring.coreos.com",
 					"monitoring.rhobs",
+					"azmonitoring.coreos.com",
 				},
 				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{rbacv1.VerbAll},
@@ -1389,7 +1396,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
-				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs", "azmonitoring.coreos.com"},
 				Resources: []string{"podmonitors"},
 				Verbs:     []string{"get", "list", "watch", "create", "update"},
 			},
@@ -1529,7 +1536,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 		},
 	}
-	if o.EnableCVOManagementClusterMetricsAccess || o.RHOBSMonitoring {
+	if o.EnableCVOManagementClusterMetricsAccess || o.RHOBSMonitoring || o.AZMonitoring {
 		role.Rules = append(role.Rules,
 			rbacv1.PolicyRule{
 				APIGroups: []string{"metrics.k8s.io"},
@@ -2041,7 +2048,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
-				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs", "azmonitoring.coreos.com"},
 				Resources: []string{"podmonitors"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
