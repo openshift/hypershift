@@ -62,6 +62,8 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 		"--root-volume-size=64",
 		"--root-volume-type=gp3",
 		"--public-only",
+		"--pods-labels=hypershift-e2e-test-label=test",
+		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
 	}
 	for _, tag := range a.additionalTags {
 		args = append(args, "--additional-tags="+tag)
