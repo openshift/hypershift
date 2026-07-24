@@ -95,7 +95,6 @@ type PlatformConfig interface {
 	// DestroyArgs returns platform-specific args for
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
-
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -105,9 +104,30 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	switch platform {
 	case "azure", "":
 		return NewAzurePlatformConfig(sharedDir), nil
+	case "aws":
+		return NewAWSPlatformConfig(AWSPlatformOptions{
+			Region: envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
+			Zones:  envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+		}, sharedDir), nil
 	default:
-		return nil, fmt.Errorf("unsupported platform %q (supported: azure)", platform)
+		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
 	}
+}
+
+// FilterSpecs returns the specs for which pred returns true.
+func FilterSpecs(specs []ClusterSpec, pred func(ClusterSpec) bool) []ClusterSpec {
+	var out []ClusterSpec
+	for _, s := range specs {
+		if pred(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// VariantEquals returns a predicate that matches specs with the given variant name.
+func VariantEquals(name string) func(ClusterSpec) bool {
+	return func(s ClusterSpec) bool { return s.Variant == name }
 }
 
 // DeriveClusterName builds a human-readable, deterministic cluster name
@@ -119,4 +139,3 @@ func DeriveClusterName(prowJobID, variant string) string {
 	hash := sha256.Sum256([]byte(prowJobID))
 	return variant + "-" + fmt.Sprintf("%x", hash)[:10]
 }
-

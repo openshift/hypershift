@@ -131,6 +131,9 @@ func loadEnvConfig() envConfig {
 
 func run(ctx context.Context, cfg envConfig) error {
 	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	if v := strings.TrimSpace(os.Getenv("HYPERSHIFT_CLUSTER_VARIANTS")); v != "" {
+		specs = lifecycle.FilterSpecs(specs, lifecycle.VariantEquals(v))
+	}
 
 	// Derive cluster names and build the name map.
 	named := make([]namedSpec, len(specs))
@@ -256,6 +259,9 @@ func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []s
 		"--pull-secret=" + cfg.pullSecret,
 		"--release-image=" + releaseImage,
 		"--generate-ssh",
+		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
+		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
+		"--feature-set=TechPreviewNoUpgrade",
 	}
 
 	if cfg.externalDNS != "" {
