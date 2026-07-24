@@ -154,6 +154,7 @@ func TestCreateCluster(t *testing.T) {
 // each individual KAS pod rather than through the service load balancer.
 func TestCreateClusterHABreakGlassCredentials(t *testing.T) {
 	t.Parallel()
+	e2eutil.AtLeast(t, e2eutil.Version423)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -162,12 +163,83 @@ func TestCreateClusterHABreakGlassCredentials(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 
+	// On non-OpenShift management clusters (e.g. AKS, GKE) there is no default
+	// router to auto-generate route hostnames. Set explicit hostnames on all
+	// Route-type services so the CPO can resolve infrastructure readiness.
+	// LoadBalancer-type services are left to the cloud LB controller, which
+	// provisions external IPs on every CI management cluster.
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		hc, ok := o.(*hyperv1.HostedCluster)
+		if !ok {
+			return
+		}
+		for i := range hc.Spec.Services {
+			svc := &hc.Spec.Services[i]
+			if svc.ServicePublishingStrategy.Type != hyperv1.Route {
+				continue
+			}
+			if svc.ServicePublishingStrategy.Route != nil && svc.ServicePublishingStrategy.Route.Hostname != "" {
+				continue
+			}
+			svc.ServicePublishingStrategy.Route = &hyperv1.RoutePublishingStrategy{
+				Hostname: fmt.Sprintf("%s.%s", strings.ToLower(string(svc.Service)), hc.Spec.DNS.BaseDomain),
+			}
+		}
+	}
+
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		// Fail fast if control plane pods can't schedule, rather than waiting
+		// for the full WaitForGuestClient timeout with a generic error.
+		e2eutil.EventuallyObjects(t, ctx, "at least one KAS pod to be scheduled",
+			func(ctx context.Context) ([]*corev1.Pod, error) {
+				podList := &corev1.PodList{}
+				err := mgtClient.List(ctx, podList,
+					crclient.InNamespace(controlPlaneNamespace),
+					crclient.MatchingLabels{"app": "kube-apiserver"},
+				)
+				if err != nil {
+					return nil, err
+				}
+				pods := make([]*corev1.Pod, len(podList.Items))
+				for i := range podList.Items {
+					pods[i] = &podList.Items[i]
+				}
+				return pods, nil
+			},
+			[]e2eutil.Predicate[[]*corev1.Pod]{
+				func(pods []*corev1.Pod) (done bool, reasons string, err error) {
+					if len(pods) == 0 {
+						return false, "no KAS pods found yet", nil
+					}
+					for _, pod := range pods {
+						for _, cond := range pod.Status.Conditions {
+							if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionTrue {
+								return true, "", nil
+							}
+						}
+					}
+					var msgs []string
+					for _, pod := range pods {
+						for _, cond := range pod.Status.Conditions {
+							if cond.Type == corev1.PodScheduled {
+								msgs = append(msgs, fmt.Sprintf("%s: %s", pod.Name, cond.Message))
+							}
+						}
+					}
+					if len(msgs) > 0 {
+						return false, fmt.Sprintf("KAS pods not scheduled: %s", strings.Join(msgs, "; ")), nil
+					}
+					return false, "KAS pods pending, scheduling conditions not yet set", nil
+				},
+			},
+			nil, // no per-pod predicates; the group predicate handles scheduling detection
+			e2eutil.WithTimeout(10*time.Minute),
+		)
+
 		// Wait for guest API to be reachable (SelfSubjectReview only, no nodes needed)
 		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
-
-		// Assert that KAS deployment has 3 ready replicas to guard against false-positive passes
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		e2eutil.EventuallyObject(t, ctx, "KAS deployment to have 3 ready replicas",
 			func(ctx context.Context) (*appsv1.Deployment, error) {
 				deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
@@ -205,7 +277,7 @@ func TestCreateClusterHABreakGlassCredentials(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
 
 		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ha-break-glass-creds", globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "ha-break-glass-creds", globalOpts.ServiceAccountSigningKey)
 }
 
 // TODO(alberto): rename this e2e to drop TestCreateCluster prefix after merging https://github.com/openshift/release/pull/66655
