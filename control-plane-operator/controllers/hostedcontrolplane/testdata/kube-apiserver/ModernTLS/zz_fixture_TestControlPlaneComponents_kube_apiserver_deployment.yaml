@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2312ad2fb360eec75741638a5741638a5741638a5741638a58b110e88a2a4098ca2a4098ce7e69167
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75741638a5741638a5741638a5741638a5860ae2958b110e88a2a4098ca2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: kube-apiserver
@@ -225,7 +225,7 @@ spec:
         - 30s
         - --server-count
         - "3"
-        - --cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-min-version=VersionTLS13
         command:
         - /usr/bin/proxy-server
         image: apiserver-network-proxy
@@ -317,6 +317,7 @@ spec:
         - --tls-cert=/var/run/app/certs/tls.crt
         - --tls-key=/var/run/app/certs/tls.key
         - --token-audience=openshift
+        - --tls-min-version=VersionTLS13
         image: aws-pod-identity-webhook
         imagePullPolicy: IfNotPresent
         name: aws-pod-identity-webhook
@@ -406,8 +407,7 @@ spec:
             kind: FeatureGate
             metadata:
               name: cluster
-            spec:
-              featureSet: TechPreviewNoUpgrade
+            spec: {}
             status:
               featureGates: null
         image: cluster-config-api
@@ -446,8 +446,7 @@ spec:
             kind: FeatureGate
             metadata:
               name: cluster
-            spec:
-              featureSet: TechPreviewNoUpgrade
+            spec: {}
             status:
               featureGates: null
         image: cluster-authentication-operator
