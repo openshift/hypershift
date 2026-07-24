@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/blang/semver"
 	"github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -78,6 +82,27 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	operatorImage, err := e2eutil.GetHyperShiftOperatorImage(ctx, client, globalOpts.HOInstallationOptions)
 	g.Expect(err).ToNot(gomega.HaveOccurred(), "Getting HyperShiftOperator image shouldn't return errors")
 	t.Logf("Observed pre-upgrade HyperShift Operator image %q", operatorImage)
+
+	// Shared role credential reconciliation only landed on 4.21+.
+	// Check the pre-upgrade HO's advertised version, not the release image version.
+	// The supported-versions ConfigMap is reconciled asynchronously by the HO after
+	// its deployment becomes Available, so poll briefly to allow for controller startup.
+	var preUpgradeHOVersion semver.Version
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		v, err := supportedversion.GetLatestSupportedOCPVersion(ctx, client)
+		if err != nil {
+			t.Logf("Waiting for supported-versions ConfigMap: %v", err)
+			return false, nil
+		}
+		preUpgradeHOVersion = v
+		return true, nil
+	})
+	g.Expect(err).ToNot(gomega.HaveOccurred(), "reading pre-upgrade HO version from supported-versions ConfigMap")
+	t.Logf("Pre-upgrade HO latest supported version: %s", preUpgradeHOVersion)
+	if preUpgradeHOVersion.LT(e2eutil.Version421) {
+		t.Log("Pre-upgrade HO < 4.21, disabling shared role")
+		clusterOpts.AWSPlatform.SharedRole = false
+	}
 
 	t.Log("Executing upgrade test")
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g gomega.Gomega, mc crclient.Client, hc *hyperv1.HostedCluster) {
