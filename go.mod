@@ -23,6 +23,14 @@ require (
 	github.com/IBM/vpc-go-sdk v0.68.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.55.7
+	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.3.5
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.233.0
+	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.29.6
+	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.45.2
+	github.com/aws/aws-sdk-go-v2/service/iam v1.39.1
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.65.2
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.0
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8
 	github.com/aws/karpenter-provider-aws v1.0.8
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
@@ -120,12 +128,17 @@ require (
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/asaskevich/govalidator/v11 v11.0.2-0.20250122183457-e11347878e23 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.38.0 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.233.0 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.43.0 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.14 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.31 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.31 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.32 // indirect
 	github.com/aws/aws-sdk-go-v2/service/eks v1.64.0 // indirect
-	github.com/aws/smithy-go v1.22.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.13 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.24 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.31 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.32 // indirect
+	github.com/aws/smithy-go v1.27.3 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
