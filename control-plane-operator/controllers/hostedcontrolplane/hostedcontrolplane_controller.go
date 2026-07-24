@@ -3084,6 +3084,20 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	if hyperazureutil.IsAroHCPByHCP(hcp) {
+		// CPO cannot reach private Key Vault endpoints; KAS pods access them
+		// through the private router (HAProxy TCP passthrough via hostAlias).
+		if hyperazureutil.IsPrivateKeyVault(hcp) {
+			condition := metav1.Condition{
+				Type:               string(hyperv1.ValidAzureKMSConfig),
+				ObservedGeneration: hcp.Generation,
+				Status:             metav1.ConditionTrue,
+				Message:            "KMS configuration accepted; Key Vault access is validated at runtime through the private router",
+				Reason:             hyperv1.AsExpectedReason,
+			}
+			meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+			return
+		}
+
 		key := hcp.Namespace + kmsAzureCredentials
 
 		// We need to only store the Azure credentials once and reuse them after that.

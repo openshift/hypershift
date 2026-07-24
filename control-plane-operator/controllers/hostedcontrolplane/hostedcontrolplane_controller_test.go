@@ -4615,6 +4615,98 @@ func TestRouterComponentComesAfterRouteCreatingComponents(t *testing.T) {
 	}
 }
 
+func TestValidateAzureKMSConfig(t *testing.T) {
+	tests := []struct {
+		name              string
+		keyVaultAccess    hyperv1.AzureKeyVaultAccessType
+		expectedStatus    metav1.ConditionStatus
+		expectedReason    string
+		expectMsgContains string
+		expectMsgExcludes string
+	}{
+		{
+			name:              "When KeyVaultAccess is Private, it should short-circuit to True",
+			keyVaultAccess:    hyperv1.AzureKeyVaultPrivate,
+			expectedStatus:    metav1.ConditionTrue,
+			expectedReason:    hyperv1.AsExpectedReason,
+			expectMsgContains: "private router",
+		},
+		{
+			name:              "When KeyVaultAccess is Public, it should proceed to credential validation",
+			keyVaultAccess:    hyperv1.AzureKeyVaultPublic,
+			expectedStatus:    metav1.ConditionFalse,
+			expectMsgExcludes: "private router",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			azureutil.SetAsAroHCPTest(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "hcp",
+					Namespace:  "hcp-namespace",
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+								ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+									ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+										ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+											Name:     "test-keyvault",
+											TenantID: "00000000-0000-0000-0000-000000000000",
+										},
+									},
+								},
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+						KMS: &hyperv1.KMSSpec{
+							Provider: hyperv1.AZURE,
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "test-kms-keyvault",
+									KeyName:      "test-key",
+									KeyVersion:   "1",
+								},
+								KMS: hyperv1.ManagedIdentity{
+									CredentialsSecretName: "test-kms-creds",
+								},
+								KeyVaultAccess: tc.keyVaultAccess,
+							},
+						},
+					},
+				},
+			}
+
+			r := &HostedControlPlaneReconciler{}
+			r.validateAzureKMSConfig(t.Context(), hcp)
+
+			g := NewWithT(t)
+			cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+			g.Expect(cond).ToNot(BeNil(), "ValidAzureKMSConfig condition should be set")
+			g.Expect(cond.Status).To(Equal(tc.expectedStatus))
+			if tc.expectedReason != "" {
+				g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+			}
+			if tc.expectMsgContains != "" {
+				g.Expect(cond.Message).To(ContainSubstring(tc.expectMsgContains))
+			}
+			if tc.expectMsgExcludes != "" {
+				g.Expect(cond.Message).ToNot(ContainSubstring(tc.expectMsgExcludes))
+			}
+		})
+	}
+}
+
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
 var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 
