@@ -26,8 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/httpstream"
-	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/streaming/pkg/httpstream"
+	"k8s.io/streaming/pkg/runtime"
 )
 
 const HeaderSpdy31 = "SPDY/3.1"
@@ -105,14 +105,14 @@ func (u responseUpgrader) UpgradeResponse(w http.ResponseWriter, req *http.Reque
 
 	conn, bufrw, err := hijacker.Hijack()
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("unable to upgrade: error hijacking response: %v", err))
+		runtime.HandleErrorWithContext(req.Context(), err, "Unable to upgrade: error hijacking response")
 		return nil
 	}
 
 	connWithBuf := &connWrapper{Conn: conn, bufReader: bufrw.Reader}
 	spdyConn, err := NewServerConnectionWithPings(connWithBuf, newStreamHandler, u.pingPeriod)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("unable to upgrade: error creating SPDY server connection: %v", err))
+		runtime.HandleErrorWithContext(req.Context(), err, "Unable to upgrade: error creating SPDY server connection")
 		return nil
 	}
 
