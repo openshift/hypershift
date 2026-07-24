@@ -1084,7 +1084,7 @@ func TestIsSpotEnabled(t *testing.T) {
 	}
 }
 
-func TestSetAWSConditions(t *testing.T) {
+func TestSetAWSValidPlatformImage(t *testing.T) {
 	t.Parallel()
 
 	releaseImageWithStreams := &releaseinfo.ReleaseImage{
@@ -1165,7 +1165,7 @@ func TestSetAWSConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionFalse,
 		},
 		// TODO(CNTRLPLANE-3553): re-enable once getRHELStreamForBootImage is
-		// wired back into setAWSConditions after MCO rhel-10 support lands.
+		// wired back into setAWSValidPlatformImage after MCO rhel-10 support lands.
 		// Currently the stream is hardcoded to rhel-9 so this validation
 		// path is not exercised.
 		// {
@@ -1196,7 +1196,7 @@ func TestSetAWSConditions(t *testing.T) {
 			g := NewWithT(t)
 
 			r := &NodePoolReconciler{}
-			err := r.setAWSConditions(t.Context(), tc.nodePool, tc.hostedCluster, "", tc.releaseImage)
+			err := r.setAWSValidPlatformImage(tc.nodePool, tc.hostedCluster, tc.releaseImage)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -1208,6 +1208,81 @@ func TestSetAWSConditions(t *testing.T) {
 				g.Expect(cond).ToNot(BeNil())
 				g.Expect(cond.Status).To(Equal(tc.expectedCondValue))
 			}
+		})
+	}
+}
+
+func TestSetAWSSecurityGroupCondition(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name              string
+		nodePool          *hyperv1.NodePool
+		hostedCluster     *hyperv1.HostedCluster
+		expectedCondValue corev1.ConditionStatus
+		expectedReason    string
+	}{
+		{
+			name:     "When platform status is nil it should set condition to false",
+			nodePool: &hyperv1.NodePool{},
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{},
+			},
+			expectedCondValue: corev1.ConditionFalse,
+			expectedReason:    hyperv1.DefaultAWSSecurityGroupNotReadyReason,
+		},
+		{
+			name:     "When AWS platform status is nil it should set condition to false",
+			nodePool: &hyperv1.NodePool{},
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Platform: &hyperv1.PlatformStatus{},
+				},
+			},
+			expectedCondValue: corev1.ConditionFalse,
+			expectedReason:    hyperv1.DefaultAWSSecurityGroupNotReadyReason,
+		},
+		{
+			name:     "When security group ID is empty it should set condition to false",
+			nodePool: &hyperv1.NodePool{},
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Platform: &hyperv1.PlatformStatus{
+						AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: ""},
+					},
+				},
+			},
+			expectedCondValue: corev1.ConditionFalse,
+			expectedReason:    hyperv1.DefaultAWSSecurityGroupNotReadyReason,
+		},
+		{
+			name:     "When security group ID is present it should set condition to true",
+			nodePool: &hyperv1.NodePool{},
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Platform: &hyperv1.PlatformStatus{
+						AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "sg-123"},
+					},
+				},
+			},
+			expectedCondValue: corev1.ConditionTrue,
+			expectedReason:    hyperv1.AsExpectedReason,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			r := &NodePoolReconciler{}
+			err := r.setAWSSecurityGroupCondition(tc.nodePool, tc.hostedCluster)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cond := FindStatusCondition(tc.nodePool.Status.Conditions, string(hyperv1.NodePoolAWSSecurityGroupAvailableConditionType))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedCondValue))
+			g.Expect(cond.Reason).To(Equal(tc.expectedReason))
 		})
 	}
 }

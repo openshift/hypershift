@@ -364,7 +364,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	if err := r.setPlatformConditions(ctx, hcluster, nodePool, controlPlaneNamespace, releaseImage); err != nil {
+	if err := r.platformConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage); err != nil {
 		return ctrl.Result{}, err
 	}
 
