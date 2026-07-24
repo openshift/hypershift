@@ -10,6 +10,7 @@ import (
 
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
+	et "github.com/openshift-eng/openshift-tests-extension/pkg/extension/extensiontests"
 	g "github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
 
 	_ "github.com/openshift/hypershift/test/e2e/v2/tests"
@@ -27,7 +28,23 @@ func main() {
 	}
 
 	platform := os.Getenv("HYPERSHIFT_PLATFORM")
-	assignPoolsFromLabels(specs, platform)
+	cfg, ok := platformConfigs[platform]
+	if !ok {
+		panic(fmt.Sprintf("unknown platform %q", platform))
+	}
+	// Assign each test to its resource pool based on label so the OTE
+	// scheduler can co-schedule tests that share a hosted cluster.
+	specs.Walk(func(spec *et.ExtensionTestSpec) {
+		for label := range spec.Labels {
+			if pool, found := cfg.LabelToPool[label]; found {
+				if spec.Resources.ResourcePools == nil {
+					spec.Resources.ResourcePools = make(map[string]int)
+				}
+				spec.Resources.ResourcePools[pool] = 1
+				return
+			}
+		}
+	})
 
 	ext.AddSpecs(specs)
 	registry.Register(ext)

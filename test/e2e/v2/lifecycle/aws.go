@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	operatorv1 "github.com/openshift/api/operator/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -76,6 +78,36 @@ func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch
 }
 
 func (a *AWSPlatformConfig) PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
+	if publicName, ok := clusterNames["cluster-name-public"]; ok {
+		if err := a.postCreatePublic(ctx, cl, namespace, publicName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *AWSPlatformConfig) postCreatePublic(ctx context.Context, cl crclient.Client, namespace, name string) error {
+	hc := &hyperv1.HostedCluster{}
+	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, hc); err != nil {
+		return fmt.Errorf("getting HostedCluster %s/%s: %w", namespace, name, err)
+	}
+
+	patch := crclient.MergeFrom(hc.DeepCopy())
+	if hc.Spec.OperatorConfiguration == nil {
+		hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+	}
+	hc.Spec.OperatorConfiguration.IngressOperator = &hyperv1.IngressOperatorSpec{
+		EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+			Type: operatorv1.LoadBalancerServiceStrategyType,
+			LoadBalancer: &operatorv1.LoadBalancerStrategy{
+				Scope: operatorv1.InternalLoadBalancer,
+			},
+		},
+	}
+	if err := cl.Patch(ctx, hc, patch); err != nil {
+		return fmt.Errorf("patching HostedCluster %s/%s OperatorConfiguration: %w", namespace, name, err)
+	}
+	log.Printf("Patched public cluster %s/%s with OperatorConfiguration", namespace, name)
 	return nil
 }
 
@@ -93,7 +125,7 @@ func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "public",
 				ClusterFile: "cluster-name-public",
-				LabelFilter: "hosted-cluster-health || control-plane-workloads || hosted-cluster-metrics || hosted-cluster-image-registry",
+				LabelFilter: "hosted-cluster-health || control-plane-workloads || hosted-cluster-metrics || hosted-cluster-image-registry || hosted-cluster-compliance || hosted-cluster-ingress || hosted-cluster-dns || hosted-cluster-security || control-plane-pki-operator || hosted-cluster-cpo || hosted-cluster-node-communication",
 				JUnitFile:   "junit_aws_public.xml",
 			},
 		},

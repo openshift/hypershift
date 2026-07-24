@@ -259,6 +259,9 @@ func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []s
 		"--pull-secret=" + cfg.pullSecret,
 		"--release-image=" + releaseImage,
 		"--generate-ssh",
+		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
+		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
+		"--feature-set=TechPreviewNoUpgrade",
 	}
 
 	if cfg.externalDNS != "" {

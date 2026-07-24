@@ -3,6 +3,10 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
 )
 
@@ -15,6 +19,9 @@ type platformConfig struct {
 	Suites       []e.Suite
 	TestPlan     testPlan
 	ClusterFiles map[string]string // suite name → filename in SHARED_DIR containing the cluster name
+	LabelToPool  map[string]string // test label → resource pool name
+	PoolCapacity map[string]int    // pool name → capacity
+	EnvFunc      func(envInput) (platformEnv []string, suiteEnv map[string][]string)
 }
 
 var platformConfigs = map[string]platformConfig{
@@ -62,6 +69,17 @@ var platformConfigs = map[string]platformConfig{
 			"hypershift/test/pool-b": "cluster-name-b",
 			"hypershift/test/step-1": "cluster-name-seq",
 			"hypershift/test/step-2": "cluster-name-seq",
+		},
+		LabelToPool: map[string]string{
+			"test-pool-a": "pool-a",
+			"test-pool-b": "pool-b",
+			"test-step-1": "pool-seq",
+			"test-step-2": "pool-seq",
+		},
+		PoolCapacity: map[string]int{
+			"pool-a":   1,
+			"pool-b":   1,
+			"pool-seq": 1,
 		},
 	},
 	"azure": {
@@ -117,13 +135,61 @@ var platformConfigs = map[string]platformConfig{
 			"hypershift/azure/upgrade":       "cluster-name-upgrade",
 			"hypershift/azure/chaos":         "cluster-name-upgrade",
 		},
+		LabelToPool: map[string]string{
+			"self-managed-azure-public": "public",
+			"nodepool-lifecycle":        "public",
+			"secret-encryption":         "public",
+			"control-plane-workloads":   "public",
+			"hosted-cluster-security":   "public",
+
+			"self-managed-azure-private": "private",
+			"hosted-cluster-compliance":  "private",
+
+			"self-managed-azure-oauth-lb":   "oauth-lb",
+			"hosted-cluster-health":         "oauth-lb",
+			"hosted-cluster-metrics":        "oauth-lb",
+			"hosted-cluster-image-registry": "oauth-lb",
+
+			"nodepool-autoscaling": "autoscaling",
+
+			"external-oidc": "external-oidc",
+
+			"control-plane-upgrade": "upgrade",
+			"etcd-chaos":            "upgrade",
+		},
+		PoolCapacity: map[string]int{
+			"public":        1,
+			"private":       1,
+			"oauth-lb":      1,
+			"autoscaling":   1,
+			"external-oidc": 1,
+			"upgrade":       1,
+		},
+		EnvFunc: func(in envInput) ([]string, map[string][]string) {
+			platform := append(
+				in.EnvFromFiles(
+					"azure_private_nat_subnet_id", "AZURE_PRIVATE_NAT_SUBNET_ID",
+					"external_oidc_test_users", "E2E_EXTERNAL_OIDC_TEST_USERS",
+				),
+				in.EnvFromFilePaths(
+					"external_oidc_ca_bundle", "E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE",
+				)...,
+			)
+			var suiteEnv map[string][]string
+			if in.ReleaseImage != "" {
+				suiteEnv = map[string][]string{
+					"hypershift/azure/upgrade": {"E2E_LATEST_RELEASE_IMAGE=" + in.ReleaseImage},
+				}
+			}
+			return platform, suiteEnv
+		},
 	},
 	"aws": {
 		Suites: []e.Suite{
 			{
 				Name:        "hypershift/aws/public",
 				Description: "AWS public cluster non-mutating tests",
-				Qualifiers:  []string{`labels.exists(l, l=="hosted-cluster-health") || labels.exists(l, l=="control-plane-workloads") || labels.exists(l, l=="hosted-cluster-metrics") || labels.exists(l, l=="hosted-cluster-image-registry")`},
+				Qualifiers:  []string{`labels.exists(l, l=="hosted-cluster-health") || labels.exists(l, l=="control-plane-workloads") || labels.exists(l, l=="hosted-cluster-metrics") || labels.exists(l, l=="hosted-cluster-image-registry") || labels.exists(l, l=="hosted-cluster-compliance") || labels.exists(l, l=="hosted-cluster-ingress") || labels.exists(l, l=="hosted-cluster-dns") || labels.exists(l, l=="hosted-cluster-security") || labels.exists(l, l=="control-plane-pki-operator") || labels.exists(l, l=="hosted-cluster-cpo") || labels.exists(l, l=="hosted-cluster-node-communication")`},
 			},
 		},
 		TestPlan: testPlan{
@@ -132,7 +198,61 @@ var platformConfigs = map[string]platformConfig{
 		ClusterFiles: map[string]string{
 			"hypershift/aws/public": "cluster-name-public",
 		},
+		LabelToPool: map[string]string{
+			"hosted-cluster-health":             "public",
+			"control-plane-workloads":           "public",
+			"hosted-cluster-metrics":            "public",
+			"hosted-cluster-image-registry":     "public",
+			"hosted-cluster-compliance":         "public",
+			"hosted-cluster-ingress":            "public",
+			"hosted-cluster-dns":                "public",
+			"hosted-cluster-security":           "public",
+			"control-plane-pki-operator":        "public",
+			"hosted-cluster-cpo":                "public",
+			"hosted-cluster-node-communication": "public",
+		},
+		PoolCapacity: map[string]int{
+			"public": 1,
+		},
 	},
+}
+
+// envInput contains runtime values the entrypoint collects and passes to
+// platform-specific EnvFunc implementations.
+type envInput struct {
+	SharedDir    string
+	ReleaseImage string
+}
+
+// EnvFromFiles reads SHARED_DIR files and returns env var assignments for
+// each file that exists and has non-empty contents. Arguments are variadic
+// pairs of (filename, envVar).
+func (in envInput) EnvFromFiles(pairs ...string) []string {
+	var env []string
+	for i := 0; i+1 < len(pairs); i += 2 {
+		data, err := os.ReadFile(filepath.Join(in.SharedDir, pairs[i]))
+		if err != nil {
+			continue
+		}
+		if v := strings.TrimSpace(string(data)); v != "" {
+			env = append(env, pairs[i+1]+"="+v)
+		}
+	}
+	return env
+}
+
+// EnvFromFilePaths returns env var assignments where the value is the full
+// file path (not the contents). Arguments are variadic pairs of (filename,
+// envVar). Only existing files are included.
+func (in envInput) EnvFromFilePaths(pairs ...string) []string {
+	var env []string
+	for i := 0; i+1 < len(pairs); i += 2 {
+		path := filepath.Join(in.SharedDir, pairs[i])
+		if _, err := os.Stat(path); err == nil {
+			env = append(env, pairs[i+1]+"="+path)
+		}
+	}
+	return env
 }
 
 func registerPlatformSuites(ext *e.Extension) {
