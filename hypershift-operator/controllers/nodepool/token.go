@@ -363,8 +363,6 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 		tokenSecret.Data[TokenSecretPullSecretHashKey] = t.pullSecretHash
 		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = t.additionalTrustBundleHash
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
-		// TODO(CNTRLPLANE-3553): consumed by the ignition-server's TokenSecretReconciler once
-		// multi-stream ignition support lands. Until then this key is written but not read downstream.
 		tokenSecret.Data[TokenSecretOSStreamKey] = []byte(t.resolvedRHELStreamForBootImage)
 		tokenSecret.Data[TokenSecretCloudConfigHashKey] = t.cloudConfigHash
 	}

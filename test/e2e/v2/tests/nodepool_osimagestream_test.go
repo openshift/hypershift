@@ -244,16 +244,8 @@ spec:
 // (no osImageStream set) reports rhel-9 in status.osImageStream.
 // This is a non-lifecycle test: it reads existing state without mutation.
 //
-// TODO(CNTRLPLANE-3032): The default OS stream is currently hardcoded to rhel-9 for all
-// OCP versions. When the hardcoding is removed and OCP >= 5.0 defaults to rhel-10,
-// this test must be updated to expect rhel-10 on OCP >= 5.0:
-//
-//	expectedStream := hyperv1.OSImageStreamRHEL9
-//	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version50) {
-//	    expectedStream = hyperv1.OSImageStreamRHEL10
-//	}
 func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGetter) {
-	It("When no osImageStream is set, it should report rhel-9 in status", func() {
+	It("When no osImageStream is set, it should report the version-derived default stream in status", func() {
 		testCtx := getTestCtx()
 		testCtx.ValidateHostedCluster()
 
@@ -290,7 +282,10 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			e2eutil.WithInterval(15*time.Second),
 		)
 
-		expectedStream := hyperv1.OSImageStreamRHEL10
+		expectedStream := hyperv1.OSImageStreamRHEL9
+		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version50) {
+			expectedStream = hyperv1.OSImageStreamRHEL10
+		}
 
 		GinkgoWriter.Printf("Waiting for NodePool %s/%s status.osImageStream.name to be %s\n",
 			defaultNP.Namespace, defaultNP.Name, expectedStream)
