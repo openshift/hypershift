@@ -177,8 +177,10 @@ nav a.active {
 main {
   margin-left: 220px;
   flex: 1;
+  min-width: 0;
   padding: 30px;
   transition: margin-left 0.25s ease;
+  overflow-x: hidden;
 }
 
 nav.collapsed ~ main {
@@ -1089,6 +1091,7 @@ td a:hover {
   color: var(--text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .comment-body.collapsed {
