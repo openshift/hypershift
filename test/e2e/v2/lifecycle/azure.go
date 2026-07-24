@@ -374,6 +374,12 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 						ExtraEnv:    []string{fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE=%s", releaseImage)},
 					},
 					{
+						Name:        "control-plane-tls",
+						ClusterFile: "cluster-name-upgrade",
+						LabelFilter: "control-plane-pki-operator",
+						JUnitFile:   "junit_control_plane_tls.xml",
+					},
+					{
 						Name:        "etcd-chaos",
 						ClusterFile: "cluster-name-upgrade",
 						LabelFilter: "etcd-chaos",
