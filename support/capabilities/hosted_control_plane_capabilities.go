@@ -89,6 +89,70 @@ func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1
 	return sortedCapabilities(netCaps.UnsortedList())
 }
 
+// baseCapabilities is the set of capabilities accepted by the ClusterVersion CRD
+// without any feature gates enabled. The CVO bootstrap init container writes
+// ClusterVersion spec to the guest cluster via kubectl; if a capability is not in
+// the guest CRD's enum, the write is rejected and the init container crash-loops.
+// This list is OCP-version-specific — it must match the featureGate="" enum from
+// the +openshift:validation:FeatureGateAwareEnum annotation on ClusterVersionCapability
+// in vendor/github.com/openshift/api/config/v1/types_cluster_version.go and must be
+// updated when capabilities graduate from feature-gated to always-on.
+var baseCapabilities = sets.New[configv1.ClusterVersionCapability](
+	configv1.ClusterVersionCapabilityOpenShiftSamples,
+	configv1.ClusterVersionCapabilityBaremetal,
+	configv1.ClusterVersionCapabilityMarketplace,
+	configv1.ClusterVersionCapabilityConsole,
+	configv1.ClusterVersionCapabilityInsights,
+	configv1.ClusterVersionCapabilityStorage,
+	configv1.ClusterVersionCapabilityCSISnapshot,
+	configv1.ClusterVersionCapabilityNodeTuning,
+	configv1.ClusterVersionCapabilityMachineAPI,
+	configv1.ClusterVersionCapabilityBuild,
+	configv1.ClusterVersionCapabilityDeploymentConfig,
+	configv1.ClusterVersionCapabilityImageRegistry,
+	configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+	configv1.ClusterVersionCapabilityCloudCredential,
+	configv1.ClusterVersionCapabilityIngress,
+	configv1.ClusterVersionCapabilityCloudControllerManager,
+	configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+)
+
+// FilterByBaseCapabilities removes capabilities that require feature gates on the
+// guest cluster's ClusterVersion CRD. For Default feature set, only capabilities
+// from the base CRD enum (no feature gates) are kept. All other feature sets
+// (TechPreviewNoUpgrade, DevPreviewNoUpgrade, CustomNoUpgrade) enable feature
+// gates that make the full enum valid, so all capabilities pass through.
+func FilterByBaseCapabilities(caps []configv1.ClusterVersionCapability, featureSet configv1.FeatureSet) []configv1.ClusterVersionCapability {
+	if featureSet == configv1.Default || featureSet == "Default" {
+		var filtered []configv1.ClusterVersionCapability
+		for _, cap := range caps {
+			if baseCapabilities.Has(cap) {
+				filtered = append(filtered, cap)
+			}
+		}
+		return filtered
+	}
+	return caps
+}
+
+// FilterByKnownCapabilities returns only the capabilities from desired that are
+// present in knownCapabilities. When knownCapabilities is empty (e.g. on first
+// reconcile before the CVO has reported status), all desired capabilities are
+// returned unfiltered.
+func FilterByKnownCapabilities(desired []configv1.ClusterVersionCapability, knownCapabilities []configv1.ClusterVersionCapability) []configv1.ClusterVersionCapability {
+	if len(knownCapabilities) == 0 {
+		return desired
+	}
+	known := sets.New[configv1.ClusterVersionCapability](knownCapabilities...)
+	var filtered []configv1.ClusterVersionCapability
+	for _, cap := range desired {
+		if known.Has(cap) {
+			filtered = append(filtered, cap)
+		}
+	}
+	return filtered
+}
+
 func sortedCapabilities(caps []configv1.ClusterVersionCapability) []configv1.ClusterVersionCapability {
 	slices.SortFunc(caps, func(a, b configv1.ClusterVersionCapability) int {
 		return strings.Compare(string(a), string(b))

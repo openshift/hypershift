@@ -1644,9 +1644,16 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
+		featureSet := configv1.Default
+		if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.FeatureGate != nil {
+			featureSet = hcp.Spec.Configuration.FeatureGate.FeatureSet
+		}
+		desiredCaps := capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities)
+		desiredCaps = capabilities.FilterByBaseCapabilities(desiredCaps, featureSet)
+		desiredCaps = capabilities.FilterByKnownCapabilities(desiredCaps, clusterVersion.Status.Capabilities.KnownCapabilities)
 		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
+			AdditionalEnabledCapabilities: desiredCaps,
 		}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel

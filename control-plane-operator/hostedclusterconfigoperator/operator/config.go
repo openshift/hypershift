@@ -92,8 +92,14 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 	}
 	hcp := resourcemanifests.HostedControlPlane(namespace, hcpName)
 
-	// Retry getting HCP to handle transient connectivity issues
-	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+	// Retry getting HCP to handle transient connectivity issues.
+	// Use a 5-minute timeout because under concurrent e2e cluster creation the
+	// HCP CR may not be fully reconciled for 60-90 seconds after the
+	// availability-prober init container completes. The liveness probe
+	// (initialDelaySeconds=60, failureThreshold=5, periodSeconds=60) gives us
+	// up to 360 seconds before the kubelet kills the container, so 5 minutes
+	// is safe and avoids unnecessary crash-restart cycles.
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 		if err := ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 			l.Error(err, "failed to get HCP, retrying", "namespace", namespace, "hcpName", hcpName)
 			return false, nil // Retry

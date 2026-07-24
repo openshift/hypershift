@@ -4,9 +4,13 @@ import (
 	"reflect"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func TestIsImageRegistryCapabilityEnabled(t *testing.T) {
@@ -69,6 +73,8 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				configv1.ClusterVersionCapabilityImageRegistry,
@@ -92,6 +98,8 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				// configv1.ClusterVersionCapabilityImageRegistry,
@@ -115,6 +123,8 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityCSISnapshot,
 				configv1.ClusterVersionCapabilityCloudControllerManager,
 				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				configv1.ClusterVersionCapabilityImageRegistry,
@@ -144,6 +154,228 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				t.Logf("calculated enabled capabilities: %v", enabledCapabilities)
 				t.Fatalf("expected enabled capabilities differed from calculated enabled capabilities")
 			}
+		})
+	}
+}
+
+func TestFilterByKnownCapabilities(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		desired           []configv1.ClusterVersionCapability
+		knownCapabilities []configv1.ClusterVersionCapability
+		expectedFiltered  []configv1.ClusterVersionCapability
+	}{
+		{
+			name: "When knownCapabilities is empty, it should return all desired capabilities unfiltered",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+			knownCapabilities: nil,
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+		},
+		{
+			name: "When guest CVO does not know some capabilities, it should filter them out",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+			knownCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+		},
+		{
+			name: "When all desired capabilities are known, it should return all desired capabilities",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+			knownCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+				configv1.ClusterVersionCapabilityStorage,
+			},
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+		},
+		{
+			name: "When no desired capabilities are known, it should return nil",
+			desired: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
+			},
+			knownCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+			},
+			expectedFiltered: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			filtered := FilterByKnownCapabilities(test.desired, test.knownCapabilities)
+			g.Expect(filtered).To(Equal(test.expectedFiltered))
+		})
+	}
+}
+
+func TestBaseCapabilitiesMatchesUpstreamAnnotation(t *testing.T) {
+	// The featureGate="" enum from the ClusterVersionCapability type annotation
+	// lists capabilities accepted without any feature gate. If this test fails
+	// after a vendor bump, update baseCapabilities.
+	expected := sets.New[configv1.ClusterVersionCapability](
+		configv1.ClusterVersionCapabilityOpenShiftSamples,
+		configv1.ClusterVersionCapabilityBaremetal,
+		configv1.ClusterVersionCapabilityMarketplace,
+		configv1.ClusterVersionCapabilityConsole,
+		configv1.ClusterVersionCapabilityInsights,
+		configv1.ClusterVersionCapabilityStorage,
+		configv1.ClusterVersionCapabilityCSISnapshot,
+		configv1.ClusterVersionCapabilityNodeTuning,
+		configv1.ClusterVersionCapabilityMachineAPI,
+		configv1.ClusterVersionCapabilityBuild,
+		configv1.ClusterVersionCapabilityDeploymentConfig,
+		configv1.ClusterVersionCapabilityImageRegistry,
+		configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+		configv1.ClusterVersionCapabilityCloudCredential,
+		configv1.ClusterVersionCapabilityIngress,
+		configv1.ClusterVersionCapabilityCloudControllerManager,
+		configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+	)
+	if !baseCapabilities.Equal(expected) {
+		t.Fatalf("baseCapabilities is out of sync with upstream featureGate=\"\" enum.\n"+
+			"Missing from baseCapabilities: %v\n"+
+			"Extra in baseCapabilities: %v",
+			expected.Difference(baseCapabilities).UnsortedList(),
+			baseCapabilities.Difference(expected).UnsortedList())
+	}
+}
+
+func TestFilterByBaseCapabilities(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		caps             []configv1.ClusterVersionCapability
+		featureSet       configv1.FeatureSet
+		expectedFiltered []configv1.ClusterVersionCapability
+	}{
+		{
+			name: "Default featureSet filters out feature-gated capabilities",
+			caps: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+			featureSet: configv1.Default,
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+			},
+		},
+		{
+			name: "Empty featureSet treated as Default and filters out feature-gated capabilities",
+			caps: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+			featureSet: "",
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+			},
+		},
+		{
+			name: "Normalized Default string also filters out feature-gated capabilities",
+			caps: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+			featureSet: "Default",
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+			},
+		},
+		{
+			name: "TechPreviewNoUpgrade passes everything through",
+			caps: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
+			},
+			featureSet: configv1.TechPreviewNoUpgrade,
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+				configv1.ClusterVersionCapabilityCompatibilityRequirements,
+			},
+		},
+		{
+			name: "DevPreviewNoUpgrade passes everything through",
+			caps: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+			featureSet: configv1.DevPreviewNoUpgrade,
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+		},
+		{
+			name: "CustomNoUpgrade passes everything through",
+			caps: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+			featureSet: configv1.CustomNoUpgrade,
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityClusterAPI,
+			},
+		},
+		{
+			name:             "Empty input returns nil",
+			caps:             nil,
+			featureSet:       configv1.Default,
+			expectedFiltered: nil,
+		},
+		{
+			name: "All base caps returned unchanged for Default featureSet",
+			caps: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+				configv1.ClusterVersionCapabilityStorage,
+			},
+			featureSet: configv1.Default,
+			expectedFiltered: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityConsole,
+				configv1.ClusterVersionCapabilityStorage,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			filtered := FilterByBaseCapabilities(test.caps, test.featureSet)
+			g.Expect(filtered).To(Equal(test.expectedFiltered))
 		})
 	}
 }
