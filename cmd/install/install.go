@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -139,6 +140,7 @@ type Options struct {
 	WaitUntilAvailable                        bool
 	WaitUntilEstablished                      bool
 	RHOBSMonitoring                           bool
+	AZMonitoring                              bool
 	CVOPrometheusURL                          string
 	SLOsAlerts                                bool
 	MonitoringDashboards                      bool
@@ -341,6 +343,9 @@ func (o *Options) validateImageConfig() []error {
 	if o.RHOBSMonitoring && os.Getenv(rhobsmonitoring.EnvironmentVariable) != "1" {
 		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the RHOBS_MONITORING environment variable must be set to \"1\""))
 	}
+	if o.AZMonitoring && os.Getenv(azmonitoring.EnvironmentVariable) != "1" {
+		errs = append(errs, fmt.Errorf("when invoking this command with the --az-monitoring flag, the AZ_MONITORING environment variable must be set to \"1\""))
+	}
 	if o.CertRotationScale > 24*time.Hour {
 		errs = append(errs, fmt.Errorf("cannot set --cert-rotation-scale longer than 24h, invalid value: %s", o.CertRotationScale.String()))
 	}
@@ -377,10 +382,16 @@ func (o *Options) validateScaleFromZeroConfig() []error {
 func (o *Options) validateMonitoringConfig() []error {
 	var errs []error
 	if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
-		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
+		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported"))
 	}
-	if len(o.CVOPrometheusURL) > 0 && !o.RHOBSMonitoring && !o.EnableCVOManagementClusterMetricsAccess {
-		errs = append(errs, fmt.Errorf("--cvo-prometheus-url requires either --rhobs-monitoring or --enable-cvo-management-cluster-metrics-access to be enabled"))
+	if o.AZMonitoring && o.EnableCVOManagementClusterMetricsAccess {
+		errs = append(errs, fmt.Errorf("when invoking this command with the --az-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported"))
+	}
+	if o.RHOBSMonitoring && o.AZMonitoring {
+		errs = append(errs, fmt.Errorf("--rhobs-monitoring and --az-monitoring are mutually exclusive; only one alternative monitoring group can be active"))
+	}
+	if len(o.CVOPrometheusURL) > 0 && !o.RHOBSMonitoring && !o.AZMonitoring && !o.EnableCVOManagementClusterMetricsAccess {
+		errs = append(errs, fmt.Errorf("--cvo-prometheus-url requires either --rhobs-monitoring, --az-monitoring, or --enable-cvo-management-cluster-metrics-access to be enabled"))
 	}
 	return errs
 }
@@ -487,6 +498,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
 	cmd.Flags().BoolVar(&opts.WaitUntilEstablished, "wait-until-crds-established", opts.WaitUntilEstablished, "If true, pauses installation until all custom resource definitions are established before applying other manifests.")
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc). For ROSA HCP, this also enables the Cluster Version Operator to query the RHOBS Prometheus for conditional update evaluation. Use --cvo-prometheus-url to override the default Prometheus endpoint.")
+	cmd.PersistentFlags().BoolVar(&opts.AZMonitoring, "az-monitoring", opts.AZMonitoring, "If true, HyperShift will generate and use the Azure monitoring version of monitoring resources (ServiceMonitors, PodMonitors, etc) under the azmonitoring.coreos.com API group. Mutually exclusive with --rhobs-monitoring.")
 	cmd.PersistentFlags().StringVar(&opts.CVOPrometheusURL, "cvo-prometheus-url", opts.CVOPrometheusURL, "Prometheus URL for the Cluster Version Operator to query metrics for conditional update risk evaluation. Only effective when --rhobs-monitoring or --enable-cvo-management-cluster-metrics-access is enabled. If not specified, defaults to the RHOBS monitoring stack for ROSA HCP, or the Thanos querier for self-managed HyperShift.")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
@@ -1372,6 +1384,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		IncludeVersion:                          !opts.Template,
 		UWMTelemetry:                            opts.EnableUWMTelemetryRemoteWrite,
 		RHOBSMonitoring:                         opts.RHOBSMonitoring,
+		AZMonitoring:                            opts.AZMonitoring,
 		CVOPrometheusURL:                        opts.CVOPrometheusURL,
 		MonitoringDashboards:                    opts.MonitoringDashboards,
 		CertRotationScale:                       opts.CertRotationScale,
@@ -1575,6 +1588,7 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
 		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
 		RHOBSMonitoring:                         opts.RHOBSMonitoring,
+		AZMonitoring:                            opts.AZMonitoring,
 		ManagedService:                          opts.ManagedService,
 		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
 	}.Build()

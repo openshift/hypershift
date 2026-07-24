@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -24,6 +25,7 @@ func TestAdaptDeployment(t *testing.T) {
 		controlPlaneOperatorImage string
 		ignitionEndpoint          string
 		rhobsEnabled              bool
+		azMonitoringEnabled       bool
 		validateFunc              func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext)
 	}{
 		{
@@ -155,6 +157,51 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
+			name:                    "When AZ monitoring is enabled on AWS, it should set environment variable",
+			platformType:            hyperv1.AWSPlatform,
+			awsRegion:               "us-east-1",
+			hyperShiftOperatorImage: "quay.io/hypershift/operator:latest",
+			ignitionEndpoint:        "https://ignition.example.com",
+			azMonitoringEnabled:     true,
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = opts.adaptDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
+				g.Expect(container.Env).To(ContainElement(
+					corev1.EnvVar{
+						Name:  azmonitoring.EnvironmentVariable,
+						Value: "1",
+					},
+				))
+			},
+		},
+		{
+			name:                    "When AZ monitoring is disabled on AWS, it should not set environment variable",
+			platformType:            hyperv1.AWSPlatform,
+			awsRegion:               "us-east-1",
+			hyperShiftOperatorImage: "quay.io/hypershift/operator:latest",
+			ignitionEndpoint:        "https://ignition.example.com",
+			azMonitoringEnabled:     false,
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = opts.adaptDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
+				g.Expect(podspec.FindEnvVar(azmonitoring.EnvironmentVariable, container.Env)).To(BeNil())
+			},
+		},
+		{
 			name:                    "When platform is not AWS, it should only set basic configuration",
 			platformType:            hyperv1.AzurePlatform,
 			hyperShiftOperatorImage: "quay.io/hypershift/operator:latest",
@@ -196,6 +243,11 @@ func TestAdaptDeployment(t *testing.T) {
 				t.Setenv(rhobsmonitoring.EnvironmentVariable, "1")
 			} else {
 				t.Setenv(rhobsmonitoring.EnvironmentVariable, "")
+			}
+			if tc.azMonitoringEnabled {
+				t.Setenv(azmonitoring.EnvironmentVariable, "1")
+			} else {
+				t.Setenv(azmonitoring.EnvironmentVariable, "")
 			}
 
 			hcp := &hyperv1.HostedControlPlane{
