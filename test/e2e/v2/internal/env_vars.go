@@ -208,11 +208,6 @@ func init() {
 		"Azure DiskEncryptionSet resource ID for disk encryption NodePool tests.",
 		false,
 	)
-	RegisterEnvVar(
-		"E2E_ADDITIONAL_PULL_SECRET_FILE",
-		"Path to an additional pull secret file for the global pull secret lifecycle test.",
-		false,
-	)
 	// External OIDC test environment variables
 	RegisterEnvVar(
 		"E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE",
