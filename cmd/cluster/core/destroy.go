@@ -29,6 +29,9 @@ const (
 	destroyFinalizer = "openshift.io/destroy-cluster"
 )
 
+// overridden in tests to inject a client with interceptor-based error injection
+var newClient = util.GetClientWithKubeconfig
+
 // DestroyPlatformSpecifics can be used to destroy platform specific resources which are unknown to hypershift
 type DestroyPlatformSpecifics = func(ctx context.Context, options *DestroyOptions) error
 
@@ -107,7 +110,7 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
 	hostedClusterExists := hostedCluster != nil
 	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
-	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
+	c, err := newClient(o.Kubeconfig)
 	if err != nil {
 		return err
 	}
@@ -163,9 +166,12 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		return err
 	}
 
-	// clean up CLI generated secrets
+	// Non-fatal: CLI-created secrets are labeled with DeleteWithClusterLabelName: "true"
+	// and AutoInfraLabelName. The operator's reconcileCLISecrets sets the HostedCluster
+	// as their ownerRef, ensuring they are garbage-collected when the HC is deleted.
 	if err = deleteCLISecrets(ctx, o, c); err != nil {
-		return err
+		o.Log.Info("Failed to delete CLI generated secrets, skipping",
+			"error", err.Error(), "namespace", o.Namespace)
 	}
 
 	if shouldDestroyPlatformSpecifics && hostedClusterExists {
