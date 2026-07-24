@@ -3864,7 +3864,11 @@ func TestEnqueueNodePoolsForCloudConfig(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build()
+			objs := make([]client.Object, len(tc.objects))
+			for i, o := range tc.objects {
+				objs[i] = o.DeepCopyObject().(client.Object)
+			}
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 			r := &NodePoolReconciler{Client: c}
 
 			result := r.enqueueNodePoolsForCloudConfig(context.Background(), tc.cm)
