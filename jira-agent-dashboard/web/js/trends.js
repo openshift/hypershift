@@ -240,35 +240,40 @@ function renderTrendCost(trends) {
   });
 }
 
-// Donut: Issues by PR status
+// Stacked bar: Issues by PR status per component
 function renderStatusChart(issues) {
   const ctx = document.getElementById('status-chart').getContext('2d');
   destroyChart('status');
 
   const groups = groupByJiraKey(issues);
-  const counts = { merged: 0, open: 0, closed: 0 };
+  const componentCounts = {};
   groups.forEach(g => {
-    if (g.best.pr_merged) counts.merged++;
-    else if (g.best.pr_closed) counts.closed++;
-    else counts.open++;
+    const comp = g.best.component || 'hypershift';
+    if (!componentCounts[comp]) componentCounts[comp] = { merged: 0, open: 0, closed: 0 };
+    if (g.best.pr_merged) componentCounts[comp].merged++;
+    else if (g.best.pr_closed) componentCounts[comp].closed++;
+    else componentCounts[comp].open++;
   });
 
+  const components = Object.keys(componentCounts).sort();
+
   chartsInstances.status = new Chart(ctx, {
-    type: 'doughnut',
+    type: 'bar',
     data: {
-      labels: ['Merged', 'Open', 'Closed'],
-      datasets: [{
-        data: [counts.merged, counts.open, counts.closed],
-        backgroundColor: ['#27ae60', '#3498db', '#e74c3c'],
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
+      labels: components,
+      datasets: [
+        { label: 'Merged', data: components.map(c => componentCounts[c].merged), backgroundColor: '#27ae60', borderRadius: 4 },
+        { label: 'Open', data: components.map(c => componentCounts[c].open), backgroundColor: '#3498db', borderRadius: 4 },
+        { label: 'Closed', data: components.map(c => componentCounts[c].closed), backgroundColor: '#e74c3c', borderRadius: 4 },
+      ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'bottom' }
+      plugins: { legend: { position: 'bottom' } },
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } }
       }
     }
   });
@@ -626,16 +631,33 @@ function updateImpactHero(issues, from, to) {
     rangeLabel.textContent = months[fm - 1] + ' ' + fd + ' – ' + months[tm - 1] + ' ' + td + ', ' + ty;
   }
 
-  loadImpactTrend(from, to);
+  renderImpactTrendFromIssues(issues, from, to);
 }
 
-async function loadImpactTrend(from, to) {
-  try {
-    const data = await fetchAPI(`/api/outcomes/trends?from=${from}&to=${to}&granularity=weekly`);
-    renderImpactTrend(data);
-  } catch {
-    // silently degrade — hero numbers still show
-  }
+function renderImpactTrendFromIssues(issues, from, to) {
+  const merged = groupByJiraKey(issues)
+    .filter(g => g.best.pr_merged && g.best.merged_at)
+    .map(g => ({ date: g.best.merged_at.split('T')[0] }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!merged.length) { destroyChart('impactTrend'); return; }
+
+  const weekStart = d => {
+    const dt = new Date(d + 'T00:00:00');
+    dt.setDate(dt.getDate() - dt.getDay());
+    return dt.toISOString().split('T')[0];
+  };
+
+  const bucketMap = {};
+  merged.forEach(m => {
+    const ws = weekStart(m.date);
+    bucketMap[ws] = (bucketMap[ws] || 0) + 1;
+  });
+
+  const weeks = Object.keys(bucketMap).sort();
+  let cum = 0;
+  const data = weeks.map(w => { cum += bucketMap[w]; return { week_start: w, cum_merged: cum }; });
+  renderImpactTrend(data);
 }
 
 function renderImpactTrend(data) {

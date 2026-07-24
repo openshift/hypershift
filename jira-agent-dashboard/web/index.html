@@ -28,7 +28,7 @@
       <!-- About + Pipeline Status -->
       <div class="overview-hero">
         <div class="overview-about">
-          <p>This dashboard tracks the <strong>HyperShift JIRA Agent</strong> — an automated system that picks up Jira issues, generates code fixes with Claude, opens pull requests, and responds to reviewer feedback. It scrapes Prow CI artifacts and GitHub to surface issue outcomes, cost breakdowns, merge timelines, and review comment analysis across every agent run.</p>
+          <p>This dashboard tracks <strong>JIRA Agent</strong> activity across teams — automated systems that pick up Jira issues, generate code fixes with Claude, open pull requests, and respond to reviewer feedback. It scrapes Prow CI artifacts and GitHub to surface issue outcomes, cost breakdowns, merge timelines, and review comment analysis across every agent run.</p>
         </div>
         <div class="overview-pipeline">
           <h4>Pipeline Status</h4>
@@ -106,7 +106,7 @@
       <!-- Charts -->
       <div class="charts">
         <div class="chart-container">
-          <h3>Issues by Status <span class="info-tip" data-tip="Breakdown of PRs by outcome: Merged (accepted), Open (still under review), Closed (rejected)">i</span></h3>
+          <h3>Issues by Component <span class="info-tip" data-tip="Breakdown of PRs by component and outcome: Merged (accepted), Open (still under review), Closed (rejected)">i</span></h3>
           <canvas id="status-chart"></canvas>
         </div>
         <div class="chart-container">
