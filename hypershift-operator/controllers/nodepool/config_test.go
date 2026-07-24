@@ -463,7 +463,13 @@ spec:
 				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build()
 			}
 
-			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test")
+			resolvedStream := StreamRHEL9
+			if tc.releaseImage != nil && client != nil {
+				if s, resolveErr := GetRHELStreamForBootImage(t.Context(), client, tc.nodePool, tc.releaseImage); resolveErr == nil {
+					resolvedStream = s
+				}
+			}
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))

@@ -82,7 +82,7 @@ type rolloutConfig struct {
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
-func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string) (*ConfigGenerator, error) {
+func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string, resolvedRHELStream string) (*ConfigGenerator, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client can't be nil")
 	}
@@ -119,17 +119,12 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		}
 	}
 
-	resolvedStream, err := getRHELStreamForBootImage(ctx, client, nodePool, releaseImage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
-	}
-
 	cg := &ConfigGenerator{
 		Client:                         client,
 		hostedCluster:                  hostedCluster,
 		nodePool:                       nodePool,
 		controlplaneNamespace:          controlPlaneNamespace,
-		resolvedRHELStreamForBootImage: resolvedStream,
+		resolvedRHELStreamForBootImage: resolvedRHELStream,
 		rolloutConfig: &rolloutConfig{
 			releaseImage:     releaseImage,
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,

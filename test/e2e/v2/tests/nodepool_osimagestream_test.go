@@ -281,10 +281,10 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			e2eutil.WithInterval(15*time.Second),
 		)
 
-		// Verify the controller populated status.osImageStream from the actual
-		// Machine NodeInfo.OSImage. The concrete value (rhel-9 or rhel-10) depends
-		// on the RHCOS shipped in the payload, so we assert it is set and valid
-		// rather than predicting the exact stream.
+		expectedStream := hyperv1.OSImageStreamRHEL10
+
+		GinkgoWriter.Printf("Waiting for NodePool %s/%s status.osImageStream.name to be %s\n",
+			defaultNP.Namespace, defaultNP.Name, expectedStream)
 		e2eutil.EventuallyObject[*hyperv1.NodePool](
 			GinkgoTB(), ctx,
 			"default NodePool status to report a non-empty osImageStream",
@@ -436,12 +436,124 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 
 		// Verify the config hash does not change over time.
 		// The controller normalizes the explicit default to empty for hash computation,
-		// so the hash should remain identical — no rollout triggered.
-		Consistently(func(g Gomega) {
-			pool := &hyperv1.NodePool{}
-			g.Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), pool)).To(Succeed())
-			g.Expect(pool.Annotations).To(HaveKeyWithValue(nodePoolAnnotationCurrentConfig, originalConfigHash),
-				"config hash should not change when setting osImageStream to the version-derived default")
-		}).WithTimeout(2 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
+		// so both hashes should be identical — no rollout would be triggered.
+		e2eutil.EventuallyObject[*hyperv1.NodePool](
+			GinkgoTB(), ctx,
+			fmt.Sprintf("NodePool %s config hash to match baseline (explicit default == implicit default)", np.Name),
+			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+					hash, ok := pool.Annotations[nodePoolAnnotationCurrentConfig]
+					if !ok || hash == "" {
+						return false, "config hash annotation not yet set", nil
+					}
+					if hash != baselineHash {
+						return false, fmt.Sprintf("config hash %s != baseline %s", hash, baselineHash), nil
+					}
+					return true, "config hash matches baseline", nil
+				},
+			},
+			e2eutil.WithTimeout(5*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
+		)
+	})
+}
+
+// NodePoolOSImageStreamUpgradeVerificationTest creates a NodePool at a previous
+// release image, upgrades it to the latest, and verifies that status.osImageStream
+// reports the correct version-derived stream after upgrade completes.
+// TODO(CNTRLPLANE-3871): After OSStreams FG graduation (openshift/api#2950),
+// move this verification back into the standard upgrade tests in nodepool_lifecycle_test.go.
+func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContextGetter) {
+	It("When a NodePool is upgraded, it should report the correct osImageStream in status", func() {
+		testCtx := getTestCtx()
+		testCtx.ValidateHostedClusterClient()
+
+		hc := testCtx.GetHostedCluster()
+		hcClient := testCtx.GetHostedClusterClient()
+
+		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
+		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
+		if previousImage == "" || latestImage == "" {
+			Skip("E2E_PREVIOUS_RELEASE_IMAGE and E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
+		}
+
+		ctx := testCtx.Context
+
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+
+		var oneReplica int32 = 1
+		np := buildTestNodePool(defaultNP, "osstream-upgrade", func(pool *hyperv1.NodePool) {
+			pool.Spec.Replicas = &oneReplica
+			pool.Spec.Release.Image = previousImage
+			pool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+				RollingUpdate: &hyperv1.RollingUpdate{
+					MaxUnavailable: ptr.To(intstr.FromInt32(0)),
+					MaxSurge:       ptr.To(intstr.FromInt32(oneReplica)),
+				},
+			}
+		})
+
+		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
+		GinkgoWriter.Printf("Created NodePool %s at previous release %s\n", np.Name, previousImage)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
+
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+
+		// Upgrade to latest release
+		GinkgoWriter.Printf("Upgrading NodePool %s to latest release %s\n", np.Name, latestImage)
+		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
+			obj.Spec.Release.Image = latestImage
+		})).To(Succeed(), "failed to update NodePool release image")
+
+		// Wait for upgrade to complete
+		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
+					Status: metav1.ConditionFalse,
+				}),
+			},
+			e2eutil.WithTimeout(upgradeTimeout),
+		)
+
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+
+		// Verify osImageStream status after upgrade.
+		// An upgraded NodePool preserves its existing stream — the controller
+		// uses status.osImageStream (set from the pre-upgrade nodes) rather
+		// than the version-derived default. Since the NP was created at a
+		// pre-5.0 release, nodes booted with rhel-9 and the stream stays rhel-9
+		// even after upgrading to 5.0.
+		expectedStream := hyperv1.OSImageStreamRHEL9
+
+		e2eutil.EventuallyObject[*hyperv1.NodePool](
+			GinkgoTB(), ctx,
+			fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s after upgrade", np.Namespace, np.Name, expectedStream),
+			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				e2eutil.OSImageStreamPredicate(expectedStream),
+			},
+			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
+		)
 	})
 }

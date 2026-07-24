@@ -79,22 +79,27 @@ func usesRuncRuntime(ctx context.Context, c client.Client, nodePool *hyperv1.Nod
 	return false, nil
 }
 
-// getRHELStreamForBootImage returns the RHEL stream name to pass to
+// GetRHELStreamForBootImage returns the RHEL stream name to pass to
 // StreamForName when resolving platform-specific boot images (AMIs, VHDs,
 // GCE images, etc.).
 //
-// It always delegates to GetRHELStream for version-aware default
-// resolution, validation, and runc constraint checking. When
-// spec.osImageStream.Name is unset, GetRHELStream derives the default
-// from the release version: rhel-9 for OCP < 5.0, rhel-10 for
-// OCP >= 5.0. This matches the dual-stream RHEL NodePool enhancement:
-// https://github.com/openshift/enhancements/blob/master/enhancements/hypershift/dual-stream-rhel-nodepool.md
-//
-// On upgrade to OCP 5.0+, existing NodePools with unset
-// spec.osImageStream will transition from rhel-9 to rhel-10 boot
-// images. This is the intended behavior per the enhancement:
-// implicit-stream NodePools automatically adopt the new default.
-func getRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+// Resolution order:
+//  1. spec.osImageStream.Name — explicit user choice, always honored
+//  2. status.osImageStream.Name — what existing nodes are running;
+//     preserves the current stream across upgrades to avoid unintended
+//     rollouts (e.g., upgrading from OCP 4.x to 5.0 keeps rhel-9)
+//  3. Version-derived default via GetRHELStream — for brand-new
+//     NodePools with no status yet (rhel-9 for <5.0, rhel-10 for >=5.0)
+func GetRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	// Explicit user choice takes precedence.
+	explicitStream := nodePool.Spec.OSImageStream.Name
+
+	// For existing NodePools without an explicit choice, preserve the
+	// stream that nodes are already running to avoid a rollout on upgrade.
+	if explicitStream == "" && nodePool.Status.OSImageStream.Name != "" {
+		return nodePool.Status.OSImageStream.Name, nil
+	}
+
 	version, err := semver.Parse(releaseImage.Version())
 	if err != nil {
 		return "", fmt.Errorf("failed to parse release image version %q: %w", releaseImage.Version(), err)
@@ -105,7 +110,7 @@ func getRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *h
 		return "", fmt.Errorf("failed to detect container runtime: %w", err)
 	}
 
-	return GetRHELStream(nodePool.Spec.OSImageStream.Name, version, usesRunc)
+	return GetRHELStream(explicitStream, version, usesRunc)
 }
 
 // validateOSImageStream checks that spec.osImageStream.Name, if set, is a
@@ -116,6 +121,6 @@ func validateOSImageStream(ctx context.Context, c client.Client, nodePool *hyper
 	if nodePool.Spec.OSImageStream.Name == "" {
 		return nil
 	}
-	_, err := getRHELStreamForBootImage(ctx, c, nodePool, releaseImage)
+	_, err := GetRHELStreamForBootImage(ctx, c, nodePool, releaseImage)
 	return err
 }

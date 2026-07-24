@@ -404,6 +404,62 @@ func TestUpdatingVersionCondition(t *testing.T) {
 	}
 }
 
+func TestValidMachineConfigCondition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+			InfraID:    "fake-infra-id",
+		},
+		Status: hyperv1.HostedClusterStatus{
+			KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
+		},
+	}
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nodepool-name",
+			Namespace: "myns",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hostedCluster.Name,
+			Release:     hyperv1.Release{Image: "fake-release-image"},
+			Config:      []corev1.LocalObjectReference{{Name: "machineconfig-1"}},
+		},
+		Status: hyperv1.NodePoolStatus{
+			Version: semver.MustParse("4.18.0").String(),
+		},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+		nodePool, hostedCluster, pullSecret, ignitionServerCACert,
+		machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3,
+	).Build()
+
+	r := &NodePoolReconciler{
+		Client:          client,
+		ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{},
+				},
+			},
+		},
+	}
+
+	_, err := r.validMachineConfigCondition(t.Context(), nodePool, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
+	g.Expect(cond).ToNot(BeNil())
+	g.Expect(cond.Status).To(Equal(corev1.ConditionTrue))
+}
+
 func setupTestObjects() (*corev1.Secret, *corev1.Secret, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap) {
 	coreMachineConfig := `
 apiVersion: machineconfiguration.openshift.io/v1

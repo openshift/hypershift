@@ -99,7 +99,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 			expectedStream: "rhel-9",
 		},
 		{
-			name: "When spec.osImageStream.Name is empty and version is 5.x, it should return rhel-10",
+			name: "When spec.osImageStream.Name is empty and version is 5.x and no status, it should return rhel-10",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{},
 			},
@@ -107,6 +107,111 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
 			},
 			expectedStream: "rhel-10",
+		},
+		{
+			name: "When spec is empty and status has rhel-9 on OCP 5.0 upgrade, it should preserve rhel-9",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{},
+				Status: hyperv1.NodePoolStatus{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+			},
+			expectedStream: "rhel-9",
+		},
+		{
+			name: "When spec is empty and status has rhel-10 on OCP 5.0, it should preserve rhel-10",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{},
+				Status: hyperv1.NodePoolStatus{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+			},
+			expectedStream: "rhel-10",
+		},
+		{
+			name: "When spec is rhel-10 and status has rhel-9, it should honor spec over status",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
+				},
+				Status: hyperv1.NodePoolStatus{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+			},
+			expectedStream: "rhel-10",
+		},
+		{
+			name: "When spec is rhel-9 and status has rhel-10, it should honor spec over status",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+				},
+				Status: hyperv1.NodePoolStatus{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+			},
+			expectedStream: "rhel-9",
+		},
+		{
+			name: "When spec is empty and status has rhel-9 with runc config, it should preserve rhel-9 without checking runc",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{Name: "runc-config"},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+				},
+			},
+			configs: []client.Object{
+				runcContainerRuntimeConfigMap("clusters", "runc-config"),
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+			},
+			expectedStream: "rhel-9",
+		},
+		{
+			name: "When spec is rhel-10 with runc config and status has rhel-9, it should return error from spec validation",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
+					Config: []corev1.LocalObjectReference{
+						{Name: "runc-config"},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
+				},
+			},
+			configs: []client.Object{
+				runcContainerRuntimeConfigMap("clusters", "runc-config"),
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
+			},
+			expectErr: true,
 		},
 		{
 			name: "When spec.osImageStream.Name is empty and version is 6.x, it should return rhel-10",
@@ -255,7 +360,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
-			stream, err := getRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage)
+			stream, err := GetRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				return
