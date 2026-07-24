@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"slices"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -8,10 +9,24 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestKonnectivityServerAuthenticatesAgents(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	c := util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer("test-image", 3, nil))
+
+	clusterCAFlagIndex := slices.Index(c.Args, "--cluster-ca-cert")
+	if clusterCAFlagIndex == -1 || clusterCAFlagIndex+1 >= len(c.Args) {
+		t.Fatal("--cluster-ca-cert flag or its value not found in konnectivity-server args")
+	}
+	g.Expect(c.Args[clusterCAFlagIndex+1]).To(Equal("/etc/konnectivity/ca/ca.crt"))
+}
 
 // Ensure certain deployment fields do not get set
 func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
