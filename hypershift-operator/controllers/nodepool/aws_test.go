@@ -1205,8 +1205,20 @@ func TestSetAWSConditions(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			r := &NodePoolReconciler{Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build()}
-			err := r.setAWSConditions(t.Context(), tc.nodePool, tc.hostedCluster, "", tc.releaseImage)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			resolvedStream := StreamRHEL9
+			if tc.releaseImage != nil {
+				var resolveErr error
+				resolvedStream, resolveErr = GetRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage)
+				if resolveErr != nil {
+					if tc.expectError {
+						return
+					}
+					t.Fatalf("failed to resolve RHEL stream: %v", resolveErr)
+				}
+			}
+			r := &NodePoolReconciler{Client: fakeClient}
+			err := r.setAWSConditions(t.Context(), tc.nodePool, tc.hostedCluster, "", tc.releaseImage, resolvedStream)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

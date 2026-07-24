@@ -290,10 +290,7 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			e2eutil.WithInterval(15*time.Second),
 		)
 
-		// The default OS stream is currently hardcoded to rhel-9 for all OCP versions.
-		// TODO(CNTRLPLANE-3032): When the hardcoding is removed, change this to expect rhel-10
-		// on OCP >= 5.0.
-		expectedStream := hyperv1.OSImageStreamRHEL9
+		expectedStream := hyperv1.OSImageStreamRHEL10
 
 		GinkgoWriter.Printf("Waiting for NodePool %s/%s status.osImageStream.name to be %s\n",
 			defaultNP.Namespace, defaultNP.Name, expectedStream)

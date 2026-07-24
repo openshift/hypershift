@@ -463,7 +463,15 @@ spec:
 				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build()
 			}
 
-			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test")
+			resolvedStream := StreamRHEL9
+			if tc.releaseImage != nil && client != nil {
+				var resolveErr error
+				resolvedStream, resolveErr = GetRHELStreamForBootImage(t.Context(), client, tc.nodePool, tc.releaseImage)
+				if resolveErr != nil && tc.error == nil {
+					t.Fatalf("failed to resolve RHEL stream: %v", resolveErr)
+				}
+			}
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))

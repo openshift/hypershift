@@ -49,20 +49,9 @@ func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (st
 
 	return template, nil
 }
-func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
-	rhelStream, err := getRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage)
-	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPlatformImageType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            fmt.Sprintf("Couldn't resolve RHEL stream for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
-	}
+func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
 	if nodePool.Spec.Platform.OpenStack.ImageName == "" {
-		_, err := openstack.OpenStackReleaseImage(releaseImage, rhelStream)
+		_, err := openstack.OpenStackReleaseImage(releaseImage, resolvedRHELStream)
 		if err != nil {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -73,7 +62,7 @@ func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePoo
 			})
 			return fmt.Errorf("couldn't discover an OpenStack Image for release image: %w", err)
 		}
-		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, releaseImage, nodePool, rhelStream)
+		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, releaseImage, nodePool, resolvedRHELStream)
 		if err != nil {
 			return err
 		}

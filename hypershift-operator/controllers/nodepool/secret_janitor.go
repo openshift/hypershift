@@ -111,7 +111,11 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
+	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
+	}
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

@@ -1489,7 +1489,7 @@ func verifyOSImageStreamAfterUpgrade(ctx context.Context, testCtx *internal.Test
 		return
 	}
 
-	expectedStream := hyperv1.OSImageStreamRHEL9
+	expectedStream := hyperv1.OSImageStreamRHEL10
 
 	e2eutil.EventuallyObject[*hyperv1.NodePool](
 		GinkgoTB(), ctx,

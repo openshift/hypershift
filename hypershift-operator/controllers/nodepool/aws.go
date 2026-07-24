@@ -331,7 +331,7 @@ func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcluster.Spec.Platform.AWS == nil {
 			return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
@@ -361,18 +361,7 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 			})
 		} else {
 			// Default behavior for Linux/RHCOS AMIs.
-			rhelStream, err := getRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage)
-			if err != nil {
-				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-					Type:               hyperv1.NodePoolValidPlatformImageType,
-					Status:             corev1.ConditionFalse,
-					Reason:             hyperv1.NodePoolValidationFailedReason,
-					Message:            fmt.Sprintf("Couldn't resolve RHEL stream for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-					ObservedGeneration: nodePool.Generation,
-				})
-				return fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
-			}
-			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, rhelStream, releaseImage)
+			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, resolvedRHELStream, releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,
