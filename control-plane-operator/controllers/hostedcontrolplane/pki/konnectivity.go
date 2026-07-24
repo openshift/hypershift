@@ -13,6 +13,26 @@ func ReconcileKonnectivitySignerSecret(secret *corev1.Secret, ownerRef config.Ow
 	return reconcileSelfSignedCA(secret, ownerRef, "konnectivity-signer", "kubernetes")
 }
 
+// ReconcileKonnectivityServerServingSignerSecret creates a dedicated CA for the konnectivity-server local serving cert (port 8090).
+func ReconcileKonnectivityServerServingSignerSecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "konnectivity-server-serving-signer", "kubernetes")
+}
+
+// ReconcileKonnectivityClusterServingSignerSecret creates a dedicated CA for the konnectivity-server cluster/agent-facing serving cert (port 8091).
+func ReconcileKonnectivityClusterServingSignerSecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "konnectivity-cluster-serving-signer", "kubernetes")
+}
+
+// ReconcileKonnectivityServerAuthSignerSecret creates a dedicated CA for the konnectivity-client cert (KAS client auth to konnectivity-server).
+func ReconcileKonnectivityServerAuthSignerSecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "konnectivity-server-auth-signer", "kubernetes")
+}
+
+// ReconcileKonnectivityClientAuthSignerSecret creates a dedicated CA for the konnectivity-agent cert (agent client auth to konnectivity-server).
+func ReconcileKonnectivityClientAuthSignerSecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "konnectivity-client-auth-signer", "kubernetes")
+}
+
 func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"localhost",
