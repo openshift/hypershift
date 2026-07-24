@@ -384,7 +384,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		case hyperv1.ArchitectureAMD64:
 			instanceType = "m5.large"
 		case hyperv1.ArchitectureARM64:
-			instanceType = "m6g.large"
+			instanceType = "m8g.large"
 		}
 	}
 

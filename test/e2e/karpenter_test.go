@@ -288,7 +288,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 
 		armNodePool := baseNodePool("arm-nodepool", armNodeClass.Name)
 		armNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
-			{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}},
+			{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m8g.xlarge"}},
 			{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}},
 			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 		}

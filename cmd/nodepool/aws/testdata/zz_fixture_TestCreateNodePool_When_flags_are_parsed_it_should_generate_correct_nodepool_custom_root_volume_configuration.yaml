@@ -1,5 +1,5 @@
 instanceProfile: test-infra-worker
-instanceType: m6g.large
+instanceType: m8g.large
 rootVolume:
   iops: 10000
   size: 200

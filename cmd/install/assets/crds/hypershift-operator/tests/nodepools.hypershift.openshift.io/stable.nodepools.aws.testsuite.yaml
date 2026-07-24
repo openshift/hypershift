@@ -509,7 +509,7 @@ tests:
         platform:
           aws:
             instanceProfile: a-profile
-            instanceType: m6g.large
+            instanceType: m8g.large
             rootVolume:
               size: 120
               type: gp3
@@ -557,7 +557,7 @@ tests:
         platform:
           aws:
             instanceProfile: a-profile
-            instanceType: m6g.large
+            instanceType: m8g.large
             rootVolume:
               size: 120
               type: gp3
@@ -633,7 +633,7 @@ tests:
         platform:
           aws:
             instanceProfile: a-profile
-            instanceType: m6g.large
+            instanceType: m8g.large
             rootVolume:
               size: 120
               type: gp3
