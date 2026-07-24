@@ -49,6 +49,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -105,7 +106,7 @@ const (
 	ControllerName            = "resources"
 	ConfigNamespace           = "openshift-config"
 	ConfigManagedNamespace    = "openshift-config-managed"
-	CloudProviderCMName       = "cloud-provider-config"
+	CloudProviderCMName       = globalconfig.CloudProviderCMName
 	maxConditionMessageLength = 1024
 	awsCredentialsTemplate    = `[default]
 role_arn = %s
@@ -2520,6 +2521,62 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 
 	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		hasTrustBundle := hcp.Spec.AdditionalTrustBundle != nil ||
+			(hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "")
+
+		if !hasTrustBundle {
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+				return fmt.Errorf("failed to clean up %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+			}
+			cmKCC := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigManagedNamespace, Name: "kube-cloud-config"}}
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, cmKCC); err != nil {
+				return fmt.Errorf("failed to clean up %s/%s configmap: %w", cmKCC.Namespace, cmKCC.Name, err)
+			}
+			return nil
+		}
+
+		reference := cpomanifests.AWSProviderConfig(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+			return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err)
+		}
+		providerConfig, ok := reference.Data[globalconfig.AWSProviderConfigKey]
+		if !ok || strings.TrimSpace(providerConfig) == "" {
+			return fmt.Errorf("source configmap %s/%s is missing required key %q", reference.Namespace, reference.Name, globalconfig.AWSProviderConfigKey)
+		}
+
+		var caBundle string
+		managedTrustBundle := cpomanifests.TrustedCABundleConfigMap(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(managedTrustBundle), managedTrustBundle); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to fetch managed trusted CA bundle from management cluster: %w", err)
+			}
+			ctrl.LoggerFrom(ctx).Info("managed trusted CA bundle ConfigMap not found, proceeding without CA bundle", "configmap", client.ObjectKeyFromObject(managedTrustBundle))
+		} else {
+			caBundle = managedTrustBundle.Data[certs.UserCABundleMapKey]
+		}
+
+		for _, target := range []struct{ namespace, name string }{
+			{ConfigNamespace, CloudProviderCMName},
+			{ConfigManagedNamespace, "kube-cloud-config"},
+		} {
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: target.namespace, Name: target.name}}
+			if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+				if cm.Data == nil {
+					cm.Data = map[string]string{}
+				}
+				cm.Data[globalconfig.AWSProviderConfigKey] = providerConfig
+				if caBundle != "" {
+					cm.Data[globalconfig.CABundleKey] = caBundle
+				} else {
+					delete(cm.Data, globalconfig.CABundleKey)
+				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+			}
+		}
 	case hyperv1.AzurePlatform:
 		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
 		reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
