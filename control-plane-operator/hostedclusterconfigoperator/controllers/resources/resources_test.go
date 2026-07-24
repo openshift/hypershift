@@ -33,6 +33,7 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -44,6 +45,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
@@ -4537,6 +4539,230 @@ func TestReconcileConfigOperatorReconciliationCondition(t *testing.T) {
 			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
 			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
 			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+		})
+	}
+}
+
+func TestReconcileIngressControllerKubevirtHTTPRoute(t *testing.T) {
+	tests := []struct {
+		name            string
+		baseDomainPT    bool
+		httpNodePort    int32
+		httpsNodePort   int32
+		expectHTTPRoute bool
+	}{
+		{
+			name:            "When KubeVirt HCP has baseDomainPassthrough enabled, it should create the HTTP passthrough route on the infra client",
+			baseDomainPT:    true,
+			httpNodePort:    30080,
+			httpsNodePort:   30443,
+			expectHTTPRoute: true,
+		},
+		{
+			name:            "When KubeVirt HCP does not have baseDomainPassthrough enabled, it should not create the HTTP passthrough route",
+			baseDomainPT:    false,
+			expectHTTPRoute: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			const (
+				hcpName      = "test-hcp"
+				hcpNamespace = "test-ns"
+				generateID   = "abc123"
+			)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcpName,
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "infra-id",
+					DNS: hyperv1.DNSSpec{
+						BaseDomain: "example.com",
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							BaseDomainPassthrough: ptr.To(tt.baseDomainPT),
+							GenerateID:            generateID,
+						},
+					},
+				},
+			}
+
+			nodePortService := manifests.IngressDefaultIngressNodePortService()
+			nodePortService.Spec.Ports = []corev1.ServicePort{
+				{Port: 443, NodePort: tt.httpsNodePort, TargetPort: intstr.FromInt(int(tt.httpsNodePort))},
+				{Port: 80, NodePort: tt.httpNodePort, TargetPort: intstr.FromInt(int(tt.httpNodePort))},
+			}
+
+			ingressCert := cpomanifests.IngressCert(hcpNamespace)
+			ingressCert.Data = map[string][]byte{"tls.crt": []byte("cert"), "tls.key": []byte("key")}
+
+			guestClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(nodePortService, manifests.IngressDefaultIngressController()).
+				Build()
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(ingressCert).
+				Build()
+			infraClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				kubevirtInfraClient:    infraClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+			errs := r.reconcileIngressController(ctx, hcp)
+			g.Expect(errs).To(BeNil(), "reconcileIngressController should succeed without errors")
+
+			httpRouteName := fmt.Sprintf("%s-%s", manifests.IngressDefaultIngressPassthroughHTTPRouteName, generateID)
+			httpRoute := &routev1.Route{}
+			err := infraClient.Get(t.Context(), client.ObjectKey{Namespace: hcpNamespace, Name: httpRouteName}, httpRoute)
+			if tt.expectHTTPRoute {
+				g.Expect(err).ToNot(HaveOccurred(), "HTTP passthrough route should exist on the infra client")
+				g.Expect(httpRoute.Spec.TLS).To(BeNil(), "HTTP route should have no TLS configuration")
+				g.Expect(string(httpRoute.Spec.WildcardPolicy)).To(Equal(string(routev1.WildcardPolicySubdomain)))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "HTTP passthrough route should not exist when baseDomainPassthrough is disabled")
+			}
+		})
+	}
+}
+
+func TestEnsureIngressControllersRemovedHTTPRoute(t *testing.T) {
+	tests := []struct {
+		name                   string
+		baseDomainPT           bool
+		preCreateRoute         bool
+		expectHTTPRouteDeleted bool
+	}{
+		{
+			name:                   "When KubeVirt HCP has baseDomainPassthrough enabled, it should delete the HTTP passthrough route during cleanup",
+			baseDomainPT:           true,
+			preCreateRoute:         true,
+			expectHTTPRouteDeleted: true,
+		},
+		{
+			name:                   "When baseDomainPassthrough is enabled but the HTTP route does not exist, cleanup should be idempotent",
+			baseDomainPT:           true,
+			preCreateRoute:         false,
+			expectHTTPRouteDeleted: true,
+		},
+		{
+			name:                   "When baseDomainPassthrough is disabled, it should not attempt to delete the HTTP passthrough route",
+			baseDomainPT:           false,
+			preCreateRoute:         true,
+			expectHTTPRouteDeleted: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			const (
+				hcpName      = "test-hcp"
+				hcpNamespace = "test-ns"
+				generateID   = "abc123"
+			)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hcpName,
+					Namespace: hcpNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "infra-id",
+					DNS:     hyperv1.DNSSpec{BaseDomain: "example.com"},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							BaseDomainPassthrough: ptr.To(tt.baseDomainPT),
+							GenerateID:            generateID,
+						},
+					},
+					Capabilities: &hyperv1.Capabilities{},
+				},
+			}
+
+			// An IngressController must exist so the function proceeds past the early-return guard.
+			ic := &operatorv1.IngressController{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "default",
+					Namespace: "openshift-ingress-operator",
+				},
+			}
+
+			guestClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(ic).
+				Build()
+			uncachedClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			httpRouteName := fmt.Sprintf("%s-%s", manifests.IngressDefaultIngressPassthroughHTTPRouteName, generateID)
+
+			infraBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tt.preCreateRoute {
+				infraBuilder = infraBuilder.WithObjects(&routev1.Route{ObjectMeta: metav1.ObjectMeta{Name: httpRouteName, Namespace: hcpNamespace}})
+			}
+			infraClient := infraBuilder.Build()
+
+			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+			r := &reconciler{
+				client:              guestClient,
+				uncachedClient:      uncachedClient,
+				kubevirtInfraClient: infraClient,
+			}
+
+			_, cleanupErr := r.ensureIngressControllersRemoved(ctx, hcp)
+			g.Expect(cleanupErr).To(BeNil(), "ensureIngressControllersRemoved should not return an error")
+
+			httpRoute := &routev1.Route{}
+			err := infraClient.Get(t.Context(), client.ObjectKey{Namespace: hcpNamespace, Name: httpRouteName}, httpRoute)
+			if tt.expectHTTPRouteDeleted {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "HTTP passthrough route should be deleted from infra client when baseDomainPassthrough is enabled")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "HTTP passthrough route should still exist on infra client when baseDomainPassthrough is disabled")
+			}
+		})
+	}
+}
+
+func TestIngressDefaultIngressPassthroughHTTPRouteManifest(t *testing.T) {
+	tests := []struct {
+		name      string
+		namespace string
+	}{
+		{
+			name:      "When namespace is provided, it should return a Route with the correct namespace set",
+			namespace: "test-namespace",
+		},
+		{
+			name:      "When an empty namespace is provided, it should return a Route with an empty namespace",
+			namespace: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			route := manifests.IngressDefaultIngressPassthroughHTTPRoute(tt.namespace)
+			g.Expect(route).ToNot(BeNil())
+			g.Expect(route.Namespace).To(Equal(tt.namespace))
 		})
 	}
 }
