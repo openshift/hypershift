@@ -90,9 +90,13 @@ func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1
 }
 
 // baseCapabilities is the set of capabilities accepted by the ClusterVersion CRD
-// without any feature gates enabled. This must match the featureGate="" enum from
+// without any feature gates enabled. The CVO bootstrap init container writes
+// ClusterVersion spec to the guest cluster via kubectl; if a capability is not in
+// the guest CRD's enum, the write is rejected and the init container crash-loops.
+// This list is OCP-version-specific — it must match the featureGate="" enum from
 // the +openshift:validation:FeatureGateAwareEnum annotation on ClusterVersionCapability
-// in vendor/github.com/openshift/api/config/v1/types_cluster_version.go.
+// in vendor/github.com/openshift/api/config/v1/types_cluster_version.go and must be
+// updated when capabilities graduate from feature-gated to always-on.
 var baseCapabilities = sets.New[configv1.ClusterVersionCapability](
 	configv1.ClusterVersionCapabilityOpenShiftSamples,
 	configv1.ClusterVersionCapabilityBaremetal,
