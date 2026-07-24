@@ -1966,6 +1966,30 @@ linters:
         text: 'optionalfields: field ForwardingRuleName should be a pointer'
       - linters:
           - kubeapilinter
+        path: hypershift/v1beta1/controlplaneversion_types.go
+        text: 'optionalfields: field ObservedGeneration should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplaneversion_types.go
+        text: 'optionalfields: field CompletionTime should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field ControlPlaneVersion should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field ControlPlaneVersion should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ControlPlaneVersion should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ControlPlaneVersion should have the omitempty tag'
+      - linters:
+          - kubeapilinter
         path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
         text: 'ssatags: GCPPrivateServiceConnectStatus.DNSRecords should have a listType marker for proper Server-Side Apply behavior'
       - linters:
