@@ -1022,8 +1022,8 @@ type ControlPlanePlacementResponse struct {
 type ControlPlaneScalingConfig struct {
 
 	// The control plane scaling tier configuration. Available options are standard ,
-	// tier-xl , tier-2xl , or tier-4xl . For more information, see EKS Provisioned
-	// Control Plane in the Amazon EKS User Guide.
+	// tier-xl , tier-2xl , tier-4xl, or tier-8xl . For more information, see EKS
+	// Provisioned Control Plane in the Amazon EKS User Guide.
 	Tier ProvisionedControlPlaneTier
 
 	noSmithyDocumentSerde
@@ -1814,6 +1814,12 @@ type Nodegroup struct {
 	// The Kubernetes version of the managed node group.
 	Version *string
 
+	// The warm pool configuration attached to the node group. Amazon EKS manages warm
+	// pools throughout the node group lifecycle using the
+	// AWSServiceRoleForAmazonEKSNodegroup service-linked role to create, update, and
+	// delete warm pool resources.
+	WarmPoolConfig *WarmPoolConfig
+
 	noSmithyDocumentSerde
 }
 
@@ -2221,6 +2227,14 @@ type PodIdentityAssociation struct {
 
 	// If defined, the EKS Pod Identity association is owned by an Amazon EKS add-on.
 	OwnerArn *string
+
+	// An optional IAM policy in JSON format (as an escaped string) that applies
+	// additional restrictions to this pod identity association beyond the IAM policies
+	// attached to the IAM role. This policy is applied as the intersection of the
+	// role's policies and this policy, allowing you to reduce the permissions that
+	// applications in the pods can use. Use this policy to enforce least privilege
+	// access while still leveraging a shared IAM role across multiple applications.
+	Policy *string
 
 	// The Amazon Resource Name (ARN) of the IAM role to associate with the service
 	// account. The EKS Pod Identity agent manages credentials to assume this role for
@@ -2854,6 +2868,43 @@ type VpcConfigResponse struct {
 
 	// The VPC associated with your cluster.
 	VpcId *string
+
+	noSmithyDocumentSerde
+}
+
+// The configuration for an Amazon EC2 Auto Scaling warm pool attached to an
+// Amazon EKS managed node group. Warm pools maintain pre-initialized EC2 instances
+// alongside your Auto Scaling group that have already completed the bootup
+// initialization process and can be kept in a Stopped , Running , or Hibernated
+// state.
+type WarmPoolConfig struct {
+
+	// Specifies whether to attach warm pools on the managed node group. Set to true
+	// to enable the warm pool, or false to disable and remove it. If not specified
+	// during an update, the current value is preserved.
+	Enabled *bool
+
+	// The maximum total number of instances across the warm pool and Auto Scaling
+	// group combined. This value controls the total prepared capacity available for
+	// your node group.
+	MaxGroupPreparedCapacity *int32
+
+	// The minimum number of instances to maintain in the warm pool. Default: 0 . Size
+	// your warm pool based on scaling patterns to balance cost and availability. Start
+	// with 10-20% of expected peak capacity.
+	MinSize *int32
+
+	// The desired state for warm pool instances. Default: Stopped . Valid values are
+	// Stopped (most cost-effective with EBS storage costs only), Running (fastest
+	// transition time with full EC2 costs), and Hibernated (balance between cost and
+	// speed, only supported on specific instance types). Warm pool instances in the
+	// Hibernated state are not supported with Bottlerocket AMIs.
+	PoolState WarmPoolState
+
+	// Indicates whether instances should return to the warm pool during scale-in
+	// events instead of being terminated. Default: false . Enable this to reduce costs
+	// by reusing instances. This feature is not supported for Bottlerocket AMIs.
+	ReuseOnScaleIn *bool
 
 	noSmithyDocumentSerde
 }

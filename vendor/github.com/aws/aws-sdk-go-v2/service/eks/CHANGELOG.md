@@ -1,3 +1,85 @@
+# v1.84.5 (2026-06-04)
+
+* **Dependency Update**: Update to smithy-go v1.27.1 to fix several union-related deserialization bugs in schema-serde-enabled services.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.84.4 (2026-06-03)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.84.3 (2026-06-02)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.84.2 (2026-05-29)
+
+* **Dependency Update**: Update to smithy-go v1.26.0.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.84.1 (2026-05-28)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.84.0 (2026-05-21)
+
+* **Feature**: Adding new BDD representation of endpoint ruleset
+
+# v1.83.0 (2026-04-30)
+
+* **Feature**: Vended logs update param for capability vended logs feature
+
+# v1.82.2 (2026-04-29)
+
+* **Dependency Update**: Update to smithy-go v1.25.1.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.82.1 (2026-04-17)
+
+* **Dependency Update**: Bump smithy-go to 1.25.0 to support endpointBdd trait
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.82.0 (2026-04-07)
+
+* **Feature**: EKS MNG WarmPool feature to support ASG WarmPool feature.
+
+# v1.81.2 (2026-03-26)
+
+* **Bug Fix**: Fix a bug where a recorded clock skew could persist on the client even if the client and server clock ended up realigning.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.81.1 (2026-03-13)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.81.0 (2026-03-11)
+
+* **Feature**: Adds support for a new tier in controlPlaneScalingConfig on EKS Clusters.
+
+# v1.80.2 (2026-03-03)
+
+* **Dependency Update**: Bump minimum Go version to 1.24
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.80.1 (2026-02-23)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.80.0 (2026-02-11)
+
+* **Feature**: This release adds support for Windows Server 2025 in Amazon EKS Managed Node Groups.
+
+# v1.79.0 (2026-02-10.2)
+
+* **Feature**: Introducing an optional policy field, an IAM policy applied to pod identity associations in addition to IAM role policies. When specified, pod permissions are the intersection of IAM role policies and the policy field, ensuring the principle of least privilege.
+
+# v1.78.0 (2026-02-10)
+
+* **Feature**: Amazon EKS adds a new DescribeUpdate update type, VendedLogsUpdate, to support an integration between EKS Auto Mode and Amazon CloudWatch Vended Logs.
+
+# v1.77.1 (2026-02-04)
+
+* **Documentation**: Update delete cluster description
+
 # v1.77.0 (2026-01-14)
 
 * **Feature**: Added support for BOTTLEROCKET NVIDIA FIPS AMIs to AMI types in US regions.
