@@ -632,39 +632,18 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should create oauth-openshift Service as LoadBalancer with external IP", func() {
+		It("should create oauth-openshift Service as LoadBalancer with endpoint", func() {
 			testCtx := getTestCtx()
 			ctx := testCtx.Context
 			controlPlaneNamespace := testCtx.ControlPlaneNamespace
 
-			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service is LoadBalancer with external IP",
+			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service is LoadBalancer with endpoint",
 				func(ctx context.Context) (*corev1.Service, error) {
 					svc := hcpmanifests.OauthServerService(controlPlaneNamespace)
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
-					func(svc *corev1.Service) (done bool, reasons string, err error) {
-						if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
-							return false, fmt.Sprintf("expected Service type LoadBalancer, got %s", svc.Spec.Type), nil
-						}
-						return true, "oauth-openshift Service is type LoadBalancer", nil
-					},
-					func(svc *corev1.Service) (done bool, reasons string, err error) {
-						if len(svc.Status.LoadBalancer.Ingress) == 0 {
-							return false, "LoadBalancer has no ingress entries yet", nil
-						}
-						ingress := svc.Status.LoadBalancer.Ingress[0]
-						if ingress.IP == "" && ingress.Hostname == "" {
-							return false, "LoadBalancer ingress has no IP or hostname", nil
-						}
-						host := ingress.IP
-						if host == "" {
-							host = ingress.Hostname
-						}
-						return true, fmt.Sprintf("oauth-openshift LoadBalancer has external endpoint: %s", host), nil
-					},
-				},
+				oauthServiceLBPredicates(),
 				e2eutil.WithTimeout(10*time.Minute),
 			)
 		})
@@ -678,12 +657,94 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+// AzureOAuthLoadBalancerPrivateTest registers tests for Azure OAuth LoadBalancer
+// publishing validation in a private topology cluster.
+// These tests verify that:
+//   - The oauth-openshift Service is created as a LoadBalancer with an allocated endpoint
+//   - The Service carries the Azure internal LoadBalancer annotation
+//   - The OAuth token flow (kubeadmin + htpasswd IDP) works through that endpoint
+//
+// The OAuth token flow test uses a port-forward tunnel to the oauth-openshift pod
+// because the Azure internal LoadBalancer is not directly reachable from the CI
+// test runner.
+func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
+	Context("[Feature:AzureOAuth] Azure OAuth LoadBalancer in Private Topology", Label("Azure", "self-managed-azure-oauth-lb-private"), Ordered, func() {
+		var testCtx *internal.TestContext
+		var controlPlaneNamespace string
+		var hc *hyperv1.HostedCluster
+
+		BeforeAll(func() {
+			testCtx = getTestCtx()
+			hc = testCtx.GetHostedCluster()
+			if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+				Skip("Azure OAuth LB Private tests are only for Azure platform")
+			}
+			if hc.Spec.Platform.Azure == nil || hc.Spec.Platform.Azure.Topology != hyperv1.AzureTopologyPrivate {
+				Skip("Azure OAuth LB Private tests require Private topology")
+			}
+			controlPlaneNamespace = testCtx.ControlPlaneNamespace
+			Expect(controlPlaneNamespace).NotTo(BeEmpty(), "control plane namespace must be set")
+
+			strategy := netutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.OAuthServer)
+			if strategy == nil || strategy.Type != hyperv1.LoadBalancer {
+				Skip("Azure OAuth LB Private tests require OAuthServer with LoadBalancer publishing strategy")
+			}
+		})
+
+		It("should create oauth-openshift Service as LoadBalancer with an allocated endpoint", func() {
+			ctx := testCtx.Context
+
+			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service is LoadBalancer with endpoint",
+				func(ctx context.Context) (*corev1.Service, error) {
+					svc := hcpmanifests.OauthServerService(controlPlaneNamespace)
+					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
+					return svc, err
+				},
+				oauthServiceLBPredicates(),
+				e2eutil.WithTimeout(10*time.Minute),
+			)
+		})
+
+		It("should have Azure internal LB annotation on oauth-openshift Service", func() {
+			ctx := testCtx.Context
+			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service has Azure internal LB annotation",
+				func(ctx context.Context) (*corev1.Service, error) {
+					svc := hcpmanifests.OauthServerService(controlPlaneNamespace)
+					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
+					return svc, err
+				},
+				[]e2eutil.Predicate[*corev1.Service]{
+					func(svc *corev1.Service) (done bool, reasons string, err error) {
+						val, ok := svc.Annotations[azureutil.InternalLoadBalancerAnnotation]
+						if !ok || val != azureutil.InternalLoadBalancerValue {
+							return false, fmt.Sprintf("expected annotation %q to be %q, got %q (present: %v)",
+								azureutil.InternalLoadBalancerAnnotation, azureutil.InternalLoadBalancerValue, val, ok), nil
+						}
+						return true, "oauth-openshift Service has internal LB annotation", nil
+					},
+				},
+				e2eutil.WithTimeout(10*time.Minute),
+			)
+		})
+
+		It("should complete OAuth token flow through LoadBalancer endpoint", func() {
+			ctx := testCtx.Context
+			oauthHost := e2eutil.WaitForOAuthLoadBalancerEndpoint(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
+			pfTransport := e2eutil.SetupOAuthPortForwardTransport(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)
+			kasConfig := e2eutil.SetupGuestKASPortForwardConfig(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
+			e2eutil.ValidateOAuthIdentityProviderFlow(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost,
+				e2eutil.WithTransport(pfTransport), e2eutil.WithGuestConfig(kasConfig))
+		})
+	})
+}
+
 // RegisterHostedClusterAzureTests registers all Azure-specific hosted cluster tests.
 func RegisterHostedClusterAzureTests(getTestCtx internal.TestContextGetter) {
 	AzurePublicClusterTest(getTestCtx)
 	AzurePrivateTopologyTest(getTestCtx)
 	AzureEndpointAccessTransitionTest(getTestCtx)
 	AzureOAuthLoadBalancerTest(getTestCtx)
+	AzureOAuthLoadBalancerPrivateTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
@@ -696,3 +757,30 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label
 
 	RegisterHostedClusterAzureTests(func() *internal.TestContext { return testCtx })
 })
+
+// oauthServiceLBPredicates returns predicates that verify the oauth-openshift Service
+// is type LoadBalancer and has an allocated ingress endpoint (IP or Hostname).
+func oauthServiceLBPredicates() []e2eutil.Predicate[*corev1.Service] {
+	return []e2eutil.Predicate[*corev1.Service]{
+		func(svc *corev1.Service) (done bool, reasons string, err error) {
+			if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+				return false, fmt.Sprintf("expected Service type LoadBalancer, got %s", svc.Spec.Type), nil
+			}
+			return true, "oauth-openshift Service is type LoadBalancer", nil
+		},
+		func(svc *corev1.Service) (done bool, reasons string, err error) {
+			if len(svc.Status.LoadBalancer.Ingress) == 0 {
+				return false, "LoadBalancer has no ingress entries yet", nil
+			}
+			ingress := svc.Status.LoadBalancer.Ingress[0]
+			if ingress.IP == "" && ingress.Hostname == "" {
+				return false, "LoadBalancer ingress has no IP or hostname", nil
+			}
+			host := ingress.IP
+			if host == "" {
+				host = ingress.Hostname
+			}
+			return true, fmt.Sprintf("oauth-openshift LoadBalancer endpoint ready: %s", host), nil
+		},
+	}
+}

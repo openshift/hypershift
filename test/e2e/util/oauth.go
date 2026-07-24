@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"testing"
@@ -29,11 +31,37 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/transport/spdy"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type oauthTokenConfig struct {
+	transport   http.RoundTripper
+	guestConfig *restclient.Config
+}
+
+// OAuthTokenOption configures how OAuth token requests are performed.
+type OAuthTokenOption func(*oauthTokenConfig)
+
+// WithTransport overrides the default HTTP transport used for OAuth requests.
+// Use this with SetupOAuthPortForwardTransport to route requests through a
+// port-forward tunnel to the OAuth server in private topology clusters.
+func WithTransport(rt http.RoundTripper) OAuthTokenOption {
+	return func(c *oauthTokenConfig) { c.transport = rt }
+}
+
+// WithGuestConfig overrides the guest cluster REST config used for API calls
+// (e.g. GetUserForToken) in ValidateOAuthIdentityProviderFlow. Use this with
+// SetupGuestKASPortForwardConfig to route guest KAS calls through a port-forward
+// tunnel in private topology clusters where the KAS is behind an ILB.
+func WithGuestConfig(cfg *restclient.Config) OAuthTokenOption {
+	return func(c *oauthTokenConfig) { c.guestConfig = cfg }
+}
 
 func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureOAuthWithIdentityProvider", func(t *testing.T) {
@@ -111,8 +139,13 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 
 // WaitForOAuthTokenByHost performs the OAuth token request flow against the given host.
 // This supports both Route-based and LoadBalancer-based OAuth endpoints.
-func WaitForOAuthTokenByHost(t testing.TB, ctx context.Context, oauthHost string, restConfig *restclient.Config, username, password string) string {
+func WaitForOAuthTokenByHost(t testing.TB, ctx context.Context, oauthHost string, restConfig *restclient.Config, username, password string, opts ...OAuthTokenOption) string {
 	g := NewWithT(t)
+
+	cfg := &oauthTokenConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
 
 	oauthClient := configmanifests.OAuthServerChallengingClient().Name
 	tokenReqUrl := fmt.Sprintf("https://%s/oauth/authorize?response_type=token&client_id=%s", oauthHost, oauthClient)
@@ -122,8 +155,13 @@ func WaitForOAuthTokenByHost(t testing.TB, ctx context.Context, oauthHost string
 	request.Header.Set("Authorization", getBasicHeader(username, password))
 	request.Header.Set("X-CSRF-Token", "1")
 
-	transport, err := restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))
-	g.Expect(err).ToNot(HaveOccurred(), "error getting transport")
+	var transport http.RoundTripper
+	if cfg.transport != nil {
+		transport = cfg.transport
+	} else {
+		transport, err = restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))
+		g.Expect(err).ToNot(HaveOccurred(), "error getting transport")
+	}
 
 	httpClient := &http.Client{
 		Transport: transport,
@@ -306,16 +344,15 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 
 }
 
-// WaitForOAuthLoadBalancerReady waits for the oauth-openshift LoadBalancer Service to have an
-// external endpoint allocated and for the /healthz endpoint to return HTTP 200.
-// It returns the OAuth hostname from the HostedCluster's service publishing strategy,
-// which matches the TLS certificate SANs, rather than the raw LoadBalancer IP.
-func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crclient.Client, restConfig *restclient.Config, hostedCluster *hyperv1.HostedCluster) string {
+// WaitForOAuthLoadBalancerEndpoint waits for the oauth-openshift LoadBalancer Service to have an
+// endpoint allocated and returns the OAuth hostname from the HostedCluster's service publishing
+// strategy. This hostname matches the TLS certificate SANs and is the one ExternalDNS creates
+// a DNS record for. Unlike WaitForOAuthLoadBalancerReady, this does not perform a direct
+// /healthz check, making it suitable for private topology clusters where the LoadBalancer
+// endpoint is not directly reachable from the test runner.
+func WaitForOAuthLoadBalancerEndpoint(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) string {
 	g := NewWithT(t)
 
-	// Get the OAuth hostname from the HostedCluster's service publishing strategy.
-	// This is the hostname that the TLS certificate is issued for and that ExternalDNS
-	// creates a DNS record for, so it must be used for TLS connections.
 	oauthStrategy := netutil.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.OAuthServer)
 	g.Expect(oauthStrategy).ToNot(BeNil(), "OAuth service publishing strategy not found in HostedCluster spec")
 	g.Expect(oauthStrategy.LoadBalancer).ToNot(BeNil(), "OAuth LoadBalancer strategy not found")
@@ -323,7 +360,6 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 	g.Expect(oauthHost).ToNot(BeEmpty(), "OAuth LoadBalancer hostname is empty")
 	t.Logf("OAuth hostname from HostedCluster spec: %s", oauthHost)
 
-	// Wait for the LoadBalancer to get an external endpoint (confirms LB is provisioned)
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	svc := hcpmanifests.OauthServerService(hcpNamespace)
 	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
@@ -335,20 +371,38 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 			return false, nil
 		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
-			t.Logf("Waiting for oauth-openshift LoadBalancer to get an external endpoint")
+			t.Logf("Waiting for oauth-openshift LoadBalancer to get an endpoint")
 			return false, nil
 		}
 		ingress := svc.Status.LoadBalancer.Ingress[0]
 		if ingress.IP == "" && ingress.Hostname == "" {
 			return false, nil
 		}
-		t.Logf("OAuth LoadBalancer has external endpoint: %s%s", ingress.IP, ingress.Hostname)
+		ip := ingress.IP
+		if ip == "" {
+			ip = "<none>"
+		}
+		hostname := ingress.Hostname
+		if hostname == "" {
+			hostname = "<none>"
+		}
+		t.Logf("OAuth LoadBalancer endpoint ready (IP=%s, Hostname=%s)", ip, hostname)
 		return true, nil
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for oauth-openshift LoadBalancer endpoint")
 
-	// Wait for the OAuth hostname to be resolvable via DNS (ExternalDNS creates the record)
-	// and for the /healthz endpoint to return HTTP 200
+	return oauthHost
+}
+
+// WaitForOAuthLoadBalancerReady waits for the oauth-openshift LoadBalancer Service to have an
+// endpoint allocated and for the /healthz endpoint to return HTTP 200.
+// It returns the OAuth hostname from the HostedCluster's service publishing strategy.
+// For private topology clusters where the /healthz endpoint is not directly reachable,
+// use WaitForOAuthLoadBalancerEndpoint instead.
+func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crclient.Client, restConfig *restclient.Config, hostedCluster *hyperv1.HostedCluster) string {
+	oauthHost := WaitForOAuthLoadBalancerEndpoint(t, ctx, client, hostedCluster)
+
+	g := NewWithT(t)
 	request, err := http.NewRequestWithContext(ctx, http.MethodHead, fmt.Sprintf("https://%s/healthz", oauthHost), nil)
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -378,28 +432,40 @@ func WaitForOAuthLoadBalancerReady(t testing.TB, ctx context.Context, client crc
 	return oauthHost
 }
 
-func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+// ValidateOAuthIdentityProviderFlow validates the full OAuth identity provider flow
+// against the given oauthHost: kubeadmin login, htpasswd IDP setup, testuser login,
+// and kubeadmin secret removal. The oauthHost can come from any source, such as
+// WaitForOAuthLoadBalancerReady (with health check) or WaitForOAuthLoadBalancerEndpoint
+// (endpoint only, suitable for private topology).
+// This function mutates cluster state (creates htpasswd Secret, patches OAuth config,
+// validates kubeadmin secret removal) and should only be used in lifecycle tests.
+func ValidateOAuthIdentityProviderFlow(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, oauthHost string, opts ...OAuthTokenOption) {
 	g := NewWithT(t)
+
+	cfg := &oauthTokenConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
 
 	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Wait for OAuth LoadBalancer to be ready
-	oauthHost := WaitForOAuthLoadBalancerReady(t, ctx, client, guestConfig, hostedCluster)
+	kasConfig := guestConfig
+	if cfg.guestConfig != nil {
+		kasConfig = cfg.guestConfig
+	}
 
-	// Validate kubeadmin login through the LoadBalancer (works without IDPs)
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
 	g.Expect(err).ToNot(HaveOccurred())
 	password := string(kubeadminPasswordSecret.Data["password"])
-	accessToken := WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "kubeadmin", password)
+	accessToken := WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "kubeadmin", password, opts...)
 
-	user, err := GetUserForToken(guestConfig, accessToken)
+	user, err := GetUserForToken(kasConfig, accessToken)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(user.Name).To(Equal("kube:admin"))
 
-	// Set up htpasswd identity provider
 	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "htpasswd",
@@ -411,7 +477,18 @@ func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.
 	}
 	err = client.Create(ctx, &secret)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create htpasswd secret")
+	t.Cleanup(func() {
+		if err := client.Delete(context.Background(), &secret); err != nil && !apierrors.IsNotFound(err) {
+			t.Logf("Warning: failed to delete htpasswd secret: %v", err)
+		}
+	})
 
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get fresh hostedcluster state")
+	var originalOAuth *v1.OAuthSpec
+	if hostedCluster.Spec.Configuration != nil && hostedCluster.Spec.Configuration.OAuth != nil {
+		originalOAuth = hostedCluster.Spec.Configuration.OAuth.DeepCopy()
+	}
 	err = UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
 		if obj.Spec.Configuration == nil {
 			obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
@@ -434,19 +511,41 @@ func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.
 		}
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := UpdateObject(t, cleanupCtx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			if obj.Spec.Configuration == nil {
+				obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+			}
+			obj.Spec.Configuration.OAuth = originalOAuth
+		}); err != nil {
+			t.Logf("Warning: failed to restore OAuth config: %v", err)
+		}
+	})
 
-	// Wait for OAuth config to pick up the new identity provider
 	WaitForOauthConfig(t, ctx, client, hostedCluster)
 
-	// Validate testuser login through the LoadBalancer
-	accessToken = WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "testuser", "password")
+	accessToken = WaitForOAuthTokenByHost(t, ctx, oauthHost, guestConfig, "testuser", "password", opts...)
 
-	user, err = GetUserForToken(guestConfig, accessToken)
+	user, err = GetUserForToken(kasConfig, accessToken)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(user.Name).To(Equal("testuser"))
 
-	// Validate kubeadmin secret was removed after IDP was added
 	validateClusterPostIDP(t, ctx, client, hostedCluster)
+}
+
+// ValidateOAuthWithIdentityProviderViaLoadBalancer combines WaitForOAuthLoadBalancerReady
+// (with /healthz check) and ValidateOAuthIdentityProviderFlow. For private topology
+// clusters where /healthz is unreachable, call those functions separately.
+func ValidateOAuthWithIdentityProviderViaLoadBalancer(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	oauthHost := WaitForOAuthLoadBalancerReady(t, ctx, client, guestConfig, hostedCluster)
+	ValidateOAuthIdentityProviderFlow(t, ctx, client, hostedCluster, oauthHost)
 }
 
 // EnsureOAuthWithIdentityProviderViaLoadBalancer is the LoadBalancer equivalent of
@@ -456,6 +555,220 @@ func EnsureOAuthWithIdentityProviderViaLoadBalancer(t *testing.T, ctx context.Co
 	t.Run("EnsureOAuthWithIdentityProviderViaLoadBalancer", func(t *testing.T) {
 		ValidateOAuthWithIdentityProviderViaLoadBalancer(t, ctx, client, hostedCluster)
 	})
+}
+
+// SetupOAuthPortForwardTransport creates a SPDY port-forward tunnel from a random local
+// port to the oauth-openshift pod (port 6443) in the hosted control plane namespace.
+// It returns an http.RoundTripper that routes requests through the tunnel while preserving
+// correct TLS verification: the guest cluster Root CA validates the certificate, and
+// ServerName is set to oauthHost so the certificate SAN check passes even though the
+// actual TCP connection goes to localhost. Pass the returned transport to
+// ValidateOAuthIdentityProviderFlow via WithTransport.
+// The port-forward is cleaned up automatically via t.Cleanup.
+// After establishing the tunnel, it verifies connectivity by polling the /healthz endpoint.
+func SetupOAuthPortForwardTransport(
+	t testing.TB, ctx context.Context,
+	mgmtClient crclient.Client,
+	hostedCluster *hyperv1.HostedCluster,
+	oauthHost string,
+) http.RoundTripper {
+	g := NewWithT(t)
+
+	mgmtConfig, err := GetConfig()
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get management cluster REST config")
+	kubeClient, err := kubernetes.NewForConfig(mgmtConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create kubernetes client")
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	podList := &corev1.PodList{}
+	err = mgmtClient.List(ctx, podList,
+		crclient.InNamespace(hcpNamespace),
+		crclient.MatchingLabels{hyperv1.ControlPlaneComponentLabel: "oauth-openshift"},
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to list oauth-openshift pods")
+
+	var oauthPod *corev1.Pod
+	for i := range podList.Items {
+		if podList.Items[i].Status.Phase == corev1.PodRunning {
+			oauthPod = &podList.Items[i]
+			break
+		}
+	}
+	g.Expect(oauthPod).ToNot(BeNil(), "no running oauth-openshift pod found in namespace %s", hcpNamespace)
+	t.Logf("Found running oauth-openshift pod %s/%s", oauthPod.Namespace, oauthPod.Name)
+
+	pfReq := kubeClient.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(oauthPod.Namespace).
+		Name(oauthPod.Name).
+		SubResource("portforward")
+
+	spdyTransport, upgrader, err := spdy.RoundTripperFor(mgmtConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create SPDY round tripper")
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: spdyTransport}, "POST", pfReq.URL())
+
+	stopCh := make(chan struct{})
+	readyCh := make(chan struct{})
+	fw, err := portforward.New(dialer, []string{"0:6443"}, stopCh, readyCh, io.Discard, io.Discard)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create port forwarder")
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- fw.ForwardPorts() }()
+	select {
+	case <-readyCh:
+	case err = <-errCh:
+		g.Expect(err).ToNot(HaveOccurred(), "port-forward failed to start")
+	}
+
+	ports, err := fw.GetPorts()
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get forwarded ports")
+	g.Expect(ports).ToNot(BeEmpty(), "no forwarded ports found")
+	localPort := ports[0].Local
+	t.Logf("Port-forward established: localhost:%d -> %s:6443", localPort, oauthPod.Name)
+
+	guestConfig, err := guestRestConfig(t, ctx, mgmtClient, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get guest REST config")
+
+	tlsConfig, err := restclient.TLSConfigFor(restclient.AnonymousClientConfig(guestConfig))
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get TLS config from guest config")
+	tlsConfig.ServerName = oauthHost
+
+	localAddr := fmt.Sprintf("localhost:%d", localPort)
+	oauthTransport := &http.Transport{
+		TLSClientConfig: tlsConfig,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp", localAddr)
+		},
+	}
+
+	healthRequest, err := http.NewRequestWithContext(ctx, http.MethodHead, fmt.Sprintf("https://%s/healthz", oauthHost), nil)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		req := healthRequest.Clone(ctx)
+		resp, err := oauthTransport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+		if resp != nil && resp.StatusCode == http.StatusOK {
+			return true, nil
+		}
+		if resp != nil {
+			t.Logf("Waiting for OAuth server healthcheck via port-forward: %v", resp.Status)
+		}
+		if err != nil {
+			t.Logf("Waiting for OAuth server healthcheck via port-forward: %v", err)
+		}
+		return false, nil
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed OAuth server healthcheck via port-forward to %s", oauthHost)
+	t.Logf("OAuth server healthy via port-forward at localhost:%d", localPort)
+
+	t.Cleanup(func() {
+		close(stopCh)
+	})
+
+	return oauthTransport
+}
+
+// SetupGuestKASPortForwardConfig creates a SPDY port-forward tunnel from a random local
+// port to the kube-apiserver pod (port 6443) in the hosted control plane namespace.
+// It returns a *restclient.Config that routes guest API calls through the tunnel while
+// preserving correct TLS verification: the guest cluster CA validates the certificate,
+// and ServerName is set to the original KAS hostname so the certificate SAN check passes.
+// Pass the returned config to ValidateOAuthIdentityProviderFlow via WithGuestConfig to
+// enable GetUserForToken calls in private topology clusters where the guest KAS is behind
+// an Azure Internal Load Balancer.
+// The port-forward is cleaned up automatically via t.Cleanup.
+func SetupGuestKASPortForwardConfig(
+	t testing.TB, ctx context.Context,
+	mgmtClient crclient.Client,
+	hostedCluster *hyperv1.HostedCluster,
+) *restclient.Config {
+	g := NewWithT(t)
+
+	mgmtConfig, err := GetConfig()
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get management cluster REST config")
+	kubeClient, err := kubernetes.NewForConfig(mgmtConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create kubernetes client")
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	podList := &corev1.PodList{}
+	err = mgmtClient.List(ctx, podList,
+		crclient.InNamespace(hcpNamespace),
+		crclient.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponentLabel: "kube-apiserver"},
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to list kube-apiserver pods")
+
+	var kasPod *corev1.Pod
+	for i := range podList.Items {
+		if podList.Items[i].Status.Phase == corev1.PodRunning {
+			kasPod = &podList.Items[i]
+			break
+		}
+	}
+	g.Expect(kasPod).ToNot(BeNil(), "no running kube-apiserver pod found in namespace %s", hcpNamespace)
+	t.Logf("Found running kube-apiserver pod %s/%s", kasPod.Namespace, kasPod.Name)
+
+	pfReq := kubeClient.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(kasPod.Namespace).
+		Name(kasPod.Name).
+		SubResource("portforward")
+
+	spdyTransport, upgrader, err := spdy.RoundTripperFor(mgmtConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create SPDY round tripper")
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: spdyTransport}, "POST", pfReq.URL())
+
+	stopCh := make(chan struct{})
+	readyCh := make(chan struct{})
+	fw, err := portforward.New(dialer, []string{"0:6443"}, stopCh, readyCh, io.Discard, io.Discard)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create port forwarder")
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- fw.ForwardPorts() }()
+	select {
+	case <-readyCh:
+	case err = <-errCh:
+		g.Expect(err).ToNot(HaveOccurred(), "KAS port-forward failed to start")
+	}
+
+	ports, err := fw.GetPorts()
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get forwarded ports")
+	g.Expect(ports).ToNot(BeEmpty(), "no forwarded ports found")
+	localPort := ports[0].Local
+	t.Logf("KAS port-forward established: localhost:%d -> %s:6443", localPort, kasPod.Name)
+
+	guestConfig, err := guestRestConfig(t, ctx, mgmtClient, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get guest REST config")
+
+	originalHost := guestConfig.Host
+	u, err := url.Parse(originalHost)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to parse guest config host URL")
+	serverName := u.Hostname()
+
+	guestConfig.Host = fmt.Sprintf("https://localhost:%d", localPort)
+	guestConfig.TLSClientConfig.ServerName = serverName
+
+	testClient, err := kubernetes.NewForConfig(guestConfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create test client for KAS port-forward")
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		_, err = testClient.Discovery().ServerVersion()
+		if err != nil {
+			t.Logf("Waiting for guest KAS connectivity via port-forward: %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed guest KAS connectivity check via port-forward")
+	t.Logf("Guest KAS reachable via port-forward at localhost:%d (ServerName=%s)", localPort, serverName)
+
+	t.Cleanup(func() {
+		close(stopCh)
+	})
+
+	return guestConfig
 }
 
 func validateClusterPostIDP(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {

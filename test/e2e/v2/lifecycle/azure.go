@@ -135,6 +135,15 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			ExtraArgs:  []string{"--oauth-publishing-strategy=LoadBalancer"},
 		},
 		{
+			Variant:    "oauth-lb-private",
+			OutputFile: "cluster-name-oauth-lb-private",
+			ExtraArgs: []string{
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
+			},
+		},
+		{
 			Variant:      "upgrade",
 			OutputFile:   "cluster-name-upgrade",
 			ReleaseImage: n1Image,
@@ -340,7 +349,7 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "private",
 				ClusterFile: "cluster-name-private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || nodepool-osimagestream",
+				LabelFilter: "self-managed-azure-private || self-managed-azure-oauth-lb-private || hosted-cluster-compliance || nodepool-osimagestream",
 				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{
@@ -354,6 +363,18 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				ClusterFile: "cluster-name-autoscaling",
 				LabelFilter: "nodepool-autoscaling",
 				JUnitFile:   "junit_nodepool_autoscaling.xml",
+			},
+			{
+				Name:        "private",
+				ClusterFile: "cluster-name-private",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+				JUnitFile:   "junit_self_managed_azure_private.xml",
+			},
+			{
+				Name:        "oauth-lb-private",
+				ClusterFile: "cluster-name-oauth-lb-private",
+				LabelFilter: "self-managed-azure-oauth-lb-private",
+				JUnitFile:   "junit_self_managed_azure_oauth_lb_private.xml",
 			},
 			{
 				Name:        "external-oidc",
