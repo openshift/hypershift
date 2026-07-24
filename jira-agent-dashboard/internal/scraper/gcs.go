@@ -32,6 +32,8 @@ func DefaultJobConfigs() []JobConfig {
 	return []JobConfig{
 		{Name: "hypershift", JobPrefix: "logs/periodic-ci-openshift-hypershift-main-periodic-jira-agent/", StepPath: "artifacts/periodic-jira-agent/hypershift-jira-agent-process/"},
 		{Name: "installer", JobPrefix: "logs/periodic-ci-openshift-installer-main-periodic-jira-agent/", StepPath: "artifacts/periodic-jira-agent/jira-agent-process/"},
+		{Name: "trt-origin", JobPrefix: "logs/periodic-ci-openshift-origin-main-agentic-periodic-origin-jira-agent/", StepPath: "artifacts/periodic-origin-jira-agent/openshift-agentic-trt-jira-solver/"},
+		{Name: "trt-sippy", JobPrefix: "logs/periodic-ci-openshift-sippy-main-agentic-periodic-sippy-jira-agent/", StepPath: "artifacts/periodic-sippy-jira-agent/openshift-agentic-trt-jira-solver/"},
 	}
 }
 
@@ -240,6 +242,7 @@ func (c *HTTPGCSClient) ListBuildArtifacts(ctx context.Context, buildID string) 
 // Regex patterns for parsing build-log.txt
 var (
 	processingRe    = regexp.MustCompile(`^Processing:\s+(\S+)`)
+	trtIssueRe      = regexp.MustCompile(`^Issue:\s+(\S+)\s+\|`)
 	prCreatedRe     = regexp.MustCompile(`PR created:\s+(https://github\.com/\S+/pull/\d+)`)
 	prLineRe        = regexp.MustCompile(`^\s+PR:\s+(https://github\.com/\S+/pull/\d+)`)
 	phaseTokensRe   = regexp.MustCompile(`^Phase\s+(\d+)\s+tokens:\s*\{`)
@@ -267,8 +270,12 @@ func ParseBuildLog(data []byte) (*BuildLogResult, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Extract issue key from "Processing: OCPBUGS-79071"
+		// Extract issue key from "Processing: OCPBUGS-79071" or TRT's "Issue: TRT-2823 |"
 		if m := processingRe.FindStringSubmatch(line); m != nil && result.IssueKey == "" {
+			result.IssueKey = m[1]
+			continue
+		}
+		if m := trtIssueRe.FindStringSubmatch(line); m != nil && result.IssueKey == "" {
 			result.IssueKey = m[1]
 			continue
 		}

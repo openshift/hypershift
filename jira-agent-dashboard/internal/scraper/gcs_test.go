@@ -215,6 +215,26 @@ Phase 1 (jira-solve) completed for OCPBUGS-74498`
 	}
 }
 
+func TestParseBuildLogTRTFormat(t *testing.T) {
+	buildLog := `=== TRT Jira Solver ===
+Issue: TRT-2823 | Upstream: openshift/sippy | Fork: openshift-trt/sippy
+Running setup script: hack/agentic_setup.sh...
+Invoking Claude to solve TRT-2823...
+PR created: https://github.com/openshift/sippy/pull/3820
+=== Processing Summary ===`
+
+	result, err := ParseBuildLog([]byte(buildLog))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IssueKey != "TRT-2823" {
+		t.Errorf("IssueKey = %q, want %q", result.IssueKey, "TRT-2823")
+	}
+	if result.PRURL != "https://github.com/openshift/sippy/pull/3820" {
+		t.Errorf("PRURL = %q, want %q", result.PRURL, "https://github.com/openshift/sippy/pull/3820")
+	}
+}
+
 func TestParseBuildLogPhaseNameFallback(t *testing.T) {
 	// When the "Phase N (name) completed" line comes AFTER the token block,
 	// the parser should fall back to the default phase number mapping.

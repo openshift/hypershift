@@ -311,8 +311,10 @@ const _componentState = {
 };
 
 const COMPONENT_COLORS = {
-  hypershift: { bg: '#cce5ff', color: '#004085' },
-  installer:  { bg: '#e8daef', color: '#4a235a' },
+  hypershift:    { bg: '#cce5ff', color: '#004085' },
+  installer:     { bg: '#e8daef', color: '#4a235a' },
+  'trt-origin':  { bg: '#d4edda', color: '#155724' },
+  'trt-sippy':   { bg: '#fff3cd', color: '#856404' },
 };
 
 function _defaultColor(name) {
