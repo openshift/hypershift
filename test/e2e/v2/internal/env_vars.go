@@ -24,12 +24,16 @@ import (
 	"strings"
 )
 
-// EnvVarSpec describes an environment variable used by the test suite
+// EnvVarSpec describes an environment variable used by the test suite.
+// Resolution order in GetEnvVarValue: os.Getenv → SharedFile → SharedFilePath → FallbackEnv → Default.
 type EnvVarSpec struct {
-	Name        string
-	Description string
-	Required    bool
-	Default     string
+	Name           string
+	Description    string
+	Required       bool
+	Default        string
+	SharedFile     string // SHARED_DIR filename; value = file content (trimmed)
+	SharedFilePath string // SHARED_DIR filename; value = full file path (if file exists)
+	FallbackEnv    string // another env var to check if this one is empty
 }
 
 var (
@@ -64,19 +68,46 @@ func RegisterEnvVarWithDefault(name, description string, required bool, defaultV
 	}
 }
 
-// GetEnvVarValue returns the value of an environment variable, or its default if not set.
+// RegisterEnvVarSpec registers an environment variable with the full spec,
+// including optional SHARED_DIR file sources and fallback env vars.
+func RegisterEnvVarSpec(spec EnvVarSpec) {
+	envVarRegistry[spec.Name] = spec
+}
+
+// GetEnvVarValue returns the value of an environment variable.
+// Resolution order: os.Getenv → SharedFile → SharedFilePath → FallbackEnv → Default.
 // Panics if the environment variable is not registered in the registry.
 func GetEnvVarValue(name string) string {
 	spec, exists := envVarRegistry[name]
 	if !exists {
 		panic(fmt.Sprintf("environment variable %q is not registered. Use RegisterEnvVar or RegisterEnvVarWithDefault to register it", name))
 	}
-
-	value := os.Getenv(name)
-	if value == "" && spec.Default != "" {
-		return spec.Default
+	if value := os.Getenv(name); value != "" {
+		return value
 	}
-	return value
+	if spec.SharedFile != "" {
+		if sharedDir := os.Getenv("SHARED_DIR"); sharedDir != "" {
+			if data, err := os.ReadFile(filepath.Join(sharedDir, spec.SharedFile)); err == nil {
+				if v := strings.TrimSpace(string(data)); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	if spec.SharedFilePath != "" {
+		if sharedDir := os.Getenv("SHARED_DIR"); sharedDir != "" {
+			path := filepath.Join(sharedDir, spec.SharedFilePath)
+			if _, err := os.Stat(path); err == nil {
+				return path
+			}
+		}
+	}
+	if spec.FallbackEnv != "" {
+		if value := os.Getenv(spec.FallbackEnv); value != "" {
+			return value
+		}
+	}
+	return spec.Default
 }
 
 // PrintEnvVarHelp prints a formatted help message for all registered environment variables.
@@ -134,6 +165,11 @@ func maskSensitiveValue(name, value string) string {
 func init() {
 	// Register environment variables used by the test suite
 	RegisterEnvVar(
+		"SHARED_DIR",
+		"Directory shared between CI steps, containing cluster name files and cluster-map.json for filesystem-based cluster resolution.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_HOSTED_CLUSTER_NAME",
 		"Name of the HostedCluster to test. Required for tests that interact with a hosted cluster.",
 		false,
@@ -167,22 +203,22 @@ func init() {
 		"",
 	)
 	// Azure self-managed test environment variables
-	RegisterEnvVar(
-		"AZURE_PRIVATE_NAT_SUBNET_ID",
-		"Azure resource ID of the NAT subnet for Private Link Service. Auto-created by PLS controller if not set.",
-		false,
-	)
+	RegisterEnvVarSpec(EnvVarSpec{
+		Name:        "AZURE_PRIVATE_NAT_SUBNET_ID",
+		Description: "Azure resource ID of the NAT subnet for Private Link Service. Auto-created by PLS controller if not set.",
+		SharedFile:  "azure_private_nat_subnet_id",
+	})
 	RegisterEnvVar(
 		"AZURE_PRIVATE_ADDITIONAL_ALLOWED_SUBSCRIPTIONS",
 		"Comma-separated list of Azure subscription IDs permitted to create Private Endpoints.",
 		false,
 	)
 	// Release image env vars for lifecycle tests
-	RegisterEnvVar(
-		"E2E_LATEST_RELEASE_IMAGE",
-		"Latest OCP release image for control plane upgrade tests.",
-		false,
-	)
+	RegisterEnvVarSpec(EnvVarSpec{
+		Name:        "E2E_LATEST_RELEASE_IMAGE",
+		Description: "Latest OCP release image for control plane upgrade tests.",
+		FallbackEnv: "RELEASE_IMAGE_LATEST",
+	})
 	RegisterEnvVar(
 		"E2E_PREVIOUS_RELEASE_IMAGE",
 		"N-1 OCP release image (previous minor) for control plane upgrade tests.",
@@ -214,14 +250,14 @@ func init() {
 		false,
 	)
 	// External OIDC test environment variables
-	RegisterEnvVar(
-		"E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE",
-		"Path to the CA bundle file for the External OIDC issuer (Keycloak). Written by the lifecycle PostCreate.",
-		false,
-	)
-	RegisterEnvVar(
-		"E2E_EXTERNAL_OIDC_TEST_USERS",
-		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
-		false,
-	)
+	RegisterEnvVarSpec(EnvVarSpec{
+		Name:           "E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE",
+		Description:    "Path to the CA bundle file for the External OIDC issuer (Keycloak). Written by the lifecycle PostCreate.",
+		SharedFilePath: "external_oidc_ca_bundle",
+	})
+	RegisterEnvVarSpec(EnvVarSpec{
+		Name:        "E2E_EXTERNAL_OIDC_TEST_USERS",
+		Description: "Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
+		SharedFile:  "external_oidc_test_users",
+	})
 }

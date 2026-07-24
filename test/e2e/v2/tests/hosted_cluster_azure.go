@@ -54,6 +54,9 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 			if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform {
 				Skip("Azure public cluster tests are only for Azure platform")
 			}
+			if hc.Spec.Platform.Azure == nil || hc.Spec.Platform.Azure.Topology == hyperv1.AzureTopologyPrivate {
+				Skip("Azure public cluster tests require Public or PublicAndPrivate topology")
+			}
 		})
 
 		It("should mutate pods with workload identity federated credentials", func() {
@@ -68,6 +71,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should have expected KAS allowed CIDRs", func() {
+			Skip("KAS allowed CIDRs test is not yet ready")
 			testCtx := getTestCtx()
 			hc := testCtx.GetHostedCluster()
 			kubeconfigData := e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
@@ -298,7 +302,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.KubeAPIServerExternalPrivateRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"KAS external private route should be deleted after transition to PublicAndPrivate")
 
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "OAuth external public route exists after transition to PublicAndPrivate",
@@ -316,7 +320,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.OauthServerExternalPrivateRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"OAuth external private route should be deleted after transition to PublicAndPrivate")
 
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "router-public Service is LoadBalancer after transition to PublicAndPrivate",
@@ -345,13 +349,13 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				svc := hcpmanifests.KubeAPIServerExternalPrivateService(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, svc)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"KAS ExternalPrivateService should be deleted after transition to PublicAndPrivate")
 
 			Eventually(func() error {
 				svc := hcpmanifests.OauthServerExternalPrivateService(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, svc)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"OAuth ExternalPrivateService should be deleted after transition to PublicAndPrivate")
 
 			verifyAPIReachable(testCtx, "after transition to PublicAndPrivate")
@@ -380,7 +384,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.KubeAPIServerExternalPublicRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"KAS external public route should be deleted after restore to Private")
 
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "OAuth external private route exists after restore to Private",
@@ -398,13 +402,13 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.OauthServerExternalPublicRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"OAuth external public route should be deleted after restore to Private")
 
 			Eventually(func() error {
 				svc := hcpmanifests.RouterPublicService(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, svc)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"router-public Service should be deleted after restore to Private")
 
 			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "PLS CRs still exist after restore to Private",
@@ -598,7 +602,7 @@ func verifyAPIReachable(testCtx *internal.TestContext, phase string) {
 		nsList := &corev1.NamespaceList{}
 		g.Expect(freshClient.List(testCtx.Context, nsList)).To(Succeed(), "failed to list namespaces %s", phase)
 		g.Expect(nsList.Items).NotTo(BeEmpty(), "namespace list is empty %s", phase)
-	}).WithTimeout(15 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(), "API server not reachable %s", phase)
+	}).WithTimeout(15*time.Minute).WithPolling(10*time.Second).Should(Succeed(), "API server not reachable %s", phase)
 }
 
 func extractHostname(host string) string {

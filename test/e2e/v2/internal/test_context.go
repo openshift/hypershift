@@ -18,7 +18,11 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -152,8 +156,10 @@ var (
 
 // GetTestContext returns the global test context. On first call, if no context
 // was set via SetTestContext (e.g. in OTE mode where BeforeSuite is stripped),
-// it lazy-initializes from environment variables. Panics on every call until
-// initialization succeeds, preserving the original diagnostic.
+// it lazy-initializes by trying filesystem-based cluster resolution first
+// (from SHARED_DIR/cluster-map.json + current spec labels), then falling back
+// to environment variables. Panics on every call until initialization succeeds,
+// preserving the original diagnostic.
 func GetTestContext() *TestContext {
 	testCtxMu.Lock()
 	defer testCtxMu.Unlock()
@@ -164,7 +170,18 @@ func GetTestContext() *TestContext {
 	if testCtxErr != nil {
 		panic(fmt.Sprintf("test context initialization failed: %v", testCtxErr))
 	}
-	tc, err := SetupTestContextFromEnv(context.Background())
+
+	tc, err := setupTestContextFromClusterMap(context.Background())
+	if err != nil {
+		testCtxErr = err
+		panic(fmt.Sprintf("test context initialization failed: %v", err))
+	}
+	if tc != nil {
+		testCtx = tc
+		return testCtx
+	}
+
+	tc, err = SetupTestContextFromEnv(context.Background())
 	if err != nil {
 		testCtxErr = err
 		panic(fmt.Sprintf("test context initialization failed: %v", err))
@@ -222,6 +239,69 @@ func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
 	testCtx.ArtifactDir = artifactDir
 
 	return testCtx, nil
+}
+
+// setupTestContextFromClusterMap resolves the hosted cluster from the filesystem
+// using the current spec's labels and SHARED_DIR/cluster-map.json. Returns
+// (nil, nil) if filesystem resolution is not configured (no SHARED_DIR, no
+// cluster-map.json, or no matching label), allowing fallback to env-based
+// resolution. In OTE mode, each test runs in its own subprocess, so the result
+// is cached as a singleton.
+func setupTestContextFromClusterMap(ctx context.Context) (*TestContext, error) {
+	sharedDir := os.Getenv("SHARED_DIR")
+	if sharedDir == "" {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(filepath.Join(sharedDir, "cluster-map.json"))
+	if err != nil {
+		return nil, nil
+	}
+	var clusterMap map[string]string
+	if err := json.Unmarshal(data, &clusterMap); err != nil {
+		return nil, nil
+	}
+
+	labels := CurrentSpecReport().Labels()
+	var clusterFile string
+	for _, label := range labels {
+		if file, ok := clusterMap[label]; ok {
+			clusterFile = file
+			break
+		}
+	}
+	if clusterFile == "" {
+		return nil, nil
+	}
+
+	clusterData, err := os.ReadFile(filepath.Join(sharedDir, clusterFile))
+	if err != nil {
+		return nil, nil
+	}
+	clusterName := strings.TrimSpace(string(clusterData))
+	if clusterName == "" {
+		return nil, nil
+	}
+
+	mgmtClient, err := e2eutil.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get management client: %w", err)
+	}
+
+	namespace := os.Getenv("E2E_HOSTED_CLUSTER_NAMESPACE")
+	if namespace == "" {
+		namespace = "clusters"
+	}
+
+	return &TestContext{
+		Context:                 ctx,
+		MgmtClient:              mgmtClient,
+		ClusterName:             clusterName,
+		ClusterNamespace:        namespace,
+		ControlPlaneNamespace:   manifests.HostedControlPlaneNamespace(namespace, clusterName),
+		HostedClusterConfigured: true,
+		ArtifactDir:             os.Getenv("ARTIFACT_DIR"),
+	}, nil
 }
 
 // ValidateHostedCluster skips the test if no hosted cluster was configured for this run.
