@@ -58,6 +58,10 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdResilience] Etcd
 	BeforeAll(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		hc := testCtx.GetHostedCluster()
+		if hc == nil || hc.Status.Version == nil || len(hc.Status.Version.History) < 2 {
+			Skip("cluster has not been upgraded — etcd chaos requires a post-upgrade cluster")
+		}
 	})
 
 	RegisterEtcdChaosTests(func() *internal.TestContext { return testCtx })

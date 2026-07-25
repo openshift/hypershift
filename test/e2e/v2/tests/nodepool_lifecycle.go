@@ -1265,7 +1265,8 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 // Helper functions
 
 // buildTestNodePool builds a new NodePool from a template with the given name prefix
-// and applies the provided mutation function.
+// and applies the provided mutation function. After mutation, it enforces the CEL
+// invariant that replicas and autoScaling are mutually exclusive.
 func buildTestNodePool(template *hyperv1.NodePool, namePrefix string, mutate func(*hyperv1.NodePool)) *hyperv1.NodePool {
 	GinkgoHelper()
 
@@ -1280,6 +1281,10 @@ func buildTestNodePool(template *hyperv1.NodePool, namePrefix string, mutate fun
 
 	if mutate != nil {
 		mutate(np)
+	}
+
+	if np.Spec.Replicas != nil && np.Spec.AutoScaling != nil {
+		np.Spec.AutoScaling = nil
 	}
 
 	return np

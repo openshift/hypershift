@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"sync"
 
-	. "github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo/v2"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -144,9 +144,33 @@ func (tc *TestContext) GetHostedClusterRESTConfig() *rest.Config {
 	return tc.hostedClusterRESTConfig
 }
 
-var testCtx *TestContext
+var (
+	testCtx    *TestContext
+	testCtxErr error
+	testCtxMu  sync.Mutex
+)
 
+// GetTestContext returns the global test context. On first call, if no context
+// was set via SetTestContext (e.g. in OTE mode where BeforeSuite is stripped),
+// it lazy-initializes from environment variables. Panics on every call until
+// initialization succeeds, preserving the original diagnostic.
 func GetTestContext() *TestContext {
+	testCtxMu.Lock()
+	defer testCtxMu.Unlock()
+
+	if testCtx != nil {
+		return testCtx
+	}
+	if testCtxErr != nil {
+		panic(fmt.Sprintf("test context initialization failed: %v", testCtxErr))
+	}
+
+	tc, err := SetupTestContextFromEnv(context.Background())
+	if err != nil {
+		testCtxErr = err
+		panic(fmt.Sprintf("test context initialization failed: %v", err))
+	}
+	testCtx = tc
 	return testCtx
 }
 
@@ -205,7 +229,7 @@ func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
 // Panics if a hosted cluster was configured but cannot be fetched.
 func (tc *TestContext) ValidateHostedCluster() {
 	if !tc.HostedClusterConfigured {
-		Skip("no hosted cluster configured for this test run")
+		ginkgo.Skip("no hosted cluster configured for this test run")
 	}
 	tc.GetHostedCluster()
 }

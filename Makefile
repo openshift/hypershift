@@ -530,6 +530,14 @@ e2ev2-destroy-guests:
 e2ev2-dump-guests:
 	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/dump-guests ./test/e2e/v2/cmd/dump-guests
 
+.PHONY: e2ev2-hypershift-tests-ext
+e2ev2-hypershift-tests-ext:
+	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/hypershift-tests-ext ./test/e2e/v2/cmd/hypershift-tests-ext
+
+.PHONY: e2ev2-hypershift-tests-ext-test
+e2ev2-hypershift-tests-ext-test: e2ev2-hypershift-tests-ext
+	$(GO) test -tags e2ev2 -v -count=1 ./test/e2e/v2/cmd/hypershift-tests-ext/
+
 .PHONY: backuprestore-e2e
 backuprestore-e2e:
 	$(GO_BACKUPRESTORE_E2E_RECIPE) -o bin/test-backuprestore ./test/e2e/v2/tests

@@ -5,10 +5,43 @@ package lifecycle
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ClusterManifest describes a created cluster for inter-step communication.
+// Written to SHARED_DIR/clusters.json by create-guests, consumed by
+// downstream steps (run, destroy-guests, dump-guests).
+type ClusterManifest struct {
+	Name         string `json:"name"`
+	Namespace    string `json:"namespace"`
+	Variant      string `json:"variant"`
+	ReleaseImage string `json:"releaseImage"`
+	Platform     string `json:"platform"`
+}
+
+func WriteClusterManifest(path string, clusters []ClusterManifest) error {
+	data, err := json.MarshalIndent(clusters, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling cluster manifest: %w", err)
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+func ReadClusterManifest(path string) ([]ClusterManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading cluster manifest: %w", err)
+	}
+	var clusters []ClusterManifest
+	if err := json.Unmarshal(data, &clusters); err != nil {
+		return nil, fmt.Errorf("unmarshaling cluster manifest: %w", err)
+	}
+	return clusters, nil
+}
 
 // ClusterSpec describes a single cluster to create for lifecycle tests.
 type ClusterSpec struct {
@@ -95,7 +128,6 @@ type PlatformConfig interface {
 	// DestroyArgs returns platform-specific args for
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
-
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -105,8 +137,13 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	switch platform {
 	case "azure", "":
 		return NewAzurePlatformConfig(sharedDir), nil
+	case "aws":
+		return NewAWSPlatformConfig(AWSPlatformOptions{
+			Region: envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
+			Zones:  envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+		}, sharedDir), nil
 	default:
-		return nil, fmt.Errorf("unsupported platform %q (supported: azure)", platform)
+		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
 	}
 }
 
@@ -119,4 +156,3 @@ func DeriveClusterName(prowJobID, variant string) string {
 	hash := sha256.Sum256([]byte(prowJobID))
 	return variant + "-" + fmt.Sprintf("%x", hash)[:10]
 }
-

@@ -223,14 +223,33 @@ func run(ctx context.Context, cfg envConfig) error {
 		return fmt.Errorf("platform post-version-rollout hook: %w", err)
 	}
 
-	// Phase 7: Write cluster names to SHARED_DIR.
-	log.Println("Phase 7: Writing cluster names to SHARED_DIR")
+	// Phase 7: Write cluster manifest and individual name files to SHARED_DIR.
+	log.Println("Phase 7: Writing cluster manifest to SHARED_DIR")
+	manifests := make([]lifecycle.ClusterManifest, len(named))
+	for i, ns := range named {
+		releaseImage := ns.ReleaseImage
+		if releaseImage == "" {
+			releaseImage = cfg.releaseImage
+		}
+		manifests[i] = lifecycle.ClusterManifest{
+			Name:         ns.name,
+			Namespace:    cfg.namespace,
+			Variant:      ns.Variant,
+			ReleaseImage: releaseImage,
+			Platform:     cfg.platform.Name(),
+		}
+	}
+	manifestPath := filepath.Join(cfg.sharedDir, "clusters.json")
+	if err := lifecycle.WriteClusterManifest(manifestPath, manifests); err != nil {
+		return fmt.Errorf("writing cluster manifest: %w", err)
+	}
+	log.Printf("Wrote cluster manifest with %d clusters to %s", len(manifests), manifestPath)
+
 	for _, ns := range named {
 		outputPath := filepath.Join(cfg.sharedDir, ns.OutputFile)
 		if err := os.WriteFile(outputPath, []byte(ns.name), 0600); err != nil {
 			return fmt.Errorf("writing cluster name to %s: %w", outputPath, err)
 		}
-		log.Printf("Wrote cluster name %q to %s", ns.name, outputPath)
 	}
 
 	if anyRolloutFailed {
@@ -256,6 +275,9 @@ func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []s
 		"--pull-secret=" + cfg.pullSecret,
 		"--release-image=" + releaseImage,
 		"--generate-ssh",
+		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
+		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
+		"--feature-set=TechPreviewNoUpgrade",
 	}
 
 	if cfg.externalDNS != "" {
