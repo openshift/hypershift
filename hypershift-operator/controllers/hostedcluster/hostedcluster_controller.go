@@ -2160,7 +2160,7 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 			destCM.Namespace = controlPlaneNamespace
 			if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
 				destCM.Annotations = sourceCM.Annotations
-				destCM.Labels = sourceCM.Labels
+				destCM.Labels = maps.Clone(sourceCM.Labels)
 				if destCM.Labels == nil {
 					destCM.Labels = map[string]string{}
 				}
@@ -2190,7 +2190,7 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 			destSecret.Namespace = controlPlaneNamespace
 			if _, err := createOrUpdate(ctx, r.Client, destSecret, func() error {
 				destSecret.Annotations = sourceSecret.Annotations
-				destSecret.Labels = sourceSecret.Labels
+				destSecret.Labels = maps.Clone(sourceSecret.Labels)
 				if destSecret.Labels == nil {
 					destSecret.Labels = map[string]string{}
 				}
@@ -2205,27 +2205,29 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 		}
 	}
 
-	if err := r.cleanupStaleSyncedConfigMaps(ctx, controlPlaneNamespace, configMapRefNames); err != nil {
+	if err := r.cleanupStaleSyncedConfigMaps(ctx, controlPlaneNamespace, hcluster.Namespace, configMapRefNames); err != nil {
 		return err
 	}
-	if err := r.cleanupStaleSyncedSecrets(ctx, controlPlaneNamespace, secretRefNames); err != nil {
+	if err := r.cleanupStaleSyncedSecrets(ctx, controlPlaneNamespace, hcluster.Namespace, secretRefNames); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (r *HostedClusterReconciler) cleanupStaleSyncedConfigMaps(ctx context.Context, controlPlaneNamespace string, currentRefs []string) error {
-	currentNames := sets.NewString(currentRefs...)
+func (r *HostedClusterReconciler) cleanupStaleSyncedConfigMaps(ctx context.Context, controlPlaneNamespace, sourceNamespace string, currentRefs []string) error {
+	log := ctrl.LoggerFrom(ctx)
+	currentNames := sets.New[string](currentRefs...)
 	var syncedCMs corev1.ConfigMapList
 	if err := r.List(ctx, &syncedCMs,
 		client.InNamespace(controlPlaneNamespace),
-		client.HasLabels{configSyncedLabel},
+		client.MatchingLabels{configSyncedLabel: sourceNamespace},
 	); err != nil {
 		return fmt.Errorf("failed to list synced configmaps: %w", err)
 	}
 	for i := range syncedCMs.Items {
 		if !currentNames.Has(syncedCMs.Items[i].Name) {
+			log.Info("Deleting stale synced configmap", "name", syncedCMs.Items[i].Name, "namespace", controlPlaneNamespace)
 			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, &syncedCMs.Items[i]); err != nil {
 				return fmt.Errorf("failed to delete stale synced configmap %s/%s: %w",
 					syncedCMs.Items[i].Namespace, syncedCMs.Items[i].Name, err)
@@ -2235,17 +2237,19 @@ func (r *HostedClusterReconciler) cleanupStaleSyncedConfigMaps(ctx context.Conte
 	return nil
 }
 
-func (r *HostedClusterReconciler) cleanupStaleSyncedSecrets(ctx context.Context, controlPlaneNamespace string, currentRefs []string) error {
-	currentNames := sets.NewString(currentRefs...)
+func (r *HostedClusterReconciler) cleanupStaleSyncedSecrets(ctx context.Context, controlPlaneNamespace, sourceNamespace string, currentRefs []string) error {
+	log := ctrl.LoggerFrom(ctx)
+	currentNames := sets.New[string](currentRefs...)
 	var syncedSecrets corev1.SecretList
 	if err := r.List(ctx, &syncedSecrets,
 		client.InNamespace(controlPlaneNamespace),
-		client.HasLabels{configSyncedLabel},
+		client.MatchingLabels{configSyncedLabel: sourceNamespace},
 	); err != nil {
 		return fmt.Errorf("failed to list synced secrets: %w", err)
 	}
 	for i := range syncedSecrets.Items {
 		if !currentNames.Has(syncedSecrets.Items[i].Name) {
+			log.Info("Deleting stale synced secret", "name", syncedSecrets.Items[i].Name, "namespace", controlPlaneNamespace)
 			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, &syncedSecrets.Items[i]); err != nil {
 				return fmt.Errorf("failed to delete stale synced secret %s/%s: %w",
 					syncedSecrets.Items[i].Namespace, syncedSecrets.Items[i].Name, err)
