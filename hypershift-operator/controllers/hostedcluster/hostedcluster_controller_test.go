@@ -9235,6 +9235,89 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 			expectSyncedConfigMaps: []string{"cm-a"},
 		},
 		{
+			name: "When a referenced ConfigMap does not exist, it should return an error",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Image: &configv1.ImageSpec{
+							AdditionalTrustedCA: configv1.ConfigMapNameReference{
+								Name: "nonexistent-cm",
+							},
+						},
+					},
+				},
+			},
+			expectError:            true,
+			expectedErrorSubstring: "failed to get referenced configmap",
+		},
+		{
+			name: "When a Secret ref is set, it should sync it with a tracking label",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{
+										ServingCertificate: configv1.SecretNameReference{Name: "secret-a"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret-a",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{"tls.crt": []byte("cert-a")},
+				},
+			},
+			expectSyncedSecrets: []string{"secret-a"},
+		},
+		{
+			name: "When a source ConfigMap has existing labels, it should add the tracking label without corrupting the source",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Image: &configv1.ImageSpec{
+							AdditionalTrustedCA: configv1.ConfigMapNameReference{
+								Name: "cm-with-labels",
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm-with-labels",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							"app": "myapp",
+						},
+					},
+					Data: map[string]string{"ca.crt": "cert-data"},
+				},
+			},
+			expectSyncedConfigMaps: []string{"cm-with-labels"},
+		},
+		{
 			name: "When a ConfigMap ref is changed, it should delete the old copy",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -9510,6 +9593,30 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 						g.Expect(err).ToNot(HaveOccurred(),
 							"unlabeled secret %s should not be deleted", secret.Name)
 					}
+				}
+			}
+
+			// Verify source objects are not corrupted by syncing
+			for _, obj := range tc.existingObjects {
+				if cm, isCM := obj.(*corev1.ConfigMap); isCM && cm.Namespace == testNamespace {
+					sourceCM := &corev1.ConfigMap{}
+					err := fakeClient.Get(ctx, crclient.ObjectKey{
+						Name:      cm.Name,
+						Namespace: cm.Namespace,
+					}, sourceCM)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(sourceCM.Labels).ToNot(HaveKey(configSyncedLabel),
+						"source configmap %s should not have the tracking label", cm.Name)
+				}
+				if secret, isSecret := obj.(*corev1.Secret); isSecret && secret.Namespace == testNamespace {
+					sourceSecret := &corev1.Secret{}
+					err := fakeClient.Get(ctx, crclient.ObjectKey{
+						Name:      secret.Name,
+						Namespace: secret.Namespace,
+					}, sourceSecret)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(sourceSecret.Labels).ToNot(HaveKey(configSyncedLabel),
+						"source secret %s should not have the tracking label", secret.Name)
 				}
 			}
 		})
