@@ -9186,3 +9186,332 @@ func TestDestroyGracePeriod(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileGlobalConfigSync(t *testing.T) {
+	t.Parallel()
+	const (
+		testNamespace         = "test-ns"
+		controlPlaneNamespace = "test-hcp-ns"
+		hostedClusterName     = "test-cluster"
+	)
+
+	testCases := []struct {
+		name                    string
+		hostedCluster           *hyperv1.HostedCluster
+		existingObjects         []crclient.Object
+		expectSyncedConfigMaps  []string
+		expectDeletedConfigMaps []string
+		expectSyncedSecrets     []string
+		expectDeletedSecrets    []string
+		expectError             bool
+		expectedErrorSubstring  string
+	}{
+		{
+			name: "When a ConfigMap ref is set, it should sync it with a tracking label",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Image: &configv1.ImageSpec{
+							AdditionalTrustedCA: configv1.ConfigMapNameReference{
+								Name: "cm-a",
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm-a",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca.crt": "cert-data"},
+				},
+			},
+			expectSyncedConfigMaps: []string{"cm-a"},
+		},
+		{
+			name: "When a ConfigMap ref is changed, it should delete the old copy",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Image: &configv1.ImageSpec{
+							AdditionalTrustedCA: configv1.ConfigMapNameReference{
+								Name: "cm-b",
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm-b",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca.crt": "cert-data-b"},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm-a",
+						Namespace: controlPlaneNamespace,
+						Labels:    map[string]string{configSyncedLabel: testNamespace},
+					},
+					Data: map[string]string{"ca.crt": "cert-data-a"},
+				},
+			},
+			expectSyncedConfigMaps:  []string{"cm-b"},
+			expectDeletedConfigMaps: []string{"cm-a"},
+		},
+		{
+			name: "When a Secret ref is changed, it should delete the old copy",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{
+										ServingCertificate: configv1.SecretNameReference{Name: "secret-b"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret-b",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{"tls.crt": []byte("cert-b")},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret-a",
+						Namespace: controlPlaneNamespace,
+						Labels:    map[string]string{configSyncedLabel: testNamespace},
+					},
+					Data: map[string][]byte{"tls.crt": []byte("cert-a")},
+				},
+			},
+			expectSyncedSecrets:  []string{"secret-b"},
+			expectDeletedSecrets: []string{"secret-a"},
+		},
+		{
+			name: "When configuration is nil, it should delete all previously synced resources",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: nil,
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm-a",
+						Namespace: controlPlaneNamespace,
+						Labels:    map[string]string{configSyncedLabel: testNamespace},
+					},
+					Data: map[string]string{"ca.crt": "cert-data-a"},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret-a",
+						Namespace: controlPlaneNamespace,
+						Labels:    map[string]string{configSyncedLabel: testNamespace},
+					},
+					Data: map[string][]byte{"tls.crt": []byte("cert-a")},
+				},
+			},
+			expectDeletedConfigMaps: []string{"cm-a"},
+			expectDeletedSecrets:    []string{"secret-a"},
+		},
+		{
+			name: "When synced resources exist without the label, it should not delete them",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: nil,
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-cm",
+						Namespace: controlPlaneNamespace,
+					},
+					Data: map[string]string{"key": "value"},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "unrelated-secret",
+						Namespace: controlPlaneNamespace,
+					},
+					Data: map[string][]byte{"key": []byte("value")},
+				},
+			},
+		},
+		{
+			name: "When a ref is still used by another field, it should not be deleted",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Image: &configv1.ImageSpec{
+							AdditionalTrustedCA: configv1.ConfigMapNameReference{
+								Name: "shared-cm",
+							},
+						},
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "shared-cm",
+							},
+						},
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "shared-cm",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"ca.crt": "cert-data"},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "old-cm",
+						Namespace: controlPlaneNamespace,
+						Labels:    map[string]string{configSyncedLabel: testNamespace},
+					},
+					Data: map[string]string{"ca.crt": "old-cert"},
+				},
+			},
+			expectSyncedConfigMaps:  []string{"shared-cm"},
+			expectDeletedConfigMaps: []string{"old-cm"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			g := NewWithT(t)
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client: fakeClient,
+			}
+
+			createOrUpdate := upsert.New(false).CreateOrUpdate
+
+			err := r.reconcileGlobalConfigSync(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrorSubstring != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+				}
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			for _, cmName := range tc.expectSyncedConfigMaps {
+				destCM := &corev1.ConfigMap{}
+				err := fakeClient.Get(ctx, crclient.ObjectKey{
+					Name:      cmName,
+					Namespace: controlPlaneNamespace,
+				}, destCM)
+				g.Expect(err).ToNot(HaveOccurred(), "expected synced configmap %s to exist", cmName)
+				g.Expect(destCM.Labels).To(HaveKeyWithValue(configSyncedLabel, testNamespace),
+					"expected synced configmap %s to have tracking label", cmName)
+			}
+
+			for _, cmName := range tc.expectDeletedConfigMaps {
+				destCM := &corev1.ConfigMap{}
+				err := fakeClient.Get(ctx, crclient.ObjectKey{
+					Name:      cmName,
+					Namespace: controlPlaneNamespace,
+				}, destCM)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue(),
+					"expected stale configmap %s to be deleted", cmName)
+			}
+
+			for _, secretName := range tc.expectSyncedSecrets {
+				destSecret := &corev1.Secret{}
+				err := fakeClient.Get(ctx, crclient.ObjectKey{
+					Name:      secretName,
+					Namespace: controlPlaneNamespace,
+				}, destSecret)
+				g.Expect(err).ToNot(HaveOccurred(), "expected synced secret %s to exist", secretName)
+				g.Expect(destSecret.Labels).To(HaveKeyWithValue(configSyncedLabel, testNamespace),
+					"expected synced secret %s to have tracking label", secretName)
+			}
+
+			for _, secretName := range tc.expectDeletedSecrets {
+				destSecret := &corev1.Secret{}
+				err := fakeClient.Get(ctx, crclient.ObjectKey{
+					Name:      secretName,
+					Namespace: controlPlaneNamespace,
+				}, destSecret)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue(),
+					"expected stale secret %s to be deleted", secretName)
+			}
+
+			// Verify unlabeled resources are never deleted
+			for _, obj := range tc.existingObjects {
+				cm, isCM := obj.(*corev1.ConfigMap)
+				if isCM && cm.Namespace == controlPlaneNamespace {
+					if cm.Labels == nil || cm.Labels[configSyncedLabel] == "" {
+						existing := &corev1.ConfigMap{}
+						err := fakeClient.Get(ctx, crclient.ObjectKey{
+							Name:      cm.Name,
+							Namespace: cm.Namespace,
+						}, existing)
+						g.Expect(err).ToNot(HaveOccurred(),
+							"unlabeled configmap %s should not be deleted", cm.Name)
+					}
+				}
+				secret, isSecret := obj.(*corev1.Secret)
+				if isSecret && secret.Namespace == controlPlaneNamespace {
+					if secret.Labels == nil || secret.Labels[configSyncedLabel] == "" {
+						existing := &corev1.Secret{}
+						err := fakeClient.Get(ctx, crclient.ObjectKey{
+							Name:      secret.Name,
+							Namespace: secret.Namespace,
+						}, existing)
+						g.Expect(err).ToNot(HaveOccurred(),
+							"unlabeled secret %s should not be deleted", secret.Name)
+					}
+				}
+			}
+		})
+	}
+}
