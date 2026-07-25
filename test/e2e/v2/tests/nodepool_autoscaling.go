@@ -243,23 +243,20 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 
 // Helper functions
 
-// getDefaultNodePool finds an existing NodePool for the hosted cluster to copy platform config
+// getDefaultNodePool returns the original NodePool created with the hosted cluster.
+// It matches by name (which equals the HostedCluster name by convention) and filters
+// out NodePools that are being deleted, so test-created or dying NodePools are never
+// returned as a template.
 func getDefaultNodePool(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster) *hyperv1.NodePool {
 	GinkgoHelper()
 
-	npList := &hyperv1.NodePoolList{}
-	err := client.List(ctx, npList, crclient.InNamespace(hc.Namespace))
-	Expect(err).NotTo(HaveOccurred(), "failed to list NodePools")
-	Expect(npList.Items).NotTo(BeEmpty(), "should have at least one NodePool")
+	np := &hyperv1.NodePool{}
+	err := client.Get(ctx, crclient.ObjectKey{Namespace: hc.Namespace, Name: hc.Name}, np)
+	Expect(err).NotTo(HaveOccurred(), "failed to get default NodePool %s/%s", hc.Namespace, hc.Name)
+	Expect(np.DeletionTimestamp.IsZero()).To(BeTrue(),
+		"default NodePool %s is being deleted", np.Name)
 
-	// Find a NodePool for this HostedCluster
-	for i := range npList.Items {
-		if npList.Items[i].Spec.ClusterName == hc.Name {
-			return &npList.Items[i]
-		}
-	}
-
-	return nil
+	return np
 }
 
 // buildAutoscalingNodePool creates a new NodePool with autoscaling enabled based on a template.
