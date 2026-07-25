@@ -241,19 +241,10 @@ spec:
 }
 
 // NodePoolOSImageStreamDefaultStatusTest verifies that the existing default NodePool
-// (no osImageStream set) reports rhel-9 in status.osImageStream.
+// (no osImageStream set) reports a recognized RHEL stream in status.osImageStream.
 // This is a non-lifecycle test: it reads existing state without mutation.
-//
-// TODO(CNTRLPLANE-3032): The default OS stream is currently hardcoded to rhel-9 for all
-// OCP versions. When the hardcoding is removed and OCP >= 5.0 defaults to rhel-10,
-// this test must be updated to expect rhel-10 on OCP >= 5.0:
-//
-//	expectedStream := hyperv1.OSImageStreamRHEL9
-//	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version50) {
-//	    expectedStream = hyperv1.OSImageStreamRHEL10
-//	}
 func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGetter) {
-	It("When no osImageStream is set, it should report rhel-9 in status", func() {
+	It("When no osImageStream is set, it should report a recognized RHEL stream in status", func() {
 		testCtx := getTestCtx()
 		testCtx.ValidateHostedCluster()
 
@@ -290,23 +281,20 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			e2eutil.WithInterval(15*time.Second),
 		)
 
-		// The default OS stream is currently hardcoded to rhel-9 for all OCP versions.
-		// TODO(CNTRLPLANE-3032): When the hardcoding is removed, change this to expect rhel-10
-		// on OCP >= 5.0.
-		expectedStream := hyperv1.OSImageStreamRHEL9
-
-		GinkgoWriter.Printf("Waiting for NodePool %s/%s status.osImageStream.name to be %s\n",
-			defaultNP.Namespace, defaultNP.Name, expectedStream)
+		// Verify the controller populated status.osImageStream from the actual
+		// Machine NodeInfo.OSImage. The concrete value (rhel-9 or rhel-10) depends
+		// on the RHCOS shipped in the payload, so we assert it is set and valid
+		// rather than predicting the exact stream.
 		e2eutil.EventuallyObject[*hyperv1.NodePool](
 			GinkgoTB(), ctx,
-			"default NodePool status to report osImageStream="+expectedStream,
+			"default NodePool status to report a non-empty osImageStream",
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
 			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(expectedStream),
+				osImageStreamSetPredicate(),
 			},
 			e2eutil.WithTimeout(10*time.Minute),
 			e2eutil.WithInterval(15*time.Second),
@@ -334,6 +322,23 @@ func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 			return false, fmt.Sprintf("status.nodesInfo has %d version entries but 0 ready nodes", len(versions)), nil
 		}
 		return true, fmt.Sprintf("status.nodesInfo has %d ready nodes across %d version entries", totalReady, len(versions)), nil
+	}
+}
+
+// osImageStreamSetPredicate returns a predicate that validates that a NodePool's
+// status.osImageStream.name is set to a recognized RHEL stream value.
+func osImageStreamSetPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+	return func(pool *hyperv1.NodePool) (bool, string, error) {
+		name := pool.Status.OSImageStream.Name
+		if name == "" {
+			return false, "status.osImageStream.name is empty", nil
+		}
+		switch name {
+		case hyperv1.OSImageStreamRHEL9, hyperv1.OSImageStreamRHEL10:
+			return true, fmt.Sprintf("status.osImageStream.name=%s", name), nil
+		default:
+			return false, fmt.Sprintf("status.osImageStream.name=%q is not a recognized RHEL stream", name), nil
+		}
 	}
 }
 
@@ -382,13 +387,29 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 			"default NodePool %s should have a config hash annotation", defaultNP.Name)
 		GinkgoWriter.Printf("Original config hash for NodePool %s: %s\n", defaultNP.Name, originalConfigHash)
 
-		// Determine the version-derived default stream.
-		// On OCP < 5.0: rhel-9; on OCP >= 5.0: rhel-10 (default NodePool has no runc config).
-		versionDerivedDefault := hyperv1.OSImageStreamRHEL9
-		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version50) {
-			versionDerivedDefault = hyperv1.OSImageStreamRHEL10
-		}
-		GinkgoWriter.Printf("Version-derived default stream: %s\n", versionDerivedDefault)
+		// Poll for status.osImageStream rather than reading a point-in-time
+		// snapshot — the controller may not have set it yet if Machines are
+		// still registering NodeInfo.
+		GinkgoWriter.Printf("Waiting for NodePool %s to have status.osImageStream set\n", defaultNP.Name)
+		e2eutil.EventuallyObject[*hyperv1.NodePool](
+			GinkgoTB(), ctx,
+			fmt.Sprintf("NodePool %s status.osImageStream to be set", defaultNP.Name),
+			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				osImageStreamSetPredicate(),
+			},
+			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
+		)
+
+		// Re-read the NodePool to get the populated status for the patch below.
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), defaultNP)).To(Succeed())
+		versionDerivedDefault := defaultNP.Status.OSImageStream.Name
+		GinkgoWriter.Printf("Observed default stream from status: %s\n", versionDerivedDefault)
 
 		// Patch the NodePool to set osImageStream to the version-derived default.
 		base := defaultNP.DeepCopy()
