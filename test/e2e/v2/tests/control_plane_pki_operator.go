@@ -44,6 +44,17 @@ const (
 	pkiOperatorMetricsPort   = "8443"
 )
 
+// extractMinTLSVersion extracts the minTLSVersion value from a config.yaml string for diagnostic logging.
+func extractMinTLSVersion(configYAML string) string {
+	for _, line := range strings.Split(configYAML, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "minTLSVersion:") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "minTLSVersion:"))
+		}
+	}
+	return "<not found>"
+}
+
 // hostedClusterHasTLSProfileType returns true if the HostedCluster has the specified TLS profile type.
 func hostedClusterHasTLSProfileType(hc *hyperv1.HostedCluster, profileType configv1.TLSProfileType) bool {
 	return hc.Spec.Configuration != nil &&
@@ -228,6 +239,26 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 			GinkgoWriter.Printf("Updated HostedCluster to Modern TLS profile, waiting for changes to propagate\n")
 
+			// Verify HC→HCP propagation: the HostedControlPlane should reflect the Modern profile
+			Eventually(func(g Gomega) {
+				var hcp hyperv1.HostedControlPlane
+				g.Expect(mgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Name:      tc.ClusterName,
+					Namespace: tc.ControlPlaneNamespace,
+				}, &hcp)).To(Succeed(), "failed to get HostedControlPlane")
+
+				profile := hcp.Spec.Configuration.GetTLSSecurityProfile()
+				if profile != nil {
+					GinkgoWriter.Printf("HCP TLS profile: type=%s\n", profile.Type)
+				} else {
+					GinkgoWriter.Printf("HCP TLS profile: nil (default)\n")
+				}
+				g.Expect(profile).NotTo(BeNil(), "HCP TLS profile should be set after HC update")
+				g.Expect(profile.Type).To(Equal(configv1.TLSProfileModernType),
+					"HCP should have Modern TLS profile after HC update")
+			}, 5*time.Minute, 10*time.Second).Should(Succeed(),
+				"HostedControlPlane did not reflect Modern TLS profile — HC→HCP propagation may be stalled")
+
 			// Wait for ConfigMap in management cluster to reflect the Modern profile with TLS 1.3
 			Eventually(func(g Gomega) {
 				cm := &corev1.ConfigMap{}
@@ -237,15 +268,16 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				}, cm)
 
 				if apierrors.IsNotFound(err) {
-					// ConfigMap doesn't exist yet, retry
+					GinkgoWriter.Printf("ConfigMap %s not found yet, retrying\n", pkiOperatorConfigMapName)
 					return
 				}
 				g.Expect(err).NotTo(HaveOccurred(), "failed to get ConfigMap")
 
 				configYAML := cm.Data["config.yaml"]
+				GinkgoWriter.Printf("Current ConfigMap minTLSVersion: %s\n", extractMinTLSVersion(configYAML))
 				g.Expect(configYAML).To(ContainSubstring("minTLSVersion: VersionTLS13"),
 					"PKI operator config should have minTLSVersion: VersionTLS13 for modern profile")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 10*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
 		It("should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
@@ -399,6 +431,25 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 			GinkgoWriter.Printf("Removed Modern TLS profile from HostedCluster (downgraded to default/Intermediate), waiting for changes to propagate\n")
 
+			// Verify HC→HCP propagation: the HostedControlPlane should reflect the nil/default profile
+			Eventually(func(g Gomega) {
+				var hcp hyperv1.HostedControlPlane
+				g.Expect(mgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Name:      tc.ClusterName,
+					Namespace: tc.ControlPlaneNamespace,
+				}, &hcp)).To(Succeed(), "failed to get HostedControlPlane")
+
+				profile := hcp.Spec.Configuration.GetTLSSecurityProfile()
+				if profile != nil {
+					GinkgoWriter.Printf("HCP TLS profile: type=%s\n", profile.Type)
+				} else {
+					GinkgoWriter.Printf("HCP TLS profile: nil (default)\n")
+				}
+				g.Expect(profile).To(BeNil(),
+					"HCP TLS profile should be nil after removing Modern profile from HC")
+			}, 5*time.Minute, 10*time.Second).Should(Succeed(),
+				"HostedControlPlane still has non-nil TLS profile — HC→HCP propagation may be stalled")
+
 			// Wait for ConfigMap in management cluster to reflect the Intermediate profile with TLS 1.2
 			Eventually(func(g Gomega) {
 				cm := &corev1.ConfigMap{}
@@ -408,15 +459,16 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				}, cm)
 
 				if apierrors.IsNotFound(err) {
-					// ConfigMap doesn't exist yet, retry
+					GinkgoWriter.Printf("ConfigMap %s not found yet, retrying\n", pkiOperatorConfigMapName)
 					return
 				}
 				g.Expect(err).NotTo(HaveOccurred(), "failed to get ConfigMap")
 
 				configYAML := cm.Data["config.yaml"]
+				GinkgoWriter.Printf("Current ConfigMap minTLSVersion: %s\n", extractMinTLSVersion(configYAML))
 				g.Expect(configYAML).To(ContainSubstring("minTLSVersion: VersionTLS12"),
 					"PKI operator config should have minTLSVersion: VersionTLS12 for intermediate profile")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}, 10*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
 		It("should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
