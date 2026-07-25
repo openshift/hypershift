@@ -877,10 +877,8 @@ func (opts *RawCreateOptions) validateCapabilities() error {
 			return fmt.Errorf("unknown enabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
 		}
 	}
-	disabledCaps := sets.NewString(opts.DisableClusterCapabilities...)
-	if disabledCaps.Has(string(hyperv1.IngressCapability)) && !disabledCaps.Has(string(hyperv1.ConsoleCapability)) {
-		return fmt.Errorf("ingress capability can only be disabled if Console capability is also disabled")
-	}
+
+
 	if len(opts.KubeAPIServerDNSName) > 0 {
 		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
 			return fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
