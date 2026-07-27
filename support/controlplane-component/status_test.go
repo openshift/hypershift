@@ -188,6 +188,57 @@ func TestReconcileComponentStatus(t *testing.T) {
 			expectedVersion: "",
 		},
 		{
+			name: "should complete rollout when selector is set but no terminating pods exist",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](1),
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": componentName},
+					},
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 1,
+					ReadyReplicas:     1,
+					Replicas:          1,
+					UpdatedReplicas:   1,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			additionalObjects: []client.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "running-pod",
+						Namespace: namespace,
+						Labels:    map[string]string{"app": componentName},
+					},
+				},
+			},
+			unavailableDependencies: nil,
+			reconciliationError:     nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			expectedVersion: testVersion,
+		},
+		{
 			name: "should block rollout when terminating pods exist",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{

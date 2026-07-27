@@ -237,6 +237,7 @@ func TestHasTerminatingPods(t *testing.T) {
 		pods           []corev1.Pod
 		deletePod      string
 		expectedResult bool
+		expectError    bool
 	}{
 		{
 			name:     "nil selector returns false",
@@ -272,6 +273,16 @@ func TestHasTerminatingPods(t *testing.T) {
 			expectedResult: true,
 		},
 		{
+			name: "malformed selector returns error",
+			selector: &v1.LabelSelector{
+				MatchExpressions: []v1.LabelSelectorRequirement{
+					{Key: "app", Operator: "InvalidOp", Values: []string{"v"}},
+				},
+			},
+			expectedResult: false,
+			expectError:    true,
+		},
+		{
 			name:     "pods not matching selector are ignored",
 			selector: selector,
 			pods: []corev1.Pod{
@@ -300,6 +311,12 @@ func TestHasTerminatingPods(t *testing.T) {
 			}
 
 			result, err := HasTerminatingPods(t.Context(), c, "ns", tt.selector)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("HasTerminatingPods() expected error but got nil")
+				}
+				return
+			}
 			if err != nil {
 				t.Errorf("HasTerminatingPods() unexpected error: %v", err)
 				return

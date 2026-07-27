@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -209,6 +210,9 @@ func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlP
 	status, reason, message := c.workloadProvider.IsReady(workloadObject)
 
 	if status == metav1.ConditionTrue {
+		// Only Deployments and StatefulSets have label selectors for rollout tracking.
+		// Job and CronJob workloads run to completion and don't have rollout semantics
+		// where terminating pods are meaningful.
 		var selector *metav1.LabelSelector
 		switch obj := any(workloadObject).(type) {
 		case *appsv1.Deployment:
@@ -218,7 +222,10 @@ func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlP
 		}
 		if selector != nil {
 			hasTerminating, err := podspec.HasTerminatingPods(cpContext, cpContext.Client, cpContext.HCP.Namespace, selector)
-			if err == nil && hasTerminating {
+			if err != nil {
+				log := ctrl.LoggerFrom(cpContext)
+				log.Error(err, "Failed to check for terminating pods", "component", c.name)
+			} else if hasTerminating {
 				status = metav1.ConditionFalse
 				reason = hyperv1.WaitingForTerminatingPodsReason
 				message = fmt.Sprintf("Waiting for terminating pods of %s to complete", c.name)
