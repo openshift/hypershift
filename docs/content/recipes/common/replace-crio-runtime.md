@@ -85,8 +85,8 @@ The following manifest sets `crun` as the default runtime.
 
     allowed_annotations = [
         "io.containers.trace-syscall",
-        "io.kubernetes.cri-o.Devices",
-        "io.kubernetes.cri-o.LinkLogs",
+        "devices.crio.io",
+        "link-logs.crio.io",
         "cpu-load-balancing.crio.io",
         "cpu-quota.crio.io",
         "irq-load-balancing.crio.io",
@@ -214,8 +214,8 @@ The following manifest sets `runc` as the default runtime.
 
     allowed_annotations = [
         "io.containers.trace-syscall",
-        "io.kubernetes.cri-o.Devices",
-        "io.kubernetes.cri-o.LinkLogs",
+        "devices.crio.io",
+        "link-logs.crio.io",
         "cpu-load-balancing.crio.io",
         "cpu-quota.crio.io",
         "irq-load-balancing.crio.io",
