@@ -208,6 +208,24 @@ func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlP
 
 	status, reason, message := c.workloadProvider.IsReady(workloadObject)
 
+	if status == metav1.ConditionTrue {
+		var selector *metav1.LabelSelector
+		switch obj := any(workloadObject).(type) {
+		case *appsv1.Deployment:
+			selector = obj.Spec.Selector
+		case *appsv1.StatefulSet:
+			selector = obj.Spec.Selector
+		}
+		if selector != nil {
+			hasTerminating, err := podspec.HasTerminatingPods(cpContext, cpContext.Client, cpContext.HCP.Namespace, selector)
+			if err == nil && hasTerminating {
+				status = metav1.ConditionFalse
+				reason = hyperv1.WaitingForTerminatingPodsReason
+				message = fmt.Sprintf("Waiting for terminating pods of %s to complete", c.name)
+			}
+		}
+	}
+
 	operandsReady, err := checkOperandsRolloutStatusFn(cpContext.workloadContext())
 	if !operandsReady && status == metav1.ConditionTrue {
 		status = metav1.ConditionFalse
