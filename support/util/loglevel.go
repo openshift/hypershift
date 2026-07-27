@@ -21,3 +21,17 @@ func LogLevelToKlogVerbosity(level *hyperv1.LogLevel) int {
 		return 2
 	}
 }
+
+// LogLevelToEtcdLevel maps a LogLevel enum to ETCD_LOG_LEVEL environment variable.
+// Returns info (Normal) for empty value.
+func LogLevelToEtcdLevel(level *hyperv1.LogLevel) string {
+	if level == nil {
+		return "info"
+	}
+	switch *level {
+	case hyperv1.Debug, hyperv1.Trace, hyperv1.TraceAll:
+		return "debug"
+	default:
+		return "info"
+	}
+}

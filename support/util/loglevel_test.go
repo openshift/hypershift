@@ -55,3 +55,51 @@ func TestLogLevelToKlogVerbosity(t *testing.T) {
 		})
 	}
 }
+
+func TestLogLevelToEtcdLevel(t *testing.T) {
+	logLevel := func(l hyperv1.LogLevel) *hyperv1.LogLevel { return &l }
+
+	tests := []struct {
+		name     string
+		level    *hyperv1.LogLevel
+		expected string
+	}{
+		{
+			name:     "When LogLevel is nil it should return etcd level info",
+			level:    nil,
+			expected: "info",
+		},
+		{
+			name:     "When LogLevel is Normal it should return etcd level info",
+			level:    logLevel(hyperv1.Normal),
+			expected: "info",
+		},
+		{
+			name:     "When LogLevel is Debug it should return etcd level debug",
+			level:    logLevel(hyperv1.Debug),
+			expected: "debug",
+		},
+		{
+			name:     "When LogLevel is Trace it should return etcd level debug",
+			level:    logLevel(hyperv1.Trace),
+			expected: "debug",
+		},
+		{
+			name:     "When LogLevel is TraceAll it should return etcd level debug",
+			level:    logLevel(hyperv1.TraceAll),
+			expected: "debug",
+		},
+		{
+			name:     "When LogLevel is empty string it should return etcd level info",
+			level:    logLevel(hyperv1.LogLevel("")),
+			expected: "info",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(LogLevelToEtcdLevel(tt.level)).To(Equal(tt.expected))
+		})
+	}
+}
