@@ -2905,28 +2905,28 @@ type OperatorConfiguration struct {
 
 	// etcd configures the Etcd component.
 	// Setting the logLevel field triggers a rolling restart of the component.
-	// Etcd runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// Etcd runs with 3 replicas — Raft quorum is maintained during rolling update.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	Etcd EtcdOperatorSpec `json:"etcd,omitzero"`
 
 	// kubeControllerManager configures the kube-controller-manager component.
 	// Setting the logLevel field triggers a rolling restart of the component.
-	// kube-controller-manager runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// kube-controller-manager uses leader election — the standby takes over during restart.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	KubeControllerManager KubeControllerManagerOperatorSpec `json:"kubeControllerManager,omitzero"`
 
 	// kubeScheduler configures the kube-scheduler component.
 	// Setting the logLevel field triggers a rolling restart of the component.
-	// kube-scheduler runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// kube-scheduler uses leader election — the standby takes over during restart.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	KubeScheduler KubeSchedulerOperatorSpec `json:"kubeScheduler,omitzero"`
 
 	// openShiftControllerManager configures the openshift-controller-manager component.
 	// Setting the logLevel field triggers a rolling restart of the component.
-	// openshift-controller-manager runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// openshift-controller-manager uses leader election — the standby takes over during restart.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OpenShiftControllerManager OpenShiftControllerManagerOperatorSpec `json:"openShiftControllerManager,omitzero"`

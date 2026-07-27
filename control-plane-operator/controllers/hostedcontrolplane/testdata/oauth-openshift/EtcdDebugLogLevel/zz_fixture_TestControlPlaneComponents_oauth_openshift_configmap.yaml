@@ -33,7 +33,7 @@ data:
       loginURL: https://:0
       masterCA: /etc/kubernetes/certs/master-ca/ca.crt
       masterPublicURL: https://:0
-      masterURL: https://:0
+      masterURL: https://oauth-openshift.hcp-namespace.svc.cluster.local:6443
       sessionConfig:
         sessionMaxAgeSeconds: 300
         sessionName: ssn

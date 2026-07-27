@@ -276,7 +276,8 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 			}
 
 			cpContext := component.WorkloadContext{
-				HCP: tc.hcp,
+				Context: t.Context(),
+				HCP:     tc.hcp,
 			}
 
 			err := adaptStatefulSet(cpContext, sts)
