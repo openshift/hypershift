@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"errors"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -79,6 +80,7 @@ func TestRolloutTrustBundleHashes(t *testing.T) {
 		expectedAdditionalTrustBundle string
 		expectedProxyTrustedCA        string
 		expectError                   bool
+		expectTrustBundleError        bool
 	}{
 		{
 			name: "When additionalTrustBundle content changes, it should produce a different hash",
@@ -117,7 +119,7 @@ func TestRolloutTrustBundleHashes(t *testing.T) {
 			expectedProxyTrustedCA: supportutil.HashSimple("proxy-bundle"),
 		},
 		{
-			name: "When referenced ConfigMap is missing ca-bundle.crt, it should return an error",
+			name: "When referenced ConfigMap is missing ca-bundle.crt, it should return a TrustBundleConfigError",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "test"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -130,7 +132,19 @@ func TestRolloutTrustBundleHashes(t *testing.T) {
 					Data:       map[string]string{"other-key": "value"},
 				},
 			},
-			expectError: true,
+			expectError:            true,
+			expectTrustBundleError: true,
+		},
+		{
+			name: "When referenced ConfigMap does not exist, it should return a TrustBundleConfigError",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca"},
+				},
+			},
+			expectError:            true,
+			expectTrustBundleError: true,
 		},
 	}
 
@@ -141,6 +155,10 @@ func TestRolloutTrustBundleHashes(t *testing.T) {
 			additionalHash, proxyHash, err := rolloutTrustBundleHashes(t.Context(), client, tc.hostedCluster)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
+				if tc.expectTrustBundleError {
+					var trustBundleErr *TrustBundleConfigError
+					g.Expect(errors.As(err, &trustBundleErr)).To(BeTrue())
+				}
 				return
 			}
 			g.Expect(err).NotTo(HaveOccurred())
