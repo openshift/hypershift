@@ -316,6 +316,10 @@ spec:
                   The default value is 0, meaning that the node can retry drain without any time limitations.
                   Changing this field propagate inplace into existing Nodes.
                 type: string
+                x-kubernetes-validations:
+                - message: nodeDrainTimeout must be a valid duration string with a
+                    unit suffix (e.g. 30s, 5m, 1h)
+                  rule: self.matches('^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$')
               nodeLabels:
                 additionalProperties:
                   type: string
@@ -330,6 +334,10 @@ spec:
                   After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
                   Changing this field propagate inplace into existing Nodes.
                 type: string
+                x-kubernetes-validations:
+                - message: nodeVolumeDetachTimeout must be a valid duration string
+                    with a unit suffix (e.g. 30s, 5m, 1h)
+                  rule: self.matches('^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$')
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
