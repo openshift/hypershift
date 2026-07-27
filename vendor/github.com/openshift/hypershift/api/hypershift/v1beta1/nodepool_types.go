@@ -185,7 +185,8 @@ type NodePoolSpec struct {
 	// Changing this field propagate inplace into existing Nodes.
 	// +optional
 	// +kubebuilder:validation:Type:=string
-	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]+(\\\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$')",message="nodeDrainTimeout must be a valid duration string with a unit suffix (e.g. 30s, 5m, 1h)"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(([0-9]+(\\\\.[0-9]+)?|\\\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')",message="nodeDrainTimeout must be a valid duration string with a unit suffix (e.g. 30s, 5m, 1h)"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^(([0-9]+(\\\\.[0-9]+)?|\\\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$') || duration(self) >= duration('0s')",message="nodeDrainTimeout must be a non-negative duration"
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 
 	// nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
@@ -194,7 +195,8 @@ type NodePoolSpec struct {
 	// Changing this field propagate inplace into existing Nodes.
 	// +optional
 	// +kubebuilder:validation:Type:=string
-	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]+(\\\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$')",message="nodeVolumeDetachTimeout must be a valid duration string with a unit suffix (e.g. 30s, 5m, 1h)"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(([0-9]+(\\\\.[0-9]+)?|\\\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')",message="nodeVolumeDetachTimeout must be a valid duration string with a unit suffix (e.g. 30s, 5m, 1h)"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^(([0-9]+(\\\\.[0-9]+)?|\\\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$') || duration(self) >= duration('0s')",message="nodeVolumeDetachTimeout must be a non-negative duration"
 	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 
 	// nodeLabels propagates a list of labels to Nodes, only once on creation.

@@ -319,7 +319,10 @@ spec:
                 x-kubernetes-validations:
                 - message: nodeDrainTimeout must be a valid duration string with a
                     unit suffix (e.g. 30s, 5m, 1h)
-                  rule: self.matches('^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$')
+                  rule: self.matches('^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
+                - message: nodeDrainTimeout must be a non-negative duration
+                  rule: '!self.matches(''^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$'')
+                    || duration(self) >= duration(''0s'')'
               nodeLabels:
                 additionalProperties:
                   type: string
@@ -337,7 +340,10 @@ spec:
                 x-kubernetes-validations:
                 - message: nodeVolumeDetachTimeout must be a valid duration string
                     with a unit suffix (e.g. 30s, 5m, 1h)
-                  rule: self.matches('^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$')
+                  rule: self.matches('^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
+                - message: nodeVolumeDetachTimeout must be a non-negative duration
+                  rule: '!self.matches(''^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$'')
+                    || duration(self) >= duration(''0s'')'
               osImageStream:
                 description: |-
                   osImageStream specifies an OS stream to be used for nodes in this pool.
