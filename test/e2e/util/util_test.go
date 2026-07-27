@@ -2,6 +2,7 @@ package util
 
 import (
 	"crypto/x509"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,6 +205,67 @@ func TestGenerateCustomCertificate(t *testing.T) {
 			// Verify the private key can be parsed
 			_, err = certs.PemToPrivateKey(keyPEM)
 			g.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestLeaderElectionFailurePatterns(t *testing.T) {
+	matchesPattern := func(line string) bool {
+		lower := strings.ToLower(line)
+		for _, pattern := range leaderElectionFailurePatterns {
+			if strings.Contains(lower, pattern) {
+				return true
+			}
+		}
+		return false
+	}
+
+	tests := []struct {
+		name  string
+		line  string
+		match bool
+	}{
+		{
+			name:  "When log contains controller-runtime leader election lost error, it should match",
+			line:  `E0709 10:32:45.123456       1 main.go:42] "leader election lost"`,
+			match: true,
+		},
+		{
+			name:  "When log contains structured leader election lost error, it should match",
+			line:  `{"ts":"2025-07-09T10:32:45Z","level":"error","msg":"leader election lost"}`,
+			match: true,
+		},
+		{
+			name:  "When log contains failed to renew lease message, it should match",
+			line:  `I0709 10:32:45.123456       1 leaderelection.go:299] "Failed to renew lease" lock="ns/lease" err="context deadline exceeded"`,
+			match: true,
+		},
+		{
+			name:  "When log contains stopped leading event, it should match",
+			line:  `I0709 10:32:45.123456       1 leaderelection.go:280] stopped leading`,
+			match: true,
+		},
+		{
+			name:  "When log contains unrelated message, it should not match",
+			line:  `I0709 10:32:45.123456       1 controller.go:100] "Reconciling resource" name="my-resource"`,
+			match: false,
+		},
+		{
+			name:  "When log contains election in non-failure context, it should not match",
+			line:  `I0709 10:32:45.123456       1 leaderelection.go:272] "Successfully acquired lease"`,
+			match: false,
+		},
+		{
+			name:  "When log is empty, it should not match",
+			line:  "",
+			match: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(matchesPattern(tc.line)).To(Equal(tc.match))
 		})
 	}
 }
