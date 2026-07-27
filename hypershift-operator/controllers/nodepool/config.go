@@ -178,6 +178,22 @@ func (cg *ConfigGenerator) HashWithoutVersion() string {
 	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.rhelStream)
 }
 
+// TrustBundleConfigError indicates a HostedCluster-referenced trust-bundle ConfigMap
+// (additionalTrustBundle or proxy.trustedCA) is missing or malformed. Callers should
+// surface this as ValidMachineConfig=False and soft-fail reconcile so transient
+// ConfigMap delete/recreate windows do not hard-fail the NodePool reconcile loop.
+type TrustBundleConfigError struct {
+	err error
+}
+
+func (e *TrustBundleConfigError) Error() string {
+	return e.err.Error()
+}
+
+func (e *TrustBundleConfigError) Unwrap() error {
+	return e.err
+}
+
 func rolloutTrustBundleHashes(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) (additionalTrustBundleHash, proxyTrustedCAHash string, err error) {
 	if hc.Spec.AdditionalTrustBundle != nil {
 		additionalTrustBundleHash, err = configMapCABundleHash(ctx, c, hc.Namespace, hc.Spec.AdditionalTrustBundle.Name)
@@ -197,11 +213,11 @@ func rolloutTrustBundleHashes(ctx context.Context, c client.Client, hc *hyperv1.
 func configMapCABundleHash(ctx context.Context, c client.Client, namespace, name string) (string, error) {
 	cm := &corev1.ConfigMap{}
 	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
-		return "", fmt.Errorf("cannot get ConfigMap %s/%s: %w", namespace, name, err)
+		return "", &TrustBundleConfigError{err: fmt.Errorf("cannot get ConfigMap %s/%s: %w", namespace, name, err)}
 	}
 	data, ok := cm.Data[certs.UserCABundleMapKey]
 	if !ok {
-		return "", fmt.Errorf("ConfigMap %s/%s missing %q key", namespace, name, certs.UserCABundleMapKey)
+		return "", &TrustBundleConfigError{err: fmt.Errorf("ConfigMap %s/%s missing %q key", namespace, name, certs.UserCABundleMapKey)}
 	}
 	return supportutil.HashSimple(data), nil
 }
