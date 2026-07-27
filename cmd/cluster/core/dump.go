@@ -137,7 +137,9 @@ type DumpOptions struct {
 	Log logr.Logger
 }
 
-func NewDumpCommand() *cobra.Command {
+type DumpCallback func(ctx context.Context, opts *DumpOptions) error
+
+func NewDumpCommand(dumpCallback DumpCallback) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "cluster",
 		Short:        "Dumps hostedcluster diagnostic info",
@@ -167,15 +169,15 @@ func NewDumpCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("dump-guest-cluster", "dump-guest-cluster-through-kube-service")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return dumpClusterWithRetry(cmd.Context(), opts)
+		return dumpCallback(cmd.Context(), opts)
 	}
 	return cmd
 }
 
-// dumpClusterWithRetry retries DumpCluster on a fixed 5-second interval until
+// DumpClusterWithRetry retries DumpCluster on a fixed 5-second interval until
 // it succeeds or the context is canceled. Every error is treated as retryable —
 // the caller controls the deadline via the context.
-func dumpClusterWithRetry(ctx context.Context, opts *DumpOptions) error {
+func DumpClusterWithRetry(ctx context.Context, opts *DumpOptions) error {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 

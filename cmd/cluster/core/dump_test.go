@@ -31,7 +31,7 @@ func TestDumpClusterWithRetry(t *testing.T) {
 			Log:         logr.Discard(),
 		}
 
-		err := dumpClusterWithRetry(ctx, opts)
+		err := DumpClusterWithRetry(ctx, opts)
 		if err == nil {
 			t.Fatal("expected an error when context is canceled, got nil")
 		}
