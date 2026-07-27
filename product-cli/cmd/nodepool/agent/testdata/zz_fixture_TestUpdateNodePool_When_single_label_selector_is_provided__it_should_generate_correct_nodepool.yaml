@@ -1,0 +1,3 @@
+agentLabelSelector:
+  matchLabels:
+    size: large

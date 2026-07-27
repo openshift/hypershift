@@ -1,0 +1,6 @@
+additionalPorts:
+- network:
+    id: 40a355cb-596d-495c-8766-419d98cadd57
+availabilityZone: nova
+flavor: m1.xlarge
+imageName: rhcos-openstack-latest
