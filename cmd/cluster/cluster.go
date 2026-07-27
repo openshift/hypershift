@@ -64,6 +64,7 @@ func NewDestroyCommands() *cobra.Command {
 	cmd.PersistentFlags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID; inferred from the hosted cluster by default")
 	cmd.PersistentFlags().BoolVar(&opts.DestroyCloudResources, "destroy-cloud-resources", opts.DestroyCloudResources, "If true, cloud resources such as load balancers and persistent storage disks created by the cluster during its lifetime are removed")
+	cmd.PersistentFlags().BoolVar(&opts.ForceDestroy, "force", opts.ForceDestroy, "Dev/CI only: when the grace period expires, force-remove all finalizers from child resources and continue with best-effort infrastructure cleanup")
 
 	_ = cmd.MarkPersistentFlagRequired("name")
 
