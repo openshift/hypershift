@@ -44350,7 +44350,14 @@ or invalid channel has been specified.</p>
 ###ComponentLogLevelSpec { #hypershift.openshift.io/v1beta1.ComponentLogLevelSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.KubeAPIServerOperatorSpec">KubeAPIServerOperatorSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.EtcdOperatorSpec">EtcdOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.KubeAPIServerOperatorSpec">KubeAPIServerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec">KubeControllerManagerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.KubeSchedulerOperatorSpec">KubeSchedulerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec">OAuthServerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftAPIServerOperatorSpec">OpenShiftAPIServerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftControllerManagerOperatorSpec">OpenShiftControllerManagerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftOAuthAPIServerOperatorSpec">OpenShiftOAuthAPIServerOperatorSpec</a>)
 </p>
 <p>
 <p>ComponentLogLevelSpec configures the log verbosity for a hosted control plane component.</p>
@@ -45653,6 +45660,39 @@ automatically.</p>
 and the user is responsible for doing so.</p>
 </td>
 </tr></tbody>
+</table>
+###EtcdOperatorSpec { #hypershift.openshift.io/v1beta1.EtcdOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>EtcdOperatorSpec specifies the configuration for the Etcd.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###EtcdShardResource { #hypershift.openshift.io/v1beta1.EtcdShardResource }
 <p>
@@ -50240,7 +50280,73 @@ KarpenterAWSConfig
 <a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
 </p>
 <p>
-<p>KubeAPIServerConfiguration specifies the configuration for the Kube API Server.</p>
+<p>KubeAPIServerOperatorSpec specifies the configuration for the Kube API Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubeControllerManagerOperatorSpec { #hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>KubeControllerManagerOperatorSpec specifies the configuration for the Kube Controller Manager.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubeSchedulerOperatorSpec { #hypershift.openshift.io/v1beta1.KubeSchedulerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>KubeSchedulerOperatorSpec specifies the configuration for the Kube Scheduler.</p>
 </p>
 <table>
 <thead>
@@ -51259,7 +51365,7 @@ If omitted, the value will be inferred from the corev1.Service Load balancer typ
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">ClusterVersionOperatorSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">ClusterVersionOperatorSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">ComponentLogLevelSpec</a>)
 </p>
 <p>
@@ -53101,6 +53207,39 @@ progress and detecting stuck nodes.</p>
 </tr>
 </tbody>
 </table>
+###OAuthServerOperatorSpec { #hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OAuthServerOperatorSpec specifies the configuration for the OAuth Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OLMCatalogPlacement { #hypershift.openshift.io/v1beta1.OLMCatalogPlacement }
 <p>
 (<em>Appears on:</em>
@@ -53429,6 +53568,105 @@ SecretProviderClass custom resource related to the managed identity.</p>
 <p>The default value is utf-8.</p>
 <p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
 </p>
+###OpenShiftAPIServerOperatorSpec { #hypershift.openshift.io/v1beta1.OpenShiftAPIServerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OpenShiftAPIServerOperatorSpec specifies the configuration for the OpenShift API Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OpenShiftControllerManagerOperatorSpec { #hypershift.openshift.io/v1beta1.OpenShiftControllerManagerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OpenShiftControllerManagerOperatorSpec specifies the configuration for the OpenShift Controller Manager.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OpenShiftOAuthAPIServerOperatorSpec { #hypershift.openshift.io/v1beta1.OpenShiftOAuthAPIServerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OpenShiftOAuthAPIServerOperatorSpec specifies the configuration for the OpenShift OAuth API Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OpenStackIdentityReference { #hypershift.openshift.io/v1beta1.OpenStackIdentityReference }
 <p>
 (<em>Appears on:</em>
@@ -53794,6 +54032,118 @@ KubeAPIServerOperatorSpec
 <p>kubeAPIServer configures the kube-apiserver component.
 Setting the logLevel field triggers a rolling restart of the component.
 kube-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>etcd,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdOperatorSpec">
+EtcdOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>etcd configures the Etcd component.
+Setting the logLevel field triggers a rolling restart of the component.
+Etcd runs with 3 replicas — Raft quorum is maintained during rolling update.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeControllerManager,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec">
+KubeControllerManagerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeControllerManager configures the kube-controller-manager component.
+Setting the logLevel field triggers a rolling restart of the component.
+kube-controller-manager uses leader election — the standby takes over during restart.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeScheduler,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeSchedulerOperatorSpec">
+KubeSchedulerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeScheduler configures the kube-scheduler component.
+Setting the logLevel field triggers a rolling restart of the component.
+kube-scheduler uses leader election — the standby takes over during restart.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>openShiftControllerManager,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftControllerManagerOperatorSpec">
+OpenShiftControllerManagerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>openShiftControllerManager configures the openshift-controller-manager component.
+Setting the logLevel field triggers a rolling restart of the component.
+openshift-controller-manager uses leader election — the standby takes over during restart.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>openShiftAPIServer,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftAPIServerOperatorSpec">
+OpenShiftAPIServerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>openShiftAPIServer configures the openshift-apiserver component.
+Setting the logLevel field triggers a rolling restart of the component.
+openshift-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>openShiftOAuthAPIServer,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftOAuthAPIServerOperatorSpec">
+OpenShiftOAuthAPIServerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+Setting the logLevel field triggers a rolling restart of the component.
+openshift-oauth-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>oauthServer,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec">
+OAuthServerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>oauthServer configures the oauth-server component.
+Setting the logLevel field triggers a rolling restart of the component.
+oauth-server runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
 </td>
 </tr>
 </tbody>

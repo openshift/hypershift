@@ -95,7 +95,6 @@ spec:
         - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
         - --cors-allowed-origins='//127\.0\.0\.1(:|$)'
         - --cors-allowed-origins='//localhost(:|$)'
-        - --v=2
         - --requestheader-client-ca-file=/etc/kubernetes/certs/aggregator-client-ca/ca.crt
         - --requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator
         - --requestheader-username-headers=X-Remote-User
@@ -105,6 +104,7 @@ spec:
         - --api-audiences=https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
         - --etcd-servers=https://etcd-client:2379
         - --tls-min-version=VersionTLS13
+        - --v=2
         command:
         - /usr/bin/oauth-apiserver
         env:

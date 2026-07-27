@@ -83,7 +83,6 @@ spec:
         - --secure-port=10259
         - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
-        - -v=2
         - --tls-min-version=VersionTLS13
         - --feature-gates=AWSEFSDriverVolumeMetrics=true
         - --feature-gates=AdditionalRoutingCapabilities=true
@@ -183,6 +182,7 @@ spec:
         - --feature-gates=VSphereMultiNetworks=false
         - --feature-gates=VolumeAttributesClass=false
         - --feature-gates=VolumeGroupSnapshot=false
+        - -v=2
         command:
         - hyperkube
         - kube-scheduler
