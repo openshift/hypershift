@@ -137,7 +137,9 @@ type DumpOptions struct {
 	Log logr.Logger
 }
 
-func NewDumpCommand() *cobra.Command {
+type DumpCallback func(ctx context.Context, opts *DumpOptions) error
+
+func NewDumpCommand(dumpCallback DumpCallback) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "cluster",
 		Short:        "Dumps hostedcluster diagnostic info",
@@ -167,7 +169,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("dump-guest-cluster", "dump-guest-cluster-through-kube-service")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := DumpCluster(cmd.Context(), opts); err != nil {
+		if err := dumpCallback(cmd.Context(), opts); err != nil {
 			opts.Log.Error(err, "Error")
 			return err
 		}

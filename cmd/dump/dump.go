@@ -13,7 +13,7 @@ func NewCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.AddCommand(core.NewDumpCommand())
+	cmd.AddCommand(core.NewDumpCommand(core.DumpCluster))
 
 	return cmd
 }
