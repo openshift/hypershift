@@ -20,10 +20,17 @@ package v1beta1
 // OperatorConfigurationApplyConfiguration represents a declarative configuration of the OperatorConfiguration type for use
 // with apply.
 type OperatorConfigurationApplyConfiguration struct {
-	ClusterVersionOperator *ClusterVersionOperatorSpecApplyConfiguration `json:"clusterVersionOperator,omitempty"`
-	ClusterNetworkOperator *ClusterNetworkOperatorSpecApplyConfiguration `json:"clusterNetworkOperator,omitempty"`
-	IngressOperator        *IngressOperatorSpecApplyConfiguration        `json:"ingressOperator,omitempty"`
-	KubeAPIServer          *KubeAPIServerOperatorSpecApplyConfiguration  `json:"kubeAPIServer,omitempty"`
+	ClusterVersionOperator     *ClusterVersionOperatorSpecApplyConfiguration             `json:"clusterVersionOperator,omitempty"`
+	ClusterNetworkOperator     *ClusterNetworkOperatorSpecApplyConfiguration             `json:"clusterNetworkOperator,omitempty"`
+	IngressOperator            *IngressOperatorSpecApplyConfiguration                    `json:"ingressOperator,omitempty"`
+	KubeAPIServer              *KubeAPIServerOperatorSpecApplyConfiguration              `json:"kubeAPIServer,omitempty"`
+	Etcd                       *EtcdOperatorSpecApplyConfiguration                       `json:"etcd,omitempty"`
+	KubeControllerManager      *KubeControllerManagerOperatorSpecApplyConfiguration      `json:"kubeControllerManager,omitempty"`
+	KubeScheduler              *KubeSchedulerOperatorSpecApplyConfiguration              `json:"kubeScheduler,omitempty"`
+	OpenShiftControllerManager *OpenShiftControllerManagerOperatorSpecApplyConfiguration `json:"openShiftControllerManager,omitempty"`
+	OpenShiftAPIServer         *OpenShiftAPIServerOperatorSpecApplyConfiguration         `json:"openShiftAPIServer,omitempty"`
+	OpenShiftOAuthAPIServer    *OpenShiftOAuthAPIServerOperatorSpecApplyConfiguration    `json:"openShiftOAuthAPIServer,omitempty"`
+	OAuthServer                *OAuthServerOperatorSpecApplyConfiguration                `json:"oauthServer,omitempty"`
 }
 
 // OperatorConfigurationApplyConfiguration constructs a declarative configuration of the OperatorConfiguration type for use with
@@ -61,5 +68,61 @@ func (b *OperatorConfigurationApplyConfiguration) WithIngressOperator(value *Ing
 // If called multiple times, the KubeAPIServer field is set to the value of the last call.
 func (b *OperatorConfigurationApplyConfiguration) WithKubeAPIServer(value *KubeAPIServerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
 	b.KubeAPIServer = value
+	return b
+}
+
+// WithEtcd sets the Etcd field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Etcd field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithEtcd(value *EtcdOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.Etcd = value
+	return b
+}
+
+// WithKubeControllerManager sets the KubeControllerManager field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeControllerManager field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithKubeControllerManager(value *KubeControllerManagerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.KubeControllerManager = value
+	return b
+}
+
+// WithKubeScheduler sets the KubeScheduler field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeScheduler field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithKubeScheduler(value *KubeSchedulerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.KubeScheduler = value
+	return b
+}
+
+// WithOpenShiftControllerManager sets the OpenShiftControllerManager field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OpenShiftControllerManager field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithOpenShiftControllerManager(value *OpenShiftControllerManagerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.OpenShiftControllerManager = value
+	return b
+}
+
+// WithOpenShiftAPIServer sets the OpenShiftAPIServer field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OpenShiftAPIServer field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithOpenShiftAPIServer(value *OpenShiftAPIServerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.OpenShiftAPIServer = value
+	return b
+}
+
+// WithOpenShiftOAuthAPIServer sets the OpenShiftOAuthAPIServer field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OpenShiftOAuthAPIServer field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithOpenShiftOAuthAPIServer(value *OpenShiftOAuthAPIServerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.OpenShiftOAuthAPIServer = value
+	return b
+}
+
+// WithOAuthServer sets the OAuthServer field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OAuthServer field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithOAuthServer(value *OAuthServerOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.OAuthServer = value
 	return b
 }
