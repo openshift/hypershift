@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"crypto/x509"
 	"testing"
 	"time"
@@ -8,10 +9,16 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestAllowedCIDRsTargetService(t *testing.T) {
@@ -204,6 +211,194 @@ func TestGenerateCustomCertificate(t *testing.T) {
 			// Verify the private key can be parsed
 			_, err = certs.PemToPrivateKey(keyPEM)
 			g.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestWaitForDaemonSetReadyWithTimeout(t *testing.T) {
+	const (
+		dsName      = hccomanifests.GlobalPullSecretDSName
+		dsNamespace = hccomanifests.GlobalPullSecretNamespace
+		minExpected = int32(3)
+	)
+
+	readyDaemonSet := func() *appsv1.DaemonSet {
+		return &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       dsName,
+				Namespace:  dsNamespace,
+				Generation: 3,
+			},
+			Status: appsv1.DaemonSetStatus{
+				ObservedGeneration:     3,
+				DesiredNumberScheduled: minExpected,
+				UpdatedNumberScheduled: minExpected,
+				NumberReady:            minExpected,
+			},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		daemonSet *appsv1.DaemonSet
+		expectErr bool
+	}{
+		{
+			name:      "When DaemonSet status matches generation and all pods are ready and updated, it should succeed",
+			daemonSet: readyDaemonSet(),
+		},
+		{
+			name: "When status.observedGeneration lags metadata.generation, it should time out",
+			daemonSet: func() *appsv1.DaemonSet {
+				ds := readyDaemonSet()
+				ds.Status.ObservedGeneration = 2
+				return ds
+			}(),
+			expectErr: true,
+		},
+		{
+			name: "When fewer pods are ready than desired, it should time out",
+			daemonSet: func() *appsv1.DaemonSet {
+				ds := readyDaemonSet()
+				ds.Status.NumberReady = minExpected - 1
+				return ds
+			}(),
+			expectErr: true,
+		},
+		{
+			name: "When rollout has not updated all pods yet, it should time out",
+			daemonSet: func() *appsv1.DaemonSet {
+				ds := readyDaemonSet()
+				ds.Status.UpdatedNumberScheduled = minExpected - 1
+				return ds
+			}(),
+			expectErr: true,
+		},
+		{
+			name: "When DesiredNumberScheduled has not yet reached minExpected, it should time out",
+			daemonSet: func() *appsv1.DaemonSet {
+				ds := readyDaemonSet()
+				ds.Status.DesiredNumberScheduled = minExpected - 1
+				ds.Status.UpdatedNumberScheduled = minExpected - 1
+				ds.Status.NumberReady = minExpected - 1
+				return ds
+			}(),
+			expectErr: true,
+		},
+		{
+			name:      "When the DaemonSet does not exist, it should time out",
+			daemonSet: nil,
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tt.daemonSet != nil {
+				builder = builder.WithObjects(tt.daemonSet)
+			}
+			client := builder.Build()
+
+			// A short timeout keeps this test fast; wait.PollUntilContextTimeout's
+			// immediate=true still guarantees at least one real evaluation of the
+			// condition before the deadline is checked.
+			err := waitForDaemonSetReadyWithTimeout(t, context.Background(), client, dsName, dsNamespace, minExpected, 50*time.Millisecond)
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestWaitForDaemonSetRollout(t *testing.T) {
+	const (
+		dsName      = hccomanifests.GlobalPullSecretDSName
+		dsNamespace = hccomanifests.GlobalPullSecretNamespace
+		minExpected = int32(3)
+	)
+
+	rolledOutDaemonSet := func() *appsv1.DaemonSet {
+		return &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       dsName,
+				Namespace:  dsNamespace,
+				Generation: 3,
+			},
+			Status: appsv1.DaemonSetStatus{
+				ObservedGeneration:     3,
+				DesiredNumberScheduled: minExpected,
+				UpdatedNumberScheduled: minExpected,
+				NumberReady:            minExpected,
+			},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		daemonSet *appsv1.DaemonSet
+		expectErr bool
+	}{
+		{
+			name:      "When rollout is complete and all pods are updated and ready, it should succeed",
+			daemonSet: rolledOutDaemonSet(),
+		},
+		{
+			name: "When status.observedGeneration lags metadata.generation, it should time out",
+			daemonSet: func() *appsv1.DaemonSet {
+				ds := rolledOutDaemonSet()
+				ds.Status.ObservedGeneration = 2
+				return ds
+			}(),
+			expectErr: true,
+		},
+		{
+			name: "When some pods are not yet updated, it should time out",
+			daemonSet: func() *appsv1.DaemonSet {
+				ds := rolledOutDaemonSet()
+				ds.Status.UpdatedNumberScheduled = minExpected - 1
+				return ds
+			}(),
+			expectErr: true,
+		},
+		{
+			name: "When some pods are not yet ready, it should time out",
+			daemonSet: func() *appsv1.DaemonSet {
+				ds := rolledOutDaemonSet()
+				ds.Status.NumberReady = minExpected - 1
+				return ds
+			}(),
+			expectErr: true,
+		},
+		{
+			name:      "When the DaemonSet does not exist, it should time out",
+			daemonSet: nil,
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tt.daemonSet != nil {
+				builder = builder.WithObjects(tt.daemonSet)
+			}
+			client := builder.Build()
+
+			err := waitForDaemonSetRollout(t, context.Background(), client, dsName, dsNamespace, minExpected, 50*time.Millisecond)
+
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
 		})
 	}
 }

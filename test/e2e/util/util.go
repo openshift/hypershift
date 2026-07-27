@@ -2170,7 +2170,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 
 		t.Run("Wait for critical DaemonSets to be ready - first check", func(t *testing.T) {
 			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			g.Expect(waitForGlobalPullSecretSyncerReady(t, ctx, guestClient, nodeCount)).To(Succeed())
 			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
 			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
 		})
@@ -2212,7 +2212,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 
 		t.Run("Wait for critical DaemonSets to be ready - second check", func(t *testing.T) {
 			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			g.Expect(waitForGlobalPullSecretSyncerReady(t, ctx, guestClient, nodeCount)).To(Succeed())
 			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
 			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
 		})
@@ -2249,7 +2249,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		// Wait for all DaemonSets to be ready after nodes stabilize
 		t.Run("Wait for pull secret synchronization to stabilize across all nodes", func(t *testing.T) {
 			t.Log("Waiting for GlobalPullSecretDaemonSet to process the deletion and stabilize all nodes")
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			g.Expect(waitForGlobalPullSecretSyncerReady(t, ctx, guestClient, nodeCount)).To(Succeed())
 		})
 
 		// Check if the config.json is updated in all of the nodes
@@ -2278,12 +2278,38 @@ func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client
 	return nil
 }
 
+// globalPullSecretSyncerReadyTimeout is used instead of the default DaemonSet-ready
+// timeout for checks against global-pull-secret-syncer specifically. That DaemonSet's
+// status.observedGeneration is updated by the guest cluster's kube-controller-manager,
+// which can have a multi-minute availability gap during early cluster life (observed:
+// a management-cluster node eviction forces a KCM pod replacement, and the replacement's
+// container creation hits a transient upstream kubelet Secret-decode race —
+// "illegal base64 data at input byte N" — before recovering on its own). This is not a
+// HyperShift code path and cannot be fixed here; the observed gap was ~20-21 minutes
+// across two independent CI failures, so 40 minutes leaves comfortable margin while
+// keeping the common case (which passes in under a second) essentially unaffected.
+const globalPullSecretSyncerReadyTimeout = 40 * time.Minute
+
 // waitForDaemonSetReady waits for a DaemonSet to have all pods ready.
 // minExpected is a sanity check to ensure we don't succeed when DesiredNumberScheduled is temporarily 0.
 func waitForDaemonSetReady(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32) error {
+	return waitForDaemonSetReadyWithTimeout(t, ctx, client, name, namespace, minExpected, 20*time.Minute)
+}
+
+// waitForGlobalPullSecretSyncerReady is waitForDaemonSetReady for
+// global-pull-secret-syncer specifically, using globalPullSecretSyncerReadyTimeout
+// instead of the default budget. See that constant's doc comment for why.
+func waitForGlobalPullSecretSyncerReady(t *testing.T, ctx context.Context, client crclient.Client, minExpected int32) error {
+	return waitForDaemonSetReadyWithTimeout(t, ctx, client, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, minExpected, globalPullSecretSyncerReadyTimeout)
+}
+
+// waitForDaemonSetReadyWithTimeout is waitForDaemonSetReady with a caller-supplied
+// timeout, for DaemonSets that need a longer budget than the default. See
+// globalPullSecretSyncerReadyTimeout for why this is needed at all.
+func waitForDaemonSetReadyWithTimeout(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32, timeout time.Duration) error {
 	t.Logf("Waiting for %s DaemonSet to be ready (min expected: %d)", name, minExpected)
 
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (done bool, err error) {
 		daemonSet := &appsv1.DaemonSet{}
 		err = client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, daemonSet)
 		if err != nil {

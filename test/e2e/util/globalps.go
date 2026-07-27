@@ -179,7 +179,7 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 	})
 
 	t.Log("Waiting for syncer DS rollout to complete before deploying verifier")
-	g.Expect(waitForDaemonSetRollout(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)).To(Succeed())
+	g.Expect(waitForDaemonSetRollout(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount, globalPullSecretSyncerReadyTimeout)).To(Succeed())
 
 	t.Log("Creating kubelet config verifier DaemonSet")
 	err := CreateKubeletConfigVerifierDaemonSet(ctx, guestClient, dsImage)
@@ -187,7 +187,7 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 
 	t.Log("Waiting for OVN, GlobalPullSecret, Konnectivity and kubelet config verifier DaemonSets to be ready")
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", expectedNodeCount)).To(Succeed())
-	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)).To(Succeed())
+	g.Expect(waitForGlobalPullSecretSyncerReady(t, ctx, guestClient, expectedNodeCount)).To(Succeed())
 	konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, expectedNodeCount)).To(Succeed())
 	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, KubeletConfigVerifierDaemonSetName, KubeletConfigVerifierNamespace, expectedNodeCount)).To(Succeed())
@@ -198,10 +198,10 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 // must be updated with the latest template AND ready. This catches the case where
 // HCCO updates the pod template (e.g. new configSeed) and the DS controller is
 // still replacing pods.
-func waitForDaemonSetRollout(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32) error {
+func waitForDaemonSetRollout(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32, timeout time.Duration) error {
 	t.Logf("Waiting for %s DaemonSet rollout to complete (min expected: %d)", name, minExpected)
 
-	return wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+	return wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (done bool, err error) {
 		ds := &appsv1.DaemonSet{}
 		if err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds); err != nil {
 			t.Logf("Failed to get DaemonSet %s: %v", name, err)
