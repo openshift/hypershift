@@ -40,6 +40,7 @@ const (
 	TokenSecretPullSecretHashKey         = "pull-secret-hash"
 	TokenSecretHCConfigurationHashKey    = "hc-configuration-hash"
 	TokenSecretAdditionalTrustBundleKey  = "additional-trust-bundle-hash"
+	TokenSecretCloudConfigHashKey        = "cloud-config-hash"
 	TokenSecretConfigKey                 = "config"
 	TokenSecretAnnotation                = "hypershift.openshift.io/ignition-config"
 	TokenSecretIgnitionReachedAnnotation = "hypershift.openshift.io/ignition-reached"
@@ -60,6 +61,7 @@ type Token struct {
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
 	globalConfigHash          []byte
+	cloudConfigHash           []byte
 	userData                  *userData
 }
 
@@ -112,6 +114,11 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		return nil, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
 	}
 
+	cloudConfigHash, err := configGenerator.GetCloudConfigHash(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	token := &Token{
 		CreateOrUpdateProvider:    upsert.New(false),
 		ConfigGenerator:           configGenerator,
@@ -119,6 +126,7 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		pullSecretHash:            []byte(supportutil.HashSimple(pullSecretBytes)),
 		additionalTrustBundleHash: []byte(supportutil.HashSimple(additionalTrustBundle)),
 		globalConfigHash:          []byte(hcConfigurationHash),
+		cloudConfigHash:           []byte(cloudConfigHash),
 	}
 
 	// User data input.
@@ -353,11 +361,13 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 		tokenSecret.Data[TokenSecretPullSecretHashKey] = t.pullSecretHash
 		tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = t.additionalTrustBundleHash
 		tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
+		tokenSecret.Data[TokenSecretCloudConfigHashKey] = t.cloudConfigHash
 	}
 	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
 	// We let this change to happen inplace now as the tokenSecret and the mcs config use the whole spec.Config for the comparing hash.
 	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would mismatch forever.
 	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
+	tokenSecret.Data[TokenSecretCloudConfigHashKey] = t.cloudConfigHash
 
 	return nil
 }

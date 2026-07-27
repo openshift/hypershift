@@ -32,8 +32,9 @@ type ExpiringCache struct {
 }
 
 type CacheValue struct {
-	Payload    []byte
-	SecretName string
+	Payload         []byte
+	SecretName      string
+	CloudConfigHash string
 }
 
 type entry struct {

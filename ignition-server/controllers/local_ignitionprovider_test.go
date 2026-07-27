@@ -9,10 +9,22 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/util"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/blang/semver"
 )
@@ -391,6 +403,145 @@ func TestBuildMCOVersionArgs(t *testing.T) {
 				g.Expect(args).To(ContainElement(fmt.Sprintf("--haproxy-image=%s", getImage("haproxy"))))
 			} else {
 				g.Expect(args).NotTo(ContainElement(ContainSubstring("--machine-config-operator-image=")))
+			}
+		})
+	}
+}
+
+func newFakeClientWithScheme(objs ...client.Object) client.Client {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = hyperv1.AddToScheme(scheme)
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objs...).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+}
+
+func hashConfigMapData(data map[string]string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte(0)
+		b.WriteString(data[k])
+		b.WriteByte(0)
+	}
+	return util.HashSimple(b.String())
+}
+
+func TestWriteCloudProviderConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		cloudProvider   hyperv1.PlatformType
+		objects         []client.Object
+		cloudConfigHash string
+		expectFile      bool
+		expectError     string
+	}{
+		{
+			name:          "When cloud provider is AWS, it should return nil without writing any file",
+			cloudProvider: hyperv1.AWSPlatform,
+			expectFile:    false,
+		},
+		{
+			name:          "When cloud provider is KubeVirt, it should return nil without writing any file",
+			cloudProvider: hyperv1.KubevirtPlatform,
+			expectFile:    false,
+		},
+		{
+			name:          "When cloud provider is Azure and configmap exists, it should write cloud config file",
+			cloudProvider: hyperv1.AzurePlatform,
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: "azure-cloud-config", Namespace: "test-ns"},
+					Data:       map[string]string{"cloud.conf": "azure-config-data"},
+				},
+			},
+			expectFile: true,
+		},
+		{
+			name:          "When cloud provider is OpenStack and configmap exists, it should write cloud config file",
+			cloudProvider: hyperv1.OpenStackPlatform,
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: "openstack-cloud-config", Namespace: "test-ns"},
+					Data:       map[string]string{"cloud.conf": "openstack-config-data"},
+				},
+			},
+			expectFile: true,
+		},
+		{
+			name:          "When cloud provider is Azure and configmap does not exist, it should return an error",
+			cloudProvider: hyperv1.AzurePlatform,
+			objects:       []client.Object{},
+			expectError:   "failed to get cloud provider configmap",
+		},
+		{
+			name:          "When cloud provider is Azure and hash matches, it should write cloud config file",
+			cloudProvider: hyperv1.AzurePlatform,
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: "azure-cloud-config", Namespace: "test-ns"},
+					Data:       map[string]string{"cloud.conf": "azure-config-data"},
+				},
+			},
+			cloudConfigHash: hashConfigMapData(map[string]string{"cloud.conf": "azure-config-data"}),
+			expectFile:      true,
+		},
+		{
+			name:          "When cloud provider is Azure and hash does not match, it should return an error",
+			cloudProvider: hyperv1.AzurePlatform,
+			objects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: "azure-cloud-config", Namespace: "test-ns"},
+					Data:       map[string]string{"cloud.conf": "azure-config-data"},
+				},
+			},
+			cloudConfigHash: "wrong-hash",
+			expectError:     "hash mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			mcoDir := filepath.Join(t.TempDir(), "mco")
+			g.Expect(os.MkdirAll(mcoDir, 0755)).To(Succeed())
+
+			provider := &LocalIgnitionProvider{
+				Client:        newFakeClientWithScheme(tt.objects...),
+				Namespace:     "test-ns",
+				CloudProvider: tt.cloudProvider,
+			}
+
+			err := provider.writeCloudProviderConfig(t.Context(), mcoDir, tt.cloudConfigHash)
+			if tt.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			cloudConfPath := filepath.Join(mcoDir, "cloud.conf.configmap.yaml")
+			if tt.expectFile {
+				_, err := os.Stat(cloudConfPath)
+				g.Expect(err).NotTo(HaveOccurred(), "cloud config file should exist")
+			} else {
+				_, err := os.Stat(cloudConfPath)
+				g.Expect(os.IsNotExist(err)).To(BeTrue(), "cloud config file should not exist for non-cloud providers")
 			}
 		})
 	}
