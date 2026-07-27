@@ -852,11 +852,17 @@ func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, 
 	return false
 }
 
+var leaderElectionFailurePatterns = []string{
+	"election lost",
+	"failed to renew lease",
+	"stopped leading",
+}
+
 func isLeaderElectionFailure(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod, containerName string) bool {
 	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
-		TailLines: ptr.To[int64](10),
+		TailLines: ptr.To[int64](100),
 	})
 	podLogs, err := req.Stream(ctx)
 	if err != nil {
@@ -868,8 +874,11 @@ func isLeaderElectionFailure(ctx context.Context, client kubernetes.Interface, p
 	scanner := bufio.NewScanner(podLogs)
 	scanner.Buffer(make([]byte, 256*1024), 512*1024)
 	for scanner.Scan() {
-		if strings.Contains(strings.ToLower(scanner.Text()), "election lost") {
-			return true
+		line := strings.ToLower(scanner.Text())
+		for _, pattern := range leaderElectionFailurePatterns {
+			if strings.Contains(line, pattern) {
+				return true
+			}
 		}
 	}
 	// Drain remaining data to avoid broken pipe

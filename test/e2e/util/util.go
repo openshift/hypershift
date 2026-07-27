@@ -833,11 +833,17 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
+var leaderElectionFailurePatterns = []string{
+	"election lost",
+	"failed to renew lease",
+	"stopped leading",
+}
+
 func isLeaderElectionFailure(ctx context.Context, client *kubeclient.Clientset, pod *corev1.Pod, containerName string, t *testing.T) bool {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
-		TailLines: ptr.To[int64](10),
+		TailLines: ptr.To[int64](100),
 	}
 	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
 	podLogs, err := req.Stream(ctx)
@@ -856,8 +862,11 @@ func isLeaderElectionFailure(ctx context.Context, client *kubeclient.Clientset, 
 	buf := make([]byte, bufSize)
 	scanner.Buffer(buf, maxScanTokenSize)
 	for scanner.Scan() {
-		if strings.Contains(strings.ToLower(scanner.Text()), "election lost") {
-			return true
+		line := strings.ToLower(scanner.Text())
+		for _, pattern := range leaderElectionFailurePatterns {
+			if strings.Contains(line, pattern) {
+				return true
+			}
 		}
 	}
 
