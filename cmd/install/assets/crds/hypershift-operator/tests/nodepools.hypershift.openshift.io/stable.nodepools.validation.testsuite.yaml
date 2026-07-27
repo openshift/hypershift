@@ -512,3 +512,209 @@ tests:
               id: "subnet-any"
           type: AWS
     expectedError: "The 'rollingUpdate' field can only be set when 'strategy' is 'RollingUpdate'"
+
+  # --- nodeDrainTimeout validation ---
+  - name: when nodeDrainTimeout has no unit suffix it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeDrainTimeout: "1"
+    expectedError: "nodeDrainTimeout must be a valid duration string with a unit suffix"
+
+  - name: when nodeDrainTimeout is a non-numeric string it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeDrainTimeout: "abc"
+    expectedError: "nodeDrainTimeout must be a valid duration string with a unit suffix"
+
+  - name: when nodeDrainTimeout is a valid simple duration it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeDrainTimeout: "30s"
+
+  - name: when nodeDrainTimeout is a valid compound duration it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeDrainTimeout: "1h30m"
+
+  # --- nodeVolumeDetachTimeout validation ---
+  - name: when nodeVolumeDetachTimeout has no unit suffix it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeVolumeDetachTimeout: "1"
+    expectedError: "nodeVolumeDetachTimeout must be a valid duration string with a unit suffix"
+
+  - name: when nodeVolumeDetachTimeout is a non-numeric string it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeVolumeDetachTimeout: "abc"
+    expectedError: "nodeVolumeDetachTimeout must be a valid duration string with a unit suffix"
+
+  - name: when nodeVolumeDetachTimeout is a valid simple duration it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeVolumeDetachTimeout: "5m"
+
+  - name: when nodeVolumeDetachTimeout is a valid compound duration it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeVolumeDetachTimeout: "2h45m"
