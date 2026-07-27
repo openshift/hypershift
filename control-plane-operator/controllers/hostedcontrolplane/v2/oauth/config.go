@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -79,11 +80,15 @@ func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServe
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
 	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
 
-	masterUrl := fmt.Sprintf("https://%s:%d", cpContext.InfraStatus.OAuthHost, cpContext.InfraStatus.OAuthPort)
+	masterUrl := fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(cpContext.InfraStatus.OAuthHost), cpContext.InfraStatus.OAuthPort)
 	controlPlaneEndpoint := cpContext.HCP.Status.ControlPlaneEndpoint
+	loginURLHost := controlPlaneEndpoint.Host
+	if cpContext.HCP.Spec.KubeAPIServerDNSName != "" {
+		loginURLHost = cpContext.HCP.Spec.KubeAPIServerDNSName
+	}
 	cfg.OAuthConfig.MasterURL = fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(cpContext.HCP.Namespace), OAuthServerPort)
 	cfg.OAuthConfig.MasterPublicURL = masterUrl
-	cfg.OAuthConfig.LoginURL = fmt.Sprintf("https://%s:%d", controlPlaneEndpoint.Host, controlPlaneEndpoint.Port)
+	cfg.OAuthConfig.LoginURL = fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(loginURLHost), controlPlaneEndpoint.Port)
 	// loginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
 	// when the login a provider uses doesn't conform to the standard login url in hypershift. The only supported use case
 	// for this is IBMCloud Red Hat Openshift
