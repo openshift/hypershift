@@ -833,13 +833,23 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
-var leaderElectionFailurePatterns = []string{
+var LeaderElectionFailurePatterns = []string{
 	"election lost",
 	"failed to renew lease",
 	"stopped leading",
 }
 
-func isLeaderElectionFailure(ctx context.Context, client *kubeclient.Clientset, pod *corev1.Pod, containerName string, t *testing.T) bool {
+func MatchesLeaderElectionFailure(line string) bool {
+	lower := strings.ToLower(line)
+	for _, pattern := range LeaderElectionFailurePatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLeaderElectionFailure(ctx context.Context, client kubeclient.Interface, pod *corev1.Pod, containerName string, t *testing.T) bool {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
@@ -862,14 +872,12 @@ func isLeaderElectionFailure(ctx context.Context, client *kubeclient.Clientset, 
 	buf := make([]byte, bufSize)
 	scanner.Buffer(buf, maxScanTokenSize)
 	for scanner.Scan() {
-		line := strings.ToLower(scanner.Text())
-		for _, pattern := range leaderElectionFailurePatterns {
-			if strings.Contains(line, pattern) {
-				return true
-			}
+		if MatchesLeaderElectionFailure(scanner.Text()) {
+			return true
 		}
 	}
 
+	_, _ = io.Copy(io.Discard, podLogs)
 	if err = scanner.Err(); err != nil {
 		t.Logf("failed to read pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
 	}

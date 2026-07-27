@@ -2,7 +2,6 @@ package util
 
 import (
 	"crypto/x509"
-	"strings"
 	"testing"
 	"time"
 
@@ -209,16 +208,8 @@ func TestGenerateCustomCertificate(t *testing.T) {
 	}
 }
 
-func TestLeaderElectionFailurePatterns(t *testing.T) {
-	matchesPattern := func(line string) bool {
-		lower := strings.ToLower(line)
-		for _, pattern := range leaderElectionFailurePatterns {
-			if strings.Contains(lower, pattern) {
-				return true
-			}
-		}
-		return false
-	}
+func TestMatchesLeaderElectionFailure(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
 		name  string
@@ -264,8 +255,9 @@ func TestLeaderElectionFailurePatterns(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
-			g.Expect(matchesPattern(tc.line)).To(Equal(tc.match))
+			g.Expect(MatchesLeaderElectionFailure(tc.line)).To(Equal(tc.match))
 		})
 	}
 }
