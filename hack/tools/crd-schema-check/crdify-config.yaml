@@ -21,3 +21,7 @@ validations:
     enforcement: Error
     configuration:
       additionPolicy: Allow
+  - name: description
+    enforcement: Warn
+  - name: pattern
+    enforcement: Warn

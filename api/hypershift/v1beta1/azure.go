@@ -131,7 +131,12 @@ type AzureVMImage struct {
 	Type AzureVMImageType `json:"type"`
 
 	// imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+	// The expected format is an Azure resource ID string. This can be a managed image or an
+	// Azure Compute Gallery image version, for example:
+	// /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}
+	// /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/galleries/{galleryName}/images/{imageDefinitionName}/versions/{imageVersionName}
+	// See https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules for
+	// Azure resource naming rules and restrictions.
 	//
 	// +optional
 	// +unionMember
@@ -166,19 +171,27 @@ type AzureMarketplaceImage struct {
 	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 
 	// publisher is the name of the organization that created the image.
-	// It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
-	// It must start with a lowercase letter or a number.
-	// TODO: Can we explain where a user might find this value, or provide an example of one they might want to use
+	// For example, "azureopenshift", "canonical", or "redhat".
+	// It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, hyphens (-), and underscores (_).
+	// It must start and end with a lowercase letter or a number.
+	// See https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage for more
+	// information on Azure Marketplace image publishers.
 	//
-	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-_]{2,49}$`
+	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-_]*[a-z0-9]$`
 	// +kubebuilder:validation:MinLength=3
 	// +kubebuilder:validation:MaxLength=50
 	// +optional
 	Publisher string `json:"publisher,omitempty"`
 
 	// offer specifies the name of a group of related images created by the publisher.
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+	// For example, "RHEL", "WindowsServer", or "0001-com-ubuntu-server-jammy".
+	// The value must consist of only alphanumeric characters (a-z, A-Z, 0-9),
+	// hyphens (-), underscores (_), and periods (.).
+	// It must start with an alphanumeric character.
+	// See https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage for more
+	// information on Azure Marketplace image offers.
 	//
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-zA-Z0-9][a-zA-Z0-9._-]*$')",message="offer must consist of alphanumeric characters, hyphens, underscores, and periods, and must start with an alphanumeric character"
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +optional
@@ -186,8 +199,10 @@ type AzureMarketplaceImage struct {
 
 	// sku specifies an instance of an offer, such as a major release of a distribution.
 	// For example, 22_04-lts-gen2, 8-lvm-gen2.
-	// The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (_).
-	// TODO: What about length limits?
+	// The value must be between 1 and 255 characters in length, and consist of only lowercase
+	// letters, numbers, hyphens (-), and underscores (_).
+	// See https://learn.microsoft.com/en-us/azure/virtual-machines/linux/cli-ps-findimage for more
+	// information on Azure Marketplace image SKUs.
 	//
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-_]+$`
 	// +kubebuilder:validation:MinLength=1
