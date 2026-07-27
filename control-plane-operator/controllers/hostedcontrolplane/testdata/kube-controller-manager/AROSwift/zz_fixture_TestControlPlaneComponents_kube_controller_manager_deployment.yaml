@@ -108,6 +108,7 @@ spec:
         - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
         - --terminated-pod-gc-threshold=1000
         - --concurrent-gc-syncs=5
+        - --v=2
         - --cluster-cidr=10.132.0.0/14
         - --service-cluster-ip-range=
         - --cloud-provider=external

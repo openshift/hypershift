@@ -1077,6 +1077,111 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "KASDebugLogLevel",
 		},
 		{
+			name:       "Default feature set, Etcd Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					Etcd: hyperv1.EtcdOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+							LogLevel: &debug,
+						},
+					},
+				}
+			},
+			subDirSuffix: "EtcdDebugLogLevel",
+		},
+		{
+			name:       "Default feature set, KCM Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					KubeControllerManager: hyperv1.KubeControllerManagerOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+							LogLevel: &debug,
+						},
+					},
+				}
+			},
+			subDirSuffix: "KCMDebugLogLevel",
+		},
+		{
+			name:       "Default feature set, KubeScheduler Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					KubeScheduler: hyperv1.KubeSchedulerOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+							LogLevel: &debug,
+						},
+					},
+				}
+			},
+			subDirSuffix: "KubeSchedulerDebugLogLevel",
+		},
+		{
+			name:       "Default feature set, OCM Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					OpenShiftControllerManager: hyperv1.OpenShiftControllerManagerOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+							LogLevel: &debug,
+						},
+					},
+				}
+			},
+			subDirSuffix: "OCMDebugLogLevel",
+		},
+		{
+			name:       "Default feature set, OpenShift API Server Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					OpenShiftAPIServer: hyperv1.OpenShiftAPIServerOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+							LogLevel: &debug,
+						},
+					},
+				}
+			},
+			subDirSuffix: "OAPIDebugLogLevel",
+		},
+		{
+			name:       "Default feature set, OpenShift OAuth API Server Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					OpenShiftOAuthAPIServer: hyperv1.OpenShiftOAuthAPIServerOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+							LogLevel: &debug,
+						},
+					},
+				}
+			},
+			subDirSuffix: "OAuthAPIDebugLogLevel",
+		},
+		{
+			name:       "Default feature set, OAuth Server Debug log level",
+			featureSet: configv1.Default,
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				debug := hyperv1.Debug
+				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					OAuthServer: hyperv1.OAuthServerOperatorSpec{
+						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+							LogLevel: &debug,
+						},
+					},
+				}
+			},
+			subDirSuffix: "OAuthServerDebugLogLevel",
+		},
+		{
 			name:         "TechPreviewNoUpgrade feature set, default platform type",
 			featureSet:   configv1.TechPreviewNoUpgrade,
 			platformType: nil,

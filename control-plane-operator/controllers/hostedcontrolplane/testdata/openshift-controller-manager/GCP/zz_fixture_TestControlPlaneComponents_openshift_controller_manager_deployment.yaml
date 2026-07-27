@@ -83,6 +83,7 @@ spec:
         - --kubeconfig
         - /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
         - --namespace=openshift-controller-manager
+        - --v=2
         command:
         - openshift-controller-manager
         env:
