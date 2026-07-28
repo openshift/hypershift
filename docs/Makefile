@@ -1,31 +1,21 @@
 RUNTIME ?= $(shell sh ../hack/utils.sh get_container_engine)
-version := $(shell awk -f image-version.awk requirements.txt)
-VERSION ?= $(if $(MKDOCS_TAG),$(MKDOCS_TAG),$(version))
-IMG ?= quay.io/hypershift/mkdocs-material:$(VERSION)
+IMG ?= docker.io/zensical/zensical:0.0.51
 
 .PHONY: build
 build:
-	mkdocs build
+	uv run --frozen zensical build --strict
 
 .PHONY: build-containerized
 build-containerized:
 	$(RUNTIME) volume create --ignore hypershift-docs-site
 	$(RUNTIME) run --rm -it \
-		-v ${PWD}:/home/docs/hypershift:Z \
-		-v hypershift-docs-site:/home/docs/hypershift/site \
+		-v ${PWD}:/docs:Z \
+		-v hypershift-docs-site:/docs/site \
 		$(IMG) build --strict
 
 .PHONY: serve-containerized
 serve-containerized:
 	$(RUNTIME) run --rm -it -p 8000:8000 \
-		-v ${PWD}:/home/docs/hypershift:Z \
-		-v hypershift-docs-site:/home/docs/hypershift/site \
-		$(IMG) serve --dev-addr 0.0.0.0:8000
-
-.PHONY: image
-image:
-	$(RUNTIME) build -t $(IMG) .
-
-.PHONY: push
-push:
-        $(RUNTIME) push $(IMG)
+		-v ${PWD}:/docs:Z \
+		-v hypershift-docs-site:/docs/site \
+		$(IMG)

@@ -7,11 +7,6 @@ theme:
   - content.code.annotate
 plugins:
 - search
-- mermaid2:
-    version: 11.2.0
-    javascript: https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
-    arguments:
-      securityLevel: loose
 - glightbox:
     touchNavigation: true
     loop: false
@@ -43,7 +38,7 @@ markdown_extensions:
     custom_fences:
     - name: mermaid
       class: mermaid
-      format: !!python/name:mermaid2.fence_mermaid
+      format: !!python/name:pymdownx.superfences.fence_code_format
 - pymdownx.snippets
 - admonition
 - pymdownx.details

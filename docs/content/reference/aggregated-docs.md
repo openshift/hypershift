@@ -286,10 +286,9 @@ title: Contribute documentation
 
 # Contributing documentation
 
-HyperShift's documentation is based on MkDocs with the
-Material theme and roughly follows the
-Diátaxis Framework for content organization and stylistic
-approach.
+HyperShift's documentation is based on Zensical and
+roughly follows the Diátaxis Framework for content
+organization and stylistic approach.
 
 The documentation site is built and published automatically to https://hypershift.pages.dev/.
 
@@ -299,12 +298,8 @@ All documentation lives in the `docs` directory of the Git repository.
 
 All content should be Markdown files placed in the `docs/content` directory.
 The MkDocs configuration file
-contains all the MkDocs and Material theme configuration, including the navigation
-structure for the site.
-
-The `quay.io/hypershift/mkdocs-material:latest` image (Dockerfile)
-is published to provide an easy and portable way to run `mkdocs` fully configured
-to preview the site equivalent to the published site.
+contains all the Zensical configuration, including the navigation structure for
+the site.
 
 !!! note
 
@@ -335,20 +330,19 @@ To start a live preview of the site which automatically rebuilds and refreshes i
 response to local content and configuration changes, run the following from the
 `docs` directory:
 
-```shell
-make serve-containerized
-```
+=== "Native"
 
-Visit the site at http://0.0.0.0:8000.
+    ```shell
+    uv run --frozen zensical serve
+    ```
 
-!!! note
+=== "Containerized"
 
-    The `serve-containerized` Make target runs the `quay.io/hypershift/mkdocs-material:latest`
-    image with the local container runtime. Running `mkdocs` natively is possible
-    but not supported.
+    ```shell
+    make serve-containerized
+    ```
 
-    If you need more control over the local preview server, consult the Makefile
-    as a guide to constructing your own local server command.
+Visit the site at http://127.0.0.1:8000.
 
 ## Generate the API reference
 
@@ -14360,7 +14354,7 @@ When a pull request modifies files under `docs/`, GitHub Actions workflows autom
 
 The preview system uses two separate workflows for security, following the reusable workflow pattern described in GitHub Actions Workflows:
 
-1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` for changes under `docs/`. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with MkDocs in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
+1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` for changes under `docs/`. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with Zensical in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
 2. **Docs Deploy** (`.github/workflows/docs-deploy.yaml`) — triggers via `workflow_run` when the Docs Build workflow completes successfully. It downloads the built artifact and deploys to Cloudflare Pages. This workflow has access to the `docs-preview` environment secrets but never executes PR code.
 
 GitHub shows a **View deployment** link in the PR timeline via the `docs-preview` environment.
@@ -14384,8 +14378,7 @@ To preview documentation locally:
 
 ```bash
 cd docs
-pip install -r requirements.txt
-mkdocs serve
+uv run zensical serve
 ```
 
 Then open http://127.0.0.1:8000.
@@ -14449,7 +14442,7 @@ All workflows run on self-hosted ARC runners and target the `main` and `release-
 
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
-| `docs-build.yaml` | `docs-build-reusable.yaml` | Build MkDocs site in strict mode |
+| `docs-build.yaml` | `docs-build-reusable.yaml` | Build Zensical site in strict mode |
 
 !!! info
     The `docs-deploy.yaml` workflow is not a reusable workflow pair — it triggers via `workflow_run` after the Docs Build completes to deploy the preview. See Documentation Preview for details.
@@ -15079,7 +15072,7 @@ These checks only run when relevant files change:
 |------------|-------------|-----------------|
 | **Envtest OCP API Validation** | `api/`, `test/envtest/`, CRD test assets | `FAIL` with the test name — see `test/envtest/README.md` for details |
 | **Envtest Vanilla Kube API Validation** | Same as above | Same as above |
-| **Docs Build** | `docs/**` changes | MkDocs build errors — usually a broken link or YAML syntax error |
+| **Docs Build** | `docs/**` changes | Zensical build errors — usually a broken link or YAML syntax error |
 | **Validate CPO Overrides** | `hypershift-operator/controlplaneoperator-overrides/assets/overrides.yaml` changes | Validation error for the CPO overrides file |
 | **gocacheprog Tests** | `contrib/ci/gocacheprog/**` changes | `FAIL` with the test name |
 
