@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -594,6 +595,13 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 			nodePool := constructor(hyperv1.AzurePlatform, availabilityZone)
 			if nodePool.Spec.Management.UpgradeType == "" {
 				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+				nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+					Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+					RollingUpdate: &hyperv1.RollingUpdate{
+						MaxSurge:       ptr.To(intstr.FromInt(1)),
+						MaxUnavailable: ptr.To(intstr.FromInt(0)),
+					},
+				}
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 				VMSize: instanceType,
@@ -635,6 +643,13 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 
 	if azureNodePool.Spec.Management.UpgradeType == "" {
 		azureNodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+		azureNodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+			Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+			RollingUpdate: &hyperv1.RollingUpdate{
+				MaxSurge:       ptr.To(intstr.FromInt(1)),
+				MaxUnavailable: ptr.To(intstr.FromInt(0)),
+			},
+		}
 	}
 	azureNodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 		VMSize:           instanceType,

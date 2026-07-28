@@ -35,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
@@ -638,6 +639,18 @@ func (r *NodePoolReconciler) deleteNodePoolSecrets(ctx context.Context, nodePool
 		}
 	}
 	return nil
+}
+
+func defaultManagement(nodePool *hyperv1.NodePool) {
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace && nodePool.Spec.Management.Replace == nil {
+		nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+			Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+			RollingUpdate: &hyperv1.RollingUpdate{
+				MaxSurge:       ptr.To(intstr.FromInt(1)),
+				MaxUnavailable: ptr.To(intstr.FromInt(0)),
+			},
+		}
+	}
 }
 
 // validateManagement does additional backend validation. API validation/default should

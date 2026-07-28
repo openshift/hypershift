@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -122,7 +123,15 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 		}
 		if np.Spec.Management.UpgradeType == "" {
 			np.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
-			np.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{}
+			maxSurge := intstr.FromInt(1)
+			maxUnavailable := intstr.FromInt(0)
+			np.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+				RollingUpdate: &hyperv1.RollingUpdate{
+					MaxSurge:       &maxSurge,
+					MaxUnavailable: &maxUnavailable,
+				},
+			}
 		}
 	}
 

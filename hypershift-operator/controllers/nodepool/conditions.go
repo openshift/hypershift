@@ -220,6 +220,7 @@ func (r *NodePoolReconciler) autoscalerEnabledCondition(_ context.Context, nodeP
 
 func (r *NodePoolReconciler) updateManagementEnabledCondition(ctx context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
+	defaultManagement(nodePool)
 	if err := validateManagement(nodePool); err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,

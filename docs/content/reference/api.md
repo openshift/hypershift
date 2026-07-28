@@ -13938,7 +13938,7 @@ ReplaceUpgrade
 <td>
 <em>(Optional)</em>
 <p>replace is the configuration for rolling upgrades.
-It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.</p>
+When upgradeType is Replace and this field is nil, the controller defaults to RollingUpdate with maxSurge=1 and maxUnavailable=0.</p>
 </td>
 </tr>
 <tr>
