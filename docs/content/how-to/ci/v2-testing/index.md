@@ -72,6 +72,8 @@ flowchart TD
 5. **dump-guests** collects diagnostic artifacts in parallel. Always exits 0.
 6. **destroy-guests** tears down all clusters in parallel. Exits non-zero if any destroy fails.
 
+For the complete end-to-end sequence — including process boundaries, inter-process communication, and Ginkgo lifecycle details — see [Test Flow](test-flow.md).
+
 !!! info "Key insight"
     `run-tests` doesn't run tests itself — it invokes the same compiled `bin/test-e2e-v2` binary multiple times with different label filters and cluster targets.
 

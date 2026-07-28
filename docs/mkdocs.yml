@@ -108,6 +108,7 @@ nav:
       - 'Writing V2 Tests': how-to/ci/v2-testing/writing-tests.md
       - 'CI Pipeline Configuration': how-to/ci/v2-testing/ci-pipeline.md
       - 'Debugging CI Failures': how-to/ci/v2-testing/debugging.md
+      - 'Test Flow': how-to/ci/v2-testing/test-flow.md
       - 'Migrating from V1': how-to/ci/v2-testing/migration.md
   - 'Cluster Capabilities': how-to/cluster-capabilities.md
   - 'Common':
