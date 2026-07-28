@@ -24,6 +24,7 @@ type MCSParams struct {
 	Network           *configv1.Network
 	Proxy             *configv1.Proxy
 	Image             *configv1.Image
+	APIServer         *configv1.APIServer
 	InstallConfig     *globalconfig.InstallConfig
 	ConfigurationHash string
 }
@@ -47,6 +48,11 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 	image := globalconfig.ImageConfig()
 	globalconfig.ReconcileImageConfig(image, hcp)
 
+	apiServer := globalconfig.APIServerConfiguration()
+	if err := globalconfig.ReconcileAPIServerConfiguration(apiServer, hcp.Spec.Configuration); err != nil {
+		return &MCSParams{}, fmt.Errorf("failed to reconcile apiserver config: %w", err)
+	}
+
 	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
 	hcConfigurationHash, err := backwardcompat.GetBackwardCompatibleConfigHash(hcp.Spec.Configuration)
 	if err != nil {
@@ -64,6 +70,7 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 		Network:           network,
 		Proxy:             proxy,
 		Image:             image,
+		APIServer:         apiServer,
 		InstallConfig:     globalconfig.NewInstallConfig(hcp),
 		ConfigurationHash: hcConfigurationHash,
 	}, nil

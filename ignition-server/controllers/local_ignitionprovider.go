@@ -558,13 +558,22 @@ func (p *LocalIgnitionProvider) copyMCOOutputToMCC(destDir, mccDir, configDir st
 	return nil
 }
 
+func copyMCCConfigInputs(configDir, mccDir string) error {
+	if err := copyFile(filepath.Join(configDir, "cluster-apiserver-config.yaml"), filepath.Join(mccDir, "cluster-apiserver-config.yaml")); err != nil {
+		return fmt.Errorf("failed to copy cluster-apiserver-config.yaml: %w", err)
+	}
+	if err := copyFile(filepath.Join(configDir, "image-config.yaml"), filepath.Join(mccDir, "image-config.yaml")); err != nil {
+		return fmt.Errorf("failed to copy image-config.yaml: %w", err)
+	}
+	return nil
+}
+
 func (p *LocalIgnitionProvider) runMCC(ctx context.Context, dirs *payloadDirs, imageProvider *imageprovider.SimpleReleaseImageProvider, payloadVersion semver.Version) error {
 	log := ctrl.Log.WithName("get-payload")
 	start := time.Now()
 
-	// copy the image config out of the configDir and into the mccBaseDir
-	if err := copyFile(filepath.Join(dirs.configDir, "image-config.yaml"), filepath.Join(dirs.mccDir, "image-config.yaml")); err != nil {
-		return fmt.Errorf("failed to copy image-config.yaml: %w", err)
+	if err := copyMCCConfigInputs(dirs.configDir, dirs.mccDir); err != nil {
+		return err
 	}
 
 	// args contains the base args that have not changed over time.
