@@ -70,6 +70,21 @@ const (
 	// ClusterVersionRetrievedUpdates bubbles up RetrievedUpdates from the CVO.
 	ClusterVersionRetrievedUpdates ConditionType = "ClusterVersionRetrievedUpdates"
 
+	// HCP-only conditions (not propagated to HostedCluster).
+
+	// PrivateConnectivityCleanedUp is an HCP-only condition that signals whether
+	// the platform's private connectivity resources (e.g. AWS PrivateLink endpoints,
+	// Azure Private Endpoints) have been cleaned up during HostedControlPlane deletion.
+	// Set by the platform controller; gated with a timeout in the CPO deletion path.
+	PrivateConnectivityCleanedUp ConditionType = "PrivateConnectivityCleanedUp"
+
+	// PrivateConnectivityCleanupCompleteReason is set when platform controllers have
+	// finished cleaning up all private connectivity resources.
+	PrivateConnectivityCleanupCompleteReason = "CleanupComplete"
+	// PrivateConnectivityCleanupTimedOutReason is set when the cleanup timeout elapsed
+	// before the platform controller signaled completion.
+	PrivateConnectivityCleanupTimedOutReason = "PrivateConnectivityCleanupTimedOut"
+
 	// UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
 	// healthy.
 	UnmanagedEtcdAvailable ConditionType = "UnmanagedEtcdAvailable"

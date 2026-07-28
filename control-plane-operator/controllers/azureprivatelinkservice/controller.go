@@ -108,25 +108,10 @@ const (
 	// aRecordTTL is the TTL for A records in seconds.
 	aRecordTTL int64 = 300
 
-	// hcpAzurePLSFinalizerName is a finalizer placed on the HostedControlPlane to ensure
-	// Azure PE and DNS cleanup completes before the HCP and its credentials are torn down.
-	//
-	// Problem: During HCP deletion, credentials (workload identity tokens, service principal
-	// secrets) may become invalid before the CPO reconciler gets a chance to clean up Azure
-	// resources. Without this finalizer, the AzurePrivateLinkService CR's own finalizer
-	// runs during CR deletion, but by that point the HCP credentials may already be gone,
-	// causing Azure API calls to fail with authentication errors. This orphans PE and DNS
-	// resources in the customer's Azure subscription.
-	//
-	// Solution: This HCP finalizer blocks HCP deletion until the CPO reconciler confirms
-	// all Azure resources (PE, DNS zone, VNet link, A record) are deleted. Only then is
-	// the finalizer removed, allowing HCP deletion to proceed with credentials still valid.
-	//
-	// Flow:
-	//   1. During normal reconciliation, this finalizer is added to the HCP.
-	//   2. When HCP.DeletionTimestamp is set, the reconciler detects it via the HCP watch,
-	//      performs Azure resource cleanup, and removes this finalizer from the HCP.
-	//   3. HCP deletion then proceeds, tearing down credentials and the namespace.
+	// hcpAzurePLSFinalizerName is the legacy HCP finalizer. It has been replaced by the
+	// PrivateConnectivityCleanedUp status condition. Kept for backward compatibility:
+	// the controller proactively removes this finalizer from existing HCPs during
+	// normal reconciliation and during HCP deletion.
 	hcpAzurePLSFinalizerName = "hypershift.openshift.io/azure-pls-endpoint-cleanup"
 
 	// externalPrivateServiceLabelAzure labels ExternalName Services created for external-dns
@@ -218,9 +203,7 @@ func (r *AzurePrivateLinkServiceReconciler) mapHCPToAzurePLS() handler.MapFunc {
 			return nil
 		}
 
-		// Only trigger reconciliation when the HCP has our finalizer; this avoids
-		// unnecessary reconciliations for HCPs that are not related to Azure PLS.
-		if !controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName) {
+		if hcp.DeletionTimestamp.IsZero() {
 			return nil
 		}
 
@@ -309,12 +292,17 @@ func (r *AzurePrivateLinkServiceReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{RequeueAfter: azureutil.PLSRequeueInterval}, nil
 	}
 
-	// 7. Add HCP finalizer to block HCP deletion until Azure cleanup is done.
-	// This is done after the PLS alias is available, which means Azure resources
-	// are about to be created or already exist. Adding the finalizer at this point
-	// ensures we only block HCP deletion when there are actually resources to clean up.
-	if result, err := r.ensureHCPFinalizer(ctx, hcp, log); err != nil || !result.IsZero() {
-		return result, err
+	// 7. Migration: remove legacy HCP finalizer if present (replaced by PrivateConnectivityCleanedUp condition)
+	if controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName) {
+		originalHCP := hcp.DeepCopy()
+		controllerutil.RemoveFinalizer(hcp, hcpAzurePLSFinalizerName)
+		if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to remove legacy HCP finalizer: %w", err)
+		}
+		log.Info("Removed legacy HCP finalizer during migration")
 	}
 
 	// 8. Reconcile Private Endpoint
@@ -381,25 +369,6 @@ func (r *AzurePrivateLinkServiceReconciler) Reconcile(ctx context.Context, req c
 	return ctrl.Result{RequeueAfter: azureutil.DriftDetectionRequeueInterval}, nil
 }
 
-// ensureHCPFinalizer adds the HCP finalizer if not already present.
-// Uses optimistic locking via MergeFromWithOptimisticLock to safely update the HCP.
-func (r *AzurePrivateLinkServiceReconciler) ensureHCPFinalizer(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
-	if controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName) {
-		return ctrl.Result{}, nil
-	}
-
-	log.Info("Adding HCP finalizer for Azure PLS cleanup")
-	originalHCP := hcp.DeepCopy()
-	controllerutil.AddFinalizer(hcp, hcpAzurePLSFinalizerName)
-	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{RequeueAfter: time.Second}, nil
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to add HCP finalizer: %w", err)
-	}
-	return ctrl.Result{}, nil
-}
-
 // getHCPOrCleanupOrphan looks up the HostedControlPlane for the given CR. If the HCP
 // is gone (NotFound), it removes any orphaned per-CR finalizer so the CR can be
 // garbage-collected with the namespace. Returns (nil, nil) when the HCP is gone and
@@ -423,28 +392,21 @@ func (r *AzurePrivateLinkServiceReconciler) getHCPOrCleanupOrphan(ctx context.Co
 }
 
 // reconcileHCPDeletion handles HCP deletion by cleaning up Azure resources, removing
-// per-CR finalizers, and removing the shared HCP finalizer. Per-CR finalizers must be
-// removed here because once HCP deletion completes and HO deletes the namespace, CPO
-// is terminated and can no longer process them. Stuck per-CR finalizers block namespace
-// deletion, which blocks HO from removing the HC finalizer, causing a 40-minute timeout.
+// per-CR finalizers, and setting the PrivateConnectivityCleanedUp condition on the HCP.
+// Per-CR finalizers must be removed here because once HCP deletion completes and HO
+// deletes the namespace, CPO is terminated and can no longer process them. Stuck per-CR
+// finalizers block namespace deletion, which blocks HO from removing the HC finalizer,
+// causing a 40-minute timeout.
 //
 // The flow is:
-//  1. If the HCP does not have our finalizer, nothing to do.
-//  2. Perform Azure resource cleanup for ALL CRs (PE, DNS zone, VNet link, A record).
+//  1. Perform Azure resource cleanup for ALL CRs (PE, DNS zone, VNet link, A record).
+//  2. Delete the shared base domain DNS zone.
 //  3. Remove per-CR finalizers from ALL CRs so they can be garbage-collected with the namespace.
-//  4. Remove the shared HCP finalizer to unblock HCP deletion.
+//  4. Remove legacy HCP finalizer if present (replaced by PrivateConnectivityCleanedUp condition).
+//  5. Set PrivateConnectivityCleanedUp condition on HCP.
 func (r *AzurePrivateLinkServiceReconciler) reconcileHCPDeletion(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
-	if !controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName) {
-		return ctrl.Result{}, nil
-	}
+	log.Info("HCP is being deleted, cleaning up Azure resources before setting cleanup condition")
 
-	log.Info("HCP is being deleted, cleaning up Azure resources before removing HCP finalizer")
-
-	// List all AzurePrivateLinkService CRs in the namespace to ensure all are cleaned up
-	// before removing the shared HCP finalizer. When multiple CRs exist (e.g., private-router
-	// and oauth-openshift), each must complete Azure resource cleanup while HCP credentials
-	// are still valid. With MaxConcurrentReconciles: 1, the first CR to reconcile handles
-	// cleanup for all siblings in a single pass.
 	var allPLS hyperv1.AzurePrivateLinkServiceList
 	if err := r.List(ctx, &allPLS, client.InNamespace(azPLS.Namespace)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list AzurePrivateLinkService resources: %w", err)
@@ -454,11 +416,6 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileHCPDeletion(ctx context.Con
 		return ctrl.Result{}, fmt.Errorf("failed to clean up Azure resources during HCP deletion: %w", err)
 	}
 
-	// Delete the base domain DNS zone explicitly. When multiple CRs share the same
-	// base domain zone, each CR's reconcileDelete skips zone deletion because
-	// hasSiblingCR sees the other CR as still active (neither has DeletionTimestamp
-	// during HCP deletion). The per-CR cleanup above already removed all A records
-	// and VNet links from the zone, so it is safe to delete here.
 	if err := r.deleteBaseDomainDNSZone(ctx, allPLS.Items, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to delete base domain DNS zone during HCP deletion: %w", err)
 	}
@@ -467,16 +424,36 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileHCPDeletion(ctx context.Con
 		return ctrl.Result{}, fmt.Errorf("failed to remove per-CR finalizers during HCP deletion: %w", err)
 	}
 
-	// Remove the HCP finalizer to unblock HCP deletion
-	log.Info("Azure resource cleanup complete for all AzurePrivateLinkService CRs, removing HCP finalizer")
+	// Remove legacy HCP finalizer if present (replaced by PrivateConnectivityCleanedUp condition)
+	if controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName) {
+		originalHCP := hcp.DeepCopy()
+		controllerutil.RemoveFinalizer(hcp, hcpAzurePLSFinalizerName)
+		if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to remove legacy HCP finalizer: %w", err)
+		}
+		log.Info("Removed legacy HCP finalizer during deletion")
+	}
+
 	originalHCP := hcp.DeepCopy()
-	controllerutil.RemoveFinalizer(hcp, hcpAzurePLSFinalizerName)
-	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+	meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+		Type:    string(hyperv1.PrivateConnectivityCleanedUp),
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.PrivateConnectivityCleanupCompleteReason,
+		Message: "All Azure Private Link Service resources have been cleaned up",
+	})
+	if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to remove HCP finalizer: %w", err)
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to set PrivateConnectivityCleanedUp condition: %w", err)
 	}
+	log.Info("Set PrivateConnectivityCleanedUp condition on HCP")
 
 	return ctrl.Result{}, nil
 }
@@ -506,8 +483,6 @@ func (r *AzurePrivateLinkServiceReconciler) cleanupAllAzureResources(ctx context
 	return utilerrors.NewAggregate(errs)
 }
 
-// removeAllCRFinalizers removes per-CR finalizers so the CRs can be deleted
-// during namespace cleanup without requiring CPO to still be running.
 func (r *AzurePrivateLinkServiceReconciler) removeAllCRFinalizers(ctx context.Context, items []hyperv1.AzurePrivateLinkService, log logr.Logger) error {
 	var errs []error
 	for i := range items {
