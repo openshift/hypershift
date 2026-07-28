@@ -1458,6 +1458,81 @@ func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
 	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
 }
 
+func TestReconcileClusterVersionWhenGuestCVOHasOlderCapabilities(t *testing.T) {
+	t.Parallel()
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ClusterID: "test-cluster-id",
+		},
+	}
+	// Simulate an older guest CVO that doesn't know about ClusterAPI or CompatibilityRequirements
+	olderCVOKnownCaps := []configv1.ClusterVersionCapability{
+		configv1.ClusterVersionCapabilityBuild,
+		configv1.ClusterVersionCapabilityCSISnapshot,
+		configv1.ClusterVersionCapabilityCloudControllerManager,
+		configv1.ClusterVersionCapabilityCloudCredential,
+		configv1.ClusterVersionCapabilityConsole,
+		configv1.ClusterVersionCapabilityDeploymentConfig,
+		configv1.ClusterVersionCapabilityImageRegistry,
+		configv1.ClusterVersionCapabilityIngress,
+		configv1.ClusterVersionCapabilityInsights,
+		configv1.ClusterVersionCapabilityMachineAPI,
+		configv1.ClusterVersionCapabilityNodeTuning,
+		configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+		configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+		configv1.ClusterVersionCapabilityStorage,
+		configv1.ClusterVersionCapabilityBaremetal,
+		configv1.ClusterVersionCapabilityMarketplace,
+		configv1.ClusterVersionCapabilityOpenShiftSamples,
+	}
+	clusterVersion := &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Status: configv1.ClusterVersionStatus{
+			Capabilities: configv1.ClusterVersionCapabilitiesStatus{
+				KnownCapabilities: olderCVOKnownCaps,
+			},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
+	g := NewWithT(t)
+	r := &reconciler{
+		client:                 fakeClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+	}
+	err := r.reconcileClusterVersion(t.Context(), hcp)
+	g.Expect(err).ToNot(HaveOccurred())
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// ClusterAPI and CompatibilityRequirements should be filtered out
+	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
+		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
+		AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
+			configv1.ClusterVersionCapabilityBuild,
+			configv1.ClusterVersionCapabilityCSISnapshot,
+			configv1.ClusterVersionCapabilityCloudControllerManager,
+			configv1.ClusterVersionCapabilityCloudCredential,
+			// ClusterAPI filtered out - not in knownCapabilities
+			// CompatibilityRequirements filtered out - not in knownCapabilities
+			configv1.ClusterVersionCapabilityConsole,
+			configv1.ClusterVersionCapabilityDeploymentConfig,
+			configv1.ClusterVersionCapabilityImageRegistry,
+			configv1.ClusterVersionCapabilityIngress,
+			configv1.ClusterVersionCapabilityInsights,
+			configv1.ClusterVersionCapabilityMachineAPI,
+			configv1.ClusterVersionCapabilityNodeTuning,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+			configv1.ClusterVersionCapabilityStorage,
+			configv1.ClusterVersionCapabilityMarketplace,
+			configv1.ClusterVersionCapabilityOpenShiftSamples,
+		},
+	}
+	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
+}
+
 func TestReconcileImageContentPolicyType(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {

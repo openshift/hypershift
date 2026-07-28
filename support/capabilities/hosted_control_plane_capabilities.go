@@ -63,12 +63,15 @@ func IsImageRegistryCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 }
 
 // CalculateEnabledCapabilities returns the net enabled capabilities, by
-// using the default set of capabilities (minus baremetal capability) and the
-// explicitly enabled and disabled capabilities, in alphabetical order.
+// using the default set of capabilities (minus baremetal, ClusterAPI, and
+// CompatibilityRequirements capabilities) and the explicitly enabled and
+// disabled capabilities, in alphabetical order.
 func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1.ClusterVersionCapability {
 	vCurrent := configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]
 	netCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
 	netCaps.Delete(configv1.ClusterVersionCapabilityBaremetal)
+	netCaps.Delete(configv1.ClusterVersionCapabilityClusterAPI)
+	netCaps.Delete(configv1.ClusterVersionCapabilityCompatibilityRequirements)
 
 	if capabilities != nil && len(capabilities.Disabled) > 0 {
 		disabledCaps := make([]configv1.ClusterVersionCapability, len(capabilities.Disabled))
