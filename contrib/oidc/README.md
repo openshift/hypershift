@@ -58,9 +58,33 @@ sequenceDiagram
 2. Ansible installed on your local machine
 3. Required Python packages and Ansible collections:
    ```bash
-   pip install -r requirements.txt
+   pip install --require-hashes -r requirements.txt
    ansible-galaxy install -r requirements.yml
    ```
+
+### Managing Python dependencies
+
+`requirements.txt` pins every Python dependency (boto3, botocore, and their
+transitive dependencies) to an exact version and includes
+`--hash=sha256:...` entries for each published artifact, enabling pip's
+hash-checking mode (`pip install --require-hashes`) used above.
+
+To add a new dependency or update an existing one:
+
+1. Add or update the package's version constraint in `requirements.txt`
+   (e.g. `newpackage>=1.0.0`, or bump an existing pin).
+2. Regenerate the file with [`uv`](https://docs.astral.sh/uv/):
+
+   ```bash
+   uv pip compile --generate-hashes contrib/oidc/requirements.txt \
+     -o contrib/oidc/requirements.txt
+   ```
+
+   This resolves the constraint to a concrete version, pulls in any new
+   transitive dependencies, and adds `--hash=sha256:...` entries for all
+   published wheel/sdist artifacts. Don't edit hashes by hand — always
+   regenerate so they're guaranteed to match the published artifact.
+3. Validate: `pip install --dry-run --require-hashes -r requirements.txt`
 
 ## Configuration
 
