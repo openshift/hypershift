@@ -63,7 +63,9 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 
 			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
 
-			if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
+			// The reason check is needed to transition from EtcdRecoveryJobFailed -> AsExpected
+			// when etcd self-heals (both use Status=False).
+			if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status || oldCondition.Reason != etcdRecoveryActiveCondition.Reason {
 				meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 					return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
@@ -87,7 +89,9 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 
 		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
 
-		if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
+		// The reason check is needed to transition from EtcdRecoveryJobFailed -> AsExpected
+		// when etcd self-heals (both use Status=False).
+		if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status || oldCondition.Reason != etcdRecoveryActiveCondition.Reason {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 				return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
@@ -132,12 +136,24 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 	}
 
 	if failingEtcdPod == nil {
-		// No failing etcd pods detected
-		// However, if the statefulset is not reporting fully available, check later
-		if !fullyAvailable {
-			return &requeueAfter, nil
+		// Clear a stale EtcdRecoveryJobFailed condition when etcd is now healthy
+		// and no pods are failing — the cluster recovered on its own.
+		if fullyAvailable {
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
+			if oldCondition != nil && oldCondition.Reason == hyperv1.EtcdRecoveryJobFailedReason {
+				etcdRecoveryActiveCondition.Status = metav1.ConditionFalse
+				etcdRecoveryActiveCondition.Reason = hyperv1.AsExpectedReason
+				etcdRecoveryActiveCondition.Message = "Etcd cluster is healthy, clearing stale recovery failure condition."
+				etcdRecoveryActiveCondition.LastTransitionTime = r.now()
+				meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
+				}
+			}
+			return nil, nil
 		}
-		return nil, nil
+		// Statefulset is not fully available yet, check later
+		return &requeueAfter, nil
 	}
 
 	log.Info("there are symptoms of etcd cluster degradation, triggering recovery job")
@@ -181,7 +197,9 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 	// If the ETCD keeps failing and recovering, we can see the hcluster.Generation increasing indefinitely.
 	oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.EtcdRecoveryActive))
 
-	if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
+	// The reason check is needed to transition from EtcdRecoveryJobFailed -> AsExpected
+	// when etcd self-heals (both use Status=False).
+	if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status || oldCondition.Reason != etcdRecoveryActiveCondition.Reason {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
 		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 			return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
