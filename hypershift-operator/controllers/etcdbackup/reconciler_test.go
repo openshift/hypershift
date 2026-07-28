@@ -632,15 +632,19 @@ func TestEnsureNetworkPolicy(t *testing.T) {
 	t.Run("When ensureNetworkPolicy is called it should create NetworkPolicy in HCP namespace", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
-		r := newReconciler(backup)
+		hcp := newHostedControlPlane()
+		r := newReconciler(backup, hcp)
 		ctx := context.Background()
 
-		err := r.ensureNetworkPolicy(ctx, backup)
+		err := r.ensureNetworkPolicy(ctx, backup, hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		np := &networkingv1.NetworkPolicy{}
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, np)).To(Succeed())
-		g.Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", "etcd"))
+		g.Expect(np.Spec.PodSelector.MatchExpressions).To(HaveLen(1))
+		g.Expect(np.Spec.PodSelector.MatchExpressions[0].Key).To(Equal("app"))
+		g.Expect(np.Spec.PodSelector.MatchExpressions[0].Operator).To(Equal(metav1.LabelSelectorOpIn))
+		g.Expect(np.Spec.PodSelector.MatchExpressions[0].Values).To(ContainElement("etcd"))
 		g.Expect(np.Spec.Ingress).To(HaveLen(1))
 		g.Expect(np.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels).To(HaveKeyWithValue("kubernetes.io/metadata.name", testHONamespace))
 		g.Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(2379))
@@ -1053,12 +1057,39 @@ func TestBuildUploadArgs(t *testing.T) {
 		},
 	}
 
+	// Default single shard for backward-compat tests
+	singleShard := []etcdShardInfo{{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"}}
+
+	// Verify single-shard uses --snapshot-path for backward compat
+	t.Run("When single shard it should use --snapshot-path for backward compatibility", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		args, err := r.buildUploadArgs(newHCPEtcdBackup(), singleShard, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElement("--snapshot-path"))
+		g.Expect(args).ToNot(ContainElement("--snapshot-dir"))
+	})
+
+	// Verify multi-shard uses --snapshot-dir
+	t.Run("When multiple shards it should use --snapshot-dir", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		multiShards := []etcdShardInfo{
+			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+		}
+		args, err := r.buildUploadArgs(newHCPEtcdBackup(), multiShards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElement("--snapshot-dir"))
+		g.Expect(args).ToNot(ContainElement("--snapshot-path"))
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			r := newReconciler()
 
-			args, err := r.buildUploadArgs(tt.backup, tt.creds)
+			args, err := r.buildUploadArgs(tt.backup, singleShard, tt.creds)
 			if tt.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
@@ -1073,6 +1104,15 @@ func TestBuildUploadArgs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildUploadContainer(t *testing.T) {
+	t.Run("When building upload container, it should set FallbackToLogsOnError termination message policy", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		container := r.buildUploadContainer("cpo:latest", []string{"control-plane-operator", "etcd-upload"}, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "creds"})
+		g.Expect(container.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError))
+	})
 }
 
 func TestEnforceRetention(t *testing.T) {
@@ -1169,9 +1209,10 @@ func TestCheckEtcdHealth(t *testing.T) {
 	t.Run("When etcd StatefulSet is fully ready it should return healthy", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		sts := newEtcdStatefulSet(3, 3)
-		r := newReconciler(sts)
+		hcp := newHostedControlPlane()
+		r := newReconciler(sts, hcp)
 
-		healthy, msg, err := r.checkEtcdHealth(context.Background(), testHCPNamespace)
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(healthy).To(BeTrue())
 		g.Expect(msg).To(BeEmpty())
@@ -1180,9 +1221,10 @@ func TestCheckEtcdHealth(t *testing.T) {
 	t.Run("When etcd StatefulSet has fewer ready replicas it should return unhealthy", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		sts := newEtcdStatefulSet(2, 3)
-		r := newReconciler(sts)
+		hcp := newHostedControlPlane()
+		r := newReconciler(sts, hcp)
 
-		healthy, msg, err := r.checkEtcdHealth(context.Background(), testHCPNamespace)
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(healthy).To(BeFalse())
 		g.Expect(msg).To(ContainSubstring("2/3"))
@@ -1303,7 +1345,7 @@ func TestCreateBackupJob(t *testing.T) {
 		g.Expect(fetchCerts.Command).To(ContainElements("fetch-etcd-certs", "--hcp-namespace", testHCPNamespace))
 
 		snapshot := podSpec.InitContainers[1]
-		g.Expect(snapshot.Name).To(Equal("snapshot"))
+		g.Expect(snapshot.Name).To(Equal("snapshot-etcd"))
 		g.Expect(snapshot.Image).To(Equal(testEtcdImage))
 		g.Expect(snapshot.Command).To(ContainElement("/usr/bin/etcdctl"))
 		g.Expect(snapshot.Command).To(ContainElement("snapshot"))
@@ -2657,15 +2699,48 @@ func TestEnforceRetentionDeleteRace(t *testing.T) {
 	})
 }
 
-func TestGetSnapshotURLFromPod(t *testing.T) {
+func TestGetShardSnapshotsFromPod(t *testing.T) {
 	tests := []struct {
 		name     string
 		pods     []client.Object
 		jobName  string
-		expected string
+		expected []hyperv1.HCPEtcdShardSnapshot
 	}{
 		{
-			name: "When upload container has termination message, it should return the URL",
+			name: "When upload container has JSON termination message, it should return shard snapshots",
+			pods: []client.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backup-pod",
+						Namespace: testHONamespace,
+						Labels:    map[string]string{"batch.kubernetes.io/job-name": "my-job"},
+					},
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name: "upload",
+								State: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										Message: `[{"name":"etcd","url":"s3://bucket/path/etcd.db"},{"name":"etcd-events","url":"s3://bucket/path/etcd-events.db"}]`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobName: "my-job",
+			expected: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://bucket/path/etcd.db"},
+				{Name: "etcd-events", SnapshotURL: "s3://bucket/path/etcd-events.db"},
+			},
+		},
+		{
+			name: "When upload container has plain URL, it should return backward-compat single snapshot",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2691,17 +2766,19 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 					},
 				},
 			},
-			jobName:  "my-job",
-			expected: "s3://bucket/path/snapshot.db",
+			jobName: "my-job",
+			expected: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://bucket/path/snapshot.db"},
+			},
 		},
 		{
-			name:     "When no pods exist for the job, it should return empty string",
+			name:     "When no pods exist for the job, it should return nil",
 			pods:     []client.Object{},
 			jobName:  "my-job",
-			expected: "",
+			expected: nil,
 		},
 		{
-			name: "When upload container has no termination message, it should return empty string",
+			name: "When upload container has no termination message, it should return nil",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2728,7 +2805,7 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 				},
 			},
 			jobName:  "my-job",
-			expected: "",
+			expected: nil,
 		},
 	}
 
@@ -2744,9 +2821,13 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 				},
 			}
 
-			url, err := r.getSnapshotURLFromPod(t.Context(), job)
+			snapshots, err := r.getShardSnapshotsFromPod(t.Context(), job)
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(url).To(Equal(tt.expected))
+			if tt.expected == nil {
+				g.Expect(snapshots).To(BeNil())
+			} else {
+				g.Expect(snapshots).To(Equal(tt.expected))
+			}
 		})
 	}
 }
@@ -2823,5 +2904,249 @@ func TestUpdateHCPBackupCondition(t *testing.T) {
 			"both the existing condition and the new backup condition should be present")
 		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.ClusterVersionAvailable))).ToNot(BeNil())
 		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))).ToNot(BeNil())
+	})
+}
+
+func TestEtcdShards(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When no shards are configured it should return only the default shard", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		shards := etcdShards(hcp)
+		g.Expect(shards).To(HaveLen(1))
+		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[0].endpoint).To(ContainSubstring("etcd-client."))
+	})
+
+	t.Run("When PV-backed shards are configured it should include them", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{
+				{
+					Name:     "events",
+					Replicas: 3,
+					Storage: hyperv1.ManagedEtcdShardStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdShardStorage,
+					},
+				},
+			},
+		}
+		shards := etcdShards(hcp)
+		g.Expect(shards).To(HaveLen(2))
+		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[1].name).To(Equal("etcd-events"))
+		g.Expect(shards[1].endpoint).To(ContainSubstring("etcd-client-events."))
+	})
+
+	t.Run("When EmptyDir shards are configured it should skip them", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{
+				{
+					Name:     "events",
+					Replicas: 1,
+					Storage: hyperv1.ManagedEtcdShardStorageSpec{
+						Type: hyperv1.EmptyDirEtcdShardStorage,
+					},
+				},
+				{
+					Name:     "leases",
+					Replicas: 3,
+					Storage: hyperv1.ManagedEtcdShardStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdShardStorage,
+					},
+				},
+			},
+		}
+		shards := etcdShards(hcp)
+		g.Expect(shards).To(HaveLen(2))
+		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[1].name).To(Equal("etcd-leases"))
+	})
+}
+
+func TestCheckEtcdHealthMultiShard(t *testing.T) {
+	t.Run("When all shard StatefulSets are ready it should return healthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 3},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeTrue())
+		g.Expect(msg).To(BeEmpty())
+	})
+
+	t.Run("When a shard StatefulSet is not ready it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("1/3"))
+	})
+
+	t.Run("When a shard StatefulSet is not found it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		// No shard StatefulSet
+		r := newReconciler(hcp, defaultSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("not found"))
+	})
+}
+
+func TestBuildSnapshotInitContainers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When single shard it should create fetch-certs + 1 snapshot container", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		r := newReconciler()
+		shards := []etcdShardInfo{{
+			name:     "etcd",
+			endpoint: "https://etcd-client.test-ns.svc:2379",
+		}}
+
+		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
+		g.Expect(containers).To(HaveLen(2))
+		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
+		g.Expect(containers[1].Name).To(Equal("snapshot-etcd"))
+		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("etcd-client.test-ns.svc")))
+		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("/etcd.db")))
+	})
+
+	t.Run("When multiple shards it should create fetch-certs + N snapshot containers", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		r := newReconciler()
+		shards := []etcdShardInfo{
+			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+		}
+
+		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
+		g.Expect(containers).To(HaveLen(3))
+		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
+		g.Expect(containers[1].Name).To(Equal("snapshot-etcd"))
+		g.Expect(containers[2].Name).To(Equal("snapshot-etcd-events"))
+		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("etcd-client-events.test-ns.svc")))
+		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("/etcd-events.db")))
+	})
+}
+
+func TestParseShardSnapshots(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When JSON array is provided it should parse all shard snapshots", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		msg := `[{"name":"etcd","url":"s3://b/etcd.db"},{"name":"etcd-events","url":"s3://b/etcd-events.db"}]`
+		snapshots, err := parseShardSnapshots(msg)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(HaveLen(2))
+		g.Expect(snapshots[0].Name).To(Equal("etcd"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/etcd.db"))
+		g.Expect(snapshots[1].Name).To(Equal("etcd-events"))
+		g.Expect(snapshots[1].SnapshotURL).To(Equal("s3://b/etcd-events.db"))
+	})
+
+	t.Run("When plain URL is provided it should return single default shard", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		snapshots, err := parseShardSnapshots("s3://b/snapshot.db")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(HaveLen(1))
+		g.Expect(snapshots[0].Name).To(Equal("etcd"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/snapshot.db"))
+	})
+
+	t.Run("When empty string is provided it should return nil", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		snapshots, err := parseShardSnapshots("")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(BeNil())
+	})
+
+	t.Run("When invalid JSON is provided it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		_, err := parseShardSnapshots("[invalid")
+		g.Expect(err).To(HaveOccurred())
+	})
+}
+
+func TestEnsureNetworkPolicyMultiShard(t *testing.T) {
+	t.Run("When shards are configured the NetworkPolicy should include shard app labels", func(t *testing.T) {
+		g := NewWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		r := newReconciler(backup, hcp)
+		ctx := context.Background()
+
+		err := r.ensureNetworkPolicy(ctx, backup, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		np := &networkingv1.NetworkPolicy{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, np)).To(Succeed())
+		g.Expect(np.Spec.PodSelector.MatchExpressions).To(HaveLen(1))
+		values := np.Spec.PodSelector.MatchExpressions[0].Values
+		g.Expect(values).To(ContainElement("etcd"))
+		g.Expect(values).To(ContainElement("etcd-events"))
 	})
 }

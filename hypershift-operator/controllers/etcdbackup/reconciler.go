@@ -2,6 +2,7 @@ package etcdbackup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	supportconfig "github.com/openshift/hypershift/support/config"
+	etcdutil "github.com/openshift/hypershift/support/etcd"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -176,7 +178,7 @@ func (r *HCPEtcdBackupReconciler) createResourcesAndJob(ctx context.Context, bac
 		return ctrl.Result{}, fmt.Errorf("failed to ensure RBAC: %w", err)
 	}
 
-	if err := r.ensureNetworkPolicy(ctx, backup); err != nil {
+	if err := r.ensureNetworkPolicy(ctx, backup, hcp); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to ensure NetworkPolicy: %w", err)
 	}
 
@@ -250,7 +252,7 @@ func (r *HCPEtcdBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			"HostedControlPlane not found in namespace "+backup.Namespace)
 	}
 
-	healthy, msg, err := r.checkEtcdHealth(ctx, backup.Namespace)
+	healthy, msg, err := r.checkEtcdHealth(ctx, hcp)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to check etcd health: %w", err)
 	}
@@ -351,20 +353,50 @@ func (r *HCPEtcdBackupReconciler) getHostedControlPlane(ctx context.Context, nam
 	return &hcpList.Items[0], nil
 }
 
-// checkEtcdHealth verifies the etcd StatefulSet has all replicas ready.
-func (r *HCPEtcdBackupReconciler) checkEtcdHealth(ctx context.Context, namespace string) (bool, string, error) {
-	sts := &appsv1.StatefulSet{}
-	if err := r.Get(ctx, types.NamespacedName{Name: "etcd", Namespace: namespace}, sts); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, "etcd StatefulSet not found", nil
-		}
-		return false, "", err
-	}
+// etcdShardInfo contains the name and endpoint for a single etcd shard to be backed up.
+type etcdShardInfo struct {
+	name     string
+	endpoint string
+}
 
-	desired := ptr.Deref(sts.Spec.Replicas, 1)
-	if sts.Status.ReadyReplicas < desired {
-		return false, fmt.Sprintf("etcd StatefulSet not fully ready: %d/%d replicas ready",
-			sts.Status.ReadyReplicas, desired), nil
+// etcdShards returns the list of etcd shards to back up for the given HCP.
+// EmptyDir-backed shards are skipped since they hold ephemeral data.
+func etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
+	shards := []etcdShardInfo{{
+		name:     "etcd",
+		endpoint: fmt.Sprintf("https://etcd-client.%s.svc:%d", hcp.Namespace, supportconfig.EtcdClientPort),
+	}}
+	if hcp.Spec.Etcd.Managed != nil {
+		for _, s := range hcp.Spec.Etcd.Managed.Shards {
+			if s.Storage.Type == hyperv1.EmptyDirEtcdShardStorage {
+				continue
+			}
+			shardName := fmt.Sprintf("etcd-%s", s.Name)
+			shards = append(shards, etcdShardInfo{
+				name: shardName,
+				endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
+					etcdutil.ClientServiceName(shardName), hcp.Namespace, supportconfig.EtcdClientPort),
+			})
+		}
+	}
+	return shards
+}
+
+// checkEtcdHealth verifies that all etcd shard StatefulSets have all replicas ready.
+func (r *HCPEtcdBackupReconciler) checkEtcdHealth(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, string, error) {
+	for _, shard := range etcdShards(hcp) {
+		sts := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, types.NamespacedName{Name: shard.name, Namespace: hcp.Namespace}, sts); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, fmt.Sprintf("etcd StatefulSet %q not found", shard.name), nil
+			}
+			return false, "", err
+		}
+		desired := ptr.Deref(sts.Spec.Replicas, 1)
+		if sts.Status.ReadyReplicas < desired {
+			return false, fmt.Sprintf("etcd StatefulSet %q not fully ready: %d/%d replicas ready",
+				shard.name, sts.Status.ReadyReplicas, desired), nil
+		}
 	}
 	return true, "", nil
 }
@@ -441,12 +473,11 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
 			logger.Info("backup Job completed successfully", "job", job.Name)
 
-			// Extract snapshotURL from the upload container's termination message.
-			// The etcd-upload command writes the URL to /dev/termination-log.
-			url, err := r.getSnapshotURLFromPod(ctx, job)
+			// Extract shard snapshot URLs from the upload container's termination message.
+			// The etcd-upload command writes JSON to /dev/termination-log.
+			shardSnapshots, err := r.getShardSnapshotsFromPod(ctx, job)
 			if err != nil {
-				logger.Error(err, "failed to read snapshot URL from pod termination message")
-				url = "" // don't use url on error
+				logger.Error(err, "failed to read shard snapshots from pod termination message")
 			}
 
 			// Cleanup temporary RBAC and NetworkPolicy as soon as the Job completes.
@@ -456,25 +487,41 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 				logger.Error(err, "failed to cleanup resources after successful backup")
 			}
 
+			// Populate status with shard snapshots and backward-compat SnapshotURL.
+			if len(shardSnapshots) > 0 {
+				backup.Status.ShardSnapshots = shardSnapshots
+				// Set the default shard's URL for backward compatibility.
+				for _, ss := range shardSnapshots {
+					if ss.Name == "etcd" {
+						backup.Status.SnapshotURL = ss.SnapshotURL
+						break
+					}
+				}
+			}
+
 			// Persist the snapshot URL in the HostedCluster status BEFORE marking
 			// the backup as terminal so the controller retries on requeue.
 			// This is idempotent: if it succeeds but the backup status update below
 			// fails, the next reconcile re-extracts the URL and writes the same value.
-			if url != "" {
-				if err := r.updateHostedClusterBackupURL(ctx, hcp, url); err != nil {
+			if backup.Status.SnapshotURL != "" {
+				if err := r.updateHostedClusterBackupURL(ctx, hcp, backup.Status.SnapshotURL); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to update HostedCluster LastSuccessfulEtcdBackupURL: %w", err)
 				}
-				backup.Status.SnapshotURL = url
 			}
 
 			// Propagate encryption metadata based on storage config
 			r.setEncryptionMetadata(backup)
 
+			successMessage := "Backup completed successfully"
+			if len(backup.Status.ShardSnapshots) == 0 {
+				successMessage = "Backup completed but snapshot URLs could not be extracted from the upload container termination message"
+			}
+
 			r.setCondition(backup, metav1.Condition{
 				Type:    string(hyperv1.BackupCompleted),
 				Status:  metav1.ConditionTrue,
 				Reason:  hyperv1.BackupSucceededReason,
-				Message: "Backup completed successfully",
+				Message: successMessage,
 			})
 
 			if err := r.Status().Update(ctx, backup); err != nil {
@@ -531,26 +578,63 @@ func (r *HCPEtcdBackupReconciler) handleJobStatus(ctx context.Context, backup *h
 	return ctrl.Result{RequeueAfter: requeueInterval}, nil
 }
 
-// getSnapshotURLFromPod reads the snapshot URL from the upload container's
-// termination message in the Pod controlled by the given Job.
-func (r *HCPEtcdBackupReconciler) getSnapshotURLFromPod(ctx context.Context, job *batchv1.Job) (string, error) {
+// getShardSnapshotsFromPod reads the per-shard snapshot URLs from the upload
+// container's termination message in the Pod controlled by the given Job.
+// The termination message is a JSON array of {"name":"...","url":"..."}.
+// For backward compatibility with older CPO images that write a plain URL,
+// a single plain URL is treated as the default shard snapshot.
+func (r *HCPEtcdBackupReconciler) getShardSnapshotsFromPod(ctx context.Context, job *batchv1.Job) ([]hyperv1.HCPEtcdShardSnapshot, error) {
 	podList := &corev1.PodList{}
 	if err := r.List(ctx, podList,
 		client.InNamespace(job.Namespace),
 		client.MatchingLabels{"batch.kubernetes.io/job-name": job.Name},
 	); err != nil {
-		return "", fmt.Errorf("failed to list pods for job %q: %w", job.Name, err)
+		return nil, fmt.Errorf("failed to list pods for job %q: %w", job.Name, err)
 	}
 
 	for i := range podList.Items {
 		pod := &podList.Items[i]
 		for _, cs := range pod.Status.ContainerStatuses {
 			if cs.Name == "upload" && cs.State.Terminated != nil && cs.State.Terminated.Message != "" {
-				return strings.TrimSpace(cs.State.Terminated.Message), nil
+				msg := strings.TrimSpace(cs.State.Terminated.Message)
+				return parseShardSnapshots(msg)
 			}
 		}
 	}
-	return "", nil
+	return nil, nil
+}
+
+// shardSnapshotJSON is the JSON format written by the etcd-upload command.
+type shardSnapshotJSON struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// parseShardSnapshots parses the termination message from the upload container.
+// Accepts either a JSON array of shard snapshots or a plain URL (backward compat).
+func parseShardSnapshots(msg string) ([]hyperv1.HCPEtcdShardSnapshot, error) {
+	if strings.HasPrefix(msg, "[") {
+		var entries []shardSnapshotJSON
+		if err := json.Unmarshal([]byte(msg), &entries); err != nil {
+			return nil, fmt.Errorf("failed to parse shard snapshots JSON: %w", err)
+		}
+		var snapshots []hyperv1.HCPEtcdShardSnapshot
+		for _, e := range entries {
+			snapshots = append(snapshots, hyperv1.HCPEtcdShardSnapshot{
+				Name:        e.Name,
+				SnapshotURL: e.URL,
+			})
+		}
+		return snapshots, nil
+	}
+	// Backward compat: plain URL from older CPO images.
+	if msg != "" {
+		return []hyperv1.HCPEtcdShardSnapshot{{
+			Name:        "etcd",
+			SnapshotURL: msg,
+		}}, nil
+	}
+	return nil, nil
 }
 
 // setEncryptionMetadata populates encryption metadata on the backup status
@@ -664,21 +748,33 @@ func (r *HCPEtcdBackupReconciler) ensureRBAC(ctx context.Context, backup *hyperv
 
 // ensureNetworkPolicy creates the temporary NetworkPolicy in the HCP namespace
 // allowing ingress from the HO namespace to etcd on port 2379.
-func (r *HCPEtcdBackupReconciler) ensureNetworkPolicy(ctx context.Context, backup *hyperv1.HCPEtcdBackup) error {
+// When sharding is enabled, the pod selector is widened to cover all shard
+// StatefulSet pods (which have labels like app: etcd-events).
+func (r *HCPEtcdBackupReconciler) ensureNetworkPolicy(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcp *hyperv1.HostedControlPlane) error {
 	np := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      NetworkPolicyName,
 			Namespace: backup.Namespace,
 		},
 	}
+
+	// Build list of app label values for all shards being backed up.
+	shards := etcdShards(hcp)
+	appLabels := make([]string, 0, len(shards))
+	for _, s := range shards {
+		appLabels = append(appLabels, s.name)
+	}
+
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, np, func() error {
 		etcdPort := intstr.FromInt32(supportconfig.EtcdClientPort)
 		tcpProtocol := corev1.ProtocolTCP
 		np.Spec = networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "etcd",
-				},
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      "app",
+					Operator: metav1.LabelSelectorOpIn,
+					Values:   appLabels,
+				}},
 			},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
 				{
@@ -794,8 +890,11 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 		return fmt.Errorf("failed to resolve etcd image: %w", err)
 	}
 
+	// Resolve etcd shards to back up
+	shards := etcdShards(hcp)
+
 	// Build upload args based on storage type and credential mode
-	uploadArgs, err := r.buildUploadArgs(backup, creds)
+	uploadArgs, err := r.buildUploadArgs(backup, shards, creds)
 	if err != nil {
 		return fmt.Errorf("failed to build upload args: %w", err)
 	}
@@ -833,50 +932,7 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 					ServiceAccountName: jobServiceAccountName,
 					RestartPolicy:      corev1.RestartPolicyNever,
 					Volumes:            r.buildJobVolumes(creds),
-					InitContainers: []corev1.Container{
-						{
-							Name:  "fetch-certs",
-							Image: cpoImage,
-							Command: []string{
-								"control-plane-operator", "fetch-etcd-certs",
-								"--hcp-namespace", backup.Namespace,
-								"--output-dir", mountPathEtcdCerts,
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      volumeEtcdCerts,
-									MountPath: mountPathEtcdCerts,
-								},
-							},
-						},
-						{
-							Name:  "snapshot",
-							Image: etcdImage,
-							Env: []corev1.EnvVar{
-								{Name: "ETCDCTL_API", Value: "3"},
-							},
-							Command: []string{
-								"/usr/bin/etcdctl",
-								"--endpoints", fmt.Sprintf("https://etcd-client.%s.svc:%d", backup.Namespace, supportconfig.EtcdClientPort),
-								"--cacert", mountPathEtcdCerts + "/ca.crt",
-								"--cert", mountPathEtcdCerts + "/etcd-client.crt",
-								"--key", mountPathEtcdCerts + "/etcd-client.key",
-								"snapshot", "save",
-								mountPathEtcdBackup + "/snapshot.db",
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      volumeEtcdCerts,
-									MountPath: mountPathEtcdCerts,
-									ReadOnly:  true,
-								},
-								{
-									Name:      volumeEtcdBackup,
-									MountPath: mountPathEtcdBackup,
-								},
-							},
-						},
-					},
+					InitContainers:     r.buildSnapshotInitContainers(cpoImage, etcdImage, backup.Namespace, shards),
 					Containers: []corev1.Container{
 						r.buildUploadContainer(cpoImage, uploadArgs, creds),
 					},
@@ -921,6 +977,62 @@ func (r *HCPEtcdBackupReconciler) getCredentialSecretName(backup *hyperv1.HCPEtc
 		return backup.Spec.Storage.AzureBlob.Credentials.Name, nil
 	}
 	return "", fmt.Errorf("unsupported storage type: %s", backup.Spec.Storage.StorageType)
+}
+
+// buildSnapshotInitContainers creates the init container list for the backup Job:
+// one fetch-certs container followed by one snapshot container per shard.
+// All shards share the same etcd-client-tls credentials because the single etcd CA
+// signs all shard certificates and KAS uses one --etcd-certfile/keyfile pair.
+func (r *HCPEtcdBackupReconciler) buildSnapshotInitContainers(cpoImage, etcdImage, namespace string, shards []etcdShardInfo) []corev1.Container {
+	initContainers := []corev1.Container{
+		{
+			Name:  "fetch-certs",
+			Image: cpoImage,
+			Command: []string{
+				"control-plane-operator", "fetch-etcd-certs",
+				"--hcp-namespace", namespace,
+				"--output-dir", mountPathEtcdCerts,
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      volumeEtcdCerts,
+					MountPath: mountPathEtcdCerts,
+				},
+			},
+		},
+	}
+
+	for _, shard := range shards {
+		initContainers = append(initContainers, corev1.Container{
+			Name:  fmt.Sprintf("snapshot-%s", shard.name),
+			Image: etcdImage,
+			Env: []corev1.EnvVar{
+				{Name: "ETCDCTL_API", Value: "3"},
+			},
+			Command: []string{
+				"/usr/bin/etcdctl",
+				"--endpoints", shard.endpoint,
+				"--cacert", mountPathEtcdCerts + "/ca.crt",
+				"--cert", mountPathEtcdCerts + "/etcd-client.crt",
+				"--key", mountPathEtcdCerts + "/etcd-client.key",
+				"snapshot", "save",
+				fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shard.name),
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      volumeEtcdCerts,
+					MountPath: mountPathEtcdCerts,
+					ReadOnly:  true,
+				},
+				{
+					Name:      volumeEtcdBackup,
+					MountPath: mountPathEtcdBackup,
+				},
+			},
+		})
+	}
+
+	return initContainers
 }
 
 func (r *HCPEtcdBackupReconciler) buildJobVolumes(creds resolvedCredentials) []corev1.Volume {
@@ -977,6 +1089,10 @@ func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []stri
 		Name:    "upload",
 		Image:   image,
 		Command: args,
+		// FallbackToLogsOnError prevents silent truncation of the termination
+		// message when the JSON shard snapshot payload approaches the 4KB limit
+		// (up to 11 shards × ~200-char URLs + JSON framing ≈ 3KB typical).
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      volumeEtcdBackup,
@@ -1010,10 +1126,15 @@ func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []stri
 }
 
 // buildUploadArgs constructs the command args for the etcd-upload container.
-func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup, creds resolvedCredentials) ([]string, error) {
-	args := []string{
-		"control-plane-operator", "etcd-upload",
-		"--snapshot-path", mountPathEtcdBackup + "/snapshot.db",
+// For single-shard clusters, --snapshot-path is used for backward compatibility
+// with older CPO images that don't support --snapshot-dir. Multi-shard clusters
+// use --snapshot-dir which uploads all .db files in the directory.
+func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup, shards []etcdShardInfo, creds resolvedCredentials) ([]string, error) {
+	args := []string{"control-plane-operator", "etcd-upload"}
+	if len(shards) == 1 {
+		args = append(args, "--snapshot-path", fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shards[0].name))
+	} else {
+		args = append(args, "--snapshot-dir", mountPathEtcdBackup)
 	}
 
 	switch backup.Spec.Storage.StorageType {
