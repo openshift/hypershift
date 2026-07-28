@@ -1879,9 +1879,9 @@ spec:
                   the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).
 
                   Version-skew rules and effects:
-                    - The minor-version skew relative to the control-plane release must be <= N-2.
-                      This is not currently enforced, but exceeding this limit is unsupported and
-                      may lead to unpredictable behavior.
+                    - The minor-version skew relative to the control-plane release must be <= N-3.
+                      Exceeding this limit is unsupported and will cause the SupportedVersionSkew
+                      condition to report False.
                     - If the specified release is higher than the HostedCluster's release, the
                       NodePool will be degraded and the ValidReleaseImage condition will be false.
                     - If the specified release is lower than the NodePool's current y-stream,
