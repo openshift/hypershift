@@ -390,14 +390,26 @@ test: generate
 # Skips entirely if no .go files changed. No generate dependency (verify-quick handles it).
 .PHONY: test-changed
 test-changed:
-	@CHANGED_PKGS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
+	@CHANGED_DIRS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
-		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
-	if [ -z "$$CHANGED_PKGS" ]; then \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -v '^\./hack/tools/'); \
+	if [ -z "$$CHANGED_DIRS" ]; then \
 		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
 	else \
-		echo "Running tests for changed packages: $$CHANGED_PKGS"; \
-		$(GO) test -parallel=$(NUM_CORES) -count=1 -timeout=30m $$CHANGED_PKGS; \
+		CHANGED_PKGS=""; \
+		for pkg in $$CHANGED_DIRS; do \
+			list_out=$$($(GO) list "$$pkg" 2>&1) && { CHANGED_PKGS="$$CHANGED_PKGS $$pkg"; continue; }; \
+			case "$$list_out" in \
+				*"build constraints exclude"*|*"no Go files"*) ;; \
+				*) echo "ERROR: go list $$pkg failed: $$list_out" >&2; exit 1 ;; \
+			esac; \
+		done; \
+		if [ -z "$$CHANGED_PKGS" ]; then \
+			echo "Changed packages all excluded by build constraints, skipping tests."; \
+		else \
+			echo "Running tests for changed packages: $$CHANGED_PKGS"; \
+			$(GO) test -parallel=$(NUM_CORES) -count=1 -timeout=30m $$CHANGED_PKGS; \
+		fi; \
 	fi
 
 # Run a subset of unit tests (used by CI sharding).
