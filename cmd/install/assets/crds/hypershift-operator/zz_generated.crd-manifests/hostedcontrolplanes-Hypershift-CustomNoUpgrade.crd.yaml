@@ -4255,10 +4255,6 @@ spec:
                           Minimum 1, maximum 10 entries. Resources must not overlap across
                           shards. Immutable after creation: shards cannot be added, removed,
                           or reordered.
-
-                          WARNING: In the current TechPreview implementation, shard data is NOT
-                          included in HCPEtcdBackup. Resources routed to shards will not be
-                          backed up. This will be addressed before promotion beyond TechPreview.
                         items:
                           description: |-
                             ManagedEtcdShardSpec defines the configuration for a single etcd shard
@@ -4366,6 +4362,22 @@ spec:
                               x-kubernetes-validations:
                               - message: resources are immutable
                                 rule: self == oldSelf
+                            restoreSnapshotURL:
+                              description: |-
+                                restoreSnapshotURL allows an optional URL to be provided where an etcd
+                                snapshot for this shard can be downloaded. This snapshot will be restored
+                                on initial startup, only when the shard's PV is empty.
+                                Only meaningful for PersistentVolume-backed shards; EmptyDir shards are
+                                ephemeral and restoring into them would be lost on pod restart.
+                              maxLength: 1024
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: restoreSnapshotURL is immutable
+                                rule: self == oldSelf
+                              - message: restoreSnapshotURL must be a valid URL with
+                                  scheme https or s3
+                                rule: self == '' || self.matches('^(https|s3)://.*')
                             scheduling:
                               description: |-
                                 scheduling configures per-shard pod placement constraints. These
@@ -4497,6 +4509,15 @@ spec:
                           x-kubernetes-validations:
                           - message: storage cannot be added or removed after creation
                             rule: has(oldSelf.storage) == has(self.storage)
+                          - message: restoreSnapshotURL is not supported for EmptyDir
+                              shards
+                            rule: '!has(self.restoreSnapshotURL) || self.restoreSnapshotURL
+                              == '''' || !has(self.storage) || self.storage.type !=
+                              ''EmptyDir'''
+                          - message: restoreSnapshotURL cannot be removed once set
+                            rule: '!has(oldSelf.restoreSnapshotURL) || oldSelf.restoreSnapshotURL
+                              == '''' || (has(self.restoreSnapshotURL) && self.restoreSnapshotURL
+                              != '''')'
                         maxItems: 10
                         minItems: 1
                         type: array

@@ -20,11 +20,12 @@ package v1beta1
 // ManagedEtcdShardSpecApplyConfiguration represents a declarative configuration of the ManagedEtcdShardSpec type for use
 // with apply.
 type ManagedEtcdShardSpecApplyConfiguration struct {
-	Name       *string                                        `json:"name,omitempty"`
-	Resources  []EtcdShardResourceApplyConfiguration          `json:"resources,omitempty"`
-	Storage    *ManagedEtcdShardStorageSpecApplyConfiguration `json:"storage,omitempty"`
-	Replicas   *int32                                         `json:"replicas,omitempty"`
-	Scheduling *EtcdShardSchedulingSpecApplyConfiguration     `json:"scheduling,omitempty"`
+	Name               *string                                        `json:"name,omitempty"`
+	Resources          []EtcdShardResourceApplyConfiguration          `json:"resources,omitempty"`
+	Storage            *ManagedEtcdShardStorageSpecApplyConfiguration `json:"storage,omitempty"`
+	Replicas           *int32                                         `json:"replicas,omitempty"`
+	Scheduling         *EtcdShardSchedulingSpecApplyConfiguration     `json:"scheduling,omitempty"`
+	RestoreSnapshotURL *string                                        `json:"restoreSnapshotURL,omitempty"`
 }
 
 // ManagedEtcdShardSpecApplyConfiguration constructs a declarative configuration of the ManagedEtcdShardSpec type for use with
@@ -75,5 +76,13 @@ func (b *ManagedEtcdShardSpecApplyConfiguration) WithReplicas(value int32) *Mana
 // If called multiple times, the Scheduling field is set to the value of the last call.
 func (b *ManagedEtcdShardSpecApplyConfiguration) WithScheduling(value *EtcdShardSchedulingSpecApplyConfiguration) *ManagedEtcdShardSpecApplyConfiguration {
 	b.Scheduling = value
+	return b
+}
+
+// WithRestoreSnapshotURL sets the RestoreSnapshotURL field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the RestoreSnapshotURL field is set to the value of the last call.
+func (b *ManagedEtcdShardSpecApplyConfiguration) WithRestoreSnapshotURL(value string) *ManagedEtcdShardSpecApplyConfiguration {
+	b.RestoreSnapshotURL = &value
 	return b
 }
