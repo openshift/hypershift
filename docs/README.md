@@ -26,20 +26,24 @@ dependency closure, not just the three plugins imported directly.
 
 1. Add or update the package's version constraint in `requirements.txt`
    (e.g. `newplugin>=1.0.0`, or bump an existing `==` pin).
-2. Regenerate the file with [`uv`](https://docs.astral.sh/uv/):
+2. Regenerate the file with [`uv`](https://docs.astral.sh/uv/), compiling to
+   a new temporary path rather than overwriting `requirements.txt` directly,
+   then move it into place:
 
    ```bash
-   uv pip compile --generate-hashes docs/requirements.txt -o docs/requirements.txt
+   uv pip compile --generate-hashes docs/requirements.txt -o /tmp/requirements.txt.new
+   mv /tmp/requirements.txt.new docs/requirements.txt
    ```
 
    This resolves the full dependency graph, pins every package (direct and
    transitive) to an exact version, and adds `--hash=sha256:...` entries for
    all of its published wheel/sdist artifacts. Don't edit hashes by hand —
    always regenerate so they're guaranteed to match the published artifact.
-3. Validate the result:
+3. Validate the result, forcing pip to actually verify every package's hash
+   rather than skipping ones already present locally:
 
    ```bash
-   pip install --dry-run --require-hashes -r docs/requirements.txt
+   pip install --dry-run --ignore-installed --require-hashes -r docs/requirements.txt
    ```
 
 4. Confirm the docs still build: `cd docs && mkdocs build --strict`
