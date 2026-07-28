@@ -26,6 +26,7 @@ type guestClusterResolver struct {
 	log                  logr.Logger
 	client               client.Client
 	konnectivityDialFunc func(ctx context.Context, network string, addr string) (net.Conn, error)
+	preferIPv4           bool
 	resolver             *net.Resolver
 	resolverLock         sync.Mutex
 }
@@ -68,6 +69,15 @@ func (gr *guestClusterResolver) resolve(ctx context.Context, name string) (net.I
 	if len(addresses) == 0 {
 		return nil, errors.New("no addresses found")
 	}
+
+	// On single-stack IPv4 data planes, filter to IPv4 so the konnectivity-agent
+	// doesn't try to connect to unreachable IPv6 endpoints.
+	if gr.preferIPv4 {
+		if filtered := filterIPv4(addresses); len(filtered) > 0 {
+			addresses = filtered
+		}
+	}
+
 	address := net.ParseIP(addresses[0])
 	if address == nil {
 		return nil, fmt.Errorf("failed to parse address %q as IP", addresses[0])
@@ -86,6 +96,7 @@ type proxyResolver struct {
 	resolveFromGuestCluster      bool
 	resolveFromManagementCluster bool
 	mustResolve                  bool
+	preferIPv4                   bool
 	konnectivityHealth           *konnectivityHealth
 	guestClusterResolver         *guestClusterResolver
 	log                          logr.Logger
@@ -102,6 +113,9 @@ func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Contex
 	if err != nil {
 		l.Info("failed to resolve address from Kubernetes service", "err", err.Error())
 		if !d.resolveFromGuestCluster {
+			if d.preferIPv4 {
+				return resolvePreferIPv4(ctx, name)
+			}
 			return socks5.DNSResolver{}.Resolve(ctx, name)
 		}
 
@@ -127,9 +141,16 @@ func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Contex
 			if d.resolveFromManagementCluster {
 				l.Info("Attempting management cluster resolution to determine if konnectivity is down")
 
-				// Use the standard DNS resolver to actually resolve the name via management cluster DNS
-				// We can't use defaultResolve because it returns nil,nil for SOCKS5 proxy
-				mgmtCtx, mgmtIP, mgmtErr := socks5.DNSResolver{}.Resolve(ctx, name)
+				// Use the standard DNS resolver to actually resolve the name via management cluster DNS.
+				// We can't use defaultResolve because it returns nil,nil for SOCKS5 proxy.
+				var mgmtCtx context.Context
+				var mgmtIP net.IP
+				var mgmtErr error
+				if d.preferIPv4 {
+					mgmtCtx, mgmtIP, mgmtErr = resolvePreferIPv4(ctx, name)
+				} else {
+					mgmtCtx, mgmtIP, mgmtErr = socks5.DNSResolver{}.Resolve(ctx, name)
+				}
 
 				// Only mark konnectivity as unhealthy if management cluster resolution succeeds
 				// If management cluster also fails, it's likely a legitimate DNS failure (name doesn't exist)
@@ -170,6 +191,9 @@ func (d proxyResolver) defaultResolve(ctx context.Context, name string) (context
 	// d.mustResolve will be set to true if the dialer needs to resolve names before
 	// dialing (which is the case of the https proxy)
 	if d.mustResolve {
+		if d.preferIPv4 {
+			return resolvePreferIPv4(ctx, name)
+		}
 		return socks5.DNSResolver{}.Resolve(ctx, name)
 	}
 	return ctx, nil, nil
@@ -200,4 +224,45 @@ func (d proxyResolver) ResolveK8sService(ctx context.Context, l logr.Logger, nam
 	l.Info("resolved address from Kubernetes service", "ip", ip.String())
 
 	return ctx, ip, nil
+}
+
+// resolvePreferIPv4 wraps DNS resolution to prefer IPv4 addresses so
+// the konnectivity-agent on single-stack data planes can reach the target.
+// Uses net.DefaultResolver.LookupIPAddr to honor context cancellation/deadlines.
+func resolvePreferIPv4(ctx context.Context, name string) (context.Context, net.IP, error) {
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, name)
+	if err != nil {
+		// Don't fall through to uncancelable socks5.DNSResolver if context is done.
+		if ctx.Err() != nil {
+			return ctx, nil, ctx.Err()
+		}
+		// Fallback intentionally does not filter for IPv4 — resolving something is better than failing.
+		return socks5.DNSResolver{}.Resolve(ctx, name)
+	}
+	// Return the first IPv4 address if available, otherwise the first address.
+	for _, a := range addrs {
+		if a.IP.To4() != nil {
+			return ctx, a.IP, nil
+		}
+	}
+	if len(addrs) > 0 {
+		return ctx, addrs[0].IP, nil
+	}
+	// Don't fall through to uncancelable socks5.DNSResolver if context is done.
+	if ctx.Err() != nil {
+		return ctx, nil, ctx.Err()
+	}
+	// Fallback intentionally does not filter for IPv4 — resolving something is better than failing.
+	return socks5.DNSResolver{}.Resolve(ctx, name)
+}
+
+// filterIPv4 returns only IPv4 addresses from the input slice.
+func filterIPv4(addresses []string) []string {
+	var filtered []string
+	for _, addr := range addresses {
+		if ip := net.ParseIP(addr); ip != nil && ip.To4() != nil {
+			filtered = append(filtered, addr)
+		}
+	}
+	return filtered
 }
