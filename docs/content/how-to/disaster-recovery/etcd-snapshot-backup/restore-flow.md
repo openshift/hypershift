@@ -163,12 +163,14 @@ Once the `HostedControlPlane` is created with `RestoreSnapshotURL` set, the Cont
 
 ### 4.1 Init Container Injection
 
-The CPO checks two conditions:
+The CPO checks two conditions for each etcd StatefulSet (default and named shards):
 
-1. `RestoreSnapshotURL` is non-empty.
+1. `RestoreSnapshotURL` is non-empty (from `ManagedEtcdStorageSpec` for the default shard, or from `ManagedEtcdShardSpec` for named shards).
 2. `EtcdSnapshotRestored` condition is not yet `True`.
 
-If both are met, an `etcd-init` init container is injected into the etcd StatefulSet spec. The container receives the snapshot URL via environment variable `RESTORE_URL_ETCD`.
+If both are met, an `etcd-init` init container is injected into the StatefulSet spec. The container receives the snapshot URL via environment variable `RESTORE_URL_ETCD`.
+
+EmptyDir-backed shards are not restored (they hold ephemeral data), and the API rejects `restoreSnapshotURL` on EmptyDir shards via CEL validation.
 
 ### 4.2 Snapshot Download and Restore
 
@@ -209,10 +211,10 @@ The `etcd-init` container runs the `etcd-init.sh` script, which executes the fol
 
 ### 4.3 Post-Restore Reconciliation
 
-After the etcd pod starts successfully with restored data:
+After the etcd pods start successfully with restored data:
 
-1. The CPO sets the `EtcdSnapshotRestored` condition to `True` on the `HostedControlPlane`.
-2. On the next reconciliation loop, the CPO detects `EtcdSnapshotRestored = True` and removes the `etcd-init` container from the StatefulSet. This prevents the init container from running on subsequent pod restarts.
+1. The CPO checks restore completion across **all** shard StatefulSets that have a `restoreSnapshotURL` configured. The `EtcdSnapshotRestored` condition is set to `True` only when all shards with restore URLs report their `etcd-init` containers have completed successfully.
+2. On the next reconciliation loop, the CPO detects `EtcdSnapshotRestored = True` and removes the `etcd-init` container from all StatefulSets. This prevents the init container from running on subsequent pod restarts.
 3. The `HostedCluster` controller detects the `restored-from-backup` annotation and monitors the restore completion. Once the `HostedClusterRestoredFromBackup` condition becomes `True`, the annotation is removed.
 
 ## Pre-Restore Checklist
