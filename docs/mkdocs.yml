@@ -79,7 +79,9 @@ nav:
     - 'Reference': getting-started/onboarding/reference.md
 - 'How-to guides':
   - how-to/index.md
-  - 'Agentic SDLC': how-to/agentic-sdlc.md
+  - 'Agentic SDLC':
+    - how-to/agentic-sdlc.md
+    - 'Triggering Jobs On Demand': how-to/ci/triggering-jobs-on-demand.md
   - how-to/audit-log-persistence.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
