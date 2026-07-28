@@ -21,7 +21,7 @@ jobs:
         env:
           PIP_CACHE_DIR: ${{ runner.temp }}/.pip-cache
       - name: Install documentation dependencies
-        run: pip install -r docs/requirements.txt
+        run: pip install --require-hashes -r docs/requirements.txt
       - name: Build documentation
         run: mkdocs build --strict
         working-directory: docs
