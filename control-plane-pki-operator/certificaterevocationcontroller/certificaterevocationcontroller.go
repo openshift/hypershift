@@ -48,6 +48,20 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// requeueInterval is the fixed polling interval used instead of SyntheticRequeueError.
+// SyntheticRequeueError feeds into DefaultControllerRateLimiter (5ms → 1000s exponential
+// backoff), which causes 11+ minute stalls when polling for KAS trust bundle reloads that
+// take ~1–2 minutes. Returning nil + AddAfter bypasses the rate limiter entirely, and
+// returning nil causes the framework to call Forget(key), resetting the failure counter.
+const requeueInterval = 10 * time.Second
+
+// revocationVerificationTimeout bounds how long step 6 (ensureOldSignerCertificateRevoked)
+// polls before surfacing a real error. Without this, the fixed-interval requeue would poll
+// every 10s indefinitely if KAS never reloads the trust bundle.
+const revocationVerificationTimeout = 10 * time.Minute
+
+const revocationVerificationTimeoutReason = "RevocationVerificationTimeout"
+
 type CertificateRevocationController struct {
 	kubeClient       kubernetes.Interface
 	hypershiftClient hypershiftclient.Interface
@@ -60,6 +74,7 @@ type CertificateRevocationController struct {
 	listPods     func(namespace string, selector labels.Selector) ([]*corev1.Pod, error)
 
 	// for unit testing only
+	now                func() time.Time
 	skipKASConnections bool
 	// overrideVerifyCertAgainstKASPods, when non-nil, replaces verifyCertificateAgainstAllKASPods
 	// for unit testing. This allows tests to control per-pod verification behavior without
@@ -309,12 +324,13 @@ func (c *CertificateRevocationController) syncCertificateRevocationRequest(ctx c
 		return err
 	}
 
-	action, requeue, err := c.processCertificateRevocationRequest(ctx, namespace, name, nil)
+	action, requeue, err := c.processCertificateRevocationRequest(ctx, namespace, name, c.now)
 	if err != nil {
 		return err
 	}
 	if requeue {
-		return factory.SyntheticRequeueError
+		syncContext.Queue().AddAfter(syncContext.QueueKey(), requeueInterval)
+		return nil
 	}
 	if action != nil {
 		if err := action.validate(); err != nil {
@@ -733,6 +749,7 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 	// that, though, and it's always valid to first check that our certificates have propagated as far
 	// as we can tell in the system before asking the KAS, since that's expensive
 	if len(trustedCertificates(totalClientTrustBundle, []*certificateSecret{{cert: signers[0]}}, now)) == 0 {
+		klog.V(2).Infof("New signer certificate not yet in total-client-ca bundle for %s/%s, requeueing", namespace, name)
 		return true, nil, true, nil
 	}
 
@@ -758,7 +775,8 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 			return true, nil, false, err
 		}
 		if !allTrusted {
-			return true, nil, true, nil // pod transitions trigger reconciliation, but synthetic re-queue is still needed for KAS trust bundle reloads
+			klog.V(2).Infof("Not all KAS pods trust new signer certificate for %s/%s, requeueing", namespace, name)
+			return true, nil, true, nil
 		}
 
 		// Cross-check: verify the previous signer is also still trusted.
@@ -777,7 +795,7 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 					return true, nil, false, err
 				}
 				if !oldTrusted {
-					klog.V(4).Infof("KAS pods accepted new cert but rejected old signer cert for %s/%s; likely mid-reload, requeueing", namespace, name)
+					klog.V(2).Infof("KAS pods accepted new cert but rejected old signer cert for %s/%s; likely mid-reload, requeueing", namespace, name)
 					return true, nil, true, nil
 				}
 			}
@@ -985,6 +1003,28 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 		return false, nil, false, nil
 	}
 
+	for _, condition := range crr.Status.Conditions {
+		if condition.Type == certificatesv1alpha1.NewCertificatesTrustedType && condition.Status == metav1.ConditionTrue {
+			if elapsed := now().Sub(condition.LastTransitionTime.Time); elapsed > revocationVerificationTimeout {
+				klog.Errorf("Revocation verification for %s/%s timed out after %v (since NewCertificatesTrusted)", namespace, name, elapsed)
+				cfg := certificatesv1alpha1applyconfigurations.CertificateRevocationRequest(name, namespace)
+				cfg.Status = certificatesv1alpha1applyconfigurations.CertificateRevocationRequestStatus().
+					WithRevocationTimestamp(*crr.Status.RevocationTimestamp).
+					WithPreviousSigner(*crr.Status.PreviousSigner).
+					WithConditions(conditions(crr.Status.Conditions, metav1applyconfigurations.Condition().
+						WithType(certificatesv1alpha1.PreviousCertificatesRevokedType).
+						WithStatus(metav1.ConditionFalse).
+						WithLastTransitionTime(metav1.NewTime(now())).
+						WithReason(revocationVerificationTimeoutReason).
+						WithMessage(fmt.Sprintf("Revocation verification timed out after %v waiting for KAS to reload trust bundle.", elapsed.Truncate(time.Second))),
+					)...)
+				e := event("CertificateRevocationStalled", "Revocation verification for %q signer timed out after %v.", crr.Spec.SignerClass, elapsed.Truncate(time.Second))
+				return true, &actions{event: e, crr: cfg}, false, fmt.Errorf("revocation verification timed out after %v", elapsed.Truncate(time.Second))
+			}
+			break
+		}
+	}
+
 	oldCertSecret, err := c.getSecret(namespace, crr.Status.PreviousSigner.Name)
 	if err != nil {
 		return true, nil, false, err
@@ -1033,6 +1073,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 	// that, though, and it's always valid to first check that our certificates have propagated as far
 	// as we can tell in the system before asking the KAS, since that's expensive
 	if len(trustedCertificates(totalClientTrustBundle, []*certificateSecret{{cert: oldCerts[0]}}, now)) != 0 {
+		klog.V(2).Infof("Old signer certificate still present in total-client-ca bundle for %s/%s, requeueing", namespace, name)
 		return true, nil, true, nil
 	}
 
@@ -1058,7 +1099,8 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 			return true, nil, false, err
 		}
 		if !allRevoked {
-			return true, nil, true, nil // pod transitions trigger reconciliation, but synthetic re-queue is still needed for KAS trust bundle reloads
+			klog.V(2).Infof("Not all KAS pods have rejected old signer certificate for %s/%s, requeueing", namespace, name)
+			return true, nil, true, nil
 		}
 
 		// Cross-check: verify the current signer is still trusted by all pods.
@@ -1070,7 +1112,7 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 			return true, nil, false, err
 		}
 		if !allTrusted {
-			klog.V(4).Infof("KAS pods rejected old cert but also rejected current signer cert for %s/%s; likely mid-reload, requeueing", namespace, name)
+			klog.V(2).Infof("KAS pods rejected old cert but also rejected current signer cert for %s/%s; likely mid-reload, requeueing", namespace, name)
 			return true, nil, true, nil
 		}
 	}

@@ -266,6 +266,7 @@ func validateRevocation(t *testing.T, ctx context.Context, hostedCluster *hypers
 		t.Fatalf("failed to create CRR: %v", err)
 	}
 
+	revocationStart := time.Now()
 	util.EventuallyObject(
 		t, ctx, fmt.Sprintf("CRR %s/%s to complete", hostedControlPlaneNamespace, crrName),
 		func(ctx context.Context) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
@@ -278,6 +279,7 @@ func validateRevocation(t *testing.T, ctx context.Context, hostedCluster *hypers
 			}),
 		},
 	)
+	t.Logf("CRR %s/%s revocation completed in %v", hostedControlPlaneNamespace, crrName, time.Since(revocationStart))
 
 	// Poll the SSR through the service LB until we get Unauthorized.
 	// The controller already verified per-pod that all KAS instances rejected
