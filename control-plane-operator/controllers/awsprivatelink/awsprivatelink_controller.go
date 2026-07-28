@@ -46,7 +46,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -371,7 +370,7 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
-		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
+		Watches(&hyperv1.HostedControlPlane{}, handler.EnqueueRequestsFromMapFunc(r.mapHCPToAWSEndpointServices())).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
@@ -381,30 +380,24 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return nil
 }
 
-func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-		logger := mgr.GetLogger()
-		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
-		if !isOk {
-			logger.Info("WARNING: enqueueOnAccessChange: new resource is not of type HostedControlPlane")
-			return
+func (r *AWSEndpointServiceReconciler) mapHCPToAWSEndpointServices() handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+		hcp, ok := obj.(*hyperv1.HostedControlPlane)
+		if !ok {
+			return nil
 		}
-		oldHCP, isOk := e.ObjectOld.(*hyperv1.HostedControlPlane)
-		if !isOk {
-			logger.Info("WARNING: enqueueOnAccessChange: old resource is not of type HostedControlPlane")
-			return
+		if hcp.DeletionTimestamp.IsZero() {
+			return nil
 		}
-		// Only enqueue awsendpointservices when there is a change in the endpointaccess value, otherwise ignore changes
-		if newHCP.Spec.Platform.AWS != nil && oldHCP.Spec.Platform.AWS != nil && newHCP.Spec.Platform.AWS.EndpointAccess != oldHCP.Spec.Platform.AWS.EndpointAccess {
-			awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
-			if err := r.List(context.Background(), awsEndpointServiceList, client.InNamespace(newHCP.Namespace)); err != nil {
-				logger.Error(err, "enqueueOnAccessChange: cannot list awsendpointservices")
-				return
-			}
-			for i := range awsEndpointServiceList.Items {
-				q.Add(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&awsEndpointServiceList.Items[i])})
-			}
+		awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+		if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(hcp.Namespace)); err != nil {
+			return nil
 		}
+		var requests []reconcile.Request
+		for i := range awsEndpointServiceList.Items {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&awsEndpointServiceList.Items[i])})
+		}
+		return requests
 	}
 }
 
@@ -475,6 +468,15 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	// Check if HCP is being deleted — handle cleanup before adding CR finalizer
+	hcp, err := r.getHostedControlPlane(ctx, req.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if hcp != nil && !hcp.DeletionTimestamp.IsZero() {
+		return r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, log)
+	}
+
 	// Ensure the awsEndpointService has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
 		controllerutil.AddFinalizer(awsEndpointService, finalizer)
@@ -493,19 +495,9 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// Fetch the HostedControlPlane
-	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get resource: %w", err)
-	}
-	if len(hcpList.Items) == 0 {
-		// Return early if HostedControlPlane is deleted
+	if hcp == nil {
 		return ctrl.Result{}, nil
 	}
-	if len(hcpList.Items) > 1 {
-		return ctrl.Result{}, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
-	}
-	hcp := &hcpList.Items[0]
 
 	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
@@ -555,6 +547,87 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+func (r *AWSEndpointServiceReconciler) getHostedControlPlane(ctx context.Context, namespace string) (*hyperv1.HostedControlPlane, error) {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: namespace}); err != nil {
+		return nil, fmt.Errorf("failed to list HostedControlPlanes: %w", err)
+	}
+	if len(hcpList.Items) == 0 {
+		return nil, nil
+	}
+	if len(hcpList.Items) > 1 {
+		return nil, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
+	}
+	return &hcpList.Items[0], nil
+}
+
+func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
+	if !awsEndpointService.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		r.awsClientBuilder.initializeWithHCP(log, hcp)
+		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for HCP deletion cleanup: %w", err)
+		}
+		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete AWS resources: %w", err)
+		}
+		if !completed {
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+		}
+		controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
+		if err := r.Update(ctx, awsEndpointService); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+		}
+	}
+
+	allCleanedUp, err := r.allEndpointServicesCleanedUp(ctx, awsEndpointService.Namespace, awsEndpointService.Name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if allCleanedUp {
+		originalHCP := hcp.DeepCopy()
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:    string(hyperv1.PrivateConnectivityCleanedUp),
+			Status:  metav1.ConditionTrue,
+			Reason:  "CleanupComplete",
+			Message: "All AWS PrivateLink resources have been cleaned up",
+		})
+		if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			if apierrors.IsNotFound(err) {
+				return ctrl.Result{}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to set PrivateConnectivityCleanedUp condition: %w", err)
+		}
+		log.Info("Set PrivateConnectivityCleanedUp condition on HCP")
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *AWSEndpointServiceReconciler) allEndpointServicesCleanedUp(ctx context.Context, namespace, selfName string) (bool, error) {
+	list := &hyperv1.AWSEndpointServiceList{}
+	if err := r.List(ctx, list, &client.ListOptions{Namespace: namespace}); err != nil {
+		return false, fmt.Errorf("failed to list AWSEndpointServices: %w", err)
+	}
+	for i := range list.Items {
+		if list.Items[i].Name == selfName {
+			continue
+		}
+		if controllerutil.ContainsFinalizer(&list.Items[i], finalizer) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func isAWSThrottleError(err error) bool {

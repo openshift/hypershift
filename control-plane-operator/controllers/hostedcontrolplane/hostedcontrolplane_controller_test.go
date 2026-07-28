@@ -4456,6 +4456,145 @@ func TestReconcileDeletion(t *testing.T) {
 	}
 }
 
+func TestWaitForPrivateConnectivityCleanup(t *testing.T) {
+	now := metav1.Now()
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		wantDone bool
+		wantErr  bool
+		// verifyCondition, when non-nil, is called after the function returns to
+		// verify that the expected condition was set on the HCP.
+		verifyCondition func(g Gomega, hcp *hyperv1.HostedControlPlane)
+	}{
+		{
+			name: "When condition is True, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: &now,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.PrivateConnectivityCleanedUp),
+							Status:             metav1.ConditionTrue,
+							Reason:             "CleanedUp",
+							LastTransitionTime: now,
+						},
+					},
+				},
+			},
+			wantDone: true,
+			wantErr:  false,
+		},
+		{
+			name: "When condition is False with CleanupTimedOut reason, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: &now,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               string(hyperv1.PrivateConnectivityCleanedUp),
+							Status:             metav1.ConditionFalse,
+							Reason:             privateConnectivityCleanupTimedOutMsg,
+							LastTransitionTime: now,
+						},
+					},
+				},
+			},
+			wantDone: true,
+			wantErr:  false,
+		},
+		{
+			name: "When DeletionTimestamp is nil, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+			},
+			wantDone: true,
+			wantErr:  false,
+		},
+		{
+			name: "When timeout has elapsed, it should set timed out condition and return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: ptr.To(metav1.NewTime(time.Now().Add(-15 * time.Minute))),
+				},
+			},
+			wantDone: true,
+			wantErr:  false,
+			verifyCondition: func(g Gomega, hcp *hyperv1.HostedControlPlane) {
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Reason).To(Equal(privateConnectivityCleanupTimedOutMsg))
+			},
+		},
+		{
+			name: "When waiting and not timed out, it should return not done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: ptr.To(metav1.NewTime(time.Now().Add(-1 * time.Minute))),
+				},
+			},
+			wantDone: false,
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tt.hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			// Re-read from fake client so the object has a ResourceVersion for OptimisticLock
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(tt.hcp), tt.hcp)).To(Succeed())
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.Log.WithName("test"),
+			}
+
+			done, err := r.waitForPrivateConnectivityCleanup(ctx, tt.hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(done).To(Equal(tt.wantDone))
+
+			if tt.verifyCondition != nil {
+				// Re-read from the fake client to see persisted status changes
+				g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(tt.hcp), tt.hcp)).To(Succeed())
+				tt.verifyCondition(g, tt.hcp)
+			}
+		})
+	}
+}
+
 func TestHealthCheckKASEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

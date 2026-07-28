@@ -39,6 +39,11 @@ const (
 	// A failure here may require external user intervention to resolve. E.g. cloud provider perms were corrupted. E.g. the guest cluster was broken
 	// and kube resource deletion that affects cloud infra like service type load balancer can't succeed.
 	CloudResourcesDestroyed ConditionType = "CloudResourcesDestroyed"
+	// PrivateConnectivityCleanedUp signals whether the platform's private connectivity
+	// resources (e.g. AWS PrivateLink endpoints, Azure Private Endpoints, GCP PSC
+	// endpoints) have been cleaned up during HostedControlPlane deletion. Set by the
+	// platform controller; gated with a timeout in the CPO deletion path.
+	PrivateConnectivityCleanedUp ConditionType = "PrivateConnectivityCleanedUp"
 	// HostedClusterDestroyed indicates that a hosted has finished destroying and that it is waiting for a destroy grace period to go away.
 	// The grace period is determined by the hypershift.openshift.io/destroy-grace-period annotation in the HostedCluster if present.
 	HostedClusterDestroyed ConditionType = "HostedClusterDestroyed"
