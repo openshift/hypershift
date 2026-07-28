@@ -106,7 +106,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "Cluster tags take precedence over nodepool tags",
+			name: "NodePool tags take precedence over cluster tags",
 			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				ResourceTags: []hyperv1.AWSResourceTag{
 					{Key: "cluster-only", Value: "value"},
@@ -123,7 +123,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
 				tmpl.Spec.Template.Spec.AdditionalTags["cluster-only"] = "value"
-				tmpl.Spec.Template.Spec.AdditionalTags["cluster-and-nodepool"] = "cluster"
+				tmpl.Spec.Template.Spec.AdditionalTags["cluster-and-nodepool"] = "nodepool"
 				tmpl.Spec.Template.Spec.AdditionalTags["nodepool-only"] = "value"
 			}),
 		},
@@ -2040,4 +2040,99 @@ func TestAWSMachineTemplateSpec_StreamSelection(t *testing.T) {
 	g.Expect(generateMachineTemplateName(nodePool, legacyJSON)).
 		ToNot(Equal(generateMachineTemplateName(nodePool, rhel10JSON)),
 			"different streams should produce different machine template names")
+}
+
+func TestAWSTagConflicts(t *testing.T) {
+	tests := []struct {
+		name         string
+		nodePoolTags []hyperv1.AWSResourceTag
+		clusterTags  []hyperv1.AWSResourceTag
+		expectedKeys []string
+	}{
+		{
+			name: "no tags on either side",
+		},
+		{
+			name: "no overlap",
+			nodePoolTags: []hyperv1.AWSResourceTag{
+				{Key: "np-key", Value: "np-value"},
+			},
+			clusterTags: []hyperv1.AWSResourceTag{
+				{Key: "cluster-key", Value: "cluster-value"},
+			},
+		},
+		{
+			name: "overlap with same value",
+			nodePoolTags: []hyperv1.AWSResourceTag{
+				{Key: "shared", Value: "same"},
+			},
+			clusterTags: []hyperv1.AWSResourceTag{
+				{Key: "shared", Value: "same"},
+			},
+		},
+		{
+			name: "overlap with different values",
+			nodePoolTags: []hyperv1.AWSResourceTag{
+				{Key: "env", Value: "staging"},
+				{Key: "team", Value: "np-team"},
+			},
+			clusterTags: []hyperv1.AWSResourceTag{
+				{Key: "env", Value: "prod"},
+				{Key: "team", Value: "cluster-team"},
+			},
+			expectedKeys: []string{"env", "team"},
+		},
+		{
+			name: "duplicate NodePool keys where final value matches cluster",
+			nodePoolTags: []hyperv1.AWSResourceTag{
+				{Key: "env", Value: "staging"},
+				{Key: "env", Value: "prod"},
+			},
+			clusterTags: []hyperv1.AWSResourceTag{
+				{Key: "env", Value: "prod"},
+			},
+		},
+		{
+			name: "mix of overlapping and non-overlapping",
+			nodePoolTags: []hyperv1.AWSResourceTag{
+				{Key: "np-only", Value: "value"},
+				{Key: "shared", Value: "np-value"},
+			},
+			clusterTags: []hyperv1.AWSResourceTag{
+				{Key: "cluster-only", Value: "value"},
+				{Key: "shared", Value: "cluster-value"},
+			},
+			expectedKeys: []string{"shared"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			nodePool := &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							ResourceTags: tt.nodePoolTags,
+						},
+					},
+				},
+			}
+			hostedCluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: tt.clusterTags,
+						},
+					},
+				},
+			}
+			conflicts := awsTagConflicts(nodePool, hostedCluster)
+			if tt.expectedKeys == nil {
+				g.Expect(conflicts).To(BeEmpty())
+			} else {
+				g.Expect(conflicts).To(Equal(tt.expectedKeys))
+			}
+		})
+	}
 }

@@ -3,6 +3,8 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -14,6 +16,7 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -250,7 +253,10 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 
 func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
 	tags := capiaws.Tags{}
-	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
+	for _, tag := range hostedCluster.Spec.Platform.AWS.ResourceTags {
+		tags[tag.Key] = tag.Value
+	}
+	for _, tag := range nodePool.Spec.Platform.AWS.ResourceTags {
 		tags[tag.Key] = tag.Value
 	}
 
@@ -267,6 +273,44 @@ func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hosted
 	}
 
 	return tags
+}
+
+func awsTagConflicts(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) []string {
+	clusterTags := make(map[string]string, len(hostedCluster.Spec.Platform.AWS.ResourceTags))
+	for _, tag := range hostedCluster.Spec.Platform.AWS.ResourceTags {
+		clusterTags[tag.Key] = tag.Value
+	}
+
+	// Normalize NodePool tags to last-write-wins, matching awsAdditionalTags behavior.
+	npEffective := make(map[string]string, len(nodePool.Spec.Platform.AWS.ResourceTags))
+	for _, tag := range nodePool.Spec.Platform.AWS.ResourceTags {
+		npEffective[tag.Key] = tag.Value
+	}
+
+	var conflicts []string
+	for k, npVal := range npEffective {
+		if clusterVal, ok := clusterTags[k]; ok && clusterVal != npVal {
+			conflicts = append(conflicts, k)
+		}
+	}
+	sort.Strings(conflicts)
+	return conflicts
+}
+
+func (r *NodePoolReconciler) warnOnAWSTagConflicts(ctx context.Context, nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) {
+	if hostedCluster.Spec.Platform.AWS == nil || nodePool.Spec.Platform.AWS == nil {
+		return
+	}
+
+	conflictKeys := awsTagConflicts(nodePool, hostedCluster)
+	if len(conflictKeys) == 0 {
+		return
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+	msg := fmt.Sprintf("AWS resource tag conflicts detected for keys %s; NodePool values take precedence over HostedCluster values", strings.Join(conflictKeys, ", "))
+	log.Info(msg)
+	r.recorder.Event(nodePool, corev1.EventTypeWarning, "AWSResourceTagConflict", msg)
 }
 
 func (c *CAPI) awsMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (*capiaws.AWSMachineTemplate, error) {
@@ -331,11 +375,12 @@ func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
+func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcluster.Spec.Platform.AWS == nil {
 			return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
 		}
+		r.warnOnAWSTagConflicts(ctx, nodePool, hcluster)
 		if nodePool.Spec.Platform.AWS.AMI != "" {
 			// User-defined AMIs cannot be validated
 			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
