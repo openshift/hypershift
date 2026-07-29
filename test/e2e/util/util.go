@@ -2350,7 +2350,6 @@ func waitForDaemonSetReady(t *testing.T, ctx context.Context, client crclient.Cl
 		return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", name, err)
 	}
 
-	t.Logf("✓ %s DaemonSet is ready", name)
 	return nil
 }
 
@@ -4721,10 +4720,8 @@ func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, 
 				return fmt.Errorf("ServiceMonitor HTTPS access did not return prometheus format metrics")
 			}
 
-			t.Logf("✓ Successfully retrieved metrics via ServiceMonitor HTTPS at %s", httpsServiceURL)
 			return nil
 		}, 3*time.Minute, 10*time.Second).Should(Succeed(), "should be able to get metrics via ServiceMonitor HTTPS configuration")
 
-		t.Logf("✅ Node-tuning-operator metrics endpoint validation completed successfully")
 	})
 }

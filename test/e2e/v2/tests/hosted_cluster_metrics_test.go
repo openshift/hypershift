@@ -17,7 +17,13 @@ limitations under the License.
 package tests
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +33,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	azureutil "github.com/openshift/hypershift/support/azureutil"
+	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
@@ -59,6 +66,7 @@ func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 	ValidateMetricsTest(getTestCtx)
 	EnsureMetricsForwarderWorkingTest(getTestCtx)
 	EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx)
+	EnsureKubeSchedulerMetricsEndpointTest(getTestCtx)
 }
 
 func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
@@ -302,6 +310,184 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 			}, 3*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
+}
+
+func EnsureKubeSchedulerMetricsEndpointTest(getTestCtx internal.TestContextGetter) {
+	When("kube-scheduler is running", func() {
+		It("should have functional kube-scheduler metrics endpoints", func() {
+			tc := getTestCtx()
+			tc.SkipIfVersionBelow(e2eutil.Version423)
+
+			// 1. Validate Service exists and has the "client" port
+			svc := &corev1.Service{}
+			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Name:      "kube-scheduler",
+				Namespace: tc.ControlPlaneNamespace,
+			}, svc)
+			Expect(err).NotTo(HaveOccurred(), "failed to get kube-scheduler service")
+			Expect(svc.Spec.Ports).NotTo(BeEmpty(), "kube-scheduler service should have at least one port")
+
+			var metricsPortNum int32
+			hasClientPort := false
+			for _, port := range svc.Spec.Ports {
+				if port.Name == "client" || port.Port == 10259 {
+					hasClientPort = true
+					metricsPortNum = port.Port
+					break
+				}
+			}
+			Expect(hasClientPort).To(BeTrue(),
+				"kube-scheduler service should expose a port named 'client' or on port 10259")
+
+			// 2. Validate ServiceMonitor exists with both endpoints
+			By("Validating ServiceMonitor exists with /metrics and /metrics/resources endpoints")
+			serviceMonitor := &monitoringv1.ServiceMonitor{}
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Name:      "kube-scheduler",
+				Namespace: tc.ControlPlaneNamespace,
+			}, serviceMonitor)).To(Succeed(), "kube-scheduler ServiceMonitor should exist")
+
+			foundDefaultMetrics := false
+			foundResourceMetrics := false
+			for _, ep := range serviceMonitor.Spec.Endpoints {
+				if ep.Path == "" || ep.Path == "/metrics" {
+					foundDefaultMetrics = true
+				}
+				if ep.Path == "/metrics/resources" {
+					foundResourceMetrics = true
+				}
+			}
+			Expect(foundDefaultMetrics).To(BeTrue(),
+				"ServiceMonitor should have a /metrics endpoint")
+			Expect(foundResourceMetrics).To(BeTrue(),
+				"ServiceMonitor should have a /metrics/resources endpoint")
+
+			// 3. Functional test - port-forward to the kube-scheduler pod and fetch metrics
+			// using TLS certificates from the k8s API.
+			By("Verifying the HTTPS metrics endpoints return Prometheus data")
+			for _, metricsPath := range []string{"/metrics", "/metrics/resources"} {
+				By(fmt.Sprintf("Testing kube-scheduler %s endpoint via port-forward", metricsPath))
+				Eventually(func(g Gomega) {
+					output, err := fetchMetricsViaPortForward(tc.Context, tc.MgmtClient,
+						tc.ControlPlaneNamespace, "kube-scheduler", metricsPortNum, metricsPath, "kube-scheduler")
+					g.Expect(err).NotTo(HaveOccurred(),
+						"should be able to fetch kube-scheduler metrics at %s", metricsPath)
+					g.Expect(output).NotTo(BeEmpty(),
+						"metrics response should not be empty")
+					g.Expect(output).To(ContainSubstring("# HELP"),
+						"metrics response should contain Prometheus format data")
+				}, 3*time.Minute, 10*time.Second).Should(Succeed())
+			}
+		})
+	})
+}
+
+// fetchMetricsViaPortForward port-forwards to a running control plane pod selected by
+// the "app=<componentLabel>" label in hcpNamespace and issues an mTLS GET against
+// metricsPath on podPort. It authenticates with the "metrics-client" secret and trusts
+// the "root-ca" ConfigMap, both read from hcpNamespace, and validates the server
+// certificate against tlsServerName. It returns the response body on HTTP 200.
+//
+// It returns an error (rather than failing the test) so callers can retry inside
+// Eventually(). Errors are returned when no running pod is found, the TLS material
+// cannot be loaded, the port-forward cannot be established, or the endpoint returns a
+// non-200 status.
+func fetchMetricsViaPortForward(ctx context.Context, mgmtClient crclient.Client, hcpNamespace, componentLabel string, podPort int32, metricsPath, tlsServerName string) (string, error) {
+	podList := &corev1.PodList{}
+	if err := mgmtClient.List(ctx, podList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels{"app": componentLabel}); err != nil {
+		return "", fmt.Errorf("failed to list %s pods: %w", componentLabel, err)
+	}
+	var runningPod *corev1.Pod
+	for i := range podList.Items {
+		if podList.Items[i].Status.Phase == corev1.PodRunning {
+			runningPod = &podList.Items[i]
+			break
+		}
+	}
+	if runningPod == nil {
+		return "", fmt.Errorf("no running %s pod found in namespace %s", componentLabel, hcpNamespace)
+	}
+
+	rootCA := &corev1.ConfigMap{}
+	if err := mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: "root-ca"}, rootCA); err != nil {
+		return "", fmt.Errorf("failed to get root-ca ConfigMap: %w", err)
+	}
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM([]byte(rootCA.Data["ca.crt"])) {
+		return "", fmt.Errorf("failed to parse root-ca certificate")
+	}
+
+	metricsClientSecret := &corev1.Secret{}
+	if err := mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: "metrics-client"}, metricsClientSecret); err != nil {
+		return "", fmt.Errorf("failed to get metrics-client secret: %w", err)
+	}
+	clientCert, err := tls.X509KeyPair(metricsClientSecret.Data["tls.crt"], metricsClientSecret.Data["tls.key"])
+	if err != nil {
+		return "", fmt.Errorf("failed to parse metrics-client certificate: %w", err)
+	}
+
+	restConfig, err := e2eutil.GetConfig()
+	if err != nil {
+		return "", fmt.Errorf("failed to get rest config: %w", err)
+	}
+	kubeClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "localhost:0")
+	if err != nil {
+		return "", fmt.Errorf("failed to allocate local port: %w", err)
+	}
+	localPort := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	stopChan := make(chan struct{})
+	defer close(stopChan)
+	fwd := &supportforwarder.PortForwarder{
+		Namespace: hcpNamespace,
+		PodName:   runningPod.Name,
+		Client:    kubeClient,
+		Config:    restConfig,
+		Out:       io.Discard,
+		ErrOut:    io.Discard,
+	}
+	if err := fwd.ForwardPorts([]string{fmt.Sprintf("%d:%d", localPort, podPort)}, stopChan); err != nil {
+		return "", fmt.Errorf("failed to start port-forward: %w", err)
+	}
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:      certPool,
+				Certificates: []tls.Certificate{clientCert},
+				ServerName:   tlsServerName,
+				MinVersion:   tls.VersionTLS12,
+			},
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	url := fmt.Sprintf("https://localhost:%d%s", localPort, metricsPath)
+	metricsReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request for %s: %w", url, err)
+	}
+	resp, err := httpClient.Do(metricsReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, url, string(body))
+	}
+
+	return string(body), nil
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Metrics] Hosted Cluster Metrics", Label("hosted-cluster-metrics"), func() {
