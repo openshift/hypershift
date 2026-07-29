@@ -666,3 +666,311 @@ tests:
               id: "subnet-any"
             imageType: Linux
           type: AWS
+
+  # --- AWS resourceTags duplicate key validation ---
+  - name: when resourceTags have duplicate keys it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+          type: AWS
+    expectedError: "Duplicate value"
+
+  - name: when resourceTags have unique keys it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "env"
+              value: "production"
+            - key: "team"
+              value: "platform"
+          type: AWS
+
+  onUpdate:
+  # --- AWS resourceTags ratcheting validation ---
+  - name: when updating a legit field while resourceTags have pre-existing duplicate keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+          type: AWS
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+          type: AWS
+
+  - name: when updating resourceTags to different but still-duplicate keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+          type: AWS
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "bar"
+              value: "x"
+            - key: "bar"
+              value: "y"
+          type: AWS
+
+  - name: when updating resourceTags to valid unique keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+          type: AWS
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "bar"
+              value: "baz"
+          type: AWS
+
+  - name: when adding a unique key to resourceTags with pre-existing duplicate keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+          type: AWS
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+            - key: "new-key"
+              value: "new-value"
+          type: AWS

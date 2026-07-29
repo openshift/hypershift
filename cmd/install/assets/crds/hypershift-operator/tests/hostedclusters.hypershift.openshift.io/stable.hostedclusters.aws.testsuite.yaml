@@ -1,0 +1,534 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster AWS validation"
+crdName: hostedclusters.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  # --- AWS resourceTags duplicate key validation ---
+  - name: when resourceTags have duplicate keys it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Duplicate value"
+
+  - name: when resourceTags have unique keys it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "env"
+              value: "production"
+            - key: "team"
+              value: "platform"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  onUpdate:
+  # --- AWS resourceTags ratcheting validation ---
+  - name: when updating a legit field while resourceTags have pre-existing duplicate keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: when updating resourceTags to different but still-duplicate keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "bar"
+              value: "x"
+            - key: "bar"
+              value: "y"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: when updating resourceTags to valid unique keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "bar"
+              value: "baz"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: when adding a unique key to resourceTags with pre-existing duplicate keys it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-type
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/aws/properties/resourceTags/x-kubernetes-list-map-keys
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/img
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kube
+              networkARN: arn:aws:iam::123456789012:role/net
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/np
+              storageARN: arn:aws:iam::123456789012:role/storage
+            resourceTags:
+            - key: "foo"
+              value: "bar"
+            - key: "foo"
+              value: "baz"
+            - key: "new-key"
+              value: "new-value"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+

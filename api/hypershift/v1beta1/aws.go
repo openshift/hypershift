@@ -62,6 +62,8 @@ type AWSNodePoolPlatform struct {
 	//
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
+	// +listType=map
+	// +listMapKey=key
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
 	// placement specifies the placement options for the EC2 instances.
@@ -377,6 +379,8 @@ type AWSPlatformSpec struct {
 	//
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
+	// +listType=map
+	// +listMapKey=key
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
 	// endpointAccess specifies the publishing scope of cluster endpoints. The

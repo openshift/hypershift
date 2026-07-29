@@ -46,6 +46,8 @@ type AWSEndpointServiceSpec struct {
 	// resourceTags is the list of tags to apply to the EndpointService
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=map
+	// +listMapKey=key
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
 
