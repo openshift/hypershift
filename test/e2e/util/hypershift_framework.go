@@ -247,6 +247,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if capabilities.IsNodeTuningCapabilityEnabled(hostedCluster.Spec.Capabilities) {
 			EnsureNodeTuningOperatorMetricsEndpoint(t, context.Background(), h.client, hostedCluster)
 		}
+		EnsureKubeSchedulerMetricsEndpoint(t, context.Background(), h.client, hostedCluster)
 
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
