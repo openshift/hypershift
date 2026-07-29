@@ -5,7 +5,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -55,7 +55,6 @@ func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
 	testCases := []struct {
 		config           *corev1.ConfigMap
 		auditConfig      *corev1.ConfigMap
-		authConfig       *corev1.ConfigMap
 		deploymentConfig config.DeploymentConfig
 		params           KubeAPIServerParams
 		activeKey        []byte
@@ -65,7 +64,6 @@ func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
 		{
 			config:           manifests.OpenShiftAPIServerConfig(targetNamespace),
 			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
-			authConfig:       manifests.AuthConfig(targetNamespace),
 			deploymentConfig: config.DeploymentConfig{},
 			params: KubeAPIServerParams{
 				CloudProvider: "test-cloud-provider",
@@ -78,9 +76,8 @@ func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
 		expectedMinReadySeconds := kubeAPIDeployment.Spec.MinReadySeconds
 		tc.config.Data = map[string]string{"config.json": "test-json"}
 		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-		tc.authConfig.Data = map[string]string{"auth.json": "test-data"}
 		err := ReconcileKubeAPIServerDeployment(kubeAPIDeployment, hcp, ownerRef, tc.deploymentConfig, tc.params.NamedCertificates(), tc.params.CloudProvider,
-			tc.params.CloudProviderConfig, tc.params.CloudProviderCreds, tc.params.Images, tc.config, tc.auditConfig, tc.authConfig, tc.params.AuditWebhookRef, tc.activeKey, tc.backupKey, 6443, "test-payload-version", tc.params.FeatureGate, nil, tc.params.CipherSuites())
+			tc.params.CloudProviderConfig, tc.params.CloudProviderCreds, tc.params.Images, tc.config, tc.auditConfig, tc.params.AuditWebhookRef, tc.activeKey, tc.backupKey, 6443, "test-payload-version", tc.params.FeatureGate, nil, tc.params.CipherSuites())
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(kubeAPIDeployment.Spec.MinReadySeconds))
 	}
