@@ -101,6 +101,20 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
+			name:       "When control plane endpoint is IPv6, it should bracket the address in API server URLs",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.NonePlatform)
+				hcp.Status.ControlPlaneEndpoint.Host = "fd2e:6f44:5dd8:c956::14"
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				wantURL := "https://[fd2e:6f44:5dd8:c956::14]:6443"
+				g.Expect(infra.Status.APIServerURL).To(Equal(wantURL))
+				g.Expect(infra.Status.APIServerInternalURL).To(Equal(wantURL))
+			},
+		},
+		{
 			name:       "When HCP has DNS config, it should set EtcdDiscoveryDomain from BaseDomain",
 			inputInfra: InfrastructureConfig(),
 			inputHCP:   baseHCP(hyperv1.NonePlatform),

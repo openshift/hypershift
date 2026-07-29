@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net"
+	"strconv"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/certs"
@@ -20,16 +22,20 @@ func ReconcileOAuthServerCertCABundle(cm *corev1.ConfigMap, sourceBundle *corev1
 	return nil
 }
 
+func oauthRedirectURI(path, externalHost string, externalPort int32) string {
+	return fmt.Sprintf("https://%s%s", net.JoinHostPort(externalHost, strconv.Itoa(int(externalPort))), path)
+}
+
 func ReconcileBrowserClient(client *oauthv1.OAuthClient, externalHost string, externalPort int32) error {
 	redirectURIs := []string{
-		fmt.Sprintf("https://%s:%d/oauth/token/display", externalHost, externalPort),
+		oauthRedirectURI("/oauth/token/display", externalHost, externalPort),
 	}
 	return reconcileOAuthClient(client, redirectURIs, false, true)
 }
 
 func ReconcileChallengingClient(client *oauthv1.OAuthClient, externalHost string, externalPort int32) error {
 	redirectURIs := []string{
-		fmt.Sprintf("https://%s:%d/oauth/token/implicit", externalHost, externalPort),
+		oauthRedirectURI("/oauth/token/implicit", externalHost, externalPort),
 	}
 	return reconcileOAuthClient(client, redirectURIs, true, false)
 }

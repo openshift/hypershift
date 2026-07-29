@@ -39,7 +39,7 @@ func TestAdaptOauthMetadata(t *testing.T) {
 			errSubstr: "failed to unmarshal oauth metadata",
 		},
 		{
-			name: "When OAuth host is IPv4, issuer URLs should not use brackets",
+			name: "When OAuth host is IPv4, it should leave issuer URLs unbracketed",
 			cfg: &corev1.ConfigMap{
 				Data: map[string]string{
 					OauthMetadataConfigKey: `{}`,
@@ -52,7 +52,7 @@ func TestAdaptOauthMetadata(t *testing.T) {
 			wantToken:  "https://192.0.2.10:32047/oauth/token",
 		},
 		{
-			name: "When OAuth host is IPv6, issuer URLs should bracket the address",
+			name: "When OAuth host is IPv6, it should bracket the address",
 			cfg: &corev1.ConfigMap{
 				Data: map[string]string{
 					OauthMetadataConfigKey: `{}`,
@@ -65,7 +65,7 @@ func TestAdaptOauthMetadata(t *testing.T) {
 			wantToken:  "https://[fd2e:6f44:5dd8:c956::14]:32047/oauth/token",
 		},
 		{
-			name: "When OAuth host is a hostname, issuer URLs should remain unbracketed",
+			name: "When OAuth host is a hostname, it should leave issuer URLs unbracketed",
 			cfg: &corev1.ConfigMap{
 				Data: map[string]string{
 					OauthMetadataConfigKey: `{}`,
