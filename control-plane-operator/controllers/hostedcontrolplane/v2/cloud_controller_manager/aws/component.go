@@ -31,6 +31,7 @@ func (c *awsOptions) NeedsManagementKASAccess() bool {
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &awsOptions{}).
+		WithAdaptFunction(adaptDeployment).
 		WithPredicate(predicate).
 		WithManifestAdapter(
 			"config.yaml",
