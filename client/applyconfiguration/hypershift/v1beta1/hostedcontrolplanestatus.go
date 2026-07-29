@@ -32,6 +32,7 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	ExternalManagedControlPlane    *bool                                        `json:"externalManagedControlPlane,omitempty"`
 	ControlPlaneEndpoint           *APIEndpointApplyConfiguration               `json:"controlPlaneEndpoint,omitempty"`
 	OAuthCallbackURLTemplate       *string                                      `json:"oauthCallbackURLTemplate,omitempty"`
+	ConsoleURL                     *string                                      `json:"consoleURL,omitempty"`
 	ControlPlaneVersion            *ControlPlaneVersionStatusApplyConfiguration `json:"controlPlaneVersion,omitempty"`
 	VersionStatus                  *ClusterVersionStatusApplyConfiguration      `json:"versionStatus,omitempty"`
 	Version                        *string                                      `json:"version,omitempty"`
@@ -103,6 +104,14 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithControlPlaneEndpoint(va
 // If called multiple times, the OAuthCallbackURLTemplate field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithOAuthCallbackURLTemplate(value string) *HostedControlPlaneStatusApplyConfiguration {
 	b.OAuthCallbackURLTemplate = &value
+	return b
+}
+
+// WithConsoleURL sets the ConsoleURL field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ConsoleURL field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithConsoleURL(value string) *HostedControlPlaneStatusApplyConfiguration {
+	b.ConsoleURL = &value
 	return b
 }
 

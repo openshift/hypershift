@@ -1,7 +1,10 @@
 package hcpstatus
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -209,6 +212,175 @@ func TestHCPStatusReconciler(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileConsoleURL(t *testing.T) {
+	t.Parallel()
+
+	baseObjects := func(extra ...crclient.Object) []crclient.Object {
+		objs := []crclient.Object{
+			&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
+			&configv1.Authentication{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+			},
+		}
+		return append(objs, extra...)
+	}
+
+	t.Run("When Console resource exists, it should set ConsoleURL on HCP status", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec:       hyperv1.HostedControlPlaneSpec{Capabilities: &hyperv1.Capabilities{}},
+		}
+
+		hostedClusterClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(baseObjects(&configv1.Console{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Status:     configv1.ConsoleStatus{ConsoleURL: "https://console.example.com"},
+			})...).
+			Build()
+
+		reconciler := &hcpStatusReconciler{
+			hostedClusterClient: hostedClusterClient,
+		}
+
+		err := reconciler.reconcile(t.Context(), hcp)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(hcp.Status.ConsoleURL).To(Equal("https://console.example.com"))
+
+		statusCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.DataPlaneStatusSynced))
+		g.Expect(statusCond).NotTo(BeNil(), "DataPlaneStatusSynced condition should be set")
+		g.Expect(statusCond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(statusCond.Reason).To(Equal(hyperv1.AsExpectedReason))
+	})
+
+	t.Run("When Console resource is not found, it should clear ConsoleURL without error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec:       hyperv1.HostedControlPlaneSpec{Capabilities: &hyperv1.Capabilities{}},
+			Status:     hyperv1.HostedControlPlaneStatus{ConsoleURL: "https://old.example.com"},
+		}
+
+		hostedClusterClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(baseObjects()...).
+			Build()
+
+		reconciler := &hcpStatusReconciler{
+			hostedClusterClient: hostedClusterClient,
+		}
+
+		err := reconciler.reconcile(t.Context(), hcp)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(hcp.Status.ConsoleURL).To(BeEmpty())
+		statusCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.DataPlaneStatusSynced))
+		g.Expect(statusCond).NotTo(BeNil(), "DataPlaneStatusSynced condition should be set even when Console is not found")
+		g.Expect(statusCond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(statusCond.Message).To(ContainSubstring("Console resource not found"))
+	})
+
+	t.Run("When Console resource fetch returns a generic error, it should log and continue without blocking other updates", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec:       hyperv1.HostedControlPlaneSpec{Capabilities: &hyperv1.Capabilities{}},
+			Status:     hyperv1.HostedControlPlaneStatus{ConsoleURL: "https://previous.example.com"},
+		}
+
+		hostedClusterClient := &erroringClient{
+			Client:    fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(baseObjects()...).Build(),
+			errorOn:   "Console",
+			returnErr: fmt.Errorf("connection refused"),
+		}
+
+		reconciler := &hcpStatusReconciler{
+			hostedClusterClient: hostedClusterClient,
+		}
+
+		err := reconciler.reconcile(t.Context(), hcp)
+		g.Expect(err).NotTo(HaveOccurred(), "transient Console error should not fail the reconcile")
+		g.Expect(hcp.Status.ConsoleURL).To(Equal("https://previous.example.com"),
+			"ConsoleURL should remain unchanged when Console fetch fails")
+		g.Expect(hcp.Status.Configuration).NotTo(BeNil(),
+			"Authentication/Configuration should still be populated despite Console error")
+	})
+
+	t.Run("When Console capability is disabled, it should not update ConsoleURL even if Console resource exists", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec: hyperv1.HostedControlPlaneSpec{Capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.ConsoleCapability},
+			}},
+			Status: hyperv1.HostedControlPlaneStatus{ConsoleURL: "https://existing.example.com"},
+		}
+
+		hostedClusterClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(baseObjects(&configv1.Console{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Status:     configv1.ConsoleStatus{ConsoleURL: "https://different.example.com"},
+			})...).
+			Build()
+
+		reconciler := &hcpStatusReconciler{
+			hostedClusterClient: hostedClusterClient,
+		}
+
+		err := reconciler.reconcile(t.Context(), hcp)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(hcp.Status.ConsoleURL).To(Equal("https://existing.example.com"),
+			"ConsoleURL should remain unchanged when Console capability is disabled")
+		statusCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.DataPlaneStatusSynced))
+		g.Expect(statusCond).NotTo(BeNil(), "DataPlaneStatusSynced condition should be set even when Console capability is disabled")
+		g.Expect(statusCond.Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	t.Run("When ConsoleURL exceeds MaxLength, it should not update ConsoleURL", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec:       hyperv1.HostedControlPlaneSpec{Capabilities: &hyperv1.Capabilities{}},
+			Status:     hyperv1.HostedControlPlaneStatus{ConsoleURL: "https://previous.example.com"},
+		}
+
+		longURL := "https://console." + string(make([]byte, 4097))
+		hostedClusterClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(baseObjects(&configv1.Console{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Status:     configv1.ConsoleStatus{ConsoleURL: longURL},
+			})...).
+			Build()
+
+		reconciler := &hcpStatusReconciler{
+			hostedClusterClient: hostedClusterClient,
+		}
+
+		err := reconciler.reconcile(t.Context(), hcp)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(hcp.Status.ConsoleURL).To(Equal("https://previous.example.com"),
+			"ConsoleURL should remain unchanged when value exceeds MaxLength")
+
+		statusCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.DataPlaneStatusSynced))
+		g.Expect(statusCond).NotTo(BeNil(), "DataPlaneStatusSynced condition should be set")
+		g.Expect(statusCond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(statusCond.Reason).To(Equal(hyperv1.DataPlaneStatusSyncFailedReason))
+		g.Expect(statusCond.Message).To(ContainSubstring("ConsoleURL"))
+	})
 }
 
 func TestBuildStatusPatch(t *testing.T) {
@@ -538,4 +710,19 @@ func TestBuildStatusPatch(t *testing.T) {
 			"/status/releaseImage",
 		))
 	})
+}
+
+// erroringClient wraps a crclient.Client and returns a specific error when
+// Get is called for an object whose kind name contains the errorOn string.
+type erroringClient struct {
+	crclient.Client
+	errorOn   string
+	returnErr error
+}
+
+func (e *erroringClient) Get(ctx context.Context, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+	if reflect.TypeOf(obj).Elem().Name() == e.errorOn {
+		return e.returnErr
+	}
+	return e.Client.Get(ctx, key, obj, opts...)
 }
