@@ -84,7 +84,7 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		// Assert NO drift during CP upgrade. Unpinned NodeClaims should not detect
 		// drift until the control plane upgrade completes, because the ignition config
 		// hash is derived from the completed release image, not the desired one.
-		noDriftCancel, noDriftDone := assertNodeClaimsNotDrifted(t, ctx, guestClient, nodeClaims)
+		noDriftCancel, noDriftDone := assertNodeClaimsNotDrifted(t, ctx, guestClient, nodeClaims, cancel)
 
 		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
 		noDriftCancel()

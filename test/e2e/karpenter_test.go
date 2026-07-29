@@ -1643,8 +1643,10 @@ func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.
 
 // assertNodeClaimsNotDrifted starts a background goroutine that polls NodeClaims every
 // 10 seconds and fails the test if any NodeClaim has the Drifted condition set to True.
+// When premature drift is detected, it calls cancelOnDrift (if non-nil) to abort the
+// parent context, avoiding wasted e2e time on a known-failed run.
 // Returns a cancel function to stop polling and a channel that closes when the goroutine exits.
-func assertNodeClaimsNotDrifted(t *testing.T, ctx context.Context, client crclient.Client, nodeClaims *karpenterv1.NodeClaimList) (context.CancelFunc, <-chan struct{}) {
+func assertNodeClaimsNotDrifted(t *testing.T, ctx context.Context, client crclient.Client, nodeClaims *karpenterv1.NodeClaimList, cancelOnDrift context.CancelFunc) (context.CancelFunc, <-chan struct{}) {
 	noDriftCtx, noDriftCancel := context.WithCancel(ctx)
 	noDriftDone := make(chan struct{})
 	go func() {
@@ -1668,6 +1670,9 @@ func assertNodeClaimsNotDrifted(t *testing.T, ctx context.Context, client crclie
 					for _, c := range conditions {
 						if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
 							t.Errorf("NodeClaim %s detected drift BEFORE CP upgrade completed", nodeClaims.Items[i].Name)
+							if cancelOnDrift != nil {
+								cancelOnDrift()
+							}
 							return
 						}
 					}
