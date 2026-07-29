@@ -46,5 +46,5 @@ dependency closure, not just the three plugins imported directly.
    pip install --dry-run --ignore-installed --require-hashes -r docs/requirements.txt
    ```
 
-4. Confirm the docs still build: `cd docs && mkdocs build --strict`
-   (after installing the regenerated requirements into your environment).
+4. Confirm the docs still build: `cd docs && mkdocs build --strict` (after installing the regenerated requirements into
+   your environment).
