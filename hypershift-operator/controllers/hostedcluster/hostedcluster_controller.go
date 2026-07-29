@@ -5273,7 +5273,7 @@ func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Cont
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot decode private key in secret %s: %w", signingKeySecret.Name, err)
 	}
-	publicKeyPEMBytes, err := certs.PublicKeyToPem(&privateKey.PublicKey)
+	publicKeyPEMBytes, err := certs.PublicKeyToPem(privateKey.Public())
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot serialize public key from private key %s: %w", signingKeySecret.Name, err)
 	}

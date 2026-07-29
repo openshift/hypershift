@@ -2,6 +2,7 @@ package certs
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
@@ -20,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/client-go/util/keyutil"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -86,7 +88,7 @@ func GenerateSelfSignedCertificate(cfg *CertCfg) (*rsa.PrivateKey, *x509.Certifi
 }
 
 // GenerateSignedCertificate generate a key and cert defined by CertCfg and signed by CA.
-func GenerateSignedCertificate(caKey *rsa.PrivateKey, caCert *x509.Certificate,
+func GenerateSignedCertificate(caKey crypto.Signer, caCert *x509.Certificate,
 	cfg *CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
 
 	// create a private key
@@ -166,7 +168,7 @@ func signedCertificate(
 	csr *x509.CertificateRequest,
 	key *rsa.PrivateKey,
 	caCert *x509.Certificate,
-	caKey *rsa.PrivateKey,
+	caKey crypto.Signer,
 ) (*x509.Certificate, error) {
 	serial, err := rand.Int(Reader(), new(big.Int).SetInt64(math.MaxInt64))
 	if err != nil {
@@ -231,28 +233,33 @@ func CertToPem(cert *x509.Certificate) []byte {
 	return certInPem
 }
 
-// PublicKeyToPem converts a rsa.PublicKey object to pem string
-func PublicKeyToPem(key *rsa.PublicKey) ([]byte, error) {
+// PublicKeyToPem converts a crypto.PublicKey to a PEM-encoded PKIX public key.
+func PublicKeyToPem(key crypto.PublicKey) ([]byte, error) {
 	keyInBytes, err := x509.MarshalPKIXPublicKey(key)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to MarshalPKIXPublicKey")
 	}
 	keyinPem := pem.EncodeToMemory(
 		&pem.Block{
-			Type:  "RSA PUBLIC KEY",
+			Type:  "PUBLIC KEY",
 			Bytes: keyInBytes,
 		},
 	)
 	return keyinPem, nil
 }
 
-// PemToPrivateKey converts a data block to rsa.PrivateKey.
-func PemToPrivateKey(data []byte) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode(data)
-	if block == nil {
-		return nil, errors.Errorf("could not find a PEM block in the private key")
+// PemToPrivateKey parses a PEM-encoded private key. Supports RSA (PKCS#1),
+// ECDSA (SEC 1), and PKCS#8 encoded keys.
+func PemToPrivateKey(data []byte) (crypto.Signer, error) {
+	key, err := keyutil.ParsePrivateKeyPEM(data)
+	if err != nil {
+		return nil, err
 	}
-	return x509.ParsePKCS1PrivateKey(block.Bytes)
+	signer, ok := key.(crypto.Signer)
+	if !ok {
+		return nil, fmt.Errorf("parsed key type %T does not implement crypto.Signer", key)
+	}
+	return signer, nil
 }
 
 // PemToCertificate converts a data block to x509.Certificate.
@@ -268,7 +275,7 @@ func Base64(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-func parsePemKeypair(key, certificate []byte) (*rsa.PrivateKey, *x509.Certificate, error) {
+func parsePemKeypair(key, certificate []byte) (crypto.Signer, *x509.Certificate, error) {
 	privKey, err := PemToPrivateKey(key)
 	if err != nil {
 		return nil, nil, err
@@ -277,13 +284,16 @@ func parsePemKeypair(key, certificate []byte) (*rsa.PrivateKey, *x509.Certificat
 	if err != nil {
 		return nil, nil, err
 	}
-	rsaPublicKey, ok := cert.PublicKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, nil, fmt.Errorf("certificate does not have a RSA public key but a %T, not supported", cert.PublicKey)
-	}
 
-	// https://cs.opensource.google/go/go/+/refs/tags/go1.17.5:src/crypto/tls/tls.go;drc=860704317e02d699e4e4a24103853c4782d746c1;l=310
-	if rsaPublicKey.N.Cmp(privKey.N) != 0 {
+	pubFromKey, err := x509.MarshalPKIXPublicKey(privKey.Public())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal public key from private key: %w", err)
+	}
+	pubFromCert, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal public key from certificate: %w", err)
+	}
+	if !bytes.Equal(pubFromKey, pubFromCert) {
 		return nil, nil, errors.New("private key does not match certificate")
 	}
 
@@ -512,7 +522,7 @@ func annotateWithCA(secret, ca *corev1.Secret, opts *CAOpts) {
 	secret.Annotations[CAHashAnnotation] = computeCAHash(ca, opts)
 }
 
-func decodeCA(ca *corev1.Secret, opts *CAOpts) (*x509.Certificate, *rsa.PrivateKey, error) {
+func decodeCA(ca *corev1.Secret, opts *CAOpts) (*x509.Certificate, crypto.Signer, error) {
 	crt, err := PemToCertificate(ca.Data[opts.CASignerCertMapKey])
 	if err != nil {
 		return nil, nil, err
