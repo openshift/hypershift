@@ -129,13 +129,15 @@ spec:
           name: tmp
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: token
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          name: root-ca
+          subPath: ca.crt
         - mountPath: /etc/aws
           name: credentials
+      enableServiceLinks: false
+      initContainers:
       - args:
         - |
-          # Extract CA certificate from kubeconfig and write to expected location
-          grep certificate-authority-data /etc/kubernetes/kubeconfig | awk '{print $2}' | base64 -d > /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-
           /usr/bin/control-plane-operator token-minter \
             --service-account-namespace=openshift-cluster-version \
             --service-account-name=default \
@@ -152,17 +154,24 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
-        securityContext:
-          readOnlyRootFilesystem: true
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /var/run/secrets/kubernetes.io/serviceaccount/token
+          failureThreshold: 30
+          periodSeconds: 1
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: token
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          name: root-ca
+          subPath: ca.crt
         - mountPath: /etc/kubernetes
           name: svc-kubeconfig
-        - mountPath: /tmp
-          name: tmp-dir
-      enableServiceLinks: false
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: hypershift-control-plane
@@ -189,6 +198,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: aws-node-termination-handler-creds
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}
