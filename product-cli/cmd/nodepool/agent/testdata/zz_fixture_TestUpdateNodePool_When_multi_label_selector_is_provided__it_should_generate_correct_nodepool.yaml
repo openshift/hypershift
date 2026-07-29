@@ -1,0 +1,9 @@
+agentLabelSelector:
+  matchExpressions:
+  - key: zone
+    operator: NotIn
+    values:
+    - az1
+    - az2
+  matchLabels:
+    size: large
