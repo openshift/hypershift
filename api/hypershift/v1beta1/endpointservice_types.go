@@ -43,9 +43,12 @@ type AWSEndpointServiceSpec struct {
 	// +kubebuilder:validation:items:MaxLength=63
 	SubnetIDs []string `json:"subnetIDs,omitempty"`
 
-	// resourceTags is the list of tags to apply to the EndpointService
+	// resourceTags is the list of tags to apply to the EndpointService.
+	// The overridePolicy field is not supported on AWSEndpointService-level tags;
+	// it only applies to HostedCluster tags to control NodePool tag precedence.
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:XValidation:rule="self.all(t, !has(t.overridePolicy))",message="overridePolicy is not supported on AWSEndpointService-level tags; set it on the HostedCluster tag instead"
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
 

@@ -16,7 +16,6 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -253,11 +252,19 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 
 func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
 	tags := capiaws.Tags{}
+
+	// Build an index of HC tags that allow override.
+	hcOverrides := make(map[string]bool, len(hostedCluster.Spec.Platform.AWS.ResourceTags))
 	for _, tag := range hostedCluster.Spec.Platform.AWS.ResourceTags {
 		tags[tag.Key] = tag.Value
+		hcOverrides[tag.Key] = tag.OverridePolicy == hyperv1.AWSResourceTagOverridePolicyAllow
 	}
+
 	for _, tag := range nodePool.Spec.Platform.AWS.ResourceTags {
-		tags[tag.Key] = tag.Value
+		allowOverride, isHCTag := hcOverrides[tag.Key]
+		if !isHCTag || allowOverride {
+			tags[tag.Key] = tag.Value
+		}
 	}
 
 	// We enforce the AWS cluster cloud provider tag here.
@@ -275,42 +282,80 @@ func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hosted
 	return tags
 }
 
-func awsTagConflicts(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) []string {
-	clusterTags := make(map[string]string, len(hostedCluster.Spec.Platform.AWS.ResourceTags))
+// awsTagConflictResult categorizes tag conflicts by their override status.
+type awsTagConflictResult struct {
+	// blocked are keys where the HC tag disallows override (HC value preserved).
+	blocked []string
+	// overridden are keys where the HC tag allows override (NP value used).
+	overridden []string
+}
+
+func awsTagConflicts(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) awsTagConflictResult {
+	type hcTag struct {
+		value          string
+		overridePolicy hyperv1.AWSResourceTagOverridePolicy
+	}
+	clusterTags := make(map[string]hcTag, len(hostedCluster.Spec.Platform.AWS.ResourceTags))
 	for _, tag := range hostedCluster.Spec.Platform.AWS.ResourceTags {
-		clusterTags[tag.Key] = tag.Value
+		clusterTags[tag.Key] = hcTag{value: tag.Value, overridePolicy: tag.OverridePolicy}
 	}
 
-	// Normalize NodePool tags to last-write-wins, matching awsAdditionalTags behavior.
 	npEffective := make(map[string]string, len(nodePool.Spec.Platform.AWS.ResourceTags))
 	for _, tag := range nodePool.Spec.Platform.AWS.ResourceTags {
 		npEffective[tag.Key] = tag.Value
 	}
 
-	var conflicts []string
+	var result awsTagConflictResult
 	for k, npVal := range npEffective {
-		if clusterVal, ok := clusterTags[k]; ok && clusterVal != npVal {
-			conflicts = append(conflicts, k)
+		hc, ok := clusterTags[k]
+		if !ok || hc.value == npVal {
+			continue
+		}
+		if hc.overridePolicy == hyperv1.AWSResourceTagOverridePolicyAllow {
+			result.overridden = append(result.overridden, k)
+		} else {
+			result.blocked = append(result.blocked, k)
 		}
 	}
-	sort.Strings(conflicts)
-	return conflicts
+	sort.Strings(result.blocked)
+	sort.Strings(result.overridden)
+	return result
 }
 
-func (r *NodePoolReconciler) warnOnAWSTagConflicts(ctx context.Context, nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) {
+func setAWSResourceTagConflictCondition(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) {
 	if hostedCluster.Spec.Platform.AWS == nil || nodePool.Spec.Platform.AWS == nil {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolAWSResourceTagConflictConditionType)
 		return
 	}
 
-	conflictKeys := awsTagConflicts(nodePool, hostedCluster)
-	if len(conflictKeys) == 0 {
+	conflicts := awsTagConflicts(nodePool, hostedCluster)
+
+	if len(conflicts.blocked) == 0 {
+		msg := "No AWS resource tag conflicts detected"
+		if len(conflicts.overridden) > 0 {
+			msg = fmt.Sprintf("AWS resource tag overrides applied for keys %s; NodePool values used (allowed by HostedCluster)", strings.Join(conflicts.overridden, ", "))
+		}
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolAWSResourceTagConflictConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AWSResourceTagNoConflictReason,
+			Message:            msg,
+			ObservedGeneration: nodePool.Generation,
+		})
 		return
 	}
 
-	log := ctrl.LoggerFrom(ctx)
-	msg := fmt.Sprintf("AWS resource tag conflicts detected for keys %s; NodePool values take precedence over HostedCluster values", strings.Join(conflictKeys, ", "))
-	log.Info(msg)
-	r.recorder.Event(nodePool, corev1.EventTypeWarning, "AWSResourceTagConflict", msg)
+	msg := fmt.Sprintf("AWS resource tag conflicts detected for keys %s; HostedCluster values preserved (override not allowed)", strings.Join(conflicts.blocked, ", "))
+	if len(conflicts.overridden) > 0 {
+		msg += fmt.Sprintf("; overrides applied for keys %s (allowed by HostedCluster)", strings.Join(conflicts.overridden, ", "))
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolAWSResourceTagConflictConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AWSResourceTagConflictDetectedReason,
+		Message:            msg,
+		ObservedGeneration: nodePool.Generation,
+	})
 }
 
 func (c *CAPI) awsMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (*capiaws.AWSMachineTemplate, error) {
@@ -375,12 +420,12 @@ func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
+func (r *NodePoolReconciler) setAWSConditions(_ context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcluster.Spec.Platform.AWS == nil {
 			return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.AWS, this is unsupported")
 		}
-		r.warnOnAWSTagConflicts(ctx, nodePool, hcluster)
+		setAWSResourceTagConflictCondition(nodePool, hcluster)
 		if nodePool.Spec.Platform.AWS.AMI != "" {
 			// User-defined AMIs cannot be validated
 			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
