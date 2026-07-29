@@ -183,6 +183,19 @@ var (
 	LoadBalancerTypeDisabled = LoadBalancerType("disabled")
 )
 
+// AWSLoadBalancerDNSResolutionCheck specifies the behavior for checking that the load balancer's
+// DNS name is resolvable.
+type AWSLoadBalancerDNSResolutionCheck string
+
+const (
+	// AWSLoadBalancerDNSResolutionCheckNone disables the DNS resolution verification step.
+	AWSLoadBalancerDNSResolutionCheckNone AWSLoadBalancerDNSResolutionCheck = "None"
+
+	// AWSLoadBalancerDNSResolutionCheckEnabled performs a DNS lookup against the load balancer's
+	// FQDN to ensure the record has propagated and is reachable.
+	AWSLoadBalancerDNSResolutionCheckEnabled AWSLoadBalancerDNSResolutionCheck = "Enabled"
+)
+
 // AWSLoadBalancerSpec defines the desired state of an AWS load balancer.
 type AWSLoadBalancerSpec struct {
 	// Name sets the name of the classic ELB load balancer. As per AWS, the name must be unique
@@ -262,6 +275,13 @@ type AWSLoadBalancerSpec struct {
 	// +kubebuilder:validation:Enum=ipv4;ipv6
 	// +optional
 	TargetGroupIPType *TargetGroupIPType `json:"targetGroupIPType,omitempty"`
+
+	// DNSResolutionCheck configures the behavior for checking the load balancer DNS resolution.
+	// Set to "None" to disable the check.
+	// If omitted, the DNS resolution check is enabled.
+	// +kubebuilder:validation:Enum=None;Enabled
+	// +optional
+	DNSResolutionCheck *AWSLoadBalancerDNSResolutionCheck `json:"dnsResolutionCheck,omitempty"`
 }
 
 // AdditionalListenerSpec defines the desired state of an
@@ -301,6 +321,26 @@ type AWSClusterStatus struct {
 	Conditions     clusterv1beta1.Conditions     `json:"conditions,omitempty"`
 }
 
+// AdditionalIAMRole defines an additional IAM role
+// with a custom S3 prefix for accessing bootstrap data from S3 Bucket.
+// This enables support for custom node pools (e.g., Karpenter) that need
+// access to bootstrap data with custom S3 prefixes.
+type AdditionalIAMRole struct {
+	// Name is the name of the IAM role that will be granted access.
+	// This must match the IAM role name (not the ARN).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[\w+=,.@-]+$`
+	Name string `json:"name"`
+
+	// Prefix is the S3 object key prefix (path) this role is granted access to.
+	// It is appended to the bucket in the policy's resource ARN, so use a trailing "/*"
+	// for wildcard access to a path (e.g. "karpenter-nodes/*") or "*" for the whole bucket.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	Prefix string `json:"prefix"`
+}
+
 // S3Bucket defines a supporting S3 bucket for the cluster, currently can be optionally used for Ignition.
 type S3Bucket struct {
 	// ControlPlaneIAMInstanceProfile is a name of the IAMInstanceProfile, which will be allowed
@@ -312,6 +352,16 @@ type S3Bucket struct {
 	// worker nodes bootstrap data from S3 Bucket.
 	// +optional
 	NodesIAMInstanceProfiles []string `json:"nodesIAMInstanceProfiles,omitempty"`
+
+	// AdditionalIAMRoles is a list of additional IAM roles
+	// with custom S3 prefixes for accessing bootstrap data.
+	// This is useful for custom node pools (e.g., Karpenter) that need access
+	// to bootstrap data stored under custom prefixes.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +listMapKey=prefix
+	AdditionalIAMRoles []AdditionalIAMRole `json:"additionalIAMRoles,omitempty"`
 
 	// PresignedURLDuration defines the duration for which presigned URLs are valid.
 	//

@@ -82,6 +82,17 @@ const (
 	FIPSDisabled FIPSState = "Disabled"
 )
 
+// DeleteProtectionState represents whether delete protection is enabled for the ROSA cluster.
+type DeleteProtectionState string
+
+const (
+	// DeleteProtectionEnabled indicates delete protection is enabled.
+	DeleteProtectionEnabled DeleteProtectionState = "Enabled"
+
+	// DeleteProtectionDisabled indicates delete protection is disabled.
+	DeleteProtectionDisabled DeleteProtectionState = "Disabled"
+)
+
 // AutoNodeMode specifies the AutoNode mode for the ROSA Control Plane.
 type AutoNodeMode string
 
@@ -202,6 +213,15 @@ type RosaControlPlaneSpec struct { //nolint: maligned
 	// +optional
 	EnableExternalAuthProviders bool `json:"enableExternalAuthProviders,omitempty"`
 
+	// DeleteProtection prevents accidental ROSA cluster deletion.
+	// When set to "Enabled", the ROSA cluster cannot be deleted through OCM.
+	// Defaults to "Disabled".
+	//
+	// +kubebuilder:default=Disabled
+	// +kubebuilder:validation:Enum=Enabled;Disabled
+	// +optional
+	DeleteProtection DeleteProtectionState `json:"deleteProtection,omitempty"`
+
 	// ExternalAuthProviders are external OIDC identity providers that can issue tokens for this cluster.
 	// Can only be set if "enableExternalAuthProviders" is set to "True".
 	//
@@ -225,6 +245,23 @@ type RosaControlPlaneSpec struct { //nolint: maligned
 	// Required if RosaRoleConfigRef is not specified.
 	// +optional
 	WorkerRoleARN string `json:"workerRoleARN,omitempty"`
+
+	// TrustPolicyExternalID is an optional STS external ID that OCM will use when assuming
+	// the installer and support account roles.
+	// When using RosaRoleConfigRef, this field is ignored, the value is always read from
+	// the ROSARoleConfig, which owns the trust policies.
+	// When providing role ARNs directly (no RosaRoleConfigRef), the user is responsible for
+	// including the sts:ExternalId condition in the roles' trust policies; this field only
+	// tells OCM which external ID to present when assuming the roles.
+	// Worker roles are not affected.
+	// Must be 2–1224 characters matching [a-zA-Z0-9=,.@:/-]+ per AWS STS requirements.
+	//
+	// +kubebuilder:validation:MinLength=2
+	// +kubebuilder:validation:MaxLength=1224
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9=,.@:\/-]+$`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="trustPolicyExternalID is immutable"
+	// +optional
+	TrustPolicyExternalID string `json:"trustPolicyExternalID,omitempty"`
 
 	// BillingAccount is an optional AWS account to use for billing the subscription fees for ROSA HCP clusters.
 	// The cost of running each ROSA HCP cluster will be billed to the infrastructure account in which the cluster
