@@ -3,12 +3,18 @@ package aws
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -104,61 +110,61 @@ func TestGetCredentialStatus(t *testing.T) {
 		expectedResult CredentialStatus
 	}{
 		{
-			name:                                    "When both conditions are True, return Valid",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			name:                                    "When both conditions are True, it should return Valid",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionTrue),
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionTrue),
 			expectedResult:                          CredentialStatusValid,
 		},
 		{
-			name:                                    "When OIDC is False, return Invalid",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			name:                                    "When OIDC is False, it should return Invalid",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionFalse),
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionTrue),
 			expectedResult:                          CredentialStatusInvalid,
 		},
 		{
-			name:                                    "When AWS Identity Provider is False, return Invalid",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			name:                                    "When AWS Identity Provider is False, it should return Invalid",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionTrue),
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionFalse),
 			expectedResult:                          CredentialStatusInvalid,
 		},
 		{
-			name:                                    "When both are False, return Invalid",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			name:                                    "When both are False, it should return Invalid",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionFalse),
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionFalse),
 			expectedResult:                          CredentialStatusInvalid,
 		},
 		{
-			name:                                    "When OIDC is Unknown, return Unknown",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			name:                                    "When OIDC is Unknown, it should return Unknown",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionUnknown),
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionTrue),
 			expectedResult:                          CredentialStatusUnknown,
 		},
 		{
-			name:                                    "When AWS Identity Provider is Unknown, return Unknown",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
+			name:                                    "When AWS Identity Provider is Unknown, it should return Unknown",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionTrue),
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionUnknown),
 			expectedResult:                          CredentialStatusUnknown,
 		},
 		{
-			name:                                    "When both are Unknown, return Unknown",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
+			name:                                    "When both are Unknown, it should return Unknown",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionUnknown),
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionUnknown),
 			expectedResult:                          CredentialStatusUnknown,
 		},
 		{
-			name:                                    "When OIDC condition is missing, return Unknown",
+			name:                                    "When OIDC condition is missing, it should return Unknown",
 			ValidOIDCConfigurationConditionStatus:   nil,
-			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			ValidAWSIdentityProviderConditionStatus: ptr.To(metav1.ConditionTrue),
 			expectedResult:                          CredentialStatusUnknown,
 		},
 		{
-			name:                                    "When AWS Identity Provider condition is missing, return Unknown",
-			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			name:                                    "When AWS Identity Provider condition is missing, it should return Unknown",
+			ValidOIDCConfigurationConditionStatus:   ptr.To(metav1.ConditionTrue),
 			ValidAWSIdentityProviderConditionStatus: nil,
 			expectedResult:                          CredentialStatusUnknown,
 		},
 		{
-			name:                                    "When both conditions are missing, return Unknown",
+			name:                                    "When both conditions are missing, it should return Unknown",
 			ValidOIDCConfigurationConditionStatus:   nil,
 			ValidAWSIdentityProviderConditionStatus: nil,
 			expectedResult:                          CredentialStatusUnknown,
@@ -245,6 +251,135 @@ region = us-east-1
 			}
 			if creds != tt.want {
 				t.Errorf("expected creds:\n%s, but got:\n%s", tt.want, creds)
+			}
+		})
+	}
+}
+
+func hostedClusterWithCredentialConditions(oidcStatus, awsIdpStatus metav1.ConditionStatus) *hyperv1.HostedCluster {
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
+	}
+	meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ValidOIDCConfiguration),
+		Status: oidcStatus,
+		Reason: "test",
+	})
+	meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ValidAWSIdentityProvider),
+		Status: awsIdpStatus,
+		Reason: "test",
+	})
+	return hc
+}
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	namespace := "clusters-test"
+	deletionTime := metav1.Now()
+
+	tests := []struct {
+		name                    string
+		hc                      *hyperv1.HostedCluster
+		machines                []capiaws.AWSMachine
+		expectErr               bool
+		expectFinalizersCleared bool
+	}{
+		{
+			name: "When credentials are valid, it should skip cleanup",
+			hc:   hostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
+			machines: []capiaws.AWSMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         namespace,
+						DeletionTimestamp: &deletionTime,
+						Finalizers:        []string{"test-finalizer"},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "machine-2",
+						Namespace:  namespace,
+						Finalizers: []string{"test-finalizer"},
+					},
+				},
+			},
+			expectFinalizersCleared: false,
+		},
+		{
+			name: "When credentials are invalid and machines have deletion timestamps, it should clear finalizers",
+			hc:   hostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
+			machines: []capiaws.AWSMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         namespace,
+						DeletionTimestamp: &deletionTime,
+						Finalizers:        []string{"test-finalizer"},
+					},
+				},
+			},
+			expectFinalizersCleared: true,
+		},
+		{
+			name: "When credentials are invalid and machines have no deletion timestamps, it should not modify them",
+			hc:   hostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
+			machines: []capiaws.AWSMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "machine-1",
+						Namespace:  namespace,
+						Finalizers: []string{"test-finalizer"},
+					},
+				},
+			},
+			expectFinalizersCleared: false,
+		},
+		{
+			name:                    "When no AWSMachines exist, it should return nil",
+			hc:                      hostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
+			machines:                []capiaws.AWSMachine{},
+			expectFinalizersCleared: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			objects := []crclient.Object{}
+			for i := range tc.machines {
+				objects = append(objects, &tc.machines[i])
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				Build()
+
+			a := AWS{}
+			err := a.DeleteOrphanedMachines(t.Context(), fakeClient, tc.hc, namespace)
+
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tc.expectFinalizersCleared {
+				var machineList capiaws.AWSMachineList
+				g.Expect(fakeClient.List(t.Context(), &machineList, crclient.InNamespace(namespace))).To(Succeed())
+				for _, m := range machineList.Items {
+					g.Expect(m.Finalizers).To(BeEmpty(), "expected finalizers to be cleared on machine %s", m.Name)
+				}
+			}
+
+			if !tc.expectFinalizersCleared && len(tc.machines) > 0 {
+				var machineList capiaws.AWSMachineList
+				g.Expect(fakeClient.List(t.Context(), &machineList, crclient.InNamespace(namespace))).To(Succeed())
+				for _, m := range machineList.Items {
+					g.Expect(m.Finalizers).To(ContainElement("test-finalizer"), "expected finalizers to be preserved on machine %s", m.Name)
+				}
 			}
 		})
 	}
