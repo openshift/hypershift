@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -63,38 +62,20 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 				Skip("global pull secret test is only supported on public clusters")
 			}
 
-			additionalPullSecretFile := internal.GetEnvVarValue("E2E_ADDITIONAL_PULL_SECRET_FILE")
-			if additionalPullSecretFile == "" {
-				Skip("E2E_ADDITIONAL_PULL_SECRET_FILE not set, skipping global pull secret test")
-			}
-
-			additionalPullSecretData, err := os.ReadFile(additionalPullSecretFile)
-			Expect(err).NotTo(HaveOccurred(), "failed to read additional pull secret file %s", additionalPullSecretFile)
-
 			tc.ValidateHostedClusterClient()
 			hcClient := tc.GetHostedClusterClient()
 
-			npList := &hyperv1.NodePoolList{}
-			Expect(tc.MgmtClient.List(tc.Context, npList, crclient.InNamespace(hc.Namespace))).To(Succeed(),
-				"failed to list NodePools")
-			Expect(npList.Items).NotTo(BeEmpty(), "expected at least one NodePool")
-
-			var np *hyperv1.NodePool
-			for i := range npList.Items {
-				candidate := &npList.Items[i]
-				if candidate.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace &&
-					candidate.Spec.Replicas != nil &&
-					*candidate.Spec.Replicas > 0 {
-					np = candidate
-					break
-				}
-			}
-			if np == nil {
+			np := getDefaultNodePool(tc.Context, tc.MgmtClient, hc)
+			if np == nil ||
+				np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace ||
+				np.Spec.Replicas == nil ||
+				*np.Spec.Replicas == 0 {
 				Skip("no suitable NodePool found (need non-InPlace upgrade type with replicas > 0)")
 			}
 			nodeCount := *np.Spec.Replicas
 
 			var dummyPullSecretData = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
+			var updatedPullSecretData = []byte(`{"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNzd29yZA=="}}}`)
 
 			By("verifying in-place management-cluster pull secret propagation without rollout")
 			if !e2eutil.IsLessThan(e2eutil.Version422) {
@@ -132,7 +113,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			additionalPS := hccomanifests.AdditionalPullSecret()
 			Expect(hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(additionalPS), additionalPS)).To(Succeed(),
 				"failed to get additional-pull-secret")
-			additionalPS.Data[corev1.DockerConfigJsonKey] = additionalPullSecretData
+			additionalPS.Data[corev1.DockerConfigJsonKey] = updatedPullSecretData
 			Expect(hcClient.Update(tc.Context, additionalPS)).To(Succeed(),
 				"failed to update additional-pull-secret with valid data")
 
@@ -249,25 +230,27 @@ func verifyPullSecretPropagation(tc *internal.TestContext, hc *hyperv1.HostedClu
 	}, 150*time.Second, 5*time.Second).Should(BeTrue(),
 		"kube-system/original-pull-secret did not propagate dummy entry")
 
-	nodePool := &hyperv1.NodePool{}
-	Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(np), nodePool)).To(Succeed())
-	foundUpdatingConfig := false
-	for _, cond := range nodePool.Status.Conditions {
-		if cond.Type == hyperv1.NodePoolUpdatingConfigConditionType {
-			foundUpdatingConfig = true
-			Expect(string(cond.Status)).To(Equal(string(metav1.ConditionFalse)),
-				"UpdatingConfig should be False — in-place pull secret update must not trigger a rollout")
-			break
+	Consistently(func(g Gomega) {
+		nodePool := &hyperv1.NodePool{}
+		g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(np), nodePool)).To(Succeed())
+		foundUpdatingConfig := false
+		for _, cond := range nodePool.Status.Conditions {
+			if cond.Type == hyperv1.NodePoolUpdatingConfigConditionType {
+				foundUpdatingConfig = true
+				g.Expect(string(cond.Status)).To(Equal(string(metav1.ConditionFalse)),
+					"UpdatingConfig should be False — in-place pull secret update must not trigger a rollout")
+				break
+			}
 		}
-	}
-	Expect(foundUpdatingConfig).To(BeTrue(),
-		"NodePool %s should have UpdatingConfig condition", nodePool.Name)
+		g.Expect(foundUpdatingConfig).To(BeTrue(),
+			"NodePool %s should have UpdatingConfig condition", nodePool.Name)
+	}, 10*time.Second, time.Second).Should(Succeed())
 
 	nodeList := &corev1.NodeList{}
 	Expect(hcClient.List(tc.Context, nodeList, crclient.MatchingLabels{
 		hyperv1.NodePoolLabel: np.Name,
 	})).To(Succeed())
-	Expect(len(nodeList.Items)).To(Equal(int(nodeCount)),
+	Expect(nodeList.Items).To(HaveLen(int(nodeCount)),
 		"node count changed — unexpected rollout")
 }
 
