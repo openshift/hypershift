@@ -16,11 +16,11 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
 	github.com/Azure/msi-dataplane v0.4.3
 	github.com/IBM-Cloud/power-go-client v1.14.4
-	github.com/IBM/go-sdk-core/v5 v5.21.2
-	github.com/IBM/ibm-cos-sdk-go v1.12.4
-	github.com/IBM/networking-go-sdk v0.51.15
+	github.com/IBM/go-sdk-core/v5 v5.21.4
+	github.com/IBM/ibm-cos-sdk-go v1.14.1
+	github.com/IBM/networking-go-sdk v0.53.5
 	github.com/IBM/platform-services-go-sdk v0.91.0
-	github.com/IBM/vpc-go-sdk v0.76.2
+	github.com/IBM/vpc-go-sdk v0.87.1
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
