@@ -48,7 +48,9 @@ data:
             "preBind": {},
             "bind": {},
             "postBind": {},
-            "multiPoint": {}
+            "multiPoint": {},
+            "placementGenerate": {},
+            "placementScore": {}
           }
         }
       ]

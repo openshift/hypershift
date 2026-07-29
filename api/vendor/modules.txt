@@ -13,14 +13,10 @@ github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee
 ## explicit; go 1.12
 github.com/modern-go/reflect2
-# github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
-## explicit; go 1.25.0
+# github.com/openshift/api v0.0.0-20260715165912-72066cc9718b
+## explicit; go 1.26.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
-# github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
-## explicit
-# github.com/spf13/pflag v1.0.10
-## explicit; go 1.12
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
 github.com/x448/float16
@@ -44,12 +40,12 @@ golang.org/x/text/unicode/norm
 # gopkg.in/inf.v0 v0.9.1
 ## explicit
 gopkg.in/inf.v0
-# k8s.io/api v0.35.1
-## explicit; go 1.25.0
+# k8s.io/api v0.36.2
+## explicit; go 1.26.0
 k8s.io/api/authorization/v1
 k8s.io/api/core/v1
-# k8s.io/apimachinery v0.35.1
-## explicit; go 1.25.0
+# k8s.io/apimachinery v0.36.2
+## explicit; go 1.26.0
 k8s.io/apimachinery/pkg/api/operation
 k8s.io/apimachinery/pkg/api/resource
 k8s.io/apimachinery/pkg/api/validate/constraints
@@ -76,8 +72,8 @@ k8s.io/apimachinery/pkg/util/validation
 k8s.io/apimachinery/pkg/util/validation/field
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/klog/v2 v2.130.1
-## explicit; go 1.18
+# k8s.io/klog/v2 v2.140.0
+## explicit; go 1.21
 k8s.io/klog/v2
 k8s.io/klog/v2/internal/buffer
 k8s.io/klog/v2/internal/clock
@@ -85,10 +81,12 @@ k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
-# k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e
-## explicit; go 1.23.0
+k8s.io/klog/v2/internal/verbosity
+k8s.io/klog/v2/textlogger
+# k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
+## explicit; go 1.24.0
 k8s.io/kube-openapi/pkg/util
-# k8s.io/utils v0.0.0-20260108192941-914a6e750570
+# k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
 ## explicit; go 1.23
 k8s.io/utils/internal/third_party/forked/golang/net
 k8s.io/utils/net

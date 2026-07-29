@@ -38,6 +38,7 @@ type Options struct {
 	ProfileMCP                  *mcov1.MachineConfigPool
 	MachineConfig               MachineConfigOptions
 	MixedCPUsFeatureGateEnabled bool
+	DRAResourceManagement       bool
 }
 
 type MachineConfigOptions struct {
@@ -48,4 +49,5 @@ type MachineConfigOptions struct {
 type KubeletConfigOptions struct {
 	MachineConfigPoolSelector map[string]string
 	MixedCPUsEnabled          bool
+	DRAResourceManagement     bool
 }
