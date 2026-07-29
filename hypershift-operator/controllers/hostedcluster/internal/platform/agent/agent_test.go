@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
 
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
@@ -27,85 +28,220 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestReconcileCredentials(t *testing.T) {
-	g := NewGomegaWithT(t)
-	platform := &Agent{}
-	hostedCluster := &hyperv1.HostedCluster{
+func newTestHostedCluster(name, agentNamespace string) *hyperv1.HostedCluster {
+	return &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "clusters",
+			Name:      name,
+		},
 		Spec: hyperv1.HostedClusterSpec{
 			Platform: hyperv1.PlatformSpec{
 				Type: hyperv1.AgentPlatform,
 				Agent: &hyperv1.AgentPlatformSpec{
-					AgentNamespace: "test",
+					AgentNamespace: agentNamespace,
 				},
 			},
 		},
 	}
-	controlPlaneNamespace := "test"
-	client := fake.NewClientBuilder().Build()
+}
 
-	err := platform.ReconcileCredentials(t.Context(),
-		client, upsert.New(false).CreateOrUpdate,
-		hostedCluster, controlPlaneNamespace)
-	g.Expect(err).ToNot(HaveOccurred())
+func TestReconcileCAPIProviderRole(t *testing.T) {
+	t.Parallel()
 
-	roleBinding := &rbacv1.RoleBinding{}
-	err = client.Get(t.Context(), types.NamespacedName{
-		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
-		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
-	}, roleBinding)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(roleBinding.Subjects[0].Namespace).To(BeIdenticalTo(controlPlaneNamespace))
-	g.Expect(roleBinding.Subjects[0].Kind).To(BeIdenticalTo("ServiceAccount"))
-	g.Expect(roleBinding.Subjects[0].Name).To(BeIdenticalTo("capi-provider"))
+	t.Run("When reconciling RBAC it should create Role and RoleBinding", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hostedCluster := newTestHostedCluster("test-cluster", "test")
+		controlPlaneNamespace := "test-cp"
+		client := fake.NewClientBuilder().Build()
+
+		err := ReconcileCAPIProviderRole(t.Context(),
+			client, upsert.New(false).CreateOrUpdate,
+			hostedCluster, controlPlaneNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		roleBinding := &rbacv1.RoleBinding{}
+		err = client.Get(t.Context(), types.NamespacedName{
+			Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
+		}, roleBinding)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(roleBinding.Subjects[0].Namespace).To(BeIdenticalTo(controlPlaneNamespace))
+		g.Expect(roleBinding.Subjects[0].Kind).To(BeIdenticalTo("ServiceAccount"))
+		g.Expect(roleBinding.Subjects[0].Name).To(BeIdenticalTo("capi-provider"))
+		g.Expect(roleBinding.Labels[capiProviderAgentRBACLabelKey]).To(Equal(capiProviderAgentRBACLabelValue))
+		g.Expect(roleBinding.Annotations[k8sutil.HostedClusterAnnotation]).To(Equal("clusters/test-cluster"))
+		g.Expect(roleBinding.RoleRef.APIGroup).To(Equal(rbacv1.GroupName))
+
+		roleName := fmt.Sprintf("%s-%s", CAPIProviderRoleName, controlPlaneNamespace)
+		g.Expect(roleBinding.RoleRef.Name).To(Equal(roleName))
+
+		role := &rbacv1.Role{}
+		err = client.Get(t.Context(), types.NamespacedName{
+			Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      roleName,
+		}, role)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(role.Labels[capiProviderAgentRBACLabelKey]).To(Equal(capiProviderAgentRBACLabelValue))
+		g.Expect(role.Annotations[k8sutil.HostedClusterAnnotation]).To(Equal("clusters/test-cluster"))
+		g.Expect(role.Rules).To(HaveLen(1))
+		g.Expect(role.Rules[0].APIGroups).To(Equal([]string{"agent-install.openshift.io"}))
+		g.Expect(role.Rules[0].Resources).To(Equal([]string{"agents"}))
+		g.Expect(role.Rules[0].Verbs).To(Equal([]string{"get", "list", "watch", "update", "patch"}))
+	})
+
+	t.Run("When called multiple times it should be idempotent", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hostedCluster := newTestHostedCluster("test-cluster", "test")
+		controlPlaneNamespace := "test-cp"
+		client := fake.NewClientBuilder().Build()
+
+		err := ReconcileCAPIProviderRole(t.Context(),
+			client, upsert.New(false).CreateOrUpdate,
+			hostedCluster, controlPlaneNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		err = ReconcileCAPIProviderRole(t.Context(),
+			client, upsert.New(false).CreateOrUpdate,
+			hostedCluster, controlPlaneNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		roleName := fmt.Sprintf("%s-%s", CAPIProviderRoleName, controlPlaneNamespace)
+		role := &rbacv1.Role{}
+		err = client.Get(t.Context(), types.NamespacedName{
+			Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      roleName,
+		}, role)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(role.Rules).To(HaveLen(1))
+		g.Expect(role.Rules[0].APIGroups).To(Equal([]string{"agent-install.openshift.io"}))
+		g.Expect(role.Rules[0].Resources).To(Equal([]string{"agents"}))
+		g.Expect(role.Rules[0].Verbs).To(Equal([]string{"get", "list", "watch", "update", "patch"}))
+		g.Expect(role.Labels[capiProviderAgentRBACLabelKey]).To(Equal(capiProviderAgentRBACLabelValue))
+		g.Expect(role.Annotations[k8sutil.HostedClusterAnnotation]).To(Equal("clusters/test-cluster"))
+	})
 }
 
 func TestDeleteCredentials(t *testing.T) {
-	g := NewGomegaWithT(t)
-	platform := &Agent{}
-	hostedCluster := &hyperv1.HostedCluster{
-		Spec: hyperv1.HostedClusterSpec{
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AgentPlatform,
-				Agent: &hyperv1.AgentPlatformSpec{
-					AgentNamespace: "test",
-				},
-			},
-		},
-	}
-	controlPlaneNamespace := "test"
-	client := fake.NewClientBuilder().Build()
+	t.Parallel()
 
-	// test noop
-	err := platform.DeleteCredentials(t.Context(),
-		client,
-		hostedCluster, controlPlaneNamespace)
-	g.Expect(err).ToNot(HaveOccurred())
+	t.Run("When deleting non-existent resources it should not error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		platform := &Agent{}
+		hostedCluster := newTestHostedCluster("test-cluster", "test")
+		controlPlaneNamespace := "test-cp"
+		client := fake.NewClientBuilder().Build()
 
-	// Create the creds
-	err = platform.ReconcileCredentials(t.Context(),
-		client, upsert.New(false).CreateOrUpdate,
-		hostedCluster, controlPlaneNamespace)
-	g.Expect(err).ToNot(HaveOccurred())
+		err := platform.DeleteCredentials(t.Context(),
+			client,
+			hostedCluster, controlPlaneNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+	})
 
-	// Verify the roleBinding exists
-	roleBinding := &rbacv1.RoleBinding{}
-	err = client.Get(t.Context(), types.NamespacedName{
-		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
-		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
-	}, roleBinding)
-	g.Expect(err).ToNot(HaveOccurred())
+	t.Run("When deleting credentials it should remove Role and RoleBinding", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		platform := &Agent{}
+		hostedCluster := newTestHostedCluster("test-cluster", "test")
+		controlPlaneNamespace := "test-cp"
+		client := fake.NewClientBuilder().Build()
 
-	err = platform.DeleteCredentials(t.Context(),
-		client,
-		hostedCluster, controlPlaneNamespace)
-	g.Expect(err).ToNot(HaveOccurred())
+		// Create the RBAC resources
+		err := ReconcileCAPIProviderRole(t.Context(),
+			client, upsert.New(false).CreateOrUpdate,
+			hostedCluster, controlPlaneNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
 
-	roleBinding = &rbacv1.RoleBinding{}
-	err = client.Get(t.Context(), types.NamespacedName{
-		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
-		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
-	}, roleBinding)
-	g.Expect(apierrors.IsNotFound(err)).To(Equal(true))
+		roleName := fmt.Sprintf("%s-%s", CAPIProviderRoleName, controlPlaneNamespace)
+		bindingName := fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace)
+
+		// Verify the RoleBinding exists
+		roleBinding := &rbacv1.RoleBinding{}
+		err = client.Get(t.Context(), types.NamespacedName{
+			Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      bindingName,
+		}, roleBinding)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Verify the Role exists
+		role := &rbacv1.Role{}
+		err = client.Get(t.Context(), types.NamespacedName{
+			Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      roleName,
+		}, role)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Delete credentials
+		err = platform.DeleteCredentials(t.Context(),
+			client,
+			hostedCluster, controlPlaneNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Verify RoleBinding is deleted
+		roleBinding = &rbacv1.RoleBinding{}
+		err = client.Get(t.Context(), types.NamespacedName{
+			Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      bindingName,
+		}, roleBinding)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "RoleBinding should be deleted")
+
+		// Verify Role is deleted
+		role = &rbacv1.Role{}
+		err = client.Get(t.Context(), types.NamespacedName{
+			Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      roleName,
+		}, role)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Role should be deleted")
+	})
+
+	t.Run("When multiple clusters share the same agent namespace it should delete independently", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		platform := &Agent{}
+		agentNamespace := "shared-agent-ns"
+		hostedCluster1 := newTestHostedCluster("cluster1", agentNamespace)
+		hostedCluster2 := newTestHostedCluster("cluster2", agentNamespace)
+		cpNamespace1 := "cp-one"
+		cpNamespace2 := "cp-two"
+		c := fake.NewClientBuilder().Build()
+
+		err := ReconcileCAPIProviderRole(t.Context(), c, upsert.New(false).CreateOrUpdate, hostedCluster1, cpNamespace1)
+		g.Expect(err).ToNot(HaveOccurred())
+		err = ReconcileCAPIProviderRole(t.Context(), c, upsert.New(false).CreateOrUpdate, hostedCluster2, cpNamespace2)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Delete cluster1's credentials
+		err = platform.DeleteCredentials(t.Context(), c, hostedCluster1, cpNamespace1)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Cluster1's Role and RoleBinding should be deleted
+		role1Name := fmt.Sprintf("%s-%s", CAPIProviderRoleName, cpNamespace1)
+		role := &rbacv1.Role{}
+		err = c.Get(t.Context(), types.NamespacedName{Namespace: agentNamespace, Name: role1Name}, role)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "cluster1's Role should be deleted")
+
+		rb1Name := fmt.Sprintf("%s-%s", CredentialsRBACPrefix, cpNamespace1)
+		rb := &rbacv1.RoleBinding{}
+		err = c.Get(t.Context(), types.NamespacedName{Namespace: agentNamespace, Name: rb1Name}, rb)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "cluster1's RoleBinding should be deleted")
+
+		// Cluster2's Role and RoleBinding should still exist
+		role2Name := fmt.Sprintf("%s-%s", CAPIProviderRoleName, cpNamespace2)
+		err = c.Get(t.Context(), types.NamespacedName{Namespace: agentNamespace, Name: role2Name}, role)
+		g.Expect(err).ToNot(HaveOccurred(), "cluster2's Role should remain untouched")
+
+		rb2Name := fmt.Sprintf("%s-%s", CredentialsRBACPrefix, cpNamespace2)
+		err = c.Get(t.Context(), types.NamespacedName{Namespace: agentNamespace, Name: rb2Name}, rb)
+		g.Expect(err).ToNot(HaveOccurred(), "cluster2's RoleBinding should remain untouched")
+
+		// Delete cluster2's credentials
+		err = platform.DeleteCredentials(t.Context(), c, hostedCluster2, cpNamespace2)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Now cluster2's resources should be deleted too
+		err = c.Get(t.Context(), types.NamespacedName{Namespace: agentNamespace, Name: role2Name}, role)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "cluster2's Role should be deleted")
+
+		err = c.Get(t.Context(), types.NamespacedName{Namespace: agentNamespace, Name: rb2Name}, rb)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "cluster2's RoleBinding should be deleted")
+	})
 }
 
 func TestReconcileCAPIInfraCR(t *testing.T) {

@@ -2895,10 +2895,8 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		},
 	}
 	err = cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiProviderDeployment), capiProviderDeployment)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
-		}
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
 	}
 	if err == nil {
 		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels[hyperv1.ControlPlaneComponentLabel] != "capi-provider" {
