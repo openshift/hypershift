@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -176,11 +177,27 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 }
 
 func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
+	existing := &appsv1.DaemonSet{}
+	if err := c.Get(ctx, crclient.ObjectKeyFromObject(daemonSet), existing); err == nil {
+		if existing.Spec.Template.Labels[configSeedLabelKey] == configSeed {
+			expectedVolumes := len(buildGlobalPSVolumes(globalPullSecretName, originalPullSecretName))
+			if len(existing.Spec.Template.Spec.Volumes) == expectedVolumes {
+				return nil
+			}
+		}
+	}
+
 	if _, err := createOrUpdate(ctx, c, daemonSet, func() error {
 		daemonSet.Spec = appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"name": manifests.GlobalPullSecretDSName,
+				},
+			},
+			UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
+				Type: appsv1.RollingUpdateDaemonSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+					MaxUnavailable: ptr.To(intstr.FromString("33%")),
 				},
 			},
 			Template: corev1.PodTemplateSpec{
@@ -220,6 +237,19 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 								// These operations cannot be performed with specific capabilities due to
 								// the combination of file system access and systemd service management.
 								Privileged: ptr.To(true),
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{
+											"/bin/sh", "-c",
+											"test -s /var/lib/kubelet/config.json",
+										},
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       10,
+								FailureThreshold:    3,
 							},
 							VolumeMounts:             buildGlobalPSVolumeMounts(globalPullSecretName),
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
