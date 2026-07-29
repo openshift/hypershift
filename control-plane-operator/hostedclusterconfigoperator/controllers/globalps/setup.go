@@ -108,7 +108,15 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 }
 
 func kubeSystemSecretPredicateFunc(o crclient.Object) bool {
-	return o.GetNamespace() == "kube-system"
+	if o.GetNamespace() != "kube-system" {
+		return false
+	}
+	switch o.GetName() {
+	case "additional-pull-secret", "original-pull-secret", "global-pull-secret":
+		return true
+	default:
+		return false
+	}
 }
 
 func namespacedNamePredicateFunc(namespace, name string) func(crclient.Object) bool {
