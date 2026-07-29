@@ -19,6 +19,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var (
@@ -102,6 +103,12 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 					}
 				}
 				g.Expect(hasGlobalSecret).To(BeFalse(), "DaemonSet should not have global-pull-secret volume when additional secret doesn't exist")
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe).NotTo(BeNil(), "DaemonSet should have a readiness probe")
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe.Exec).NotTo(BeNil())
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe.Exec.Command).To(ContainElement("test -s /var/lib/kubelet/config.json"))
+				g.Expect(ds.Spec.UpdateStrategy.Type).To(Equal(appsv1.RollingUpdateDaemonSetStrategyType))
+				g.Expect(ds.Spec.UpdateStrategy.RollingUpdate).NotTo(BeNil())
+				g.Expect(ds.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String()).To(Equal("33%"))
 			},
 			validateOriginalSecret: func(t *testing.T, secret *corev1.Secret) {
 				g := NewWithT(t)
@@ -176,6 +183,12 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 					}
 				}
 				g.Expect(hasGlobalSecret).To(BeTrue(), "DaemonSet should have global-pull-secret volume when additional secret exists")
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe).NotTo(BeNil(), "DaemonSet should have a readiness probe")
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe.Exec).NotTo(BeNil())
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe.Exec.Command).To(ContainElement("test -s /var/lib/kubelet/config.json"))
+				g.Expect(ds.Spec.UpdateStrategy.Type).To(Equal(appsv1.RollingUpdateDaemonSetStrategyType))
+				g.Expect(ds.Spec.UpdateStrategy.RollingUpdate).NotTo(BeNil())
+				g.Expect(ds.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String()).To(Equal("33%"))
 			},
 			validateGlobalSecret: func(t *testing.T, secret *corev1.Secret) {
 				g := NewWithT(t)
@@ -337,6 +350,12 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 			validateDaemonSet: func(t *testing.T, ds *appsv1.DaemonSet) {
 				g := NewWithT(t)
 				g.Expect(ds.Spec.Template.Spec.NodeSelector).To(HaveKeyWithValue(globalPSLabelKey, "true"))
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe).NotTo(BeNil(), "DaemonSet should have a readiness probe")
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe.Exec).NotTo(BeNil())
+				g.Expect(ds.Spec.Template.Spec.Containers[0].ReadinessProbe.Exec.Command).To(ContainElement("test -s /var/lib/kubelet/config.json"))
+				g.Expect(ds.Spec.UpdateStrategy.Type).To(Equal(appsv1.RollingUpdateDaemonSetStrategyType))
+				g.Expect(ds.Spec.UpdateStrategy.RollingUpdate).NotTo(BeNil())
+				g.Expect(ds.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String()).To(Equal("33%"))
 			},
 		},
 	}
@@ -492,6 +511,48 @@ func TestValidateAdditionalPullSecret(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileDaemonSetIdempotency(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	configSeed := "test-hash-abc123"
+	globalPullSecretName := "global-pull-secret"
+	originalPullSecretName := "original-pull-secret"
+	hccoImage := "test-image:latest"
+
+	ds := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "global-pull-secret-syncer",
+			Namespace: "kube-system",
+		},
+	}
+
+	callCount := 0
+	trackingCreateOrUpdate := func(ctx context.Context, cl client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		callCount++
+		return upsert.New(false).CreateOrUpdate(ctx, cl, obj, f)
+	}
+
+	err := reconcileDaemonSet(context.Background(), ds, globalPullSecretName, originalPullSecretName, configSeed, fakeClient, trackingCreateOrUpdate, hccoImage)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(callCount).To(Equal(1), "First reconcile should call createOrUpdate")
+
+	callCount = 0
+	ds2 := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "global-pull-secret-syncer",
+			Namespace: "kube-system",
+		},
+	}
+	err = reconcileDaemonSet(context.Background(), ds2, globalPullSecretName, originalPullSecretName, configSeed, fakeClient, trackingCreateOrUpdate, hccoImage)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(callCount).To(Equal(0), "Second reconcile with same configSeed should be a no-op")
 }
 
 func TestMergePullSecrets(t *testing.T) {

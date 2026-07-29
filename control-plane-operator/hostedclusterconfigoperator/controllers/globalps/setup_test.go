@@ -17,14 +17,35 @@ func Test_kubeSystemSecretPredicateFunc(t *testing.T) {
 		want   bool
 	}{
 		{
-			name: "When secret is in kube-system it should return true",
+			name: "When secret is additional-pull-secret in kube-system, it should return true",
 			object: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "any-secret"},
+				ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "additional-pull-secret"},
 			},
 			want: true,
 		},
 		{
-			name: "When secret is in a different namespace it should return false",
+			name: "When secret is original-pull-secret in kube-system, it should return true",
+			object: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "original-pull-secret"},
+			},
+			want: true,
+		},
+		{
+			name: "When secret is global-pull-secret in kube-system, it should return true",
+			object: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "global-pull-secret"},
+			},
+			want: true,
+		},
+		{
+			name: "When secret is an unrelated secret in kube-system, it should return false",
+			object: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "some-serviceaccount-token"},
+			},
+			want: false,
+		},
+		{
+			name: "When secret is in a different namespace, it should return false",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-config", Name: "pull-secret"},
 			},
