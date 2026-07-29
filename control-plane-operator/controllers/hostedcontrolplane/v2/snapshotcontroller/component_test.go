@@ -20,63 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestIsStorageAndCSIManaged(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name     string
-		platform hyperv1.PlatformType
-		expected bool
-	}{
-		{
-			name:     "When platform is IBMCloud, it should return false",
-			platform: hyperv1.IBMCloudPlatform,
-			expected: false,
-		},
-		{
-			name:     "When platform is PowerVS, it should return false",
-			platform: hyperv1.PowerVSPlatform,
-			expected: false,
-		},
-		{
-			name:     "When platform is AWS, it should return true",
-			platform: hyperv1.AWSPlatform,
-			expected: true,
-		},
-		{
-			name:     "When platform is Azure, it should return true",
-			platform: hyperv1.AzurePlatform,
-			expected: true,
-		},
-		{
-			name:     "When platform is KubeVirt, it should return true",
-			platform: hyperv1.KubevirtPlatform,
-			expected: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
-
-			cpContext := component.WorkloadContext{
-				HCP: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: tc.platform,
-						},
-					},
-				},
-			}
-
-			result, err := isStorageAndCSIManaged(cpContext)
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(result).To(Equal(tc.expected))
-		})
-	}
-}
-
 func buildDeployment(image string, ready bool) *appsv1.Deployment {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

@@ -80,10 +80,7 @@ func NewComponent() component.ControlPlaneComponent {
 }
 
 func isStorageAndCSIManaged(cpContext component.WorkloadContext) (bool, error) {
-	if cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform || cpContext.HCP.Spec.Platform.Type == hyperv1.PowerVSPlatform {
-		return false, nil
-	}
-	return true, nil
+	return component.IsStorageAndCSIManaged(cpContext.HCP.Spec.Platform.Type), nil
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
