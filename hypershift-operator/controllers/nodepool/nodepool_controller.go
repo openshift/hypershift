@@ -1179,10 +1179,16 @@ func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodeP
 		return "", err
 	}
 
+	nodePoolCPOImage := r.HypershiftOperatorImage
+	if img, exists := releaseImage.ComponentImages()["hypershift"]; exists {
+		nodePoolCPOImage = img
+	}
+
 	haProxy := haproxy.HAProxy{
 		Client:                  r.Client,
 		HAProxyImage:            haProxyImage,
 		HypershiftOperatorImage: r.HypershiftOperatorImage,
+		NodePoolCPOImage:        nodePoolCPOImage,
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
 	}

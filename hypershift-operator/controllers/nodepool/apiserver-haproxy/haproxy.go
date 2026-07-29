@@ -45,11 +45,16 @@ const (
 	HAProxyRouterImageName                                = "haproxy-router"
 )
 
+//go:generate ../../../../hack/tools/bin/mockgen -package=haproxy -destination=releaseinfo_mock.go github.com/openshift/hypershift/support/releaseinfo Provider
 type HAProxy struct {
 	crclient.Client
 
 	HAProxyImage            string
 	HypershiftOperatorImage string
+	// NodePoolCPOImage is the control-plane-operator image resolved from the
+	// NodePool's release image. Used for the kubernetes-default-proxy static
+	// pod in the ignition config so that it stays stable during CP-only upgrades.
+	NodePoolCPOImage string
 
 	ReleaseProvider       releaseinfo.Provider
 	ImageMetadataProvider util.ImageMetadataProvider
@@ -596,7 +601,14 @@ func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv
 			}
 		}
 
-		haproxyRawConfig, err = r.reconcileHAProxyIgnitionConfig(ctx, hcluster, cpoImage)
+		// Use the NodePool's CPO image for the ignition config content so that
+		// CP-only upgrades don't change the hash and trigger unintended node rollouts.
+		// Fall back to the HC's CPO image if not set.
+		ignitionCPOImage := r.NodePoolCPOImage
+		if ignitionCPOImage == "" {
+			ignitionCPOImage = cpoImage
+		}
+		haproxyRawConfig, err = r.reconcileHAProxyIgnitionConfig(ctx, hcluster, ignitionCPOImage)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate haproxy ignition config: %w", err)
 		}
