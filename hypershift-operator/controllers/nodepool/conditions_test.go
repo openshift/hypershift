@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -21,10 +22,183 @@ import (
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/blang/semver"
 )
+
+func TestIgnitionEndpointAvailableCondition(t *testing.T) {
+	const ignitionHostname = "ignition-example.service.hypershift.example.com"
+
+	ignitionRouteService := func(hostname string) []hyperv1.ServicePublishingStrategyMapping {
+		return []hyperv1.ServicePublishingStrategyMapping{
+			{
+				Service: hyperv1.Ignition,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.Route,
+					Route: &hyperv1.RoutePublishingStrategy{
+						Hostname: hostname,
+					},
+				},
+			},
+		}
+	}
+	publicAzurePlatform := hyperv1.PlatformSpec{
+		Type: hyperv1.AzurePlatform,
+		Azure: &hyperv1.AzurePlatformSpec{
+			Topology: hyperv1.AzureTopologyPublic,
+		},
+	}
+	privateAzurePlatform := hyperv1.PlatformSpec{
+		Type: hyperv1.AzurePlatform,
+		Azure: &hyperv1.AzurePlatformSpec{
+			Topology: hyperv1.AzureTopologyPrivate,
+		},
+	}
+	awsPlatform := hyperv1.PlatformSpec{
+		Type: hyperv1.AWSPlatform,
+		AWS: &hyperv1.AWSPlatformSpec{
+			EndpointAccess: hyperv1.Public,
+		},
+	}
+	dnsLookupErr := fmt.Errorf("lookup %s: no such host", ignitionHostname)
+
+	testCases := []struct {
+		name                    string
+		platform                hyperv1.PlatformSpec
+		services                []hyperv1.ServicePublishingStrategyMapping
+		ignitionEndpoint        string
+		resolveErr              error
+		expectResolverCall      bool
+		expectedRequeueAfter    time.Duration
+		expectedConditionReason string
+		expectedMessagePart     string
+	}{
+		{
+			name:                    "When an Azure public ignition hostname is not resolvable, it should wait before reconciling machines",
+			platform:                publicAzurePlatform,
+			services:                ignitionRouteService(ignitionHostname),
+			ignitionEndpoint:        ignitionHostname,
+			resolveErr:              dnsLookupErr,
+			expectResolverCall:      true,
+			expectedRequeueAfter:    10 * time.Second,
+			expectedConditionReason: hyperv1.ExternalDNSHostNotReachableReason,
+			expectedMessagePart:     ignitionHostname,
+		},
+		{
+			name:               "When an Azure public ignition hostname is resolvable, it should continue reconciliation",
+			platform:           publicAzurePlatform,
+			services:           ignitionRouteService(ignitionHostname),
+			ignitionEndpoint:   ignitionHostname,
+			expectResolverCall: true,
+		},
+		{
+			name:               "When an Azure ignition hostname is private, it should skip public DNS resolution",
+			platform:           privateAzurePlatform,
+			services:           ignitionRouteService(ignitionHostname),
+			ignitionEndpoint:   ignitionHostname,
+			expectResolverCall: false,
+		},
+		{
+			name:               "When a non-Azure ignition hostname is configured, it should skip Azure DNS readiness",
+			platform:           awsPlatform,
+			services:           ignitionRouteService(ignitionHostname),
+			ignitionEndpoint:   ignitionHostname,
+			expectResolverCall: false,
+		},
+		{
+			name:               "When Azure external DNS is not configured, it should skip DNS resolution",
+			platform:           publicAzurePlatform,
+			services:           ignitionRouteService(""),
+			ignitionEndpoint:   "ignition-server.apps.management.example.com",
+			expectResolverCall: false,
+		},
+		{
+			name:                    "When the ignition endpoint is missing, it should wait without resolving DNS",
+			platform:                publicAzurePlatform,
+			services:                ignitionRouteService(ignitionHostname),
+			expectResolverCall:      false,
+			expectedConditionReason: hyperv1.IgnitionEndpointMissingReason,
+			expectedMessagePart:     "Ignition endpoint not available",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := t.Context()
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "example",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: tc.platform,
+					Services: tc.services,
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: tc.ignitionEndpoint,
+				},
+			}
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "workers",
+					Namespace:  "clusters",
+					Generation: 3,
+				},
+				Status: hyperv1.NodePoolStatus{
+					Conditions: []hyperv1.NodePoolCondition{
+						{
+							Type:   string(hyperv1.IgnitionEndpointAvailable),
+							Status: corev1.ConditionFalse,
+							Reason: hyperv1.IgnitionEndpointMissingReason,
+						},
+					},
+				},
+			}
+			ignitionCACert := ignitionserver.IgnitionCACertSecret("clusters-example")
+			ignitionCACert.Data = map[string][]byte{
+				corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+			}
+
+			resolverCalled := false
+			reconciler := &NodePoolReconciler{
+				Client: fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(ignitionCACert).
+					Build(),
+				resolveDNSHostname: func(_ context.Context, hostname string) error {
+					resolverCalled = true
+					g.Expect(hostname).To(Equal(ignitionHostname))
+					return tc.resolveErr
+				},
+			}
+
+			result, err := reconciler.ignitionEndpointAvailableCondition(ctx, nodePool, hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(resolverCalled).To(Equal(tc.expectResolverCall))
+			if tc.expectedConditionReason != "" {
+				g.Expect(result).NotTo(BeNil())
+				g.Expect(result).To(Equal(&ctrl.Result{RequeueAfter: tc.expectedRequeueAfter}))
+			} else {
+				g.Expect(result).To(BeNil())
+			}
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
+			if tc.expectedConditionReason == "" {
+				g.Expect(condition).To(BeNil())
+				return
+			}
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(tc.expectedConditionReason))
+			g.Expect(condition.Message).To(ContainSubstring(tc.expectedMessagePart))
+			g.Expect(condition.ObservedGeneration).To(Equal(nodePool.Generation))
+		})
+	}
+}
 
 func TestGenerateReconciliationPausedCondition(t *testing.T) {
 	fakeInputGeneration := int64(5)
