@@ -370,6 +370,57 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 	return ln
 }
 
+func TestBuildAddressList(t *testing.T) {
+	tests := []struct {
+		name         string
+		primary      string
+		fallbacks    []net.IP
+		port         string
+		maxFallbacks int
+		expected     []string
+	}{
+		{
+			name:         "When no fallback IPs, it should return only primary",
+			primary:      "10.0.0.1:443",
+			port:         "443",
+			maxFallbacks: 3,
+			expected:     []string{"10.0.0.1:443"},
+		},
+		{
+			name:         "When fallbacks within limit, it should return all",
+			primary:      "10.0.0.1:443",
+			fallbacks:    []net.IP{net.ParseIP("10.0.0.2"), net.ParseIP("10.0.0.3")},
+			port:         "443",
+			maxFallbacks: 3,
+			expected:     []string{"10.0.0.1:443", "10.0.0.2:443", "10.0.0.3:443"},
+		},
+		{
+			name:         "When fallbacks exceed limit, it should cap at maxFallbacks",
+			primary:      "10.0.0.1:8080",
+			fallbacks:    []net.IP{net.ParseIP("10.0.0.2"), net.ParseIP("10.0.0.3"), net.ParseIP("10.0.0.4"), net.ParseIP("10.0.0.5")},
+			port:         "8080",
+			maxFallbacks: 2,
+			expected:     []string{"10.0.0.1:8080", "10.0.0.2:8080", "10.0.0.3:8080"},
+		},
+		{
+			name:         "When IPv6 fallbacks, it should format addresses correctly",
+			primary:      "[::1]:443",
+			fallbacks:    []net.IP{net.ParseIP("2001:db8::1")},
+			port:         "443",
+			maxFallbacks: 3,
+			expected:     []string{"[::1]:443", "[2001:db8::1]:443"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := buildAddressList(tt.primary, tt.fallbacks, tt.port, tt.maxFallbacks)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
 func TestDialDirectWithProxy(t *testing.T) {
 	const testTimeout = 5 * time.Second
 

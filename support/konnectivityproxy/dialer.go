@@ -254,6 +254,19 @@ func (p *konnectivityProxy) getTLSConfig() *tls.Config {
 	return p.tlsConfig
 }
 
+// buildAddressList creates the list of addresses to try, starting with the primary
+// address and appending up to maxFallbacks alternative IPs.
+func buildAddressList(primaryAddress string, fallbackIPs []net.IP, requestPort string, maxFallbacks int) []string {
+	addresses := []string{primaryAddress}
+	if len(fallbackIPs) > 0 {
+		limit := min(len(fallbackIPs), maxFallbacks)
+		for _, ip := range fallbackIPs[:limit] {
+			addresses = append(addresses, net.JoinHostPort(ip.String(), requestPort))
+		}
+	}
+	return addresses
+}
+
 // DialContext dials the specified address using the specified context. It implements the upstream
 // proxy.Dialer interface.
 func (p *konnectivityProxy) DialContext(ctx context.Context, network string, requestAddress string) (net.Conn, error) {
@@ -281,10 +294,60 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		return p.dialDirectWithoutProxy(ctx, network, requestAddress)
 	}
 
-	// get a TLS config based on x509 certs
+	// Resolve hostname to IPs when needed (HTTPS proxy path).
+	// Resolve() stores fallback IPs in ctx for the loop below.
+	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
+		log.Info("Host name must be resolved before dialing", "host", requestHost)
+		var ip net.IP
+		ctx, ip, err = p.Resolve(ctx, requestHost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
+		}
+		log.Info("Host name resolved", "ip", ip.String())
+		requestAddress = net.JoinHostPort(ip.String(), requestPort)
+	}
+
+	// Build address list: primary address + any fallback IPs from context.
+	// Fallback IPs are populated by Resolve() — either called above (HTTPS)
+	// or by the socks5 library before calling DialContext (SOCKS5).
+	const maxFallbacks = 3
+	addresses := buildAddressList(requestAddress, fallbackIPsFromContext(ctx), requestPort, maxFallbacks)
+	if len(addresses) > 1 {
+		log.Info("Resolved addresses for fallback", "using", len(addresses))
+	}
+
+	// Bound total fallback latency so unreachable addresses don't block for minutes.
+	// dialThroughKonnectivity derives its CONNECT deadline from this context, so
+	// no single attempt can outlive the budget.
+	const overallDialBudget = 90 * time.Second
+	dialCtx, cancel := context.WithTimeout(ctx, overallDialBudget)
+	defer cancel()
+
+	// Try each address through konnectivity, stop on first success.
+	var lastErr error
+	for i, addr := range addresses {
+		if i > 0 {
+			log.Info("Retrying with fallback address", "address", addr, "attempt", i+1)
+		}
+		conn, dialErr := p.dialThroughKonnectivity(dialCtx, addr, requestHost)
+		if dialErr == nil {
+			return conn, nil
+		}
+		lastErr = dialErr
+		log.Info("Connection through konnectivity failed", "address", addr, "err", dialErr)
+		if dialCtx.Err() != nil {
+			break
+		}
+	}
+	return nil, lastErr
+}
+
+// dialThroughKonnectivity opens a TLS connection to the konnectivity server and
+// sends a CONNECT request to tunnel to the target address.
+func (p *konnectivityProxy) dialThroughKonnectivity(ctx context.Context, requestAddress, requestHost string) (net.Conn, error) {
+	log := p.log.WithName("konnectivityProxy.dialThroughKonnectivity")
 	tlsConfig := p.getTLSConfig()
 
-	// connect to the konnectivity server address and get a TLS connection
 	konnectivityServerAddress := net.JoinHostPort(p.konnectivityHost, fmt.Sprintf("%d", p.konnectivityPort))
 	log.V(1).Info("Dialing konnectivity server", "address", konnectivityServerAddress)
 	tlsDialer := &tls.Dialer{
@@ -296,23 +359,15 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		return nil, fmt.Errorf("dialing proxy %q failed: %w", konnectivityServerAddress, err)
 	}
 
-	// Bound CONNECT handshake I/O to avoid indefinite stalls and clear on success.
-	_ = konnectivityConnection.SetDeadline(time.Now().Add(60 * time.Second))
+	// Bound CONNECT handshake I/O to the earlier of 60s or the context deadline,
+	// so the handshake cannot outlive the overallDialBudget set in DialContext.
+	connectDeadline := time.Now().Add(60 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(connectDeadline) {
+		connectDeadline = d
+	}
+	_ = konnectivityConnection.SetDeadline(connectDeadline)
 	defer func() { _ = konnectivityConnection.SetDeadline(time.Time{}) }()
 
-	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
-		log.Info("Host name must be resolved before dialing", "host", requestHost)
-		_, ip, err := p.Resolve(ctx, requestHost)
-		if err != nil {
-			_ = konnectivityConnection.Close()
-			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
-		}
-		p.log.Info("Host name resolved", "ip", ip.String())
-		requestAddress = net.JoinHostPort(ip.String(), requestPort)
-	}
-
-	// The CONNECT command sent to the Konnectivity server opens a TCP connection
-	// to the request host via the konnectivity tunnel.
 	connectString := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, requestHost)
 	log.V(1).Info("Sending CONNECT to konnectivity server", "target", requestAddress)
 	_, err = fmt.Fprintf(konnectivityConnection, "%s", connectString)
@@ -322,7 +377,6 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		return nil, err
 	}
 
-	// read HTTP response and return the connection
 	br := bufio.NewReader(konnectivityConnection)
 	log.V(1).Info("Reading response from konnectivity server")
 	res, err := http.ReadResponse(br, nil)
