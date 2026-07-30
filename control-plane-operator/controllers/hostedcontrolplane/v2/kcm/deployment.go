@@ -20,6 +20,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// resolveKCMVerbosity returns the klog verbosity for kube-controller-manager
+// only when explicitly configured via OperatorConfiguration. Returns false when
+// no LogLevel is set, preserving the klog default (0) for existing clusters.
+func resolveKCMVerbosity(hcp *hyperv1.HostedControlPlane) (int, bool) {
+	if hcp.Spec.OperatorConfiguration != nil &&
+		hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel != nil {
+		return util.LogLevelToKlogVerbosity(
+			hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel), true
+	}
+	return 0, false
+}
+
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 	serviceServingCA, err := getServiceServingCA(cpContext)
@@ -30,6 +42,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	featureGates, err := config.FeatureGatesFromConfigMap(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
 	if err != nil {
 		return err
+	}
+
+	// Only override verbosity when explicitly configured; preserve klog default otherwise.
+	if v, ok := resolveKCMVerbosity(hcp); ok {
+		podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+			c.Args = append(c.Args, fmt.Sprintf("--v=%d", v))
+		})
 	}
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
