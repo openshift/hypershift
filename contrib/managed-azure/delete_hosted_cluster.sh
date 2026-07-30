@@ -21,6 +21,7 @@ fi
 AZURE_CREDS=${AZURE_CREDS:?"Error: AZURE_CREDS is not set. Please check your user-vars.sh file."}
 HYPERSHIFT_BINARY_PATH=${HYPERSHIFT_BINARY_PATH:?"Error: HYPERSHIFT_BINARY_PATH is not set. Please check your user-vars.sh file."}
 PREFIX=${PREFIX:?"Error: PREFIX is not set. Please check your user-vars.sh file."}
+PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:?"Error: PERSISTENT_RG_NAME is not set. Please check the vars.sh file."}
 
 # Local variables following the same pattern as create_basic_hosted_cluster.sh
 MANAGED_RG_NAME="${PREFIX}-managed-rg"
@@ -32,7 +33,8 @@ CLUSTER_NAME="${PREFIX}-hc"
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
     --name "$CLUSTER_NAME" \
     --azure-creds "$AZURE_CREDS" \
-    --resource-group-name "$MANAGED_RG_NAME"
+    --resource-group-name "$MANAGED_RG_NAME" \
+    --dns-zone-rg-name "$PERSISTENT_RG_NAME"
 
 if [ $? -ne 0 ]; then
     echo "Error: Failed to destroy hosted cluster $CLUSTER_NAME"
