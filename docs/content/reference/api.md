@@ -11383,6 +11383,38 @@ the update is at least 70% of desired nodes.</p>
 </tr>
 </tbody>
 </table>
+###IngressDefaultCertificateReference { #hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IngressOperatorSpec">IngressOperatorSpec</a>)
+</p>
+<p>
+<p>IngressDefaultCertificateReference contains a reference to a TLS Secret
+in the HostedCluster namespace used as the default serving certificate
+for the ingress controller.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the Secret containing tls.crt and tls.key.
+The Secret must exist in the same namespace as the HostedCluster.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###IngressOperatorSpec { #hypershift.openshift.io/v1beta1.IngressOperatorSpec }
 <p>
 (<em>Appears on:</em>
@@ -11428,6 +11460,33 @@ LoadBalancerService with External scope</p>
 - Other platforms: LoadBalancerService with External scope</p>
 <p>See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
 <a href="https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go">https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>defaultCertificate,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference">
+IngressDefaultCertificateReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>defaultCertificate is a reference to a secret in the HostedCluster namespace
+that contains the default certificate served by the default ingress controller.
+When Routes don&rsquo;t specify their own certificate, defaultCertificate is used.</p>
+<p>The secret must contain the following keys and data:
+tls.crt: certificate file contents
+tls.key: key file contents</p>
+<p>When set, this certificate replaces the auto-generated wildcard certificate
+that is normally created by the control plane operator. The secret is synced
+from the HostedCluster namespace to the control plane, and then propagated
+to the hosted cluster&rsquo;s openshift-ingress namespace.</p>
+<p>When the referenced secret is updated, the new certificate data is
+automatically propagated to the hosted cluster.</p>
+<p>When not set, the control plane operator generates a wildcard certificate
+signed by the cluster&rsquo;s root CA.</p>
 </td>
 </tr>
 </tbody>

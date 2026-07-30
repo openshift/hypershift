@@ -3429,6 +3429,37 @@ spec:
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
                       This allows configuring how the default ingress controller endpoints are published.
                     properties:
+                      defaultCertificate:
+                        description: |-
+                          defaultCertificate is a reference to a secret in the HostedCluster namespace
+                          that contains the default certificate served by the default ingress controller.
+                          When Routes don't specify their own certificate, defaultCertificate is used.
+
+                          The secret must contain the following keys and data:
+                            tls.crt: certificate file contents
+                            tls.key: key file contents
+
+                          When set, this certificate replaces the auto-generated wildcard certificate
+                          that is normally created by the control plane operator. The secret is synced
+                          from the HostedCluster namespace to the control plane, and then propagated
+                          to the hosted cluster's openshift-ingress namespace.
+
+                          When the referenced secret is updated, the new certificate data is
+                          automatically propagated to the hosted cluster.
+
+                          When not set, the control plane operator generates a wildcard certificate
+                          signed by the cluster's root CA.
+                        properties:
+                          name:
+                            description: |-
+                              name is the name of the Secret containing tls.crt and tls.key.
+                              The Secret must exist in the same namespace as the HostedCluster.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
                       endpointPublishingStrategy:
                         description: |-
                           endpointPublishingStrategy is used to publish the default ingress controller endpoints.
