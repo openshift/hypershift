@@ -1367,6 +1367,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
+	if err := r.reconcileIngressDefaultCertSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile ingress default certificate: %w", err)
+	}
+
 	// Reconcile the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving the source reference
 	// from the HostedCluster and syncing the CM in the control plane namespace.
 	if err := r.reconcileAdditionalTrustBundle(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name); err != nil {

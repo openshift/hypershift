@@ -1452,6 +1452,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileSSHKeySync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
 
+	report.execute("IngressDefaultCertSync", nonCritical, func() error {
+		return r.reconcileIngressDefaultCertSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+	})
+
 	report.execute("AdditionalTrustBundle", nonCritical, func() error {
 		return r.reconcileAdditionalTrustBundle(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
@@ -2082,6 +2086,44 @@ func (r *HostedClusterReconciler) reconcileSSHKeySync(
 			dest.Data = map[string][]byte{}
 		}
 		dest.Data["id_rsa.pub"] = srcData
+		return nil
+	})
+	return err
+}
+
+// reconcileIngressDefaultCertSync syncs the user-provided ingress default
+// certificate secret from the HostedCluster namespace to the control plane namespace.
+func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
+	controlPlaneNamespace string,
+) error {
+	if hcluster.Spec.OperatorConfiguration == nil ||
+		hcluster.Spec.OperatorConfiguration.IngressOperator == nil ||
+		len(hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name) == 0 {
+		return nil
+	}
+	sourceSecretName := hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name
+	var src corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: sourceSecretName}, &src); err != nil {
+		return fmt.Errorf("failed to get ingress default certificate secret %s: %w", sourceSecretName, err)
+	}
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+	dest := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)
+	_, err := createOrUpdate(ctx, r.Client, dest, func() error {
+		if _, ok := src.Data[corev1.TLSCertKey]; !ok {
+			return fmt.Errorf("ingress default certificate secret %q must have a %s key", sourceSecretName, corev1.TLSCertKey)
+		}
+		if _, ok := src.Data[corev1.TLSPrivateKeyKey]; !ok {
+			return fmt.Errorf("ingress default certificate secret %q must have a %s key", sourceSecretName, corev1.TLSPrivateKeyKey)
+		}
+		dest.Type = corev1.SecretTypeTLS
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data[corev1.TLSCertKey] = src.Data[corev1.TLSCertKey]
+		dest.Data[corev1.TLSPrivateKeyKey] = src.Data[corev1.TLSPrivateKeyKey]
 		return nil
 	})
 	return err
