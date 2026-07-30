@@ -66,6 +66,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&noProxy, "no-proxy", "", "URLs that should not use the provided http-proxy and https-proxy")
 
 	cmd.Flags().BoolVar(&opts.ConnectDirectlyToCloudAPIs, "connect-directly-to-cloud-apis", false, "If true, bypass konnectivity to connect to cloud APIs while still honoring management proxy config")
+	cmd.Flags().BoolVar(&opts.PreferIPv4, "prefer-ipv4", false, "Prefer IPv4 addresses when resolving DNS names")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		l.Info("Starting proxy", "version", supportedversion.String())
