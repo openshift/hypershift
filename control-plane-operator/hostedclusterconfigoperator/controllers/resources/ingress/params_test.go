@@ -317,6 +317,33 @@ func TestNewIngressParams(t *testing.T) {
 				LoadBalancerScope: v1.ExternalLoadBalancer,
 			},
 		},
+		{
+			name: "DefaultCertificate set via OperatorConfiguration",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						OperatorConfiguration: &hyperv1.OperatorConfiguration{
+							IngressOperator: &hyperv1.IngressOperatorSpec{
+								DefaultCertificate: hyperv1.IngressDefaultCertificateReference{
+									Name: "my-custom-cert",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &IngressParams{
+				IngressSubdomain:  "apps.",
+				Replicas:          1,
+				IsPrivate:         false,
+				IBMCloudUPI:       false,
+				AWSNLB:            false,
+				LoadBalancerScope: v1.ExternalLoadBalancer,
+				DefaultCertificate: hyperv1.IngressDefaultCertificateReference{
+					Name: "my-custom-cert",
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
