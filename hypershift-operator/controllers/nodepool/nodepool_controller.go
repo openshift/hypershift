@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -365,7 +366,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage)
+	osStreamsEnabled := featuregate.Gate().Enabled(featuregate.OSStreams)
+	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -376,6 +378,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 		return ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
+	// TODO(jparrill): remove debug log before merge
+	log.Info("Resolved RHEL stream for boot image",
+		"stream", resolvedRHELStream,
+		"osStreamsEnabled", osStreamsEnabled,
+		"specOSImageStream", nodePool.Spec.OSImageStream.Name,
+		"statusOSImageStream", nodePool.Status.OSImageStream.Name,
+		"releaseVersion", releaseImage.Version())
 
 	if err := r.setPlatformConditions(ctx, hcluster, nodePool, controlPlaneNamespace, releaseImage, resolvedRHELStream); err != nil {
 		return ctrl.Result{}, err
@@ -488,7 +497,8 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 		return nil, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage)
+	osStreamsEnabled := featuregate.Gate().Enabled(featuregate.OSStreams)
+	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}

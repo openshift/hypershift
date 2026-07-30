@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -111,7 +112,8 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage)
+	osStreamsEnabled := featuregate.Gate().Enabled(featuregate.OSStreams)
+	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}

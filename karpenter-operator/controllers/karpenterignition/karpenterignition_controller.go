@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -592,7 +593,8 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		return nil, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
 
-	resolvedRHELStream, err := nodepool.GetRHELStreamForBootImage(ctx, r.ManagementClient, np, releaseImage)
+	osStreamsEnabled := featuregate.Gate().Enabled(featuregate.OSStreams)
+	resolvedRHELStream, err := nodepool.GetRHELStreamForBootImage(ctx, r.ManagementClient, np, releaseImage, osStreamsEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}

@@ -465,7 +465,7 @@ spec:
 
 			resolvedStream := StreamRHEL9
 			if tc.releaseImage != nil && client != nil {
-				if s, resolveErr := GetRHELStreamForBootImage(t.Context(), client, tc.nodePool, tc.releaseImage); resolveErr == nil {
+				if s, resolveErr := GetRHELStreamForBootImage(t.Context(), client, tc.nodePool, tc.releaseImage, false); resolveErr == nil {
 					resolvedStream = s
 				}
 			}

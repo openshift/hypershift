@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -367,7 +368,8 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	// Validate osImageStream before expensive config generation to fail fast.
-	if err := validateOSImageStream(ctx, r.Client, nodePool, releaseImage); err != nil {
+	osStreamsEnabled := featuregate.Gate().Enabled(featuregate.OSStreams)
+	if err := validateOSImageStream(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled); err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
@@ -384,7 +386,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage)
+	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,

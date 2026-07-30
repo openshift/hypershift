@@ -88,16 +88,30 @@ func usesRuncRuntime(ctx context.Context, c client.Client, nodePool *hyperv1.Nod
 //  2. status.osImageStream.Name — what existing nodes are running;
 //     preserves the current stream across upgrades to avoid unintended
 //     rollouts (e.g., upgrading from OCP 4.x to 5.0 keeps rhel-9)
-//  3. Version-derived default via GetRHELStream — for brand-new
-//     NodePools with no status yet (rhel-9 for <5.0, rhel-10 for >=5.0)
-func GetRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+//  3. When the OSStreams feature gate is disabled: always rhel-9
+//     (backwards-compatible with upstream behavior)
+//  4. When the OSStreams feature gate is enabled: version-derived default
+//     via GetRHELStream — for brand-new NodePools with no status yet
+//     (rhel-9 for <5.0, rhel-10 for >=5.0)
+func GetRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, osStreamsEnabled bool) (string, error) {
 	// Explicit user choice takes precedence.
 	explicitStream := nodePool.Spec.OSImageStream.Name
 
-	// For existing NodePools without an explicit choice, preserve the
-	// stream that nodes are already running to avoid a rollout on upgrade.
-	if explicitStream == "" && nodePool.Status.OSImageStream.Name != "" {
-		return nodePool.Status.OSImageStream.Name, nil
+	if explicitStream == "" {
+		// Preserve the stream that nodes are already running to avoid a
+		// spurious rollout on upgrade (e.g., 4.x→5.0 keeps rhel-9).
+		if nodePool.Status.OSImageStream.Name != "" {
+			return nodePool.Status.OSImageStream.Name, nil
+		}
+		if !osStreamsEnabled {
+			// Feature gate off: match upstream behavior (hardcoded rhel-9).
+			// Without this guard a 5.x NodePool would resolve to rhel-10
+			// while the MCO still installs rhel-9, causing a template flip
+			// after machines report their actual OS.
+			return StreamRHEL9, nil
+		}
+		// Feature gate on, no status yet: fall through to version-derived
+		// default so brand-new OCP 5.0+ NodePools get rhel-10.
 	}
 
 	version, err := semver.Parse(releaseImage.Version())
@@ -117,10 +131,10 @@ func GetRHELStreamForBootImage(ctx context.Context, c client.Client, nodePool *h
 // valid stream for the given release version and container runtime
 // configuration. Returns an error describing the problem or nil.
 // It delegates to GetRHELStream for version-aware validation.
-func validateOSImageStream(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) error {
+func validateOSImageStream(ctx context.Context, c client.Client, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, osStreamsEnabled bool) error {
 	if nodePool.Spec.OSImageStream.Name == "" {
 		return nil
 	}
-	_, err := GetRHELStreamForBootImage(ctx, c, nodePool, releaseImage)
+	_, err := GetRHELStreamForBootImage(ctx, c, nodePool, releaseImage, osStreamsEnabled)
 	return err
 }

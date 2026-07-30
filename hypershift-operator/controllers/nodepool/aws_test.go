@@ -1208,7 +1208,7 @@ func TestSetAWSConditions(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			resolvedStream := StreamRHEL9
 			if tc.releaseImage != nil {
-				if s, resolveErr := GetRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage); resolveErr != nil {
+				if s, resolveErr := GetRHELStreamForBootImage(t.Context(), fakeClient, tc.nodePool, tc.releaseImage, false); resolveErr != nil {
 					if tc.expectError {
 						g.Expect(resolveErr).To(HaveOccurred(), "stream resolution should fail for invalid osImageStream")
 						return
