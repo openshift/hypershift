@@ -383,9 +383,19 @@ func TestReportLimitedSuportEnabled(t *testing.T) {
 		expected *dto.MetricFamily
 	}{
 		{
-			name:     "When limited support label is set, metric is reported as one",
+			name:     "When limited support label is set to true, metric is reported as one",
 			labels:   map[string]string{hyperv1.LimitedSupportLabel: "true"},
 			expected: wrapExpectedValueAsMetric(1),
+		},
+		{
+			name:     "When limited support label is set to false, metric is reported as zero",
+			labels:   map[string]string{hyperv1.LimitedSupportLabel: "false"},
+			expected: wrapExpectedValueAsMetric(0),
+		},
+		{
+			name:     "When limited support label is set to anything unsupported, metric is reported as zero",
+			labels:   map[string]string{hyperv1.LimitedSupportLabel: "foo"},
+			expected: wrapExpectedValueAsMetric(0),
 		},
 		{
 			name:     "When limited support label is not set, metric is reported as zero",
