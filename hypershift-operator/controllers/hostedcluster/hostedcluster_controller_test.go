@@ -3995,6 +3995,47 @@ func TestIsProgressing(t *testing.T) {
 	}
 }
 
+func TestInvertConditionStatus(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		input          metav1.ConditionStatus
+		expectedStatus metav1.ConditionStatus
+	}{
+		{
+			name:           "When status is True it should invert to False",
+			input:          metav1.ConditionTrue,
+			expectedStatus: metav1.ConditionFalse,
+		},
+		{
+			name:           "When status is False it should invert to True",
+			input:          metav1.ConditionFalse,
+			expectedStatus: metav1.ConditionTrue,
+		},
+		{
+			name:           "When status is Unknown it should produce Unknown",
+			input:          metav1.ConditionUnknown,
+			expectedStatus: metav1.ConditionUnknown,
+		},
+		{
+			name:           "When status is empty string it should produce Unknown",
+			input:          metav1.ConditionStatus(""),
+			expectedStatus: metav1.ConditionUnknown,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			result := invertConditionStatus(tc.input)
+			g.Expect(result).To(Equal(tc.expectedStatus))
+			g.Expect(result).ToNot(BeEmpty(), "Status must not be empty string — API server rejects it")
+		})
+	}
+}
+
 func TestComputeAWSDefaultSGDeletedCondition(t *testing.T) {
 	t.Parallel()
 
