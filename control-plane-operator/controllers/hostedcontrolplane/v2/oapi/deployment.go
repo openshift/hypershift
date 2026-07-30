@@ -57,6 +57,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		config.AuditWebhookService,
 	}
 
+	if v, ok := resolveOAPIVerbosity(cpContext.HCP); ok {
+		podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+			c.Args = append(c.Args, fmt.Sprintf("--v=%d", v))
+		})
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if !util.HCPOAuthEnabled(cpContext.HCP) {
 			c.Args = append(c.Args, "--internal-oauth-disabled=true")
@@ -117,6 +123,15 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	)
 
 	return nil
+}
+
+func resolveOAPIVerbosity(hcp *hyperv1.HostedControlPlane) (int, bool) {
+	if hcp.Spec.OperatorConfiguration != nil &&
+		hcp.Spec.OperatorConfiguration.OpenShiftAPIServer.LogLevel != nil {
+		return util.LogLevelToKlogVerbosity(
+			hcp.Spec.OperatorConfiguration.OpenShiftAPIServer.LogLevel), true
+	}
+	return 0, false
 }
 
 func applyAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {
