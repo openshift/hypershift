@@ -62,6 +62,7 @@ type RawCreateOptions struct {
 	AutoNode                         bool
 	UseROSAManagedPolicies           bool
 	SharedRole                       bool
+	StorageVolumesKMSKey             string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -333,6 +334,18 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			},
 		}
 	}
+
+	if o.StorageVolumesKMSKey != "" {
+		if cluster.Spec.OperatorConfiguration == nil {
+			cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+		}
+		cluster.Spec.OperatorConfiguration.CSIDriverConfig = hyperv1.CSIDriverOperatorConfig{
+			AWS: hyperv1.AWSCSIDriverConfig{
+				KMSKeyARN: o.StorageVolumesKMSKey,
+			},
+		}
+	}
+
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
 	if o.externalDNSDomain != "" {
 		for i, svc := range cluster.Spec.Services {
@@ -511,6 +524,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
 	flags.BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 	flags.BoolVar(&opts.SharedRole, "shared-role", opts.SharedRole, "Create a single shared role with all role policies instead of individual component roles")
+	flags.StringVar(&opts.StorageVolumesKMSKey, "storage-volumes-kms-key", opts.StorageVolumesKMSKey, "AWS KMS key ARN or alias ARN used to encrypt PVCs created by the default StorageClass at cluster creation. If omitted, PVCs use AWS-managed encryption. Day-2 key changes should be made directly on the ClusterCSIDriver resource in the guest cluster.")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }

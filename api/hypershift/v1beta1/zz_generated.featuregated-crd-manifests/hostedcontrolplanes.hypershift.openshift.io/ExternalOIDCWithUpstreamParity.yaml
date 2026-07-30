@@ -3847,6 +3847,41 @@ spec:
                     - message: ovnKubernetesConfig is immutable once set and cannot
                         be removed
                       rule: '!has(oldSelf.ovnKubernetesConfig) || has(self.ovnKubernetesConfig)'
+                  csiDriverConfig:
+                    description: |-
+                      csiDriverConfig specifies configuration for CSI driver operators in the hosted cluster.
+                      This allows configuring platform-specific CSI driver behavior such as KMS encryption
+                      for the default StorageClass.
+                    minProperties: 1
+                    properties:
+                      aws:
+                        description: aws specifies configuration for the AWS EBS CSI
+                          driver operator.
+                        minProperties: 1
+                        properties:
+                          kmsKeyARN:
+                            description: |-
+                              kmsKeyARN sets the cluster default storage class to encrypt volumes with
+                              a user-defined KMS key, rather than the default KMS key used by AWS.
+                              The value may be either the ARN or Alias ARN of a KMS key.
+
+                              The ARN must follow the format:
+                                arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>
+                              where <partition> is the AWS partition (aws, aws-cn, aws-us-gov, aws-iso,
+                              aws-iso-b, aws-iso-e, or aws-iso-f).
+
+                              This field is applied at cluster creation time only. Day-2 changes to
+                              storage encryption should be made directly on the ClusterCSIDriver
+                              resource in the guest cluster.
+
+                              The StorageARN role in AWSRolesRef must have kms:Decrypt,
+                              kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+                              permissions on the specified key.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                        type: object
+                    type: object
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
