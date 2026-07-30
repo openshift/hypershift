@@ -66,18 +66,15 @@ func (hcu *HealthCheckUpdater) update(ctx context.Context) error {
 		return fmt.Errorf("failed to get HostedControlPlane: %w", err)
 	}
 
-	// Return early if deleting
-	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		return nil
-	}
-
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
 	errs := []error{}
 
-	// Call generic health checks
-
-	// Call platform-specific health checks
+	// NOTE: generic health checks (if added in the future) should be gated
+	// behind hostedControlPlane.DeletionTimestamp.IsZero(). Platform-specific
+	// credential checks below must keep running during deletion so that
+	// shouldCleanupCloudResources() sees an up-to-date ValidAWSIdentityProvider
+	// condition.
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
 		// This is the best effort ping to the identity provider
 		// that enables access from the operator to the cloud provider resources.
