@@ -163,7 +163,7 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 	return nil
 }
 
-func (r *NodePoolReconciler) setPowerVSconditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setPowerVSValidPlatformImage(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	log := ctrl.LoggerFrom(ctx)
 	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
 	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
