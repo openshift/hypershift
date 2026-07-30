@@ -94,6 +94,9 @@ type Options struct {
 	ExternalOIDCTestUsers       string
 	// ExternalCNIProvider specifies the third-party CNI provider (e.g., "cilium", "calico")
 	ExternalCNIProvider string
+
+	// AdditionalPullSecretFile is the path to a pull secret file used by the EnsureGlobalPullSecret test
+	AdditionalPullSecretFile string
 }
 
 type HyperShiftOperatorInstallOptions struct {
