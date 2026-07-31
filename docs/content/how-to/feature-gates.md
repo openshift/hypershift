@@ -1,53 +1,102 @@
 # Feature Gates
 
-Feature gates in OpenShift allows to ensure everything new works together and optimizes for rapid evaluation in CI to promote without ever releasing a public preview.
-There are no guarantees that your fleet continues to be operational long term after you enable a feature gate.
+## :material-information-outline: Overview
 
-In the HCP context, there are multiple non exclusive scenarios where features might need to be gated:
+HyperShift has two separate feature gate systems that serve different purposes. Understanding which system applies is essential for correctly enabling and testing features.
 
-1 - A feature that impacts HO install
-E.g. New CRDs are required for CPOv2 (control plane operator version 2)
+| System | Scope | Set by |
+|--------|-------|--------|
+| **Management cluster feature gates** | CRD schemas, HyperShift Operator, Control Plane Operator | `hypershift install --tech-preview-no-upgrade` |
+| **Hosted Cluster feature gates** | OCP release payload for a single tenant | `spec.configuration.featureGate.featureSet` on the HostedCluster |
 
-2 - A feature that impacts the whole cluster fleet / HO
-E.g. Introduce fleet wide shared ingress to be validated in targeted environments
+!!! warning
 
-3 - A feature that impacts individual clusters
-E.g. Introduce using CPOv2 for some HC to develop feedback
+    These two systems are independent. Enabling a management cluster feature gate does **not** enable OCP feature gates inside hosted clusters, and vice versa.
 
-4 - A feature that impacts API
-E.g. Introduce a new provider like Openstack
-E.g. Introduce a new field/feature like AWS tenancy
+## :material-server-network: Management Cluster Feature Gates
 
-5 - A feature specific for an OCP component
-Components honour existing standalone in-cluster OCP feature gate mechanisim
+Management cluster feature gates govern the HyperShift infrastructure running on the management cluster. There are no guarantees that your fleet continues to be operational long-term after you enable these feature gates.
 
-## Users
-All the feature gates are grouped in a single TechPreviewNoUpgrade feature set. Current implementation exposes this --tech-preview-no-upgrade flag in the CLI at install time
+These gates apply to the following scenarios:
 
-```
-hypershift install --help
-```
-Will show among other flags:
-```
---tech-preview-no-upgrade                        If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled
+- A feature that impacts HyperShift Operator install (e.g. new CRDs are required for CPOv2)
+- A feature that impacts the whole cluster fleet (e.g. fleet-wide shared ingress to be validated in targeted environments)
+- A feature that impacts individual clusters (e.g. introduce using CPOv2 for some HostedClusters)
+- A feature that impacts the HyperShift API (e.g. introduce a new provider like OpenStack, or a new field like AWS tenancy)
+
+All management cluster feature gates are grouped under a single `TechPreviewNoUpgrade` feature set. To enable them, pass `--tech-preview-no-upgrade` at install time:
+
+```bash
+hypershift install --tech-preview-no-upgrade
 ```
 
-In a follow up we'll consider to introduce support to also signal --tech-preview-no-upgrade at the HC level.
-Eventually support for at least 1, 2, 3 and 4 afromentioned scenarios will most likely converge into a single API.
+This flag determines which CRD variants are installed (Default vs TechPreviewNoUpgrade) and configures the `HYPERSHIFT_FEATURESET` environment variable that both the HyperShift Operator and Control Plane Operator read.
 
-## Devs
+### Adding a Management Cluster Feature Gate
 
-We rely on [openshift/api](https://github.com/openshift/api) tooling for generating CRDs with [openshift markers](https://github.com/openshift/kubernetes-sigs-controller-tools/blob/96a305393cb22f0c69c4ee59be27ad09057cc704/pkg/crd/markers/patch_validation.go#L30-L36). See [this PR](https://github.com/openshift/hypershift/pull/5047) as an example of a adding a field behind a feature gate.
+We rely on [openshift/api](https://github.com/openshift/api) tooling for generating CRDs with [openshift markers](https://github.com/openshift/kubernetes-sigs-controller-tools/blob/96a305393cb22f0c69c4ee59be27ad09057cc704/pkg/crd/markers/patch_validation.go#L30-L36). See [this PR](https://github.com/openshift/hypershift/pull/8675) as an example of adding an API field behind a feature gate.
 
-The currently ongoing implementation of feature gates for the controllers business logic relies on "k8s.io/component-base/featuregate". This enables devs to declare [granular gates for their features](https://github.com/openshift/hypershift/blob/9f5ccaef47cdcf9d2df91134571f1783e99e30fe/hypershift-operator/featuregate/feature.go).
-See [this PR](https://github.com/openshift/hypershift/pull/4980) as an example.
+The controller business logic uses `k8s.io/component-base/featuregate`. This enables devs to declare [granular gates for their features](https://github.com/openshift/hypershift/blob/9f5ccaef47cdcf9d2df91134571f1783e99e30fe/hypershift-operator/featuregate/feature.go). See [this PR](https://github.com/openshift/hypershift/pull/8976) as an example.
 
-### Promoting a feature gated API field and feature to sable
+## :material-cloud-outline: Hosted Cluster Feature Gates
 
-Generally speaking any new field should start by being feature gated.
+Hosted Cluster feature gates control the OCP release payload for a specific hosted cluster. OCP components in the hosted control plane honor the standard in-cluster OCP feature gate mechanism. This applies to:
+
+- A feature specific to an OCP component (e.g. TLSAdherence, DynamicResourceAllocation)
+
+To enable a feature set for a hosted cluster, set it in `spec.configuration.featureGate.featureSet`:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example
+  namespace: clusters
+spec:
+  configuration:
+    featureGate:
+      featureSet: TechPreviewNoUpgrade
+```
+
+!!! warning
+
+    Enabling `TechPreviewNoUpgrade` is irreversible and prevents minor-version upgrades on the hosted cluster. Use this only on test clusters where future upgrades are not required.
+
+The `featuregate-generator` job in the hosted control plane namespace renders the OCP payload's feature gates into a `feature-gate` ConfigMap that OCP components consume.
+
+!!! note
+
+    If you are an OCP component team looking to test a feature gate like `TLSAdherence` or `DynamicResourceAllocation`, this is the mechanism you need — set the feature set on the HostedCluster, not on the management cluster.
+
+### Example: Enabling TLSAdherence
+
+The `TLSAdherence` feature gate is an OCP feature gate that is part of the `TechPreviewNoUpgrade` feature set. To enable it on a hosted cluster:
+
+1. Set `TechPreviewNoUpgrade` as the feature set on the HostedCluster:
+
+    ```yaml
+    spec:
+      configuration:
+        featureGate:
+          featureSet: TechPreviewNoUpgrade
+    ```
+
+2. Verify the feature gate was rendered by checking the ConfigMap in the hosted control plane namespace:
+
+    ```bash
+    oc get configmap feature-gate -n <hcp-namespace> -o yaml
+    ```
+
+    !!! tip
+
+        The hosted control plane namespace is typically `<clusters-namespace>-<hostedcluster-name>`.
+
+## Promoting a Feature Gated API Field
+
+Generally speaking any new field should start by being feature-gated.
 The minimum criteria for promotion is:
 
-- Provide clear context and analysis on the PR about how the field might impact the different GA products. This includes but it is not limited to ROSA, ARO, IBM Cloud and MCE (self hosted).
+- Provide clear context and analysis on the PR about how the field might impact the different GA products. This includes but is not limited to ROSA, ARO, IBM Cloud and MCE (self-hosted).
 
 - Document the field with the expected behaviour for day 1 and day 2 changes.
 
@@ -57,4 +106,4 @@ The minimum criteria for promotion is:
 
 - There is e2e test coverage for day 2 on update UX failure expectations via [this e2e test](https://github.com/openshift/hypershift/blob/d6f79f6cd0a638e07f82b6c57bff6c23a6c8d2c0/test/e2e/util/util.go#L977)
 
-In general we aim to adhere and converge with stand alone principles in [openshift/api](https://github.com/openshift/api)
+In general we aim to adhere and converge with stand-alone principles in [openshift/api](https://github.com/openshift/api)

@@ -16,12 +16,14 @@ import (
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
+	hypershiftfake "github.com/openshift/hypershift/client/clientset/clientset/fake"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
+	"github.com/openshift/library-go/pkg/operator/events"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +40,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/util/cert"
+	"k8s.io/client-go/util/workqueue"
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
@@ -2108,6 +2111,360 @@ func TestEnsureOldSignerCertificateRevoked_KASVerification(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(done).To(BeTrue())
 			g.Expect(requeue).To(BeTrue())
+		})
+	}
+}
+
+// spyQueue wraps a RateLimitingInterface to record AddAfter calls.
+type spyQueue struct {
+	workqueue.RateLimitingInterface //nolint:staticcheck
+	addAfterCalls                   []struct {
+		item     any
+		duration time.Duration
+	}
+}
+
+func (s *spyQueue) AddAfter(item any, d time.Duration) {
+	s.addAfterCalls = append(s.addAfterCalls, struct {
+		item     any
+		duration time.Duration
+	}{item, d})
+	s.RateLimitingInterface.AddAfter(item, d)
+}
+
+// fakeSyncContext implements factory.SyncContext for sync-level testing.
+type fakeSyncContext struct {
+	queue    workqueue.RateLimitingInterface //nolint:staticcheck
+	queueKey string
+	recorder events.Recorder
+}
+
+func (f *fakeSyncContext) Queue() workqueue.RateLimitingInterface { return f.queue } //nolint:staticcheck
+func (f *fakeSyncContext) QueueKey() string                       { return f.queueKey }
+func (f *fakeSyncContext) Recorder() events.Recorder              { return f.recorder }
+
+func TestSyncCertificateRevocationRequest_RequeueBehavior(t *testing.T) {
+	revocationTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z")
+	if err != nil {
+		t.Fatalf("could not parse time: %v", err)
+	}
+	postRevocationClock := testingclock.NewFakeClock(revocationTime.Add(revocationOffset + 1*time.Hour))
+
+	data := pki(t, revocationTime)
+
+	for _, testCase := range []struct {
+		name    string
+		now     func() time.Time
+		crr     *certificatesv1alpha1.CertificateRevocationRequest
+		secrets []*corev1.Secret
+		cms     []*corev1.ConfigMap
+
+		expectAddAfter bool
+		expectErr      bool
+	}{
+		{
+			name: "When the request is non-terminal, it should requeue via AddAfter",
+			crr: &certificatesv1alpha1.CertificateRevocationRequest{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
+				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
+				Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+					RevocationTimestamp: ptr.To(metav1.NewTime(revocationTime)),
+					PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+					Conditions: []metav1.Condition{{
+						Type:               certificatesv1alpha1.LeafCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "All leaf certificates are re-generated.",
+					}, {
+						Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "Signer certificate crr-ns/customer-system-admin-signer regenerated.",
+					}, {
+						Type:               certificatesv1alpha1.NewCertificatesTrustedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "New signer certificate crr-ns/customer-system-admin-signer trusted.",
+					}},
+				},
+			},
+			secrets: []*corev1.Secret{{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.CustomerSystemAdminSigner("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.original.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.original.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.CustomerSystemAdminClientCertSecret("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signedCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.clientKey,
+				},
+			}},
+			cms: []*corev1.ConfigMap{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.CustomerSystemAdminSignerCA("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.future.raw.signerCert),
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.TotalKASClientCABundle("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.original.raw.signerCert) + string(data.future.raw.signerCert),
+				},
+			}},
+			expectAddAfter: true,
+		},
+		{
+			name: "When the request has reached a terminal state, it should not touch the queue",
+			crr: &certificatesv1alpha1.CertificateRevocationRequest{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
+				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
+				Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+					RevocationTimestamp: ptr.To(metav1.NewTime(revocationTime)),
+					PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+					Conditions: []metav1.Condition{{
+						Type:               certificatesv1alpha1.PreviousCertificatesRevokedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "Previous signer certificate revoked.",
+					}, {
+						Type:               certificatesv1alpha1.LeafCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "All leaf certificates are re-generated.",
+					}, {
+						Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "Signer certificate crr-ns/customer-system-admin-signer regenerated.",
+					}, {
+						Type:               certificatesv1alpha1.NewCertificatesTrustedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "New signer certificate crr-ns/customer-system-admin-signer trusted.",
+					}},
+				},
+			},
+			secrets: []*corev1.Secret{{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.CustomerSystemAdminSigner("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.original.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.original.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.CustomerSystemAdminClientCertSecret("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signedCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.clientKey,
+				},
+			}},
+			cms: []*corev1.ConfigMap{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.CustomerSystemAdminSignerCA("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.future.raw.signerCert),
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.TotalKASClientCABundle("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.future.raw.signerCert),
+				},
+			}},
+			expectAddAfter: false,
+		},
+		{
+			name: "When old-signer verification exceeds the timeout, it should patch status and return an error",
+			now: func() time.Time {
+				return postRevocationClock.Now().Add(11 * time.Minute)
+			},
+			crr: &certificatesv1alpha1.CertificateRevocationRequest{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "crr-name"},
+				Spec:       certificatesv1alpha1.CertificateRevocationRequestSpec{SignerClass: string(certificates.CustomerBreakGlassSigner)},
+				Status: certificatesv1alpha1.CertificateRevocationRequestStatus{
+					RevocationTimestamp: ptr.To(metav1.NewTime(revocationTime)),
+					PreviousSigner:      &corev1.LocalObjectReference{Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+					Conditions: []metav1.Condition{{
+						Type:               certificatesv1alpha1.LeafCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "All leaf certificates are re-generated.",
+					}, {
+						Type:               certificatesv1alpha1.RootCertificatesRegeneratedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "Signer certificate crr-ns/customer-system-admin-signer regenerated.",
+					}, {
+						Type:               certificatesv1alpha1.NewCertificatesTrustedType,
+						Status:             metav1.ConditionTrue,
+						LastTransitionTime: metav1.NewTime(postRevocationClock.Now()),
+						Reason:             hypershiftv1beta1.AsExpectedReason,
+						Message:            "New signer certificate crr-ns/customer-system-admin-signer trusted.",
+					}},
+				},
+			},
+			secrets: []*corev1.Secret{{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.CustomerSystemAdminSigner("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: "1pfcydcz358pa1glirkmc72sdkf5zw21uam4jbnj03pw"},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.original.raw.signerCert,
+					corev1.TLSPrivateKeyKey: data.original.raw.signerKey,
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:   "crr-ns",
+					Name:        manifests.CustomerSystemAdminClientCertSecret("").Name,
+					Annotations: map[string]string{certrotation.CertificateIssuer: "crr-ns_customer-break-glass-signer@1234"},
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       data.future.raw.signedCert,
+					corev1.TLSPrivateKeyKey: data.future.raw.clientKey,
+				},
+			}},
+			cms: []*corev1.ConfigMap{{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.CustomerSystemAdminSignerCA("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.future.raw.signerCert),
+				},
+			}, {
+				ObjectMeta: metav1.ObjectMeta{Namespace: "crr-ns", Name: manifests.TotalKASClientCABundle("").Name},
+				Data: map[string]string{
+					"ca-bundle.crt": string(data.original.raw.signerCert) + string(data.future.raw.signerCert),
+				},
+			}},
+			expectAddAfter: false,
+			expectErr:      true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			spy := &spyQueue{
+				RateLimitingInterface: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()), //nolint:staticcheck
+			}
+			defer spy.ShutDown()
+
+			syncCtx := &fakeSyncContext{
+				queue:    spy,
+				queueKey: "crr-ns/crr-name",
+				recorder: events.NewInMemoryRecorder("test", postRevocationClock),
+			}
+
+			nowFunc := testCase.now
+			if nowFunc == nil {
+				nowFunc = postRevocationClock.Now
+			}
+
+			fakeHypershiftClient := hypershiftfake.NewSimpleClientset()
+			c := &CertificateRevocationController{
+				clock:            nowFunc,
+				hypershiftClient: fakeHypershiftClient,
+				fieldManager:     "test",
+				getCRR: func(namespace, name string) (*certificatesv1alpha1.CertificateRevocationRequest, error) {
+					if namespace == testCase.crr.Namespace && name == testCase.crr.Name {
+						return testCase.crr, nil
+					}
+					return nil, apierrors.NewNotFound(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificaterevocationrequest").GroupResource(), name)
+				},
+				getSecret: func(namespace, name string) (*corev1.Secret, error) {
+					for _, secret := range testCase.secrets {
+						if secret.Namespace == namespace && secret.Name == name {
+							return secret, nil
+						}
+					}
+					return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(), name)
+				},
+				listSecrets: func(namespace string) ([]*corev1.Secret, error) {
+					return testCase.secrets, nil
+				},
+				getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
+					for _, cm := range testCase.cms {
+						if cm.Namespace == namespace && cm.Name == name {
+							return cm, nil
+						}
+					}
+					return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
+				},
+				listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+					return nil, nil
+				},
+				skipKASConnections: true,
+			}
+
+			err := c.syncCertificateRevocationRequest(t.Context(), syncCtx)
+
+			if testCase.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				// When timeout fires, verify the status patch contains PreviousCertificatesRevoked=False with the timeout reason
+				actions := fakeHypershiftClient.Actions()
+				var foundPatch bool
+				for _, a := range actions {
+					if a.GetVerb() == "patch" && a.GetResource().Resource == "certificaterevocationrequests" && a.GetSubresource() == "status" {
+						patchAction, ok := a.(k8stesting.PatchAction)
+						g.Expect(ok).To(BeTrue(), "expected PatchAction type")
+						patchBody := string(patchAction.GetPatch())
+						g.Expect(patchBody).To(ContainSubstring(certificatesv1alpha1.PreviousCertificatesRevokedType))
+						g.Expect(patchBody).To(ContainSubstring(string(metav1.ConditionFalse)))
+						g.Expect(patchBody).To(ContainSubstring(revocationVerificationTimeoutReason))
+						foundPatch = true
+					}
+				}
+				g.Expect(foundPatch).To(BeTrue(), "timeout should apply PreviousCertificatesRevoked=False status condition before returning error")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "syncCertificateRevocationRequest should return nil, not SyntheticRequeueError")
+			}
+
+			if testCase.expectAddAfter {
+				g.Expect(spy.addAfterCalls).To(HaveLen(1), "expected exactly one AddAfter call")
+				g.Expect(spy.addAfterCalls[0].item).To(Equal("crr-ns/crr-name"))
+				g.Expect(spy.addAfterCalls[0].duration).To(Equal(requeueInterval))
+			} else {
+				g.Expect(spy.addAfterCalls).To(BeEmpty(), "expected no AddAfter calls for terminal state")
+			}
 		})
 	}
 }

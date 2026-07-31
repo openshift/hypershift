@@ -317,6 +317,42 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 				Status: agentv1.AgentClusterStatus{},
 			},
 		},
+		"When ign endpoint is IPv6 host:port, it should create infra cluster with bracketed URL": {
+			controlPlaneNamespace: controlPlaneNamespace,
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: hostedClusterNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AgentPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: "[fd2e:6f44:5dd8:c956::14]:31936",
+				},
+			},
+			APIEndpoint: APIEndpoint,
+			expectedObject: &agentv1.AgentCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:       controlPlaneNamespace,
+					Name:            hostedClusterName,
+					ResourceVersion: "1",
+				},
+				Spec: agentv1.AgentClusterSpec{
+					IgnitionEndpoint: &agentv1.IgnitionEndpoint{
+						Url:                    "https://[fd2e:6f44:5dd8:c956::14]:31936/ignition",
+						CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
+					},
+					ControlPlaneEndpoint: capiv1.APIEndpoint{
+						Port: APIEndpoint.Port,
+						Host: APIEndpoint.Host,
+					},
+				},
+				Status: agentv1.AgentClusterStatus{},
+			},
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

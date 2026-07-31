@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -388,7 +389,7 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
 		if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
 			condition.Message = "failed to delete AWS default security group"
-			if code == "DependencyViolation" {
+			if code == supportawsutil.DependencyViolation {
 				condition.Message = destroyErr.Error()
 			}
 			condition.Reason = hyperv1.AWSErrorReason
@@ -400,9 +401,11 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 			}
 
 			switch code {
-			case "UnauthorizedOperation":
+			case supportawsutil.UnauthorizedOperation:
 				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
-			case "DependencyViolation":
+			case supportawsutil.InvalidIdentityToken:
+				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of invalid identity token (OIDC provider may be missing).")
+			case supportawsutil.DependencyViolation:
 				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
 			default:
 				return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
@@ -761,7 +764,9 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Reason:  hyperv1.AsExpectedReason,
 		}
 		if util.HCPOAuthEnabled(hostedControlPlane) {
-			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauth2callback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
+			// JoinHostPort brackets IPv6 literals so url.Parse accepts the callback template.
+			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s/oauth2callback/[identity-provider-name]",
+				net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
 		}
 	} else {
 		message := "Cluster infrastructure is still provisioning"
@@ -2911,7 +2916,8 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	// Get the security group to delete. If it no longer exists, then there's nothing to do
 	sg, err := supportawsutil.GetSecurityGroup(ctx, r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
 	if err != nil {
-		return "", err
+		code := supportawsutil.AWSErrorCode(err)
+		return code, err
 	}
 	if sg == nil {
 		return "", nil
@@ -2955,7 +2961,8 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	// the delete until it's no longer there.
 	sg, err = supportawsutil.GetSecurityGroup(ctx, r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
 	if err != nil {
-		return "", err
+		code := supportawsutil.AWSErrorCode(err)
+		return code, err
 	}
 	if sg != nil {
 		return "", fmt.Errorf("security group still exists, waiting on deletion")

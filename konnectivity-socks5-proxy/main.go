@@ -44,6 +44,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.ResolveFromGuestClusterDNS, "resolve-from-guest-cluster-dns", false, "If DNS resolving should use the guest clusters cluster-dns")
 	cmd.Flags().BoolVar(&opts.ResolveFromManagementClusterDNS, "resolve-from-management-cluster-dns", false, "If guest cluster's dns fails, fallback to the management cluster's dns")
 	cmd.Flags().BoolVar(&opts.DisableResolver, "disable-resolver", false, "If true, DNS resolving is disabled. Takes precedence over resolve-from-guest-cluster-dns and resolve-from-management-cluster-dns")
+	cmd.Flags().BoolVar(&opts.PreferIPv4, "prefer-ipv4", false, "Prefer IPv4 addresses when resolving DNS names")
 
 	cmd.Flags().StringVar(&opts.CAFile, "ca-cert-path", "/etc/konnectivity/proxy-ca/ca.crt", "The path to the konnectivity client's ca-cert.")
 	cmd.Flags().StringVar(&opts.ClientCertFile, "tls-cert-path", "/etc/konnectivity/proxy-client/tls.crt", "The path to the konnectivity client's tls certificate.")

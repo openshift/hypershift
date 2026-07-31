@@ -48,10 +48,6 @@ type ConfigGenerator struct {
 	controlplaneNamespace string
 	// resolvedRHELStreamForBootImage is the RHEL stream name used for boot
 	// image resolution via StreamForName.
-	// TODO(CNTRLPLANE-3553): currently hardcoded to rhel-9 until the MCO
-	// can install rhel-10 OS images. Once MCO support lands, this should
-	// be set by getRHELStreamForBootImage for version-aware resolution.
-	//
 	// This field is intentionally outside rolloutConfig because it does not
 	// participate in the config hash that drives rollouts.
 	resolvedRHELStreamForBootImage string
@@ -86,7 +82,7 @@ type rolloutConfig struct {
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
-func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string) (*ConfigGenerator, error) {
+func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string, resolvedRHELStream string) (*ConfigGenerator, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client can't be nil")
 	}
@@ -124,16 +120,11 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 	}
 
 	cg := &ConfigGenerator{
-		Client:                client,
-		hostedCluster:         hostedCluster,
-		nodePool:              nodePool,
-		controlplaneNamespace: controlPlaneNamespace,
-		// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
-		// rhel-10 OS images. Otherwise NodePools pointing to a 5.x release image
-		// will boot with a rhel-10 AMI while the MCO installs rhel-9, which is a
-		// path we don't need to exercise for replace upgrades. In-place upgrades
-		// from rhel-9 to rhel-10 should have their own dedicated e2e.
-		resolvedRHELStreamForBootImage: StreamRHEL9,
+		Client:                         client,
+		hostedCluster:                  hostedCluster,
+		nodePool:                       nodePool,
+		controlplaneNamespace:          controlPlaneNamespace,
+		resolvedRHELStreamForBootImage: resolvedRHELStream,
 		rolloutConfig: &rolloutConfig{
 			releaseImage:     releaseImage,
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,

@@ -251,6 +251,7 @@ func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []s
 	args := []string{
 		"create", "cluster", cfg.platform.Name(),
 		"--name=" + name,
+		"--namespace=" + cfg.namespace,
 		"--node-pool-replicas=" + strconv.Itoa(cfg.nodeCount),
 		"--base-domain=" + cfg.baseDomain,
 		"--pull-secret=" + cfg.pullSecret,

@@ -11,7 +11,7 @@ type Object interface {
 	client.Object
 	GetConditions() []Condition
 	SetConditions([]Condition)
-	StatusConditions() ConditionSet
+	StatusConditions(...ForOption) ConditionSet
 }
 
 // ConditionType is a upper-camel-cased condition type.

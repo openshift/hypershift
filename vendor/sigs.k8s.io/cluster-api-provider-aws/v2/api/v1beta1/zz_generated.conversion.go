@@ -1242,6 +1242,7 @@ func autoConvert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(in *
 	// WARNING: in.DisableHostsRewrite requires manual conversion: does not exist in peer-type
 	// WARNING: in.PreserveClientIP requires manual conversion: does not exist in peer-type
 	// WARNING: in.TargetGroupIPType requires manual conversion: does not exist in peer-type
+	// WARNING: in.DNSResolutionCheck requires manual conversion: does not exist in peer-type
 	return nil
 }
 
@@ -2179,6 +2180,7 @@ func Convert_v1beta1_S3Bucket_To_v1beta2_S3Bucket(in *S3Bucket, out *v1beta2.S3B
 func autoConvert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(in *v1beta2.S3Bucket, out *S3Bucket, s conversion.Scope) error {
 	out.ControlPlaneIAMInstanceProfile = in.ControlPlaneIAMInstanceProfile
 	out.NodesIAMInstanceProfiles = *(*[]string)(unsafe.Pointer(&in.NodesIAMInstanceProfiles))
+	// WARNING: in.AdditionalIAMRoles requires manual conversion: does not exist in peer-type
 	// WARNING: in.PresignedURLDuration requires manual conversion: does not exist in peer-type
 	out.Name = in.Name
 	// WARNING: in.BestEffortDeleteObjects requires manual conversion: does not exist in peer-type

@@ -3,7 +3,7 @@
 ## Overview
 
 In standalone OpenShift, cluster configuration is achieved via cluster-scoped resources in the `config.openshift.io/v1`
-API group. Resources such as APIServer, OAuth, and Proxy allow adding additional named certificates to the Kube APIServer, 
+API group. Resources such as APIServer, OAuth, and Proxy allow adding additional named certificates to the Kube APIServer,
 adding identity providers, configuring the global proxy, etc. In HyperShift, configuration resources that
 impact the control plane need to be specified in the HostedCluster resource instead of inside the guest cluster. The
 resources still exist inside the guest cluster, but their source of truth is the HostedCluster and are continuously
@@ -15,7 +15,7 @@ The configuration resources that should be specified in the HostedCluster are:
 
 * [APIServer](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/apiserver-config-openshift-io-v1.html) - Provides API server configuration such as certificates and certificate authorities.
 * [Authentication](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/authentication-config-openshift-io-v1.html) - Controls the identity provider and authentication configuration for the cluster.
-* [FeatureGate](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/featuregate-config-openshift-io-v1.html) - Enables FeatureGates so that you can use Tech Preview features.
+* [FeatureGate](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/featuregate-config-openshift-io-v1.html) - Enables FeatureGates so that you can use Tech Preview features. See [Feature Gates](../feature-gates.md) for the distinction between management cluster and hosted cluster feature gates.
 * [Ingress](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/ingress-config-openshift-io-v1.html) - Configuration details related to routing such as the default domain for routes.
 * [Image](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/image-config-openshift-io-v1.html) - Configures how specific image registries should be treated (allowed, disallowed, insecure, CA details).
 * [OAuth](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/oauth-config-openshift-io-v1.html) - Configures identity providers and other behavior related to internal OAuth server flows.

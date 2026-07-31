@@ -1115,7 +1115,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 			}
 			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
-				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
+				hcluster.Status.IgnitionEndpoint = net.JoinHostPort(serviceStrategy.NodePort.Address, strconv.Itoa(int(ignitionService.Spec.Ports[0].NodePort)))
 			}
 		default:
 			// We don't return the error here as reconciling won't solve the input problem.
