@@ -7,10 +7,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -194,6 +194,57 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
+			name:       "When AWS platform without trust bundle, it should not set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(BeEmpty())
+				g.Expect(infra.Spec.CloudConfig.Key).To(BeEmpty())
+			},
+		},
+		{
+			name:       "When AWS platform with AdditionalTrustBundle, it should set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: "user-ca-bundle"}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(AWSProviderConfigKey))
+			},
+		},
+		{
+			name:       "When AWS platform with proxy TrustedCA, it should set CloudConfig",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.AWSPlatform)
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: "us-east-1",
+				}
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						TrustedCA: configv1.ConfigMapNameReference{Name: "proxy-ca"},
+					},
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(AWSProviderConfigKey))
+			},
+		},
+		{
 			name:       "When AWS platform has resource tags, it should copy tags filtering out kubernetes.io prefixed ones",
 			inputInfra: InfrastructureConfig(),
 			inputHCP: func() *hyperv1.HostedControlPlane {
@@ -299,8 +350,8 @@ func TestReconcileInfrastructure(t *testing.T) {
 			verify: func(g Gomega, infra *configv1.Infrastructure) {
 				g.Expect(infra.Status.Platform).To(Equal(configv1.OpenStackPlatformType))
 				g.Expect(infra.Spec.PlatformSpec.OpenStack).ToNot(BeNil())
-				g.Expect(infra.Spec.CloudConfig.Name).To(Equal("cloud-provider-config"))
-				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(openstack.CloudConfigKey))
+				g.Expect(infra.Spec.CloudConfig.Name).To(Equal(CloudProviderCMName))
+				g.Expect(infra.Spec.CloudConfig.Key).To(Equal(OpenStackCloudConfigKey))
 			},
 		},
 		{
