@@ -61,3 +61,12 @@ func EnableForPlatform(platform hyperv1.PlatformType) option {
 		return cpContext.HCP.Spec.Platform.Type == platform
 	})
 }
+
+// IsStorageAndCSIManaged returns true if storage and CSI components should be managed for the given platform.
+// IBMCloud and PowerVS platforms do not support managed storage/CSI.
+func IsStorageAndCSIManaged(platform hyperv1.PlatformType) bool {
+	if platform == hyperv1.IBMCloudPlatform || platform == hyperv1.PowerVSPlatform {
+		return false
+	}
+	return true
+}

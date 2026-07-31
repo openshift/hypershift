@@ -258,3 +258,63 @@ func TestGenericAdapterReconcile(t *testing.T) {
 		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	})
 }
+
+func TestWithPredicate(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	predicate := func(ctx WorkloadContext) bool { return true }
+	ga := &genericAdapter{}
+
+	opt := WithPredicate(predicate)
+	opt(ga)
+
+	g.Expect(ga.predicate).ToNot(BeNil())
+}
+
+func TestSkipManifest(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	ga := &genericAdapter{}
+
+	opt := SkipManifest()
+	opt(ga)
+
+	g.Expect(ga.skip).To(BeTrue())
+}
+
+func TestReconcileExisting(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	ga := &genericAdapter{}
+
+	opt := ReconcileExisting()
+	opt(ga)
+
+	g.Expect(ga.reconcileExisting).To(BeTrue())
+}
+
+func TestNewGenericControllerConfigAdapter(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	adapter := NewGenericControllerConfigAdapter("0.0.0.0:8443", "tcp4")
+	g.Expect(adapter).ToNot(BeNil())
+
+	cm := &corev1.ConfigMap{}
+	ctx := WorkloadContext{
+		HCP: &hyperv1.HostedControlPlane{
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Configuration: &hyperv1.ClusterConfiguration{},
+			},
+		},
+	}
+
+	err := adapter(ctx, cm)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(cm.Data).To(HaveKey("config.yaml"))
+	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindAddress: 0.0.0.0:8443"))
+	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindNetwork: tcp4"))
+}

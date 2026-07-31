@@ -41,7 +41,7 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		WithManifestAdapter(
 			"controller-config.yaml",
-			component.WithAdaptFunction(adaptControllerConfig),
+			component.WithAdaptFunction(component.NewGenericControllerConfigAdapter(":60000", "")),
 		).
 		WithManifestAdapter(
 			"azure-secretprovider.yaml",

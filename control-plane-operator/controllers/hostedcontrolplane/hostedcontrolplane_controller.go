@@ -1661,6 +1661,22 @@ func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Cont
 		}
 	}
 
+	if component.IsStorageAndCSIManaged(hcp.Spec.Platform.Type) {
+		clusterStorageOperatorServingCert := manifests.ClusterStorageOperatorServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, clusterStorageOperatorServingCert, func() error {
+			return pki.ReconcileClusterStorageOperatorServingCert(clusterStorageOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cluster storage operator serving cert: %w", err)
+		}
+
+		csiSnapshotControllerOperatorServingCert := manifests.CSISnapshotControllerOperatorServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, csiSnapshotControllerOperatorServingCert, func() error {
+			return pki.ReconcileCSISnapshotControllerOperatorServingCert(csiSnapshotControllerOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile CSI snapshot controller operator serving cert: %w", err)
+		}
+	}
+
 	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kcmServerSecret, func() error {
 		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
