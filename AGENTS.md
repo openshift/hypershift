@@ -28,6 +28,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |
 | **Contributing and PR workflow** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Agentic SDLC framework** | [docs/content/how-to/agentic-sdlc.md](docs/content/how-to/agentic-sdlc.md) |
+| **Feature gates** | [docs/content/how-to/feature-gates.md](docs/content/how-to/feature-gates.md) — two separate systems: management cluster gates vs hosted cluster gates |
 | **Pre-commit hooks** | [docs/content/contribute/precommit-hook-help.md](docs/content/contribute/precommit-hook-help.md) |
 
 ## Pull Secret Cycling
