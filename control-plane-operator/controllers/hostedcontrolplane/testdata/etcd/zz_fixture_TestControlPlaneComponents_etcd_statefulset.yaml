@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: dbe8cc53c45e5f7ec6ff4e32193771fb949755a93c461a08545fafaa966f5c1f
+    hypershift.openshift.io/desired-state-hash: 4ca0d704026c94e734c2c4514011697e920716c4aff00c27f9f27566b3980613
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -134,6 +134,8 @@ spec:
           value: /etc/etcd/tls/etcd-ca/ca.crt
         - name: ETCD_ENABLE_PPROF
           value: "true"
+        - name: ETCD_METRICS
+          value: extensive
         - name: ETCD_INITIAL_CLUSTER
           value: etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380,etcd-1=https://etcd-1.etcd-discovery.hcp-namespace.svc:2380,etcd-2=https://etcd-2.etcd-discovery.hcp-namespace.svc:2380
         - name: ETCD_TLS_MIN_VERSION
