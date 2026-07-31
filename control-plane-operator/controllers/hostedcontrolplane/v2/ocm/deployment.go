@@ -27,7 +27,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 // no LogLevel is set, preserving the klog default (0) for existing clusters.
 func resolveOCMVerbosity(hcp *hyperv1.HostedControlPlane) (int, bool) {
 	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.OpenShiftControllerManager.LogLevel != nil {
+		hcp.Spec.OperatorConfiguration.OpenShiftControllerManager.LogLevel != "" {
 		return util.LogLevelToKlogVerbosity(
 			hcp.Spec.OperatorConfiguration.OpenShiftControllerManager.LogLevel), true
 	}

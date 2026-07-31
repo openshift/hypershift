@@ -91,7 +91,7 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 			})
 		}
 		if hcp.Spec.OperatorConfiguration != nil &&
-			hcp.Spec.OperatorConfiguration.Etcd.LogLevel != nil {
+			hcp.Spec.OperatorConfiguration.Etcd.LogLevel != "" {
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name: "ETCD_LOG_LEVEL",
 				Value: util.LogLevelToEtcdLevel(

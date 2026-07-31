@@ -183,7 +183,7 @@ spec:
         - --feature-gates=VSphereMultiNetworks=false
         - --feature-gates=VolumeAttributesClass=false
         - --feature-gates=VolumeGroupSnapshot=false
-        - -v=4
+        - --v=4
         command:
         - hyperkube
         - kube-scheduler

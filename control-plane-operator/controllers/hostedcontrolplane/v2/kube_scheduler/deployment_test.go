@@ -11,7 +11,7 @@ import (
 func TestResolveSchedulerVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.KubeSchedulerOperatorSpec {
 		return hyperv1.KubeSchedulerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 

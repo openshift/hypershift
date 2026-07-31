@@ -45,7 +45,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 func resolveSchedulerVerbosity(hcp *hyperv1.HostedControlPlane) int {
 	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel != nil {
+		hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel != "" {
 		return util.LogLevelToKlogVerbosity(
 			hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel)
 	}

@@ -388,7 +388,7 @@ const (
 	RecommendedClusterSizeAnnotation = "hypershift.openshift.io/recommended-cluster-size"
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifying the log verbosity of kube-apiserver.
-	// Deprecated: Use OperatorConfiguration.KubeAPIServer.LogLevel instead.
+	// Deprecated: Use spec.operatorConfiguration.kubeAPIServer.logLevel instead.
 	// When both are set, the OperatorConfiguration field takes precedence.
 	// This annotation will be removed in a future release.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
@@ -2898,13 +2898,17 @@ type OperatorConfiguration struct {
 
 	// kubeAPIServer configures the kube-apiserver component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// kube-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
 
-	// etcd configures the Etcd component.
+	// etcd configures the etcd component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// Etcd runs with 3 replicas — Raft quorum is maintained during rolling update.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
@@ -2912,6 +2916,8 @@ type OperatorConfiguration struct {
 
 	// kubeControllerManager configures the kube-controller-manager component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// kube-controller-manager uses leader election — the standby takes over during restart.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
@@ -2919,6 +2925,8 @@ type OperatorConfiguration struct {
 
 	// kubeScheduler configures the kube-scheduler component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// kube-scheduler uses leader election — the standby takes over during restart.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
@@ -2926,6 +2934,8 @@ type OperatorConfiguration struct {
 
 	// openShiftControllerManager configures the openshift-controller-manager component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// openshift-controller-manager uses leader election — the standby takes over during restart.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
@@ -2933,6 +2943,8 @@ type OperatorConfiguration struct {
 
 	// openShiftAPIServer configures the openshift-apiserver component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// openshift-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
@@ -2940,6 +2952,8 @@ type OperatorConfiguration struct {
 
 	// openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// openshift-oauth-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
@@ -2947,6 +2961,8 @@ type OperatorConfiguration struct {
 
 	// oauthServer configures the oauth-server component.
 	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
 	// oauth-server runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs

@@ -4570,7 +4570,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           Defaults to "Normal".
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -4582,8 +4581,10 @@ spec:
                     - minProperties: 1
                     - minProperties: 1
                     description: |-
-                      etcd configures the Etcd component.
+                      etcd configures the etcd component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       Etcd runs with 3 replicas — Raft quorum is maintained during rolling update.
                     properties:
                       logLevel:
@@ -4592,7 +4593,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -5332,6 +5332,8 @@ spec:
                     description: |-
                       kubeAPIServer configures the kube-apiserver component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       kube-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
                     properties:
                       logLevel:
@@ -5340,7 +5342,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -5354,6 +5355,8 @@ spec:
                     description: |-
                       kubeControllerManager configures the kube-controller-manager component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       kube-controller-manager uses leader election — the standby takes over during restart.
                     properties:
                       logLevel:
@@ -5362,7 +5365,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -5376,6 +5378,8 @@ spec:
                     description: |-
                       kubeScheduler configures the kube-scheduler component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       kube-scheduler uses leader election — the standby takes over during restart.
                     properties:
                       logLevel:
@@ -5384,7 +5388,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -5398,6 +5401,8 @@ spec:
                     description: |-
                       oauthServer configures the oauth-server component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       oauth-server runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
                     properties:
                       logLevel:
@@ -5406,7 +5411,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -5420,6 +5424,8 @@ spec:
                     description: |-
                       openShiftAPIServer configures the openshift-apiserver component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       openshift-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
                     properties:
                       logLevel:
@@ -5428,7 +5434,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -5442,6 +5447,8 @@ spec:
                     description: |-
                       openShiftControllerManager configures the openshift-controller-manager component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       openshift-controller-manager uses leader election — the standby takes over during restart.
                     properties:
                       logLevel:
@@ -5450,7 +5457,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
@@ -5464,6 +5470,8 @@ spec:
                     description: |-
                       openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
                       Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
                       openshift-oauth-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
                     properties:
                       logLevel:
@@ -5472,7 +5480,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace

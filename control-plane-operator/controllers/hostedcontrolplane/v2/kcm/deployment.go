@@ -25,7 +25,7 @@ import (
 // no LogLevel is set, preserving the klog default (0) for existing clusters.
 func resolveKCMVerbosity(hcp *hyperv1.HostedControlPlane) (int, bool) {
 	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel != nil {
+		hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel != "" {
 		return util.LogLevelToKlogVerbosity(
 			hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel), true
 	}

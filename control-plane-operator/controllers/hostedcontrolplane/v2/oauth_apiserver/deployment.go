@@ -97,7 +97,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 func resolveOAuthAPIServerVerbosity(hcp *hyperv1.HostedControlPlane) int {
 	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel != nil {
+		hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel != "" {
 		return util.LogLevelToKlogVerbosity(
 			hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel)
 	}

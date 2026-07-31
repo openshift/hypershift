@@ -1070,11 +1070,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "KAS Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
@@ -1085,11 +1084,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "Etcd Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					Etcd: hyperv1.EtcdOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
@@ -1100,11 +1098,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "KCM Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					KubeControllerManager: hyperv1.KubeControllerManagerOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
@@ -1115,11 +1112,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "KubeScheduler Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					KubeScheduler: hyperv1.KubeSchedulerOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
@@ -1130,11 +1126,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "OCM Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					OpenShiftControllerManager: hyperv1.OpenShiftControllerManagerOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
@@ -1145,11 +1140,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "OpenShift API Server Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					OpenShiftAPIServer: hyperv1.OpenShiftAPIServerOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
@@ -1160,11 +1154,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "OpenShift OAuth API Server Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					OpenShiftOAuthAPIServer: hyperv1.OpenShiftOAuthAPIServerOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
@@ -1175,11 +1168,10 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:       "OAuth Server Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
-				debug := hyperv1.Debug
 				hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 					OAuthServer: hyperv1.OAuthServerOperatorSpec{
 						ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
-							LogLevel: &debug,
+							LogLevel: hyperv1.Debug,
 						},
 					},
 				}
