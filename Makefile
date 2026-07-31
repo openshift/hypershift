@@ -640,7 +640,7 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./test/ui/playwright-report/*,./test/ui/node_modules/*,./test/ui/test-results/*"
 
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
@@ -709,3 +709,24 @@ $(CODESPELL): $(PYTHON_VENV_STAMP)
 
 gitlint: $(GITLINT) ## Install local copy of gitlint.
 $(GITLINT): $(PYTHON_VENV_STAMP)
+
+##@ UI Tests
+.PHONY: test-ui-install
+test-ui-install: ## Install UI test dependencies (Playwright)
+	@echo "Installing UI test dependencies..."
+	cd test/ui && npm ci
+	@echo "Installing Playwright browsers..."
+	cd test/ui && npx playwright install chromium
+
+# Runs all Playwright projects: setup (auth) + common (all tests)
+.PHONY: test-ui
+test-ui: test-ui-install ## Run all UI tests (headless)
+	@echo "Running all UI tests..."
+	cd test/ui && npm test
+
+# Runs tests with visible browser window - useful for debugging and for developers.
+# Runs all projects (setup + common) in headed mode.
+.PHONY: test-ui-headed
+test-ui-headed: test-ui-install ## Run UI tests in headed mode (interactive)
+	@echo "Running UI tests in headed mode..."
+	cd test/ui && npm run test:headed
