@@ -2900,7 +2900,7 @@ type OperatorConfiguration struct {
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// kube-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
@@ -2909,7 +2909,7 @@ type OperatorConfiguration struct {
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// Etcd runs with 3 replicas — Raft quorum is maintained during rolling update.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	Etcd EtcdOperatorSpec `json:"etcd,omitzero"`
@@ -2918,7 +2918,7 @@ type OperatorConfiguration struct {
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// kube-controller-manager uses leader election — the standby takes over during restart.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	KubeControllerManager KubeControllerManagerOperatorSpec `json:"kubeControllerManager,omitzero"`
@@ -2926,8 +2926,8 @@ type OperatorConfiguration struct {
 	// kubeScheduler configures the kube-scheduler component.
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
+	// The current default log level is Normal.
 	// chooses a reasonable default, which is subject to change over time.
-	// kube-scheduler uses leader election — the standby takes over during restart.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	KubeScheduler KubeSchedulerOperatorSpec `json:"kubeScheduler,omitzero"`
@@ -2936,7 +2936,7 @@ type OperatorConfiguration struct {
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// openshift-controller-manager uses leader election — the standby takes over during restart.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OpenShiftControllerManager OpenShiftControllerManagerOperatorSpec `json:"openShiftControllerManager,omitzero"`
@@ -2945,7 +2945,7 @@ type OperatorConfiguration struct {
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// openshift-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OpenShiftAPIServer OpenShiftAPIServerOperatorSpec `json:"openShiftAPIServer,omitzero"`
@@ -2954,7 +2954,7 @@ type OperatorConfiguration struct {
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// openshift-oauth-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OpenShiftOAuthAPIServer OpenShiftOAuthAPIServerOperatorSpec `json:"openShiftOAuthAPIServer,omitzero"`
@@ -2963,7 +2963,7 @@ type OperatorConfiguration struct {
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// oauth-server runs with 3 replicas (HA) — 2 continue serving while 1 restarts.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`

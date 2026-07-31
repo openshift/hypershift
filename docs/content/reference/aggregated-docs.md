@@ -54773,7 +54773,7 @@ KubeAPIServerOperatorSpec
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
-kube-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
+The current default log level is Normal.</p>
 </td>
 </tr>
 <tr>
@@ -54791,7 +54791,7 @@ EtcdOperatorSpec
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
-Etcd runs with 3 replicas — Raft quorum is maintained during rolling update.</p>
+The current default log level is Normal.</p>
 </td>
 </tr>
 <tr>
@@ -54809,7 +54809,7 @@ KubeControllerManagerOperatorSpec
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
-kube-controller-manager uses leader election — the standby takes over during restart.</p>
+The current default log level is Normal.</p>
 </td>
 </tr>
 <tr>
@@ -54826,8 +54826,8 @@ KubeSchedulerOperatorSpec
 <p>kubeScheduler configures the kube-scheduler component.
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
-chooses a reasonable default, which is subject to change over time.
-kube-scheduler uses leader election — the standby takes over during restart.</p>
+The current default log level is Normal.
+chooses a reasonable default, which is subject to change over time.</p>
 </td>
 </tr>
 <tr>
@@ -54845,7 +54845,7 @@ OpenShiftControllerManagerOperatorSpec
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
-openshift-controller-manager uses leader election — the standby takes over during restart.</p>
+The current default log level is Normal.</p>
 </td>
 </tr>
 <tr>
@@ -54863,7 +54863,7 @@ OpenShiftAPIServerOperatorSpec
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
-openshift-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
+The current default log level is Normal.</p>
 </td>
 </tr>
 <tr>
@@ -54881,7 +54881,7 @@ OpenShiftOAuthAPIServerOperatorSpec
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
-openshift-oauth-apiserver runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
+The current default log level is Normal.</p>
 </td>
 </tr>
 <tr>
@@ -54899,7 +54899,7 @@ OAuthServerOperatorSpec
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
-oauth-server runs with 3 replicas (HA) — 2 continue serving while 1 restarts.</p>
+The current default log level is Normal.</p>
 </td>
 </tr>
 </tbody>
