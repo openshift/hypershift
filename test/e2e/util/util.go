@@ -57,6 +57,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -392,6 +393,27 @@ func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Clien
 		t.Fatalf("could not create client for guest cluster: %v", err)
 	}
 	return guestClient
+}
+
+// guestClientImpersonating returns a guest cluster client that impersonates the given username in
+// the system:masters group. The group keeps the request authorized, so admission is what decides
+// the outcome, while the username is one no admission policy whitelists.
+func guestClientImpersonating(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, username string) crclient.Client {
+	g := NewWithT(t)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+	guestConfig.Impersonate = rest.ImpersonationConfig{
+		UserName: username,
+		Groups:   []string{"system:masters"},
+	}
+
+	impersonatingClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
+	g.Expect(err).NotTo(HaveOccurred(), "could not create impersonating client for guest cluster")
+	return impersonatingClient
 }
 
 func GetGuestKubeconfigHost(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
@@ -2731,6 +2753,9 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 			hccokasvap.AdmissionPolicyNameInfra,
 			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
 		}
+		if IsGreaterThanOrEqualTo(Version50) {
+			requiredVAPs = append(requiredVAPs, hccokasvap.AdmissionPolicyNameRBAC)
+		}
 		presentVAPs := []string{}
 		for _, vap := range validatingAdmissionPolicies.Items {
 			presentVAPs = append(presentVAPs, vap.Name)
@@ -2755,6 +2780,28 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesBlockRBACDeletion", func(t *testing.T) {
+		CPOAtLeast(t, Version50, hc)
+		g := NewWithT(t)
+		t.Log("Checking that VAP blocks deletion of hcco-cluster-admin ClusterRoleBinding")
+		// The admin kubeconfig authenticates as system:admin, which the policy whitelists so the
+		// KAS bootstrap container can apply these bindings. Impersonate an unrelated user to
+		// exercise the path the policy actually guards.
+		impersonatingClient := guestClientImpersonating(t, ctx, mgmtClient, hc, "hypershift-e2e-rbac-vap-test")
+		crb := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "hcco-cluster-admin",
+			},
+		}
+		err := impersonatingClient.Get(ctx, crclient.ObjectKeyFromObject(crb), crb)
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to get hcco-cluster-admin ClusterRoleBinding: %v", err))
+		// Dry run: admission still evaluates the policy, but a cluster missing the VAP is not
+		// left without the binding HCCO depends on.
+		err = impersonatingClient.Delete(ctx, crb, crclient.DryRunAll)
+		g.Expect(err).To(HaveOccurred(), "VAP should block deletion of hcco-cluster-admin ClusterRoleBinding")
+		g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
+			fmt.Sprintf("rejection should come from a ValidatingAdmissionPolicy, got: %v", err))
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)

@@ -29,6 +29,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -36,9 +37,11 @@ import (
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -133,6 +136,9 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 					hccokasvap.AdmissionPolicyNameInfra,
 					hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
 				}
+				if tc.VersionAtLeast(e2eutil.Version50) {
+					requiredVAPs = append(requiredVAPs, hccokasvap.AdmissionPolicyNameRBAC)
+				}
 				vapNames := make([]string, 0, len(vapList.Items))
 				for _, vap := range vapList.Items {
 					vapNames = append(vapNames, vap.Name)
@@ -160,6 +166,35 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 				}
 				err := hcClient.Update(tc.Context, apiServerCopy)
 				g.Expect(err).To(HaveOccurred(), "VAP should block audit profile modification")
+				g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
+					"rejection should be from a ValidatingAdmissionPolicy, got: %v", err)
+			}, time.Minute, 5*time.Second).Should(Succeed())
+		})
+
+		It("should deny unauthorized deletion of kas-bootstrap RBAC bindings via VAPs", func() {
+			tc.SkipIfVersionBelow(e2eutil.Version50)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			// The admin kubeconfig authenticates as system:admin, which the policy whitelists so
+			// the KAS bootstrap container can apply these bindings. Impersonate an unrelated user
+			// to exercise the path the policy actually guards; system:masters keeps the request
+			// authorized so admission is what decides the outcome.
+			restConfig, err := tc.GetHostedClusterRESTConfig(hc)
+			Expect(err).NotTo(HaveOccurred())
+			restConfig.Impersonate = rest.ImpersonationConfig{
+				UserName: "hypershift-e2e-rbac-vap-test",
+				Groups:   []string{"system:masters"},
+			}
+			hcClient, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				crb := &rbacv1.ClusterRoleBinding{}
+				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "hcco-cluster-admin"}, crb)).To(Succeed())
+				// Dry run: admission still evaluates the policy, but a cluster missing the VAP is
+				// not left without the binding HCCO depends on.
+				err := hcClient.Delete(tc.Context, crb, crclient.DryRunAll)
+				g.Expect(err).To(HaveOccurred(), "VAP should block deletion of hcco-cluster-admin ClusterRoleBinding")
 				g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
 					"rejection should be from a ValidatingAdmissionPolicy, got: %v", err)
 			}, time.Minute, 5*time.Second).Should(Succeed())
