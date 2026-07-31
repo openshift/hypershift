@@ -27,6 +27,22 @@ const (
 	FlowStyle
 )
 
+// EncodeHint controls how a mapping node is serialised by format-specific encoders
+// that distinguish between inline and block/section representations (e.g. TOML, HCL).
+type EncodeHint int
+
+const (
+	// EncodeHintDefault lets the encoder choose the representation (e.g. TOML block
+	// mappings default to [section] headers).
+	EncodeHintDefault EncodeHint = iota
+	// EncodeHintSeparateBlock forces the node to be emitted as a separate block or
+	// table-section header (used by TOML [section] and HCL block decoders).
+	EncodeHintSeparateBlock
+	// EncodeHintInline forces the node to be emitted as an inline / flow table
+	// (used by TOML inline-table decoder and TOML encoder).
+	EncodeHintInline
+)
+
 func createStringScalarNode(stringValue string) *CandidateNode {
 	var node = &CandidateNode{Kind: ScalarNode}
 	node.Value = stringValue
@@ -51,6 +67,20 @@ func createScalarNode(value interface{}, stringValue string) *CandidateNode {
 		node.Tag = "!!null"
 	}
 	return node
+}
+
+type NodeInfo struct {
+	Kind        string      `yaml:"kind"`
+	Style       string      `yaml:"style,omitempty"`
+	Anchor      string      `yaml:"anchor,omitempty"`
+	Tag         string      `yaml:"tag,omitempty"`
+	HeadComment string      `yaml:"headComment,omitempty"`
+	LineComment string      `yaml:"lineComment,omitempty"`
+	FootComment string      `yaml:"footComment,omitempty"`
+	Value       string      `yaml:"value,omitempty"`
+	Line        int         `yaml:"line,omitempty"`
+	Column      int         `yaml:"column,omitempty"`
+	Content     []*NodeInfo `yaml:"content,omitempty"`
 }
 
 type CandidateNode struct {
@@ -83,6 +113,9 @@ type CandidateNode struct {
 	// (e.g. top level cross document merge). This property does not propagate to child nodes.
 	EvaluateTogether bool
 	IsMapKey         bool
+	// EncodeHint controls how a mapping node is serialised by format-specific encoders
+	// (e.g. TOML, HCL) that support both inline and block/section representations.
+	EncodeHint EncodeHint
 }
 
 func (n *CandidateNode) CreateChild() *CandidateNode {
@@ -155,6 +188,18 @@ func (n *CandidateNode) getParsedKey() interface{} {
 
 }
 
+func (n *CandidateNode) FilterMapContentByKey(keyPredicate func(*CandidateNode) bool) []*CandidateNode {
+	var result []*CandidateNode
+	for index := 0; index < len(n.Content); index = index + 2 {
+		keyNode := n.Content[index]
+		valueNode := n.Content[index+1]
+		if keyPredicate(keyNode) {
+			result = append(result, keyNode, valueNode)
+		}
+	}
+	return result
+}
+
 func (n *CandidateNode) GetPath() []interface{} {
 	key := n.getParsedKey()
 	if n.Parent != nil && key != nil {
@@ -198,6 +243,30 @@ func (n *CandidateNode) SetParent(parent *CandidateNode) {
 	n.Parent = parent
 }
 
+type ValueVisitor func(*CandidateNode) error
+
+func (n *CandidateNode) VisitValues(visitor ValueVisitor) error {
+	switch n.Kind {
+	case MappingNode:
+		for i := 1; i < len(n.Content); i = i + 2 {
+			if err := visitor(n.Content[i]); err != nil {
+				return err
+			}
+		}
+	case SequenceNode:
+		for i := 0; i < len(n.Content); i = i + 1 {
+			if err := visitor(n.Content[i]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (n *CandidateNode) CanVisitValues() bool {
+	return n.Kind == MappingNode || n.Kind == SequenceNode
+}
+
 func (n *CandidateNode) AddKeyValueChild(rawKey *CandidateNode, rawValue *CandidateNode) (*CandidateNode, *CandidateNode) {
 	key := rawKey.Copy()
 	key.SetParent(n)
@@ -215,20 +284,19 @@ func (n *CandidateNode) AddKeyValueChild(rawKey *CandidateNode, rawValue *Candid
 func (n *CandidateNode) AddChild(rawChild *CandidateNode) {
 	value := rawChild.Copy()
 	value.SetParent(n)
-	if value.Key != nil {
-		value.Key.SetParent(n)
-	} else {
-		index := len(n.Content)
-		keyNode := createScalarNode(index, fmt.Sprintf("%v", index))
-		keyNode.SetParent(n)
-		value.Key = keyNode
-	}
+	value.IsMapKey = false
+
+	index := len(n.Content)
+	keyNode := createScalarNode(index, fmt.Sprintf("%v", index))
+	keyNode.SetParent(n)
+	value.Key = keyNode
+
 	n.Content = append(n.Content, value)
 }
 
 func (n *CandidateNode) AddChildren(children []*CandidateNode) {
 	if n.Kind == MappingNode {
-		for i := 0; i < len(children); i += 2 {
+		for i := 0; i < len(children)-1; i += 2 {
 			key := children[i]
 			value := children[i+1]
 			n.AddKeyValueChild(key, value)
@@ -271,11 +339,11 @@ func (n *CandidateNode) guessTagFromCustomType() string {
 	dataBucket, errorReading := parseSnippet(n.Value)
 
 	if errorReading != nil {
-		log.Debug("guessTagFromCustomType: could not guess underlying tag type %v", errorReading)
+		log.Debugf("guessTagFromCustomType: could not guess underlying tag type %v", errorReading)
 		return n.Tag
 	}
 	guessedTag := dataBucket.Tag
-	log.Info("im guessing the tag %v is a %v", n.Tag, guessedTag)
+	log.Infof("im guessing the tag %v is a %v", n.Tag, guessedTag)
 	return guessedTag
 }
 
@@ -358,6 +426,8 @@ func (n *CandidateNode) doCopy(cloneContent bool) *CandidateNode {
 
 		EvaluateTogether: n.EvaluateTogether,
 		IsMapKey:         n.IsMapKey,
+
+		EncodeHint: n.EncodeHint,
 	}
 
 	if cloneContent {
@@ -391,7 +461,7 @@ func (n *CandidateNode) UpdateFrom(other *CandidateNode, prefs assignPreferences
 }
 
 func (n *CandidateNode) UpdateAttributesFrom(other *CandidateNode, prefs assignPreferences) {
-	log.Debug("UpdateAttributesFrom: n: %v other: %v", NodeToString(n), NodeToString(other))
+	log.Debugf("UpdateAttributesFrom: n: %v other: %v", NodeToString(n), NodeToString(other))
 	if n.Kind != other.Kind {
 		// clear out the contents when switching to a different type
 		// e.g. map to array
@@ -411,6 +481,9 @@ func (n *CandidateNode) UpdateAttributesFrom(other *CandidateNode, prefs assignP
 		n.Anchor = other.Anchor
 	}
 
+	// Preserve EncodeHint for format-specific encoding hints
+	n.EncodeHint = other.EncodeHint
+
 	// merge will pickup the style of the new thing
 	// when autocreating nodes
 
@@ -427,4 +500,65 @@ func (n *CandidateNode) UpdateAttributesFrom(other *CandidateNode, prefs assignP
 	if other.LineComment != "" {
 		n.LineComment = other.LineComment
 	}
+}
+
+func (n *CandidateNode) ConvertToNodeInfo() *NodeInfo {
+	info := &NodeInfo{
+		Kind:        kindToString(n.Kind),
+		Style:       styleToString(n.Style),
+		Anchor:      n.Anchor,
+		Tag:         n.Tag,
+		HeadComment: n.HeadComment,
+		LineComment: n.LineComment,
+		FootComment: n.FootComment,
+		Value:       n.Value,
+		Line:        n.Line,
+		Column:      n.Column,
+	}
+	if len(n.Content) > 0 {
+		info.Content = make([]*NodeInfo, len(n.Content))
+		for i, child := range n.Content {
+			info.Content[i] = child.ConvertToNodeInfo()
+		}
+	}
+	return info
+}
+
+// Helper functions to convert Kind and Style to string for NodeInfo
+func kindToString(k Kind) string {
+	switch k {
+	case SequenceNode:
+		return "SequenceNode"
+	case MappingNode:
+		return "MappingNode"
+	case ScalarNode:
+		return "ScalarNode"
+	case AliasNode:
+		return "AliasNode"
+	default:
+		return "Unknown"
+	}
+}
+
+func styleToString(s Style) string {
+	var styles []string
+	if s&TaggedStyle != 0 {
+		styles = append(styles, "TaggedStyle")
+	}
+	if s&DoubleQuotedStyle != 0 {
+		styles = append(styles, "DoubleQuotedStyle")
+	}
+	if s&SingleQuotedStyle != 0 {
+		styles = append(styles, "SingleQuotedStyle")
+	}
+	if s&LiteralStyle != 0 {
+		styles = append(styles, "LiteralStyle")
+	}
+	if s&FoldedStyle != 0 {
+		styles = append(styles, "FoldedStyle")
+	}
+	if s&FlowStyle != 0 {
+		styles = append(styles, "FlowStyle")
+	}
+	return strings.Join(styles, ",")
 }
