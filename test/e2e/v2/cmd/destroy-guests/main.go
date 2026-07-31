@@ -15,11 +15,10 @@ limitations under the License.
 */
 
 // destroy-guests destroys all HostedClusters created by the v2 e2e
-// lifecycle tests. Cluster names are re-derived from PROW_JOB_ID
-// using the same sha256 hash logic as the create step. All clusters
-// are destroyed in parallel with best-effort semantics.
-// Platform selection is controlled by the HYPERSHIFT_PLATFORM
-// environment variable (default: "azure").
+// lifecycle tests. Cluster identities are read from the cluster
+// manifest written by create-guests to SHARED_DIR. Platform-specific
+// destroy flags come from PlatformConfig.DestroyArgs().
+// All clusters are destroyed in parallel with best-effort semantics.
 package main
 
 import (
@@ -35,12 +34,15 @@ import (
 const clusterGracePeriod = "40m"
 
 func main() {
-	prowJobID := os.Getenv("PROW_JOB_ID")
-	if prowJobID == "" {
-		log.Fatal("PROW_JOB_ID is required")
+	sharedDir := os.Getenv("SHARED_DIR")
+	if sharedDir == "" {
+		log.Fatal("SHARED_DIR is required")
 	}
 
-	sharedDir := os.Getenv("SHARED_DIR")
+	manifest, err := lifecycle.ReadManifest(sharedDir)
+	if err != nil {
+		log.Fatalf("Failed to read cluster manifest: %v", err)
+	}
 
 	platform, err := lifecycle.NewPlatformConfig(os.Getenv("HYPERSHIFT_PLATFORM"), sharedDir)
 	if err != nil {
@@ -52,14 +54,7 @@ func main() {
 		hypershiftBin = "hypershift"
 	}
 
-	namespace := os.Getenv("HYPERSHIFT_NAMESPACE")
-	if namespace == "" {
-		namespace = "clusters"
-	}
-
-	specs := platform.ClusterSpecs("", "")
-
-	log.Printf("Destroying %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
+	log.Printf("Destroying %d clusters from manifest", len(manifest.Clusters))
 
 	var (
 		mu     sync.Mutex
@@ -67,14 +62,13 @@ func main() {
 		wg     sync.WaitGroup
 	)
 
-	for _, spec := range specs {
-		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Variant)
+	for _, entry := range manifest.Clusters {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := destroyCluster(hypershiftBin, clusterName, namespace, spec.Variant, platform); err != nil {
-				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", clusterName, spec.Variant, err)
-				log.Printf("ACTION REQUIRED: cloud resources for cluster %s may be orphaned and need manual cleanup (resource group, DNS records, etc.)", clusterName)
+			if err := destroyCluster(hypershiftBin, entry, platform); err != nil {
+				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", entry.Name, entry.Variant, err)
+				log.Printf("ACTION REQUIRED: cloud resources for cluster %s (infraID=%s) may be orphaned and need manual cleanup", entry.Name, entry.InfraID)
 				mu.Lock()
 				failed = true
 				mu.Unlock()
@@ -90,13 +84,14 @@ func main() {
 	log.Printf("All clusters destroyed successfully")
 }
 
-func destroyCluster(hypershiftBin, name, namespace, variant string, platform lifecycle.PlatformConfig) error {
-	log.Printf("Destroying cluster %s (%s)", name, variant)
+func destroyCluster(hypershiftBin string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig) error {
+	log.Printf("Destroying cluster %s (%s, infraID=%s)", entry.Name, entry.Variant, entry.InfraID)
 
 	args := []string{
 		"destroy", "cluster", platform.Name(),
-		"--name=" + name,
-		"--namespace=" + namespace,
+		"--name=" + entry.Name,
+		"--namespace=" + entry.Namespace,
+		"--infra-id=" + entry.InfraID,
 		"--cluster-grace-period=" + clusterGracePeriod,
 	}
 	args = append(args, platform.DestroyArgs()...)
@@ -107,9 +102,9 @@ func destroyCluster(hypershiftBin, name, namespace, variant string, platform lif
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("hypershift destroy cluster %s failed for %s: %w", platform.Name(), name, err)
+		return fmt.Errorf("hypershift destroy cluster %s failed for %s: %w", platform.Name(), entry.Name, err)
 	}
 
-	log.Printf("Finished destroying cluster: %s", name)
+	log.Printf("Finished destroying cluster: %s", entry.Name)
 	return nil
 }

@@ -58,9 +58,8 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 	}
 	return []ClusterSpec{
 		{
-			Variant:    "public",
-			OutputFile: "cluster-name-public",
-			ExtraArgs:  extraArgs,
+			Variant:   "public",
+			ExtraArgs: extraArgs,
 		},
 	}
 }
@@ -105,7 +104,7 @@ func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 		Parallel: []TestGroup{
 			{
 				Name:        "aws-public",
-				ClusterFile: "cluster-name-public",
+				Variant:     "public",
 				LabelFilter: "!lifecycle || hosted-cluster-aws",
 				JUnitFile:   "junit_aws_public.xml",
 			},
@@ -113,10 +112,13 @@ func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 	}
 }
 
+
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {}
 
 func (a *AWSPlatformConfig) DestroyArgs() []string {
+	baseDomain := envOrDefault("HYPERSHIFT_BASE_DOMAIN", a.DefaultBaseDomain())
 	return []string{
 		"--region=" + a.region,
+		"--base-domain=" + baseDomain,
 	}
 }
