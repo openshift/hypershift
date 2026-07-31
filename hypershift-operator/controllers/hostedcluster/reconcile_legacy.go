@@ -3,6 +3,7 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -795,7 +796,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 				}
 			}
 			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
-				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
+				hcluster.Status.IgnitionEndpoint = net.JoinHostPort(serviceStrategy.NodePort.Address, strconv.Itoa(int(ignitionService.Spec.Ports[0].NodePort)))
 			}
 		default:
 			// We don't return the error here as reconciling won't solve the input problem.

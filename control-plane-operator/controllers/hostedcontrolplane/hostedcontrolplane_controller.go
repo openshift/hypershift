@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -763,7 +764,9 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Reason:  hyperv1.AsExpectedReason,
 		}
 		if util.HCPOAuthEnabled(hostedControlPlane) {
-			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauth2callback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
+			// JoinHostPort brackets IPv6 literals so url.Parse accepts the callback template.
+			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s/oauth2callback/[identity-provider-name]",
+				net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
 		}
 	} else {
 		message := "Cluster infrastructure is still provisioning"
