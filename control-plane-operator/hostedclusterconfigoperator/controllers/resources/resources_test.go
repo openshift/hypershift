@@ -107,6 +107,9 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameNTOMirroredConfigs)),
+	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameRBAC),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameRBAC)),
 
 	fakeOperatorHub(),
 	manifests.KASConnectionCheckerDeployment(),

@@ -57,6 +57,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -2730,6 +2731,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 			hccokasvap.AdmissionPolicyNameICSP,
 			hccokasvap.AdmissionPolicyNameInfra,
 			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+			hccokasvap.AdmissionPolicyNameRBAC,
 		}
 		presentVAPs := []string{}
 		for _, vap := range validatingAdmissionPolicies.Items {
@@ -2755,6 +2757,20 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesBlockRBACDeletion", func(t *testing.T) {
+		CPOAtLeast(t, Version418, hc)
+		g := NewWithT(t)
+		t.Log("Checking that VAP blocks deletion of hcco-cluster-admin ClusterRoleBinding")
+		crb := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "hcco-cluster-admin",
+			},
+		}
+		err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(crb), crb)
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to get hcco-cluster-admin ClusterRoleBinding: %v", err))
+		err = guestClient.Delete(ctx, crb)
+		g.Expect(err).To(HaveOccurred(), "VAP should block deletion of hcco-cluster-admin ClusterRoleBinding")
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)

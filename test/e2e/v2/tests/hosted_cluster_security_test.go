@@ -36,6 +36,7 @@ import (
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -131,6 +132,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 					hccokasvap.AdmissionPolicyNameICSP,
 					hccokasvap.AdmissionPolicyNameInfra,
 					hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+					hccokasvap.AdmissionPolicyNameRBAC,
 				}
 				vapNames := make([]string, 0, len(vapList.Items))
 				for _, vap := range vapList.Items {
@@ -155,6 +157,17 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 				}
 				err := hcClient.Update(tc.Context, apiServerCopy)
 				g.Expect(err).To(HaveOccurred(), "VAP should block audit profile modification")
+				g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
+					"rejection should be from a ValidatingAdmissionPolicy, got: %v", err)
+			}, time.Minute, 5*time.Second).Should(Succeed())
+		})
+
+		It("should deny unauthorized deletion of kas-bootstrap RBAC bindings via VAPs", func() {
+			Eventually(func(g Gomega) {
+				crb := &rbacv1.ClusterRoleBinding{}
+				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "hcco-cluster-admin"}, crb)).To(Succeed())
+				err := hcClient.Delete(tc.Context, crb)
+				g.Expect(err).To(HaveOccurred(), "VAP should block deletion of hcco-cluster-admin ClusterRoleBinding")
 				g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
 					"rejection should be from a ValidatingAdmissionPolicy, got: %v", err)
 			}, time.Minute, 5*time.Second).Should(Succeed())
