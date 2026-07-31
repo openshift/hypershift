@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/awslabs/operatorpkg/serrors"
 	"github.com/awslabs/operatorpkg/status"
@@ -97,6 +98,23 @@ type CloudProvider interface {
 	// GetSupportedNodeClasses returns CloudProvider NodeClass that implements status.Object
 	// NOTE: It returns a list where the first element should be the default NodeClass
 	GetSupportedNodeClasses() []status.Object
+}
+
+type NodeLifecycleHookResult struct {
+	// Requeue indicates the lifecycle controller should requeue with exponential backoff.
+	Requeue bool
+	// RequeueAfter indicates the lifecycle controller should requeue after the provided duration.
+	// If multiple hooks are provided, the shortest interval is respected.
+	RequeueAfter time.Duration
+}
+
+// NodeLifecycleHook is implemented by cloud providers to gate node registration.
+// All registered hooks must return an empty result before node registration completes.
+type NodeLifecycleHook interface {
+	// Name for the hook.
+	Name() string
+	// Registered returns true if this hook's preconditions are satisfied and can proceed.
+	Registered(context.Context, *v1.NodeClaim) (NodeLifecycleHookResult, error)
 }
 
 // InstanceType describes the properties of a potential node (either concrete attributes of an instance of this type
@@ -605,4 +623,16 @@ func IsUnevaluatedNodePoolError(err error) bool {
 	}
 	var onatnpErr *UnevaluatedNodePoolError
 	return errors.As(err, &onatnpErr)
+}
+
+// DeviceID is a hashable, unique ID for a device. This ID is absolute - depending on the driver, pool, and device
+// names - as opposed to relative - depending on in-memory indexes.
+type DeviceID struct {
+	Driver unique.Handle[string]
+	Pool   unique.Handle[string]
+	Device unique.Handle[string]
+}
+
+func (id DeviceID) String() string {
+	return fmt.Sprintf("%s/%s/%s", id.Driver.Value(), id.Pool.Value(), id.Device.Value())
 }
