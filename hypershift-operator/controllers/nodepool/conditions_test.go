@@ -177,7 +177,7 @@ func TestIgnitionEndpointAvailableCondition(t *testing.T) {
 			}
 
 			result, err := reconciler.ignitionEndpointAvailableCondition(ctx, nodePool, hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(err).NotTo(HaveOccurred(), "ignitionEndpointAvailableCondition should not return an error")
 			g.Expect(resolverCalled).To(Equal(tc.expectResolverCall))
 			if tc.expectedConditionReason != "" {
 				g.Expect(result).NotTo(BeNil())
