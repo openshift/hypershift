@@ -52,6 +52,11 @@ func main() {
 		log.Fatalf("Failed to initialize platform config: %v", err)
 	}
 
+	namespace := os.Getenv("HYPERSHIFT_NAMESPACE")
+	if namespace == "" {
+		namespace = "clusters"
+	}
+
 	specs := platform.ClusterSpecs("", "")
 	log.Printf("Dumping %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
 
@@ -61,7 +66,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, clusterName)
+			dumpCluster(*hypershiftBinary, artifactDir, clusterName, namespace)
 		}()
 	}
 	wg.Wait()
@@ -69,7 +74,7 @@ func main() {
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName string) {
+func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string) {
 	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
@@ -81,6 +86,7 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName string) {
 		"--artifact-dir=" + dumpDir,
 		"--dump-guest-cluster=true",
 		"--name=" + clusterName,
+		"--namespace=" + namespace,
 	}
 
 	log.Printf("Dumping cluster %s -> %s", clusterName, dumpDir)

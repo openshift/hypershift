@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	testBinary          = "bin/test-e2e-v2"
-	clusterNS           = "clusters"
-	defaultVerbose      = "false"
+	defaultTestBinary    = "bin/test-e2e-v2"
+	defaultNamespace     = "clusters"
+	defaultVerbose       = "false"
 	defaultGinkgoTimeout = "3h"
 )
 
@@ -30,12 +30,26 @@ type testResult struct {
 	err  error
 }
 
+func resolveTestBinary() string {
+	if binDir := os.Getenv("E2EV2_BIN_DIR"); binDir != "" {
+		return filepath.Join(binDir, "test-e2e-v2")
+	}
+	return defaultTestBinary
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags)
+
+	testBinary := resolveTestBinary()
 
 	sharedDir := requireEnv("SHARED_DIR")
 	artifactDir := requireEnv("ARTIFACT_DIR")
 	releaseImage := os.Getenv("RELEASE_IMAGE_LATEST")
+
+	namespace := os.Getenv("HYPERSHIFT_NAMESPACE")
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
 
 	eventuallyVerbose := os.Getenv("EVENTUALLY_VERBOSE")
 	if eventuallyVerbose == "" {
@@ -67,7 +81,7 @@ func main() {
 			defer wg.Done()
 			clusterName := readClusterName(sharedDir, g.ClusterFile)
 			log.Printf("Running %s tests against %s...", g.Name, clusterName)
-			err := runTestBinary(clusterName, g.LabelFilter, g.Skip,
+			err := runTestBinary(testBinary, clusterName, namespace, g.LabelFilter, g.Skip,
 				filepath.Join(artifactDir, g.JUnitFile), g.ExtraEnv)
 			mu.Lock()
 			results = append(results, testResult{name: g.Name, err: err})
@@ -90,7 +104,7 @@ func main() {
 			for i, step := range sg.Steps {
 				clusterName := readClusterName(sharedDir, step.ClusterFile)
 				log.Printf("Running %s tests against %s...", step.Name, clusterName)
-				err := runTestBinary(clusterName, step.LabelFilter, step.Skip,
+				err := runTestBinary(testBinary, clusterName, namespace, step.LabelFilter, step.Skip,
 					filepath.Join(artifactDir, step.JUnitFile), step.ExtraEnv)
 				mu.Lock()
 				results = append(results, testResult{name: step.Name, err: err})
@@ -126,7 +140,7 @@ func main() {
 	log.Println("All test groups passed")
 }
 
-func runTestBinary(clusterName, labelFilter, skip, junitPath string, extraEnv []string) error {
+func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitPath string, extraEnv []string) error {
 	ginkgoTimeout := os.Getenv("GINKGO_TIMEOUT")
 	if ginkgoTimeout == "" {
 		ginkgoTimeout = defaultGinkgoTimeout
@@ -148,7 +162,7 @@ func runTestBinary(clusterName, labelFilter, skip, junitPath string, extraEnv []
 
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAME=%s", clusterName),
-		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAMESPACE=%s", clusterNS),
+		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAMESPACE=%s", namespace),
 	)
 	cmd.Env = append(cmd.Env, extraEnv...)
 
