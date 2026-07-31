@@ -685,6 +685,15 @@ spec:
                               DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                               file of each instance. This is by default, false.
                             type: boolean
+                          dnsResolutionCheck:
+                            description: |-
+                              DNSResolutionCheck configures the behavior for checking the load balancer DNS resolution.
+                              Set to "None" to disable the check.
+                              If omitted, the DNS resolution check is enabled.
+                            enum:
+                            - None
+                            - Enabled
+                            type: string
                           healthCheck:
                             description: HealthCheck sets custom health check configuration
                               to the API target group.
@@ -1439,6 +1448,44 @@ spec:
                           (https://coreos.github.io/ignition/) for bootstrapping (requires
                           BootstrapFormatIgnition feature flag to be enabled).
                         properties:
+                          additionalIAMRoles:
+                            description: |-
+                              AdditionalIAMRoles is a list of additional IAM roles
+                              with custom S3 prefixes for accessing bootstrap data.
+                              This is useful for custom node pools (e.g., Karpenter) that need access
+                              to bootstrap data stored under custom prefixes.
+                            items:
+                              description: |-
+                                AdditionalIAMRole defines an additional IAM role
+                                with a custom S3 prefix for accessing bootstrap data from S3 Bucket.
+                                This enables support for custom node pools (e.g., Karpenter) that need
+                                access to bootstrap data with custom S3 prefixes.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name is the name of the IAM role that will be granted access.
+                                    This must match the IAM role name (not the ARN).
+                                  maxLength: 128
+                                  minLength: 1
+                                  pattern: ^[\w+=,.@-]+$
+                                  type: string
+                                prefix:
+                                  description: |-
+                                    Prefix is the S3 object key prefix (path) this role is granted access to.
+                                    It is appended to the bucket in the policy's resource ARN, so use a trailing "/*"
+                                    for wildcard access to a path (e.g. "karpenter-nodes/*") or "*" for the whole bucket.
+                                  maxLength: 512
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - name
+                              - prefix
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            - prefix
+                            x-kubernetes-list-type: map
                           bestEffortDeleteObjects:
                             description: BestEffortDeleteObjects defines whether access/permission
                               errors during object deletion should be ignored.
@@ -1600,6 +1647,15 @@ spec:
                               DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                               file of each instance. This is by default, false.
                             type: boolean
+                          dnsResolutionCheck:
+                            description: |-
+                              DNSResolutionCheck configures the behavior for checking the load balancer DNS resolution.
+                              Set to "None" to disable the check.
+                              If omitted, the DNS resolution check is enabled.
+                            enum:
+                            - None
+                            - Enabled
+                            type: string
                           healthCheck:
                             description: HealthCheck sets custom health check configuration
                               to the API target group.
