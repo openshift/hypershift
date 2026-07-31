@@ -1061,8 +1061,13 @@ func TestControlPlaneComponents(t *testing.T) {
 			featureSet:   configv1.Default,
 			platformType: nil,
 		},
+
+		// OperatorConfiguration fields are CRD-gated behind HCPUserFacingOperatorLogs
+		// (TechPreviewNoUpgrade only). The Go code sees all struct fields regardless
+		// of CRD gating, so we test the resolver logic with Default feature set.
+
 		{
-			name:       "Default feature set, KAS Debug log level",
+			name:       "KAS Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
@@ -1077,7 +1082,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "KASDebugLogLevel",
 		},
 		{
-			name:       "Default feature set, Etcd Debug log level",
+			name:       "Etcd Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
@@ -1092,7 +1097,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "EtcdDebugLogLevel",
 		},
 		{
-			name:       "Default feature set, KCM Debug log level",
+			name:       "KCM Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
@@ -1107,7 +1112,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "KCMDebugLogLevel",
 		},
 		{
-			name:       "Default feature set, KubeScheduler Debug log level",
+			name:       "KubeScheduler Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
@@ -1122,7 +1127,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "KubeSchedulerDebugLogLevel",
 		},
 		{
-			name:       "Default feature set, OCM Debug log level",
+			name:       "OCM Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
@@ -1137,7 +1142,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "OCMDebugLogLevel",
 		},
 		{
-			name:       "Default feature set, OpenShift API Server Debug log level",
+			name:       "OpenShift API Server Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
@@ -1152,7 +1157,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "OAPIDebugLogLevel",
 		},
 		{
-			name:       "Default feature set, OpenShift OAuth API Server Debug log level",
+			name:       "OpenShift OAuth API Server Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
@@ -1167,7 +1172,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "OAuthAPIDebugLogLevel",
 		},
 		{
-			name:       "Default feature set, OAuth Server Debug log level",
+			name:       "OAuth Server Debug log level",
 			featureSet: configv1.Default,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
 				debug := hyperv1.Debug
