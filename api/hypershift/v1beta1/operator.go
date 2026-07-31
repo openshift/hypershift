@@ -18,7 +18,7 @@ const (
 	KubevirtDefaultV4InternalSubnet = "100.66.0.0/16"
 )
 
-// +kubebuilder:validation:Enum="";Normal;Debug;Trace;TraceAll
+// +kubebuilder:validation:Enum=Normal;Debug;Trace;TraceAll
 type LogLevel string
 
 var (
@@ -47,7 +47,7 @@ type ComponentLogLevelSpec struct {
 	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
 	// When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
 	// +optional
-	LogLevel *LogLevel `json:"logLevel,omitempty"`
+	LogLevel LogLevel `json:"logLevel,omitempty"`
 }
 
 // KubeAPIServerOperatorSpec specifies the configuration for the Kube API Server.

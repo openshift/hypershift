@@ -204,7 +204,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 func resolveKASVerbosity(hcp *hyperv1.HostedControlPlane) int {
 	// 1. New API field takes precedence
 	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel != nil {
+		hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel != "" {
 		return util.LogLevelToKlogVerbosity(
 			hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel)
 	}

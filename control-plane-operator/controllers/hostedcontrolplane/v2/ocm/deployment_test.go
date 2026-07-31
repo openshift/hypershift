@@ -11,7 +11,7 @@ import (
 func TestResolveOCMVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.OpenShiftControllerManagerOperatorSpec {
 		return hyperv1.OpenShiftControllerManagerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 

@@ -22,7 +22,7 @@ import (
 func TestResolveKASVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.KubeAPIServerOperatorSpec {
 		return hyperv1.KubeAPIServerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 

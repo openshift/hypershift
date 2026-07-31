@@ -147,7 +147,7 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 
 	logLevel := func(l hyperv1.LogLevel) hyperv1.EtcdOperatorSpec {
 		return hyperv1.EtcdOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 

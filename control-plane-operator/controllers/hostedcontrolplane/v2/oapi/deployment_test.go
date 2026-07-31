@@ -160,7 +160,7 @@ func getFakeVolumeProjectionImageRegistryCAs() corev1.VolumeProjection {
 func TestResolveOAPIVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.OpenShiftAPIServerOperatorSpec {
 		return hyperv1.OpenShiftAPIServerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 

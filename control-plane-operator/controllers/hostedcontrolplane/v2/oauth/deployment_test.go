@@ -120,7 +120,7 @@ func TestAdaptDeployment(t *testing.T) {
 func TestResolveOAuthVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.OAuthServerOperatorSpec {
 		return hyperv1.OAuthServerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 

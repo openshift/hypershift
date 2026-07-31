@@ -720,7 +720,7 @@ func TestAdaptDeploymentMultipleConfigurations(t *testing.T) {
 func TestResolveOAuthAPIServerVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.OpenShiftOAuthAPIServerOperatorSpec {
 		return hyperv1.OpenShiftOAuthAPIServerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 

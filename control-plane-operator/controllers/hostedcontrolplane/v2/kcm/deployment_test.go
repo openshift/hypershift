@@ -509,7 +509,7 @@ func TestAdaptDeployment(t *testing.T) {
 func TestResolveKCMVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.KubeControllerManagerOperatorSpec {
 		return hyperv1.KubeControllerManagerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: &l},
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
 		}
 	}
 
