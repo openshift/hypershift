@@ -284,6 +284,11 @@ func (r *NodePoolReconciler) ignitionEndpointAvailableCondition(ctx context.Cont
 		log.Info("Ignition endpoint not available, waiting")
 		return &ctrl.Result{}, nil
 	}
+	// Gate on AzurePlatform (not just ARO HCP) because Azure DNS API throttling
+	// (429s) can delay any Azure DNS zone, not only ARO-managed ones.
+	// ServiceExternalDNSHostnameByHC already narrows this to public clusters with
+	// an explicit external DNS hostname, so self-managed Azure without external
+	// DNS is unaffected.
 	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
 		ignitionHostname := netutil.ServiceExternalDNSHostnameByHC(hcluster, hyperv1.Ignition)
 		if ignitionHostname != "" {
