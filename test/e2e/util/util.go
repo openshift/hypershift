@@ -2154,18 +2154,18 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		err = createAdditionalPullSecret(ctx, guestClient, additionalPullSecretDummyData, additionalPullSecretName, additionalPullSecretNamespace)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create additional-pull-secret secret")
 
-		// Check if HCCO generates the GlobalPullSecret secret in the kube-system namespace in the DataPlane
+		// Check if HCCO generates the GlobalPullSecret secret in the kube-system namespace in the DataPlane.
+		// This is a controller-propagation boundary. Use the same bounded budget as the
+		// earlier HCCO propagation checks so a recoverable HCCO replacement does not
+		// turn into a false test failure.
 		t.Run("Check if GlobalPullSecret secret is in the right place at Dataplane", func(t *testing.T) {
 			globalPullSecret := hccomanifests.GlobalPullSecret()
-			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				oldglobalPullSecretData = globalPullSecret.Data[corev1.DockerConfigJsonKey]
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not present")
+			data, err := waitForGlobalPullSecret(ctx, guestClient, crclient.ObjectKeyFromObject(globalPullSecret), 150*time.Second, 5*time.Second)
+			if err != nil {
+				logHCCODeploymentStatus(t, ctx, mgmtClient, entryHostedCluster)
+			}
+			g.Expect(err).NotTo(HaveOccurred(), "global-pull-secret secret is not present")
+			oldglobalPullSecretData = data
 		})
 
 		t.Run("Wait for critical DaemonSets to be ready - first check", func(t *testing.T) {
@@ -4536,6 +4536,61 @@ func ExtractVersionFromReleaseImage(releaseImage string) string {
 
 	// No known architecture suffix found, return the tag as-is
 	return tag
+}
+
+// waitForGlobalPullSecret waits for HCCO to create a non-empty destination
+// Secret. It retains the final observation in the returned error so an e2e
+// timeout identifies whether the Secret was absent or incomplete.
+func waitForGlobalPullSecret(ctx context.Context, guestClient crclient.Client, key crclient.ObjectKey, timeout, interval time.Duration) ([]byte, error) {
+	var (
+		data    []byte
+		lastErr error
+	)
+
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		secret := &corev1.Secret{}
+		if err := guestClient.Get(ctx, key, secret); err != nil {
+			lastErr = fmt.Errorf("read %s/%s: %w", key.Namespace, key.Name, err)
+			return false, nil
+		}
+		if len(secret.Data) == 0 || len(secret.Data[corev1.DockerConfigJsonKey]) == 0 {
+			lastErr = fmt.Errorf("read %s/%s: Secret data is empty", key.Namespace, key.Name)
+			return false, nil
+		}
+		data = slices.Clone(secret.Data[corev1.DockerConfigJsonKey])
+		return true, nil
+	})
+	if err != nil && lastErr != nil {
+		return nil, fmt.Errorf("global-pull-secret did not become ready within %s: %w", timeout, lastErr)
+	}
+	return data, err
+}
+
+// logHCCODeploymentStatus emits credentials-safe management-side HCCO state
+// after a terminal destination-Secret timeout. It deliberately logs only
+// Deployment status fields and condition reasons, never Secret data.
+func logHCCODeploymentStatus(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	deployment := &appsv1.Deployment{}
+	if err := mgmtClient.Get(ctx, crclient.ObjectKey{Name: "hosted-cluster-config-operator", Namespace: namespace}, deployment); err != nil {
+		t.Logf("HCCO deployment %s/%s is not readable after global-pull-secret timeout: %v", namespace, "hosted-cluster-config-operator", err)
+		return
+	}
+
+	t.Logf("HCCO deployment %s/%s status: generation=%d observedGeneration=%d replicas=%d updated=%d ready=%d available=%d unavailable=%d",
+		namespace,
+		deployment.Name,
+		deployment.Generation,
+		deployment.Status.ObservedGeneration,
+		deployment.Status.Replicas,
+		deployment.Status.UpdatedReplicas,
+		deployment.Status.ReadyReplicas,
+		deployment.Status.AvailableReplicas,
+		deployment.Status.UnavailableReplicas,
+	)
+	for _, condition := range deployment.Status.Conditions {
+		t.Logf("HCCO deployment condition: type=%s status=%s reason=%s", condition.Type, condition.Status, condition.Reason)
+	}
 }
 
 // WaitForDeploymentAvailable waits for a deployment to be ready.

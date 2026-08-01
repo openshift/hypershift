@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"crypto/x509"
 	"testing"
 	"time"
@@ -11,8 +12,46 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestWaitForGlobalPullSecret(t *testing.T) {
+	key := client.ObjectKey{Namespace: "kube-system", Name: "global-pull-secret"}
+	newClient := func(objects ...client.Object) client.Client {
+		t.Helper()
+		scheme := runtime.NewScheme()
+		if err := corev1.AddToScheme(scheme); err != nil {
+			t.Fatalf("add corev1 scheme: %v", err)
+		}
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	}
+
+	t.Run("returns a copy of populated docker config data", func(t *testing.T) {
+		g := NewWithT(t)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		data, err := waitForGlobalPullSecret(context.Background(), newClient(secret), key, time.Second, time.Millisecond)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(data).To(Equal([]byte(`{"auths":{}}`)))
+		data[0] = 'x'
+		g.Expect(secret.Data[corev1.DockerConfigJsonKey]).To(Equal([]byte(`{"auths":{}}`)))
+	})
+
+	t.Run("reports the final not found observation on timeout", func(t *testing.T) {
+		g := NewWithT(t)
+		_, err := waitForGlobalPullSecret(context.Background(), newClient(), key, 20*time.Millisecond, time.Millisecond)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("read kube-system/global-pull-secret"))
+		g.Expect(err.Error()).To(ContainSubstring("not found"))
+	})
+}
 
 func TestAllowedCIDRsTargetService(t *testing.T) {
 	const ns = "test-hcp"
