@@ -31,25 +31,25 @@ func TestWaitForGlobalPullSecret(t *testing.T) {
 		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 	}
 
-	t.Run("returns a copy of populated docker config data", func(t *testing.T) {
+	t.Run("When the destination Secret is populated it should return a copy of the docker config data", func(t *testing.T) {
 		g := NewWithT(t)
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name},
 			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
 		}
 		data, err := waitForGlobalPullSecret(context.Background(), newClient(secret), key, time.Second, time.Millisecond)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(data).To(Equal([]byte(`{"auths":{}}`)))
+		g.Expect(err).NotTo(HaveOccurred(), "wait for a populated global-pull-secret")
+		g.Expect(data).To(Equal([]byte(`{"auths":{}}`)), "return the docker config data")
 		data[0] = 'x'
-		g.Expect(secret.Data[corev1.DockerConfigJsonKey]).To(Equal([]byte(`{"auths":{}}`)))
+		g.Expect(secret.Data[corev1.DockerConfigJsonKey]).To(Equal([]byte(`{"auths":{}}`)), "return a copy instead of mutating the Secret data")
 	})
 
-	t.Run("reports the final not found observation on timeout", func(t *testing.T) {
+	t.Run("When the destination Secret is absent it should report the final NotFound observation on timeout", func(t *testing.T) {
 		g := NewWithT(t)
 		_, err := waitForGlobalPullSecret(context.Background(), newClient(), key, 20*time.Millisecond, time.Millisecond)
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("read kube-system/global-pull-secret"))
-		g.Expect(err.Error()).To(ContainSubstring("not found"))
+		g.Expect(err).To(HaveOccurred(), "return a bounded timeout error")
+		g.Expect(err.Error()).To(ContainSubstring("read kube-system/global-pull-secret"), "identify the destination Secret")
+		g.Expect(err.Error()).To(ContainSubstring("not found"), "retain the final NotFound observation")
 	})
 }
 
