@@ -1,0 +1,87 @@
+package kas
+
+import (
+	"testing"
+
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+func TestKonnectivityServerAuthenticatesAgents(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	c := util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer("test-image", 3, nil))
+
+	clusterCAFlagIndex := -1
+	for i, arg := range c.Args {
+		if arg == "--cluster-ca-cert" {
+			clusterCAFlagIndex = i
+			break
+		}
+	}
+	if clusterCAFlagIndex == -1 || clusterCAFlagIndex+1 >= len(c.Args) {
+		t.Fatal("--cluster-ca-cert flag or its value not found in konnectivity-server args")
+	}
+	g.Expect(c.Args[clusterCAFlagIndex+1]).To(Equal("/etc/konnectivity/ca/ca.crt"))
+}
+
+// Ensure certain deployment fields do not get set
+func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
+
+	// Setup expected values that are universal
+
+	// Setup hypershift hosted control plane.
+	targetNamespace := "test"
+	kubeAPIDeployment := manifests.KASDeployment(targetNamespace)
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: targetNamespace,
+		},
+	}
+	hcp.Name = "name"
+	hcp.Namespace = "namespace"
+	ownerRef := config.OwnerRefFrom(hcp)
+
+	testCases := []struct {
+		config           *corev1.ConfigMap
+		auditConfig      *corev1.ConfigMap
+		authConfig       *corev1.ConfigMap
+		deploymentConfig config.DeploymentConfig
+		params           KubeAPIServerParams
+		activeKey        []byte
+		backupKey        []byte
+	}{
+		// empty deployment config
+		{
+			config:           manifests.OpenShiftAPIServerConfig(targetNamespace),
+			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			authConfig:       manifests.AuthConfig(targetNamespace),
+			deploymentConfig: config.DeploymentConfig{},
+			params: KubeAPIServerParams{
+				CloudProvider: "test-cloud-provider",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		g := NewGomegaWithT(t)
+		kubeAPIDeployment.Spec.MinReadySeconds = 60
+		expectedMinReadySeconds := kubeAPIDeployment.Spec.MinReadySeconds
+		tc.config.Data = map[string]string{"config.json": "test-json"}
+		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		tc.authConfig.Data = map[string]string{"auth.json": "test-data"}
+		err := ReconcileKubeAPIServerDeployment(kubeAPIDeployment, hcp, ownerRef, tc.deploymentConfig, tc.params.NamedCertificates(), tc.params.CloudProvider,
+			tc.params.CloudProviderConfig, tc.params.CloudProviderCreds, tc.params.Images, tc.config, tc.auditConfig, tc.authConfig, tc.params.AuditWebhookRef, tc.activeKey, tc.backupKey, 6443, "test-payload-version", tc.params.FeatureGate, nil, tc.params.CipherSuites())
+		g.Expect(err).To(BeNil())
+		g.Expect(expectedMinReadySeconds).To(Equal(kubeAPIDeployment.Spec.MinReadySeconds))
+	}
+}
