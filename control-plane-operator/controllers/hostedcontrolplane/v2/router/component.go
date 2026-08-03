@@ -10,7 +10,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/netutil"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -128,7 +127,7 @@ func metricsProxyRouteRequired(hcp *hyperv1.HostedControlPlane) bool {
 	if err != nil || !enabled {
 		return false
 	}
-	return netutil.LabelHCPRoutes(hcp) || netutil.IsPrivateHCP(hcp)
+	return supportutil.LabelHCPRoutes(hcp) || supportutil.IsPrivateHCP(hcp)
 }
 
 func hcpRouterRouteReady(route *routev1.Route) bool {

@@ -2650,13 +2650,8 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 func TestRouterComponentComesAfterRouteCreatingComponents(t *testing.T) {
 	t.Parallel()
 
-	mockCtrl := gomock.NewController(t)
-	mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-	mockedProvider.EXPECT().GetRegistryOverrides().Return(map[string]string{}).AnyTimes()
-	mockedProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(map[string][]string{}).AnyTimes()
-
 	reconciler := &HostedControlPlaneReconciler{
-		ReleaseProvider:               mockedProvider,
+		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 	}
 
