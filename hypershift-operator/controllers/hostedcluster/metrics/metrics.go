@@ -423,7 +423,7 @@ func collectUpgradingDurationMetric(ch chan<- prometheus.Metric, clk clock.Clock
 
 func collectLimitedSupportMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
 	limitedSupportValue := 0.0
-	if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
+	if v, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok && v == "true" {
 		limitedSupportValue = 1.0
 	}
 	ch <- prometheus.MustNewConstMetric(
