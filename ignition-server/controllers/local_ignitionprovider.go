@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -131,7 +132,7 @@ const (
 	managedTrustBundleName    = "trusted-ca-bundle-managed"
 )
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, cloudConfigHash string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -339,26 +340,8 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to extract image-references from image: %w", err)
 	}
 
-	// For Azure and OpenStack, extract the cloud provider config file as MCO input
-	if p.CloudProvider == hyperv1.AzurePlatform || p.CloudProvider == hyperv1.OpenStackPlatform {
-		cloudConfigMap := &corev1.ConfigMap{}
-		switch p.CloudProvider {
-		case hyperv1.AzurePlatform:
-			if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.AzureProviderConfig("").Name}, cloudConfigMap); err != nil {
-				return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
-			}
-		case hyperv1.OpenStackPlatform:
-			if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.OpenStackProviderConfig("").Name}, cloudConfigMap); err != nil {
-				return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
-			}
-		}
-		cloudConfYaml, err := yaml.Marshal(cloudConfigMap)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal cloud config: %w", err)
-		}
-		if err := os.WriteFile(filepath.Join(mcoBaseDir, "cloud.conf.configmap.yaml"), cloudConfYaml, 0644); err != nil {
-			return nil, fmt.Errorf("failed to write bootstrap kubeconfig: %w", err)
-		}
+	if err := p.writeCloudProviderConfig(ctx, mcoBaseDir, cloudConfigHash); err != nil {
+		return nil, err
 	}
 
 	// Extract template files from the MCO image to the MCC input directory
@@ -824,6 +807,50 @@ cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 	}
 
 	return fmt.Sprintf(script, binary, workDir, outputDir, payloadVersion, featureGateYAML)
+}
+
+func (p *LocalIgnitionProvider) writeCloudProviderConfig(ctx context.Context, mcoDir, cloudConfigHash string) error {
+	if p.CloudProvider != hyperv1.AzurePlatform && p.CloudProvider != hyperv1.OpenStackPlatform {
+		return nil
+	}
+	cloudConfigMap := &corev1.ConfigMap{}
+	switch p.CloudProvider {
+	case hyperv1.AzurePlatform:
+		if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.AzureProviderConfig("").Name}, cloudConfigMap); err != nil {
+			return fmt.Errorf("failed to get cloud provider configmap: %w", err)
+		}
+	case hyperv1.OpenStackPlatform:
+		if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.OpenStackProviderConfig("").Name}, cloudConfigMap); err != nil {
+			return fmt.Errorf("failed to get cloud provider configmap: %w", err)
+		}
+	}
+	if cloudConfigHash != "" {
+		keys := make([]string, 0, len(cloudConfigMap.Data))
+		for k := range cloudConfigMap.Data {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var b strings.Builder
+		for _, k := range keys {
+			b.WriteString(k)
+			b.WriteByte(0)
+			b.WriteString(cloudConfigMap.Data[k])
+			b.WriteByte(0)
+		}
+		actualHash := util.HashSimple(b.String())
+		if actualHash != cloudConfigHash {
+			return fmt.Errorf("cloud config %s/%s hash mismatch (expected %s, got %s), waiting for update",
+				cloudConfigMap.Namespace, cloudConfigMap.Name, cloudConfigHash, actualHash)
+		}
+	}
+	cloudConfYaml, err := yaml.Marshal(cloudConfigMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cloud config: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(mcoDir, "cloud.conf.configmap.yaml"), cloudConfYaml, 0644); err != nil {
+		return fmt.Errorf("failed to write bootstrap kubeconfig: %w", err)
+	}
+	return nil
 }
 
 // buildMCOVersionArgs returns the version-dependent arguments for the MCO
