@@ -302,4 +302,5 @@ Post in [#forum-ocp-hypershift](https://redhat.enterprise.slack.com/archives/C04
 - [Debugging CI Failures](../v2-testing/debugging.md) — Reading JUnit XML, Ginkgo output, and dump-guests artifacts
 - [V2 E2E Testing Overview](../v2-testing/index.md) — Architecture of the v2 test framework
 - [CI Pipeline Configuration](../v2-testing/ci-pipeline.md) — How presubmit jobs are configured
+- [Test Flow](../v2-testing/test-flow.md) — End-to-end CI sequence, process boundaries, and inter-process communication
 - [Daily CI Health](daily-health.md) — Monitoring periodic and presubmit job health
