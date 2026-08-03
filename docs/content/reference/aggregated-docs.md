@@ -12276,15 +12276,19 @@ subnet must be in the **management cluster's VNet** and must have
     HostedCluster's configured location. Azure will reject PLS creation if the NAT subnet
     is in a different region.
 
-First, identify the management cluster's VNet:
+First, identify the management cluster's VNet. HyperShift may place the VNet in a
+separate resource group from the infrastructure resource group, so the most reliable
+method is to trace a worker node's network interface back to its VNet:
 
 ```bash
 # Get the management cluster's infrastructure resource group
 MGMT_INFRA_RG=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.azure.resourceGroupName}')
 
-# Find the VNet in the infrastructure resource group
-MGMT_VNET_NAME=$(az network vnet list --resource-group "${MGMT_INFRA_RG}" --query "[0].name" -o tsv)
-MGMT_VNET_RG="${MGMT_INFRA_RG}"
+# Discover the VNet by tracing a VM's network interface
+NIC_ID=$(az vm list -g "${MGMT_INFRA_RG}" --query '[0].networkProfile.networkInterfaces[0].id' -o tsv)
+SUBNET_ID=$(az network nic show --ids "${NIC_ID}" --query 'ipConfigurations[0].subnet.id' -o tsv)
+MGMT_VNET_RG=$(echo "${SUBNET_ID}" | cut -d'/' -f5)
+MGMT_VNET_NAME=$(echo "${SUBNET_ID}" | cut -d'/' -f9)
 ```
 
 Create the NAT subnet:
@@ -12303,18 +12307,18 @@ az network vnet subnet create \
     --resource-group "${MGMT_VNET_RG}" \
     --vnet-name "${MGMT_VNET_NAME}" \
     --name "${NAT_SUBNET_NAME}" \
-    --address-prefixes 10.1.64.0/24 \
+    --address-prefixes 10.0.1.0/24 \
     --disable-private-link-service-network-policies true
 ```
 
 !!! warning "Choose a Non-Overlapping CIDR"
 
-    The `10.1.64.0/24` address prefix above is an **example only**. You must choose a
-    CIDR range that does not overlap with any existing subnets in the management cluster's
-    VNet. Check the VNet's address space and existing subnets before creating the NAT
-    subnet. If the management cluster's VNet uses `10.0.0.0/16`, the NAT subnet must
-    fall within that range (e.g., `10.0.64.0/24`) or you must first expand the VNet's
-    address space.
+    The `10.0.1.0/24` address prefix above works for the default `10.0.0.0/16` VNet
+    address space and does not overlap with the default node subnet (`10.0.0.0/24`).
+    You must choose a CIDR range that does not overlap with any existing subnets in
+    the management cluster's VNet. Check the VNet's address space and existing subnets
+    before creating the NAT subnet. If your VNet uses a different address space, adjust
+    the CIDR accordingly or first expand the VNet's address space.
 
 Get the NAT subnet resource ID for later use:
 
@@ -12640,8 +12644,8 @@ The deletion process automatically cleans up Private Link resources in the corre
 ### NAT Subnet
 
 - The NAT subnet CIDR (`--address-prefixes`) must fall within the management cluster's
-  VNet address space. If the VNet uses `10.0.0.0/16`, a NAT subnet of `10.1.64.0/24`
-  will fail unless you first expand the VNet address space.
+  VNet address space. For the default `10.0.0.0/16` VNet, `10.0.1.0/24` works without
+  overlapping the default node subnet (`10.0.0.0/24`).
 
 - The `--disable-private-link-service-network-policies true` flag is **required** on
   the NAT subnet. If omitted, Azure will reject PLS creation with an error about
