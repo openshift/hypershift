@@ -23,6 +23,13 @@ func TestRawCreateOptions_Validate(t *testing.T) {
 		expectedError string
 	}{
 		{
+			name: "When service-publishing-strategy is not provided, it should return an error",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: "",
+			},
+			expectedError: "service publishing strategy  is not supported, supported options: NodePort, LoadBalancer",
+		},
+		{
 			name: "When service-publishing-strategy is unsupported, it should return an error",
 			input: RawCreateOptions{
 				ServicePublishingStrategy: "whatever",
@@ -64,6 +71,8 @@ func TestRawCreateOptions_Validate(t *testing.T) {
 }
 
 func TestCreateCluster(t *testing.T) {
+	utilrand.Seed(1234567890)
+	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 
 	tempDir := t.TempDir()
@@ -98,9 +107,6 @@ func TestCreateCluster(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			utilrand.Seed(1234567890)
-			certs.UnsafeSeed(1234567890)
-
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)

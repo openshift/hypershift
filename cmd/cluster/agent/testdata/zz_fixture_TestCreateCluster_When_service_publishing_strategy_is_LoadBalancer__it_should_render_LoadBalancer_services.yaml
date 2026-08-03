@@ -15,21 +15,9 @@ metadata:
   name: example-pull-secret
   namespace: clusters
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: capi-provider-role
-rules:
-- apiGroups:
-  - agent-install.openshift.io
-  resources:
-  - agents
-  verbs:
-  - '*'
----
 apiVersion: v1
 data:
-  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
+  key: FYHY8RFxHaJUPFFWuo2z9iWCO01hcj3fqHMMWMeEHHw=
 kind: Secret
 metadata:
   labels:
@@ -58,7 +46,7 @@ spec:
         type: PersistentVolume
     managementType: Managed
   fips: false
-  infraID: example-sffhb
+  infraID: example-f9nvz
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
