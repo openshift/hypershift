@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
@@ -19,7 +18,6 @@ import (
 
 const (
 	defaultTestBinary    = "bin/test-e2e-v2"
-	defaultNamespace     = "clusters"
 	defaultVerbose       = "false"
 	defaultGinkgoTimeout = "3h"
 )
@@ -46,16 +44,16 @@ func main() {
 	artifactDir := requireEnv("ARTIFACT_DIR")
 	releaseImage := os.Getenv("RELEASE_IMAGE_LATEST")
 
-	namespace := os.Getenv("HYPERSHIFT_NAMESPACE")
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
 	eventuallyVerbose := os.Getenv("EVENTUALLY_VERBOSE")
 	if eventuallyVerbose == "" {
 		eventuallyVerbose = defaultVerbose
 	}
 	os.Setenv("EVENTUALLY_VERBOSE", eventuallyVerbose)
+
+	manifest, err := lifecycle.ReadManifest(sharedDir)
+	if err != nil {
+		log.Fatalf("Failed to read cluster manifest: %v", err)
+	}
 
 	platform, err := lifecycle.NewPlatformConfig(os.Getenv("HYPERSHIFT_PLATFORM"), sharedDir)
 	if err != nil {
@@ -67,6 +65,11 @@ func main() {
 
 	matrix := platform.TestMatrix(releaseImage)
 
+	clustersByVariant, err := matrix.ResolveVariants(manifest)
+	if err != nil {
+		log.Fatalf("Manifest/test matrix mismatch: %v", err)
+	}
+
 	var (
 		mu      sync.Mutex
 		results []testResult
@@ -76,12 +79,12 @@ func main() {
 	// Launch parallel test groups.
 	for _, g := range matrix.Parallel {
 		g := g
+		entry := clustersByVariant[g.Variant]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			clusterName := readClusterName(sharedDir, g.ClusterFile)
-			log.Printf("Running %s tests against %s...", g.Name, clusterName)
-			err := runTestBinary(testBinary, clusterName, namespace, g.LabelFilter, g.Skip,
+			log.Printf("Running %s tests against %s...", g.Name, entry.Name)
+			err := runTestBinary(testBinary, entry.Name, entry.Namespace, g.LabelFilter, g.Skip,
 				filepath.Join(artifactDir, g.JUnitFile), g.ExtraEnv)
 			mu.Lock()
 			results = append(results, testResult{name: g.Name, err: err})
@@ -102,9 +105,9 @@ func main() {
 		go func() {
 			defer wg.Done()
 			for i, step := range sg.Steps {
-				clusterName := readClusterName(sharedDir, step.ClusterFile)
-				log.Printf("Running %s tests against %s...", step.Name, clusterName)
-				err := runTestBinary(testBinary, clusterName, namespace, step.LabelFilter, step.Skip,
+				entry := clustersByVariant[step.Variant]
+				log.Printf("Running %s tests against %s...", step.Name, entry.Name)
+				err := runTestBinary(testBinary, entry.Name, entry.Namespace, step.LabelFilter, step.Skip,
 					filepath.Join(artifactDir, step.JUnitFile), step.ExtraEnv)
 				mu.Lock()
 				results = append(results, testResult{name: step.Name, err: err})
@@ -167,19 +170,6 @@ func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitP
 	cmd.Env = append(cmd.Env, extraEnv...)
 
 	return cmd.Run()
-}
-
-func readClusterName(sharedDir, filename string) string {
-	path := filepath.Join(sharedDir, filename)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		log.Fatalf("Failed to read cluster name from %s: %v", path, err)
-	}
-	name := strings.TrimSpace(string(data))
-	if name == "" {
-		log.Fatalf("Cluster name file %s is empty", path)
-	}
-	return name
 }
 
 func requireEnv(key string) string {

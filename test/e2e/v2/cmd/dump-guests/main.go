@@ -15,11 +15,9 @@ limitations under the License.
 */
 
 // dump-guests collects diagnostic artifacts from all v2 e2e
-// HostedClusters in parallel. It shells out to the hypershift CLI
-// for each cluster and always exits 0 so that dump failures never
-// block teardown.
-// Platform selection is controlled by the HYPERSHIFT_PLATFORM
-// environment variable (default: "azure").
+// HostedClusters in parallel. Cluster identities are read from
+// the cluster manifest written by create-guests to SHARED_DIR.
+// It always exits 0 so that dump failures never block teardown.
 package main
 
 import (
@@ -37,36 +35,28 @@ func main() {
 	hypershiftBinary := flag.String("hypershift-binary", "hypershift", "Path to the hypershift CLI binary")
 	flag.Parse()
 
-	prowJobID := os.Getenv("PROW_JOB_ID")
-	if prowJobID == "" {
-		log.Fatal("PROW_JOB_ID environment variable is required")
+	sharedDir := os.Getenv("SHARED_DIR")
+	if sharedDir == "" {
+		log.Fatal("SHARED_DIR environment variable is required")
 	}
 	artifactDir := os.Getenv("ARTIFACT_DIR")
 	if artifactDir == "" {
 		log.Fatal("ARTIFACT_DIR environment variable is required")
 	}
 
-	sharedDir := os.Getenv("SHARED_DIR")
-	platform, err := lifecycle.NewPlatformConfig(os.Getenv("HYPERSHIFT_PLATFORM"), sharedDir)
+	manifest, err := lifecycle.ReadManifest(sharedDir)
 	if err != nil {
-		log.Fatalf("Failed to initialize platform config: %v", err)
+		log.Fatalf("Failed to read cluster manifest: %v", err)
 	}
 
-	namespace := os.Getenv("HYPERSHIFT_NAMESPACE")
-	if namespace == "" {
-		namespace = "clusters"
-	}
-
-	specs := platform.ClusterSpecs("", "")
-	log.Printf("Dumping %d clusters derived from PROW_JOB_ID=%s", len(specs), prowJobID)
+	log.Printf("Dumping %d clusters from manifest", len(manifest.Clusters))
 
 	var wg sync.WaitGroup
-	for _, spec := range specs {
-		clusterName := lifecycle.DeriveClusterName(prowJobID, spec.Variant)
+	for _, entry := range manifest.Clusters {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, clusterName, namespace)
+			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace)
 		}()
 	}
 	wg.Wait()

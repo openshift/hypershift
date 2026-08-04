@@ -132,17 +132,37 @@ func loadEnvConfig() envConfig {
 func run(ctx context.Context, cfg envConfig) error {
 	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
 
-	// Derive cluster names and build the name map.
+	// Phase 0: The manifest must exist before any infra is provisioned so
+	// destroy-guests can always clean up, even if create-guests fails
+	// before the HostedCluster CR is applied.
+	log.Println("Phase 0: Computing cluster identities and writing manifest")
 	named := make([]namedSpec, len(specs))
-	clusterNames := make(map[string]string) // outputFile -> name
+	clusterNames := make(map[string]string) // variant -> name
+	entries := make([]lifecycle.ClusterEntry, len(specs))
 	for i, spec := range specs {
 		name := lifecycle.DeriveClusterName(cfg.prowJobID, spec.Variant)
 		named[i] = namedSpec{ClusterSpec: spec, name: name}
-		clusterNames[spec.OutputFile] = name
+		clusterNames[spec.Variant] = name
+		entries[i] = lifecycle.ClusterEntry{
+			Variant:   spec.Variant,
+			Name:      name,
+			InfraID:   name,
+			Namespace: cfg.namespace,
+		}
+		log.Printf("Cluster %s: name=%s", spec.Variant, name)
 	}
 
-	// Phase 0: Platform-specific pre-create hooks (e.g., deploy OIDC providers).
-	log.Println("Phase 0: Running platform pre-create hooks")
+	manifest := &lifecycle.ClusterManifest{
+		Clusters: entries,
+	}
+	if err := lifecycle.WriteManifest(cfg.sharedDir, manifest); err != nil {
+		return fmt.Errorf("writing cluster manifest: %w", err)
+	}
+	log.Printf("Wrote cluster manifest to %s/%s", cfg.sharedDir, lifecycle.ManifestFileName)
+
+	// Phase 1: Some platforms need prerequisites deployed before clusters
+	// exist (e.g., OIDC providers that the HC spec references).
+	log.Println("Phase 1: Running platform pre-create hooks")
 	mgmtClientPre, err := newMgmtClient()
 	if err != nil {
 		return fmt.Errorf("creating management cluster client for pre-create: %w", err)
@@ -151,8 +171,9 @@ func run(ctx context.Context, cfg envConfig) error {
 		return fmt.Errorf("platform pre-create hook: %w", err)
 	}
 
-	// Phase 1: Create all clusters in parallel.
-	log.Printf("Phase 1: Creating %d clusters in parallel", len(named))
+	// Phase 2: Clusters are independent; creating them in parallel cuts
+	// wall-clock time proportionally.
+	log.Printf("Phase 2: Creating %d clusters in parallel", len(named))
 	createErrors := createClustersParallel(ctx, cfg, named)
 	for _, ns := range named {
 		if err := createErrors[ns.Variant]; err != nil {
@@ -167,8 +188,9 @@ func run(ctx context.Context, cfg envConfig) error {
 		}
 	}
 
-	// Phase 2: Platform-specific post-create hooks.
-	log.Println("Phase 2: Running platform post-create hooks")
+	// Phase 3: Some platforms need configuration applied after the HC CR
+	// exists but before it becomes Available (e.g., patching OperatorConfiguration).
+	log.Println("Phase 3: Running platform post-create hooks")
 	mgmtClient, err := newMgmtClient()
 	if err != nil {
 		return fmt.Errorf("creating management cluster client: %w", err)
@@ -177,9 +199,9 @@ func run(ctx context.Context, cfg envConfig) error {
 		return fmt.Errorf("platform post-create hook: %w", err)
 	}
 
-	// Phase 3: Watch for Available condition on all clusters.
-	log.Println("Phase 3: Waiting for all clusters to become Available")
-	// Use cfg.waitTimeout (45m) to match the version rollout timeout at line 352.
+	// Phase 4: Control plane components must exist before post-available
+	// hooks can run; Available guarantees that.
+	log.Println("Phase 4: Waiting for all clusters to become Available")
 	availableErrors := waitForClustersAvailable(ctx, mgmtClient, cfg.namespace, named, cfg.waitTimeout)
 	for _, ns := range named {
 		if err := availableErrors[ns.Variant]; err != nil {
@@ -194,15 +216,16 @@ func run(ctx context.Context, cfg envConfig) error {
 		}
 	}
 
-	// Phase 4: Platform-specific post-available hooks (e.g., waiting for
-	// day-2 config transitions now that control plane components exist).
-	log.Println("Phase 4: Running platform post-available hooks")
+	// Phase 5: Some platforms need to wait for day-2 config transitions
+	// that depend on control plane components existing.
+	log.Println("Phase 5: Running platform post-available hooks")
 	if err := cfg.platform.PostAvailable(ctx, mgmtClient, cfg.namespace, clusterNames); err != nil {
 		return fmt.Errorf("platform post-available hook: %w", err)
 	}
 
-	// Phase 5: Watch for version rollout completion on all clusters.
-	log.Println("Phase 5: Waiting for version rollout completion on all clusters")
+	// Phase 6: Tests assume rollout is complete; block until all version
+	// history entries reach CompletedUpdate.
+	log.Println("Phase 6: Waiting for version rollout completion on all clusters")
 	rolloutErrors := waitForVersionRollout(ctx, mgmtClient, cfg, named)
 	anyRolloutFailed := false
 	for _, ns := range named {
@@ -216,21 +239,11 @@ func run(ctx context.Context, cfg envConfig) error {
 		}
 	}
 
-	// Phase 6: Day-2 operations that disrupt ClusterOperators (e.g., External OIDC).
-	// These run after VersionState=Completed so the initial rollout isn't blocked.
-	log.Println("Phase 6: Running platform post-version-rollout hooks (day-2 operations)")
+	// Phase 7: Day-2 operations that disrupt ClusterOperators (e.g., External OIDC)
+	// run after rollout so they don't block the initial version completion.
+	log.Println("Phase 7: Running platform post-version-rollout hooks (day-2 operations)")
 	if err := cfg.platform.PostVersionRollout(ctx, mgmtClient, cfg.namespace, clusterNames); err != nil {
 		return fmt.Errorf("platform post-version-rollout hook: %w", err)
-	}
-
-	// Phase 7: Write cluster names to SHARED_DIR.
-	log.Println("Phase 7: Writing cluster names to SHARED_DIR")
-	for _, ns := range named {
-		outputPath := filepath.Join(cfg.sharedDir, ns.OutputFile)
-		if err := os.WriteFile(outputPath, []byte(ns.name), 0600); err != nil {
-			return fmt.Errorf("writing cluster name to %s: %w", outputPath, err)
-		}
-		log.Printf("Wrote cluster name %q to %s", ns.name, outputPath)
 	}
 
 	if anyRolloutFailed {
@@ -242,16 +255,17 @@ func run(ctx context.Context, cfg envConfig) error {
 }
 
 // buildCreateArgs returns CLI arguments for creating a cluster.
-func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []string {
+func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 	releaseImage := cfg.releaseImage
-	if spec.ReleaseImage != "" {
-		releaseImage = spec.ReleaseImage
+	if ns.ReleaseImage != "" {
+		releaseImage = ns.ReleaseImage
 	}
 
 	args := []string{
 		"create", "cluster", cfg.platform.Name(),
-		"--name=" + name,
+		"--name=" + ns.name,
 		"--namespace=" + cfg.namespace,
+		"--infra-id=" + ns.name,
 		"--node-pool-replicas=" + strconv.Itoa(cfg.nodeCount),
 		"--base-domain=" + cfg.baseDomain,
 		"--pull-secret=" + cfg.pullSecret,
@@ -267,7 +281,7 @@ func buildCreateArgs(cfg envConfig, name string, spec lifecycle.ClusterSpec) []s
 	}
 
 	args = append(args, cfg.platform.CreateArgs()...)
-	args = append(args, spec.ExtraArgs...)
+	args = append(args, ns.ExtraArgs...)
 
 	return args
 }
@@ -286,7 +300,7 @@ func createClustersParallel(ctx context.Context, cfg envConfig, specs []namedSpe
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			args := buildCreateArgs(cfg, ns.name, ns.ClusterSpec)
+			args := buildCreateArgs(cfg, ns)
 			log.Printf("Creating %s cluster %s", ns.Variant, ns.name)
 			log.Printf("Running: %s %v", cfg.hypershiftBinary, args)
 

@@ -117,36 +117,30 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 
 	return []ClusterSpec{
 		{
-			Variant:    "public",
-			OutputFile: "cluster-name-public",
-			ExtraArgs:  publicExtraArgs,
+			Variant:   "public",
+			ExtraArgs: publicExtraArgs,
 		},
 		{
-			Variant:    "private",
-			OutputFile: "cluster-name-private",
+			Variant: "private",
 			ExtraArgs: []string{
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
 			},
 		},
 		{
-			Variant:    "oauth-lb",
-			OutputFile: "cluster-name-oauth-lb",
-			ExtraArgs:  []string{"--oauth-publishing-strategy=LoadBalancer"},
+			Variant:   "oauth-lb",
+			ExtraArgs: []string{"--oauth-publishing-strategy=LoadBalancer"},
 		},
 		{
 			Variant:      "upgrade",
-			OutputFile:   "cluster-name-upgrade",
 			ReleaseImage: n1Image,
 			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
 		},
 		{
-			Variant:    "autoscaling",
-			OutputFile: "cluster-name-autoscaling",
+			Variant: "autoscaling",
 		},
 		{
-			Variant:    "external-oidc",
-			OutputFile: "cluster-name-external-oidc",
+			Variant: "external-oidc",
 		},
 	}
 }
@@ -191,7 +185,7 @@ func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWat
 // PostCreate runs variant-specific post-creation hooks for each cluster
 // that was created by the lifecycle orchestrator.
 func (a *AzurePlatformConfig) PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
-	if publicName, ok := clusterNames["cluster-name-public"]; ok {
+	if publicName, ok := clusterNames["public"]; ok {
 		if err := a.postCreatePublic(ctx, cl, namespace, publicName); err != nil {
 			return err
 		}
@@ -211,7 +205,7 @@ func (a *AzurePlatformConfig) PostAvailable(ctx context.Context, cl crclient.Wit
 }
 
 func (a *AzurePlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
-	if oidcName, ok := clusterNames["cluster-name-external-oidc"]; ok {
+	if oidcName, ok := clusterNames["external-oidc"]; ok {
 		if err := a.postCreateExternalOIDC(ctx, cl, namespace, oidcName); err != nil {
 			return err
 		}
@@ -332,32 +326,32 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 		Parallel: []TestGroup{
 			{
 				Name:        "public",
-				ClusterFile: "cluster-name-public",
+				Variant:     "public",
 				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security",
 				Skip:        "KAS allowed CIDRs",
 				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
 				Name:        "private",
-				ClusterFile: "cluster-name-private",
+				Variant:     "private",
 				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || nodepool-osimagestream",
 				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{
 				Name:        "oauth-lb",
-				ClusterFile: "cluster-name-oauth-lb",
+				Variant:     "oauth-lb",
 				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
 				JUnitFile:   "junit_self_managed_azure_oauth_lb.xml",
 			},
 			{
 				Name:        "autoscaling",
-				ClusterFile: "cluster-name-autoscaling",
+				Variant:     "autoscaling",
 				LabelFilter: "nodepool-autoscaling",
 				JUnitFile:   "junit_self_managed_azure_nodepool_autoscaling.xml",
 			},
 			{
 				Name:        "external-oidc",
-				ClusterFile: "cluster-name-external-oidc",
+				Variant:     "external-oidc",
 				LabelFilter: "external-oidc || global-pull-secret",
 				JUnitFile:   "junit_self_managed_azure_external_oidc.xml",
 			},
@@ -368,14 +362,14 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				Steps: []TestGroup{
 					{
 						Name:        "upgrade",
-						ClusterFile: "cluster-name-upgrade",
+						Variant:     "upgrade",
 						LabelFilter: "control-plane-upgrade",
 						JUnitFile:   "junit_lifecycle_upgrade.xml",
 						ExtraEnv:    []string{fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE=%s", releaseImage)},
 					},
 					{
 						Name:        "etcd-chaos",
-						ClusterFile: "cluster-name-upgrade",
+						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
 						JUnitFile:   "junit_lifecycle_etcd_chaos.xml",
 					},
@@ -411,6 +405,7 @@ func (a *AzurePlatformConfig) DestroyArgs() []string {
 		"--dns-zone-rg-name=" + a.dnsZoneRG,
 	}
 }
+
 
 func envOrDefault(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
