@@ -342,6 +342,7 @@ func (r *Reconciler) computeTargetKeyProviderName(ctx context.Context, hcp *hype
 			KeyVaultName: tk.Azure.KeyVaultName,
 			KeyName:      tk.Azure.KeyName,
 			KeyVersion:   tk.Azure.KeyVersion,
+			KeyVaultType: tk.Azure.KeyVaultType,
 		})
 
 	case hyperv1.SecretEncryptionProviderAWS:

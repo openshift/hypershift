@@ -486,6 +486,71 @@ func TestGenerateKMSPodConfig_ActiveContainerArgs(t *testing.T) {
 	}
 }
 
+func TestBuildKASContainerAzureKMS(t *testing.T) {
+	tests := []struct {
+		name             string
+		keyVaultType     hyperv1.AzureKMSKeyVaultType
+		expectManagedHSM bool
+	}{
+		{
+			name:             "When keyVaultType is omitted it should not pass the managed HSM flag",
+			expectManagedHSM: false,
+		},
+		{
+			name:             "When keyVaultType is KeyVault it should not pass the managed HSM flag",
+			keyVaultType:     hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			expectManagedHSM: false,
+		},
+		{
+			name:             "When keyVaultType is ManagedHSM it should pass the managed HSM flag",
+			keyVaultType:     hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			expectManagedHSM: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := validAzureKMSSpec()
+			spec.ActiveKey.KeyVaultType = tt.keyVaultType
+			provider, err := newTestAzureKMSProvider(spec, "test-kms-image:latest", AzureKMSProviderOptions{})
+			g := NewWithT(t)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			podConfig, err := provider.GenerateKMSPodConfig()
+			g.Expect(err).NotTo(HaveOccurred())
+			active := findContainer(podConfig.Containers, "azure-kms-provider-active")
+			g.Expect(active).NotTo(BeNil())
+			if tt.expectManagedHSM {
+				g.Expect(active.Args).To(ContainElement("--managed-hsm"))
+			} else {
+				g.Expect(active.Args).NotTo(ContainElement("--managed-hsm"))
+			}
+		})
+	}
+}
+
+func TestAzureKMSProviderName(t *testing.T) {
+	const legacyProviderName = "azure-be23a676"
+
+	legacyKey := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "1"}
+	explicitKeyVault := legacyKey
+	explicitKeyVault.KeyVaultType = hyperv1.AzureKMSKeyVaultTypeKeyVault
+	managedHSMKey := legacyKey
+	managedHSMKey.KeyVaultType = hyperv1.AzureKMSKeyVaultTypeManagedHSM
+
+	legacyName, err := AzureKMSProviderName(legacyKey)
+	g := NewWithT(t)
+	g.Expect(err).NotTo(HaveOccurred())
+	explicitKeyVaultName, err := AzureKMSProviderName(explicitKeyVault)
+	g.Expect(err).NotTo(HaveOccurred())
+	managedHSMName, err := AzureKMSProviderName(managedHSMKey)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	g.Expect(legacyName).To(Equal(legacyProviderName))
+	g.Expect(explicitKeyVaultName).To(Equal(legacyProviderName), "explicit KeyVault must preserve the legacy provider name")
+	g.Expect(managedHSMName).NotTo(Equal(legacyProviderName))
+}
+
 func TestGenerateKMSPodConfig_BackupContainerArgs(t *testing.T) {
 	g := NewWithT(t)
 
