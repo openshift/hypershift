@@ -2892,6 +2892,13 @@ type OperatorConfiguration struct {
 	//
 	// +optional
 	IngressOperator *IngressOperatorSpec `json:"ingressOperator,omitempty"`
+
+	// csiDriverConfig specifies configuration for CSI driver operators in the hosted cluster.
+	// This allows configuring platform-specific CSI driver behavior such as KMS encryption
+	// for the default StorageClass.
+	//
+	// +optional
+	CSIDriverConfig CSIDriverOperatorConfig `json:"csiDriverConfig,omitzero,omitempty"`
 }
 
 // +genclient

@@ -3535,6 +3535,12 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		driver := manifests.ClusterCSIDriver(driverName)
 		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
+			// For AWS EBS, configure KMS encryption if specified in the HCP spec.
+			if driverName == operatorv1.AWSEBSCSIDriver &&
+				hcp.Spec.OperatorConfiguration != nil &&
+				hcp.Spec.OperatorConfiguration.CSIDriverConfig.AWS.KMSKeyARN != "" {
+				storage.ReconcileClusterCSIDriverKMSKey(driver, hcp.Spec.OperatorConfiguration.CSIDriverConfig.AWS.KMSKeyARN)
+			}
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile ClusterCSIDriver %s: %w", driver.Name, err))

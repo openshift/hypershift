@@ -284,3 +284,41 @@ type IngressOperatorSpec struct {
 	// +kubebuilder:validation:Type=object
 	EndpointPublishingStrategy *operatorv1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
 }
+
+// CSIDriverOperatorConfig specifies configuration for CSI driver operators
+// in the hosted cluster. Platform-specific configuration is nested inside
+// the operator's config, following the ingress operator pattern where
+// platform branching is inside the operator's own struct.
+// +kubebuilder:validation:MinProperties=1
+type CSIDriverOperatorConfig struct {
+	// aws specifies configuration for the AWS EBS CSI driver operator.
+	// +optional
+	AWS AWSCSIDriverConfig `json:"aws,omitzero,omitempty"`
+}
+
+// AWSCSIDriverConfig specifies configuration for the AWS EBS CSI driver.
+// +kubebuilder:validation:MinProperties=1
+type AWSCSIDriverConfig struct {
+	// kmsKeyARN sets the cluster default storage class to encrypt volumes with
+	// a user-defined KMS key, rather than the default KMS key used by AWS.
+	// The value may be either the ARN or Alias ARN of a KMS key.
+	//
+	// The ARN must follow the format:
+	//   arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>
+	// where <partition> is the AWS partition (aws, aws-cn, aws-us-gov, aws-iso,
+	// aws-iso-b, aws-iso-e, or aws-iso-f).
+	//
+	// This field is applied at cluster creation time only. Day-2 changes to
+	// storage encryption should be made directly on the ClusterCSIDriver
+	// resource in the guest cluster.
+	//
+	// The StorageARN role in AWSRolesRef must have kms:Decrypt,
+	// kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+	// permissions on the specified key.
+	//
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	// +openshift:validation:FeatureGateAwareXValidation:featureGate="",rule="matches(self, '^arn:(aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f):kms:[a-z0-9-]+:[0-9]{12}:(key|alias)/.+$')",message="kmsKeyARN must be a valid AWS KMS key ARN in the format: arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>"
+	KMSKeyARN string `json:"kmsKeyARN,omitempty"`
+}
