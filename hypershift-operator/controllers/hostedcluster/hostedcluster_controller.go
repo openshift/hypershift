@@ -752,14 +752,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// So consumers e.g. UI can categorize as good (True) / bad (False).
 			if conditionType == hyperv1.ClusterVersionSucceeding {
 				hcCVOCondition.Type = string(hyperv1.ClusterVersionSucceeding)
-				var status metav1.ConditionStatus
-				switch hcpCVOConditions[conditionType].Status {
-				case metav1.ConditionTrue:
-					status = metav1.ConditionFalse
-				case metav1.ConditionFalse:
-					status = metav1.ConditionTrue
-				}
-				hcCVOCondition.Status = status
+				hcCVOCondition.Status = invertConditionStatus(hcpCVOConditions[conditionType].Status)
 			}
 		}
 
@@ -3316,6 +3309,17 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 		},
 	}
 	return nil
+}
+
+func invertConditionStatus(s metav1.ConditionStatus) metav1.ConditionStatus {
+	switch s {
+	case metav1.ConditionTrue:
+		return metav1.ConditionFalse
+	case metav1.ConditionFalse:
+		return metav1.ConditionTrue
+	default:
+		return metav1.ConditionUnknown
+	}
 }
 
 // computeClusterVersionStatus determines the ClusterVersionStatus of the

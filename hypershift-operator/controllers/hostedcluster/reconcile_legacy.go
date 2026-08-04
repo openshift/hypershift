@@ -434,14 +434,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			// So consumers e.g. UI can categorize as good (True) / bad (False).
 			if conditionType == hyperv1.ClusterVersionSucceeding {
 				hcCVOCondition.Type = string(hyperv1.ClusterVersionSucceeding)
-				var status metav1.ConditionStatus
-				switch hcpCVOConditions[conditionType].Status {
-				case metav1.ConditionTrue:
-					status = metav1.ConditionFalse
-				case metav1.ConditionFalse:
-					status = metav1.ConditionTrue
-				}
-				hcCVOCondition.Status = status
+				hcCVOCondition.Status = invertConditionStatus(hcpCVOConditions[conditionType].Status)
 			}
 		}
 
