@@ -2671,8 +2671,8 @@ func apiServerExternalName(service hyperv1.ServicePublishingStrategyMapping) str
 			return service.LoadBalancer.Hostname
 		}
 	case hyperv1.NodePort:
-		if service.NodePort != nil && len(service.NodePort.Address) > 0 && service.NodePort.Port != 0 {
-			return fmt.Sprintf("%s:%d", service.NodePort.Address, service.NodePort.Port)
+		if service.NodePort != nil && len(service.NodePort.Address) > 0 && service.NodePort.Port != nil && *service.NodePort.Port != 0 {
+			return fmt.Sprintf("%s:%d", service.NodePort.Address, *service.NodePort.Port)
 		}
 	}
 	return ""
