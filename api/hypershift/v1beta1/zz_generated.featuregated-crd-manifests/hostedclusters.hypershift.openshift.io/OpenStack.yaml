@@ -6937,18 +6937,28 @@ spec:
                               encrypt new secrets
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
+                                type: string
+                              keyVaultType:
+                                default: KeyVault
+                                description: |-
+                                  keyVaultType specifies whether the key is hosted by Azure Key Vault or Azure Managed HSM.
+                                  The type is immutable; key rotation must remain within the same service.
+                                  When omitted, the type defaults to KeyVault.
+                                enum:
+                                - KeyVault
+                                - ManagedHSM
                                 type: string
                               keyVersion:
                                 description: keyVersion contains the version of the
@@ -6970,18 +6980,28 @@ spec:
                               The system automatically manages the previous key via the status field.
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
+                                type: string
+                              keyVaultType:
+                                default: KeyVault
+                                description: |-
+                                  keyVaultType specifies whether the key is hosted by Azure Key Vault or Azure Managed HSM.
+                                  The type is immutable; key rotation must remain within the same service.
+                                  When omitted, the type defaults to KeyVault.
+                                enum:
+                                - KeyVault
+                                - ManagedHSM
                                 type: string
                               keyVersion:
                                 description: keyVersion contains the version of the
@@ -7088,6 +7108,14 @@ spec:
                             both keys must reside in the same Key Vault
                           rule: '!has(self.backupKey) || self.backupKey.keyVaultName
                             == self.activeKey.keyVaultName'
+                        - message: backupKey.keyVaultType must match activeKey.keyVaultType
+                          rule: '!has(self.backupKey) || (has(self.activeKey.keyVaultType)
+                            ? self.activeKey.keyVaultType : ''KeyVault'') == (has(self.backupKey.keyVaultType)
+                            ? self.backupKey.keyVaultType : ''KeyVault'')'
+                        - message: activeKey.keyVaultType is immutable
+                          rule: '(has(self.activeKey.keyVaultType) ? self.activeKey.keyVaultType
+                            : ''KeyVault'') == (has(oldSelf.activeKey.keyVaultType)
+                            ? oldSelf.activeKey.keyVaultType : ''KeyVault'')'
                         - message: kms and workloadIdentity are mutually exclusive
                           rule: '!(has(self.kms) && has(self.workloadIdentity))'
                         - message: one of kms or workloadIdentity must be set
@@ -7914,18 +7942,27 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1
+                            type: string
+                          keyVaultType:
+                            default: KeyVault
+                            description: |-
+                              keyVaultType specifies whether the key is hosted by Azure Key Vault or Azure Managed HSM.
+                              The type is immutable; key rotation must remain within the same service.
+                              When omitted, the type defaults to KeyVault.
+                            enum:
+                            - KeyVault
+                            - ManagedHSM
                             type: string
                           keyVersion:
                             description: keyVersion contains the version of the key
@@ -8149,18 +8186,27 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1
+                            type: string
+                          keyVaultType:
+                            default: KeyVault
+                            description: |-
+                              keyVaultType specifies whether the key is hosted by Azure Key Vault or Azure Managed HSM.
+                              The type is immutable; key rotation must remain within the same service.
+                              When omitted, the type defaults to KeyVault.
+                            enum:
+                            - KeyVault
+                            - ManagedHSM
                             type: string
                           keyVersion:
                             description: keyVersion contains the version of the key

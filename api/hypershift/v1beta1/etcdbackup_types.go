@@ -178,14 +178,14 @@ type HCPEtcdBackupAzureBlob struct {
 	// +required
 	Credentials SecretReference `json:"credentials,omitzero"`
 
-	// encryptionKeyURL is the URL of the Azure Key Vault key used for encryption.
-	// Must be a valid Azure Key Vault key URL in the format
-	// "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
+	// encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key used for encryption.
+	// Managed HSM URLs support Azure Public Cloud and Azure US Government Cloud.
+	// Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.
 	// This field is immutable once set and cannot be removed.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=210
-	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.(vault\\\\.azure\\\\.net|managedhsm\\\\.(azure\\\\.net|usgovcloudapi\\\\.net))/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault or Managed HSM HTTPS URL"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="encryptionKeyURL is immutable"
 	EncryptionKeyURL string `json:"encryptionKeyURL,omitempty"`
 }
@@ -249,13 +249,13 @@ type HCPEtcdBackupEncryptionMetadataAWS struct {
 // HCPEtcdBackupEncryptionMetadataAzure contains Azure-specific encryption metadata.
 // The values here reflect the encryption settings from the HCPEtcdBackupConfig input.
 type HCPEtcdBackupEncryptionMetadataAzure struct {
-	// encryptionKeyURL is the URL of the Azure Key Vault key used for encryption of the backup.
-	// Must be a valid Azure Key Vault key URL in the format
-	// "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
+	// encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key used for encryption of the backup.
+	// Managed HSM URLs support Azure Public Cloud and Azure US Government Cloud.
+	// Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=210
-	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.(vault\\\\.azure\\\\.net|managedhsm\\\\.(azure\\\\.net|usgovcloudapi\\\\.net))/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault or Managed HSM HTTPS URL"
 	EncryptionKeyURL string `json:"encryptionKeyURL,omitempty"`
 }
 
@@ -349,12 +349,12 @@ type HCPEtcdBackupConfigAWS struct {
 
 // HCPEtcdBackupConfigAzure defines Azure-specific encryption settings for etcd backups.
 type HCPEtcdBackupConfigAzure struct {
-	// encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
-	// Must be a valid Azure Key Vault key URL in the format
-	// "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
+	// encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key to use for encrypting etcd backup artifacts.
+	// Managed HSM URLs support Azure Public Cloud and Azure US Government Cloud.
+	// Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=210
-	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.(vault\\\\.azure\\\\.net|managedhsm\\\\.(azure\\\\.net|usgovcloudapi\\\\.net))/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault or Managed HSM HTTPS URL"
 	EncryptionKeyURL string `json:"encryptionKeyURL,omitempty"`
 }
