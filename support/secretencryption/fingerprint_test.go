@@ -25,6 +25,25 @@ func TestFingerprintAzureKMSKey(t *testing.T) {
 		key2 := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"}
 		g.Expect(FingerprintAzureKMSKey(key1)).ToNot(Equal(FingerprintAzureKMSKey(key2)))
 	})
+
+	t.Run("When KeyVault type is explicit it should preserve the legacy fingerprint", func(t *testing.T) {
+		const legacyFingerprint = "d5962eb588f841eaa664c407524cfeff2eb31432751370611c35737a8b81da35"
+
+		g := NewWithT(t)
+		legacyKey := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}
+		explicitKeyVault := legacyKey
+		explicitKeyVault.KeyVaultType = hyperv1.AzureKMSKeyVaultTypeKeyVault
+		g.Expect(FingerprintAzureKMSKey(legacyKey)).To(Equal(legacyFingerprint))
+		g.Expect(FingerprintAzureKMSKey(explicitKeyVault)).To(Equal(legacyFingerprint))
+	})
+
+	t.Run("When vault type changes to ManagedHSM it should produce a different fingerprint", func(t *testing.T) {
+		g := NewWithT(t)
+		keyVaultKey := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}
+		managedHSMKey := keyVaultKey
+		managedHSMKey.KeyVaultType = hyperv1.AzureKMSKeyVaultTypeManagedHSM
+		g.Expect(FingerprintAzureKMSKey(managedHSMKey)).ToNot(Equal(FingerprintAzureKMSKey(keyVaultKey)))
+	})
 }
 
 func TestFingerprintAWSKMSKey(t *testing.T) {
