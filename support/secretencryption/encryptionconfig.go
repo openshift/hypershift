@@ -10,7 +10,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
@@ -83,27 +82,12 @@ func KASDeploymentConvergedWithEncryptionConfig(ctx context.Context, c client.Re
 // on error to fail closed.
 func hasTerminatingPods(ctx context.Context, c client.Reader, deployment *appsv1.Deployment) bool {
 	logger := logr.FromContextOrDiscard(ctx)
-	if deployment.Spec.Selector == nil {
-		return false
-	}
-	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	has, err := podspec.HasTerminatingPods(ctx, c, deployment.Namespace, deployment.Spec.Selector)
 	if err != nil {
-		logger.Error(err, "Failed to parse deployment selector, failing closed")
+		logger.Error(err, "Failed to check for terminating pods, failing closed")
 		return true
 	}
-	podList := &corev1.PodList{}
-	if err := c.List(ctx, podList,
-		client.InNamespace(deployment.Namespace),
-		client.MatchingLabelsSelector{Selector: selector}); err != nil {
-		logger.Error(err, "Failed to list pods for termination check, failing closed")
-		return true
-	}
-	for i := range podList.Items {
-		if podList.Items[i].DeletionTimestamp != nil {
-			return true
-		}
-	}
-	return false
+	return has
 }
 
 // DecodeEncryptionConfiguration parses raw YAML bytes into an EncryptionConfiguration.
