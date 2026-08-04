@@ -37,11 +37,22 @@ jobs:
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$ref" | grep -qE '^(api/|test/envtest/|cmd/install/assets/crds/hypershift-operator/tests/|karpenter-operator/controllers/karpenter/assets/tests/|\.github/workflows/envtest-ocp(-reusable)?\.yaml$)'; then
-            echo "should_run=true"
+          echo "Diff ref: $ref"
+          pattern='^(api/|test/envtest/|cmd/install/assets/crds/|karpenter-operator/controllers/karpenter/assets/tests/|hack/tools/|\.github/workflows/envtest-ocp(-reusable)?\.yaml$)'
+          diff_output=$(git diff --name-only "$ref" 2>/dev/null)
+          diff_rc=$?
+          if [ $diff_rc -ne 0 ]; then
+            echo "git diff failed (exit $diff_rc). Ref: $ref"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif matched=$(echo "$diff_output" | grep -E "$pattern"); then
+            echo "Matched files:"
+            echo "$matched"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "should_run=false"
-          fi >> "$GITHUB_OUTPUT"
+            echo "No relevant files changed. Diff output:"
+            echo "$diff_output" | sed -n '1,50p'
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
 
   envtest-ocp:
     name: Envtest OCP (K8s ${{ matrix.version }})
