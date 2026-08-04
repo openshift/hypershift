@@ -20,12 +20,19 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	kyaml "sigs.k8s.io/yaml"
 )
+
+// minK8sMinorVersionForCELFormatLibrary is the minimum k8s minor version that
+// supports the CEL format library (format.dns1123Subdomain(), format.labelValue(),
+// etc.), introduced in k8s 1.31 via KEP-4222. CustomNoUpgrade CRDs that use
+// these functions cannot be installed on older API servers.
+const minK8sMinorVersionForCELFormatLibrary = 31
 
 // LoadTestSuiteSpecs recursively walks the given paths looking for any .yaml file
 // inside a tests/ directory structure (matching openshift/api conventions).
@@ -177,6 +184,17 @@ func GenerateTestSuite(suiteSpec SuiteSpec) {
 
 			BeforeEach(OncePerOrdered, func() {
 				Expect(k8sClient).ToNot(BeNil(), "Kubernetes client is not initialised")
+
+				// CustomNoUpgrade CRDs may contain CEL rules (e.g. format.*) that
+				// require k8s 1.31+. Skip on older versions to avoid CRD install failures.
+				// TODO(OCPBUGS-104528): remove this skip once the envtest matrix has a
+				// well-defined sliding window of supported versions and 1.30 is dropped.
+				if featureSetAnnotation := baseCRD.Annotations["release.openshift.io/feature-set"]; featureSetAnnotation != "" {
+					featureSets := sets.New[string](strings.Split(featureSetAnnotation, ",")...)
+					if featureSets.Has("CustomNoUpgrade") && k8sMinorVersion < minK8sMinorVersionForCELFormatLibrary {
+						Skip(fmt.Sprintf("CustomNoUpgrade CRDs require k8s >= 1.%d for CEL format library support (current: 1.%d)", minK8sMinorVersionForCELFormatLibrary, k8sMinorVersion))
+					}
+				}
 
 				// Retry CRD installation — a previous suite may still be deleting the same CRD.
 				var crds []*apiextensionsv1.CustomResourceDefinition

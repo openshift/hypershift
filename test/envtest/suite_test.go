@@ -29,6 +29,7 @@ var k8sClient client.Client
 var testEnv *envtest.Environment
 var ctx = context.Background()
 var suites []SuiteSpec
+var k8sMinorVersion int
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -73,6 +74,7 @@ var _ = BeforeSuite(func() {
 	minorInt, err := strconv.Atoi(strings.Split(serverVersion.Minor, "+")[0])
 	Expect(err).ToNot(HaveOccurred())
 	Expect(minorInt).To(BeNumerically(">=", 25), fmt.Sprintf("This test suite requires a Kube API server of at least version 1.25, current version is 1.%s", serverVersion.Minor))
+	k8sMinorVersion = minorInt
 })
 
 var _ = AfterSuite(func() {
