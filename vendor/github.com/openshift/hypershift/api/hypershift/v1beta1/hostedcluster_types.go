@@ -2926,8 +2926,8 @@ type OperatorConfiguration struct {
 	// kubeScheduler configures the kube-scheduler component.
 	// Setting the logLevel field triggers a rolling restart of the component.
 	// When omitted, this means the user has no opinion and the platform
-	// The current default log level is Normal.
 	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	KubeScheduler KubeSchedulerOperatorSpec `json:"kubeScheduler,omitzero"`

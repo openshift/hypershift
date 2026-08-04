@@ -15722,8 +15722,8 @@ KubeSchedulerOperatorSpec
 <p>kubeScheduler configures the kube-scheduler component.
 Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
-The current default log level is Normal.
-chooses a reasonable default, which is subject to change over time.</p>
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
 </td>
 </tr>
 <tr>
