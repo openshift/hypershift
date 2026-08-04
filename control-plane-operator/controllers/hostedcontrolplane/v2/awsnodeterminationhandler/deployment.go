@@ -51,9 +51,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		}
 	})
 
-	// Update the token-minter-kube container with the proper audience
-	// The token-minter command is embedded in a shell script, so we need to do string replacement
-	podspec.UpdateContainer(tokenMinterKubeContainerName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+	// Update token-minter-kube (native sidecar in initContainers) with the proper audience.
+	// The token-minter command is embedded in a shell script, so we need to do string replacement.
+	podspec.UpdateContainer(tokenMinterKubeContainerName, deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		for i := range c.Args {
 			if strings.Contains(c.Args[i], "--token-audience=") {
 				c.Args[i] = strings.Replace(c.Args[i], "--token-audience=", fmt.Sprintf("--token-audience=%s", issuerURL), 1)

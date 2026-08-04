@@ -85,32 +85,43 @@ spec:
           mountPath: /tmp
         - name: token
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        - name: root-ca
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          subPath: ca.crt
         - name: credentials
           mountPath: /etc/aws
+      initContainers:
       # token-minter-kube mints a token for Kubernetes API access to the guest cluster.
-      # It also extracts the CA certificate from the kubeconfig and writes it to the token volume
-      # so the AWS Node Termination Handler can verify TLS connections to the guest cluster API.
+      # Runs as a native sidecar (restartPolicy: Always) so it starts before the handler
+      # and keeps refreshing the token. The startupProbe blocks the handler until the
+      # token file exists, preventing the startup race that caused CrashLoopBackOff.
       - name: token-minter-kube
         image: token-minter
         imagePullPolicy: IfNotPresent
+        restartPolicy: Always
         command: ["/bin/sh", "-c"]
-        # we use openshift-cluster-version/default service account to avoid the need to create a new one.
-        # We need to authenticate with a SA because the terminantion handler has hardcoded in cluster client credentials.
+        # We use openshift-cluster-version/default service account to avoid creating a new one.
+        # The handler has hardcoded in-cluster client credentials:
         # https://github.com/aws/aws-node-termination-handler/pull/1230
         args:
         - |
-          # Extract CA certificate from kubeconfig and write to expected location
-          grep certificate-authority-data /etc/kubernetes/kubeconfig | awk '{print $2}' | base64 -d > /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-
           /usr/bin/control-plane-operator token-minter \
             --service-account-namespace=openshift-cluster-version \
             --service-account-name=default \
             --token-audience= \
             --token-file=/var/run/secrets/kubernetes.io/serviceaccount/token \
             --kubeconfig=/etc/kubernetes/kubeconfig
+        startupProbe:
+          exec:
+            command: ["test", "-f", "/var/run/secrets/kubernetes.io/serviceaccount/token"]
+          periodSeconds: 1
+          failureThreshold: 30
         volumeMounts:
         - name: token
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        - name: root-ca
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          subPath: ca.crt
         - name: svc-kubeconfig
           mountPath: /etc/kubernetes
         resources:
@@ -130,5 +141,8 @@ spec:
       - name: credentials
         secret:
           secretName: aws-node-termination-handler-creds
+      - name: root-ca
+        configMap:
+          name: root-ca
       nodeSelector:
         kubernetes.io/os: linux
