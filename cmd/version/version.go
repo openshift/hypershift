@@ -20,28 +20,29 @@ func NewVersionCommand() *cobra.Command {
 		Short:        "Prints HyperShift CLI version",
 		SilenceUsage: true,
 		Run: func(cmd *cobra.Command, args []string) {
+			out := cmd.OutOrStdout()
 			if commitOnly {
-				fmt.Printf("%s\n", supportedversion.GetRevision())
+				fmt.Fprintf(out, "%s\n", supportedversion.GetRevision())
 				return
 			}
-			fmt.Printf("Client Version: %s\n", supportedversion.String())
+			fmt.Fprintf(out, "Client Version: %s\n", supportedversion.String())
 			if clientOnly {
 				return
 			}
 
 			client, err := util.GetClient()
 			if err != nil {
-				fmt.Printf("failed to connect to server: %v", err)
+				fmt.Fprintf(out, "failed to connect to server: %v", err)
 				return
 			}
 
 			supportedVersions, serverVersion, err := supportedversion.GetSupportedOCPVersions(cmd.Context(), namespace, client, nil)
 			if err != nil {
-				fmt.Printf("failed to get supported OCP versions: %v\n", err)
+				fmt.Fprintf(out, "failed to get supported OCP versions: %v\n", err)
 				return
 			}
-			fmt.Printf("Server Version: %s\n", serverVersion)
-			fmt.Printf("Server Supports OCP Versions: %s\n", strings.Join(supportedVersions.Versions, ", "))
+			fmt.Fprintf(out, "Server Version: %s\n", serverVersion)
+			fmt.Fprintf(out, "Server Supports OCP Versions: %s\n", strings.Join(supportedVersions.Versions, ", "))
 		},
 	}
 
