@@ -230,8 +230,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 			err = backuprestore.WaitForBackupCompletion(testCtx, backupName)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for schedule to have one backup completed")
-			err = backuprestore.WaitForScheduleCompletion(testCtx, scheduleName)
+			By("Waiting for schedule to create a backup")
+			err = backuprestore.WaitForScheduleBackupCreated(testCtx, scheduleName)
 			Expect(err).NotTo(HaveOccurred())
 
 		})
