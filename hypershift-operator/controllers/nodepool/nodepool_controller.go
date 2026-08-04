@@ -111,6 +111,7 @@ type NodePoolReconciler struct {
 	EC2Client               awsapi.EC2API
 	InstanceTypeProvider    instancetype.Provider
 	ScaleFromZeroPlatform   hyperv1.PlatformType
+	resolveDNSHostname      func(context.Context, string) error
 }
 
 type NotReadyError struct {

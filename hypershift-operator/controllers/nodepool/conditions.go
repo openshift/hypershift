@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
@@ -283,6 +284,31 @@ func (r *NodePoolReconciler) ignitionEndpointAvailableCondition(ctx context.Cont
 		})
 		log.Info("Ignition endpoint not available, waiting")
 		return &ctrl.Result{}, nil
+	}
+	// Gate on AzurePlatform (not just ARO HCP) because Azure DNS API throttling
+	// (429s) can delay any Azure DNS zone, not only ARO-managed ones.
+	// ServiceExternalDNSHostnameByHC already narrows this to public clusters with
+	// an explicit external DNS hostname, so self-managed Azure without external
+	// DNS is unaffected.
+	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+		ignitionHostname := netutil.ServiceExternalDNSHostnameByHC(hcluster, hyperv1.Ignition)
+		if ignitionHostname != "" {
+			resolveDNSHostname := r.resolveDNSHostname
+			if resolveDNSHostname == nil {
+				resolveDNSHostname = netutil.ResolveDNSHostname
+			}
+			if err := resolveDNSHostname(ctx, ignitionHostname); err != nil {
+				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               string(hyperv1.IgnitionEndpointAvailable),
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.ExternalDNSHostNotReachableReason,
+					Message:            fmt.Sprintf("Ignition endpoint DNS hostname %q is not resolvable: %v", ignitionHostname, err),
+					ObservedGeneration: nodePool.Generation,
+				})
+				log.Info("Ignition endpoint DNS hostname is not resolvable, waiting")
+				return &ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			}
+		}
 	}
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
