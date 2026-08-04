@@ -101,7 +101,8 @@ func TestAdaptDeployment(t *testing.T) {
 		name           string
 		hcpAnnotations map[string]string
 
-		expectedImage string
+		expectedImage   string
+		expectedEnvVars []corev1.EnvVar
 	}{
 		{
 			name: "when HCP has KarpenterProviderAWSImage annotation, image should be overridden",
@@ -113,6 +114,16 @@ func TestAdaptDeployment(t *testing.T) {
 		{
 			name:          "expect default image",
 			expectedImage: "aws-karpenter-provider-aws",
+		},
+		{
+			name: "when HCP has KarpenterProviderAWSClusterNameTagKey annotation, it should set CLUSTER_NAME_TAG_KEY env var",
+			hcpAnnotations: map[string]string{
+				hyperkarpenterv1.KarpenterProviderAWSClusterNameTagKey: "openshift:cluster-name",
+			},
+			expectedImage: "aws-karpenter-provider-aws",
+			expectedEnvVars: []corev1.EnvVar{
+				{Name: "CLUSTER_NAME_TAG_KEY", Value: "openshift:cluster-name"},
+			},
 		},
 	}
 
@@ -161,6 +172,10 @@ func TestAdaptDeployment(t *testing.T) {
 
 			// expect correct image
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(tc.expectedImage))
+
+			if tc.expectedEnvVars != nil {
+				g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(tc.expectedEnvVars))
+			}
 		})
 	}
 }
