@@ -147,6 +147,43 @@ func allServicesRouteWithHostnames() []hyperv1.ServicePublishingStrategyMapping 
 	}
 }
 
+// allServicesRouteNoKASHostname creates service publishing strategies with all services using Route type,
+// but without a hostname for APIServer (simulates Private cluster without external DNS).
+func allServicesRouteNoKASHostname() []hyperv1.ServicePublishingStrategyMapping {
+	return []hyperv1.ServicePublishingStrategyMapping{
+		{
+			Service: hyperv1.APIServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+		{
+			Service: hyperv1.Konnectivity,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: testKonnectivityHost,
+				},
+			},
+		},
+		{
+			Service: hyperv1.OAuthServer,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: testOAuthHostname,
+				},
+			},
+		},
+		{
+			Service: hyperv1.Ignition,
+			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
+	}
+}
+
 // kasServiceLoadBalancerOthersRoute creates service publishing strategies with LoadBalancer for APIServer
 // and Route for others (Konnectivity, OAuthServer, Ignition).
 func kasServiceLoadBalancerOthersRoute() []hyperv1.ServicePublishingStrategyMapping {
@@ -462,6 +499,14 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		// Azure self-managed test cases
+		{
+			name: "When Azure Private cluster has Route strategy without hostname, it should only need an internal router",
+			hcp: withServices(
+				withAzureTopology(baseAzureHCP(), hyperv1.AzureTopologyPrivate),
+				allServicesRouteNoKASHostname(),
+			),
+			expectError: false,
+		},
 		{
 			name: "When Azure self-managed cluster has KAS Route with hostname, it should need an external router",
 			hcp: withServices(
@@ -1355,6 +1400,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 		name                  string
 		endpointAccess        hyperv1.AWSEndpointAccessType
 		apiPublishingStrategy hyperv1.ServicePublishingStrategy
+		existingObjects       []client.Object
 
 		expectedServices []corev1.Service
 		expectedRoutes   []routev1.Route
@@ -1473,6 +1519,28 @@ func TestReconcileAPIServerService(t *testing.T) {
 				kasExternalPrivateRoute,
 			},
 		},
+		{
+			name:           "When Route strategy is private with no hostname, it should delete obsolete routes and create only internal route",
+			endpointAccess: hyperv1.Private,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+			existingObjects: []client.Object{
+				manifests.KubeAPIServerExternalPublicRoute(targetNamespace),
+				manifests.KubeAPIServerExternalPrivateRoute(targetNamespace),
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				kasInternalRoute,
+			},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1503,7 +1571,11 @@ func TestReconcileAPIServerService(t *testing.T) {
 
 			ctx := context.Background()
 
-			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tc.existingObjects) > 0 {
+				clientBuilder = clientBuilder.WithObjects(tc.existingObjects...)
+			}
+			fakeClient := clientBuilder.Build()
 			r := NewReconciler(fakeClient, testIngressDomain)
 
 			if err := r.reconcileAPIServerService(ctx, hcp, controllerutil.CreateOrUpdate); err != nil {
