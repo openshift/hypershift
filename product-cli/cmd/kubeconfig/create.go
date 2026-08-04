@@ -1,7 +1,9 @@
 package kubeconfig
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 
 	hypershiftkubeconfig "github.com/openshift/hypershift/cmd/kubeconfig"
@@ -15,9 +17,18 @@ type options struct {
 	portForward bool
 }
 
+// renderFunc renders the kubeconfig for the selected HostedCluster(s). It is a
+// parameter of newCreateCommand so tests can exercise the flag wiring and the
+// error handling without a management cluster.
+type renderFunc func(ctx context.Context, namespace string, name string, portForward bool) error
+
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
 // resources.
 func NewCreateCommand() *cobra.Command {
+	return newCreateCommand(hypershiftkubeconfig.Render, os.Stderr)
+}
+
+func newCreateCommand(render renderFunc, errOut io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubeconfig",
 		Short:        "Renders kubeconfigs for HostedCluster resources",
@@ -34,8 +45,8 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.portForward, "port-forward", false, "For private clusters, rewrite the kubeconfig server URL for use with kubectl port-forward.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := hypershiftkubeconfig.Render(cmd.Context(), opts.namespace, opts.name, opts.portForward); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		if err := render(cmd.Context(), opts.namespace, opts.name, opts.portForward); err != nil {
+			_, _ = fmt.Fprintf(errOut, "Error: %s\n", err)
 			return err
 		}
 		return nil
