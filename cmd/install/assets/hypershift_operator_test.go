@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
@@ -969,6 +970,15 @@ func TestBuildEnvVars(t *testing.T) {
 			},
 			expectContains: []corev1.EnvVar{
 				{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"},
+			},
+		},
+		{
+			name: "When AZMonitoring is enabled, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				AZMonitoring: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: azmonitoring.EnvironmentVariable, Value: "1"},
 			},
 		},
 		{

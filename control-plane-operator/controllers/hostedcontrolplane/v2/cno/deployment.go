@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -126,6 +127,12 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) []corev1.EnvVar {
 	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name:  rhobsmonitoring.EnvironmentVariable,
+			Value: "1",
+		})
+	}
+	if os.Getenv(azmonitoring.EnvironmentVariable) == "1" {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name:  azmonitoring.EnvironmentVariable,
 			Value: "1",
 		})
 	}

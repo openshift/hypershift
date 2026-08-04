@@ -73,6 +73,7 @@ rules:
   - apiGroups:
       - "monitoring.coreos.com"
       - "monitoring.rhobs"
+      - "azmonitoring.coreos.com"
     resources:
       - "podmonitors"
     verbs:

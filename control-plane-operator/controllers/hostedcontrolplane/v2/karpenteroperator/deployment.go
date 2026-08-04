@@ -4,6 +4,7 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -65,6 +66,14 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 				c.Env = append(c.Env,
 					corev1.EnvVar{
 						Name:  rhobsmonitoring.EnvironmentVariable,
+						Value: "1",
+					},
+				)
+			}
+			if os.Getenv(azmonitoring.EnvironmentVariable) == "1" {
+				c.Env = append(c.Env,
+					corev1.EnvVar{
+						Name:  azmonitoring.EnvironmentVariable,
 						Value: "1",
 					},
 				)
