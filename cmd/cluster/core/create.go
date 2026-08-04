@@ -1089,10 +1089,9 @@ func defaultNodePool(opts *CreateOptions) func(platformType hyperv1.PlatformType
 	}
 }
 
-func GetIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, usesExternalDNS bool) []hyperv1.ServicePublishingStrategyMapping {
-	// TODO (Alberto): Default KAS to Route if endpointAccess is Private.
+func GetIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, usesExternalDNS bool, isPrivate bool) []hyperv1.ServicePublishingStrategyMapping {
 	apiServiceStrategy := hyperv1.LoadBalancer
-	if usesExternalDNS {
+	if usesExternalDNS || isPrivate {
 		apiServiceStrategy = hyperv1.Route
 	}
 	services := map[hyperv1.ServiceType]hyperv1.PublishingStrategyType{

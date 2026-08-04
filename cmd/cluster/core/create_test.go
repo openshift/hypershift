@@ -832,12 +832,12 @@ func TestGetServicePublishingStrategyMapping(t *testing.T) {
 	}{
 		{
 			name:            "When GetIngressServicePublishingStrategyMapping is called with OVNKubernetes, it should not include deprecated service types",
-			services:        GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false),
+			services:        GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false, false),
 			checkDeprecated: true,
 		},
 		{
 			name:            "When GetIngressServicePublishingStrategyMapping is called with Other network type, it should not include deprecated service types",
-			services:        GetIngressServicePublishingStrategyMapping(hyperv1.Other, false),
+			services:        GetIngressServicePublishingStrategyMapping(hyperv1.Other, false, false),
 			checkDeprecated: true,
 		},
 		{
@@ -852,7 +852,7 @@ func TestGetServicePublishingStrategyMapping(t *testing.T) {
 		},
 		{
 			name:          "When GetIngressServicePublishingStrategyMapping is called, it should include all required service types",
-			services:      GetIngressServicePublishingStrategyMapping(hyperv1.Other, false),
+			services:      GetIngressServicePublishingStrategyMapping(hyperv1.Other, false, false),
 			checkRequired: true,
 			requiredTypes: requiredServiceTypes,
 		},
@@ -871,13 +871,19 @@ func TestGetServicePublishingStrategyMapping(t *testing.T) {
 		},
 		{
 			name:             "When GetIngressServicePublishingStrategyMapping is called without external DNS, it should use LoadBalancer for APIServer",
-			services:         GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false),
+			services:         GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false, false),
 			checkStrategy:    true,
 			expectedStrategy: hyperv1.LoadBalancer,
 		},
 		{
 			name:             "When GetIngressServicePublishingStrategyMapping is called with external DNS, it should use Route for APIServer",
-			services:         GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, true),
+			services:         GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, true, false),
+			checkStrategy:    true,
+			expectedStrategy: hyperv1.Route,
+		},
+		{
+			name:             "When GetIngressServicePublishingStrategyMapping is called with isPrivate, it should use Route for APIServer",
+			services:         GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false, true),
 			checkStrategy:    true,
 			expectedStrategy: hyperv1.Route,
 		},
