@@ -61,6 +61,20 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 					"ActiveKey.KeyVersion must be set")
 			})
 
+			It("should have a valid KeyVaultType when set", func() {
+				testCtx := getTestCtx()
+				hc := testCtx.GetHostedCluster()
+				azureKMS := hc.Spec.SecretEncryption.KMS.Azure
+
+				if azureKMS.ActiveKey.KeyVaultType == "" {
+					Skip("KeyVaultType is not set on this hosted cluster")
+				}
+
+				Expect(azureKMS.ActiveKey.KeyVaultType).To(
+					BeElementOf(hyperv1.AzureKMSKeyVaultTypeKeyVault, hyperv1.AzureKMSKeyVaultTypeManagedHSM),
+					"ActiveKey.KeyVaultType must be KeyVault or ManagedHSM")
+			})
+
 			It("should have KMS authentication configured", func() {
 				testCtx := getTestCtx()
 				hc := testCtx.GetHostedCluster()

@@ -209,7 +209,217 @@ tests:
             type: Route
             route: {}
 
+  - name: When active and backup keys use different vault types it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                ingress:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                file:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                disk:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                nodePoolManagement:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                cloudProvider:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                network:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        secretEncryption:
+          type: kms
+          kms:
+            provider: Azure
+            azure:
+              activeKey:
+                keyVaultName: test-vault
+                keyName: test-key
+                keyVersion: "1"
+                keyVaultType: KeyVault
+              backupKey:
+                keyVaultName: test-vault
+                keyName: backup-key
+                keyVersion: "1"
+                keyVaultType: ManagedHSM
+              kms:
+                credentialsSecretName: kms-creds
+                objectEncoding: utf-8
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "backupKey.keyVaultType must match activeKey.keyVaultType"
+
   onUpdate:
+  - name: When active key vault type changes it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                ingress:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                file:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                disk:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                nodePoolManagement:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                cloudProvider:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                network:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        secretEncryption:
+          type: kms
+          kms:
+            provider: Azure
+            azure:
+              activeKey:
+                keyVaultName: test-vault
+                keyName: test-key
+                keyVersion: "1"
+                keyVaultType: KeyVault
+              workloadIdentity:
+                clientID: "22222222-2222-2222-2222-222222222222"
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                ingress:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                file:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                disk:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                nodePoolManagement:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                cloudProvider:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+                network:
+                  clientID: "11111111-1111-1111-1111-111111111111"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        secretEncryption:
+          type: kms
+          kms:
+            provider: Azure
+            azure:
+              activeKey:
+                keyVaultName: test-vault
+                keyName: test-key
+                keyVersion: "2"
+                keyVaultType: ManagedHSM
+              workloadIdentity:
+                clientID: "22222222-2222-2222-2222-222222222222"
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "activeKey.keyVaultType is immutable"
+
   - name: When switching from kms to workloadIdentity it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -478,7 +688,7 @@ tests:
             route: {}
     expectedError: "the KMS authentication mode is immutable once set"
 
-  - name: When only workloadIdentity is set and key version is updated it should succeed
+  - name: When an omitted active key vault type is updated to explicit KeyVault it should succeed
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
@@ -590,6 +800,7 @@ tests:
                 keyVaultName: test-vault
                 keyName: test-key
                 keyVersion: "2"
+                keyVaultType: KeyVault
               workloadIdentity:
                 clientID: "22222222-2222-2222-2222-222222222222"
         services:
@@ -671,6 +882,7 @@ tests:
               activeKey:
                 keyName: test-key
                 keyVaultName: test-vault
+                keyVaultType: KeyVault
                 keyVersion: '2'
               workloadIdentity:
                 clientID: 22222222-2222-2222-2222-222222222222
