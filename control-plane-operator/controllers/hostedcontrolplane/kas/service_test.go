@@ -438,3 +438,141 @@ func TestKonnectivityServiceReconcile(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileServiceDisableExternalDNS(t *testing.T) {
+	host := "api.example.com"
+
+	testCases := []struct {
+		name                string
+		hcpAnnotations      map[string]string
+		existingAnnotations map[string]string
+		expectAnnotation    bool
+	}{
+		{
+			name:             "When disable annotation is absent, it should set ExternalDNS annotation",
+			hcpAnnotations:   nil,
+			expectAnnotation: true,
+		},
+		{
+			name:             "When disable annotation is true, it should not set ExternalDNS annotation",
+			hcpAnnotations:   map[string]string{hyperv1.DisableExternalDNSManagementAnnotation: "true"},
+			expectAnnotation: false,
+		},
+		{
+			name:             "When disable annotation is false, it should set ExternalDNS annotation",
+			hcpAnnotations:   map[string]string{hyperv1.DisableExternalDNSManagementAnnotation: "false"},
+			expectAnnotation: true,
+		},
+		{
+			name:           "When disable annotation is true on day-2, it should delete existing ExternalDNS annotation",
+			hcpAnnotations: map[string]string{hyperv1.DisableExternalDNSManagementAnnotation: "true"},
+			existingAnnotations: map[string]string{
+				hyperv1.ExternalDNSHostnameAnnotation: host,
+			},
+			expectAnnotation: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: tc.hcpAnnotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Public,
+						},
+					},
+				},
+			}
+			svc := &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: tc.existingAnnotations,
+				},
+			}
+			strategy := &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: host,
+				},
+			}
+
+			err := ReconcileService(svc, strategy, &v1.OwnerReference{}, 6443, []string{}, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectAnnotation {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(hyperv1.ExternalDNSHostnameAnnotation, host))
+			} else {
+				g.Expect(svc.Annotations).ToNot(HaveKey(hyperv1.ExternalDNSHostnameAnnotation))
+			}
+		})
+	}
+}
+
+func TestReconcileKonnectivityServiceDisableExternalDNS(t *testing.T) {
+	host := "konnectivity.example.com"
+
+	testCases := []struct {
+		name                string
+		hcpAnnotations      map[string]string
+		existingAnnotations map[string]string
+		expectAnnotation    bool
+	}{
+		{
+			name:             "When disable annotation is absent, it should set ExternalDNS annotation",
+			hcpAnnotations:   nil,
+			expectAnnotation: true,
+		},
+		{
+			name:             "When disable annotation is true, it should not set ExternalDNS annotation",
+			hcpAnnotations:   map[string]string{hyperv1.DisableExternalDNSManagementAnnotation: "true"},
+			expectAnnotation: false,
+		},
+		{
+			name:           "When disable annotation is true on day-2, it should delete existing ExternalDNS annotation",
+			hcpAnnotations: map[string]string{hyperv1.DisableExternalDNSManagementAnnotation: "true"},
+			existingAnnotations: map[string]string{
+				hyperv1.ExternalDNSHostnameAnnotation: host,
+			},
+			expectAnnotation: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: tc.hcpAnnotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			}
+			svc := &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: tc.existingAnnotations,
+				},
+			}
+			strategy := &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: host,
+				},
+			}
+
+			err := ReconcileKonnectivityServerService(svc, config.OwnerRef{}, strategy, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectAnnotation {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(hyperv1.ExternalDNSHostnameAnnotation, host))
+			} else {
+				g.Expect(svc.Annotations).ToNot(HaveKey(hyperv1.ExternalDNSHostnameAnnotation))
+			}
+		})
+	}
+}
