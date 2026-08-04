@@ -914,9 +914,11 @@ const (
 	AzureKeyVaultPrivate AzureKeyVaultAccessType = "Private"
 )
 
-// AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
+// AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure Key Vault or Managed HSM.
 //
 // +kubebuilder:validation:XValidation:rule="!has(self.backupKey) || self.backupKey.keyVaultName == self.activeKey.keyVaultName",message="backupKey.keyVaultName must match activeKey.keyVaultName; both keys must reside in the same Key Vault"
+// +kubebuilder:validation:XValidation:rule="!has(self.backupKey) || (has(self.activeKey.keyVaultType) ? self.activeKey.keyVaultType : 'KeyVault') == (has(self.backupKey.keyVaultType) ? self.backupKey.keyVaultType : 'KeyVault')",message="backupKey.keyVaultType must match activeKey.keyVaultType"
+// +kubebuilder:validation:XValidation:rule="(has(self.activeKey.keyVaultType) ? self.activeKey.keyVaultType : 'KeyVault') == (has(oldSelf.activeKey.keyVaultType) ? oldSelf.activeKey.keyVaultType : 'KeyVault')",message="activeKey.keyVaultType is immutable"
 // +kubebuilder:validation:XValidation:rule="!(has(self.kms) && has(self.workloadIdentity))",message="kms and workloadIdentity are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="has(self.kms) || has(self.workloadIdentity)",message="one of kms or workloadIdentity must be set"
 // +kubebuilder:validation:XValidation:rule="has(self.kms) == has(oldSelf.kms)",message="the KMS authentication mode is immutable once set"
@@ -957,16 +959,28 @@ type AzureKMSSpec struct {
 	KeyVaultAccess AzureKeyVaultAccessType `json:"keyVaultAccess,omitempty"`
 }
 
+// AzureKMSKeyVaultType specifies the Azure service that hosts a KMS key.
+// +kubebuilder:validation:Enum=KeyVault;ManagedHSM
+type AzureKMSKeyVaultType string
+
+const (
+	// AzureKMSKeyVaultTypeKeyVault indicates that the key is hosted by Azure Key Vault.
+	AzureKMSKeyVaultTypeKeyVault AzureKMSKeyVaultType = "KeyVault"
+	// AzureKMSKeyVaultTypeManagedHSM indicates that the key is hosted by Azure Managed HSM.
+	AzureKMSKeyVaultTypeManagedHSM AzureKMSKeyVaultType = "ManagedHSM"
+)
+
+// AzureKMSKey defines an Azure Key Vault or Managed HSM key used for KMS encryption.
 type AzureKMSKey struct {
-	// keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+	// keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+	// Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyVaultName string `json:"keyVaultName,omitempty"`
 
-	// keyName is the name of the keyvault key used for encrypt/decrypt
+	// keyName is the name of the key used for encrypt/decrypt.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
@@ -977,6 +991,13 @@ type AzureKMSKey struct {
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyVersion string `json:"keyVersion,omitempty"`
+
+	// keyVaultType specifies whether the key is hosted by Azure Key Vault or Azure Managed HSM.
+	// The type is immutable; key rotation must remain within the same service.
+	// When omitted, the type defaults to KeyVault.
+	// +optional
+	// +default="KeyVault"
+	KeyVaultType AzureKMSKeyVaultType `json:"keyVaultType,omitempty"`
 }
 
 // AzureAuthenticationType is a discriminated union type that contains the Azure authentication configuration for an

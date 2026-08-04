@@ -17,12 +17,17 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // AzureKMSKeyApplyConfiguration represents a declarative configuration of the AzureKMSKey type for use
 // with apply.
 type AzureKMSKeyApplyConfiguration struct {
-	KeyVaultName *string `json:"keyVaultName,omitempty"`
-	KeyName      *string `json:"keyName,omitempty"`
-	KeyVersion   *string `json:"keyVersion,omitempty"`
+	KeyVaultName *string                                 `json:"keyVaultName,omitempty"`
+	KeyName      *string                                 `json:"keyName,omitempty"`
+	KeyVersion   *string                                 `json:"keyVersion,omitempty"`
+	KeyVaultType *hypershiftv1beta1.AzureKMSKeyVaultType `json:"keyVaultType,omitempty"`
 }
 
 // AzureKMSKeyApplyConfiguration constructs a declarative configuration of the AzureKMSKey type for use with
@@ -52,5 +57,13 @@ func (b *AzureKMSKeyApplyConfiguration) WithKeyName(value string) *AzureKMSKeyAp
 // If called multiple times, the KeyVersion field is set to the value of the last call.
 func (b *AzureKMSKeyApplyConfiguration) WithKeyVersion(value string) *AzureKMSKeyApplyConfiguration {
 	b.KeyVersion = &value
+	return b
+}
+
+// WithKeyVaultType sets the KeyVaultType field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KeyVaultType field is set to the value of the last call.
+func (b *AzureKMSKeyApplyConfiguration) WithKeyVaultType(value hypershiftv1beta1.AzureKMSKeyVaultType) *AzureKMSKeyApplyConfiguration {
+	b.KeyVaultType = &value
 	return b
 }
