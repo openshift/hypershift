@@ -801,15 +801,22 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 						return true, "native Status.Capacity present with CPU and Memory", nil
 					}
 
-					// Fall back to checking annotations (pre-CAPI 1.11)
+					// Fall back to checking annotations
 					t.Logf("No Status.Capacity found, checking for workaround annotations on MachineDeployment")
+					// CAPI autoscaler keys (--cloud-provider=clusterapi)
+					if _, ok := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/cpu"]; !ok {
+						return false, "missing CAPI cpu annotation", nil
+					}
+					if _, ok := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/memory"]; !ok {
+						return false, "missing CAPI memory annotation", nil
+					}
+					// Legacy keys (co-existing for backward compatibility)
 					if _, ok := md.Annotations["machine.openshift.io/vCPU"]; !ok {
-						return false, "missing both Status.Capacity and vCPU annotation", nil
+						return false, "missing legacy vCPU annotation", nil
 					}
 					if _, ok := md.Annotations["machine.openshift.io/memoryMb"]; !ok {
-						return false, "missing both Status.Capacity and memoryMb annotation", nil
+						return false, "missing legacy memoryMb annotation", nil
 					}
-					// GPU annotation is optional - only set when instance type has GPUs
 					labels, ok := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"]
 					if !ok {
 						return false, "missing capacity labels annotation", nil
@@ -844,15 +851,18 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 				memQty.String(),
 				gpuQty.String())
 		} else {
-			gpuValue := md.Annotations["machine.openshift.io/GPU"]
+			gpuValue := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/gpu-count"]
 			if gpuValue == "" {
 				gpuValue = "none (non-GPU instance)"
 			}
-			t.Logf("Capacity via %s: vCPU=%s, memoryMb=%s, GPU=%s, labels=%s",
+			t.Logf("Capacity via %s: CAPI[cpu=%s, memory=%s, gpu=%s] legacy[vCPU=%s, memoryMb=%s, GPU=%s] labels=%s",
 				capacitySource,
+				md.Annotations["capacity.cluster-autoscaler.kubernetes.io/cpu"],
+				md.Annotations["capacity.cluster-autoscaler.kubernetes.io/memory"],
+				gpuValue,
 				md.Annotations["machine.openshift.io/vCPU"],
 				md.Annotations["machine.openshift.io/memoryMb"],
-				gpuValue,
+				md.Annotations["machine.openshift.io/GPU"],
 				md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"])
 		}
 
