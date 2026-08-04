@@ -77,7 +77,7 @@ jobs:
           ref: ${{ steps.pr.outputs.branch }}
           repository: ${{ steps.pr.outputs.repo }}
           token: ${{ steps.app-token.outputs.token || github.token }}
-          persist-credentials: true
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Add upstream remote
@@ -122,7 +122,6 @@ jobs:
           CLAUDE_CODE_USE_VERTEX: "1"
           CLOUD_ML_REGION: global
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
-          GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number }}
           CLAUDE_PROMPT: ${{ inputs.claude-prompt }}
@@ -135,4 +134,20 @@ jobs:
           claude plugin marketplace add openshift-eng/ai-helpers
           claude plugin install openshift-developer@ai-helpers
           claude --version
-          claude -p "$CLAUDE_PROMPT" --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
+          claude -p "$CLAUDE_PROMPT" --bare --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
+
+      - name: Push changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          PR_REPO: ${{ steps.pr.outputs.repo }}
+          PR_BRANCH: ${{ steps.pr.outputs.branch }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${PR_REPO}.git"
+          if ! git -c core.hooksPath=/dev/null push --force-with-lease origin "HEAD:${PR_BRANCH}" 2>&1; then
+            gh pr comment "$PR_NUMBER" --repo "$REPO" \
+              --body "⚠️ The operation succeeded locally but the push failed. If this is a fork PR, please enable **Allow edits from maintainers** and retry."
+            exit 1
+          fi
