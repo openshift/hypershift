@@ -212,7 +212,7 @@ func resolveKASVerbosity(hcp *hyperv1.HostedControlPlane) int {
 	// 2. Fallback: deprecated annotation (raw integer)
 	if v := hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil {
-			// TODO: emit deprecation warning condition on HCP status
+			// TODO(CNTRLPLANE-3998): Emit deprecation warning condition on HCP status
 			return parsed
 		}
 	}
