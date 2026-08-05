@@ -45,9 +45,14 @@ var (
 type ComponentLogLevelSpec struct {
 	// logLevel sets the log verbosity for the component.
 	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+	// When set to Normal, standard operational log messages are produced for auditing and common operations.
+	// When set to Debug, more verbose logging is enabled for diagnosing problems.
+	// When set to Trace, very verbose logging is enabled including function-level tracing.
+	// When set to TraceAll, the most verbose logging is used, including full API body content,
+	// this can cause significant performance impact and produce large volumes of logs.
 	// When omitted, this means the user has no opinion and the platform
 	// chooses a reasonable default, which is subject to change over time.
-	// The current default is Normal.
+	// The current default log level is Normal.
 	// +optional
 	LogLevel LogLevel `json:"logLevel,omitempty"`
 }
