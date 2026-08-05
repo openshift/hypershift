@@ -519,8 +519,9 @@ func ShouldSkipWorkloadForPlatform(workload WorkloadSpec, hostedCluster *hyperv1
 // This is a generic function that handles both Deployments and StatefulSets.
 func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []string, excludeWorkloads []string) error {
 	workloads := GetControlPlaneWorkloads()
+	hostedCluster := testCtx.MustGetHostedCluster()
 	for _, workload := range workloads {
-		if ShouldSkipWorkloadForPlatform(workload, testCtx.GetHostedCluster()) {
+		if ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 			continue
 		}
 		if !slices.Contains(workloadTypes, workload.Type) {

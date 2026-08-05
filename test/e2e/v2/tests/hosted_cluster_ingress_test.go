@@ -38,10 +38,8 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 	When("hosted cluster has IngressOperator EndpointPublishingStrategy configured", func() {
 		It("should reflect the custom strategy in the hosted cluster IngressController", func() {
 			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version421) {
-				Skip("Ingress operator configuration requires version >= 4.21")
-			}
-			hc := tc.GetHostedCluster()
+			tc.SkipIfVersionBelow(e2eutil.Version421)
+			hc := tc.MustGetHostedCluster()
 
 			if hc.Spec.OperatorConfiguration == nil ||
 				hc.Spec.OperatorConfiguration.IngressOperator == nil ||
@@ -51,8 +49,7 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 
 			expectedStrategy := hc.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy
 
-			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
+			hcClient := tc.MustGetHostedClusterClient()
 
 			Eventually(func(g Gomega) {
 				ic := &operatorv1.IngressController{}
@@ -82,8 +79,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Ingress] Hosted Clus
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterIngressTests(func() *internal.TestContext { return testCtx })

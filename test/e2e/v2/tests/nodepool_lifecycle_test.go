@@ -85,14 +85,10 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] N
 func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out a MachineConfig change via Replace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/CNV-38196
+		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform)
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -187,17 +183,11 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out an NTO Tuned config change via Replace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
-		}
-		if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
+		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform)
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -261,17 +251,11 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out an NTO Tuned config change via InPlace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
-		}
-		if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
+		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform)
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -330,10 +314,9 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade a NodePool from previous to latest release via Replace strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -417,10 +400,9 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade a NodePool from previous to latest release via InPlace strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -498,15 +480,11 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should perform a rolling upgrade when instance type or VM size changes", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
+		testCtx.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 		platform := hc.Spec.Platform.Type
-		if platform != hyperv1.AWSPlatform && platform != hyperv1.AzurePlatform {
-			Skip("rolling upgrade test only supported on AWS and Azure platforms")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -596,16 +574,14 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool at N-1 release and have ready nodes", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
 
 		n1Image := internal.GetEnvVarValue("E2E_N1_RELEASE_IMAGE")
 		if n1Image == "" {
 			Skip("E2E_N1_RELEASE_IMAGE not set, skipping N-1 release test")
 		}
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -635,16 +611,14 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool at N-2 release and have ready nodes", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
 
 		n2Image := internal.GetEnvVarValue("E2E_N2_RELEASE_IMAGE")
 		if n2Image == "" {
 			Skip("E2E_N2_RELEASE_IMAGE not set, skipping N-2 release test")
 		}
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -676,14 +650,11 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 	It("should mirror KubeletConfig to the hosted cluster and clean up on removal", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if e2eutil.IsLessThan(e2eutil.Version418) {
-			Skip("mirror configs test only applicable for 4.18+")
-		}
+		hc := testCtx.MustGetHostedCluster()
+		testCtx.SkipIfVersionBelow(e2eutil.Version418)
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -811,12 +782,11 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 	It("should propagate and remove additional trust bundle to/from the hosted cluster", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		e2eutil.GinkgoAtLeast(e2eutil.Version418)
+		hc := testCtx.MustGetHostedCluster()
+		version := testCtx.SkipIfVersionBelow(e2eutil.Version418)
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -866,7 +836,14 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		// Defer cleanup: remove trust bundle reference from HostedCluster
 		DeferCleanup(func() {
-			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, testCtx.GetHostedCluster(), func(obj *hyperv1.HostedCluster) {
+			currentHC := &hyperv1.HostedCluster{}
+			if err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {
+				if !apierrors.IsNotFound(err) {
+					GinkgoWriter.Printf("Warning: cleanup: failed to get HostedCluster: %v\n", err)
+				}
+				return
+			}
+			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, currentHC, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.AdditionalTrustBundle = nil
 			})
 			if err != nil && !apierrors.IsNotFound(err) {
@@ -999,7 +976,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		)
 
 		// Verify user-ca-bundle is deleted from the hosted cluster (4.22+)
-		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version422) {
+		if version.GE(e2eutil.Version422) {
 			e2eutil.EventuallyNotFound(GinkgoTB(), ctx, hcClient, userCAConfigMap,
 				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 			)
@@ -1013,14 +990,11 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 	It("should create and manage NTO PerformanceProfile via NodePool TuningConfig", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/OSASINFRA-3566
+		testCtx.SkipIfPlatform(hyperv1.OpenStackPlatform)
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -1108,7 +1082,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 		)
 
 		// Verify status ConfigMap (4.17+)
-		if !e2eutil.IsLessThan(e2eutil.Version417) {
+		if testCtx.VersionAtLeast(e2eutil.Version417) {
 			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "PerformanceProfile status ConfigMap to exist",
 				func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 					list := &corev1.ConfigMapList{}
@@ -1181,15 +1155,13 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 		Skip("auto-repair instance termination not yet implemented for v2 framework")
 
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 		platform := hc.Spec.Platform.Type
 		if platform != hyperv1.AWSPlatform && platform != hyperv1.AzurePlatform {
 			Skip("auto-repair test only supported on AWS and Azure platforms")
 		}
-
-		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -1224,19 +1196,16 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool with Azure DiskEncryptionSet and verify it is applied", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
-			Skip("disk encryption test only supported on Azure platform")
-		}
+		testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
+		hc := testCtx.MustGetHostedCluster()
 
 		diskEncryptionSetID := internal.GetEnvVarValue("E2E_AZURE_DISK_ENCRYPTION_SET_ID")
 		if diskEncryptionSetID == "" {
 			Skip("E2E_AZURE_DISK_ENCRYPTION_SET_ID not set, skipping disk encryption test")
 		}
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.MustGetHostedClusterClient()
 
 		ctx := testCtx.Context
 

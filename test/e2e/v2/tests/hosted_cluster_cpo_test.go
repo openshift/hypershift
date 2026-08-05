@@ -39,7 +39,7 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 	When("a CPO override image is configured for the platform and version", func() {
 		It("should run the control-plane-operator pod with the expected override image", func() {
 			tc := getTestCtx()
-			hc := tc.GetHostedCluster()
+			hc := tc.MustGetHostedCluster()
 
 			releaseImage := hc.Spec.Release.Image
 			Expect(releaseImage).NotTo(BeEmpty(), "HostedCluster release image should be set")
@@ -97,8 +97,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneOperator
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterCPOTests(func() *internal.TestContext { return testCtx })

@@ -71,7 +71,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			tc = getTestCtx()
 
 			// Capture original TLS security profile from HostedCluster
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster := tc.MustGetHostedCluster()
 			if hostedCluster.Spec.Configuration != nil &&
 				hostedCluster.Spec.Configuration.APIServer != nil &&
 				hostedCluster.Spec.Configuration.APIServer.TLSSecurityProfile != nil {
@@ -105,7 +105,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("should have minTLSVersion set to VersionTLS12 with default/intermediate profile", func() {
 			// Check HostedCluster TLS profile configuration
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster := tc.MustGetHostedCluster()
 
 			// Only run for nil (default) or explicit Intermediate profile
 			hasProfile := hostedCluster.Spec.Configuration != nil &&
@@ -134,7 +134,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
 			// Check HostedCluster TLS profile configuration
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster := tc.MustGetHostedCluster()
 
 			// Only run for nil (default) or explicit Intermediate profile
 			hasProfile := hostedCluster.Spec.Configuration != nil &&
@@ -568,8 +568,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:PKIOperator] Control
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterControlPlanePKIOperatorTests(func() *internal.TestContext { return testCtx })

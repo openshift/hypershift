@@ -113,8 +113,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	BeforeAll(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil())
-		hostedCluster := testCtx.GetHostedCluster()
-		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
+		hostedCluster := testCtx.MustGetHostedCluster()
 		cfg, supported := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
 		if !supported {
 			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
@@ -177,7 +176,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 
 	Context(ContextBackup, func() {
 		It("should create backup and schedule successfully", func() {
-			if testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
+			if testCtx.MustGetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
 				By("Pausing AgentMachine and AgentCluster CRs")
 				err := backuprestore.PauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
 				Expect(err).NotTo(HaveOccurred())
@@ -282,7 +281,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	Context(ContextPostRestoreControlPlane, func() {
 		It("should have control plane healthy after restore", func() {
 			// TODO(mgencur): Remove this condition once https://redhat.atlassian.net/browse/MGMT-23509 is fixed
-			skipNodePoolValidation := testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform
+			skipNodePoolValidation := testCtx.MustGetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform
 			validatePostRestoreControlPlane(testCtx, platformCfg.excludeWorkloads, expectedConditions, skipNodePoolValidation)
 		})
 	})
@@ -307,8 +306,6 @@ func getNodePool(testCtx *internal.TestContext) (*hyperv1.NodePool, error) {
 }
 
 func validateBeforeEach(testCtx *internal.TestContext) {
-	testCtx.ValidateHostedCluster()
-
 	err := backuprestore.EnsureVeleroPodRunning(testCtx)
 	if err != nil {
 		Fail(fmt.Sprintf("Velero is not running: %v", err))
@@ -393,11 +390,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 	BeforeAll(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil())
-		hostedCluster := testCtx.GetHostedCluster()
-		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			Skip("etcd snapshot backup test only supported on AWS")
-		}
+		testCtx.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		platformCfg = backupRestorePlatforms[hyperv1.AWSPlatform]
 
 		By("Checking if HCPEtcdBackup feature gate is enabled")

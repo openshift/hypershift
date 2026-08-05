@@ -62,7 +62,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ExternalOIDC] Extern
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterExternalOIDCTests(func() *internal.TestContext { return testCtx })
@@ -88,11 +87,11 @@ func skipIfNotOIDC(hc *hyperv1.HostedCluster) {
 func ExternalOIDCClusterConfigTest(getTestCtx internal.TestContextGetter) {
 	Context("Cluster OIDC Configuration", Label("external-oidc"), func() {
 		BeforeEach(func() {
-			skipIfNotOIDC(getTestCtx().GetHostedCluster())
+			skipIfNotOIDC(getTestCtx().MustGetHostedCluster())
 		})
 
 		It("should have authentication type OIDC on the hosted cluster", func() {
-			hc := getTestCtx().GetHostedCluster()
+			hc := getTestCtx().MustGetHostedCluster()
 			Expect(hc.Spec.Configuration).NotTo(BeNil(),
 				"hosted cluster %s/%s should have configuration set", hc.Namespace, hc.Name)
 			Expect(hc.Spec.Configuration.Authentication).NotTo(BeNil(),
@@ -104,7 +103,7 @@ func ExternalOIDCClusterConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should have the hosted cluster Available", func() {
-			hc := getTestCtx().GetHostedCluster()
+			hc := getTestCtx().MustGetHostedCluster()
 			found := false
 			for _, cond := range hc.Status.Conditions {
 				if cond.Type == string(hyperv1.HostedClusterAvailable) {
@@ -126,7 +125,7 @@ func ExternalOIDCClusterConfigTest(getTestCtx internal.TestContextGetter) {
 func ExternalOIDCOAuthNotDeployedTest(getTestCtx internal.TestContextGetter) {
 	Context("OAuth Server Not Deployed", Label("external-oidc"), func() {
 		BeforeEach(func() {
-			skipIfNotOIDC(getTestCtx().GetHostedCluster())
+			skipIfNotOIDC(getTestCtx().MustGetHostedCluster())
 		})
 
 		It("should not have oauth-openshift deployment in the control plane namespace", func() {
@@ -161,12 +160,12 @@ func ExternalOIDCOAuthNotDeployedTest(getTestCtx internal.TestContextGetter) {
 func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 	Context("KAS Authentication Configuration", Label("external-oidc"), func() {
 		BeforeEach(func() {
-			skipIfNotOIDC(getTestCtx().GetHostedCluster())
+			skipIfNotOIDC(getTestCtx().MustGetHostedCluster())
 		})
 
 		It("should have auth-config ConfigMap with JWT authenticator matching the OIDC provider", func() {
 			tc := getTestCtx()
-			hc := tc.GetHostedCluster()
+			hc := tc.MustGetHostedCluster()
 
 			expectedIssuerURL := hc.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.URL
 			Expect(expectedIssuerURL).NotTo(BeEmpty(),
@@ -205,7 +204,7 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("should have correct audiences in JWT config", func() {
 			tc := getTestCtx()
-			hc := tc.GetHostedCluster()
+			hc := tc.MustGetHostedCluster()
 
 			expectedAudiences := hc.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.Audiences
 			Expect(expectedAudiences).NotTo(BeEmpty(),
@@ -272,7 +271,7 @@ func ExternalOIDCKeycloakAuthTest(getTestCtx internal.TestContextGetter) {
 
 		BeforeAll(func() {
 			tc := getTestCtx()
-			hc := tc.GetHostedCluster()
+			hc := tc.MustGetHostedCluster()
 			skipIfNotOIDC(hc)
 
 			provider := hc.Spec.Configuration.Authentication.OIDCProviders[0]
@@ -310,9 +309,7 @@ func ExternalOIDCKeycloakAuthTest(getTestCtx internal.TestContextGetter) {
 				extOIDCConfig.UserPrefix = provider.ClaimMappings.Username.Prefix.PrefixString
 			}
 
-			restConfig := tc.GetHostedClusterRESTConfig()
-			Expect(restConfig).NotTo(BeNil(),
-				"hosted cluster REST config should be available for %s/%s", hc.Namespace, hc.Name)
+			restConfig := tc.MustGetHostedClusterRESTConfig()
 
 			// KAS may need time to load the OIDC authentication config after the HC
 			// was patched in PostVersionRollout. Retry with a fresh token each attempt
@@ -402,4 +399,3 @@ func obtainKeycloakIDToken(config *e2eutil.ExtOIDCConfig) string {
 	Expect(ok).To(BeTrue(), "id_token not found or not a string in Keycloak response")
 	return idToken
 }
-

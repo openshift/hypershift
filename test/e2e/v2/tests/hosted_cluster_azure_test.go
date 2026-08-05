@@ -50,26 +50,22 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AzureWorkloadIdentity] Azure Public Cluster", Label("Azure", "self-managed-azure-public"), func() {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
-			if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform {
-				Skip("Azure public cluster tests are only for Azure platform")
-			}
+			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
 		})
 
 		It("should mutate pods with workload identity federated credentials", func() {
-			e2eutil.GinkgoAtLeast(e2eutil.Version420)
 			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
+			hc := testCtx.MustGetHostedCluster()
+			testCtx.SkipIfVersionBelow(e2eutil.Version420)
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
-			hostedClusterClient := testCtx.GetHostedClusterClient()
-			Expect(hostedClusterClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
+			hostedClusterClient := testCtx.MustGetHostedClusterClient()
 
 			e2eutil.ValidateAzureWorkloadIdentityWebhookMutation(GinkgoTB(), testCtx.Context, hostedClusterClient)
 		})
 
 		It("should have expected KAS allowed CIDRs", func() {
 			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
+			hc := testCtx.MustGetHostedCluster()
 			kubeconfigData := e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
 			restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
 			Expect(err).NotTo(HaveOccurred(), "failed to create hosted cluster REST config")
@@ -78,12 +74,11 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should have Ingress Operator configuration applied", func() {
-			e2eutil.GinkgoAtLeast(e2eutil.Version421)
 			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
+			hc := testCtx.MustGetHostedCluster()
+			testCtx.SkipIfVersionBelow(e2eutil.Version421)
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
-			hostedClusterClient := testCtx.GetHostedClusterClient()
-			Expect(hostedClusterClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
+			hostedClusterClient := testCtx.MustGetHostedClusterClient()
 
 			e2eutil.ValidateIngressOperatorConfiguration(GinkgoTB(), testCtx.Context, hostedClusterClient, hc)
 		})
@@ -100,10 +95,8 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 
 		BeforeAll(func() {
 			testCtx = getTestCtx()
-			hc := testCtx.GetHostedCluster()
-			if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform {
-				Skip("Azure private topology tests are only for Azure platform")
-			}
+			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
+			hc := testCtx.MustGetHostedCluster()
 			if hc.Spec.Platform.Azure == nil || hc.Spec.Platform.Azure.Topology != hyperv1.AzureTopologyPrivate {
 				Skip("Azure private topology tests require Private topology")
 			}
@@ -228,10 +221,8 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 
 		BeforeAll(func() {
 			testCtx = getTestCtx()
-			hc = testCtx.GetHostedCluster()
-			if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform {
-				Skip("Azure endpoint access transition tests are only for Azure platform")
-			}
+			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
+			hc := testCtx.MustGetHostedCluster()
 			if hc.Spec.Platform.Azure == nil || hc.Spec.Platform.Azure.Topology != hyperv1.AzureTopologyPrivate {
 				Skip("Azure endpoint access transition tests require Private topology")
 			}
@@ -298,7 +289,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.KubeAPIServerExternalPrivateRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"KAS external private route should be deleted after transition to PublicAndPrivate")
 
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "OAuth external public route exists after transition to PublicAndPrivate",
@@ -316,7 +307,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.OauthServerExternalPrivateRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"OAuth external private route should be deleted after transition to PublicAndPrivate")
 
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "router-public Service is LoadBalancer after transition to PublicAndPrivate",
@@ -345,13 +336,13 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				svc := hcpmanifests.KubeAPIServerExternalPrivateService(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, svc)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"KAS ExternalPrivateService should be deleted after transition to PublicAndPrivate")
 
 			Eventually(func() error {
 				svc := hcpmanifests.OauthServerExternalPrivateService(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, svc)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"OAuth ExternalPrivateService should be deleted after transition to PublicAndPrivate")
 
 			verifyAPIReachable(testCtx, "after transition to PublicAndPrivate")
@@ -380,7 +371,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.KubeAPIServerExternalPublicRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"KAS external public route should be deleted after restore to Private")
 
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "OAuth external private route exists after restore to Private",
@@ -398,13 +389,13 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Eventually(func() error {
 				route := hcpmanifests.OauthServerExternalPublicRoute(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, route)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"OAuth external public route should be deleted after restore to Private")
 
 			Eventually(func() error {
 				svc := hcpmanifests.RouterPublicService(controlPlaneNamespace)
 				return expectDeleted(ctx, testCtx.MgmtClient, svc)
-			}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(),
+			}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(Succeed(),
 				"router-public Service should be deleted after restore to Private")
 
 			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "PLS CRs still exist after restore to Private",
@@ -541,7 +532,12 @@ func verifyAPIReachable(testCtx *internal.TestContext, phase string) {
 	attempts := 0
 	Eventually(func(g Gomega) {
 		attempts++
-		hc := testCtx.GetHostedCluster()
+		hc := &hyperv1.HostedCluster{}
+		err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
+			Namespace: testCtx.ClusterNamespace,
+			Name:      testCtx.ClusterName,
+		}, hc)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 		g.Expect(hc).NotTo(BeNil(), "hosted cluster is nil %s", phase)
 		g.Expect(hc.Status.KubeConfig).NotTo(BeNil(), "hosted cluster kubeconfig status not set %s", phase)
 
@@ -598,7 +594,7 @@ func verifyAPIReachable(testCtx *internal.TestContext, phase string) {
 		nsList := &corev1.NamespaceList{}
 		g.Expect(freshClient.List(testCtx.Context, nsList)).To(Succeed(), "failed to list namespaces %s", phase)
 		g.Expect(nsList.Items).NotTo(BeEmpty(), "namespace list is empty %s", phase)
-	}).WithTimeout(15 * time.Minute).WithPolling(10 * time.Second).Should(Succeed(), "API server not reachable %s", phase)
+	}).WithTimeout(15*time.Minute).WithPolling(10*time.Second).Should(Succeed(), "API server not reachable %s", phase)
 }
 
 func extractHostname(host string) string {
@@ -622,10 +618,8 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AzureOAuth] Azure OAuth LoadBalancer", Label("Azure", "self-managed-azure-oauth-lb"), func() {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
-			if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform {
-				Skip("Azure OAuth LB tests are only for Azure platform")
-			}
+			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
+			hc := testCtx.MustGetHostedCluster()
 			strategy := netutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.OAuthServer)
 			if strategy == nil || strategy.Type != hyperv1.LoadBalancer {
 				Skip("Azure OAuth LB tests require OAuthServer with LoadBalancer publishing strategy")
@@ -671,7 +665,7 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 
 		It("should complete OAuth token flow through LoadBalancer endpoint", func() {
 			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
+			hc := testCtx.MustGetHostedCluster()
 
 			e2eutil.ValidateOAuthWithIdentityProviderViaLoadBalancer(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
 		})

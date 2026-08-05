@@ -31,9 +31,8 @@ import (
 func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade the control plane from N-1 to latest", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedCluster()
 		ctx := testCtx.Context
-		hc := testCtx.GetHostedCluster()
+		hc := testCtx.MustGetHostedCluster()
 
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
 		Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
@@ -54,11 +53,12 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 		Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster release image")
 
 		By("Waiting for control plane components to complete rollout")
-		e2eutil.GinkgoAtLeast(e2eutil.Version420)
+		testCtx.SkipIfVersionBelow(e2eutil.Version420)
 		e2eutil.WaitForControlPlaneComponentRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc, startingVersion)
 
+		hc = testCtx.MustGetHostedCluster()
 		By("Waiting for control plane version to complete rollout")
-		e2eutil.GinkgoAtLeast(e2eutil.Version422)
+		testCtx.SkipIfVersionBelow(e2eutil.Version422)
 		e2eutil.WaitForControlPlaneRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
 
 		By("Waiting for data plane rollout to complete")

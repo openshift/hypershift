@@ -44,10 +44,8 @@ import (
 func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 	It("should scale up when workload increases and scale down when workload decreases", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hc := testCtx.MustGetHostedCluster()
+		hcClient := testCtx.MustGetHostedClusterClient()
 		ctx := testCtx.Context
 
 		// Find the default NodePool to copy platform config
@@ -109,12 +107,11 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 	It("should balance pods across multiple autoscaling NodePools", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		e2eutil.GinkgoAtLeast(e2eutil.Version420)
+		hc := testCtx.MustGetHostedCluster()
+		testCtx.SkipIfVersionBelow(e2eutil.Version420)
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient := testCtx.MustGetHostedClusterClient()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
