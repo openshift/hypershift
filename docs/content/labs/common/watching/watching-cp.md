@@ -1,3 +1,7 @@
+---
+title: Watching the Control Plane
+---
+
 Now it's a matter of waiting for the cluster to finish the deployment, so let's take a look at some useful commands on the Management cluster side:
 
 ```bash

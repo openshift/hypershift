@@ -1,3 +1,7 @@
+---
+title: Node Pools
+---
+
 A `NodePool` is a scalable set of worker nodes associated with a HostedCluster. NodePool machine architectures remain consistent within a specific pool and are independent of the underlying machine architecture of the control plane.
 
 !!! note

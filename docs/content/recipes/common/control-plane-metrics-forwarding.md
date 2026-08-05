@@ -1,3 +1,7 @@
+---
+title: Control Plane Metrics Forwarding
+---
+
 ## Enable Control Plane Metrics Forwarding to Hosted Clusters
 
 !!! important

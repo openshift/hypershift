@@ -1,3 +1,7 @@
+---
+title: Agent Service Config
+---
+
 The Agent Service Config object is an essential component of the Assisted Service addon included in MCE/ACM, responsible for Baremetal cluster deployment. When the addon is enabled, you must deploy an operand (CRD) named `AgentServiceConfig` to configure it.
 
 ## Agent Service Config Objects

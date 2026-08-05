@@ -1,3 +1,7 @@
+---
+title: Multicluster Engine
+---
+
 The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a crucial role in deploying clusters across multiple providers.
 
 ## Credentials and Authorization

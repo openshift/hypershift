@@ -1,3 +1,7 @@
+---
+title: Openshift Compact Dual
+---
+
 In this section, we will discuss how to deploy the Openshift management cluster. To do that, we need to have the following files in place:
 
 1. **Pull Secret**
