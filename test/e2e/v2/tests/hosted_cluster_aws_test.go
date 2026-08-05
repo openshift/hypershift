@@ -114,6 +114,19 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 				if err != nil && !apierrors.IsNotFound(err) {
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore HostedCluster AWS resource tags")
 				}
+
+				tc.ValidateHostedClusterClient()
+				hcClient := tc.GetHostedClusterClient()
+				Eventually(func(g Gomega) {
+					infra := &configv1.Infrastructure{}
+					g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed())
+					g.Expect(infra.Status.PlatformStatus).NotTo(BeNil())
+					g.Expect(infra.Status.PlatformStatus.AWS).NotTo(BeNil())
+					g.Expect(infra.Status.PlatformStatus.AWS.ResourceTags).NotTo(
+						ContainElement(configv1.AWSResourceTag{Key: day2TagKey, Value: day2TagValue}),
+						"cleanup: day-2 tag should be removed from infrastructure resource",
+					)
+				}, 5*time.Minute, 10*time.Second).Should(Succeed())
 			})
 
 			Eventually(func(g Gomega) {
@@ -140,7 +153,13 @@ func EnsureInfrastructureResourceTagsTest(getTestCtx internal.TestContextGetter)
 				Skip("HostedCluster does not have AWS platform spec")
 			}
 
-			specTags := hc.Spec.Platform.AWS.ResourceTags
+			// Re-fetch to get current server state; the cached hc pointer may be
+			// stale if a prior test mutated it via UpdateObject.
+			freshHC := &hyperv1.HostedCluster{}
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hc), freshHC)).To(Succeed(),
+				"failed to re-fetch HostedCluster")
+
+			specTags := freshHC.Spec.Platform.AWS.ResourceTags
 			if len(specTags) == 0 {
 				Skip("HostedCluster does not have AWS resource tags configured")
 			}
