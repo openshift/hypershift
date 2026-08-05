@@ -9,6 +9,8 @@ aliases:
     - enxebre
     - csrwng
     - sjenning
+  e2e-approvers:
+    - ironcladlou
   core-approvers:
     - enxebre
     - csrwng
