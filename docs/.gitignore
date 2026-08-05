@@ -1,1 +1,5 @@
 site/
+site-base/
+site-head/
+compare/output/
+compare/node_modules/

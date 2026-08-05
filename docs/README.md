@@ -2,8 +2,8 @@ Any changes to the docs in this directory can be tested locally before pushing c
 steps:
 
 1. cd to this directory
-2. Run `make build-containerized` to build the containerized version of the image
-3. Run `make serve-containerized` to serve up the docs website locally
+2. Run `make build-containerized` to build the docs inside a container
+3. Run `make serve-containerized` to serve the docs website locally
 
 Any changes you make while the docs are served locally, will be updated in the local docs website.
 

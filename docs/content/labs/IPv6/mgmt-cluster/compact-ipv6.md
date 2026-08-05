@@ -1,5 +1,5 @@
 ---
-title: Openshift Compact IPv6
+title: OpenShift Compact IPv6
 ---
 
 In this section, we will discuss how to deploy the Openshift management cluster. To do that, we need to have the following files in place:
