@@ -1536,27 +1536,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	})
 
 	report.execute("ManagedHSMVersionCheck", critical, func() error {
-		if hcluster.Spec.Platform.Type != hyperv1.AzurePlatform {
-			return nil
-		}
-		if hcluster.Spec.SecretEncryption == nil ||
-			hcluster.Spec.SecretEncryption.KMS == nil ||
-			hcluster.Spec.SecretEncryption.KMS.Azure == nil {
-			return nil
-		}
-		if hcluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
-			return nil
-		}
-		if releaseImageVersion.LT(semver.MustParse("4.22.0")) {
-			msg := fmt.Sprintf("Azure Managed HSM requires OpenShift 4.22 or later, but release image version is %s", releaseImageVersion)
+		if err := validateManagedHSMVersion(hcluster, releaseImageVersion); err != nil {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 				Type:               string(hyperv1.ValidHostedClusterConfiguration),
 				ObservedGeneration: hcluster.Generation,
 				Status:             metav1.ConditionFalse,
 				Reason:             hyperv1.InvalidConfigurationReason,
-				Message:            msg,
+				Message:            err.Error(),
 			})
-			return errors.New(msg)
+			return err
 		}
 		return nil
 	})
@@ -4430,6 +4418,26 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 		)
 	}
 
+	return nil
+}
+
+var minManagedHSMVersion = semver.MustParse("4.22.0")
+
+func validateManagedHSMVersion(hc *hyperv1.HostedCluster, releaseVersion semver.Version) error {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+	if hc.Spec.SecretEncryption == nil ||
+		hc.Spec.SecretEncryption.KMS == nil ||
+		hc.Spec.SecretEncryption.KMS.Azure == nil {
+		return nil
+	}
+	if hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		return nil
+	}
+	if releaseVersion.LTE(minManagedHSMVersion) {
+		return fmt.Errorf("release image version %s does not support Azure Managed HSM, which requires a version newer than %s", releaseVersion, minManagedHSMVersion)
+	}
 	return nil
 }
 

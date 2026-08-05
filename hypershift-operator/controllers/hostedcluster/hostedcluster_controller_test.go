@@ -7277,6 +7277,106 @@ func TestValidateAzureConfig(t *testing.T) {
 	}
 }
 
+func TestValidateManagedHSMVersion(t *testing.T) {
+	managedHSMCluster := func(version string) (*hyperv1.HostedCluster, semver.Version) {
+		return &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+				},
+				SecretEncryption: &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.KMS,
+					KMS: &hyperv1.KMSSpec{
+						Azure: &hyperv1.AzureKMSSpec{
+							ActiveKey: hyperv1.AzureKMSKey{
+								KeyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+							},
+						},
+					},
+				},
+			},
+		}, semver.MustParse(version)
+	}
+
+	testCases := []struct {
+		name        string
+		hc          *hyperv1.HostedCluster
+		version     semver.Version
+		expectError bool
+	}{
+		{
+			name: "When platform is not Azure it should skip validation",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			version:     semver.MustParse("4.21.0"),
+			expectError: false,
+		},
+		{
+			name: "When Azure platform uses KeyVault it should skip validation",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultType: hyperv1.AzureKMSKeyVaultTypeKeyVault,
+								},
+							},
+						},
+					},
+				},
+			},
+			version:     semver.MustParse("4.21.0"),
+			expectError: false,
+		},
+		{
+			name:        "When release version is too low it should reject ManagedHSM",
+			expectError: true,
+		},
+		{
+			name:        "When release version is exactly 4.22.0 it should reject ManagedHSM",
+			expectError: true,
+		},
+		{
+			name:        "When release version is 5.0 it should accept ManagedHSM",
+			expectError: false,
+		},
+		{
+			name:        "When release version is 5.1 it should accept ManagedHSM",
+			expectError: false,
+		},
+	}
+
+	testCases[2].hc, testCases[2].version = managedHSMCluster("4.21.3")
+	testCases[3].hc, testCases[3].version = managedHSMCluster("4.22.0")
+	testCases[4].hc, testCases[4].version = managedHSMCluster("5.0.0")
+	testCases[5].hc, testCases[5].version = managedHSMCluster("5.1.0")
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateManagedHSMVersion(tc.hc, tc.version)
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestComputeEndpointServiceCondition(t *testing.T) {
 	t.Parallel()
 	g := NewGomegaWithT(t)
