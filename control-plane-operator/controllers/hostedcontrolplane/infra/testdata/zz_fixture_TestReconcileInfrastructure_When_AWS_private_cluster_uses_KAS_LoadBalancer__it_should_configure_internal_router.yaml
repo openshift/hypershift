@@ -101,6 +101,7 @@ services:
   - metadata:
       annotations:
         service.beta.kubernetes.io/aws-load-balancer-type: nlb
+        service.kubernetes.io/topology-mode: Auto
       labels:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
