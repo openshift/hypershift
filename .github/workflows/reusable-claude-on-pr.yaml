@@ -23,6 +23,12 @@ on:
         description: Space-separated list of allowed Claude tools
         type: string
         default: "Bash Read Write Edit Grep Glob WebFetch"
+      trusted-commands:
+        description: >-
+          Space-separated list of .claude/ files to load from the trusted main branch
+          (e.g. "commands/restructure-commits.md skills/git-commit-format/SKILL.md")
+        type: string
+        default: ""
 
 jobs:
   run:
@@ -90,6 +96,18 @@ jobs:
             git update-ref refs/heads/main refs/remotes/upstream/main
           fi
 
+      - name: Load trusted commands from main
+        if: inputs.trusted-commands != ''
+        env:
+          TRUSTED_COMMANDS: ${{ inputs.trusted-commands }}
+        run: |
+          git rev-parse --verify refs/heads/main >/dev/null 2>&1 || git update-ref refs/heads/main refs/remotes/origin/main
+          for file in $TRUSTED_COMMANDS; do
+            echo "--- Loading .claude/$file from main ---"
+            git show "main:.claude/$file" >> /tmp/trusted-system-prompt.md
+            printf '\n---\n' >> /tmp/trusted-system-prompt.md
+          done
+
       - name: Authenticate to GCP via WIF
         id: gcp-auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -134,7 +152,11 @@ jobs:
           claude plugin marketplace add openshift-eng/ai-helpers
           claude plugin install openshift-developer@ai-helpers
           claude --version
-          claude -p "$CLAUDE_PROMPT" --bare --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
+          TRUSTED_PROMPT_ARGS=""
+          if [[ -f /tmp/trusted-system-prompt.md ]]; then
+            TRUSTED_PROMPT_ARGS="--append-system-prompt-file /tmp/trusted-system-prompt.md"
+          fi
+          claude -p "$CLAUDE_PROMPT" --bare $TRUSTED_PROMPT_ARGS --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
 
       - name: Push changes
         env:
