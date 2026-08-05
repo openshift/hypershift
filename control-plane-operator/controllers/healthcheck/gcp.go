@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
@@ -41,10 +42,9 @@ func gcpHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 	project := hcp.Spec.Platform.GCP.Project
 	region := hcp.Spec.Platform.GCP.Region
 	if _, err := computeService.Regions.Get(project, region).Context(ctx).Do(); err != nil {
-		var apiErr *googleapi.Error
-		if errors.As(err, &apiErr) && (apiErr.Code == 401 || apiErr.Code == 403) {
+		if isPermanentGCPCredentialError(err) {
 			setGCPConditions(hcp, metav1.ConditionFalse, hyperv1.InvalidIdentityProvider,
-				fmt.Sprintf("GCP credential validation failed: %s", apiErr.Message))
+				fmt.Sprintf("GCP credential validation failed: %v", err))
 			return fmt.Errorf("error health checking GCP identity provider: %w", err)
 		}
 
@@ -72,6 +72,25 @@ func setGCPConditions(hcp *hyperv1.HostedControlPlane, status metav1.ConditionSt
 		Reason:             reason,
 		Message:            message,
 	})
+}
+
+// isPermanentGCPCredentialError returns true if the error indicates a
+// non-transient credential failure (HTTP 401/403 from the API, or a permanent
+// OAuth token exchange failure such as a deleted WIF pool/provider).
+func isPermanentGCPCredentialError(err error) bool {
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) && (apiErr.Code == 401 || apiErr.Code == 403) {
+		return true
+	}
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) && retrieveErr.Response != nil {
+		code := retrieveErr.Response.StatusCode
+		// 408, 429, 500, 503 are transient per google.AuthenticationError.Temporary()
+		if code == 401 || code == 403 || code == 400 {
+			return true
+		}
+	}
+	return false
 }
 
 func initGCPComputeClient(ctx context.Context) (*compute.Service, error) {
