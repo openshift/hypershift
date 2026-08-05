@@ -28,3 +28,6 @@ status:
   - group: rbac.authorization.k8s.io
     kind: RoleBinding
     name: csi-snapshot-controller-operator-role
+  - group: ""
+    kind: ConfigMap
+    name: csi-snapshot-controller-operator-config

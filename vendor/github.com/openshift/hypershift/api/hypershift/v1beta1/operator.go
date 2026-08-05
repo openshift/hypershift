@@ -45,7 +45,9 @@ var (
 type ComponentLogLevelSpec struct {
 	// logLevel sets the log verbosity for the component.
 	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
-	// When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default is Normal.
 	// +optional
 	LogLevel LogLevel `json:"logLevel,omitempty"`
 }
