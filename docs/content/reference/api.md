@@ -6019,7 +6019,9 @@ LogLevel
 <em>(Optional)</em>
 <p>logLevel sets the log verbosity for the component.
 Valid values are: &ldquo;Normal&rdquo;, &ldquo;Debug&rdquo;, &ldquo;Trace&rdquo;, &ldquo;TraceAll&rdquo;.
-When omitted, this means the user has no opinion and the platform defaults to Normal, which is subject to change over time.</p>
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default is Normal.</p>
 </td>
 </tr>
 </tbody>
