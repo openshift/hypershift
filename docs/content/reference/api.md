@@ -15692,6 +15692,8 @@ EtcdOperatorSpec
 <em>(Optional)</em>
 <p>etcd configures the etcd component.
 Setting the logLevel field triggers a rolling restart of the component.
+Note: etcd supports fewer log levels than klog-based components,
+Debug, Trace, and TraceAll all map to etcd&rsquo;s &ldquo;debug&rdquo; log level.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
 The current default log level is Normal.</p>
