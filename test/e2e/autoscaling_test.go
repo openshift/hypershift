@@ -484,6 +484,9 @@ func pollCASLogsForPausedNodeGroup(t *testing.T, ctx context.Context, controlPla
 // 8. Unpause and wait for clean convergence to numNodes
 func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, numNodes, max int32) func(t *testing.T) {
 	return func(t *testing.T) {
+		// spec.autoscaling.scaleDown requires CPO support added in 4.18 (CNTRLPLANE-952).
+		e2eutil.AtLeast(t, e2eutil.Version418)
+
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
