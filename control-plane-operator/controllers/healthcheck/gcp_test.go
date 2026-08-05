@@ -19,6 +19,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 		name            string
 		kasCondition    *metav1.Condition
 		gcpSpec         *hyperv1.GCPPlatformSpec
+		expectError     bool
 		expectedStatus  metav1.ConditionStatus
 		expectedReason  string
 		expectedMessage string
@@ -26,6 +27,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 		{
 			name:            "KAS not available - condition missing",
 			kasCondition:    nil,
+			expectError:     false,
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.StatusUnknownReason,
 			expectedMessage: "Cannot validate GCP credentials while KubeAPIServer is not available",
@@ -36,6 +38,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 				Type:   string(hyperv1.KubeAPIServerAvailable),
 				Status: metav1.ConditionFalse,
 			},
+			expectError:     false,
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.StatusUnknownReason,
 			expectedMessage: "Cannot validate GCP credentials while KubeAPIServer is not available",
@@ -47,6 +50,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 				Status: metav1.ConditionTrue,
 			},
 			gcpSpec:         nil,
+			expectError:     true,
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  "MissingGCPConfiguration",
 			expectedMessage: "GCP platform configuration is missing from HostedControlPlane spec",
@@ -61,6 +65,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 				Project: "test-project",
 				Region:  "us-central1",
 			},
+			expectError:    false,
 			expectedStatus: metav1.ConditionUnknown,
 			expectedReason: hyperv1.StatusUnknownReason,
 		},
@@ -89,8 +94,13 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 				meta.SetStatusCondition(&hcp.Status.Conditions, *tc.kasCondition)
 			}
 
-			// Error is expected for the missing-spec case; ignore return value
-			_ = gcpHealthCheckIdentityProvider(t.Context(), hcp)
+			err := gcpHealthCheckIdentityProvider(t.Context(), hcp)
+			if tc.expectError && err == nil {
+				t.Fatal("expected error but got nil")
+			}
+			if !tc.expectError && err != nil {
+				t.Fatalf("expected no error but got: %v", err)
+			}
 
 			for _, condType := range []string{
 				string(hyperv1.ValidGCPWorkloadIdentity),
