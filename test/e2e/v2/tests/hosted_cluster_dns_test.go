@@ -35,13 +35,10 @@ func EnsureKubeAPIDNSNameCustomCertTest(getTestCtx internal.TestContextGetter) {
 	When("KubeAPIDNSName and custom certificate are configured", func() {
 		PIt("should make KAS reachable via the custom DNS endpoint", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-			if e2eutil.IsLessThan(e2eutil.Version419) {
-				Skip("custom DNS name test requires version >= 4.19")
-			}
-			if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-				Skip("custom DNS name test not supported on KubeVirt platform")
-			}
+			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfPlatform(hyperv1.KubevirtPlatform)
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			if !netutil.IsPublicHC(hostedCluster) {
 				Skip("custom DNS name test requires a public hosted cluster")
@@ -74,7 +71,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:DNS] Hosted Cluster 
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterDNSTests(func() *internal.TestContext { return testCtx })

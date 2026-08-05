@@ -37,9 +37,10 @@ func EnsureNodeCommunicationTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has konnectivity tunnel configured", func() {
 		It("should have konnectivity-agent pods with retrievable logs", func() {
 			tc := getTestCtx()
-			tc.ValidateHostedClusterClient()
-			restConfig := tc.GetHostedClusterRESTConfig()
-			Expect(restConfig).NotTo(BeNil(), "hosted cluster REST config should be available")
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			restConfig, err := tc.GetHostedClusterRESTConfig(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			clientset, err := kubernetes.NewForConfig(restConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create hosted cluster kubernetes clientset")
@@ -73,8 +74,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodeCommunication] H
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterNodeCommunicationTests(func() *internal.TestContext { return testCtx })

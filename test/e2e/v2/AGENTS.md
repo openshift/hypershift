@@ -44,9 +44,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkload
 })
 ```
 
-### 3. Fail-Loud Philosophy
+### 3. Test Cluster Assumptions / Invariants
 
-Framework functions panic with diagnostic messages rather than returning errors silently. `GetHostedCluster()` uses `sync.Once` to fetch lazily and panics on failure. `GetEnvVarValue()` panics on unregistered variables. Tests assume the hosted cluster is fully operational before they run — there is no startup polling.
+Tests assume the hosted cluster is fully operational before they run — there is no startup polling.
 
 ### 4. Test Assertion Patterns
 

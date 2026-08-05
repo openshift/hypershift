@@ -19,7 +19,6 @@ package tests
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -38,8 +37,8 @@ func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 	When("routes are created in the control plane namespace", func() {
 		It("should label all routes for the per-HCP router", Label("routes"), func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-			Expect(hostedCluster).NotTo(BeNil(), "hosted cluster must be configured")
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			isRoute := false
 			for _, svc := range hostedCluster.Spec.Services {
@@ -74,8 +73,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Compliance] Hosted C
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterComplianceTests(func() *internal.TestContext { return testCtx })

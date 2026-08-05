@@ -31,11 +31,7 @@ import (
 func GCPPrivateServiceConnectTest(getTestCtx internal.TestContextGetter) {
 	Context("GCP Private Service Connect", Label("GCP", "PSC"), func() {
 		BeforeEach(func() {
-			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
-			if hc == nil || hc.Spec.Platform.Type != hyperv1.GCPPlatform {
-				Skip("GCP Private Service Connect test is only for GCP platform")
-			}
+			getTestCtx().SkipIfNotPlatform(hyperv1.GCPPlatform)
 		})
 
 		// GCP enforces that the NAT subnet and the forwarding rule must belong to the same VPC
@@ -93,7 +89,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:GCPPrivateServiceCon
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterGCPPSCTests(func() *internal.TestContext { return testCtx })

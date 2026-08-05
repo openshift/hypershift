@@ -46,24 +46,19 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 	When("an additional pull secret is created in the hosted cluster", Label("Informing"), func() {
 		It("should propagate it through the global pull secret pipeline and clean up on deletion", func() {
 			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version419) {
-				Skip("global pull secret test requires version >= 4.19")
-			}
-
-			hc := tc.GetHostedCluster()
-
-			if hc.Spec.Platform.Type != hyperv1.AzurePlatform && hc.Spec.Platform.Type != hyperv1.AWSPlatform {
-				Skip("global pull secret test is only supported on AWS and Azure platforms")
-			}
-			if hc.Spec.Platform.Type == hyperv1.AWSPlatform && e2eutil.IsLessThan(e2eutil.Version421) {
+			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if hc.Spec.Platform.Type == hyperv1.AWSPlatform && !tc.VersionAtLeast(e2eutil.Version421) {
 				Skip("AWS platform requires version >= 4.21 for global pull secret")
 			}
 			if !netutil.IsPublicHC(hc) {
 				Skip("global pull secret test is only supported on public clusters")
 			}
 
-			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			np := getDefaultNodePool(tc.Context, tc.MgmtClient, hc)
 			if np == nil ||
@@ -78,7 +73,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			var updatedPullSecretData = []byte(`{"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNzd29yZA=="}}}`)
 
 			By("verifying in-place management-cluster pull secret propagation without rollout")
-			if !e2eutil.IsLessThan(e2eutil.Version422) {
+			if tc.VersionAtLeast(e2eutil.Version422) {
 				verifyPullSecretPropagation(tc, hc, np, hcClient, nodeCount)
 			}
 
@@ -332,8 +327,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:GlobalPullSecret] Gl
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterGlobalPullSecretTests(func() *internal.TestContext { return testCtx })
