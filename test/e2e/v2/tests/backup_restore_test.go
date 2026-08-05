@@ -191,6 +191,10 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				})
 			}
 
+			By("Waiting for BackupStorageLocation to be Available")
+			err := backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
+			Expect(err).NotTo(HaveOccurred())
+
 			// Create schedule first to test parallel execution of backup and schedule and
 			// to speed up the test execution.
 			By("Creating schedule")
@@ -203,7 +207,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				StorageLocation:   testCtx.ClusterName,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
 			}
-			err := backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
+			err = backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
 			Expect(err).NotTo(HaveOccurred())
 
 			DeferCleanup(func() {

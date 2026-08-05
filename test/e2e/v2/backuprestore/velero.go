@@ -97,6 +97,31 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
+// WaitForBackupStorageLocationAvailable waits for the BackupStorageLocation with the given
+// name to reach the Available phase. OADP reconciles the BSL from the DataProtectionApplication
+// asynchronously, so it can still be Unavailable for a short time after Velero itself is running,
+// which would otherwise fail any Backup/Schedule created against it with FailedValidation.
+func WaitForBackupStorageLocationAvailable(testCtx *internal.TestContext, name string) error {
+	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
+		bsl, err := getVeleroResource(ctx, testCtx.MgmtClient, DefaultOADPNamespace, name, "BackupStorageLocation")
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		phase, _, err := unstructured.NestedString(bsl.Object, "status", "phase")
+		if err != nil {
+			return false, fmt.Errorf("failed to get BackupStorageLocation phase: %w", err)
+		}
+		return phase == "Available", nil
+	})
+	if err != nil {
+		return fmt.Errorf("BackupStorageLocation %s did not become Available: %w", name, err)
+	}
+	return nil
+}
+
 // WaitForBackupCompletion waits for a backup to complete.
 // If backupName is provided, it waits for that specific backup.
 // If backupName is empty, it finds the most recent backup matching the HostedCluster name/namespace.
