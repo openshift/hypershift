@@ -13,102 +13,79 @@ import (
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 )
 
-// TestValidCredentials tests the ValidCredentials method for various condition states.
-// This tests the logic for checking both ValidGCPWorkloadIdentity and ValidGCPCredentials conditions.
-func TestValidCredentials(t *testing.T) {
+// TestGetCredentialStatus tests the GetCredentialStatus method for various condition states.
+// This tests the tri-state logic for checking both ValidGCPWorkloadIdentity and ValidGCPCredentials conditions.
+func TestGetCredentialStatus(t *testing.T) {
 	tests := []struct {
-		name        string
-		conditions  []metav1.Condition
-		expected    bool
-		description string
+		name       string
+		conditions []metav1.Condition
+		expected   CredentialStatus
 	}{
 		{
-			name: "When both conditions are true, it should return true",
+			name: "both conditions true returns Valid",
 			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionTrue,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionTrue,
-				},
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
 			},
-			expected:    true,
-			description: "Both conditions are present and true",
+			expected: CredentialStatusValid,
 		},
 		{
-			name: "When ValidGCPWorkloadIdentity is false, it should return false",
+			name: "WIF false returns Invalid",
 			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionFalse,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionTrue,
-				},
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
 			},
-			expected:    false,
-			description: "ValidGCPWorkloadIdentity is false",
+			expected: CredentialStatusInvalid,
 		},
 		{
-			name: "When ValidGCPCredentials is false, it should return false",
+			name: "credentials false returns Invalid",
 			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionTrue,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionFalse,
-				},
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
 			},
-			expected:    false,
-			description: "ValidGCPCredentials is false",
+			expected: CredentialStatusInvalid,
 		},
 		{
-			name: "When both conditions are false, it should return false",
+			name: "both conditions false returns Invalid",
 			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionFalse,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionFalse,
-				},
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
 			},
-			expected:    false,
-			description: "Both conditions are false",
+			expected: CredentialStatusInvalid,
 		},
 		{
-			name: "When ValidGCPWorkloadIdentity is missing, it should return false",
+			name: "WIF missing returns Unknown",
 			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionTrue,
-				},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
 			},
-			expected:    false,
-			description: "ValidGCPWorkloadIdentity condition is missing",
+			expected: CredentialStatusUnknown,
 		},
 		{
-			name: "When ValidGCPCredentials is missing, it should return false",
+			name: "credentials missing returns Unknown",
 			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionTrue,
-				},
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
 			},
-			expected:    false,
-			description: "ValidGCPCredentials condition is missing",
+			expected: CredentialStatusUnknown,
 		},
 		{
-			name:        "When no conditions exist, it should return false",
-			conditions:  []metav1.Condition{},
-			expected:    false,
-			description: "No conditions present",
+			name:       "no conditions returns Unknown",
+			conditions: []metav1.Condition{},
+			expected:   CredentialStatusUnknown,
+		},
+		{
+			name: "WIF true credentials unknown returns Unknown",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionUnknown},
+			},
+			expected: CredentialStatusUnknown,
+		},
+		{
+			name: "WIF false credentials missing returns Invalid",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+			},
+			expected: CredentialStatusInvalid,
 		},
 	}
 
@@ -122,8 +99,7 @@ func TestValidCredentials(t *testing.T) {
 				},
 			}
 
-			result := ValidCredentials(hc)
-			g.Expect(result).To(Equal(tt.expected), tt.description)
+			g.Expect(GetCredentialStatus(hc)).To(Equal(tt.expected))
 		})
 	}
 }

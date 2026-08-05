@@ -44,6 +44,15 @@ import (
 	"github.com/blang/semver"
 )
 
+// CredentialStatus represents the status of GCP credentials.
+type CredentialStatus int
+
+const (
+	CredentialStatusValid   CredentialStatus = 0
+	CredentialStatusInvalid CredentialStatus = 1
+	CredentialStatusUnknown CredentialStatus = 2
+)
+
 // GCP implements the Platform interface for Google Cloud Platform.
 //
 // This implementation enables HostedCluster reconciliation for GCP platform
@@ -461,28 +470,65 @@ func (p GCP) DeleteCredentials(ctx context.Context, c client.Client, hcluster *h
 	return nil
 }
 
-// ValidCredentials checks if GCP credentials are valid and ready for use.
-// This function validates Workload Identity Federation configuration and status.
-func ValidCredentials(hc *hyperv1.HostedCluster) bool {
-	// Check if GCP Workload Identity Federation is configured and valid
+// GetCredentialStatus returns the GCP credential status (valid/invalid/unknown).
+func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
+	var wifStatus metav1.ConditionStatus
 	validWIF := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
-	if validWIF == nil || validWIF.Status != metav1.ConditionTrue {
-		return false
+	if validWIF == nil {
+		wifStatus = metav1.ConditionUnknown
+	} else {
+		wifStatus = validWIF.Status
 	}
 
-	// Check if GCP credentials condition indicates WIF is ready
+	var credsStatus metav1.ConditionStatus
 	validCredentials := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
-	if validCredentials == nil || validCredentials.Status != metav1.ConditionTrue {
-		return false
+	if validCredentials == nil {
+		credsStatus = metav1.ConditionUnknown
+	} else {
+		credsStatus = validCredentials.Status
 	}
 
-	return true
+	if wifStatus == metav1.ConditionFalse || credsStatus == metav1.ConditionFalse {
+		return CredentialStatusInvalid
+	}
+	if wifStatus == metav1.ConditionTrue && credsStatus == metav1.ConditionTrue {
+		return CredentialStatusValid
+	}
+	return CredentialStatusUnknown
 }
 
-func SetValidGCPWorkloadIdentityAndCalidGCPCredentialsConditions(hc *hyperv1.HostedCluster) {
-	if hc.Spec.Platform.Type != hyperv1.GCPPlatform {
-		return
+// RefreshGCPCredentialConditions validates GCP workload identity configuration
+// and updates the ValidGCPWorkloadIdentity condition on the HostedCluster.
+// This is a pure spec check with no network calls, safe to call during deletion.
+// Returns true if the condition was updated.
+func RefreshGCPCredentialConditions(hc *hyperv1.HostedCluster) bool {
+	if hc.Spec.Platform.GCP == nil {
+		return meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidGCPWorkloadIdentity),
+			Status:             metav1.ConditionFalse,
+			Reason:             "MissingGCPConfiguration",
+			Message:            "GCP platform configuration is missing",
+			ObservedGeneration: hc.Generation,
+		})
 	}
+
+	if err := validateWorkloadIdentityConfiguration(hc); err != nil {
+		return meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidGCPWorkloadIdentity),
+			Status:             metav1.ConditionFalse,
+			Reason:             "InvalidWIFConfiguration",
+			Message:            fmt.Sprintf("Workload Identity Federation configuration is invalid: %v", err),
+			ObservedGeneration: hc.Generation,
+		})
+	}
+
+	return meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.ValidGCPWorkloadIdentity),
+		Status:             metav1.ConditionTrue,
+		Reason:             "ValidWIFConfiguration",
+		Message:            "Workload Identity Federation configuration is valid and ready",
+		ObservedGeneration: hc.Generation,
+	})
 }
 
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.
@@ -536,7 +582,7 @@ func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) erro
 }
 
 func (GCP) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	if ValidCredentials(hc) {
+	if GetCredentialStatus(hc) != CredentialStatusInvalid {
 		return nil
 	}
 	gcpMachineList := capigcp.GCPMachineList{}
@@ -554,11 +600,10 @@ func (GCP) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 
 		gcpMachine.Finalizers = []string{}
 		if err := c.Update(ctx, gcpMachine); err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete machine %s/%s: %w", gcpMachine.Namespace, gcpMachine.Name, err))
+			errs = append(errs, fmt.Errorf("failed to remove finalizers from GCPMachine %s/%s: %w", gcpMachine.Namespace, gcpMachine.Name, err))
 			continue
 		}
 		logger.Info("removed finalizers of gcpmachine because of invalid GCP credentials", "machine", client.ObjectKeyFromObject(gcpMachine))
-
 	}
 	return utilerrors.NewAggregate(errs)
 }
