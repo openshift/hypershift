@@ -929,6 +929,9 @@ func reconcileAvailabilityStatus(
 	case healthCheckErr != nil:
 		reason = hyperv1.KASLoadBalancerNotReachableReason
 		message = healthCheckErr.Error()
+		if componentsNotAvailableMsg != "" {
+			message += "; " + componentsNotAvailableMsg
+		}
 	case componentsErr != nil:
 		reason = hyperv1.ControlPlaneComponentsNotAvailable
 		message = fmt.Sprintf("Failed to check control plane component availability: %v", componentsErr)

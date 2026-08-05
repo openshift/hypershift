@@ -2397,6 +2397,59 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 			expectedMessage:     "connection refused",
 		},
 		{
+			name: "When health check fails and components are not available, it should include both in message",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable:       true,
+			healthCheckErr:            fmt.Errorf("APIServer external route not admitted"),
+			componentsNotAvailableMsg: "Waiting for components to be available: router, ingress-operator",
+			expectedReady:             false,
+			expectedReason:            hyperv1.KASLoadBalancerNotReachableReason,
+			expectedMessage:           "APIServer external route not admitted; Waiting for components to be available: router, ingress-operator",
+		},
+		{
+			name: "When health check fails with components error and unavailable message, health check error takes precedence",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable:       true,
+			healthCheckErr:            fmt.Errorf("connection timeout"),
+			componentsErr:             fmt.Errorf("failed to list components"),
+			componentsNotAvailableMsg: "Waiting for components to be available: router",
+			expectedReady:             false,
+			expectedReason:            hyperv1.KASLoadBalancerNotReachableReason,
+			expectedMessage:           "connection timeout; Waiting for components to be available: router",
+		},
+		{
 			name: "When components check returns error, it should report components not available with error",
 			conditions: []metav1.Condition{
 				{
