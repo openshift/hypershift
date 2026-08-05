@@ -40,7 +40,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
-	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
@@ -452,12 +451,36 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Refresh ValidGCPWorkloadIdentity condition from spec validation.
-	// We set this condition even if the HC is being deleted so that
-	// DeleteOrphanedMachines has a fresh signal. Unlike AWS (which bubbles up
-	// from HCP), this is a pure spec check with no network calls.
+	// Bubble up ValidGCPWorkloadIdentity and ValidGCPCredentials conditions from the hostedControlPlane.
+	// We set these conditions even if the HC is being deleted so that
+	// DeleteOrphanedMachines has a fresh signal for credential validity.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
-		if platformgcp.RefreshGCPCredentialConditions(hcluster) {
+		updated := false
+		for _, condType := range []hyperv1.ConditionType{
+			hyperv1.ValidGCPWorkloadIdentity,
+			hyperv1.ValidGCPCredentials,
+		} {
+			var cond *metav1.Condition
+			if hcp != nil {
+				cond = meta.FindStatusCondition(hcp.Status.Conditions, string(condType))
+			}
+			if cond == nil {
+				if meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+					Type:               string(condType),
+					Status:             metav1.ConditionUnknown,
+					Reason:             hyperv1.StatusUnknownReason,
+					ObservedGeneration: hcluster.Generation,
+				}) {
+					updated = true
+				}
+			} else {
+				cond.ObservedGeneration = hcluster.Generation
+				if meta.SetStatusCondition(&hcluster.Status.Conditions, *cond) {
+					updated = true
+				}
+			}
+		}
+		if updated {
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 			}
