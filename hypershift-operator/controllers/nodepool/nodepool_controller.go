@@ -440,6 +440,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	// Ensure trust-bundle content-hash baseline is seeded before CAPI decides whether to
+	// rewrite MachineDeployment/MachineSet user-data Secret names.
+	if maybeSeedTrustBundleContentHashBaseline(nodePool, configGenerator) {
+		log.Info("Seeded NodePool config hash baseline for trust-bundle content hashing migration",
+			"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+			"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
+	}
+
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
 		targetConfigHash := token.HashWithoutVersion()

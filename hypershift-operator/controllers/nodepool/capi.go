@@ -601,22 +601,31 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	isUpdating := false
 
 	if userDataSecret.Name != ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
-		log.Info("New user data Secret has been generated",
-			"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
-			"target", userDataSecret.Name)
+		currentTemplateVersion := ptr.Deref(machineDeployment.Spec.Template.Spec.Version, "")
+		if shouldSkipUserDataSecretPropagation(nodePool, targetConfigHash, targetVersion, currentTemplateVersion) {
+			// Config/version targets already match the NodePool baseline (e.g. after seeding
+			// content-based trust-bundle hashes). Keep Machines on the existing user-data Secret.
+			log.Info("Skipping user-data Secret propagation; config and version unchanged",
+				"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
+				"target", userDataSecret.Name)
+		} else {
+			log.Info("New user data Secret has been generated",
+				"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
+				"target", userDataSecret.Name)
 
-		if targetVersion != ptr.Deref(machineDeployment.Spec.Template.Spec.Version, "") {
-			log.Info("Starting version update: Propagating new version to the MachineDeployment",
-				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
-		}
+			if targetVersion != currentTemplateVersion {
+				log.Info("Starting version update: Propagating new version to the MachineDeployment",
+					"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
+			}
 
-		if targetConfigHash != nodePool.Annotations[nodePoolAnnotationCurrentConfig] {
-			log.Info("Starting config update: Propagating new config to the MachineDeployment",
-				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
+			if targetConfigHash != nodePool.Annotations[nodePoolAnnotationCurrentConfig] {
+				log.Info("Starting config update: Propagating new config to the MachineDeployment",
+					"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
+			}
+			machineDeployment.Spec.Template.Spec.Version = &targetVersion
+			machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
+			isUpdating = true
 		}
-		machineDeployment.Spec.Template.Spec.Version = &targetVersion
-		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
-		isUpdating = true
 	}
 
 	if machineTemplateCR.GetName() != machineDeployment.Spec.Template.Spec.InfrastructureRef.Name {
@@ -999,31 +1008,38 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	isUpdating := false
 	// Propagate version and userData Secret to the MachineSet.
 	if userDataSecret.Name != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
-		log.Info("New user data Secret has been generated",
-			"current", machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
-			"target", userDataSecret.Name)
+		currentTemplateVersion := ptr.Deref(machineSet.Spec.Template.Spec.Version, "")
+		if shouldSkipUserDataSecretPropagation(nodePool, targetConfigHash, targetVersion, currentTemplateVersion) {
+			log.Info("Skipping user-data Secret propagation; config and version unchanged",
+				"current", machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
+				"target", userDataSecret.Name)
+		} else {
+			log.Info("New user data Secret has been generated",
+				"current", machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
+				"target", userDataSecret.Name)
 
-		// TODO (alberto): possibly compare with NodePool here instead so we don't rely on impl details to drive decisions.
-		if targetVersion != ptr.Deref(machineSet.Spec.Template.Spec.Version, "") {
-			log.Info("Starting version upgrade: Propagating new version to the MachineSet",
-				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
+			// TODO (alberto): possibly compare with NodePool here instead so we don't rely on impl details to drive decisions.
+			if targetVersion != currentTemplateVersion {
+				log.Info("Starting version upgrade: Propagating new version to the MachineSet",
+					"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
+			}
+
+			if targetConfigHash != nodePool.Annotations[nodePoolAnnotationCurrentConfig] {
+				log.Info("Starting config upgrade: Propagating new config to the MachineSet",
+					"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
+			}
+			machineSet.Spec.Template.Spec.Version = &targetVersion
+			machineSet.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
+
+			// Signal in-place upgrade request.
+			machineSet.Annotations[nodePoolAnnotationTargetConfigVersion] = targetConfigVersionHash
+
+			// If the machineSet is brand new, set current version to target so in-place upgrade no-op.
+			if _, ok := machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion]; !ok {
+				machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+			}
+			isUpdating = true
 		}
-
-		if targetConfigHash != nodePool.Annotations[nodePoolAnnotationCurrentConfig] {
-			log.Info("Starting config upgrade: Propagating new config to the MachineSet",
-				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
-		}
-		machineSet.Spec.Template.Spec.Version = &targetVersion
-		machineSet.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
-
-		// Signal in-place upgrade request.
-		machineSet.Annotations[nodePoolAnnotationTargetConfigVersion] = targetConfigVersionHash
-
-		// If the machineSet is brand new, set current version to target so in-place upgrade no-op.
-		if _, ok := machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion]; !ok {
-			machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
-		}
-		isUpdating = true
 	}
 
 	// template spec has changed, signal a rolling upgrade.
