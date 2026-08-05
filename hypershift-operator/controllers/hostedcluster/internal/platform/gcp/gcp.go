@@ -305,28 +305,14 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 ) error {
-	// Validate GCP platform configuration is present
 	if hcluster.Spec.Platform.GCP == nil {
-		setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse, "MissingGCPConfiguration", "GCP platform configuration is missing")
-		if updateErr := c.Status().Update(ctx, hcluster); updateErr != nil {
-			return fmt.Errorf("GCP platform configuration is missing (failed to update status: %w)", updateErr)
-		}
 		return fmt.Errorf("GCP platform configuration is missing")
 	}
 
-	// Validate Workload Identity Federation configuration (required)
 	if err := validateWorkloadIdentityConfiguration(hcluster); err != nil {
-		setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse, "InvalidWIFConfiguration", fmt.Sprintf("Workload Identity Federation configuration is invalid: %v", err))
-		if updateErr := c.Status().Update(ctx, hcluster); updateErr != nil {
-			return fmt.Errorf("invalid workload identity configuration: %w (failed to update status: %w)", err, updateErr)
-		}
 		return fmt.Errorf("invalid workload identity configuration: %w", err)
 	}
 
-	// Set successful WIF validation condition
-	setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionTrue, "ValidWIFConfiguration", "Workload Identity Federation configuration is valid and ready")
-
-	// Create credential secrets following AWS pattern
 	var errs []error
 	syncSecret := func(secret *corev1.Secret, serviceAccountEmail string) error {
 		credentials, err := gcputil.BuildWorkloadIdentityCredentials(hcluster.Spec.Platform.GCP.WorkloadIdentity, serviceAccountEmail)
@@ -343,7 +329,6 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		return nil
 	}
 
-	// Create credential secrets for all configured service accounts
 	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
@@ -360,19 +345,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	if len(errs) > 0 {
-		setCondition(hcluster, hyperv1.ValidGCPCredentials, metav1.ConditionFalse, "CredentialsError", fmt.Sprintf("Failed to reconcile credentials: %v", errs))
-		if updateErr := c.Status().Update(ctx, hcluster); updateErr != nil {
-			return fmt.Errorf("failed to reconcile GCP credentials: %v (failed to update status: %w)", errs, updateErr)
-		}
 		return fmt.Errorf("failed to reconcile GCP credentials: %v", errs)
-	}
-
-	// Set credentials condition to indicate federation is ready
-	setCondition(hcluster, hyperv1.ValidGCPCredentials, metav1.ConditionTrue, "WIFReady", "GCP Workload Identity Federation is configured and ready")
-
-	// Persist status condition changes to the API server
-	if err := c.Status().Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update HostedCluster status conditions: %w", err)
 	}
 
 	return nil
@@ -497,40 +470,6 @@ func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
 	return CredentialStatusUnknown
 }
 
-// RefreshGCPCredentialConditions validates GCP workload identity configuration
-// and updates the ValidGCPWorkloadIdentity condition on the HostedCluster.
-// This is a pure spec check with no network calls, safe to call during deletion.
-// Returns true if the condition was updated.
-func RefreshGCPCredentialConditions(hc *hyperv1.HostedCluster) bool {
-	if hc.Spec.Platform.GCP == nil {
-		return meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.ValidGCPWorkloadIdentity),
-			Status:             metav1.ConditionFalse,
-			Reason:             "MissingGCPConfiguration",
-			Message:            "GCP platform configuration is missing",
-			ObservedGeneration: hc.Generation,
-		})
-	}
-
-	if err := validateWorkloadIdentityConfiguration(hc); err != nil {
-		return meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.ValidGCPWorkloadIdentity),
-			Status:             metav1.ConditionFalse,
-			Reason:             "InvalidWIFConfiguration",
-			Message:            fmt.Sprintf("Workload Identity Federation configuration is invalid: %v", err),
-			ObservedGeneration: hc.Generation,
-		})
-	}
-
-	return meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-		Type:               string(hyperv1.ValidGCPWorkloadIdentity),
-		Status:             metav1.ConditionTrue,
-		Reason:             "ValidWIFConfiguration",
-		Message:            "Workload Identity Federation configuration is valid and ready",
-		ObservedGeneration: hc.Generation,
-	})
-}
-
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.
 // This ensures all required fields are present and properly formatted.
 func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {
@@ -606,16 +545,4 @@ func (GCP) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 		logger.Info("removed finalizers of gcpmachine because of invalid GCP credentials", "machine", client.ObjectKeyFromObject(gcpMachine))
 	}
 	return utilerrors.NewAggregate(errs)
-}
-
-// setCondition updates or creates a condition on the HostedCluster.
-// This follows the standard HyperShift pattern for condition management.
-func setCondition(hcluster *hyperv1.HostedCluster, conditionType hyperv1.ConditionType, status metav1.ConditionStatus, reason, message string) {
-	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-		Type:               string(conditionType),
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	})
 }
