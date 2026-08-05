@@ -40,6 +40,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
@@ -445,6 +446,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 		if updated {
 			// Persist status updates
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
+		}
+	}
+
+	// Refresh ValidGCPWorkloadIdentity condition from spec validation.
+	// We set this condition even if the HC is being deleted so that
+	// DeleteOrphanedMachines has a fresh signal. Unlike AWS (which bubbles up
+	// from HCP), this is a pure spec check with no network calls.
+	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+		if platformgcp.RefreshGCPCredentialConditions(hcluster) {
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 			}
