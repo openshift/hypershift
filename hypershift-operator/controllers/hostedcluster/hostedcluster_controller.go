@@ -4435,8 +4435,8 @@ func validateManagedHSMVersion(hc *hyperv1.HostedCluster, releaseVersion semver.
 	if hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
 		return nil
 	}
-	if releaseVersion.LTE(minManagedHSMVersion) {
-		return fmt.Errorf("release image version %s does not support Azure Managed HSM, which requires a version newer than %s", releaseVersion, minManagedHSMVersion)
+	if releaseVersion.LT(minManagedHSMVersion) {
+		return fmt.Errorf("release image version %s does not support Azure Managed HSM, which requires version %s or newer", releaseVersion, minManagedHSMVersion)
 	}
 	return nil
 }

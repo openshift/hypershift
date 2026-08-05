@@ -7305,7 +7305,7 @@ func TestValidateManagedHSMVersion(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "When platform is not Azure it should skip validation",
+			name: "When the platform is not Azure, it should skip validation",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -7317,7 +7317,7 @@ func TestValidateManagedHSMVersion(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When Azure platform uses KeyVault it should skip validation",
+			name: "When Azure uses KeyVault, it should skip validation",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -7339,27 +7339,27 @@ func TestValidateManagedHSMVersion(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "When release version is too low it should reject ManagedHSM",
+			name:        "When the release version is 4.21, it should reject ManagedHSM",
 			expectError: true,
 		},
 		{
-			name:        "When release version is exactly 4.22.0 it should reject ManagedHSM",
-			expectError: true,
-		},
-		{
-			name:        "When release version is 5.0 it should accept ManagedHSM",
+			name:        "When the release version is exactly 4.22.0, it should accept ManagedHSM",
 			expectError: false,
 		},
 		{
-			name:        "When release version is 5.1 it should accept ManagedHSM",
+			name:        "When the release version is newer than 4.22, it should accept ManagedHSM",
+			expectError: false,
+		},
+		{
+			name:        "When the release version has a newer major version, it should accept ManagedHSM",
 			expectError: false,
 		},
 	}
 
 	testCases[2].hc, testCases[2].version = managedHSMCluster("4.21.3")
 	testCases[3].hc, testCases[3].version = managedHSMCluster("4.22.0")
-	testCases[4].hc, testCases[4].version = managedHSMCluster("5.0.0")
-	testCases[5].hc, testCases[5].version = managedHSMCluster("5.1.0")
+	testCases[4].hc, testCases[4].version = managedHSMCluster("4.23.0")
+	testCases[5].hc, testCases[5].version = managedHSMCluster("5.0.0")
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
