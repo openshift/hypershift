@@ -11084,7 +11084,7 @@ This section walks through how to:
     Managed HSM endpoints in other Azure clouds and custom Azure Stack Key Vault endpoints are not supported.
 
 There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of
-steps mentioned above. However, this guide will manually walk through those steps.
+steps mentioned above. For Managed HSM, use `setup_etcd_managed_hsm.sh` instead. However, this guide will manually walk through those steps.
 
 1a) Create a resource group for the key vault that will house the key used for etcd encryption.
 

@@ -1535,6 +1535,32 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return nil
 	})
 
+	report.execute("ManagedHSMVersionCheck", critical, func() error {
+		if hcluster.Spec.Platform.Type != hyperv1.AzurePlatform {
+			return nil
+		}
+		if hcluster.Spec.SecretEncryption == nil ||
+			hcluster.Spec.SecretEncryption.KMS == nil ||
+			hcluster.Spec.SecretEncryption.KMS.Azure == nil {
+			return nil
+		}
+		if hcluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+			return nil
+		}
+		if releaseImageVersion.LT(semver.MustParse("4.22.0")) {
+			msg := fmt.Sprintf("Azure Managed HSM requires OpenShift 4.22 or later, but release image version is %s", releaseImageVersion)
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidHostedClusterConfiguration),
+				ObservedGeneration: hcluster.Generation,
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.InvalidConfigurationReason,
+				Message:            msg,
+			})
+			return errors.New(msg)
+		}
+		return nil
+	})
+
 	report.executeOrBlock("OperatorDeployments", func() error {
 		return r.reconcileOperatorDeployments(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespace, p,
 			controlPlaneOperatorImage, utilitiesImage,

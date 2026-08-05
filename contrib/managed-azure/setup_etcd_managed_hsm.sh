@@ -63,19 +63,31 @@ az keyvault security-domain download \
 echo "Security domain downloaded to ${SD_DIR}/security_domain.json"
 echo "IMPORTANT: Back up the security domain file and key pairs — they are required to restore the HSM."
 
-# Assign the Managed HSM Crypto Officer role so the user can create keys
+# Assign the Managed HSM Crypto Officer role (key management) and
+# Crypto User role at /keys (data-plane key operations). Both are
+# needed to create keys — Administrator alone is not sufficient.
 az keyvault role assignment create \
     --hsm-name "$HSM_NAME" \
     --assignee "$USER_OBJECT_ID" \
     --role "Managed HSM Crypto Officer" \
     --scope "/"
 
+az keyvault role assignment create \
+    --hsm-name "$HSM_NAME" \
+    --assignee "$USER_OBJECT_ID" \
+    --role "Managed HSM Crypto User" \
+    --scope "/keys"
+
+# Wait for RBAC to propagate (~2-5 minutes for Managed HSM data-plane)
+echo "Waiting for RBAC propagation..."
+sleep 300
+
 # Create a key in the Managed HSM
+# Note: --protection is not used; all Managed HSM keys are HSM-backed.
 export KEY_ID
 KEY_ID=$(az keyvault key create \
     --hsm-name "$HSM_NAME" \
     --name "$KEY_NAME" \
-    --protection software \
     --kty RSA-HSM \
     --query key.kid \
     -o tsv)
