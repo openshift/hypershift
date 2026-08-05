@@ -477,6 +477,15 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
 
+	// One-time migration: when annotations still encode the legacy name-based trust-bundle
+	// hash, seed the content-based hash as the current baseline so HO upgrade does not
+	// set UpdatingConfig / roll Nodes. Real ca-bundle.crt changes still roll afterward.
+	if maybeSeedTrustBundleContentHashBaseline(nodePool, token.ConfigGenerator) {
+		log.Info("Seeded NodePool config hash baseline for trust-bundle content hashing migration",
+			"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+			"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
+	}
+
 	targetConfigHash := token.HashWithoutVersion()
 	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
