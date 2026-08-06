@@ -37,6 +37,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -379,10 +382,243 @@ func cleanupWorkload(ctx context.Context, client crclient.Client, job *batchv1.J
 	}
 }
 
+// AutoscalingScaleFromZeroTest tests that the cluster autoscaler can scale a NodePool
+// from zero replicas when pending pods require resources. It validates that the
+// instance type provider populates capacity information (CPU, memory, architecture)
+// on the infrastructure machine template so the autoscaler knows what resources
+// a new node would provide without any existing nodes.
+//
+// This test requires:
+// - AWS or Azure platform
+// - The hypershift-operator-scale-from-zero-credentials secret in the hypershift namespace
+func AutoscalingScaleFromZeroTest(getTestCtx internal.TestContextGetter) {
+	It("should scale a NodePool from zero replicas when workload is pending", func() {
+		testCtx := getTestCtx()
+		testCtx.ValidateHostedClusterClient()
+
+		hc := testCtx.GetHostedCluster()
+		hcClient := testCtx.GetHostedClusterClient()
+		ctx := testCtx.Context
+		cpNamespace := testCtx.ControlPlaneNamespace
+
+		// Platform guard: only AWS and Azure support scale-from-zero
+		if hc.Spec.Platform.Type != hyperv1.AWSPlatform && hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+			Skip("scale-from-zero test is only supported on AWS and Azure platforms")
+		}
+
+		// Check if scale-from-zero is enabled by looking for the credentials secret.
+		// The instance type provider is enabled when this secret exists.
+		scaleFromZeroSecret := &corev1.Secret{}
+		err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: "hypershift",
+			Name:      "hypershift-operator-scale-from-zero-credentials",
+		}, scaleFromZeroSecret)
+		if apierrors.IsNotFound(err) {
+			Skip("scale-from-zero test requires the hypershift-operator-scale-from-zero-credentials secret in the hypershift namespace")
+		}
+		Expect(err).NotTo(HaveOccurred(), "failed to check for scale-from-zero credentials secret")
+
+		// Find the default NodePool to copy platform config
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+
+		// Create NodePool with autoscaling min=0, max=2 and a unique node label
+		// so the workload targets only this NodePool's nodes.
+		scaleFromZeroLabel := map[string]string{"e2e-autoscaling-test": "scale-from-zero"}
+		scaleFromZeroNP := buildAutoscalingNodePool(defaultNP, 0, 2, scaleFromZeroLabel)
+		err = testCtx.MgmtClient.Create(ctx, scaleFromZeroNP)
+		Expect(err).NotTo(HaveOccurred(), "failed to create scale-from-zero NodePool")
+		GinkgoWriter.Printf("Created NodePool %s with autoscaling min=0, max=2\n", scaleFromZeroNP.Name)
+
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, scaleFromZeroNP)
+		})
+
+		// Verify capacity information is available on the infrastructure machine template.
+		// The instance type provider must populate either Status.Capacity on the machine
+		// template (native CAPI 1.11+) or workaround annotations on the MachineDeployment
+		// so the cluster autoscaler can estimate node resources.
+		GinkgoWriter.Println("Verifying scale-from-zero capacity information is available")
+		md := &capiv1.MachineDeployment{}
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, "MachineDeployment to have capacity information",
+			func(ctx context.Context) (*capiv1.MachineDeployment, error) {
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{
+					Namespace: cpNamespace,
+					Name:      scaleFromZeroNP.Name,
+				}, md)
+				return md, err
+			},
+			[]e2eutil.Predicate[*capiv1.MachineDeployment]{
+				func(md *capiv1.MachineDeployment) (done bool, reasons string, err error) {
+					if md.Spec.Template.Spec.InfrastructureRef.Name == "" {
+						return false, "MachineDeployment missing infrastructureRef", nil
+					}
+
+					infraRef := md.Spec.Template.Spec.InfrastructureRef
+
+					// Check Status.Capacity on the platform-specific machine template
+					var statusCapacity corev1.ResourceList
+					switch hc.Spec.Platform.Type {
+					case hyperv1.AWSPlatform:
+						awsTemplate := &capiaws.AWSMachineTemplate{}
+						if getErr := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{
+							Namespace: infraRef.Namespace,
+							Name:      infraRef.Name,
+						}, awsTemplate); getErr != nil {
+							return false, fmt.Sprintf("failed to get AWSMachineTemplate: %v", getErr), nil
+						}
+						statusCapacity = awsTemplate.Status.Capacity
+					case hyperv1.AzurePlatform:
+						azureTemplate := &capiazure.AzureMachineTemplate{}
+						if getErr := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{
+							Namespace: infraRef.Namespace,
+							Name:      infraRef.Name,
+						}, azureTemplate); getErr != nil {
+							return false, fmt.Sprintf("failed to get AzureMachineTemplate: %v", getErr), nil
+						}
+						statusCapacity = azureTemplate.Status.Capacity
+					}
+
+					// Prefer native Status.Capacity
+					if len(statusCapacity) > 0 {
+						if _, ok := statusCapacity[corev1.ResourceCPU]; !ok {
+							return false, "Status.Capacity missing CPU", nil
+						}
+						if _, ok := statusCapacity[corev1.ResourceMemory]; !ok {
+							return false, "Status.Capacity missing Memory", nil
+						}
+						GinkgoWriter.Printf("Capacity via Status.Capacity: CPU=%s, Memory=%s\n",
+							statusCapacity[corev1.ResourceCPU], statusCapacity[corev1.ResourceMemory])
+						return true, "native Status.Capacity present with CPU and Memory", nil
+					}
+
+					// Fall back to workaround annotations on MachineDeployment
+					annotations := md.GetAnnotations()
+					if annotations == nil {
+						return false, "missing both Status.Capacity and workaround annotations", nil
+					}
+
+					vCPU, hasVCPU := annotations["machine.openshift.io/vCPU"]
+					memoryMb, hasMemory := annotations["machine.openshift.io/memoryMb"]
+					labelsVal, hasLabels := annotations["capacity.cluster-autoscaler.kubernetes.io/labels"]
+
+					if !hasVCPU {
+						return false, "missing both Status.Capacity and vCPU annotation", nil
+					}
+					if !hasMemory {
+						return false, "missing both Status.Capacity and memoryMb annotation", nil
+					}
+					if !hasLabels {
+						return false, "missing capacity labels annotation", nil
+					}
+					if !strings.Contains(labelsVal, "kubernetes.io/arch=") {
+						return false, "capacity labels missing architecture", nil
+					}
+
+					gpuValue := annotations["machine.openshift.io/GPU"]
+					if gpuValue == "" {
+						gpuValue = "none (non-GPU instance)"
+					}
+					GinkgoWriter.Printf("Capacity via annotations: vCPU=%s, memoryMb=%s, GPU=%s, labels=%s\n",
+						vCPU, memoryMb, gpuValue, labelsVal)
+					return true, "all capacity annotations present", nil
+				},
+			},
+			e2eutil.WithTimeout(5*time.Minute),
+		)
+
+		// Verify NodePool autoscaling is enabled
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, "NodePool autoscaling to be enabled",
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
+				return scaleFromZeroNP, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
+					for _, condition := range np.Status.Conditions {
+						if condition.Type == hyperv1.NodePoolAutoscalingEnabledConditionType {
+							return condition.Status == corev1.ConditionTrue,
+								fmt.Sprintf("autoscaling enabled status is %s", condition.Status),
+								nil
+						}
+					}
+					return false, "autoscaling enabled condition not found", nil
+				},
+			},
+			e2eutil.WithTimeout(5*time.Minute),
+		)
+
+		// Verify NodePool starts with 0 replicas
+		GinkgoWriter.Println("Verifying NodePool starts with 0 replicas")
+		err = testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(scaleFromZeroNP.Status.Replicas).To(Equal(int32(0)), "NodePool should start with 0 replicas")
+
+		// Create workload targeting the scale-from-zero NodePool to trigger scale-up.
+		// Use 2 pods with modest resource requests — enough to require at least 1 node.
+		GinkgoWriter.Println("Creating workload to trigger scale-up from 0 nodes")
+		workload := newAutoscalingWorkload(2, resource.MustParse("1Gi"), scaleFromZeroLabel)
+		err = hcClient.Create(ctx, workload)
+		Expect(err).NotTo(HaveOccurred(), "failed to create workload")
+		GinkgoWriter.Printf("Created workload %s with 2 pods\n", workload.Name)
+
+		DeferCleanup(func() {
+			cleanupWorkload(ctx, hcClient, workload)
+		})
+
+		npLabelSelector := e2eutil.WithClientOptions(crclient.MatchingLabelsSelector{
+			Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: scaleFromZeroNP.Name}),
+		})
+
+		// Wait for NodePool to scale from 0 to at least 1 node
+		GinkgoWriter.Println("Waiting for NodePool to scale from 0 to at least 1 node")
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, "NodePool to scale from 0",
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
+				return scaleFromZeroNP, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
+					if np.Status.Replicas > 0 {
+						return true, fmt.Sprintf("NodePool scaled to %d replicas", np.Status.Replicas), nil
+					}
+					return false, fmt.Sprintf("NodePool has %d replicas, waiting for >0", np.Status.Replicas), nil
+				},
+			},
+			e2eutil.WithInterval(10*time.Second),
+			e2eutil.WithTimeout(15*time.Minute),
+		)
+		GinkgoWriter.Printf("NodePool successfully scaled from 0 to %d replicas\n", scaleFromZeroNP.Status.Replicas)
+
+		// Wait for at least 1 ready node from the scale-from-zero NodePool
+		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type,
+			fmt.Sprintf("for NodePool %s", scaleFromZeroNP.Name), npLabelSelector)
+
+		// Verify workload pods are scheduled and running on the scaled nodes
+		GinkgoWriter.Println("Verifying workload pods are scheduled and running")
+		Eventually(func(g Gomega) {
+			pods := &corev1.PodList{}
+			g.Expect(hcClient.List(ctx, pods,
+				crclient.InNamespace("default"),
+				crclient.MatchingLabels{"job-name": workload.Name})).To(Succeed())
+			g.Expect(pods.Items).To(HaveLen(2), "expected 2 workload pods")
+			for _, pod := range pods.Items {
+				g.Expect(pod.Spec.NodeName).NotTo(BeEmpty(),
+					"pod %s should be scheduled to a node", pod.Name)
+				g.Expect(pod.Status.Phase).To(BeElementOf(corev1.PodRunning, corev1.PodSucceeded),
+					"pod %s should be running or succeeded, got %s", pod.Name, pod.Status.Phase)
+			}
+		}).WithTimeout(20 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
+
+		GinkgoWriter.Println("Successfully verified scale-from-zero: workload pods are scheduled and running on scaled nodes")
+	})
+}
+
 // RegisterNodePoolAutoscalingTests registers all autoscaling test cases
 func RegisterNodePoolAutoscalingTests(getTestCtx internal.TestContextGetter) {
 	AutoscalingScaleUpDownTest(getTestCtx)
 	AutoscalingBalancingTest(getTestCtx)
+	AutoscalingScaleFromZeroTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolAutoscaling] NodePool Autoscaling", Label("lifecycle", "nodepool-autoscaling"), func() {
