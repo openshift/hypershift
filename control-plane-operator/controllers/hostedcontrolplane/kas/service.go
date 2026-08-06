@@ -65,9 +65,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		svc.Annotations = map[string]string{}
 	}
 
-	// Remove stale AWS NLB annotation before reconciling.
-	// It will be re-added only when the service is actually a LoadBalancer.
+	// Remove stale annotations before reconciling; each is re-added only in the
+	// eligible branch below so that transitions (e.g. ClusterIP → public LB)
+	// never leave behind a stale annotation.
 	delete(svc.Annotations, AWSNLBAnnotation)
+	delete(svc.Annotations, "service.kubernetes.io/topology-mode")
 
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
