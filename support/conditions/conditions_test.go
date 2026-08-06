@@ -3,10 +3,9 @@ package conditions
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	. "github.com/onsi/gomega"
 )
 
 func TestExpectedHCConditionsGCPPlatform(t *testing.T) {
