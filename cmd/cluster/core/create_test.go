@@ -93,7 +93,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "When a multi-arch release is passed, the function should return no errors",
+			name: "When a multi-arch release is passed, it should return no errors",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-multi",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
@@ -103,7 +103,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When no release image was passed and a valid multi-arch stream is passed, the function should return no errors",
+			name: "When no release image is provided and a valid multi-arch stream is passed, it should return no errors",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
@@ -113,7 +113,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When a single arch release is passed and the NodePool arch matches the arch of the release, the function should return no errors",
+			name: "When a single arch release is passed and the NodePool arch matches the release arch, it should return no errors",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
@@ -123,7 +123,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When a single arch release is passed and the NodePool arch doesn't match the arch of the release, the function should return an error",
+			name: "When a single arch release is passed and the NodePool arch doesn't match the release arch, it should return an error",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",

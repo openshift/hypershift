@@ -19,10 +19,10 @@ func TestSetEnvVars(t *testing.T) {
 		expected []corev1.EnvVar
 	}{
 		{
-			name: "No proxy configured and no proxy in env vars, no change",
+			name: "When no proxy is configured and no proxy env vars exist, it should make no changes",
 		},
 		{
-			name: "No proxy configured, proxy gets removed from env vars",
+			name: "When no proxy is configured but proxy env vars exist, it should remove proxy env vars",
 			currentEnvVars: []corev1.EnvVar{
 				{Name: "HTTP_PROXY", Value: "http://foo"},
 				{Name: "HTTPS_PROXY", Value: "http://foo"},
@@ -30,7 +30,7 @@ func TestSetEnvVars(t *testing.T) {
 			},
 		},
 		{
-			name:      "Proxy configured and gets added to env vars",
+			name:      "When proxy is configured and no env vars exist, it should add proxy env vars",
 			httpProxy: "http://foo", httpsProxy: "http://foo", noProxy: "kube-apiserver",
 			expected: []corev1.EnvVar{
 				{Name: "HTTP_PROXY", Value: "http://foo"},
@@ -39,7 +39,7 @@ func TestSetEnvVars(t *testing.T) {
 			},
 		},
 		{
-			name:      "Proxy configured, env vars get changed",
+			name:      "When proxy is configured and env vars have different values, it should update env vars",
 			httpProxy: "http://foo", httpsProxy: "http://foo", noProxy: "kube-apiserver",
 			currentEnvVars: []corev1.EnvVar{
 				{Name: "HTTP_PROXY", Value: "nope"},
@@ -53,7 +53,7 @@ func TestSetEnvVars(t *testing.T) {
 			},
 		},
 		{
-			name:      "kube-apiserver always gets included into NO_PROXY",
+			name:      "When proxy is configured without NO_PROXY, it should include kube-apiserver in NO_PROXY",
 			httpProxy: "http://foo", httpsProxy: "http://foo",
 			expected: []corev1.EnvVar{
 				{Name: "HTTP_PROXY", Value: "http://foo"},
@@ -62,7 +62,7 @@ func TestSetEnvVars(t *testing.T) {
 			},
 		},
 		{
-			name:      "Additional no proxy is respected",
+			name:      "When proxy is configured with additional no proxy entries, it should include them in NO_PROXY",
 			httpProxy: "http://foo", httpsProxy: "http://foo",
 			additionalNoProxy: []string{"dont-proxy-me"},
 			expected: []corev1.EnvVar{
@@ -72,7 +72,7 @@ func TestSetEnvVars(t *testing.T) {
 			},
 		},
 		{
-			name:              "Additional no proxy does nothing if no proxy is configured",
+			name:              "When no proxy is configured, it should ignore additional no proxy entries",
 			additionalNoProxy: []string{"dont-proxy-me"},
 		},
 	}

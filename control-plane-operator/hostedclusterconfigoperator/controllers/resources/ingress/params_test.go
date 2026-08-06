@@ -23,7 +23,7 @@ func TestNewIngressParams(t *testing.T) {
 		want *IngressParams
 	}{
 		{
-			name: "DefaultParams",
+			name: "When HCP has default configuration, it should return default ingress params",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{}},
 			want: &IngressParams{
@@ -36,7 +36,7 @@ func TestNewIngressParams(t *testing.T) {
 			},
 		},
 		{
-			name: "PrivateIngress",
+			name: "When private ingress annotation is set, it should set IsPrivate to true",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
@@ -56,7 +56,7 @@ func TestNewIngressParams(t *testing.T) {
 			},
 		},
 		{
-			name: "HighlyAvailable",
+			name: "When infrastructure is highly available, it should set replicas to two",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
 					Spec: hyperv1.HostedControlPlaneSpec{
@@ -74,7 +74,7 @@ func TestNewIngressParams(t *testing.T) {
 			},
 		},
 		{
-			name: "IBMCloudUPI",
+			name: "When platform is IBMCloud UPI, it should set IBMCloudUPI to true",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
 					Spec: hyperv1.HostedControlPlaneSpec{
@@ -96,7 +96,7 @@ func TestNewIngressParams(t *testing.T) {
 			},
 		},
 		{
-			name: "AWSNLB",
+			name: "When AWS platform uses NLB, it should set AWSNLB to true",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
 					Spec: hyperv1.HostedControlPlaneSpec{
@@ -127,7 +127,7 @@ func TestNewIngressParams(t *testing.T) {
 			},
 		},
 		{
-			name: "AWSInternalNLB",
+			name: "When AWS platform is private with NLB, it should set internal load balancer scope",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
 					Spec: hyperv1.HostedControlPlaneSpec{

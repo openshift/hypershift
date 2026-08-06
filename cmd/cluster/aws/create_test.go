@@ -180,7 +180,7 @@ func TestCreateCluster(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "minimal flags necessary to render",
+			name: "When minimal flags are provided, it should render successfully",
 			args: []string{
 				"--sts-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
@@ -192,7 +192,7 @@ func TestCreateCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "default creation flags for cesar",
+			name: "When default creation flags are provided, it should create cluster with expected configuration",
 			args: []string{
 				"--pull-secret=" + pullSecretFile,
 				"--name=example",
@@ -215,7 +215,7 @@ func TestCreateCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "minimal with KubeAPIServerDNSName",
+			name: "When KubeAPIServerDNSName is provided, it should configure custom DNS name",
 			args: []string{
 				"--name=example",
 				"--sts-creds=" + credentialsFile,
@@ -227,7 +227,7 @@ func TestCreateCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "minimal with OVNKubernetesMTU",
+			name: "When OVNKubernetesMTU is provided, it should configure custom MTU",
 			args: []string{
 				"--name=example",
 				"--sts-creds=" + credentialsFile,

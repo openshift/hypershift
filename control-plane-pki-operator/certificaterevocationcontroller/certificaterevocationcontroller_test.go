@@ -213,7 +213,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 		expected        *actions
 	}{
 		{
-			name:         "invalid signer class is flagged",
+			name:         "When signer class is invalid, it should flag the error",
 			now:          revocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -240,7 +240,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "a timestamp is chosen if one does not exist",
+			name:         "When no timestamp exists, it should choose one",
 			now:          revocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -268,7 +268,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "current signer is copied if none exists",
+			name:         "When no signer copy exists, it should copy the current signer",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -309,7 +309,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "status updated to contain copied signer when copy exists",
+			name:         "When signer copy exists, it should update status with copied signer reference",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -362,7 +362,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "copies finished means we annotate for regeneration",
+			name:         "When copies are finished, it should annotate for regeneration",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -406,7 +406,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "new signer generated, mark as such",
+			name:         "When new signer is generated, it should mark regeneration as complete",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -466,7 +466,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:            "not yet propagated, nothing to do",
+			name:            "When new cert is not yet propagated, it should requeue",
 			now:             postRevocationClock.Now,
 			crrNamespace:    "crr-ns",
 			crrName:         "crr-name",
@@ -513,7 +513,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			}},
 		},
 		{
-			name:         "propagated, mark as trusted",
+			name:         "When new cert is propagated, it should mark as trusted",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -586,7 +586,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "leaf certificate not yet regenerated, annotate them",
+			name:         "When leaf certificate is not regenerated, it should annotate for regeneration",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -665,7 +665,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "leaf certificate already regenerated",
+			name:         "When leaf certificate is already regenerated, it should update the CA bundle",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -744,7 +744,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:         "bundle only has new signers",
+			name:         "When bundle has only new signers, it should mark leaves regenerated and revocation pending",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -851,7 +851,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:            "validating, previous still valid",
+			name:            "When validating and previous signer is still valid, it should requeue",
 			now:             postRevocationClock.Now,
 			crrNamespace:    "crr-ns",
 			crrName:         "crr-name",
@@ -926,7 +926,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			}},
 		},
 		{
-			name:         "validating, previous invalid",
+			name:         "When validating and previous signer is invalid, it should mark revoked",
 			now:          postRevocationClock.Now,
 			crrNamespace: "crr-ns",
 			crrName:      "crr-name",
@@ -1039,7 +1039,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			},
 		},
 		{
-			name:            "SRE signer: validating, previous still valid (requeue path)",
+			name:            "When SRE signer is validating and previous is still valid, it should requeue",
 			now:             postRevocationClock.Now,
 			crrNamespace:    "crr-ns",
 			crrName:         "crr-name-sre",

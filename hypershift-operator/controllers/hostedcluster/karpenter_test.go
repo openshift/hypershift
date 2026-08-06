@@ -192,25 +192,25 @@ func TestIsKASAvailable(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:     "deployment missing",
+			name:     "When deployment is missing it should return false",
 			expected: false,
 		},
 		{
-			name: "deployment exists, Available=True",
+			name: "When deployment exists with Available=True it should return true",
 			objects: []crclient.Object{
 				kasDeployment(cpNamespace, true),
 			},
 			expected: true,
 		},
 		{
-			name: "deployment exists, Available=False",
+			name: "When deployment exists with Available=False it should return false",
 			objects: []crclient.Object{
 				kasDeployment(cpNamespace, false),
 			},
 			expected: false,
 		},
 		{
-			name: "deployment exists, no Available condition",
+			name: "When deployment exists with no Available condition it should return false",
 			objects: []crclient.Object{
 				&appsv1.Deployment{
 					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: cpNamespace},

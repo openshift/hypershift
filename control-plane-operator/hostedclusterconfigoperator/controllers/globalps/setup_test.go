@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func Test_kubeSystemSecretPredicateFunc(t *testing.T) {
+func TestKubeSystemSecretPredicateFunc(t *testing.T) {
 	tests := []struct {
 		name   string
 		object *corev1.Secret
@@ -40,7 +40,7 @@ func Test_kubeSystemSecretPredicateFunc(t *testing.T) {
 	}
 }
 
-func Test_namespacedNamePredicateFunc(t *testing.T) {
+func TestNamespacedNamePredicateFunc(t *testing.T) {
 	predicate := namespacedNamePredicateFunc("my-hcp-namespace", "pull-secret")
 
 	tests := []struct {
@@ -79,7 +79,7 @@ func Test_namespacedNamePredicateFunc(t *testing.T) {
 	}
 }
 
-func Test_staticReconcileMapper(t *testing.T) {
+func TestStaticReconcileMapper(t *testing.T) {
 	t.Run("When called it should return a single empty reconcile request", func(t *testing.T) {
 		g := NewWithT(t)
 		requests := staticReconcileMapper(context.Background(), &corev1.Secret{})

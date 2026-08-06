@@ -16,15 +16,15 @@ func TestConvertHypershiftTagToCAPOTag(t *testing.T) {
 		want []capo.NeutronTag
 	}{
 		{
-			name: "empty tags",
+			name: "When tags are empty, it should return empty CAPO tags",
 		},
 		{
-			name: "single tag",
+			name: "When a single tag is provided, it should convert to CAPO tag",
 			tags: []hyperv1.NeutronTag{"tag1"},
 			want: []capo.NeutronTag{"tag1"},
 		},
 		{
-			name: "multiple tags",
+			name: "When multiple tags are provided, it should convert all to CAPO tags",
 			tags: []hyperv1.NeutronTag{"tag1", "tag2"},
 			want: []capo.NeutronTag{"tag1", "tag2"},
 		},
@@ -49,7 +49,7 @@ func TestCreateCAPOFilterTags(t *testing.T) {
 		want       capo.FilterByNeutronTags
 	}{
 		{
-			name:       "empty tags",
+			name:       "When all tag categories are empty, it should return empty filter",
 			tags:       []hyperv1.NeutronTag{},
 			tagsAny:    []hyperv1.NeutronTag{},
 			NotTags:    []hyperv1.NeutronTag{},
@@ -57,7 +57,7 @@ func TestCreateCAPOFilterTags(t *testing.T) {
 			want:       capo.FilterByNeutronTags{},
 		},
 		{
-			name:       "single tag in each category",
+			name:       "When each tag category has a single tag, it should convert all categories",
 			tags:       []hyperv1.NeutronTag{"tag1"},
 			tagsAny:    []hyperv1.NeutronTag{"tag2"},
 			NotTags:    []hyperv1.NeutronTag{"tag3"},
@@ -87,7 +87,7 @@ func TestCreateCAPONetworkFilter(t *testing.T) {
 		want   *capo.NetworkFilter
 	}{
 		{
-			name: "filled filter",
+			name: "When filter has all fields populated, it should convert to CAPO network filter",
 			filter: &hyperv1.NetworkFilter{
 				Name:        "test-name",
 				Description: "test-description",

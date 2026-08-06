@@ -52,25 +52,25 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 		expectedPrincipalsToRemove  []string
 	}{
 		{
-			name:                    "no additional principals",
+			name:                    "When there are no additional principals it should add only the CPO role ARN",
 			hasInfraCapability:      true,
 			expectedPrincipalsToAdd: []string{mockControlPlaneOperatorRoleArn},
 		},
 		{
-			name:                        "additional principals",
+			name:                        "When additional principals are specified it should add them alongside the CPO role ARN",
 			hasInfraCapability:          true,
 			additionalAllowedPrincipals: []string{"additional1", "additional2"},
 			expectedPrincipalsToAdd:     []string{mockControlPlaneOperatorRoleArn, "additional1", "additional2"},
 		},
 		{
-			name:                       "removing extra principals",
+			name:                       "When extra principals exist it should remove them",
 			hasInfraCapability:         true,
 			existingAllowedPrincipals:  []string{"existing1", "existing2"},
 			expectedPrincipalsToAdd:    []string{mockControlPlaneOperatorRoleArn},
 			expectedPrincipalsToRemove: []string{"existing1", "existing2"},
 		},
 		{
-			name:                    "no infrastructure capability omits owned tag",
+			name:                    "When there is no infrastructure capability it should omit the owned tag",
 			hasInfraCapability:      false,
 			expectedPrincipalsToAdd: []string{mockControlPlaneOperatorRoleArn},
 		},
@@ -619,14 +619,14 @@ func TestRejectVpcEndpointConnections(t *testing.T) {
 	})
 }
 
-func Test_controlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
+func TestControlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		hc       *hyperv1.HostedCluster
 		expected string
 	}{
 		{
-			name: "ARN without path",
+			name: "When ARN has no path it should return unchanged",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -641,7 +641,7 @@ func Test_controlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
 			expected: "arn:aws:iam::12345678910:role/test-name",
 		},
 		{
-			name: "ARN with path",
+			name: "When ARN has a path it should strip the path prefix",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{

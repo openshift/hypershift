@@ -44,7 +44,7 @@ func TestReconcileAzureClusterIdentity(t *testing.T) {
 		expectedAzureClusterIdentity *capiazure.AzureClusterIdentity
 	}{
 		{
-			name:             "when MANAGED_SERVICE is set to AROHCP, it should reconcile AzureClusterIdentity as UserAssignedIdentityCredential",
+			name:             "When MANAGED_SERVICE is set to AROHCP it should reconcile AzureClusterIdentity as UserAssignedIdentityCredential",
 			isManagedService: true,
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -84,7 +84,7 @@ func TestReconcileAzureClusterIdentity(t *testing.T) {
 			},
 		},
 		{
-			name:             "when MANAGED_SERVICE is not set, it should reconcile AzureClusterIdentity as WorkloadIdentity",
+			name:             "When MANAGED_SERVICE is not set it should reconcile AzureClusterIdentity as WorkloadIdentity",
 			isManagedService: false,
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -156,25 +156,25 @@ func TestParseCloudType(t *testing.T) {
 		expectedError  bool
 	}{
 		{
-			name:           "when input is AzurePublicCloud, expected output is public",
+			name:           "When input is AzurePublicCloud it should return public",
 			input:          "AzurePublicCloud",
 			expectedOutput: "public",
 			expectedError:  false,
 		},
 		{
-			name:           "when input is AzureUSGovernmentCloud, expected output is usgovernment",
+			name:           "When input is AzureUSGovernmentCloud it should return usgovernment",
 			input:          "AzureUSGovernmentCloud",
 			expectedOutput: "usgovernment",
 			expectedError:  false,
 		},
 		{
-			name:           "when input is AzureChinaCloud, expected output is china",
+			name:           "When input is AzureChinaCloud it should return china",
 			input:          "AzureChinaCloud",
 			expectedOutput: "china",
 			expectedError:  false,
 		},
 		{
-			name:           "when input is an invalid cloud type, expect error",
+			name:           "When input is an invalid cloud type it should return an error",
 			input:          "AzureGermanCloud",
 			expectedOutput: "",
 			expectedError:  true,
@@ -259,7 +259,7 @@ func TestReconcileCredentials(t *testing.T) {
 		validateSecrets      func(secrets []*corev1.Secret)
 	}{
 		{
-			name:           "self-managed Azure with workload identities creates all credential secrets",
+			name:           "When self-managed Azure has workload identities it should create all credential secrets",
 			managedService: "",
 			hcluster: createTestHostedCluster(true, &hyperv1.AzureWorkloadIdentities{
 				Ingress: hyperv1.WorkloadIdentity{
@@ -313,7 +313,7 @@ func TestReconcileCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:           "self-managed Azure with disabled capabilities skips appropriate secrets",
+			name:           "When self-managed Azure has disabled capabilities it should skip appropriate secrets",
 			managedService: "",
 			hcluster: func() *hyperv1.HostedCluster {
 				hc := createTestHostedCluster(true, &hyperv1.AzureWorkloadIdentities{
@@ -357,7 +357,7 @@ func TestReconcileCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:                 "managed Azure (ARO-HCP) does not create workload identity secrets",
+			name:                 "When managed Azure ARO-HCP is used it should not create workload identity secrets",
 			managedService:       hyperv1.AroHCP,
 			hcluster:             createTestHostedCluster(false, nil),
 			expectedSecretsCount: 1, // Only CNCC secret should be created
@@ -565,7 +565,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		expectedError             bool
 	}{
 		{
-			name: "when ManagedIdentities is nil it should return early without modifying machines",
+			name: "When ManagedIdentities is nil it should return early without modifying machines",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -592,14 +592,14 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:                      "when there are no machines it should succeed",
+			name:                      "When there are no machines it should succeed",
 			hostedCluster:             managedIdentitiesHC,
 			azureMachines:             []capiazure.AzureMachine{},
 			expectedFinalizersRemoved: false,
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
+			name:          "When a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -618,7 +618,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
+			name:          "When a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -637,7 +637,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
+			name:          "When a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -661,7 +661,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine is not pending deletion it should not remove finalizers regardless of conditions",
+			name:          "When a machine is not pending deletion it should not remove finalizers regardless of conditions",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{

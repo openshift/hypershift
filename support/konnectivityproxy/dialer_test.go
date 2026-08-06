@@ -24,7 +24,7 @@ func TestValidate(t *testing.T) {
 		expectValid bool
 	}{
 		{
-			name: "valid options",
+			name: "When all required options are provided it should be valid",
 			o: Options{
 				CAFile:           "test-ca",
 				ClientCertBytes:  []byte("test-cert"),
@@ -36,7 +36,7 @@ func TestValidate(t *testing.T) {
 			expectValid: true,
 		},
 		{
-			name: "missing CA",
+			name: "When CA is missing it should be invalid",
 			o: Options{
 				ClientCertBytes:  []byte("test-cert"),
 				ClientKeyFile:    "test-key-name",
@@ -47,7 +47,7 @@ func TestValidate(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "missing KonnectivityPort",
+			name: "When KonnectivityPort is missing it should be invalid",
 			o: Options{
 				CABytes:          []byte("test-ca"),
 				ClientCertBytes:  []byte("test-cert"),
@@ -58,7 +58,7 @@ func TestValidate(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "client cert file and bytes",
+			name: "When both client cert file and bytes are provided it should be invalid",
 			o: Options{
 				CAFile:           "test-ca",
 				ClientCertFile:   "test-cert-file",
@@ -127,7 +127,7 @@ func TestKonnectivityHealth(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "After success it should be healthy",
+			name: "When the check succeeds it should be healthy",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 				kh.markSuccess()
@@ -136,7 +136,7 @@ func TestKonnectivityHealth(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "After failure it should be unhealthy",
+			name: "When the check fails it should be unhealthy",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 			},

@@ -37,19 +37,19 @@ func TestIsResourceRegistered(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "group version not found",
+			name:        "When group version is not found, it should return false",
 			gvk:         schema.GroupVersionKind{Group: "non.existing.group.io", Version: dummyVersion, Kind: dummyKind},
 			expected:    false,
 			expectError: false,
 		},
 		{
-			name:        "group version found but kind not found",
+			name:        "When group version is found but kind is not found, it should return false",
 			gvk:         schema.GroupVersionKind{Group: dummyGroup, Version: dummyVersion, Kind: "non-existing-kind"},
 			expected:    false,
 			expectError: false,
 		},
 		{
-			name:        "group version kind found",
+			name:        "When group version kind is found, it should return true",
 			gvk:         schema.GroupVersionKind{Group: dummyGroup, Version: dummyVersion, Kind: dummyKind},
 			expected:    true,
 			expectError: false,
