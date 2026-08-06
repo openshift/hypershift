@@ -45674,7 +45674,7 @@ and the user is responsible for doing so.</p>
 <a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
 </p>
 <p>
-<p>EtcdOperatorSpec specifies the configuration for the Etcd.</p>
+<p>EtcdOperatorSpec specifies the configuration for the etcd.</p>
 </p>
 <table>
 <thead>
