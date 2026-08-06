@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/upsert"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -44,7 +46,10 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var workloads = internal.GetControlPlaneWorkloads()
+var (
+	workloads             = internal.GetControlPlaneWorkloads()
+	desiredStateHashHexRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 func getWorkloadPods(testCtx *internal.TestContext, workload internal.WorkloadSpec) []corev1.Pod {
 	GinkgoHelper()
@@ -1047,6 +1052,38 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 }
 
 // RegisterControlPlaneWorkloadsTests registers all control plane workloads tests
+func DesiredStateHashAnnotationTest(getTestCtx internal.TestContextGetter) {
+	Context("Desired state hash annotation", func() {
+		for _, w := range workloads {
+			workload := w
+			Context(workload.Name, func() {
+				It("should carry desired-state-hash annotation if managed by control-plane-operator", func() {
+					tc := getTestCtx()
+
+					deploy := &appsv1.Deployment{}
+					err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: workload.Name}, deploy)
+					if apierrors.IsNotFound(err) {
+						Skip(fmt.Sprintf("Deployment %s not found in %s", workload.Name, tc.ControlPlaneNamespace))
+					}
+					Expect(err).NotTo(HaveOccurred(), "failed to get Deployment %s/%s", tc.ControlPlaneNamespace, workload.Name)
+
+					if deploy.Labels["hypershift.openshift.io/managed-by"] != "control-plane-operator" {
+						Skip(fmt.Sprintf("Deployment %s/%s is not managed by control-plane-operator", deploy.Namespace, deploy.Name))
+					}
+
+					hash, ok := deploy.Annotations[upsert.DesiredStateHashAnnotation]
+					Expect(ok).To(BeTrue(),
+						"Deployment %s/%s is missing the %s annotation",
+						deploy.Namespace, deploy.Name, upsert.DesiredStateHashAnnotation)
+					Expect(desiredStateHashHexRE.MatchString(hash)).To(BeTrue(),
+						"Deployment %s/%s has invalid desired-state-hash %q (expected 64 hex chars)",
+						deploy.Namespace, deploy.Name, hash)
+				})
+			})
+		}
+	})
+}
+
 func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	WorkloadRegistryValidationTest(getTestCtx)
 	DeploymentGenerationTest(getTestCtx)
@@ -1063,6 +1100,7 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	CustomLabelsTest(getTestCtx)
 	CustomTolerationsTest(getTestCtx)
 	SecurityContextUIDTest(getTestCtx)
+	DesiredStateHashAnnotationTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {
