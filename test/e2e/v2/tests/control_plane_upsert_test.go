@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -39,6 +40,7 @@ var desiredStateHashHexRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 func RegisterUpsertTests(getTestCtx internal.TestContextGetter) {
 	VerifyDesiredStateHashAnnotationStamped(getTestCtx)
 	VerifyDesiredStateHashIdempotency(getTestCtx)
+	VerifySpecFieldRemovalDetected(getTestCtx)
 	VerifyExternalDriftReverted(getTestCtx)
 	VerifyServiceAccountPullSecretsPreserved(getTestCtx)
 }
@@ -106,6 +108,115 @@ func VerifyDesiredStateHashIdempotency(getTestCtx internal.TestContextGetter) {
 					"Deployment %s/%s had unexpected resourceVersion change — possible reconcile hot-loop",
 					d.Namespace, d.Name)
 			}
+		})
+	})
+}
+
+// VerifySpecFieldRemovalDetected verifies Scenario 2: removing a field from HostedCluster spec
+// propagates to managed Deployments. Before PR #7713, DeepDerivative(desired, current) would
+// return true when the desired toleration slice is a prefix of the current slice — silently
+// missing the extra toleration. The desired-state-hash catches this because the hash of the
+// desired manifest changes as soon as the toleration is removed from HC spec.
+func VerifySpecFieldRemovalDetected(getTestCtx internal.TestContextGetter) {
+	Context("spec field removal is detected and applied", func() {
+		It("should remove a toleration from managed Deployments when removed from HostedCluster spec", func() {
+			tc := getTestCtx()
+
+			// A toleration for a non-existent taint key is completely harmless: pods tolerate
+			// taints that no node will ever actually have.
+			testToleration := corev1.Toleration{
+				Key:      "hypershift.openshift.io/e2e-upsert-removal-test",
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoSchedule,
+			}
+
+			deployList := &appsv1.DeploymentList{}
+			Expect(tc.MgmtClient.List(tc.Context, deployList, crclient.InNamespace(tc.ControlPlaneNamespace))).
+				To(Succeed(), "failed to list Deployments in namespace %s", tc.ControlPlaneNamespace)
+			Expect(deployList.Items).NotTo(BeEmpty(),
+				"expected at least one managed Deployment in namespace %s", tc.ControlPlaneNamespace)
+			targetDeployKey := crclient.ObjectKeyFromObject(&deployList.Items[0])
+
+			hcKey := crclient.ObjectKeyFromObject(tc.GetHostedCluster())
+			getHC := func() *hyperv1.HostedCluster {
+				hc := &hyperv1.HostedCluster{}
+				Expect(tc.MgmtClient.Get(tc.Context, hcKey, hc)).To(Succeed(),
+					"failed to fetch HostedCluster %s", hcKey)
+				return hc
+			}
+			removeToleration := func(tols []corev1.Toleration) []corev1.Toleration {
+				out := tols[:0:0]
+				for _, t := range tols {
+					if t.Key != testToleration.Key {
+						out = append(out, t)
+					}
+				}
+				return out
+			}
+			hasToleration := func(deploy *appsv1.Deployment) bool {
+				for _, t := range deploy.Spec.Template.Spec.Tolerations {
+					if t.Key == testToleration.Key {
+						return true
+					}
+				}
+				return false
+			}
+
+			// Step 1: add the test toleration to HC spec.
+			hc := getHC()
+			base := hc.DeepCopy()
+			hc.Spec.Tolerations = append(hc.Spec.Tolerations, testToleration)
+			Expect(tc.MgmtClient.Patch(tc.Context, hc, crclient.MergeFrom(base))).To(Succeed(),
+				"failed to patch HostedCluster %s to add test toleration", hcKey)
+
+			// DeferCleanup removes the test toleration on all exit paths.
+			DeferCleanup(func() {
+				current := getHC()
+				cleaned := removeToleration(current.Spec.Tolerations)
+				if len(cleaned) == len(current.Spec.Tolerations) {
+					return // already removed
+				}
+				restore := current.DeepCopy()
+				current.Spec.Tolerations = cleaned
+				if err := tc.MgmtClient.Patch(tc.Context, current, crclient.MergeFrom(restore)); err != nil {
+					if !apierrors.IsNotFound(err) {
+						GinkgoLogr.Error(err, "cleanup: failed to remove test toleration from HostedCluster", "key", hcKey)
+					}
+				}
+			})
+
+			// Step 2: wait for the toleration to propagate HC → HCP → Deployment (two reconcile hops).
+			var hashWithToleration string
+			Eventually(func(g Gomega) {
+				deploy := &appsv1.Deployment{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, targetDeployKey, deploy)).To(Succeed())
+				g.Expect(hasToleration(deploy)).To(BeTrue(),
+					"test toleration not yet present on Deployment %s", targetDeployKey)
+				hashWithToleration = deploy.Annotations[upsert.DesiredStateHashAnnotation]
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+
+			// Step 3: remove the test toleration from HC spec.
+			hc = getHC()
+			base = hc.DeepCopy()
+			hc.Spec.Tolerations = removeToleration(hc.Spec.Tolerations)
+			Expect(tc.MgmtClient.Patch(tc.Context, hc, crclient.MergeFrom(base))).To(Succeed(),
+				"failed to patch HostedCluster %s to remove test toleration", hcKey)
+
+			// Step 4: wait for the toleration to disappear from the Deployment.
+			// DeepDerivative(desired_without_tol, current_with_tol) returns true because the
+			// desired slice is a prefix of the current slice — without the hash fix this removal
+			// would never be applied and this Eventually would time out.
+			Eventually(func(g Gomega) {
+				deploy := &appsv1.Deployment{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, targetDeployKey, deploy)).To(Succeed())
+				g.Expect(hasToleration(deploy)).To(BeFalse(),
+					"test toleration still present on Deployment %s — the desired-state-hash "+
+						"mechanism should have detected its removal from HC spec",
+					targetDeployKey)
+				g.Expect(deploy.Annotations[upsert.DesiredStateHashAnnotation]).NotTo(Equal(hashWithToleration),
+					"expected desired-state-hash to change on Deployment %s after toleration removal",
+					targetDeployKey)
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
 }
