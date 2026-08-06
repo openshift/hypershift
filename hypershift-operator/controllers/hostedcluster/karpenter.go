@@ -71,9 +71,10 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 	}
 
 	karpenteroperator := karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
-		HyperShiftOperatorImage:   hypershiftOperatorImage,
-		ControlPlaneOperatorImage: controlPlaneOperatorImage,
-		IgnitionEndpoint:          hcluster.Status.IgnitionEndpoint,
+		HyperShiftOperatorImage:            hypershiftOperatorImage,
+		ControlPlaneOperatorImage:          controlPlaneOperatorImage,
+		IgnitionEndpoint:                   hcluster.Status.IgnitionEndpoint,
+		StandaloneKarpenterOperatorEnabled: karpenterutil.IsStandaloneKarpenterOperatorEnabled(),
 	})
 
 	// Always reconcile the Karpenter Operator so it has a chance to clean up, the predicate on
