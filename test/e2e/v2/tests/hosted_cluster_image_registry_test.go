@@ -56,7 +56,9 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 	When("the ImageRegistry capability is enabled", Ordered, func() {
 		BeforeAll(func() {
 			tc = getTestCtx()
-			hc = tc.MustGetHostedCluster()
+			var err error
+			hc, err = tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hc.Spec.Capabilities != nil {
 				for _, disabled := range hc.Spec.Capabilities.Disabled {
 					if disabled == hyperv1.ImageRegistryCapability {
@@ -64,7 +66,8 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 					}
 				}
 			}
-			hostedClusterClient = tc.MustGetHostedClusterClient()
+			hostedClusterClient, err = tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should have a healthy image-registry ClusterOperator", func() {
@@ -184,7 +187,8 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 
 		BeforeEach(func() {
 			tc = getTestCtx()
-			hc := tc.MustGetHostedCluster()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			isDisabled := false
 			if hc.Spec.Capabilities != nil {
@@ -199,7 +203,8 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 				Skip("ImageRegistry capability is not disabled on this HostedCluster")
 			}
 
-			hostedClusterClient = tc.MustGetHostedClusterClient()
+			hostedClusterClient, err = tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should not have the image-registry ClusterOperator", func() {

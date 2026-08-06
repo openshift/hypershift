@@ -37,7 +37,10 @@ func EnsureNodeCommunicationTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has konnectivity tunnel configured", func() {
 		It("should have konnectivity-agent pods with retrievable logs", func() {
 			tc := getTestCtx()
-			restConfig := tc.MustGetHostedClusterRESTConfig()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			restConfig, err := tc.GetHostedClusterRESTConfig(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			clientset, err := kubernetes.NewForConfig(restConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create hosted cluster kubernetes clientset")

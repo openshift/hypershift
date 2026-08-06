@@ -48,7 +48,8 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version419)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
-			hc := tc.MustGetHostedCluster()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hc.Spec.Platform.Type == hyperv1.AWSPlatform && !tc.VersionAtLeast(e2eutil.Version421) {
 				Skip("AWS platform requires version >= 4.21 for global pull secret")
 			}
@@ -56,7 +57,8 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 				Skip("global pull secret test is only supported on public clusters")
 			}
 
-			hcClient := tc.MustGetHostedClusterClient()
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			np := getDefaultNodePool(tc.Context, tc.MgmtClient, hc)
 			if np == nil ||

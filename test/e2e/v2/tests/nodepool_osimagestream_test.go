@@ -107,7 +107,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStrea
 func NodePoolOSImageStreamRHEL10RejectionTest(getTestCtx internal.TestContextGetter) {
 	It("When osImageStream is set to rhel-10 on OCP < 5.0, it should set ValidMachineConfig to False", func() {
 		testCtx := getTestCtx()
-		hc := testCtx.MustGetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		if testCtx.VersionAtLeast(e2eutil.Version50) {
 			Skip("test only applies to OCP < 5.0; rhel-10 is valid on OCP >= 5.0")
 		}
@@ -164,7 +165,8 @@ func NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx internal.TestContex
 	It("When osImageStream is set to rhel-10 with runc ContainerRuntimeConfig, it should set ValidMachineConfig to False", func() {
 		testCtx := getTestCtx()
 
-		hc := testCtx.MustGetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		testCtx.SkipIfVersionBelow(e2eutil.Version50)
 
 		ctx := testCtx.Context
@@ -245,7 +247,8 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 	It("When no osImageStream is set, it should report a recognized RHEL stream in status", func() {
 		testCtx := getTestCtx()
 
-		hc := testCtx.MustGetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
@@ -365,7 +368,8 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 	It("When osImageStream is set to the version-derived default, it should not trigger a rollout", func() {
 		testCtx := getTestCtx()
 
-		hc := testCtx.MustGetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
@@ -456,8 +460,10 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 	It("When a NodePool is upgraded, it should report the correct osImageStream in status", func() {
 		testCtx := getTestCtx()
 
-		hc := testCtx.MustGetHostedCluster()
-		hcClient := testCtx.MustGetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")

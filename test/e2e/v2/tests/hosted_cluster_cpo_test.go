@@ -39,7 +39,8 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 	When("a CPO override image is configured for the platform and version", func() {
 		It("should run the control-plane-operator pod with the expected override image", func() {
 			tc := getTestCtx()
-			hc := tc.MustGetHostedCluster()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			releaseImage := hc.Spec.Release.Image
 			Expect(releaseImage).NotTo(BeEmpty(), "HostedCluster release image should be set")

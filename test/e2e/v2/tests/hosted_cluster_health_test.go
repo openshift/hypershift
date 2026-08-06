@@ -51,7 +51,8 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 	When("hosted cluster is operational", func() {
 		It("should have all expected conditions with correct status", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 			delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
@@ -103,7 +104,10 @@ func EnsureFeatureGateStatusTest(getTestCtx internal.TestContextGetter) {
 		It("should have feature gate status matching cluster version", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version419)
-			hcClient := tc.MustGetHostedClusterClient()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			var currentVersion string
 			Eventually(func(g Gomega) {
@@ -134,7 +138,8 @@ func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has a release image", func() {
 		It("should set payload arch status correctly", func() {
 			tc := getTestCtx()
-			hostedCluster := getTestCtx().MustGetHostedCluster()
+			hostedCluster, err := getTestCtx().GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
 			Eventually(func(g Gomega) {
@@ -153,10 +158,12 @@ func ValidateConfigurationStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster authentication is configured", func() {
 		It("should propagate configuration status consistently", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			tc.SkipIfVersionBelow(e2eutil.Version421)
 
-			hcClient := tc.MustGetHostedClusterClient()
+			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
 				var hostedClusterAuth configv1.Authentication

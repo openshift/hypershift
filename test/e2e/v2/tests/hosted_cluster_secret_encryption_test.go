@@ -40,7 +40,8 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 		Context("Azure KMS", func() {
 			BeforeEach(func() {
 				getTestCtx().SkipIfNotPlatform(hyperv1.AzurePlatform)
-				hc := getTestCtx().MustGetHostedCluster()
+				hc, err := getTestCtx().GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				if hc.Spec.SecretEncryption == nil || hc.Spec.SecretEncryption.KMS == nil ||
 					hc.Spec.SecretEncryption.KMS.Azure == nil {
 					Skip("Azure KMS spec validation requires KMS configured")
@@ -48,7 +49,8 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			It("should have ActiveKey fields populated", func() {
-				hc := getTestCtx().MustGetHostedCluster()
+				hc, err := getTestCtx().GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				azureKMS := hc.Spec.SecretEncryption.KMS.Azure
 
 				Expect(azureKMS.ActiveKey.KeyVaultName).NotTo(BeEmpty(),
@@ -60,7 +62,8 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			It("should have KMS authentication configured", func() {
-				hc := getTestCtx().MustGetHostedCluster()
+				hc, err := getTestCtx().GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				azureKMS := hc.Spec.SecretEncryption.KMS.Azure
 
 				hasWorkloadIdentity := azureKMS.WorkloadIdentity.ClientID != ""
@@ -94,7 +97,11 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 
 			testCtx.SkipIfVersionBelow(e2eutil.Version417)
 
-			hostedClusterClient := testCtx.MustGetHostedClusterClient()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+
+			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			testSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -152,7 +159,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:SecretEncryption] Ho
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 
-		hc := testCtx.MustGetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		if hc.Spec.SecretEncryption == nil || hc.Spec.SecretEncryption.KMS == nil {
 			Skip("SecretEncryption with KMS is not configured on this hosted cluster")
 		}

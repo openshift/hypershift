@@ -55,17 +55,20 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 
 		It("should mutate pods with workload identity federated credentials", func() {
 			testCtx := getTestCtx()
-			hc := testCtx.MustGetHostedCluster()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			testCtx.SkipIfVersionBelow(e2eutil.Version420)
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
-			hostedClusterClient := testCtx.MustGetHostedClusterClient()
+			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			e2eutil.ValidateAzureWorkloadIdentityWebhookMutation(GinkgoTB(), testCtx.Context, hostedClusterClient)
 		})
 
 		It("should have expected KAS allowed CIDRs", func() {
 			testCtx := getTestCtx()
-			hc := testCtx.MustGetHostedCluster()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			kubeconfigData := e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
 			restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
 			Expect(err).NotTo(HaveOccurred(), "failed to create hosted cluster REST config")
@@ -75,10 +78,12 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 
 		It("should have Ingress Operator configuration applied", func() {
 			testCtx := getTestCtx()
-			hc := testCtx.MustGetHostedCluster()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			testCtx.SkipIfVersionBelow(e2eutil.Version421)
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
-			hostedClusterClient := testCtx.MustGetHostedClusterClient()
+			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			e2eutil.ValidateIngressOperatorConfiguration(GinkgoTB(), testCtx.Context, hostedClusterClient, hc)
 		})
@@ -96,7 +101,8 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 		BeforeAll(func() {
 			testCtx = getTestCtx()
 			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
-			hc := testCtx.MustGetHostedCluster()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hc.Spec.Platform.Azure == nil || hc.Spec.Platform.Azure.Topology != hyperv1.AzureTopologyPrivate {
 				Skip("Azure private topology tests require Private topology")
 			}
@@ -222,7 +228,8 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 		BeforeAll(func() {
 			testCtx = getTestCtx()
 			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
-			hc := testCtx.MustGetHostedCluster()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hc.Spec.Platform.Azure == nil || hc.Spec.Platform.Azure.Topology != hyperv1.AzureTopologyPrivate {
 				Skip("Azure endpoint access transition tests require Private topology")
 			}
@@ -619,7 +626,8 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
 			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
-			hc := testCtx.MustGetHostedCluster()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			strategy := netutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.OAuthServer)
 			if strategy == nil || strategy.Type != hyperv1.LoadBalancer {
 				Skip("Azure OAuth LB tests require OAuthServer with LoadBalancer publishing strategy")
@@ -665,7 +673,8 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 
 		It("should complete OAuth token flow through LoadBalancer endpoint", func() {
 			testCtx := getTestCtx()
-			hc := testCtx.MustGetHostedCluster()
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			e2eutil.ValidateOAuthWithIdentityProviderViaLoadBalancer(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
 		})

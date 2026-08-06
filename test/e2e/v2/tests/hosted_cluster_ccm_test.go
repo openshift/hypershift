@@ -43,9 +43,11 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 
 			BeforeEach(func() {
 				testCtx := getTestCtx()
-				hc := testCtx.MustGetHostedCluster()
+				hc, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
-				hostedClusterClient := testCtx.MustGetHostedClusterClient()
+				hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
 
 				nodes = &corev1.NodeList{}
 				Expect(hostedClusterClient.List(testCtx.Context, nodes)).To(Succeed())
@@ -54,7 +56,8 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 
 			It("should set providerID on all nodes", func() {
 				testCtx := getTestCtx()
-				hc := testCtx.MustGetHostedCluster()
+				hc, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				Expect(hc.Spec.Platform.GCP).NotTo(BeNil(), "GCP platform spec must be set for GCP HostedCluster %s/%s", hc.Namespace, hc.Name)
 				gcpProject := hc.Spec.Platform.GCP.Project
 

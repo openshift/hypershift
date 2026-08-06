@@ -71,7 +71,8 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			tc = getTestCtx()
 
 			// Capture original TLS security profile from HostedCluster
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hostedCluster.Spec.Configuration != nil &&
 				hostedCluster.Spec.Configuration.APIServer != nil &&
 				hostedCluster.Spec.Configuration.APIServer.TLSSecurityProfile != nil {
@@ -79,7 +80,6 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}
 
 			// Setup management cluster REST config and kubernetes client for pod exec
-			var err error
 			mgmtRestConfig, err = e2eutil.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "failed to get management cluster REST config")
 			mgmtKubeClient, err = kubernetes.NewForConfig(mgmtRestConfig)
@@ -105,7 +105,8 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("should have minTLSVersion set to VersionTLS12 with default/intermediate profile", func() {
 			// Check HostedCluster TLS profile configuration
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			// Only run for nil (default) or explicit Intermediate profile
 			hasProfile := hostedCluster.Spec.Configuration != nil &&
@@ -121,7 +122,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			// Check ConfigMap in management cluster control plane namespace
 			mgmtClient := tc.MgmtClient
 			cm := &corev1.ConfigMap{}
-			err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
+			err = mgmtClient.Get(tc.Context, crclient.ObjectKey{
 				Namespace: tc.ControlPlaneNamespace,
 				Name:      pkiOperatorConfigMapName,
 			}, cm)
@@ -134,7 +135,8 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
 			// Check HostedCluster TLS profile configuration
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			// Only run for nil (default) or explicit Intermediate profile
 			hasProfile := hostedCluster.Spec.Configuration != nil &&

@@ -46,10 +46,10 @@ type TestContext struct {
 	ArtifactDir           string
 }
 
-// getHostedCluster fetches the HostedCluster from the management cluster.
+// GetHostedCluster fetches the HostedCluster from the management cluster.
 // Returns an error if no cluster name/namespace is configured or if the API
 // call fails.
-func (tc *TestContext) getHostedCluster() (*hyperv1.HostedCluster, error) {
+func (tc *TestContext) GetHostedCluster() (*hyperv1.HostedCluster, error) {
 	if tc.ClusterName == "" || tc.ClusterNamespace == "" {
 		return nil, fmt.Errorf("no hosted cluster configured for this test run (E2E_HOSTED_CLUSTER_NAME and E2E_HOSTED_CLUSTER_NAMESPACE must be set)")
 	}
@@ -64,26 +64,30 @@ func (tc *TestContext) getHostedCluster() (*hyperv1.HostedCluster, error) {
 	return hostedCluster, nil
 }
 
-func (tc *TestContext) getHostedClusterVersion() (*hyperv1.HostedCluster, semver.Version, error) {
-	version := semver.Version{}
-	hc, err := tc.getHostedCluster()
+// GetHostedClusterVersion fetches the HostedCluster and parses its version.
+// Returns an error if the cluster cannot be fetched or the version cannot be
+// parsed.
+func (tc *TestContext) GetHostedClusterVersion() (semver.Version, error) {
+	hc, err := tc.GetHostedCluster()
 	if err != nil {
-		return nil, version, err
+		return semver.Version{}, err
 	}
 	if hc.Status.Version != nil && len(hc.Status.Version.History) > 0 && hc.Status.Version.History[0].Version != "" {
 		releaseVersion, err := semver.Parse(hc.Status.Version.History[0].Version)
 		if err != nil {
-			return nil, version, fmt.Errorf("error parsing version: %w", err)
+			return semver.Version{}, fmt.Errorf("error parsing version: %w", err)
 		}
 		releaseVersion.Patch = 0
 		releaseVersion.Pre = nil
 		releaseVersion.Build = nil
-		version = releaseVersion
+		return releaseVersion, nil
 	}
-	return hc, version, nil
+	return semver.Version{}, nil
 }
 
-func (tc *TestContext) getHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*rest.Config, error) {
+// GetHostedClusterRESTConfig returns the REST config for the hosted cluster.
+// Returns an error if the kubeconfig secret cannot be fetched or parsed.
+func (tc *TestContext) GetHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*rest.Config, error) {
 	var kubeconfigSecret corev1.Secret
 	err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 		Namespace: hc.Namespace,
@@ -108,8 +112,10 @@ func (tc *TestContext) getHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*r
 	return restConfig, nil
 }
 
-func (tc *TestContext) getHostedClusterClient(hc *hyperv1.HostedCluster) (crclient.Client, error) {
-	restConfig, err := tc.getHostedClusterRESTConfig(hc)
+// GetHostedClusterClient returns a controller-runtime client for the hosted
+// cluster. Returns an error if the kubeconfig or client setup fails.
+func (tc *TestContext) GetHostedClusterClient(hc *hyperv1.HostedCluster) (crclient.Client, error) {
+	restConfig, err := tc.GetHostedClusterRESTConfig(hc)
 	if err != nil {
 		return nil, err
 	}
@@ -123,49 +129,20 @@ func (tc *TestContext) getHostedClusterClient(hc *hyperv1.HostedCluster) (crclie
 	return client, nil
 }
 
-// MustGetHostedCluster fetches the HostedCluster, failing the test via Expect
-// on error. Do not call inside Eventually or other retry closures.
-func (tc *TestContext) MustGetHostedCluster() *hyperv1.HostedCluster {
-	GinkgoHelper()
-	hc, err := tc.getHostedCluster()
-	Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", tc.ClusterNamespace, tc.ClusterName)
-	return hc
-}
-
 // VersionAtLeast returns true if the hosted cluster version is at least v.
 // Fails the test if the version cannot be determined.
 func (tc *TestContext) VersionAtLeast(v semver.Version) bool {
 	GinkgoHelper()
-	_, version, err := tc.getHostedClusterVersion()
+	version, err := tc.GetHostedClusterVersion()
 	Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster version for %s/%s", tc.ClusterNamespace, tc.ClusterName)
 	return !version.LT(v)
-}
-
-// MustGetHostedClusterClient returns a controller-runtime client for the hosted
-// cluster, failing the test on error. Do not call inside retry closures.
-func (tc *TestContext) MustGetHostedClusterClient() crclient.Client {
-	GinkgoHelper()
-	hc := tc.MustGetHostedCluster()
-	client, err := tc.getHostedClusterClient(hc)
-	Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client for %s/%s", tc.ClusterNamespace, tc.ClusterName)
-	return client
-}
-
-// MustGetHostedClusterRESTConfig returns the REST config for the hosted cluster,
-// failing the test on error. Do not call inside retry closures.
-func (tc *TestContext) MustGetHostedClusterRESTConfig() *rest.Config {
-	GinkgoHelper()
-	hc := tc.MustGetHostedCluster()
-	cfg, err := tc.getHostedClusterRESTConfig(hc)
-	Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster REST config for %s/%s", tc.ClusterNamespace, tc.ClusterName)
-	return cfg
 }
 
 // SkipIfVersionBelow skips the test if the hosted cluster version is below
 // minVersion. Returns the detected version on success.
 func (tc *TestContext) SkipIfVersionBelow(minVersion semver.Version) semver.Version {
 	GinkgoHelper()
-	_, version, err := tc.getHostedClusterVersion()
+	version, err := tc.GetHostedClusterVersion()
 	Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster version for %s/%s", tc.ClusterNamespace, tc.ClusterName)
 	if version.LT(minVersion) {
 		Skip(fmt.Sprintf("Only tested in %s and later", minVersion))
@@ -174,10 +151,11 @@ func (tc *TestContext) SkipIfVersionBelow(minVersion semver.Version) semver.Vers
 }
 
 // SkipIfNotPlatform skips the test unless the hosted cluster matches one of the
-// given platforms.
+// given platforms. Fails the test if the HostedCluster cannot be fetched.
 func (tc *TestContext) SkipIfNotPlatform(platforms ...hyperv1.PlatformType) {
 	GinkgoHelper()
-	hc := tc.MustGetHostedCluster()
+	hc, err := tc.GetHostedCluster()
+	Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster for platform check")
 	for _, p := range platforms {
 		if hc.Spec.Platform.Type == p {
 			return
@@ -187,10 +165,11 @@ func (tc *TestContext) SkipIfNotPlatform(platforms ...hyperv1.PlatformType) {
 }
 
 // SkipIfPlatform skips the test if the hosted cluster matches any of the given
-// platforms.
+// platforms. Fails the test if the HostedCluster cannot be fetched.
 func (tc *TestContext) SkipIfPlatform(platforms ...hyperv1.PlatformType) {
 	GinkgoHelper()
-	hc := tc.MustGetHostedCluster()
+	hc, err := tc.GetHostedCluster()
+	Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster for platform check")
 	for _, p := range platforms {
 		if hc.Spec.Platform.Type == p {
 			Skip(fmt.Sprintf("test does not apply to platform %s", p))

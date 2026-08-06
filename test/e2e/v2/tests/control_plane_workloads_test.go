@@ -59,7 +59,8 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 	Context("Deployment generation", func() {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hostedCluster := testCtx.MustGetHostedCluster()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hostedCluster.CreationTimestamp.IsZero() || time.Since(hostedCluster.CreationTimestamp.Time) > 4*time.Hour {
 				Skip("Deployment generation test is only for recently created hosted clusters")
 			}
@@ -76,13 +77,14 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should not indicate rapid rollouts", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
 
 					deployment := &appsv1.Deployment{}
-					err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
+					err = testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
 						Namespace: testCtx.ControlPlaneNamespace,
 						Name:      workload.Name,
 					}, deployment)
@@ -129,7 +131,8 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should exist for pods with emptyDir or hostPath volumes", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -224,7 +227,8 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should have read-only root filesystem for containers", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -297,7 +301,8 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 			Context(workload.Name, func() {
 				It("should have /tmp mounted for containers", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -339,7 +344,8 @@ func ContainerImagePullPolicyTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should have IfNotPresent pull policy for containers", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -389,7 +395,8 @@ func ContainerTerminationMessagePolicyTest(getTestCtx internal.TestContextGetter
 			Context(workload.Name, func() {
 				It("should have FallbackToLogsOnError termination message policy for containers", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -431,7 +438,8 @@ func ContainerResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should have resource requests for containers", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -468,7 +476,8 @@ func PodPriorityTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should not have too high priority for pods", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -543,7 +552,8 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should not mount service account token unless necessary for pods", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					testCtx.SkipIfVersionBelow(e2eutil.Version416)
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
@@ -585,7 +595,8 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should have correct affinities and tolerations for pods", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -785,7 +796,8 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should have expected RunAsUser UID for pods", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -890,7 +902,8 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should have no crashing pods", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -966,7 +979,8 @@ func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should propagate custom labels to pods", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -1005,7 +1019,8 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 			Context(workload.Name, func() {
 				It("should propagate custom tolerations to pods", func() {
 					testCtx := getTestCtx()
-					hostedCluster := testCtx.MustGetHostedCluster()
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}

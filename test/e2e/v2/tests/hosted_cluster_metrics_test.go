@@ -66,7 +66,8 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 		It("should expose expected metrics at the metrics endpoint", func() {
 			tc := getTestCtx()
 			tc.SkipIfPlatform(hyperv1.NonePlatform)
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			mgmtRestConfig, err := e2eutil.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
@@ -137,7 +138,8 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 		It("should deploy the metrics pipeline and scrape kube-apiserver metrics end-to-end", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version422)
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			if hostedCluster.Spec.Monitoring.MetricsForwarding.Mode != hyperv1.MetricsForwardingModeForward {
 				Skip("metrics forwarding not enabled on hosted cluster; skipping verification test")
@@ -156,8 +158,10 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Waiting for hosted cluster metrics-forwarder deployment")
-			hcClient := tc.MustGetHostedClusterClient()
-			hcRestConfig := tc.MustGetHostedClusterRESTConfig()
+			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
+			hcRestConfig, err := tc.GetHostedClusterRESTConfig(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
 
 			hcClientset, err := kubernetes.NewForConfig(hcRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create hosted cluster kubernetes clientset")

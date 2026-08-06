@@ -52,7 +52,8 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
-			hc := tc.MustGetHostedCluster()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			Expect(hc.Status.Platform).NotTo(BeNil(),
 				"HostedCluster %s/%s should have platform status", hc.Namespace, hc.Name)
@@ -111,7 +112,8 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore HostedCluster AWS resource tags")
 				}
 
-				hcClient := tc.MustGetHostedClusterClient()
+				hcClient, err := tc.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(func(g Gomega) {
 					infra := &configv1.Infrastructure{}
 					g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed())
@@ -141,7 +143,8 @@ func EnsureInfrastructureResourceTagsTest(getTestCtx internal.TestContextGetter)
 		It("should propagate those tags to the infrastructure resource in the hosted cluster", Label("AWS"), func() {
 			tc := getTestCtx()
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
-			hc := tc.MustGetHostedCluster()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			specTags := hc.Spec.Platform.AWS.ResourceTags
 			if len(specTags) == 0 {
@@ -165,7 +168,8 @@ func EnsureInfrastructureResourceTagsTest(getTestCtx internal.TestContextGetter)
 				Skip("HostedCluster has only kubernetes.io-prefixed tags which are filtered out")
 			}
 
-			hcClient := tc.MustGetHostedClusterClient()
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			infra := &configv1.Infrastructure{}
 			Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed(),
@@ -220,8 +224,10 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 		When("a LoadBalancer NLB service is created in the hosted cluster", func() {
 			It("should attach managed security groups to the NLB", func() {
 				tc := getTestCtx()
-				hc := tc.MustGetHostedCluster()
-				hcClient := tc.MustGetHostedClusterClient()
+				hc, err := tc.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
+				hcClient, err := tc.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
 
 				awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
 				Expect(awsCredsFile).NotTo(BeEmpty(), "AWS_GUEST_INFRA_CREDENTIALS_FILE must be set for AWS CCM NLB test")

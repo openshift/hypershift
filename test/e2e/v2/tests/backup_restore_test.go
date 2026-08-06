@@ -113,7 +113,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	BeforeAll(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil())
-		hostedCluster := testCtx.MustGetHostedCluster()
+		hostedCluster, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		cfg, supported := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
 		if !supported {
 			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
@@ -176,7 +177,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 
 	Context(ContextBackup, func() {
 		It("should create backup and schedule successfully", func() {
-			if testCtx.MustGetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if hc.Spec.Platform.Type == hyperv1.AgentPlatform {
 				By("Pausing AgentMachine and AgentCluster CRs")
 				err := backuprestore.PauseAgentCAPIResources(testCtx, GinkgoLogr.WithName("backup-restore"))
 				Expect(err).NotTo(HaveOccurred())
@@ -199,7 +202,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				StorageLocation:   testCtx.ClusterName,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
 			}
-			err := backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
+			err = backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
 			Expect(err).NotTo(HaveOccurred())
 
 			DeferCleanup(func() {
@@ -281,7 +284,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	Context(ContextPostRestoreControlPlane, func() {
 		It("should have control plane healthy after restore", func() {
 			// TODO(mgencur): Remove this condition once https://redhat.atlassian.net/browse/MGMT-23509 is fixed
-			skipNodePoolValidation := testCtx.MustGetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			skipNodePoolValidation := hc.Spec.Platform.Type == hyperv1.AgentPlatform
 			validatePostRestoreControlPlane(testCtx, platformCfg.excludeWorkloads, expectedConditions, skipNodePoolValidation)
 		})
 	})

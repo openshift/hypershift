@@ -39,7 +39,8 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 		It("should reflect the custom strategy in the hosted cluster IngressController", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version421)
-			hc := tc.MustGetHostedCluster()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			if hc.Spec.OperatorConfiguration == nil ||
 				hc.Spec.OperatorConfiguration.IngressOperator == nil ||
@@ -49,7 +50,8 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 
 			expectedStrategy := hc.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy
 
-			hcClient := tc.MustGetHostedClusterClient()
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
 				ic := &operatorv1.IngressController{}

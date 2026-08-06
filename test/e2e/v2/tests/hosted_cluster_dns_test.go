@@ -37,7 +37,8 @@ func EnsureKubeAPIDNSNameCustomCertTest(getTestCtx internal.TestContextGetter) {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version419)
 			tc.SkipIfPlatform(hyperv1.KubevirtPlatform)
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			if !netutil.IsPublicHC(hostedCluster) {
 				Skip("custom DNS name test requires a public hosted cluster")

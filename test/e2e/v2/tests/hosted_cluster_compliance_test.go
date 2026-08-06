@@ -37,7 +37,8 @@ func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 	When("routes are created in the control plane namespace", func() {
 		It("should label all routes for the per-HCP router", Label("routes"), func() {
 			tc := getTestCtx()
-			hostedCluster := tc.MustGetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			isRoute := false
 			for _, svc := range hostedCluster.Spec.Services {

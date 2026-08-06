@@ -125,7 +125,10 @@ func EtcdKillRandomMembersTest(getTestCtx internal.TestContextGetter) {
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
-		hcClient := testCtx.MustGetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		// Create marker data that should survive the chaos
 		markerCM := createMarkerConfigMap(ctx, hcClient)
@@ -172,7 +175,10 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
-		hcClient := testCtx.MustGetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		// Create marker data that should survive the chaos
 		markerCM := createMarkerConfigMap(ctx, hcClient)
