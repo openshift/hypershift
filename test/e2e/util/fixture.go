@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,8 @@ import (
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	resourcegroupstaggingapitypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 
@@ -296,7 +299,8 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	}
 }
 
-// validateAWSGuestResourcesDeletedFunc waits for 15min or until the guest cluster resources are gone.
+// validateAWSGuestResourcesDeletedFunc actively deletes tagged NLBs/ELBs and
+// then polls until all remaining guest cluster resources are gone.
 func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, infraID, awsCreds, awsRegion string) func() {
 	if IsLessThan(Version415) {
 		return func() {
@@ -310,11 +314,15 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		taggingClient := resourcegroupstaggingapi.NewFromConfig(*awsSession, func(o *resourcegroupstaggingapi.Options) {
 			o.Retryer = awsConfig()
 		})
+		elbv2Client := elbv2.NewFromConfig(*awsSession, func(o *elbv2.Options) {
+			o.Retryer = awsConfig()
+		})
 		var lastOutput *resourcegroupstaggingapi.GetResourcesOutput
 
-		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
+		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster.
+		// Any tagged NLBs/ELBs are actively deleted rather than waiting for the
+		// cloud controller to clean them up asynchronously.
 		err := wait.PollUntilContextTimeout(ctx, 20*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
-			// Filter get cluster resources.
 			output, err := taggingClient.GetResources(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 				ResourceTypeFilters: []string{
 					"elasticloadbalancing:loadbalancer",
@@ -336,6 +344,11 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 				return false, nil
 			}
 			lastOutput = output
+
+			if err := deleteTaggedLoadBalancers(ctx, t, elbv2Client, lastOutput.ResourceTagMappingList); err != nil {
+				return false, err
+			}
+
 			if hasGuestResources(t, lastOutput.ResourceTagMappingList) {
 				return false, nil
 			}
@@ -396,6 +409,40 @@ func hasGuestResources(t *testing.T, resourceTagMappings []resourcegroupstagging
 
 func clusterTag(infraID string) string {
 	return fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
+}
+
+// loadBalancerDeleter abstracts the ELBv2 DeleteLoadBalancer operation for testing.
+type loadBalancerDeleter interface {
+	DeleteLoadBalancer(ctx context.Context, params *elbv2.DeleteLoadBalancerInput, optFns ...func(*elbv2.Options)) (*elbv2.DeleteLoadBalancerOutput, error)
+}
+
+// deleteTaggedLoadBalancers actively deletes any ELBs/NLBs found in the
+// resource tag mapping list rather than waiting for the cloud controller.
+// Terminal AWS errors (OperationNotPermitted, ResourceInUse) are returned
+// immediately; transient errors are logged for retry by the caller's poll loop.
+func deleteTaggedLoadBalancers(ctx context.Context, t *testing.T, client loadBalancerDeleter, mappings []resourcegroupstaggingapitypes.ResourceTagMapping) error {
+	for _, mapping := range mappings {
+		resourceARN, err := arn.Parse(awssdk.ToString(mapping.ResourceARN))
+		if err != nil {
+			continue
+		}
+		if resourceARN.Service != "elasticloadbalancing" {
+			continue
+		}
+		lbARN := awssdk.ToString(mapping.ResourceARN)
+		t.Logf("Actively deleting load balancer: %s", lbARN)
+		if _, err := client.DeleteLoadBalancer(ctx, &elbv2.DeleteLoadBalancerInput{
+			LoadBalancerArn: mapping.ResourceARN,
+		}); err != nil {
+			var opNotPermitted *elbv2types.OperationNotPermittedException
+			var resourceInUse *elbv2types.ResourceInUseException
+			if errors.As(err, &opNotPermitted) || errors.As(err, &resourceInUse) {
+				return fmt.Errorf("terminal error deleting load balancer %s: %w", lbARN, err)
+			}
+			t.Logf("Failed to delete load balancer %s (will retry): %v", lbARN, err)
+		}
+	}
+	return nil
 }
 
 // newClusterDumper returns a function that dumps important diagnostic data for

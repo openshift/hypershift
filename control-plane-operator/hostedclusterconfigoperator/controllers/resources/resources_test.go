@@ -1042,6 +1042,68 @@ func TestDestroyCloudResources(t *testing.T) {
 	}
 }
 
+func TestDestroyCloudResources_WhenPlatformIsAWS_ItShouldSkipLoadBalancerServiceDeletion(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.CloudResourcesDestroyed),
+					Status: metav1.ConditionFalse,
+				},
+			},
+		},
+	}
+
+	lbService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-loadbalancer",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeLoadBalancer,
+		},
+	}
+
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(lbService).Build()
+	kasDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: fakeHCP.Namespace,
+		},
+	}
+	cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP, kasDeployment).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+
+	r := &reconciler{
+		client:                 guestClient,
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		cpClient:               cpClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		cleanupTracker:         supportutil.NewCleanupTracker(),
+	}
+
+	remaining, _, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(remaining.Has("loadbalancers")).To(BeFalse(), "AWS should not track loadbalancers in remaining set")
+
+	// Verify the LoadBalancer Service was NOT deleted
+	svc := &corev1.Service{}
+	err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(lbService), svc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
+}
+
 func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
 	t.Parallel()
 	fakeHCP := &hyperv1.HostedControlPlane{
