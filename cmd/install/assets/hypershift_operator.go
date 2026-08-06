@@ -17,6 +17,7 @@ import (
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -548,6 +549,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
 	EnableCPOOverrides                      bool
+	EnableKarpenterOperator                 bool
 	AdditionalOperatorEnvVars               map[string]string
 	AROHCPKeyVaultUsersClientID             string
 	TechPreviewNoUpgrade                    bool
@@ -864,6 +866,9 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	}
 	if o.EnableCPOOverrides {
 		envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"})
+	}
+	if o.EnableKarpenterOperator {
+		envVars = append(envVars, corev1.EnvVar{Name: karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, Value: "1"})
 	}
 	if len(o.PlatformsInstalled) > 0 {
 		envVars = append(envVars, corev1.EnvVar{Name: "PLATFORMS_INSTALLED", Value: o.PlatformsInstalled})

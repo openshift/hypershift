@@ -18,9 +18,10 @@ const (
 var _ component.ComponentOptions = &KarpenterOperatorOptions{}
 
 type KarpenterOperatorOptions struct {
-	HyperShiftOperatorImage   string
-	ControlPlaneOperatorImage string
-	IgnitionEndpoint          string
+	HyperShiftOperatorImage            string
+	ControlPlaneOperatorImage          string
+	IgnitionEndpoint                   string
+	StandaloneKarpenterOperatorEnabled bool
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.

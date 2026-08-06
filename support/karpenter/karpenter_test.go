@@ -8,6 +8,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -208,6 +211,62 @@ func TestKarpenterTaintConfigManifest(t *testing.T) {
 		g.Expect(taint["value"]).To(Equal(KarpenterBaseTaints[0].Value))
 		g.Expect(taint["effect"]).To(Equal(string(KarpenterBaseTaints[0].Effect)))
 	})
+}
+
+func TestIsStandaloneKarpenterOperatorEnabled(t *testing.T) {
+	testCases := []struct {
+		name       string
+		featureSet configv1.FeatureSet
+		envValue   string
+		expected   bool
+	}{
+		{
+			name:       "When both feature gate and env var are enabled, it should return true",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			envValue:   "1",
+			expected:   true,
+		},
+		{
+			name:       "When feature gate is enabled but env var is unset, it should return false",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			envValue:   "",
+			expected:   false,
+		},
+		{
+			name:       "When feature gate is enabled but env var is set to 0, it should return false",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			envValue:   "0",
+			expected:   false,
+		},
+		{
+			name:       "When feature gate is disabled but env var is set to 1, it should return false",
+			featureSet: configv1.Default,
+			envValue:   "1",
+			expected:   false,
+		},
+		{
+			name:       "When both feature gate and env var are disabled, it should return false",
+			featureSet: configv1.Default,
+			envValue:   "",
+			expected:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			previousFeatureSet := featuregate.FeatureSet()
+			featuregate.ConfigureFeatureSet(string(tc.featureSet))
+			t.Cleanup(func() {
+				featuregate.ConfigureFeatureSet(string(previousFeatureSet))
+			})
+
+			t.Setenv(EnableStandaloneKarpenterOperatorEnvVar, tc.envValue)
+
+			g.Expect(IsStandaloneKarpenterOperatorEnabled()).To(Equal(tc.expected))
+		})
+	}
 }
 
 func TestKarpenterBaseTaintMap(t *testing.T) {
