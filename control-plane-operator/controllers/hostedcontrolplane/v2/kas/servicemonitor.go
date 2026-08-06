@@ -4,6 +4,7 @@ import (
 	_ "embed"
 
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -13,6 +14,7 @@ func adaptServiceMonitor(cpContext component.WorkloadContext, sm *prometheusoper
 	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{cpContext.HCP.Namespace},
 	}
+	sm.Spec.Endpoints[0].MetricRelabelConfigs = metrics.KASRelabelConfigs(cpContext.MetricsSet)
 	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], cpContext.HCP.Spec.ClusterID)
 
 	return nil
