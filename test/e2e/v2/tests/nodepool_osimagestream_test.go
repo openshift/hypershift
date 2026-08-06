@@ -421,21 +421,9 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 			"failed to patch NodePool %s with osImageStream=%s", defaultNP.Name, versionDerivedDefault)
 		GinkgoWriter.Printf("Patched NodePool %s with osImageStream=%s\n", defaultNP.Name, versionDerivedDefault)
 
-		// Restore the original state on cleanup.
-		DeferCleanup(func() {
-			current := &hyperv1.NodePool{}
-			if err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), current); err != nil {
-				if !apierrors.IsNotFound(err) {
-					GinkgoWriter.Printf("Warning: failed to get NodePool %s for cleanup: %v\n", defaultNP.Name, err)
-				}
-				return
-			}
-			cleanupBase := current.DeepCopy()
-			current.Spec.OSImageStream.Name = ""
-			Expect(testCtx.MgmtClient.Patch(ctx, current, crclient.MergeFrom(cleanupBase))).To(Succeed(),
-				"cleanup: failed to restore NodePool %s osImageStream", defaultNP.Name)
-			GinkgoWriter.Printf("Restored NodePool %s osImageStream to unset\n", defaultNP.Name)
-		})
+		// No cleanup needed: osImageStream is immutable once set (CEL validation
+		// rejects removal), and we set it to the version-derived default which is
+		// semantically equivalent to the original unset state.
 
 		// Verify the config hash does not change over time.
 		// The controller normalizes the explicit default to empty for hash computation,
