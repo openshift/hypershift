@@ -685,6 +685,24 @@ func WaitForControlPlaneRollout(t testing.TB, ctx context.Context, client crclie
 	)
 }
 
+// WaitForControlPlaneRolloutImage waits for ControlPlaneVersion to reach Completed
+// for a specific target image. Unlike WaitForControlPlaneRollout, this cannot be
+// satisfied by an already-completed old rollout.
+func WaitForControlPlaneRolloutImage(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, targetImage string) {
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s controlPlaneVersion to complete for target image", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			isControlPlaneVersionCompletedForImage(targetImage),
+		},
+		WithTimeout(30*time.Minute),
+		WithInterval(10*time.Second),
+	)
+}
+
 // WaitForControlPlaneComponentRollout waits for all ControlPlaneComponent resources to report
 // RolloutComplete=True and a version different from initialVersion. This provides a belt-and-suspenders
 // check alongside WaitForControlPlaneRollout by directly inspecting individual component status.
