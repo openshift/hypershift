@@ -971,6 +971,35 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 	})
 }
 
+// isKubeVirtPod returns true if the pod is a KubeVirt-managed pod that should be
+// skipped from HCP validation checks. This includes virt-launcher pods, VMI console
+// debug pods, and CDI importer pods, all of which have hardcoded labels/tolerations
+// that cannot be customized.
+func isKubeVirtPod(pod corev1.Pod) bool {
+	if pod.Labels["kubevirt.io"] == "virt-launcher" {
+		return true
+	}
+	if pod.Labels["app"] == "vmi-console-debug" {
+		return true
+	}
+	if _, ok := pod.Labels["cdi.kubevirt.io"]; ok {
+		return true
+	}
+	return false
+}
+
+// filterControlPlanePods returns only the pods that are managed by the control plane,
+// filtering out KubeVirt/CDI pods whose labels and tolerations cannot be customized.
+func filterControlPlanePods(pods []corev1.Pod) []corev1.Pod {
+	var filtered []corev1.Pod
+	for _, pod := range pods {
+		if !isKubeVirtPod(pod) {
+			filtered = append(filtered, pod)
+		}
+	}
+	return filtered
+}
+
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHavePullPolicyIfNotPresent", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1008,7 +1037,7 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 			"network-node-identity",
 			"ovnkube-control-plane",
 		}
-		for _, pod := range podList.Items {
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			skip := false
 			for _, excludedPod := range excludedPods {
 				if strings.HasPrefix(pod.Name, excludedPod) {
@@ -1017,11 +1046,6 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 				}
 			}
 			if skip {
-				continue
-			}
-
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
 				continue
 			}
 
@@ -1776,6 +1800,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "cloud-network-config-controller"}:        {},
 			{label: "app", value: "vmi-console-debug"}:                      {},
 			{label: "kubevirt.io", value: "virt-launcher"}:                  {}, // virt-launcher pods have no app label
+			{label: "app", value: "containerized-data-importer"}:            {}, // CDI importer pods have hardcoded settings
 		}
 
 		for _, pod := range hcpPods.Items {
@@ -1836,6 +1861,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "cloud-network-config-controller"}:        {},
 			{label: "app", value: "vmi-console-debug"}:                      {},
 			{label: "kubevirt.io", value: "virt-launcher"}:                  {}, // virt-launcher pods have no app label
+			{label: "app", value: "containerized-data-importer"}:            {}, // CDI importer pods have hardcoded settings
 			{label: "app", value: "csi-snapshot-controller"}:                {},
 			{label: "app", value: "csi-snapshot-webhook"}:                   {},
 			{label: "app", value: "packageserver"}: {
@@ -3290,12 +3316,7 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 			},
 		}
 
-		for _, pod := range podList.Items {
-			// Skip KubeVirt VM worker node related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// SRO is being removed in 4.18, not worth correcting the tolerations on back releases
 			if pod.Labels["name"] == "shared-resource-csi-driver-operator" {
 				continue
@@ -3492,12 +3513,7 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 		}
 
 		var podsWithoutLabel []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has the custom label
 			if value, exist := pod.Labels["hypershift-e2e-test-label"]; !exist || value != "test" {
 				podsWithoutLabel = append(podsWithoutLabel, pod.Name)
@@ -3521,12 +3537,7 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 		}
 
 		var podsWithoutToleration []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has the custom toleration
 			found := false
 			for _, toleration := range pod.Spec.Tolerations {
@@ -3560,12 +3571,7 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 		}
 
 		var podsWithoutAppLabel []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has an app label set
 			val, ok := pod.Labels["app"]
 			if ok && val != "" {
