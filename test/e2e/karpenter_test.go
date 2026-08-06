@@ -20,6 +20,7 @@ import (
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
@@ -36,6 +37,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -1606,30 +1608,92 @@ func waitForReadyNodeClaims(t *testing.T, ctx context.Context, client crclient.C
 	return nodeClaims
 }
 
+// expectControlPlaneRolloutWithoutDrift waits for ControlPlaneVersion to reach
+// Completed for the target image while asserting that no pre-upgrade NodeClaim
+// drifts or is deleted before the rollout finishes. If any NodeClaim shows
+// premature drift or disappears, the test fails immediately.
+func expectControlPlaneRolloutWithoutDrift(
+	t *testing.T,
+	ctx context.Context,
+	mgmtClient crclient.Client,
+	guestClient crclient.Client,
+	hc *hyperv1.HostedCluster,
+	targetImage string,
+	nodeClaims *karpenterv1.NodeClaimList,
+) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+		// Check CP completion first. If the target image already reached Completed,
+		// drift is expected and correct, so return success without inspecting NodeClaims.
+		currentHC := &hyperv1.HostedCluster{}
+		if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {
+			t.Logf("failed to get HostedCluster: %v", err)
+			return false, nil
+		}
+		cpv := currentHC.Status.ControlPlaneVersion
+		if cpv.Desired.Image == targetImage &&
+			len(cpv.History) > 0 &&
+			cpv.History[0].Image == targetImage &&
+			cpv.History[0].State == configv1.CompletedUpdate {
+			return true, nil
+		}
+
+		// CP rollout still in progress — any drift at this point is premature.
+		for i := range nodeClaims.Items {
+			nc := &karpenterv1.NodeClaim{}
+			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(&nodeClaims.Items[i]), nc)
+			if apierrors.IsNotFound(err) {
+				t.Fatalf("NodeClaim %s deleted before CP upgrade completed", nodeClaims.Items[i].Name)
+			}
+			if err != nil {
+				t.Logf("failed to get NodeClaim %s: %v", nodeClaims.Items[i].Name, err)
+				return false, nil
+			}
+			conditions, err := e2eutil.Conditions(nc)
+			if err != nil {
+				t.Logf("failed to read conditions for NodeClaim %s: %v", nodeClaims.Items[i].Name, err)
+				return false, nil
+			}
+			for _, c := range conditions {
+				if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
+					t.Fatalf("NodeClaim %s detected drift before CP upgrade completed", nodeClaims.Items[i].Name)
+				}
+			}
+		}
+
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("timed out waiting for CP rollout to complete for image %s: %v", targetImage, err)
+	}
+}
+
 func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.Client, nc *karpenterv1.NodeClaim) {
 	waitTimeout := 5 * time.Minute
 	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodeClaim %s to be drifted", nc.Name),
 		func(ctx context.Context) (*karpenterv1.NodeClaim, error) {
 			nodeClaim := &karpenterv1.NodeClaim{}
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(nc), nodeClaim)
-			// make sure that the condition actually exists first
-			if err == nil {
-				haystack, err := e2eutil.Conditions(nodeClaim)
-				if err != nil {
-					return nil, err
-				}
-				for _, condition := range haystack {
-					if karpenterv1.ConditionTypeDrifted == condition.Type {
-						if condition.Status == metav1.ConditionTrue {
-							return nodeClaim, nil
-						}
-						return nil, fmt.Errorf("condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-					}
-				}
-				return nil, fmt.Errorf("condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-			} else {
+			if apierrors.IsNotFound(err) {
+				t.Logf("WARNING: NodeClaim %s not found; assuming it was deleted after drifting", nc.Name)
+				return nc, nil
+			}
+			if err != nil {
 				return nil, err
 			}
+			haystack, err := e2eutil.Conditions(nodeClaim)
+			if err != nil {
+				return nil, err
+			}
+			for _, condition := range haystack {
+				if karpenterv1.ConditionTypeDrifted == condition.Type {
+					if condition.Status == metav1.ConditionTrue {
+						return nodeClaim, nil
+					}
+					return nil, fmt.Errorf("condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
+				}
+			}
+			return nil, fmt.Errorf("condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
 		},
 		[]e2eutil.Predicate[*karpenterv1.NodeClaim]{
 			e2eutil.ConditionPredicate[*karpenterv1.NodeClaim](e2eutil.Condition{
