@@ -63,7 +63,7 @@ type KubeAPIServerOperatorSpec struct {
 	ComponentLogLevelSpec `json:",inline"`
 }
 
-// EtcdOperatorSpec specifies the configuration for the Etcd.
+// EtcdOperatorSpec specifies the configuration for the etcd.
 // +kubebuilder:validation:MinProperties=1
 type EtcdOperatorSpec struct {
 	ComponentLogLevelSpec `json:",inline"`
