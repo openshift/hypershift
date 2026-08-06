@@ -716,6 +716,8 @@ func TestEventHandling(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{}).AnyTimes()
 
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
