@@ -81,19 +81,19 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
-		driftChan := make(chan struct{})
-		go func() {
-			defer close(driftChan)
-			for _, nodeClaim := range nodeClaims.Items {
-				waitForNodeClaimDrifted(t, ctx, guestClient, &nodeClaim)
-			}
-		}()
+		// Assert NO drift during CP upgrade. Unpinned NodeClaims should not detect
+		// drift until the control plane upgrade completes, because the ignition config
+		// hash is derived from the completed release image, not the desired one.
+		expectControlPlaneRolloutWithoutDrift(t, ctx, mgtClient, guestClient, hostedCluster, globalOpts.LatestReleaseImage, nodeClaims)
 
-		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
 		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-		<-driftChan
+		// After CP upgrade completes, drift should now be detected.
+		t.Logf("Control plane upgrade complete, waiting for NodeClaim drift detection")
+		for i := range nodeClaims.Items {
+			waitForNodeClaimDrifted(t, ctx, guestClient, &nodeClaims.Items[i])
+		}
 		t.Logf("Karpenter Nodes drifted")
 
 		preUpgradeRHCOSVersion := extractRHCOSVersion(preUpgradeOSImage)

@@ -17,6 +17,8 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -129,12 +131,23 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster release image")
 
-			By("Waiting for NodeClaims to be drifted")
+			// Assert NO drift during CP upgrade. Unpinned NodeClaims should not detect
+			// drift until the control plane upgrade completes, because the ignition config
+			// hash is derived from the completed release image, not the desired one.
+			By("Waiting for CP rollout and asserting no premature drift")
+			expectControlPlaneRolloutWithoutDrift(ctx, tc.MgmtClient, hcClient, hc, latestImage, nodeClaims)
+			GinkgoWriter.Println("Control plane upgraded")
+
+			By("Waiting for NodeClaims to be drifted after CP upgrade")
 			for i := range nodeClaims.Items {
 				nodeClaim := &nodeClaims.Items[i]
 				Eventually(func(g Gomega, pollCtx context.Context) {
 					current := &karpenterv1.NodeClaim{}
 					err := hcClient.Get(pollCtx, crclient.ObjectKeyFromObject(nodeClaim), current)
+					if apierrors.IsNotFound(err) {
+						GinkgoWriter.Printf("WARNING: NodeClaim %s not found; assuming it was deleted after drifting\n", nodeClaim.Name)
+						return
+					}
 					g.Expect(err).NotTo(HaveOccurred())
 					if err != nil {
 						return
@@ -156,10 +169,6 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 					Should(Succeed())
 			}
 			GinkgoWriter.Println("Karpenter Nodes drifted")
-
-			By("Waiting for control plane components to complete rollout")
-			ExpectHostedClusterUpgradeToComplete(ctx, tc.MgmtClient, hc, latestImage)
-			GinkgoWriter.Println("Control plane upgraded")
 
 			preUpgradeRHCOSVersion := extractRHCOSVersion(preUpgradeOSImage)
 			GinkgoWriter.Printf("Pre-upgrade RHCOS version: %s\n", preUpgradeRHCOSVersion)
@@ -234,53 +243,101 @@ func extractRHCOSVersion(osImage string) string {
 // waitForReadyNodeClaims polls until exactly n NodeClaims are present and all
 // have Launched, Registered, and Initialized conditions set to True.
 func waitForReadyNodeClaims(ctx context.Context, client crclient.Client, n int) *karpenterv1.NodeClaimList {
-	t := GinkgoTB()
+	GinkgoHelper()
 	nodeClaims := &karpenterv1.NodeClaimList{}
-	e2eutil.EventuallyObjects(t, ctx, "NodeClaims to be ready",
-		func(ctx context.Context) ([]*karpenterv1.NodeClaim, error) {
-			err := client.List(ctx, nodeClaims)
-			if err != nil {
-				return nil, err
-			}
-			items := make([]*karpenterv1.NodeClaim, 0, len(nodeClaims.Items))
-			for i := range nodeClaims.Items {
-				items = append(items, &nodeClaims.Items[i])
-			}
-			return items, nil
-		},
-		[]e2eutil.Predicate[[]*karpenterv1.NodeClaim]{
-			func(claims []*karpenterv1.NodeClaim) (done bool, reasons string, err error) {
-				want, got := n, len(claims)
-				return want == got, fmt.Sprintf("expected %d NodeClaims, got %d", want, got), nil
-			},
-		},
-		[]e2eutil.Predicate[*karpenterv1.NodeClaim]{
-			func(claim *karpenterv1.NodeClaim) (done bool, reasons string, err error) {
-				hasLaunched := false
-				hasRegistered := false
-				hasInitialized := false
 
-				for _, condition := range claim.Status.Conditions {
-					if condition.Type == karpenterv1.ConditionTypeLaunched && condition.Status == metav1.ConditionTrue {
-						hasLaunched = true
-					}
-					if condition.Type == karpenterv1.ConditionTypeRegistered && condition.Status == metav1.ConditionTrue {
-						hasRegistered = true
-					}
-					if condition.Type == karpenterv1.ConditionTypeInitialized && condition.Status == metav1.ConditionTrue {
-						hasInitialized = true
-					}
-				}
+	Eventually(func(g Gomega) {
+		err := client.List(ctx, nodeClaims)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list NodeClaims")
+		g.Expect(nodeClaims.Items).To(HaveLen(n), "expected %d NodeClaims, got %d", n, len(nodeClaims.Items))
 
-				if !hasLaunched || !hasRegistered || !hasInitialized {
-					return false, fmt.Sprintf("NodeClaim %s not ready: Launched=%v, Registered=%v, Initialized=%v",
-						claim.Name, hasLaunched, hasRegistered, hasInitialized), nil
+		for i := range nodeClaims.Items {
+			claim := &nodeClaims.Items[i]
+			hasLaunched := false
+			hasRegistered := false
+			hasInitialized := false
+			for _, condition := range claim.Status.Conditions {
+				if condition.Type == karpenterv1.ConditionTypeLaunched && condition.Status == metav1.ConditionTrue {
+					hasLaunched = true
 				}
-				return true, "", nil
-			},
-		},
-		e2eutil.WithTimeout(5*time.Minute),
-	)
+				if condition.Type == karpenterv1.ConditionTypeRegistered && condition.Status == metav1.ConditionTrue {
+					hasRegistered = true
+				}
+				if condition.Type == karpenterv1.ConditionTypeInitialized && condition.Status == metav1.ConditionTrue {
+					hasInitialized = true
+				}
+			}
+			g.Expect(hasLaunched && hasRegistered && hasInitialized).To(BeTrue(),
+				"NodeClaim %s not ready: Launched=%v, Registered=%v, Initialized=%v",
+				claim.Name, hasLaunched, hasRegistered, hasInitialized)
+		}
+	}).
+		WithContext(ctx).
+		WithTimeout(5 * time.Minute).
+		WithPolling(10 * time.Second).
+		Should(Succeed())
 
 	return nodeClaims
+}
+
+// expectControlPlaneRolloutWithoutDrift waits for ControlPlaneVersion to reach
+// Completed for the target image while asserting that no pre-upgrade NodeClaim
+// drifts or is deleted before the rollout finishes. If any NodeClaim shows
+// premature drift or disappears, the failure is permanent (StopTrying).
+func expectControlPlaneRolloutWithoutDrift(
+	ctx context.Context,
+	mgmtClient crclient.Client,
+	guestClient crclient.Client,
+	hc *hyperv1.HostedCluster,
+	targetImage string,
+	nodeClaims *karpenterv1.NodeClaimList,
+) {
+	GinkgoHelper()
+
+	// TODO(maxcao13): Drift is only a failure while the NodeClass is gated from setting userData + AMI.
+	// This test infers that from mgmt ControlPlaneVersion, which can lag the operator ungating EC2NodeClass
+	// spec. An UpgradePending condition on the NodeClass set in the same reconcile as NodeClass.spec
+	// freeze/unfreeze would remove that race. We may have to go with that path if tests show to be flaky.
+
+	Eventually(func(g Gomega) {
+		// Check CP completion first. If the target image already reached Completed,
+		// drift is expected and correct, so return success without inspecting NodeClaims.
+		currentHC := &hyperv1.HostedCluster{}
+		err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
+
+		cpv := currentHC.Status.ControlPlaneVersion
+		if cpv.Desired.Image == targetImage &&
+			len(cpv.History) > 0 &&
+			cpv.History[0].Image == targetImage &&
+			cpv.History[0].State == configv1.CompletedUpdate {
+			return
+		}
+
+		// CP rollout still in progress — any drift at this point is premature.
+		for i := range nodeClaims.Items {
+			nc := &karpenterv1.NodeClaim{}
+			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(&nodeClaims.Items[i]), nc)
+			if apierrors.IsNotFound(err) {
+				StopTrying(fmt.Sprintf("NodeClaim %s deleted before CP upgrade completed", nodeClaims.Items[i].Name)).Now()
+			}
+			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodeClaim %s", nodeClaims.Items[i].Name)
+
+			conditions, err := e2eutil.Conditions(nc)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to read conditions for NodeClaim %s", nodeClaims.Items[i].Name)
+			for _, c := range conditions {
+				if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
+					StopTrying(fmt.Sprintf("NodeClaim %s detected drift before CP upgrade completed", nodeClaims.Items[i].Name)).Now()
+				}
+			}
+		}
+
+		// Signal that CP is not yet complete so Eventually retries.
+		g.Expect(cpv.History).NotTo(BeEmpty(), "controlPlaneVersion has no history yet")
+		g.Expect(cpv.History[0].State).To(Equal(configv1.CompletedUpdate))
+	}).
+		WithContext(ctx).
+		WithTimeout(30 * time.Minute).
+		WithPolling(10 * time.Second).
+		Should(Succeed())
 }
