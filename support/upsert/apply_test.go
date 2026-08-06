@@ -427,6 +427,49 @@ func TestApplyManifest_DesiredStateHash(t *testing.T) {
 		}
 	})
 
+	t.Run("external drift detected via DeepDerivative fallback despite matching hash", func(t *testing.T) {
+		dep := makeDeployment("--foo", "--bar")
+		client := fake.NewClientBuilder().Build()
+
+		// Create - stamps the hash based on dep's desired spec.
+		if _, err := (&applyProvider{}).ApplyManifest(t.Context(), client, dep); err != nil {
+			t.Fatal(err)
+		}
+
+		// Simulate an external modification to the live object's spec (e.g. someone
+		// running `kubectl edit`, or an unrelated controller), without touching the
+		// hash annotation our controller stamped on create.
+		var drifted appsv1.Deployment
+		if err := client.Get(t.Context(), types.NamespacedName{Name: "test-dep", Namespace: "test-ns"}, &drifted); err != nil {
+			t.Fatal(err)
+		}
+		drifted.Spec.Template.Spec.Containers[0].Image = "someone-else/hijacked:latest"
+		if err := client.Update(t.Context(), &drifted); err != nil {
+			t.Fatal(err)
+		}
+
+		// Reconcile again with the exact same desired manifest as before, so the
+		// hash comparison alone would say "no update needed". The DeepDerivative
+		// fallback must still catch the drift and force an update.
+		dep2 := makeDeployment("--foo", "--bar")
+		result, err := (&applyProvider{}).ApplyManifest(t.Context(), client, dep2)
+		if err != nil {
+			t.Fatalf("ApplyManifest failed: %v", err)
+		}
+		if result != controllerutil.OperationResultUpdated {
+			t.Errorf("expected Updated (external drift detected via DeepDerivative fallback), got %s", result)
+		}
+
+		// Verify the drift was actually corrected.
+		var reconciled appsv1.Deployment
+		if err := client.Get(t.Context(), types.NamespacedName{Name: "test-dep", Namespace: "test-ns"}, &reconciled); err != nil {
+			t.Fatal(err)
+		}
+		if reconciled.Spec.Template.Spec.Containers[0].Image != "registry.example.com/image:latest" {
+			t.Errorf("expected drifted image to be corrected, got %q", reconciled.Spec.Template.Spec.Containers[0].Image)
+		}
+	})
+
 	t.Run("migration force-stamps hash on pre-existing object", func(t *testing.T) {
 		dep := makeDeployment("--foo")
 		// Pre-existing object without hash annotation
