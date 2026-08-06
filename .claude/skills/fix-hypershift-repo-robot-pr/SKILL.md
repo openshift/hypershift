@@ -24,7 +24,7 @@ changes into logical commits, and create a clean replacement PR.
 
 ## What This Skill Does
 
-1. Validates the PR is authored by a bot (`is_bot: true`)
+1. Validates the PR is authored by a trusted bot (from an explicit allowlist)
 2. Fetches the bot's PR commits
 3. Creates a new branch `fix/<original-branch-name>` from the base branch
 4. Cherry-picks commits and converts to conventional commit format
@@ -53,15 +53,21 @@ gh pr view "$PR_NUMBER" --json number,title,author,headRefName,baseRefName,body,
 
 **Required validations:**
 - PR must exist and be `OPEN`
-- `author.is_bot` must be `true`
+- `author.login` must match one of the trusted bots listed below
 - Working directory must be clean (no uncommitted changes)
 
-**Error if not a bot:**
+**Trusted bot allowlist:**
 ```
-ERROR: PR #7435 is not authored by a bot.
-Author: username (is_bot: false)
+TRUSTED_BOTS=("dependabot[bot]" "red-hat-konflux[bot]" "renovate[bot]")
+```
 
-This skill is specifically for fixing bot-authored PRs.
+**Error if not a trusted bot:**
+```
+ERROR: PR #7435 is not authored by a trusted bot.
+Author: username
+
+This skill only processes PRs from the following trusted bots:
+  dependabot[bot], red-hat-konflux[bot], renovate[bot]
 ```
 
 ### Step 2: Create Fix Branch from Base
@@ -98,7 +104,19 @@ done
 
 ### Step 4: Run make verify, Update Test Fixtures, and Organize Changes
 
+Run validation in a sandboxed environment when possible to limit exposure:
+
 ```bash
+# Preferred: sandboxed execution (no network, no credential access)
+podman run --rm --network=none \
+  -v "$(pwd):/workspace:Z" -w /workspace \
+  <builder-image> make verify 2>&1 || true
+
+podman run --rm --network=none \
+  -v "$(pwd):/workspace:Z" -w /workspace \
+  <builder-image> UPDATE=true make test 2>&1 || true
+
+# Fallback: local execution (if podman/docker not available)
 make verify 2>&1 || true
 UPDATE=true make test 2>&1 || true
 git status --porcelain
@@ -229,7 +247,7 @@ gh pr comment "$PR_NUMBER" --body "This PR has been superseded by #${NEW_PR_NUMB
 
 ## Safety Features
 
-- **Bot verification**: Only processes PRs with `is_bot: true`
+- **Trusted bot allowlist**: Only processes PRs from explicitly listed bots (`dependabot[bot]`, `red-hat-konflux[bot]`, `renovate[bot]`) — arbitrary bot PRs are rejected
 - **Atomic operations**: Original PR only closed AFTER new PR is created
 - **Failure preservation**: Original PR is NEVER closed if validation fails
 - **Clean state required**: Refuses to run with uncommitted changes
@@ -241,10 +259,12 @@ gh pr comment "$PR_NUMBER" --body "This PR has been superseded by #${NEW_PR_NUMB
 
 | Bot | Author Login | Typical PRs |
 |-----|-------------|-------------|
-| Dependabot | `app/dependabot` | Go dependency updates |
-| Konflux | `app/red-hat-konflux` | Image and pipeline updates |
-| Renovate | `app/renovate` | Dependency updates |
-| Any | `is_bot: true` | Various automated updates |
+| Dependabot | `dependabot[bot]` | Go dependency updates |
+| Konflux | `red-hat-konflux[bot]` | Image and pipeline updates |
+| Renovate | `renovate[bot]` | Dependency updates |
+
+> **Security note:** Only bots in this allowlist are accepted. To add a new trusted bot,
+> update both the `TRUSTED_BOTS` array in Step 1 and this table.
 
 ## Requirements
 
@@ -252,3 +272,4 @@ gh pr comment "$PR_NUMBER" --body "This PR has been superseded by #${NEW_PR_NUMB
 - `git` configured with `user.name` and `user.email`
 - `make` and Go toolchain available
 - Clean working directory (no uncommitted changes)
+- `podman` or `docker` recommended for sandboxed execution of `make verify`/`make test`
