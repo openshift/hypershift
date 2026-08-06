@@ -75,18 +75,36 @@ func setGCPConditions(hcp *hyperv1.HostedControlPlane, status metav1.ConditionSt
 }
 
 // isPermanentGCPCredentialError returns true if the error indicates a
-// non-transient credential failure (HTTP 401/403 from the API, or a permanent
-// OAuth token exchange failure such as a deleted WIF pool/provider).
+// non-transient credential failure: HTTP 401 (always), HTTP 403 from the
+// Compute API only when it is NOT a rate-limit or quota issue, or a permanent
+// OAuth token-exchange failure (e.g. deleted WIF pool/provider).
 func isPermanentGCPCredentialError(err error) bool {
 	var apiErr *googleapi.Error
-	if errors.As(err, &apiErr) && (apiErr.Code == 401 || apiErr.Code == 403) {
-		return true
+	if errors.As(err, &apiErr) {
+		if apiErr.Code == 401 {
+			return true
+		}
+		if apiErr.Code == 403 && !isTransientGCPReason(apiErr) {
+			return true
+		}
 	}
 	var retrieveErr *oauth2.RetrieveError
 	if errors.As(err, &retrieveErr) && retrieveErr.Response != nil {
 		code := retrieveErr.Response.StatusCode
-		// 408, 429, 500, 503 are transient per google.AuthenticationError.Temporary()
-		if code == 401 || code == 403 || code == 400 {
+		if code == 400 || code == 401 || code == 403 {
+			return true
+		}
+	}
+	return false
+}
+
+// isTransientGCPReason returns true if a 403 googleapi.Error carries a reason
+// that indicates a transient quota or rate-limit condition rather than a
+// permanent credential/permission failure.
+func isTransientGCPReason(apiErr *googleapi.Error) bool {
+	for _, item := range apiErr.Errors {
+		switch item.Reason {
+		case "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded":
 			return true
 		}
 	}

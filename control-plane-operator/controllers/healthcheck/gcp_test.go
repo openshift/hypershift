@@ -1,6 +1,8 @@
 package healthcheck
 
 import (
+	"fmt"
+	"net/http"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -8,6 +10,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"golang.org/x/oauth2"
+	"google.golang.org/api/googleapi"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -185,5 +190,96 @@ func TestUpdateRunsGCPIdentityCheckDuringDeletion(t *testing.T) {
 		if condition.Status != metav1.ConditionUnknown {
 			t.Errorf("%s: expected status %v, got %v", condType, metav1.ConditionUnknown, condition.Status)
 		}
+	}
+}
+
+func TestIsPermanentGCPCredentialError(t *testing.T) {
+	testCases := []struct {
+		name      string
+		err       error
+		permanent bool
+	}{
+		{
+			name:      "401 googleapi error is permanent",
+			err:       &googleapi.Error{Code: 401, Message: "Unauthorized"},
+			permanent: true,
+		},
+		{
+			name:      "403 googleapi error without transient reason is permanent",
+			err:       &googleapi.Error{Code: 403, Message: "Forbidden"},
+			permanent: true,
+		},
+		{
+			name: "403 googleapi error with rateLimitExceeded is transient",
+			err: &googleapi.Error{
+				Code:    403,
+				Message: "Rate Limit Exceeded",
+				Errors:  []googleapi.ErrorItem{{Reason: "rateLimitExceeded", Message: "Rate Limit Exceeded"}},
+			},
+			permanent: false,
+		},
+		{
+			name: "403 googleapi error with userRateLimitExceeded is transient",
+			err: &googleapi.Error{
+				Code:    403,
+				Message: "User Rate Limit Exceeded",
+				Errors:  []googleapi.ErrorItem{{Reason: "userRateLimitExceeded", Message: "User Rate Limit Exceeded"}},
+			},
+			permanent: false,
+		},
+		{
+			name: "403 googleapi error with dailyLimitExceeded is transient",
+			err: &googleapi.Error{
+				Code:    403,
+				Message: "Daily Limit Exceeded",
+				Errors:  []googleapi.ErrorItem{{Reason: "dailyLimitExceeded", Message: "Daily Limit Exceeded"}},
+			},
+			permanent: false,
+		},
+		{
+			name:      "500 googleapi error is not permanent",
+			err:       &googleapi.Error{Code: 500, Message: "Internal Server Error"},
+			permanent: false,
+		},
+		{
+			name: "oauth2 RetrieveError with 401 is permanent",
+			err: &oauth2.RetrieveError{
+				Response: &http.Response{StatusCode: 401},
+			},
+			permanent: true,
+		},
+		{
+			name: "oauth2 RetrieveError with 400 is permanent",
+			err: &oauth2.RetrieveError{
+				Response: &http.Response{StatusCode: 400},
+			},
+			permanent: true,
+		},
+		{
+			name: "oauth2 RetrieveError with 429 is not permanent",
+			err: &oauth2.RetrieveError{
+				Response: &http.Response{StatusCode: 429},
+			},
+			permanent: false,
+		},
+		{
+			name:      "wrapped googleapi 401 error is permanent",
+			err:       fmt.Errorf("compute call failed: %w", &googleapi.Error{Code: 401}),
+			permanent: true,
+		},
+		{
+			name:      "generic error is not permanent",
+			err:       fmt.Errorf("network timeout"),
+			permanent: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isPermanentGCPCredentialError(tc.err)
+			if got != tc.permanent {
+				t.Errorf("isPermanentGCPCredentialError() = %v, want %v", got, tc.permanent)
+			}
+		})
 	}
 }
