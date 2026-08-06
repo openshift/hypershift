@@ -113,6 +113,10 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 				Name:      supportutil.ShortenName(mirroredConfig.Name, nodePool.Name, validation.LabelValueMaxLength),
 				Namespace: controlPlaneNamespace},
 		}
+		if err := r.deleteImmutableConfigMapIfNeeded(ctx, logr, cm, nodePool.Name); err != nil {
+			return err
+		}
+		cm.SetResourceVersion("")
 		if result, err := r.CreateOrUpdate(ctx, r.Client, cm, func() error {
 			return mutateMirroredConfig(cm, mirroredConfig, nodePool)
 		}); err != nil {
@@ -190,7 +194,7 @@ func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.Co
 }
 
 func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, nodePool *hyperv1.NodePool) error {
-	cm.Immutable = ptr.To(true)
+	cm.Immutable = ptr.To(false)
 	if cm.Annotations == nil {
 		cm.Annotations = make(map[string]string)
 	}
@@ -202,6 +206,21 @@ func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, no
 	cm.Labels = labels.Merge(cm.Labels, mirroredConfig.Labels)
 	cm.Data = mirroredConfig.Data
 	return nil
+}
+
+func (r *NodePoolReconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap, nodePoolName string) error {
+	_, err := supportutil.DeleteIfNeededWithPredicate(ctx, r.Client, cm, func(existing *corev1.ConfigMap) bool {
+		if existing.Labels[NTOMirroredConfigLabel] != "true" || existing.Labels[hyperv1.NodePoolLabel] != nodePoolName {
+			return false
+		}
+		if existing.Immutable != nil && *existing.Immutable {
+			log.Info("deleting immutable mirrored ConfigMap to recreate as mutable",
+				"configMap", client.ObjectKeyFromObject(existing).String())
+			return true
+		}
+		return false
+	})
+	return err
 }
 
 func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,

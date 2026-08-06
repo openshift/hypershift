@@ -553,7 +553,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			existingConfigsInHcpNs: nil,
 			expectedMirroredConfigs: []corev1.ConfigMap{
 				{
-					Immutable: ptr.To(true),
+					Immutable: ptr.To(false),
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
@@ -602,7 +602,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			},
 			expectedMirroredConfigs: []corev1.ConfigMap{
 				{
-					Immutable: ptr.To(true),
+					Immutable: ptr.To(false),
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      supportutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
@@ -652,7 +652,172 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			existingConfigsInHcpNs: nil,
 			expectedMirroredConfigs: []corev1.ConfigMap{
 				{
+					Immutable: ptr.To(false),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:          npName,
+							KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+				},
+			},
+		},
+		{
+			name:                  "When an immutable mirrored ConfigMap exists and data changes, it should delete and recreate as mutable",
+			nodePool:              np,
+			controlPlaneNamespace: hcpNamespace,
+			configsToBeMirrored: []*MirrorConfig{
+				{
+					ConfigMap: &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "bar",
+							Namespace: npNamespace,
+						},
+						Data: map[string]string{
+							TokenSecretConfigKey: kubeletConfig1,
+						},
+					},
+					Labels: map[string]string{
+						KubeletConfigConfigMapLabel: "true",
+					},
+				},
+			},
+			existingConfigsInHcpNs: []client.Object{
+				&corev1.ConfigMap{
 					Immutable: ptr.To(true),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:          npName,
+							KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: "old-data",
+					},
+				},
+			},
+			expectedMirroredConfigs: []corev1.ConfigMap{
+				{
+					Immutable: ptr.To(false),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:          npName,
+							KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+				},
+			},
+		},
+		{
+			name:                  "When an immutable mirrored ConfigMap belongs to a different NodePool, it should not be deleted",
+			nodePool:              np,
+			controlPlaneNamespace: hcpNamespace,
+			configsToBeMirrored: []*MirrorConfig{
+				{
+					ConfigMap: &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "bar",
+							Namespace: npNamespace,
+						},
+						Data: map[string]string{
+							TokenSecretConfigKey: kubeletConfig1,
+						},
+					},
+					Labels: map[string]string{
+						KubeletConfigConfigMapLabel: "true",
+					},
+				},
+			},
+			existingConfigsInHcpNs: []client.Object{
+				&corev1.ConfigMap{
+					Immutable: ptr.To(true),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:          "other-nodepool",
+							KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: "old-data",
+					},
+				},
+			},
+			expectedMirroredConfigs: []corev1.ConfigMap{
+				{
+					Immutable: ptr.To(false),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:          npName,
+							KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+				},
+			},
+		},
+		{
+			name:                  "When an existing mirrored ConfigMap is already mutable, it should not be deleted",
+			nodePool:              np,
+			controlPlaneNamespace: hcpNamespace,
+			configsToBeMirrored: []*MirrorConfig{
+				{
+					ConfigMap: &corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "bar",
+							Namespace: npNamespace,
+						},
+						Data: map[string]string{
+							TokenSecretConfigKey: kubeletConfig1,
+						},
+					},
+					Labels: map[string]string{
+						KubeletConfigConfigMapLabel: "true",
+					},
+				},
+			},
+			existingConfigsInHcpNs: []client.Object{
+				&corev1.ConfigMap{
+					Immutable: ptr.To(false),
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
+						Namespace: hcpNamespace,
+						Labels: map[string]string{
+							NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:          npName,
+							KubeletConfigConfigMapLabel: "true",
+						},
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: "old-data",
+					},
+				},
+			},
+			expectedMirroredConfigs: []corev1.ConfigMap{
+				{
+					Immutable: ptr.To(false),
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      supportutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
