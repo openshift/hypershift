@@ -122,6 +122,7 @@ func TestReconcile(t *testing.T) {
 					{
 						State:          configv1.CompletedUpdate,
 						Version:        "4.17.0",
+						Image:          "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
 						CompletionTime: &metav1.Time{Time: time.Now()},
 					},
 				},
@@ -437,6 +438,7 @@ func TestReconcileVersionResolution(t *testing.T) {
 						{
 							State:          configv1.CompletedUpdate,
 							Version:        "4.17.0",
+							Image:          "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
 							CompletionTime: &metav1.Time{Time: time.Now()},
 						},
 					},
@@ -732,6 +734,7 @@ func TestResolveVersion(t *testing.T) {
 						{
 							State:          configv1.CompletedUpdate,
 							Version:        "4.17.0",
+							Image:          "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
 							CompletionTime: &metav1.Time{Time: time.Now()},
 						},
 					},
@@ -993,18 +996,23 @@ func TestUpdateVersionStatus(t *testing.T) {
 	})
 }
 
-func TestCurrentClusterVersion(t *testing.T) {
+func TestCurrentClusterRelease(t *testing.T) {
 	completedTime1 := metav1.Now()
 	completedTime2 := metav1.NewTime(completedTime1.Add(time.Hour))
 
 	testCases := []struct {
 		name            string
 		hostedCluster   *hyperv1.HostedCluster
+		expectedImage   string
 		expectedVersion string
+		expectedRequeue bool
 	}{
 		{
-			name: "When there is a single completed history entry it should return that version",
+			name: "When there is a single completed entry, it should return that entry's version and image",
 			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.17.0"},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{Version: "4.17.0"},
@@ -1012,100 +1020,241 @@ func TestCurrentClusterVersion(t *testing.T) {
 							{
 								State:          configv1.CompletedUpdate,
 								Version:        "4.17.0",
+								Image:          "quay.io/release:4.17.0",
 								CompletionTime: &completedTime1,
 							},
 						},
 					},
 				},
 			},
+			expectedImage:   "quay.io/release:4.17.0",
 			expectedVersion: "4.17.0",
 		},
 		{
-			name: "When there are multiple completed entries it should return the one with the most recent CompletionTime",
+			name: "When upgrade is in progress, it should return completed entry, not the partial",
 			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.18.0"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.18.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "",
+								Image:   "quay.io/release:4.18.0",
+							},
+							{
+								State:          configv1.CompletedUpdate,
+								Version:        "4.17.0",
+								Image:          "quay.io/release:4.17.0",
+								CompletionTime: &completedTime1,
+							},
+						},
+					},
+				},
+			},
+			expectedImage:   "quay.io/release:4.17.0",
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When there are multiple completed entries, it should return the first (newest per API ordering contract)",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.18.0"},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{Version: "4.18.0"},
 						History: []configv1.UpdateHistory{
 							{
 								State:          configv1.CompletedUpdate,
+								Version:        "4.18.0",
+								Image:          "quay.io/release:4.18.0",
+								CompletionTime: &completedTime2,
+							},
+							{
+								State:          configv1.CompletedUpdate,
 								Version:        "4.17.0",
+								Image:          "quay.io/release:4.17.0",
 								CompletionTime: &completedTime1,
+							},
+						},
+					},
+				},
+			},
+			expectedImage:   "quay.io/release:4.18.0",
+			expectedVersion: "4.18.0",
+		},
+		{
+			name: "When there is a partial entry and a completed entry, it should return the completed entry",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.18.0"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.18.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.18.0",
+								Image:   "quay.io/release:4.18.0",
+							},
+							{
+								State:          configv1.CompletedUpdate,
+								Version:        "4.17.0",
+								Image:          "quay.io/release:4.17.0",
+								CompletionTime: &completedTime1,
+							},
+						},
+					},
+				},
+			},
+			expectedImage:   "quay.io/release:4.17.0",
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When there are no completed entries and exactly one Partial entry, it should fall back to the Partial entry",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.17.0"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.17.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.17.0",
+								Image:   "quay.io/release:4.17.0",
+							},
+						},
+					},
+				},
+			},
+			expectedImage:   "quay.io/release:4.17.0",
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When there are no completed entries and multiple Partial entries, it should return the first Partial entry",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.18.0"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.18.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.18.0",
+								Image:   "quay.io/release:4.18.0",
+							},
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.17.0",
+								Image:   "quay.io/release:4.17.0",
+							},
+						},
+					},
+				},
+			},
+			expectedImage:   "quay.io/release:4.18.0",
+			expectedVersion: "4.18.0",
+		},
+		{
+			name: "When Spec image differs from only Partial entry during upgrade, it should return Partial image not Spec",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.18.0"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.18.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.17.0",
+								Image:   "quay.io/release:4.17.0",
+							},
+						},
+					},
+				},
+			},
+			expectedImage:   "quay.io/release:4.17.0",
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When multi-upgrade has 2 Completed and 1 Partial, it should return latest Completed not the Partial",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.19.0"},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.19.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.19.0",
+								Image:   "quay.io/release:4.19.0",
 							},
 							{
 								State:          configv1.CompletedUpdate,
 								Version:        "4.18.0",
+								Image:          "quay.io/release:4.18.0",
 								CompletionTime: &completedTime2,
-							},
-						},
-					},
-				},
-			},
-			expectedVersion: "4.18.0",
-		},
-		{
-			name: "When there is a partial entry and a completed entry it should return the completed entry",
-			hostedCluster: &hyperv1.HostedCluster{
-				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: configv1.Release{Version: "4.18.0"},
-						History: []configv1.UpdateHistory{
-							{
-								State:   configv1.PartialUpdate,
-								Version: "4.18.0",
 							},
 							{
 								State:          configv1.CompletedUpdate,
 								Version:        "4.17.0",
+								Image:          "quay.io/release:4.17.0",
 								CompletionTime: &completedTime1,
 							},
 						},
 					},
 				},
 			},
-			expectedVersion: "4.17.0",
+			expectedImage:   "quay.io/release:4.18.0",
+			expectedVersion: "4.18.0",
 		},
 		{
-			name: "When there are no completed entries and exactly one history entry it should fall back to Desired.Version",
+			name: "When first Completed entry has nil CompletionTime, it is still returned (ordering is trusted over timestamps)",
 			hostedCluster: &hyperv1.HostedCluster{
-				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: configv1.Release{Version: "4.17.0"},
-						History: []configv1.UpdateHistory{
-							{
-								State:   configv1.PartialUpdate,
-								Version: "4.17.0",
-							},
-						},
-					},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.18.0"},
 				},
-			},
-			expectedVersion: "4.17.0",
-		},
-		{
-			name: "When there are no completed entries and multiple history entries it should fall back to Desired.Version",
-			hostedCluster: &hyperv1.HostedCluster{
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{Version: "4.18.0"},
 						History: []configv1.UpdateHistory{
 							{
-								State:   configv1.PartialUpdate,
+								State:   configv1.CompletedUpdate,
 								Version: "4.18.0",
+								Image:   "quay.io/release:4.18.0",
+								// nil CompletionTime — still returned because it's first
 							},
 							{
-								State:   configv1.PartialUpdate,
-								Version: "4.17.0",
+								State:          configv1.CompletedUpdate,
+								Version:        "4.17.0",
+								Image:          "quay.io/release:4.17.0",
+								CompletionTime: &completedTime1,
 							},
 						},
 					},
 				},
 			},
+			expectedImage:   "quay.io/release:4.18.0",
 			expectedVersion: "4.18.0",
 		},
 		{
-			name: "When history is empty it should fall back to Desired.Version",
+			name: "When history is empty, it should signal requeue",
 			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.17.0"},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{Version: "4.17.0"},
@@ -1113,15 +1262,19 @@ func TestCurrentClusterVersion(t *testing.T) {
 					},
 				},
 			},
-			expectedVersion: "4.17.0",
+			expectedRequeue: true,
 		},
 		{
-			name: "When Version is nil it should return empty string",
+			name: "When Version is nil, it should return Spec.Release.Image and empty version",
 			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{Image: "quay.io/release:4.17.0"},
+				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: nil,
 				},
 			},
+			expectedImage:   "quay.io/release:4.17.0",
 			expectedVersion: "",
 		},
 	}
@@ -1129,8 +1282,12 @@ func TestCurrentClusterVersion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			version := currentClusterVersion(tc.hostedCluster)
-			g.Expect(version).To(Equal(tc.expectedVersion))
+			image, version, requeue := currentClusterRelease(tc.hostedCluster)
+			g.Expect(requeue).To(Equal(tc.expectedRequeue))
+			if !tc.expectedRequeue {
+				g.Expect(image).To(Equal(tc.expectedImage))
+				g.Expect(version).To(Equal(tc.expectedVersion))
+			}
 		})
 	}
 }
@@ -1336,6 +1493,7 @@ func TestReconcileKubeletConfigMapOrphanCleanup(t *testing.T) {
 						{
 							State:          configv1.CompletedUpdate,
 							Version:        "4.17.0",
+							Image:          "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
 							CompletionTime: &metav1.Time{Time: time.Now()},
 						},
 					},
