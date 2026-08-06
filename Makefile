@@ -100,6 +100,11 @@ KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
 $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
 	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
 
+HYPERSHIFTLINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/hypershiftlinter.so)
+HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 2>/dev/null)
+$(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
+
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
@@ -114,20 +119,25 @@ api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: lint
-lint: generate
+lint: generate $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
-	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter --build-tags e2ev2; hs_rc=$$?; \
+	exit $$(( api_rc > main_rc ? (api_rc > hs_rc ? api_rc : hs_rc) : (main_rc > hs_rc ? main_rc : hs_rc) ))
 
 .PHONY: main-lint-fix
 main-lint-fix: generate $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
 
 .PHONY: lint-fix
-lint-fix: generate
+lint-fix: generate $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint-fix; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+
+.PHONY: hypershift-lint-all
+hypershift-lint-all: $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter --build-tags e2ev2
 
 .PHONY: verify-git-clean
 verify-git-clean:

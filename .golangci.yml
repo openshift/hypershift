@@ -13,7 +13,12 @@ linters:
     - noctx
     - unparam
     - usestdlibvars
+    - hypershiftlinter
   settings:
+    custom:
+      hypershiftlinter:
+        path: hack/tools/bin/hypershiftlinter.so
+        description: "Enforces HyperShift test conventions from TESTING.md and test/e2e/v2/AGENTS.md"
     gocyclo:
       min-complexity: 30
     govet:
