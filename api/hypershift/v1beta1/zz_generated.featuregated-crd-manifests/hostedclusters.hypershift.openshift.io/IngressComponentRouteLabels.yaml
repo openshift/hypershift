@@ -1212,12 +1212,13 @@ spec:
                                   alphanumeric characters, '-', '_', or '.', starting and ending with
                                   an alphanumeric character.
                                 maxLength: 63
+                                minLength: 0
                                 type: string
                                 x-kubernetes-validations:
                                 - message: label values must be valid Kubernetes label
                                     values (at most 63 characters, alphanumeric, '-',
                                     '_', or '.', must start and end with alphanumeric)
-                                  rule: '!format.labelValue().validate(self).hasValue()'
+                                  rule: self == "" || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')
                               description: |-
                                 labels defines additional labels to be applied to the route created
                                 for the component. These labels are used by the IngressController to
@@ -1241,6 +1242,10 @@ spec:
                               type: object
                               x-kubernetes-map-type: granular
                               x-kubernetes-validations:
+                              - message: label keys must be between 1 and 63 characters
+                                  in length
+                                rule: self.all(key, key.size() <= 63 && key.size()
+                                  > 0)
                               - message: label keys must be valid qualified names,
                                   consisting of an optional DNS subdomain prefix of
                                   up to 253 characters followed by a slash and a name
@@ -1248,7 +1253,8 @@ spec:
                                   alphanumeric characters, dashes, underscores, and
                                   dots, and must start and end with an alphanumeric
                                   character
-                                rule: self.all(key, !format.qualifiedName().validate(key).hasValue())
+                                rule: self.all(key, key.matches('^([a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*\\/)?[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')
+                                  && key.size() <= 253)
                               - message: kubernetes.io/, k8s.io/, and openshift.io/
                                   prefixed label keys are reserved and may not be
                                   used

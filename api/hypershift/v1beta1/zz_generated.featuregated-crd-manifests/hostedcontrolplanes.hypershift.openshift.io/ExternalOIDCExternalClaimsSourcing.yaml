@@ -1070,7 +1070,7 @@ spec:
                                                     character, and must only contain
                                                     lowercase alphanumeric characters,
                                                     '-' or '.'
-                                                  rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                                  rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$')
                                             required:
                                             - name
                                             type: object
@@ -1136,7 +1136,7 @@ spec:
                                                         character, and must only contain
                                                         lowercase alphanumeric characters,
                                                         '-' or '.'
-                                                      rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                                      rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$')
                                                 required:
                                                 - name
                                                 type: object
@@ -1347,7 +1347,7 @@ spec:
                                                 a lowercase alphanumeric character,
                                                 and must only contain lowercase alphanumeric
                                                 characters, '-' or '.'
-                                              rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                              rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$')
                                         required:
                                         - name
                                         type: object
@@ -1383,7 +1383,7 @@ spec:
                                             and end with a lowercase alphanumeric
                                             character, and must only contain lowercase
                                             alphanumeric characters, '-' or '.'
-                                          rule: '!format.dns1123Subdomain().validate(self.split('':'')[0]).hasValue()'
+                                          rule: self.split(':')[0].matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$')
                                         - message: port must not exceed 65535
                                           rule: 'self.split('':'').size() > 1 ? int(self.split('':'')[1])
                                             <= 65535 : true'

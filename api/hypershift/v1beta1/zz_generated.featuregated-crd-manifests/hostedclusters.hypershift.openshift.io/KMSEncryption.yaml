@@ -696,7 +696,7 @@ spec:
                                                     lowercase alphanumeric characters,
                                                     ''-'' or ''.'', and start and
                                                     end with an alphanumeric character'
-                                                  rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                                  rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
                                             required:
                                             - name
                                             type: object
@@ -792,7 +792,7 @@ spec:
                                                 contain only lowercase alphanumeric
                                                 characters, ''-'' or ''.'', and start
                                                 and end with an alphanumeric character'
-                                              rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                              rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
                                         required:
                                         - name
                                         type: object
@@ -813,50 +813,8 @@ spec:
                                             contain only lowercase alphanumeric characters,
                                             ''-'' or ''.'', and start and end with
                                             an alphanumeric character'
-                                          rule: '!format.dns1123Subdomain().validate(self).hasValue()'
+                                          rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
                                     type: object
-                                  transitKey:
-                                    description: |-
-                                      transitKey specifies the name of the encryption key in Vault's Transit engine.
-                                      This key is used to encrypt and decrypt data.
-
-                                      The transit key must be between 1 and 512 characters, cannot contain forward slashes,
-                                      and must only contain alphanumeric characters, hyphens, periods, and underscores.
-                                    maxLength: 512
-                                    minLength: 1
-                                    type: string
-                                    x-kubernetes-validations:
-                                    - message: transitKey cannot contain forward slashes
-                                      rule: '!self.contains(''/'')'
-                                    - message: transitKey must only contain alphanumeric
-                                        characters, hyphens, periods, and underscores
-                                      rule: self.matches('^[a-zA-Z0-9._-]+$')
-                                  transitMount:
-                                    description: |-
-                                      transitMount specifies the mount path of the Vault Transit engine.
-
-                                      The transit mount must be between 1 and 1024 characters, cannot start or
-                                      end with a forward slash, cannot contain consecutive forward slashes, and
-                                      must only contain RFC 3986 unreserved characters (alphanumeric, hyphen,
-                                      period, underscore, tilde) and forward slashes as path separators.
-                                    maxLength: 1024
-                                    minLength: 1
-                                    type: string
-                                    x-kubernetes-validations:
-                                    - message: transitMount cannot start with a forward
-                                        slash
-                                      rule: '!self.startsWith(''/'')'
-                                    - message: transitMount cannot end with a forward
-                                        slash
-                                      rule: '!self.endsWith(''/'')'
-                                    - message: transitMount cannot contain consecutive
-                                        forward slashes
-                                      rule: '!self.contains(''//'')'
-                                    - message: transitMount must only contain RFC
-                                        3986 unreserved characters (alphanumeric,
-                                        hyphen, period, underscore, tilde) and forward
-                                        slashes
-                                      rule: self.matches('^[a-zA-Z0-9._~/-]+$')
                                   vaultAddress:
                                     description: |-
                                       vaultAddress specifies the address of the HashiCorp Vault instance.
@@ -886,6 +844,70 @@ spec:
                                       rule: self.find('#(.+)$') == ''
                                     - message: must not have user info
                                       rule: self.find('@') == ''
+                                  vaultAuthNamespace:
+                                    description: |-
+                                      vaultAuthNamespace specifies the Vault namespace to use for authentication.
+                                      This is only applicable for Vault Enterprise installations where authentication
+                                      and Transit operations may be in different namespaces.
+                                      When this field is not set, the value of vaultNamespace is used for both
+                                      authentication and Transit key operations.
+
+                                      The value must be between 1 and 4096 characters.
+                                      The namespace cannot end with a forward slash, cannot contain spaces, and cannot be one of the reserved strings: root, sys, audit, auth, cubbyhole, or identity.
+                                    maxLength: 4096
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: vaultAuthNamespace cannot end with
+                                        a forward slash
+                                      rule: '!self.endsWith(''/'')'
+                                    - message: vaultAuthNamespace cannot contain spaces
+                                      rule: '!self.contains('' '')'
+                                    - message: vaultAuthNamespace cannot be a reserved
+                                        string (root, sys, audit, auth, cubbyhole,
+                                        identity)
+                                      rule: '!(self in [''root'', ''sys'', ''audit'',
+                                        ''auth'', ''cubbyhole'', ''identity''])'
+                                  vaultKeyPath:
+                                    description: |-
+                                      vaultKeyPath specifies the full path to the encryption key in Vault's Transit secrets engine,
+                                      combining the Transit engine mount path and the key name separated by "/keys/".
+                                      Format: <mount>/keys/<key-name> (e.g., transit/keys/my-key, myteam/transit/keys/production-key).
+
+                                      The total path length must be between 8 and 1542 characters.
+                                      The path cannot start or end with a forward slash, cannot contain consecutive forward slashes,
+                                      must only contain RFC 3986 unreserved characters (alphanumeric, hyphen, period, underscore, tilde)
+                                      and forward slashes as path separators, and must not contain "." or ".." path segments.
+                                      The key name must start and end with an alphanumeric character or underscore, and may contain
+                                      alphanumeric characters, underscores, hyphens, and periods in the middle.
+                                    maxLength: 1542
+                                    minLength: 8
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: vaultKeyPath cannot start with a forward
+                                        slash
+                                      rule: '!self.startsWith(''/'')'
+                                    - message: vaultKeyPath cannot end with a forward
+                                        slash
+                                      rule: '!self.endsWith(''/'')'
+                                    - message: vaultKeyPath cannot contain consecutive
+                                        forward slashes
+                                      rule: '!self.contains(''//'')'
+                                    - message: vaultKeyPath must only contain RFC
+                                        3986 unreserved characters (alphanumeric,
+                                        hyphen, period, underscore, tilde) and forward
+                                        slashes
+                                      rule: self.matches('^[a-zA-Z0-9._~/-]+$')
+                                    - message: vaultKeyPath must not contain '.' or
+                                        '..' path segments
+                                      rule: self.split('/').filter(s, s == '.' ||
+                                        s == '..').size() == 0
+                                    - message: vaultKeyPath must follow the format
+                                        <mount>/keys/<key-name> where the key name
+                                        starts and ends with an alphanumeric character
+                                        or underscore and may contain alphanumeric
+                                        characters, underscores, hyphens, and periods
+                                      rule: self.matches('^[a-zA-Z0-9._~-]+(/[a-zA-Z0-9._~-]+)*/keys/[a-zA-Z0-9_]([a-zA-Z0-9_.-]*[a-zA-Z0-9_])?$')
                                   vaultNamespace:
                                     description: |-
                                       vaultNamespace specifies the Vault namespace where the Transit secrets engine is mounted.
@@ -911,9 +933,8 @@ spec:
                                 required:
                                 - authentication
                                 - kmsPluginImage
-                                - transitKey
-                                - transitMount
                                 - vaultAddress
+                                - vaultKeyPath
                                 type: object
                             required:
                             - type
