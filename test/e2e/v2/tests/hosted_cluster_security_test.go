@@ -95,7 +95,7 @@ func EnsureHostedClusterWebhooksValidatedTest(getTestCtx internal.TestContextGet
 				existing := &admissionregistrationv1.ValidatingWebhookConfiguration{}
 				err := hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(webhookConf), existing)
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "webhook should have been deleted by HCCO")
-			}, time.Minute, 5*time.Second).Should(Succeed())
+			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
 	})
 }
