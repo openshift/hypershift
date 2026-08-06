@@ -35,6 +35,14 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// managedByLabel is the label key+value applied by the CPOv2 framework to every Deployment
+// it reconciles. Filtering on this label excludes non-HyperShift Deployments that may run
+// in the same namespace (e.g. OLM catalog deployments).
+const (
+	managedByLabel = "hypershift.openshift.io/managed-by"
+	managedByValue = "control-plane-operator"
+)
+
 var desiredStateHashHexRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func RegisterUpsertTests(getTestCtx internal.TestContextGetter) {
@@ -53,10 +61,12 @@ func VerifyDesiredStateHashAnnotationStamped(getTestCtx internal.TestContextGett
 			tc := getTestCtx()
 
 			deployList := &appsv1.DeploymentList{}
-			Expect(tc.MgmtClient.List(tc.Context, deployList, crclient.InNamespace(tc.ControlPlaneNamespace))).
-				To(Succeed(), "failed to list Deployments in namespace %s", tc.ControlPlaneNamespace)
+			Expect(tc.MgmtClient.List(tc.Context, deployList,
+				crclient.InNamespace(tc.ControlPlaneNamespace),
+				crclient.MatchingLabels{managedByLabel: managedByValue})).
+				To(Succeed(), "failed to list managed Deployments in namespace %s", tc.ControlPlaneNamespace)
 			Expect(deployList.Items).NotTo(BeEmpty(),
-				"expected at least one managed Deployment in namespace %s", tc.ControlPlaneNamespace)
+				"expected at least one CPOv2-managed Deployment in namespace %s", tc.ControlPlaneNamespace)
 
 			for i := range deployList.Items {
 				deploy := &deployList.Items[i]
@@ -85,11 +95,21 @@ func VerifyDesiredStateHashIdempotency(getTestCtx internal.TestContextGetter) {
 			Expect(deployList.Items).NotTo(BeEmpty(),
 				"expected at least one managed Deployment in namespace %s", tc.ControlPlaneNamespace)
 
+			// Only track Deployments that carry the desired-state-hash annotation —
+			// those are the ones reconciled by ApplyManifest and subject to the
+			// idempotency guarantee. Non-HyperShift Deployments in the same namespace
+			// (e.g. OLM catalog deployments) legitimately change resourceVersion and
+			// must not be checked here.
 			initialVersions := make(map[string]string, len(deployList.Items))
 			for i := range deployList.Items {
 				d := &deployList.Items[i]
-				initialVersions[d.Name] = d.ResourceVersion
+				if _, ok := d.Annotations[upsert.DesiredStateHashAnnotation]; ok {
+					initialVersions[d.Name] = d.ResourceVersion
+				}
 			}
+			Expect(initialVersions).NotTo(BeEmpty(),
+				"expected at least one ApplyManifest-managed Deployment (with %s annotation) in namespace %s",
+				upsert.DesiredStateHashAnnotation, tc.ControlPlaneNamespace)
 
 			// Wait long enough to cover at least two reconcile cycles.
 			time.Sleep(2 * time.Minute)
@@ -131,10 +151,12 @@ func VerifySpecFieldRemovalDetected(getTestCtx internal.TestContextGetter) {
 			}
 
 			deployList := &appsv1.DeploymentList{}
-			Expect(tc.MgmtClient.List(tc.Context, deployList, crclient.InNamespace(tc.ControlPlaneNamespace))).
-				To(Succeed(), "failed to list Deployments in namespace %s", tc.ControlPlaneNamespace)
+			Expect(tc.MgmtClient.List(tc.Context, deployList,
+				crclient.InNamespace(tc.ControlPlaneNamespace),
+				crclient.MatchingLabels{managedByLabel: managedByValue})).
+				To(Succeed(), "failed to list CPOv2-managed Deployments in namespace %s", tc.ControlPlaneNamespace)
 			Expect(deployList.Items).NotTo(BeEmpty(),
-				"expected at least one managed Deployment in namespace %s", tc.ControlPlaneNamespace)
+				"expected at least one CPOv2-managed Deployment in namespace %s", tc.ControlPlaneNamespace)
 			targetDeployKey := crclient.ObjectKeyFromObject(&deployList.Items[0])
 
 			hcKey := crclient.ObjectKeyFromObject(tc.GetHostedCluster())
@@ -229,10 +251,12 @@ func VerifyExternalDriftReverted(getTestCtx internal.TestContextGetter) {
 			tc := getTestCtx()
 
 			deployList := &appsv1.DeploymentList{}
-			Expect(tc.MgmtClient.List(tc.Context, deployList, crclient.InNamespace(tc.ControlPlaneNamespace))).
-				To(Succeed(), "failed to list Deployments in namespace %s", tc.ControlPlaneNamespace)
+			Expect(tc.MgmtClient.List(tc.Context, deployList,
+				crclient.InNamespace(tc.ControlPlaneNamespace),
+				crclient.MatchingLabels{managedByLabel: managedByValue})).
+				To(Succeed(), "failed to list CPOv2-managed Deployments in namespace %s", tc.ControlPlaneNamespace)
 			Expect(deployList.Items).NotTo(BeEmpty(),
-				"expected at least one managed Deployment in namespace %s", tc.ControlPlaneNamespace)
+				"expected at least one CPOv2-managed Deployment in namespace %s", tc.ControlPlaneNamespace)
 
 			target := deployList.Items[0].DeepCopy()
 			targetKey := crclient.ObjectKeyFromObject(target)
