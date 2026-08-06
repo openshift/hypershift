@@ -23,13 +23,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/openshift/hypershift/support/netutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	suppconfig "github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/netutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
@@ -54,8 +54,10 @@ func EnsureHostedClusterWebhooksValidatedTest(getTestCtx internal.TestContextGet
 	When("[Feature:WebhookValidation] a webhook targeting a control plane service is created in the hosted cluster", func() {
 		It("should be automatically deleted", func() {
 			tc := getTestCtx()
-			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			sideEffectsNone := admissionregistrationv1.SideEffectClassNone
 			webhookConf := &admissionregistrationv1.ValidatingWebhookConfiguration{
@@ -103,23 +105,22 @@ func EnsureHostedClusterWebhooksValidatedTest(getTestCtx internal.TestContextGet
 func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AdmissionPolicies] checking admission policies on a public hosted cluster", Ordered, func() {
 		var tc *internal.TestContext
-		var hcClient crclient.Client
-		var hostedCluster *hyperv1.HostedCluster
 
 		BeforeAll(func() {
 			tc = getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version418) {
-				Skip("Admission policies require version >= 4.18")
-			}
-			hostedCluster = tc.GetHostedCluster()
-			if !netutil.IsPublicHC(hostedCluster) {
+			tc.SkipIfVersionBelow(e2eutil.Version418)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if !netutil.IsPublicHC(hc) {
 				Skip("admission policies test requires a public hosted cluster")
 			}
-			tc.ValidateHostedClusterClient()
-			hcClient = tc.GetHostedClusterClient()
 		})
 
 		It("should find all required ValidatingAdmissionPolicies", func() {
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(func(g Gomega) {
 				vapList := &admissionregistrationv1.ValidatingAdmissionPolicyList{}
 				g.Expect(hcClient.List(tc.Context, vapList)).To(Succeed())
@@ -144,6 +145,10 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should deny unauthorized config changes via VAPs", func() {
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 			Eventually(func(g Gomega) {
 				apiServer := &configv1.APIServer{}
 				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, apiServer)).To(Succeed())
@@ -161,6 +166,10 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should allow status modifications via VAPs", func() {
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 			network := &configv1.Network{}
 			Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, network)).To(Succeed())
 			originalMTU := network.Status.ClusterNetworkMTU
@@ -184,6 +193,10 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should allow OperatorHub config changes with guest OLM placement", func() {
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
 			if hostedCluster.Spec.OLMCatalogPlacement != hyperv1.GuestOLMCatalogPlacement {
 				Skip("OperatorHub test requires guest OLM catalog placement")
 			}
@@ -215,10 +228,7 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:NetworkPolicies] checking network policies on an AWS hosted cluster", func() {
 		BeforeEach(func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-			if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-				Skip("network policies test is only for AWS platform")
-			}
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		})
 
 		It("should find management KAS access labels on expected components", func() {
@@ -282,7 +292,8 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 				), "failure should be a curl connection error, not an exec/setup error; got: %v", err)
 			}, 1*time.Minute, 10*time.Second).Should(Succeed())
 
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform &&
 				hostedCluster.Spec.Platform.AWS != nil &&
 				hostedCluster.Spec.Platform.AWS.EndpointAccess != hyperv1.Private {
@@ -333,8 +344,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Security", La
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterSecurityTests(func() *internal.TestContext { return testCtx })

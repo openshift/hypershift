@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -34,11 +35,7 @@ import (
 func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 	Context("GCP Cloud Controller Manager", Label("GCP", "CCM"), func() {
 		BeforeEach(func() {
-			testCtx := getTestCtx()
-			hc := testCtx.GetHostedCluster()
-			if hc == nil || hc.Spec.Platform.Type != hyperv1.GCPPlatform {
-				Skip("GCP Cloud Controller Manager test is only for GCP platform")
-			}
+			getTestCtx().SkipIfNotPlatform(hyperv1.GCPPlatform)
 		})
 
 		When("nodes are initialized by the CCM", func() {
@@ -46,8 +43,11 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 
 			BeforeEach(func() {
 				testCtx := getTestCtx()
-				hostedClusterClient := testCtx.GetHostedClusterClient()
-				Expect(hostedClusterClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
+				hc, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
+				e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
+				hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
 
 				nodes = &corev1.NodeList{}
 				Expect(hostedClusterClient.List(testCtx.Context, nodes)).To(Succeed())
@@ -56,7 +56,8 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 
 			It("should set providerID on all nodes", func() {
 				testCtx := getTestCtx()
-				hc := testCtx.GetHostedCluster()
+				hc, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				Expect(hc.Spec.Platform.GCP).NotTo(BeNil(), "GCP platform spec must be set for GCP HostedCluster %s/%s", hc.Namespace, hc.Name)
 				gcpProject := hc.Spec.Platform.GCP.Project
 
@@ -111,7 +112,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CloudControllerManag
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterCCMTests(func() *internal.TestContext { return testCtx })
