@@ -22,7 +22,7 @@ func TestCreatingFeatureGates(t *testing.T) {
 
 	testcases := []testcase{
 		{
-			name: "configuring a feature gate with no featureset, should never be enabled",
+			name: "When a feature gate has no featureset, it should never be enabled",
 			features: []*featuregates.Feature{
 				featuregates.NewFeature("Foo"),
 			},
@@ -39,7 +39,7 @@ func TestCreatingFeatureGates(t *testing.T) {
 			},
 		},
 		{
-			name: "configuring featuregates with specific featureset enablement, should only be enabled in featuresets it is explicitly enabled in",
+			name: "When featuregates have specific featureset enablement, it should only enable in explicitly enabled featuresets",
 			features: []*featuregates.Feature{
 				featuregates.NewFeature("Foo", featuregates.WithEnableForFeatureSets(configv1.AllFixedFeatureSets...)),
 				featuregates.NewFeature("Bar", featuregates.WithEnableForFeatureSets(configv1.Default)), // enabling only in default should generally never be done, but theoretically possible
@@ -93,7 +93,9 @@ func TestCreatingFeatureGates(t *testing.T) {
 }
 
 func TestConfiguringUnknownFeatureSetErrors(t *testing.T) {
-	features := featuregates.NewFeatureSetAwareFeatures()
-	_, err := features.FeatureGatesForFeatureSet("FooBar")
-	assert.Error(t, err, "configuring an unknown featureset should result in an error")
+	t.Run("When an unknown featureset is configured it should return an error", func(t *testing.T) {
+		features := featuregates.NewFeatureSetAwareFeatures()
+		_, err := features.FeatureGatesForFeatureSet("FooBar")
+		assert.Error(t, err, "configuring an unknown featureset should result in an error")
+	})
 }

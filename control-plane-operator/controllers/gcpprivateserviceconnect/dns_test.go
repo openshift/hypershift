@@ -19,32 +19,32 @@ func TestEnsureDNSDot(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When name has no trailing dot it should add one",
+			name:     "When name has no trailing dot, it should add one",
 			input:    "example.com",
 			expected: "example.com.",
 		},
 		{
-			name:     "When name already has trailing dot it should not add another",
+			name:     "When name already has trailing dot, it should not add another",
 			input:    "example.com.",
 			expected: "example.com.",
 		},
 		{
-			name:     "When name is empty it should add trailing dot",
+			name:     "When name is empty, it should add trailing dot",
 			input:    "",
 			expected: ".",
 		},
 		{
-			name:     "When name is just a dot it should remain a single dot",
+			name:     "When name is just a dot, it should remain a single dot",
 			input:    ".",
 			expected: ".",
 		},
 		{
-			name:     "When name has subdomain without dot it should add one",
+			name:     "When name has subdomain without dot, it should add one",
 			input:    "api.cluster.hypershift.local",
 			expected: "api.cluster.hypershift.local.",
 		},
 		{
-			name:     "When name has wildcard without dot it should add one",
+			name:     "When name has wildcard without dot, it should add one",
 			input:    "*.apps.cluster.example.com",
 			expected: "*.apps.cluster.example.com.",
 		},
@@ -65,62 +65,62 @@ func TestIsNotFound(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When error is googleapi 404 it should return true",
+			name:     "When error is googleapi 404, it should return true",
 			err:      &googleapi.Error{Code: 404, Message: "not found"},
 			expected: true,
 		},
 		{
-			name:     "When error is googleapi 403 it should return false",
+			name:     "When error is googleapi 403, it should return false",
 			err:      &googleapi.Error{Code: 403, Message: "forbidden"},
 			expected: false,
 		},
 		{
-			name:     "When error is googleapi 500 it should return false",
+			name:     "When error is googleapi 500, it should return false",
 			err:      &googleapi.Error{Code: 500, Message: "internal error"},
 			expected: false,
 		},
 		{
-			name:     "When error is googleapi 400 it should return false",
+			name:     "When error is googleapi 400, it should return false",
 			err:      &googleapi.Error{Code: 400, Message: "bad request"},
 			expected: false,
 		},
 		{
-			name:     "When error message contains 'error 404' it should return true",
+			name:     "When error message contains 'error 404', it should return true",
 			err:      errors.New("error 404: resource not found"),
 			expected: true,
 		},
 		{
-			name:     "When error message contains 'notfound' it should return true",
+			name:     "When error message contains 'notfound', it should return true",
 			err:      errors.New("googleapi: Error 404: notfound"),
 			expected: true,
 		},
 		{
-			name:     "When error message contains 'not found' it should return true",
+			name:     "When error message contains 'not found', it should return true",
 			err:      errors.New("the resource was not found"),
 			expected: true,
 		},
 		{
-			name:     "When error message contains 'NOT FOUND' in uppercase it should return true",
+			name:     "When error message contains 'NOT FOUND' in uppercase, it should return true",
 			err:      errors.New("RESOURCE NOT FOUND"),
 			expected: true,
 		},
 		{
-			name:     "When error is a wrapped googleapi 404 it should return true",
+			name:     "When error is a wrapped googleapi 404, it should return true",
 			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 404, Message: "not found"}),
 			expected: true,
 		},
 		{
-			name:     "When error is a wrapped googleapi 500 it should return false",
+			name:     "When error is a wrapped googleapi 500, it should return false",
 			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 500, Message: "internal error"}),
 			expected: false,
 		},
 		{
-			name:     "When error is generic without 404 it should return false",
+			name:     "When error is generic without 404, it should return false",
 			err:      errors.New("connection timeout"),
 			expected: false,
 		},
 		{
-			name:     "When error is permission denied it should return false",
+			name:     "When error is permission denied, it should return false",
 			err:      errors.New("permission denied"),
 			expected: false,
 		},
@@ -142,37 +142,37 @@ func TestTruncateName(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When name is shorter than max it should not truncate",
+			name:     "When name is shorter than max, it should not truncate",
 			input:    "short-name",
 			maxLen:   63,
 			expected: "short-name",
 		},
 		{
-			name:     "When name equals max length it should not truncate",
+			name:     "When name equals max length, it should not truncate",
 			input:    "exactly-ten",
 			maxLen:   11,
 			expected: "exactly-ten",
 		},
 		{
-			name:     "When name exceeds max length it should truncate",
+			name:     "When name exceeds max length, it should truncate",
 			input:    "this-is-a-very-long-name-that-exceeds-the-maximum-length-allowed",
 			maxLen:   20,
 			expected: "this-is-a-very-long-",
 		},
 		{
-			name:     "When max is 63 and name is 64 chars it should truncate to 63",
+			name:     "When max is 63 and name is 64 chars, it should truncate to 63",
 			input:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 64 chars
 			maxLen:   63,
 			expected: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 63 chars
 		},
 		{
-			name:     "When max is 0 it should return empty string",
+			name:     "When max is 0, it should return empty string",
 			input:    "any-name",
 			maxLen:   0,
 			expected: "",
 		},
 		{
-			name:     "When name is empty it should return empty",
+			name:     "When name is empty, it should return empty",
 			input:    "",
 			maxLen:   63,
 			expected: "",
@@ -290,13 +290,13 @@ func TestValidateReconcileInput(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name:          "When all inputs are valid it should return nil",
+			name:          "When all inputs are valid, it should return nil",
 			hcp:           validHCP,
 			pscEndpointIP: "10.0.1.5",
 			expectError:   false,
 		},
 		{
-			name: "When GCP platform spec is nil it should return error",
+			name: "When GCP platform spec is nil, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -309,7 +309,7 @@ func TestValidateReconcileInput(t *testing.T) {
 			errorContains: "GCP platform spec is nil",
 		},
 		{
-			name: "When baseDomain is empty it should return error",
+			name: "When baseDomain is empty, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -332,7 +332,7 @@ func TestValidateReconcileInput(t *testing.T) {
 			errorContains: "DNS baseDomain is required",
 		},
 		{
-			name: "When GCP project is empty it should return error",
+			name: "When GCP project is empty, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -355,7 +355,7 @@ func TestValidateReconcileInput(t *testing.T) {
 			errorContains: "GCP project is required",
 		},
 		{
-			name: "When VPC network name is empty it should return error",
+			name: "When VPC network name is empty, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -378,7 +378,7 @@ func TestValidateReconcileInput(t *testing.T) {
 			errorContains: "VPC network name is required",
 		},
 		{
-			name:          "When PSC endpoint IP is empty it should return error",
+			name:          "When PSC endpoint IP is empty, it should return error",
 			hcp:           validHCP,
 			pscEndpointIP: "",
 			expectError:   true,
@@ -457,57 +457,57 @@ func TestValidateZoneName(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "When zone name starts with lowercase letter it should be valid",
+			name:        "When zone name starts with lowercase letter, it should be valid",
 			zoneName:    "my-zone",
 			expectError: false,
 		},
 		{
-			name:        "When zone name contains only lowercase letters it should be valid",
+			name:        "When zone name contains only lowercase letters, it should be valid",
 			zoneName:    "myzone",
 			expectError: false,
 		},
 		{
-			name:        "When zone name contains lowercase letters and numbers it should be valid",
+			name:        "When zone name contains lowercase letters and numbers, it should be valid",
 			zoneName:    "my-zone-123",
 			expectError: false,
 		},
 		{
-			name:        "When zone name contains hyphens it should be valid",
+			name:        "When zone name contains hyphens, it should be valid",
 			zoneName:    "my-cluster-hypershift-local",
 			expectError: false,
 		},
 		{
-			name:        "When zone name starts with 'in-' (managed service pattern) it should be valid",
+			name:        "When zone name starts with 'in-' (managed service pattern), it should be valid",
 			zoneName:    "in-cluster-abc123-public",
 			expectError: false,
 		},
 		{
-			name:        "When zone name starts with digit it should be invalid",
+			name:        "When zone name starts with digit, it should be invalid",
 			zoneName:    "123-zone",
 			expectError: true,
 		},
 		{
-			name:        "When zone name starts with hyphen it should be invalid",
+			name:        "When zone name starts with hyphen, it should be invalid",
 			zoneName:    "-my-zone",
 			expectError: true,
 		},
 		{
-			name:        "When zone name contains uppercase letters it should be invalid",
+			name:        "When zone name contains uppercase letters, it should be invalid",
 			zoneName:    "My-Zone",
 			expectError: true,
 		},
 		{
-			name:        "When zone name contains underscore it should be invalid",
+			name:        "When zone name contains underscore, it should be invalid",
 			zoneName:    "my_zone",
 			expectError: true,
 		},
 		{
-			name:        "When zone name contains dot it should be invalid",
+			name:        "When zone name contains dot, it should be invalid",
 			zoneName:    "my.zone",
 			expectError: true,
 		},
 		{
-			name:        "When zone name is empty it should be invalid",
+			name:        "When zone name is empty, it should be invalid",
 			zoneName:    "",
 			expectError: true,
 		},

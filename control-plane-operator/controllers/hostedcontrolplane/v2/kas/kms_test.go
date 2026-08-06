@@ -23,7 +23,7 @@ func TestDeriveKMSKeys(t *testing.T) {
 		validate      func(g Gomega, keys kmsWriteReadKeys)
 	}{
 		{
-			name: "When AWS with nil status it should use spec active key as write with spec backup as read",
+			name: "When AWS with nil status, it should use spec active key as write with spec backup as read",
 			kmsSpec: &hyperv1.KMSSpec{
 				Provider: hyperv1.AWS,
 				AWS: &hyperv1.AWSKMSSpec{
@@ -41,7 +41,7 @@ func TestDeriveKMSKeys(t *testing.T) {
 			},
 		},
 		{
-			name: "When AWS with status set but no target key it should use only write key",
+			name: "When AWS with status set but no target key, it should use only write key",
 			kmsSpec: &hyperv1.KMSSpec{
 				Provider: hyperv1.AWS,
 				AWS: &hyperv1.AWSKMSSpec{
@@ -62,7 +62,7 @@ func TestDeriveKMSKeys(t *testing.T) {
 			},
 		},
 		{
-			name: "When AWS rotation in progress and target key absent from config it should use old key as write (ReadOnlyDeploy)",
+			name: "When AWS rotation in progress and target key absent from config, it should use old key as write (ReadOnlyDeploy)",
 			kmsSpec: &hyperv1.KMSSpec{
 				Provider: hyperv1.AWS,
 				AWS: &hyperv1.AWSKMSSpec{
@@ -87,7 +87,7 @@ func TestDeriveKMSKeys(t *testing.T) {
 			},
 		},
 		{
-			name: "When AWS rotation in progress and target key present in config it should promote target to write (WritePromote)",
+			name: "When AWS rotation in progress and target key present in config, it should promote target to write (WritePromote)",
 			kmsSpec: &hyperv1.KMSSpec{
 				Provider: hyperv1.AWS,
 				AWS: &hyperv1.AWSKMSSpec{
@@ -116,7 +116,7 @@ func TestDeriveKMSKeys(t *testing.T) {
 			},
 		},
 		{
-			name: "When Azure rotation in progress and target key absent from config it should use old key as write",
+			name: "When Azure rotation in progress and target key absent from config, it should use old key as write",
 			kmsSpec: &hyperv1.KMSSpec{
 				Provider: hyperv1.AZURE,
 				Azure: &hyperv1.AzureKMSSpec{

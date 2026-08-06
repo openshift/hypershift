@@ -444,7 +444,7 @@ func TestValidateAdditionalPullSecret(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid pull secret",
+			name: "When pull secret has valid docker config, it should pass validation",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"quay.io": validAuth}),
@@ -453,7 +453,7 @@ func TestValidateAdditionalPullSecret(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing docker config key",
+			name: "When pull secret is missing docker config key, it should return error",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					"wrong-key": composePullSecretBytes(map[string]string{"quay.io": validAuth}),
@@ -462,7 +462,7 @@ func TestValidateAdditionalPullSecret(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "invalid json",
+			name: "When pull secret has invalid json, it should return error",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					corev1.DockerConfigJsonKey: []byte(`invalid json`),
@@ -471,7 +471,7 @@ func TestValidateAdditionalPullSecret(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "empty auths",
+			name: "When pull secret has empty auths, it should return error",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`),
@@ -503,68 +503,68 @@ func TestMergePullSecrets(t *testing.T) {
 		wantErr          bool
 	}{
 		{
-			name:             "successful merge with 1 entries",
+			name:             "When merging one entry from each secret, it should combine both registries",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry2": validAuth}),
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "successful merge with 2 entries in additional secret",
+			name:             "When additional secret has two entries, it should merge all registries",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry2": validAuth, "registry3": validAuth}),
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "successful merge with 2 entries in original secret",
+			name:             "When original secret has two entries, it should merge all registries",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry3": validAuth}),
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "conflict resolution - original always wins",
+			name:             "When registries conflict, it should preserve original secret credentials",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "precedence test - original always has precedence",
+			name:             "When registries overlap, it should give precedence to original secret",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth, "registry3": validAuth}),
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "multiple conflicts - original always wins",
+			name:             "When multiple registries conflict, it should preserve all original credentials",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth, "registry3": validAuth}),
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "invalid original secret",
+			name:             "When original secret has invalid json, it should return error",
 			originalSecret:   []byte(`invalid json`),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			wantErr:          true,
 		},
 		{
-			name:             "invalid additional secret",
+			name:             "When additional secret has invalid json, it should return error",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: []byte(`invalid json`),
 			wantErr:          true,
 		},
 		{
-			name:             "empty additional secret, invalid JSON",
+			name:             "When additional secret has empty invalid json, it should return error",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: []byte{},
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			wantErr:          true,
 		},
 		{
-			name:             "empty additional secret with valid JSON",
+			name:             "When additional secret has empty valid json, it should return original secret unchanged",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			additionalSecret: []byte(`{"auths":{}}`),
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
@@ -612,7 +612,7 @@ func TestAdditionalPullSecretExists(t *testing.T) {
 		objects        []client.Object
 	}{
 		{
-			name:           "secret exists",
+			name:           "When additional pull secret exists, it should return true with secret data",
 			secretExists:   true,
 			expectedExists: true,
 			expectedSecret: &corev1.Secret{
@@ -637,7 +637,7 @@ func TestAdditionalPullSecretExists(t *testing.T) {
 			},
 		},
 		{
-			name:           "secret exists but has no content",
+			name:           "When additional pull secret exists without content, it should return true with nil data",
 			secretExists:   true,
 			expectedExists: true,
 			expectedSecret: &corev1.Secret{
@@ -658,7 +658,7 @@ func TestAdditionalPullSecretExists(t *testing.T) {
 			},
 		},
 		{
-			name:           "secret exists but has incorrect content",
+			name:           "When additional pull secret exists with invalid content, it should return true with raw data",
 			secretExists:   true,
 			expectedExists: true,
 			expectedSecret: &corev1.Secret{
@@ -683,7 +683,7 @@ func TestAdditionalPullSecretExists(t *testing.T) {
 			},
 		},
 		{
-			name:           "secret does not exist",
+			name:           "When additional pull secret does not exist, it should return false",
 			secretExists:   false,
 			expectedExists: false,
 			expectedSecret: nil,

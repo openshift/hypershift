@@ -265,13 +265,13 @@ func TestReconcileOLM(t *testing.T) {
 		want                *configv1.OperatorHubSpec
 	}{
 		{
-			name:                "PlacementStrategy is management and no configuration provided",
+			name:                "When placement is management with no configuration, it should return empty OperatorHub spec",
 			hcpClusterConfig:    nil,
 			olmCatalogPlacement: hyperv1.ManagementOLMCatalogPlacement,
 			want:                &configv1.OperatorHubSpec{},
 		},
 		{
-			name: "PlacementStrategy is management and allDefaultSources disabled",
+			name: "When placement is management with allDefaultSources disabled, it should disable all default sources",
 			hcpClusterConfig: &hyperv1.ClusterConfiguration{
 				OperatorHub: &configv1.OperatorHubSpec{
 					DisableAllDefaultSources: true,
@@ -283,7 +283,7 @@ func TestReconcileOLM(t *testing.T) {
 			},
 		},
 		{
-			name: "PlacementStrategy is management and allDefaultSources enabled",
+			name: "When placement is management with allDefaultSources enabled, it should enable all default sources",
 			hcpClusterConfig: &hyperv1.ClusterConfiguration{
 				OperatorHub: &configv1.OperatorHubSpec{
 					DisableAllDefaultSources: false,
@@ -295,7 +295,7 @@ func TestReconcileOLM(t *testing.T) {
 			},
 		},
 		{
-			name:                "PlacementStrategy is guest and no configuration provided",
+			name:                "When placement is guest with no configuration, it should return empty OperatorHub spec",
 			hcpClusterConfig:    nil,
 			olmCatalogPlacement: hyperv1.GuestOLMCatalogPlacement,
 			want:                &configv1.OperatorHubSpec{},
@@ -303,7 +303,7 @@ func TestReconcileOLM(t *testing.T) {
 		{
 			// We expect here the OperatorHub in guest to keep the already set value and
 			// don't overwrite the value with the new one.
-			name: "PlacementStrategy is guest and allDefaultSources disabled, the first reconciliation loop already happened",
+			name: "When placement is guest with allDefaultSources disabled after first reconcile, it should preserve existing value",
 			hcpClusterConfig: &hyperv1.ClusterConfiguration{
 				OperatorHub: &configv1.OperatorHubSpec{
 					DisableAllDefaultSources: true,
@@ -315,7 +315,7 @@ func TestReconcileOLM(t *testing.T) {
 			},
 		},
 		{
-			name: "PlacementStrategy is guest and allDefaultSources enabled",
+			name: "When placement is guest with allDefaultSources enabled, it should enable all default sources",
 			hcpClusterConfig: &hyperv1.ClusterConfiguration{
 				OperatorHub: &configv1.OperatorHubSpec{
 					DisableAllDefaultSources: false,
@@ -505,7 +505,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 		expectKubeadminPasswordHashSecretToExist bool
 		expectHashPreserved                      bool
 	}{
-		"when kubeadminPasswordSecret exists the hash secret is created": {
+		"When kubeadminPasswordSecret exists, it should create the hash secret": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -581,7 +581,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			expectKubeadminPasswordHashSecretToExist: true,
 			expectHashPreserved:                      true,
 		},
-		"when kubeadminPasswordSecret doesn't exist the hash secret is not created": {
+		"When kubeadminPasswordSecret does not exist, it should not create the hash secret": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -649,7 +649,7 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 		existingGuestObjects  []client.Object
 		expectUserCAConfigMap bool
 	}{
-		"No AdditionalTrustBundle": {
+		"When no AdditionalTrustBundle is set, it should not create user CA configmap": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -660,7 +660,7 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 			existingGuestObjects:  []client.Object{},
 			expectUserCAConfigMap: false,
 		},
-		"AdditionalTrustBundle": {
+		"When AdditionalTrustBundle is set, it should create user CA configmap": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -683,7 +683,7 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 			existingGuestObjects:  []client.Object{},
 			expectUserCAConfigMap: true,
 		},
-		"AdditionalTrustBundle removed - should delete existing user-ca-bundle": {
+		"When AdditionalTrustBundle is removed, it should delete existing user-ca-bundle": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -926,18 +926,18 @@ func TestDestroyCloudResources(t *testing.T) {
 		verifyDoneCond   bool
 	}{
 		{
-			name:           "no existing resources",
+			name:           "When no resources exist, it should mark done condition",
 			verifyDoneCond: true,
 		},
 		{
-			name: "image registry with storage",
+			name: "When image registry has managed storage, it should set management state to removed",
 			existing: []client.Object{
 				managedImageRegistry(),
 			},
 			verify: verifyImageRegistryConfig,
 		},
 		{
-			name: "existing ingress controller",
+			name: "When ingress controllers exist, it should remove all ingress controllers",
 			existing: []client.Object{
 				ingressController("default"),
 				ingressController("foobar"),
@@ -945,7 +945,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			verify: verifyIngressControllersRemoved,
 		},
 		{
-			name: "existing service load balancers",
+			name: "When service load balancers exist, it should remove load balancers but preserve ClusterIP services",
 			existing: []client.Object{
 				serviceLoadBalancer("foo"),
 				serviceLoadBalancer("bar"),
@@ -958,7 +958,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			verifyDoneCond: true,
 		},
 		{
-			name: "existing service load balancers owned by ingress controller",
+			name: "When load balancers are owned by ingress controller, it should preserve them",
 			existing: []client.Object{
 				serviceLoadBalancerOwnedByIngressController("bar"),
 				clusterIPService("baz"),
@@ -969,7 +969,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			},
 		},
 		{
-			name: "existing pv/pvc",
+			name: "When PVs and PVCs exist, it should remove PVCs and pods",
 			existing: []client.Object{
 				pv("foo"), pvc("foo"),
 				pv("bar"), pvc("bar"),
@@ -983,7 +983,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			},
 		},
 		{
-			name: "existing everything",
+			name: "When all resource types exist, it should clean up everything",
 			existing: []client.Object{
 				managedImageRegistry(),
 				ingressController("default"),
@@ -1067,12 +1067,12 @@ func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
 		expectFailureTracking bool
 	}{
 		{
-			name:                 "KAS deployment not found - cleanup skipped",
+			name:                 "When KAS deployment is not found, it should skip cleanup",
 			kasDeploymentExists:  false,
 			expectCleanupSkipped: true,
 		},
 		{
-			name:                 "KAS deployment exists - cleanup proceeds",
+			name:                 "When KAS deployment exists, it should proceed with cleanup",
 			kasDeploymentExists:  true,
 			expectCleanupSkipped: false,
 		},
@@ -1141,22 +1141,22 @@ func TestConnectionErrorTracking(t *testing.T) {
 		expectedConnection bool
 	}{
 		{
-			name:               "K8s timeout error",
+			name:               "When K8s timeout error occurs, it should return true",
 			err:                apierrors.NewTimeoutError("request timeout", 5),
 			expectedConnection: true,
 		},
 		{
-			name:               "K8s server timeout error",
+			name:               "When K8s server timeout error occurs, it should return true",
 			err:                apierrors.NewServerTimeout(schema.GroupResource{Group: "", Resource: "pods"}, "get", 5),
 			expectedConnection: true,
 		},
 		{
-			name:               "K8s service unavailable error",
+			name:               "When K8s service unavailable error occurs, it should return true",
 			err:                apierrors.NewServiceUnavailable("service unavailable"),
 			expectedConnection: true,
 		},
 		{
-			name: "net.Error with timeout",
+			name: "When net.Error has timeout, it should return true",
 			err: &mockNetError{
 				error:   fmt.Errorf("connection timeout"),
 				timeout: true,
@@ -1164,7 +1164,7 @@ func TestConnectionErrorTracking(t *testing.T) {
 			expectedConnection: true,
 		},
 		{
-			name: "net.Error temporary",
+			name: "When net.Error is temporary, it should return true",
 			err: &mockNetError{
 				error:     fmt.Errorf("temporary network error"),
 				temporary: true,
@@ -1172,22 +1172,22 @@ func TestConnectionErrorTracking(t *testing.T) {
 			expectedConnection: true,
 		},
 		{
-			name:               "wrapped net.Error",
+			name:               "When net.Error is wrapped, it should return true",
 			err:                fmt.Errorf("failed to connect: %w", &mockNetError{error: fmt.Errorf("connection refused"), timeout: false}),
 			expectedConnection: true,
 		},
 		{
-			name:               "other K8s error (not found)",
+			name:               "When K8s error is not found, it should return false",
 			err:                apierrors.NewNotFound(schema.GroupResource{Group: "", Resource: "pods"}, "test-pod"),
 			expectedConnection: false,
 		},
 		{
-			name:               "other error",
+			name:               "When error is generic, it should return false",
 			err:                fmt.Errorf("permission denied"),
 			expectedConnection: false,
 		},
 		{
-			name:               "nil error",
+			name:               "When error is nil, it should return false",
 			err:                nil,
 			expectedConnection: false,
 		},
@@ -1542,15 +1542,15 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 		removeICSAndReconcile bool
 	}{
 		{
-			name: "ICS with content, it should return an IDMS with the same content",
+			name: "When ICS has content, it should return an IDMS with the same content",
 			hcp:  withICS(fakeHCP()),
 		},
 		{
-			name: "ICS empty, is should return an empty IDMS",
+			name: "When ICS is empty, it should return an empty IDMS",
 			hcp:  fakeHCP(),
 		},
 		{
-			name:                  "ICS And IDMS should be in sync always",
+			name:                  "When ICS is removed after reconcile, it should sync IDMS to match",
 			hcp:                   withICS(fakeHCP()),
 			removeICSAndReconcile: true,
 		},
@@ -1617,7 +1617,7 @@ func TestReconcileKASEndpoints(t *testing.T) {
 		expectedPort int32
 	}{
 		{
-			name: "When HC has hcp.spec.networking.apiServer.port set to 443, endpoint and slice should have port 443",
+			name: "When HC has hcp.spec.networking.apiServer.port set to 443, it should set endpoint and slice port to 443",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
@@ -1630,7 +1630,7 @@ func TestReconcileKASEndpoints(t *testing.T) {
 			expectedPort: int32(443),
 		},
 		{
-			name: "When HC has no hcp.spec.networking.apiServer.port set, endpoint and slice should have port 6443",
+			name: "When HC has no hcp.spec.networking.apiServer.port set, it should set endpoint and slice port to 6443",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{},
 			},
@@ -1689,7 +1689,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 		preservedObjects               []client.Object
 	}{
 		{
-			name: "copy kubelet config from control plane NS",
+			name: "When kubelet config exists in control plane namespace, it should copy to hosted cluster",
 			hostedControlPlaneObjects: []client.Object{
 				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
 			},
@@ -1698,7 +1698,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "some CM already exist and some are not, expect HCCO to catch up",
+			name: "When some ConfigMaps already exist, it should reconcile missing ones",
 			hostedControlPlaneObjects: []client.Object{
 				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
 				makeKubeletConfigConfigMap(netutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
@@ -1712,7 +1712,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "CM need to be deleted",
+			name: "When ConfigMaps are removed from source, it should delete from hosted cluster",
 			hostedControlPlaneObjects: []client.Object{
 				makeKubeletConfigConfigMap(netutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
 			},
@@ -1900,7 +1900,7 @@ func TestBuildAWSWebIdentityCredentials(t *testing.T) {
 	}
 	tests := []test{
 		{
-			name: "should fail if the role ARN is empty",
+			name: "When role ARN is empty, it should return error",
 			args: args{
 				roleArn: "",
 				region:  "us-east-1",
@@ -1908,7 +1908,7 @@ func TestBuildAWSWebIdentityCredentials(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "should fail if the region is empty",
+			name:    "When region is empty, it should return error",
 			wantErr: true,
 			args: args{
 				roleArn: "arn:aws:iam::123456789012:role/some-role",
@@ -1916,7 +1916,7 @@ func TestBuildAWSWebIdentityCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:    "should succeed and return the creds template populated with role arn and region otherwise",
+			name:    "When role ARN and region are valid, it should return populated credentials template",
 			wantErr: false,
 			args: args{
 				roleArn: "arn:aws:iam::123456789012:role/some-role",
@@ -2005,7 +2005,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 		expectedErrorMessages   []string
 		setAROHCP               bool
 	}{
-		"when OAuth is enabled, should not copy OIDC resources": {
+		"When OAuth is enabled, it should not copy OIDC resources": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2031,7 +2031,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{},
 			expectErrors:            false,
 		},
-		"when OAuth is disabled and no OIDC providers, should not copy anything": {
+		"When OAuth is disabled with no OIDC providers, it should not copy anything": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2050,7 +2050,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{},
 			expectErrors:            false,
 		},
-		"when OAuth is disabled with OIDC provider with CA configmap, should copy CA": {
+		"When OAuth is disabled with OIDC CA configmap, it should copy CA": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2090,7 +2090,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{},
 			expectErrors:            false,
 		},
-		"when OAuth is disabled with OIDC provider with OIDC clients, should copy client secrets": {
+		"When OAuth is disabled with OIDC clients, it should copy client secrets": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2154,7 +2154,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{"console-client-secret", "cli-client-secret"},
 			expectErrors:            false,
 		},
-		"when OAuth is disabled with OIDC provider with both CA and client secrets, should copy both": {
+		"When OAuth is disabled with OIDC CA and client secrets, it should copy both": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2213,7 +2213,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{"console-client-secret"},
 			expectErrors:            false,
 		},
-		"when OAuth is disabled with OIDC provider with confidential and public OIDC clients, should copy confidential client secret": {
+		"When OAuth is disabled with mixed OIDC clients, it should copy only confidential client secret": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2268,7 +2268,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{"console-client-secret"},
 			expectErrors:            false,
 		},
-		"when OAuth is disabled with OIDC provider with a hosted-cluster-sourced annotated client secret and ARO-HCP platform, should not copy the client secret": {
+		"When ARO-HCP has hosted-cluster-sourced client secret, it should not copy the secret": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2330,7 +2330,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectErrors:            false,
 			setAROHCP:               true,
 		},
-		"when OAuth is disabled with OIDC provider and not ARO-HCP platform, setting hosted-cluster-sourced annotation on a client secret should not skip copying the secret": {
+		"When non-ARO-HCP has hosted-cluster-sourced annotation, it should still copy the secret": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2381,7 +2381,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectErrors:            false,
 			setAROHCP:               false,
 		},
-		"when OAuth is disabled but CA configmap is missing, should return error": {
+		"When OAuth is disabled but CA configmap is missing, it should return error": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2412,7 +2412,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectErrors:            true,
 			expectedErrorMessages:   []string{"failed to get issuer CA configmap missing-ca-bundle"},
 		},
-		"when OAuth is disabled but client secret is missing, should return error": {
+		"When OAuth is disabled but client secret is missing, it should return error": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2450,7 +2450,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectErrors:            true,
 			expectedErrorMessages:   []string{"failed to get OIDCClient secret missing-client-secret"},
 		},
-		"when OAuth is disabled with multiple OIDC providers, should handle first provider only": {
+		"When OAuth is disabled with multiple OIDC providers, it should handle first provider only": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -2681,7 +2681,7 @@ func newCondition(conditionType string, status metav1.ConditionStatus, reason, m
 	}
 }
 
-func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
+func TestReconcileDataPlaneConnectionAvailable(t *testing.T) {
 	t.Parallel()
 	newKonnectivityAgentPod := func(name string, phase corev1.PodPhase) corev1.Pod {
 		return corev1.Pod{
@@ -2723,7 +2723,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 		mockedGetPodLogs  func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
 	}{
 		{
-			name:    "no worker nodes Condition Unknown",
+			name:    "When no worker nodes exist, it should set condition to Unknown",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2737,7 +2737,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 			},
 		},
 		{
-			name:    "no konnectivity-agent PODs condition False",
+			name:    "When no konnectivity-agent pods exist, it should set condition to False",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2752,7 +2752,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 			},
 		},
 		{
-			name:    "only one pending POD condition False",
+			name:    "When only pending konnectivity-agent pods exist, it should set condition to False",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2767,7 +2767,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 			},
 		},
 		{
-			name:    "one konnectivity-agent PODs running condition OK",
+			name:    "When one konnectivity-agent pod is running, it should set condition to True",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2782,7 +2782,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 			},
 		},
 		{
-			name:    "may konnectivity-agent PODs only one running condition OK",
+			name:    "When many konnectivity-agent pods exist with one running, it should set condition to True",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2801,7 +2801,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 			},
 		},
 		{
-			name:    "one konnectivity-agent PODs running bad since error getting LOG",
+			name:    "When konnectivity-agent pod has log retrieval error, it should set condition to False",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2817,7 +2817,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 			},
 		},
 		{
-			name:    "one konnectivity-agent PODs running bad since no LOG", // unsure this is possible
+			name:    "When konnectivity-agent pod has no log output, it should set condition to False", // unsure this is possible
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2877,7 +2877,7 @@ func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 	}
 }
 
-func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
+func TestReconcileControlPlaneConnectionAvailable(t *testing.T) {
 	t.Parallel()
 	newConnectivityConfigMap := func(data map[string]string) *corev1.ConfigMap {
 		return &corev1.ConfigMap{
@@ -2914,7 +2914,7 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 		nodes             []corev1.Node
 	}{
 		{
-			name:    "When no worker nodes exist it should set condition to Unknown with NoWorkerNodesAvailable reason",
+			name:    "When no worker nodes exist, it should set condition to Unknown with NoWorkerNodesAvailable reason",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
@@ -2927,7 +2927,7 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 			nodes:     []corev1.Node{},
 		},
 		{
-			name:    "When ConfigMap does not exist it should set condition to Unknown with ConfigMapNotFound reason",
+			name:    "When ConfigMap does not exist, it should set condition to Unknown with ConfigMapNotFound reason",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
@@ -2941,7 +2941,7 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 			nodes:     []corev1.Node{newReadyNode("node1")},
 		},
 		{
-			name:    "When ConfigMap has no lastSucceeded key it should set condition to False with KASAccessFailed reason",
+			name:    "When ConfigMap has no lastSucceeded key, it should set condition to False with KASAccessFailed reason",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
@@ -2954,7 +2954,7 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 			nodes:     []corev1.Node{newReadyNode("node1")},
 		},
 		{
-			name:    "When ConfigMap has empty lastSucceeded it should set condition to False with KASAccessFailed reason",
+			name:    "When ConfigMap has empty lastSucceeded, it should set condition to False with KASAccessFailed reason",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
@@ -2967,7 +2967,7 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 			nodes:     []corev1.Node{newReadyNode("node1")},
 		},
 		{
-			name:    "When lastSucceeded is recent it should set condition to True",
+			name:    "When lastSucceeded is recent, it should set condition to True",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
@@ -2982,7 +2982,7 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 			nodes: []corev1.Node{newReadyNode("node1")},
 		},
 		{
-			name:    "When lastSucceeded is stale it should set condition to False with ConnectionCheckStale reason",
+			name:    "When lastSucceeded is stale, it should set condition to False with ConnectionCheckStale reason",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
@@ -3209,7 +3209,7 @@ func getKASCheckerDeployment(t *testing.T, c client.Client) *appsv1.Deployment {
 	return dep
 }
 
-func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
+func TestReconcileKASConnectionCheckerDeployment(t *testing.T) {
 	t.Parallel()
 	const testCLIImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-test"
 
@@ -3221,7 +3221,7 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 		validate           func(t *testing.T, c client.Client)
 	}{
 		{
-			name:               "When Deployment does not exist it should create it with correct spec",
+			name:               "When Deployment does not exist, it should create it with correct spec",
 			hcp:                fakeHCP(),
 			existingDeployment: nil,
 			wantErr:            false,
@@ -3247,7 +3247,7 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 			},
 		},
 		{
-			name: "When platform is IBM Cloud it should use IBM Cloud specific endpoint in curl script",
+			name: "When platform is IBM Cloud, it should use IBM Cloud specific endpoint in curl script",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-hcp",
@@ -3271,7 +3271,7 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 			},
 		},
 		{
-			name: "When Deployment already exists it should update it",
+			name: "When Deployment already exists, it should update it",
 			hcp:  fakeHCP(),
 			existingDeployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -3492,7 +3492,7 @@ func TestReconcileMetricsForwarder(t *testing.T) {
 	}
 }
 
-func Test_namespacedNamePredicateFunc(t *testing.T) {
+func TestNamespacedNamePredicateFunc(t *testing.T) {
 	predicate := namespacedNamePredicateFunc("my-hcp-namespace", "pull-secret")
 
 	tests := []struct {
@@ -3501,21 +3501,21 @@ func Test_namespacedNamePredicateFunc(t *testing.T) {
 		want   bool
 	}{
 		{
-			name: "When namespace and name match it should return true",
+			name: "When namespace and name match, it should return true",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "my-hcp-namespace", Name: "pull-secret"},
 			},
 			want: true,
 		},
 		{
-			name: "When namespace differs it should return false",
+			name: "When namespace differs, it should return false",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "other-namespace", Name: "pull-secret"},
 			},
 			want: false,
 		},
 		{
-			name: "When name differs it should return false",
+			name: "When name differs, it should return false",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "my-hcp-namespace", Name: "other-secret"},
 			},

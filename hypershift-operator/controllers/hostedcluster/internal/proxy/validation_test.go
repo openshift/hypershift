@@ -36,7 +36,7 @@ func TestLoadCABundle(t *testing.T) {
 		expectCerts   int
 	}{
 		{
-			name: "When ConfigMap has valid certificate it should succeed",
+			name: "When ConfigMap has valid certificate, it should succeed",
 			configMap: corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-ca-bundle",
@@ -50,7 +50,7 @@ func TestLoadCABundle(t *testing.T) {
 			expectCerts: 1,
 		},
 		{
-			name: "When ConfigMap has multiple certificates it should succeed",
+			name: "When ConfigMap has multiple certificates, it should succeed",
 			configMap: corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-ca-bundle",
@@ -64,7 +64,7 @@ func TestLoadCABundle(t *testing.T) {
 			expectCerts: 2,
 		},
 		{
-			name: "When ConfigMap is missing ca-bundle.crt key it should fail",
+			name: "When ConfigMap is missing ca-bundle.crt key, it should fail",
 			configMap: corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-ca-bundle",
@@ -78,7 +78,7 @@ func TestLoadCABundle(t *testing.T) {
 			errorContains: "is missing \"ca-bundle.crt\"",
 		},
 		{
-			name: "When ConfigMap has empty ca-bundle.crt it should fail",
+			name: "When ConfigMap has empty ca-bundle.crt, it should fail",
 			configMap: corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-ca-bundle",
@@ -92,7 +92,7 @@ func TestLoadCABundle(t *testing.T) {
 			errorContains: "is empty",
 		},
 		{
-			name: "When ConfigMap has invalid certificate data it should fail",
+			name: "When ConfigMap has invalid certificate data, it should fail",
 			configMap: corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-ca-bundle",
@@ -141,7 +141,7 @@ func TestValidateProxyCAValidity(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name: "When no proxy configured it should succeed",
+			name: "When no proxy configured, it should succeed",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -152,7 +152,7 @@ func TestValidateProxyCAValidity(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When proxy configured without CA it should succeed",
+			name: "When proxy configured without CA, it should succeed",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -169,7 +169,7 @@ func TestValidateProxyCAValidity(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When valid certificate it should succeed",
+			name: "When valid certificate, it should succeed",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -197,7 +197,7 @@ func TestValidateProxyCAValidity(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When expired certificate it should fail",
+			name: "When expired certificate, it should fail",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -226,7 +226,7 @@ func TestValidateProxyCAValidity(t *testing.T) {
 			errorContains: "no longer valid",
 		},
 		{
-			name: "When future-dated certificate it should fail",
+			name: "When future-dated certificate, it should fail",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -380,7 +380,7 @@ func TestExpiryTimeProxyCA(t *testing.T) {
 			expectedExpiry: func() *time.Time { t := now.Add(24 * time.Hour); return &t }(),
 		},
 		{
-			name: "When ConfigMap not found it should return error",
+			name: "When ConfigMap not found, it should return error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",

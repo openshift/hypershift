@@ -104,13 +104,13 @@ func TestGetRHELStream(t *testing.T) {
 
 		// --- Explicit rhel-10 ---
 		{
-			name:           "When explicit rhel-10 and release is 4.x it should return error",
+			name:           "When explicit rhel-10 and release is 4.x, it should return error",
 			explicitStream: "rhel-10",
 			releaseVersion: semver.MustParse("4.19.0"),
 			expectError:    true,
 		},
 		{
-			name:           "When explicit rhel-10 and release is 4.x with runc it should return error",
+			name:           "When explicit rhel-10 and release is 4.x with runc, it should return error",
 			explicitStream: "rhel-10",
 			releaseVersion: semver.MustParse("4.19.0"),
 			usesRunc:       true,
@@ -123,7 +123,7 @@ func TestGetRHELStream(t *testing.T) {
 			expectResult:   "rhel-10",
 		},
 		{
-			name:           "When explicit rhel-10 and release is 5.0 with runc it should return error",
+			name:           "When explicit rhel-10 and release is 5.0 with runc, it should return error",
 			explicitStream: "rhel-10",
 			releaseVersion: semver.MustParse("5.0.0"),
 			usesRunc:       true,
@@ -136,7 +136,7 @@ func TestGetRHELStream(t *testing.T) {
 			expectResult:   "rhel-10",
 		},
 		{
-			name:           "When explicit rhel-10 and release is 5.1 with runc it should return error",
+			name:           "When explicit rhel-10 and release is 5.1 with runc, it should return error",
 			explicitStream: "rhel-10",
 			releaseVersion: semver.MustParse("5.1.0"),
 			usesRunc:       true,
@@ -145,13 +145,13 @@ func TestGetRHELStream(t *testing.T) {
 
 		// --- Unknown stream ---
 		{
-			name:           "When explicit unknown stream and release is 4.x it should return error",
+			name:           "When explicit unknown stream and release is 4.x, it should return error",
 			explicitStream: "rhel-8",
 			releaseVersion: semver.MustParse("4.18.0"),
 			expectError:    true,
 		},
 		{
-			name:           "When explicit unknown stream and release is 5.0 it should return error",
+			name:           "When explicit unknown stream and release is 5.0, it should return error",
 			explicitStream: "rhel-8",
 			releaseVersion: semver.MustParse("5.0.0"),
 			expectError:    true,

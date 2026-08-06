@@ -35,7 +35,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func Test_diffIDs(t *testing.T) {
+func TestDiffIDs(t *testing.T) {
 	subnet1 := "1"
 	subnet2 := "2"
 	subnet3 := "3"
@@ -50,7 +50,7 @@ func Test_diffIDs(t *testing.T) {
 		wantRemoved []string
 	}{
 		{
-			name: "no subnets, no change",
+			name: "When no subnets exist, it should return no changes",
 			args: args{
 				desired:  []string{},
 				existing: []string{},
@@ -59,7 +59,7 @@ func Test_diffIDs(t *testing.T) {
 			wantRemoved: nil,
 		},
 		{
-			name: "two subnet, no change",
+			name: "When two subnets match, it should return no changes",
 			args: args{
 				desired:  []string{subnet1, subnet2},
 				existing: []string{subnet1, subnet2},
@@ -68,7 +68,7 @@ func Test_diffIDs(t *testing.T) {
 			wantRemoved: nil,
 		},
 		{
-			name: "one new subnet",
+			name: "When one new subnet is desired, it should return it as added",
 			args: args{
 				desired:  []string{subnet1, subnet2},
 				existing: []string{subnet1},
@@ -77,7 +77,7 @@ func Test_diffIDs(t *testing.T) {
 			wantRemoved: nil,
 		},
 		{
-			name: "one removed subnet",
+			name: "When one subnet is removed, it should return it as removed",
 			args: args{
 				desired:  []string{subnet1},
 				existing: []string{subnet1, subnet2},
@@ -86,7 +86,7 @@ func Test_diffIDs(t *testing.T) {
 			wantRemoved: []string{subnet2},
 		},
 		{
-			name: "one removed subnet, one added subnet",
+			name: "When one subnet is added and one removed, it should return both",
 			args: args{
 				desired:  []string{subnet1, subnet2},
 				existing: []string{subnet2, subnet3},
@@ -108,7 +108,7 @@ func Test_diffIDs(t *testing.T) {
 	}
 }
 
-func Test_deduplicateSubnetsByAZ(t *testing.T) {
+func TestDeduplicateSubnetsByAZ(t *testing.T) {
 	tests := []struct {
 		name               string
 		subnetIDs          []string
@@ -187,7 +187,7 @@ func Test_deduplicateSubnetsByAZ(t *testing.T) {
 			expectedSubnets:    []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"},
 		},
 		{
-			name:               "When DescribeSubnets fails it should return error",
+			name:               "When DescribeSubnets fails, it should return error",
 			subnetIDs:          []string{"subnet-aaa", "subnet-bbb"},
 			describeErr:        fmt.Errorf("access denied"),
 			expectDescribeCall: true,
@@ -230,16 +230,16 @@ func TestRecordForService(t *testing.T) {
 		expected       []string
 	}{
 		{
-			name: "Unknown service, no entry",
+			name: "When service is unknown it should return no entry",
 			in:   &hyperv1.AWSEndpointService{ObjectMeta: metav1.ObjectMeta{Name: "unknown"}},
 		},
 		{
-			name:     "KAS service gets api entry",
+			name:     "When service is KAS, it should return api entry",
 			in:       &hyperv1.AWSEndpointService{ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private"}},
 			expected: []string{"api"},
 		},
 		{
-			name: "Router service gets api and apps entry when kas is exposed through route",
+			name: "When router service has KAS exposed through route, it should return api and apps entries",
 			in:   &hyperv1.AWSEndpointService{ObjectMeta: metav1.ObjectMeta{Name: "private-router"}},
 			serviceMapping: []hyperv1.ServicePublishingStrategyMapping{{
 				Service:                   hyperv1.APIServer,
@@ -248,7 +248,7 @@ func TestRecordForService(t *testing.T) {
 			expected: []string{"api", "*.apps"},
 		},
 		{
-			name:     "Router service gets apps entry only when kas is not exposed through route",
+			name:     "When router service has KAS not exposed through route, it should return only apps entry",
 			in:       &hyperv1.AWSEndpointService{ObjectMeta: metav1.ObjectMeta{Name: "private-router"}},
 			expected: []string{"*.apps"},
 		},
@@ -330,8 +330,13 @@ func TestDiffPermissions(t *testing.T) {
 		},
 	}
 
+	testNames := []string{
+		"When no actual permissions exist it should return all required as needed",
+		"When actual contains required permissions it should return empty diff",
+		"When partially matching permissions exist it should return only missing ones",
+	}
 	for i, test := range tests {
-		t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
+		t.Run(testNames[i], func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			result := diffPermissions(test.actual, test.required)
 			g.Expect(result).To(Equal(test.expected))
@@ -365,7 +370,7 @@ func TestReconcileDeletion(t *testing.T) {
 		expectRequeue   bool
 	}{
 		{
-			name: "When all AWS resources are cleaned up successfully it should remove the finalizer",
+			name: "When all AWS resources are cleaned up successfully, it should remove the finalizer",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "private-router",
@@ -419,7 +424,7 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When status has no AWS resources it should remove the finalizer",
+			name: "When status has no AWS resources, it should remove the finalizer",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "private-router",
@@ -440,7 +445,7 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When HCP exists after restart it should initialize clients and complete deletion",
+			name: "When HCP exists after restart, it should initialize clients and complete deletion",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "private-router",
@@ -506,7 +511,7 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When VPC endpoint deletion fails it should return error and preserve the finalizer",
+			name: "When VPC endpoint deletion fails, it should return error and preserve the finalizer",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "private-router",
@@ -530,7 +535,7 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: true,
 		},
 		{
-			name: "When security group deletion returns DependencyViolation it should requeue without error",
+			name: "When security group deletion returns DependencyViolation, it should requeue without error",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "private-router",
@@ -564,7 +569,7 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: true,
 		},
 		{
-			name: "When Route53 hosted zone is already deleted externally it should treat deletion as successful",
+			name: "When Route53 hosted zone is already deleted externally, it should treat deletion as successful",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "private-router",
@@ -1636,7 +1641,7 @@ func TestReconcileDeletionSharedVPC(t *testing.T) {
 			// deleted, role ARNs lost. The controller errors on every retry because it
 			// cannot initialize clients without the HCP. After the 10-minute grace period
 			// the hypershift-operator will force-remove the finalizer, leaking resources.
-			name:   "When SharedVPC operator restarts with no HCP it should return error and preserve finalizer",
+			name:   "When SharedVPC operator restarts with no HCP, it should return error and preserve finalizer",
 			hasHCP: false,
 			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
 				mockBuilder := NewMockawsClientProvider(mockCtrl)
@@ -1657,7 +1662,7 @@ func TestReconcileDeletionSharedVPC(t *testing.T) {
 			// SharedVPC roles. In production the subsequent delete calls would fail with
 			// AccessDenied because the security group and VPC endpoint live in a
 			// different AWS account — a mocked error simulates this deterministically.
-			name:   "When SharedVPC client is initialized without role ARNs it should fail to create AWS session",
+			name:   "When SharedVPC client is initialized without role ARNs, it should fail to create AWS session",
 			hasHCP: false,
 			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
 				mockBuilder := NewMockawsClientProvider(mockCtrl)
@@ -1769,17 +1774,17 @@ func TestExtractNLBName(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When standard NLB hostname it should extract name without hyphens",
+			name:     "When standard NLB hostname, it should extract name without hyphens",
 			hostname: "a1b2c3d4e5f6g7-1234567890abcdef.elb.us-east-1.amazonaws.com",
 			expected: "a1b2c3d4e5f6g7",
 		},
 		{
-			name:     "When EKS Auto Mode NLB hostname it should extract full name with hyphens",
+			name:     "When EKS Auto Mode NLB hostname, it should extract full name with hyphens",
 			hostname: "k8s-clusters-kubeapis-db6fee3a62-8008741421d14306.elb.us-east-1.amazonaws.com",
 			expected: "k8s-clusters-kubeapis-db6fee3a62",
 		},
 		{
-			name:     "When hostname has no hyphens it should return the first label as-is",
+			name:     "When hostname has no hyphens, it should return the first label as-is",
 			hostname: "somename.elb.us-east-1.amazonaws.com",
 			expected: "somename",
 		},
@@ -2068,37 +2073,37 @@ func TestIsAWSThrottleError(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "Throttling error should be detected",
+			name:     "When error code is Throttling, it should be detected",
 			err:      &testAPIError{code: "Throttling"},
 			expected: true,
 		},
 		{
-			name:     "ThrottlingException should be detected",
+			name:     "When error code is ThrottlingException, it should be detected",
 			err:      &testAPIError{code: "ThrottlingException"},
 			expected: true,
 		},
 		{
-			name:     "RequestLimitExceeded should be detected",
+			name:     "When error code is RequestLimitExceeded, it should be detected",
 			err:      &testAPIError{code: "RequestLimitExceeded"},
 			expected: true,
 		},
 		{
-			name:     "TooManyRequestsException should be detected",
+			name:     "When error code is TooManyRequestsException, it should be detected",
 			err:      &testAPIError{code: "TooManyRequestsException"},
 			expected: true,
 		},
 		{
-			name:     "Non-throttle AWS error should not be detected",
+			name:     "When error code is non-throttle AWS error, it should not be detected",
 			err:      &testAPIError{code: "NoSuchHostedZone"},
 			expected: false,
 		},
 		{
-			name:     "Non-AWS error should not be detected",
+			name:     "When error is not an AWS error, it should not be detected",
 			err:      errors.New("network error"),
 			expected: false,
 		},
 		{
-			name:     "Nil error should not be detected",
+			name:     "When error is nil, it should not be detected",
 			err:      nil,
 			expected: false,
 		},

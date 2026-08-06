@@ -94,7 +94,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 		expected   map[string]bool
 	}{
 		{
-			name:       "Default feature set",
+			name:       "When using Default feature set, it should disable all feature gates",
 			featureSet: configv1.Default,
 			expected: map[string]bool{
 				"AROHCPManagedIdentities": false,
@@ -105,7 +105,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			},
 		},
 		{
-			name:       "TechPreviewNoUpgrade feature set",
+			name:       "When using TechPreviewNoUpgrade feature set, it should enable all feature gates",
 			featureSet: configv1.TechPreviewNoUpgrade,
 			expected: map[string]bool{
 				"AROHCPManagedIdentities": true,
@@ -116,7 +116,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			},
 		},
 		{
-			name:       "DevPreviewNoUpgrade feature set",
+			name:       "When using DevPreviewNoUpgrade feature set, it should disable all feature gates",
 			featureSet: configv1.DevPreviewNoUpgrade,
 			expected: map[string]bool{
 				"AROHCPManagedIdentities": false,

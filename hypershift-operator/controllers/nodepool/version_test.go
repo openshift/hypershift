@@ -23,7 +23,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		expected []hyperv1.NodeVersion
 	}{
 		{
-			name:     "When there are no machines it should return nil",
+			name:     "When there are no machines, it should return nil",
 			machines: nil,
 			nodePool: &hyperv1.NodePool{
 				Status: hyperv1.NodePoolStatus{Version: "4.18.12"},
@@ -31,7 +31,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "When all machines have the same version and are healthy it should return a single entry",
+			name: "When all machines have the same version and are healthy, it should return a single entry",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -45,7 +45,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
-			name: "When there are mixed versions during rolling upgrade it should return one entry per version",
+			name: "When there are mixed versions during rolling upgrade, it should return one entry per version",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -60,7 +60,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
-			name: "When there is mixed health it should report ready and unready counts per version",
+			name: "When there is mixed health, it should report ready and unready counts per version",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
@@ -75,7 +75,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
-			name: "When NodeHealthy condition is absent it should count the node as unready",
+			name: "When NodeHealthy condition is absent, it should count the node as unready",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndConditions("m1", "v1.31.4", nil, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 			},
@@ -87,7 +87,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
-			name: "When some machines have no NodeInfo it should skip them",
+			name: "When some machines have no NodeInfo, it should skip them",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				{
@@ -108,7 +108,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
-			name: "When all machines have no NodeInfo it should return nil",
+			name: "When all machines have no NodeInfo, it should return nil",
 			machines: []*v1beta1.Machine{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "m1"},
@@ -121,7 +121,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "When machine has release-version annotation it should use it for ocpVersion",
+			name: "When machine has release-version annotation, it should use it for ocpVersion",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 			},
@@ -133,7 +133,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
-			name: "When machine has no annotation it should fall back to nodePool.Status.Version",
+			name: "When machine has no annotation, it should fall back to nodePool.Status.Version",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, nil),
 			},
@@ -145,7 +145,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
-			name: "When there are multiple versions it should sort by ocpVersion then kubeletVersion",
+			name: "When there are multiple versions, it should sort by ocpVersion then kubeletVersion",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -299,47 +299,47 @@ func TestRhcosStreamFromOSImage(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When OSImage is RHCOS 4xx it should return rhel-9",
+			name:     "When OSImage is RHCOS 4xx, it should return rhel-9",
 			osImage:  "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
 			expected: StreamRHEL9,
 		},
 		{
-			name:     "When OSImage is RHCOS 5xx it should return rhel-10",
+			name:     "When OSImage is RHCOS 5xx, it should return rhel-10",
 			osImage:  "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)",
 			expected: StreamRHEL10,
 		},
 		{
-			name:     "When OSImage has different 4xx version it should return rhel-9",
+			name:     "When OSImage has different 4xx version, it should return rhel-9",
 			osImage:  "Red Hat Enterprise Linux CoreOS 418.94.202501011200-0 (Plow)",
 			expected: StreamRHEL9,
 		},
 		{
-			name:     "When OSImage is empty it should return empty string",
+			name:     "When OSImage is empty, it should return empty string",
 			osImage:  "",
 			expected: "",
 		},
 		{
-			name:     "When OSImage is unrecognized it should return empty string",
+			name:     "When OSImage is unrecognized, it should return empty string",
 			osImage:  "Ubuntu 22.04 LTS",
 			expected: "",
 		},
 		{
-			name:     "When OSImage has unknown major version it should return empty string",
+			name:     "When OSImage has unknown major version, it should return empty string",
 			osImage:  "Red Hat Enterprise Linux CoreOS 300.97.202505081234-0 (Plow)",
 			expected: "",
 		},
 		{
-			name:     "When OSImage uses new OCP 5.0 format with RHEL 9 it should return rhel-9",
+			name:     "When OSImage uses new OCP 5.0 format with RHEL 9, it should return rhel-9",
 			osImage:  "Red Hat Enterprise Linux CoreOS 9.8.20260721-0 (Plow)",
 			expected: StreamRHEL9,
 		},
 		{
-			name:     "When OSImage uses new OCP 5.0 format with RHEL 10 it should return rhel-10",
+			name:     "When OSImage uses new OCP 5.0 format with RHEL 10, it should return rhel-10",
 			osImage:  "Red Hat Enterprise Linux CoreOS 10.2.20260801-0 (Plow)",
 			expected: StreamRHEL10,
 		},
 		{
-			name:     "When OSImage uses new format with unknown major it should return empty string",
+			name:     "When OSImage uses new format with unknown major, it should return empty string",
 			osImage:  "Red Hat Enterprise Linux CoreOS 8.5.20260101-0 (Plow)",
 			expected: "",
 		},
@@ -360,19 +360,19 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When there are no machines it should return empty string",
+			name:     "When there are no machines, it should return empty string",
 			machines: nil,
 			expected: "",
 		},
 		{
-			name: "When a single machine reports RHEL 9 it should return rhel-9",
+			name: "When a single machine reports RHEL 9, it should return rhel-9",
 			machines: []*v1beta1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 			},
 			expected: StreamRHEL9,
 		},
 		{
-			name: "When all machines report RHEL 9 it should return rhel-9",
+			name: "When all machines report RHEL 9, it should return rhel-9",
 			machines: []*v1beta1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
@@ -381,7 +381,7 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 			expected: StreamRHEL9,
 		},
 		{
-			name: "When all machines report RHEL 10 it should return rhel-10",
+			name: "When all machines report RHEL 10, it should return rhel-10",
 			machines: []*v1beta1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
@@ -389,7 +389,7 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 			expected: StreamRHEL10,
 		},
 		{
-			name: "When a majority reports RHEL 10 during rolling upgrade it should return rhel-10",
+			name: "When a majority reports RHEL 10 during rolling upgrade, it should return rhel-10",
 			machines: []*v1beta1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
@@ -398,7 +398,7 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 			expected: StreamRHEL10,
 		},
 		{
-			name: "When streams are evenly split it should return empty string",
+			name: "When streams are evenly split, it should return empty string",
 			machines: []*v1beta1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
@@ -406,21 +406,21 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "When machines have no NodeInfo it should return empty string",
+			name: "When machines have no NodeInfo, it should return empty string",
 			machines: []*v1beta1.Machine{
 				{ObjectMeta: metav1.ObjectMeta{Name: "m1"}, Status: v1beta1.MachineStatus{}},
 			},
 			expected: "",
 		},
 		{
-			name: "When machines have unrecognized OSImage it should return empty string",
+			name: "When machines have unrecognized OSImage, it should return empty string",
 			machines: []*v1beta1.Machine{
 				machineWithOSImage("m1", "Ubuntu 22.04 LTS"),
 			},
 			expected: "",
 		},
 		{
-			name: "When some machines have no NodeInfo it should count only those with NodeInfo",
+			name: "When some machines have no NodeInfo, it should count only those with NodeInfo",
 			machines: []*v1beta1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
 				{ObjectMeta: metav1.ObjectMeta{Name: "m2"}, Status: v1beta1.MachineStatus{}},

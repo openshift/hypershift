@@ -358,7 +358,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "When userdata and token secret are outdated userdata secret should be deleted and token secret should get and expiration timestamp",
+			name: "When userdata and token secret are outdated, it should delete userdata secret and add expiration timestamp to token secret",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{
 					nodePool: &hyperv1.NodePool{
@@ -435,7 +435,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "When platform is KubeVirt, outdated userdata secret should be preserved and token secret should get an expiration timestamp",
+			name: "When platform is KubeVirt, it should preserve outdated userdata secret and add expiration timestamp to token secret",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{
 					nodePool: &hyperv1.NodePool{
@@ -461,7 +461,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "When platform is AWS, outdated userdata secret should be preserved and token secret should get an expiration timestamp",
+			name: "When platform is AWS, it should preserve outdated userdata secret and add expiration timestamp to token secret",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{
 					nodePool: &hyperv1.NodePool{

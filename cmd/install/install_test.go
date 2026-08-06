@@ -45,13 +45,13 @@ func TestOptions_Validate(t *testing.T) {
 		inputOptions Options
 		expectError  bool
 	}{
-		"when aws private platform without private creds or secret reference and region it errors": {
+		"When AWS private platform has no credentials or region, it should return an error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.AWSPlatform),
 			},
 			expectError: true,
 		},
-		"when aws private platform with private creds and region there is no error": {
+		"When AWS private platform has private credentials and region, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:  string(hyperv1.AWSPlatform),
 				AWSPrivateCreds:  "/path/to/credentials",
@@ -59,7 +59,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when aws private platform with secret and region there is no error": {
+		"When AWS private platform has a secret and region, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:             string(hyperv1.AWSPlatform),
 				AWSPrivateCredentialsSecret: "my-secret",
@@ -67,7 +67,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"When AWS private platform with role ARN and region it should succeed": {
+		"When AWS private platform with role ARN and region, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:         string(hyperv1.AWSPlatform),
 				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
@@ -76,7 +76,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"When AWS private platform with role ARN and creds file it should error": {
+		"When AWS private platform with role ARN and creds file, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:         string(hyperv1.AWSPlatform),
 				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
@@ -86,7 +86,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When AWS private platform with both creds file and secret it should error": {
+		"When AWS private platform with both creds file and secret, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:             string(hyperv1.AWSPlatform),
 				AWSPrivateCreds:             "/path/to/credentials",
@@ -95,7 +95,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When AWS private platform with role ARN and no region it should error": {
+		"When AWS private platform with role ARN and no region, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:         string(hyperv1.AWSPlatform),
 				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
@@ -103,7 +103,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When role ARN is set with invalid credential source it should error": {
+		"When role ARN is set with invalid credential source, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:         string(hyperv1.AWSPlatform),
 				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
@@ -112,7 +112,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When role ARN is set with web-identity credential source it should succeed": {
+		"When role ARN is set with web-identity credential source, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:         string(hyperv1.AWSPlatform),
 				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
@@ -121,7 +121,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"When role ARN is set with ec2-instance-metadata credential source it should succeed": {
+		"When role ARN is set with ec2-instance-metadata credential source, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:         string(hyperv1.AWSPlatform),
 				AWSPrivateRoleARN:       "arn:aws:iam::123456789012:role/op-ec2",
@@ -130,30 +130,30 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when empty private platform is specified it errors": {
+		"When private platform is empty, it should return an error": {
 			inputOptions: Options{},
 			expectError:  true,
 		},
-		"when partially specified oauth creds used (OIDCStorageProviderS3Credentials) it errors": {
+		"When only OIDCStorageProviderS3Credentials is provided, it should return an error": {
 			inputOptions: Options{
 				OIDCStorageProviderS3Credentials: "mycreds",
 			},
 			expectError: true,
 		},
-		"when partially specified oauth creds used (OIDCStorageProviderS3CredentialsSecret) it errors": {
+		"When only OIDCStorageProviderS3CredentialsSecret is provided, it should return an error": {
 			inputOptions: Options{
 				OIDCStorageProviderS3CredentialsSecret: "mysecret",
 			},
 			expectError: true,
 		},
-		"when external-dns provider is set without creds it errors": {
+		"When external-dns provider is set without credentials, it should return an error": {
 			inputOptions: Options{
 				ExternalDNSProvider:     "aws",
 				ExternalDNSDomainFilter: "test.com",
 			},
 			expectError: true,
 		},
-		"when external-dns provider is set with both creds methods it errors": {
+		"When external-dns provider is set with both credential methods, it should return an error": {
 			inputOptions: Options{
 				ExternalDNSProvider:          "aws",
 				ExternalDNSCredentials:       "/path/to/credentials",
@@ -162,28 +162,28 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"when external-dns provider is set without domain filter it errors": {
+		"When external-dns provider is set without a domain filter, it should return an error": {
 			inputOptions: Options{
 				ExternalDNSProvider:    "aws",
 				ExternalDNSCredentials: "/path/to/credentials",
 			},
 			expectError: true,
 		},
-		"when GCP private platform with only gcp-project it errors": {
+		"When GCP private platform has only gcp-project, it should return an error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.GCPPlatform),
 				GCPProject:      "my-project",
 			},
 			expectError: true,
 		},
-		"when GCP private platform with only gcp-region it errors": {
+		"When GCP private platform has only gcp-region, it should return an error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.GCPPlatform),
 				GCPRegion:       "us-central1",
 			},
 			expectError: true,
 		},
-		"when GCP private platform with both gcp-project and gcp-region it succeeds": {
+		"When GCP private platform has gcp-project and gcp-region, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.GCPPlatform),
 				GCPProject:      "my-project",
@@ -191,13 +191,13 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when GCP private platform without gcp-project and gcp-region it succeeds": {
+		"When GCP private platform has no gcp-project or gcp-region, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.GCPPlatform),
 			},
 			expectError: false,
 		},
-		"when external-dns GCP provider is set without credentials it succeeds (Workload Identity)": {
+		"When external-dns GCP provider is set without credentials, it should use Workload Identity": {
 			inputOptions: Options{
 				PrivatePlatform:          string(hyperv1.GCPPlatform),
 				ExternalDNSProvider:      "google",
@@ -206,7 +206,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when external-dns GCP provider is set with credentials it succeeds": {
+		"When external-dns GCP provider is set with credentials, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:          string(hyperv1.GCPPlatform),
 				ExternalDNSProvider:      "google",
@@ -216,7 +216,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when external-dns GCP provider is set without google-project it succeeds": {
+		"When external-dns GCP provider is set without google-project, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:         string(hyperv1.GCPPlatform),
 				ExternalDNSProvider:     "google",
@@ -302,7 +302,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"when all data specified there is no error": {
+		"When all data is specified, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:                           string(hyperv1.NonePlatform),
 				OIDCStorageProviderS3CredentialsSecret:    "mysecret",
@@ -312,27 +312,27 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when image pull policy is not set there is no error": {
+		"When image pull policy is not set, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.NonePlatform),
 			},
 			expectError: false,
 		},
-		"when valid image pull policy is set there is no error": {
+		"When a valid image pull policy is set, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.NonePlatform),
 				ImagePullPolicy: "Always",
 			},
 			expectError: false,
 		},
-		"when invalid image pull policy is set it errors": {
+		"When an invalid image pull policy is set, it should return an error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.NonePlatform),
 				ImagePullPolicy: "InvalidPolicy",
 			},
 			expectError: true,
 		},
-		"When Azure private platform with managed identity and creds file it should error": {
+		"When Azure private platform with managed identity and creds file, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:                 string(hyperv1.AzurePlatform),
 				AzurePrivateCreds:               "/path/to/credentials",
@@ -341,7 +341,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When Azure private platform with managed identity and secret it should error": {
+		"When Azure private platform with managed identity and secret, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:                 string(hyperv1.AzurePlatform),
 				AzurePrivateCredentialsSecret:   "my-secret",
@@ -350,14 +350,14 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When Azure private platform with managed identity but no subscription ID it should error": {
+		"When Azure private platform with managed identity but no subscription ID, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:                 string(hyperv1.AzurePlatform),
 				AzurePLSManagedIdentityClientID: "client-id",
 			},
 			expectError: true,
 		},
-		"When Azure private platform with managed identity and subscription ID it should succeed": {
+		"When Azure private platform with managed identity and subscription ID, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:                 string(hyperv1.AzurePlatform),
 				AzurePLSManagedIdentityClientID: "client-id",
@@ -366,7 +366,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"When Azure private platform with creds file it should succeed": {
+		"When Azure private platform with creds file, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:       string(hyperv1.AzurePlatform),
 				AzurePrivateCreds:     "/path/to/credentials",
@@ -374,7 +374,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when scale-from-zero provider is missing but creds provided it errors": {
+		"When scale-from-zero credentials are provided without a provider, it should return an error": {
 			inputOptions: Options{
 				PrivatePlatform:    string(hyperv1.AWSPlatform),
 				AWSPrivateCreds:    "/dev/null",
@@ -383,7 +383,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"when scale-from-zero provider is invalid it errors": {
+		"When scale-from-zero provider is invalid, it should return an error": {
 			inputOptions: Options{
 				PrivatePlatform:       string(hyperv1.AWSPlatform),
 				AWSPrivateCreds:       "/dev/null",
@@ -393,7 +393,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"when scale-from-zero both creds and secret provided it errors": {
+		"When scale-from-zero credentials and secret are both provided, it should return an error": {
 			inputOptions: Options{
 				PrivatePlatform:                string(hyperv1.AWSPlatform),
 				AWSPrivateCreds:                "/dev/null",
@@ -404,7 +404,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"when scale-from-zero provider is aws with creds file there is no error": {
+		"When scale-from-zero provider is AWS with a credentials file, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:       string(hyperv1.AWSPlatform),
 				AWSPrivateCreds:       "/dev/null",
@@ -414,7 +414,7 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when scale-from-zero provider is aws with secret reference there is no error": {
+		"When scale-from-zero provider is AWS with a secret reference, it should succeed": {
 			inputOptions: Options{
 				PrivatePlatform:                   string(hyperv1.AWSPlatform),
 				AWSPrivateCreds:                   "/dev/null",
@@ -425,35 +425,35 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when install-scope is all it should not error": {
+		"When install-scope is all, it should not error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.NonePlatform),
 				InstallScope:    string(OutputAll),
 			},
 			expectError: false,
 		},
-		"when install-scope is crds it should not error": {
+		"When install-scope is crds, it should not error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.NonePlatform),
 				InstallScope:    string(OutputCRDs),
 			},
 			expectError: false,
 		},
-		"when install-scope is resources it should not error": {
+		"When install-scope is resources, it should not error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.NonePlatform),
 				InstallScope:    string(OutputResources),
 			},
 			expectError: false,
 		},
-		"when install-scope is invalid it should error": {
+		"When install-scope is invalid, it should error": {
 			inputOptions: Options{
 				PrivatePlatform: string(hyperv1.NonePlatform),
 				InstallScope:    "bogus",
 			},
 			expectError: true,
 		},
-		"when install-scope is crds with wait-until-available it should error": {
+		"When install-scope is crds with wait-until-available, it should error": {
 			inputOptions: Options{
 				PrivatePlatform:    string(hyperv1.NonePlatform),
 				InstallScope:       string(OutputCRDs),
@@ -583,21 +583,21 @@ func TestCRDIncludeFilter(t *testing.T) {
 			expect: false,
 		},
 		{
-			name:   "When PlatformsToInstall includes aws, AWS provider CRDs should be included",
+			name:   "When PlatformsToInstall includes aws, it should include AWS provider CRDs",
 			opts:   Options{PlatformsToInstall: []string{"aws"}},
 			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
 			crd:    defaultCRD(),
 			expect: true,
 		},
 		{
-			name:   "When PlatformsToInstall includes only azure, AWS provider CRDs should be excluded",
+			name:   "When PlatformsToInstall includes only azure, it should exclude AWS provider CRDs",
 			opts:   Options{PlatformsToInstall: []string{"azure"}},
 			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
 			crd:    defaultCRD(),
 			expect: false,
 		},
 		{
-			name:   "When PlatformsToInstall is empty, all platform CRDs should be included",
+			name:   "When PlatformsToInstall is empty, it should include all platform CRDs",
 			path:   "cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml",
 			crd:    defaultCRD(),
 			expect: true,
@@ -647,19 +647,19 @@ func TestSetupCRDs(t *testing.T) {
 			inputOptions: Options{},
 		},
 		{
-			name: "When PlatformOptions is set to Azure only Azure CAPI CRDs should be present",
+			name: "When PlatformOptions is set to Azure, it should include only Azure CAPI CRDs",
 			inputOptions: Options{
 				PlatformsToInstall: []string{"azure"},
 			},
 		},
 		{
-			name: "When PlatformOptions is set to AWS only AWS CAPI CRDs should be present",
+			name: "When PlatformOptions is set to AWS, it should include only AWS CAPI CRDs",
 			inputOptions: Options{
 				PlatformsToInstall: []string{"aws"},
 			},
 		},
 		{
-			name: "When PlatformOptions is set to AWS,Azure only AWS & Azure CAPI CRDs should be present",
+			name: "When PlatformOptions is set to AWS,Azure, it should include only AWS When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs it should be present Azure CAPI CRDs",
 			inputOptions: Options{
 				PlatformsToInstall: []string{"aws", "azure"},
 			},
@@ -2476,7 +2476,7 @@ func TestLoadOperatorRolesFile(t *testing.T) {
 		expectError bool
 		validate    func(*GomegaWithT, Options)
 	}{
-		"When no roles file is specified it should be a no-op": {
+		"When no roles file is specified, it should be a no-op": {
 			setup: func(t *testing.T) Options {
 				return Options{}
 			},
@@ -2486,7 +2486,7 @@ func TestLoadOperatorRolesFile(t *testing.T) {
 				g.Expect(o.ExternalDNSRoleARN).To(BeEmpty())
 			},
 		},
-		"When a valid roles file is specified it should populate role ARN fields": {
+		"When a valid roles file is specified, it should populate role ARN fields": {
 			setup: func(t *testing.T) Options {
 				roles := aws.CreateOperatorRolesOutput{
 					OperatorEC2RoleARN:    "arn:aws:iam::123456789012:role/op-ec2",
@@ -2509,7 +2509,7 @@ func TestLoadOperatorRolesFile(t *testing.T) {
 				g.Expect(o.ExternalDNSRoleARN).To(Equal("arn:aws:iam::123456789012:role/ext-dns"))
 			},
 		},
-		"When roles file conflicts with --aws-private-role-arn it should error": {
+		"When roles file conflicts with --aws-private-role-arn, it should error": {
 			setup: func(t *testing.T) Options {
 				f := filepath.Join(t.TempDir(), "roles.json")
 				if err := os.WriteFile(f, []byte(`{}`), 0644); err != nil {
@@ -2522,7 +2522,7 @@ func TestLoadOperatorRolesFile(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When roles file conflicts with --oidc-storage-provider-s3-role-arn it should error": {
+		"When roles file conflicts with --oidc-storage-provider-s3-role-arn, it should error": {
 			setup: func(t *testing.T) Options {
 				f := filepath.Join(t.TempDir(), "roles.json")
 				if err := os.WriteFile(f, []byte(`{}`), 0644); err != nil {
@@ -2535,7 +2535,7 @@ func TestLoadOperatorRolesFile(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When roles file conflicts with --external-dns-role-arn it should error": {
+		"When roles file conflicts with --external-dns-role-arn, it should error": {
 			setup: func(t *testing.T) Options {
 				f := filepath.Join(t.TempDir(), "roles.json")
 				if err := os.WriteFile(f, []byte(`{}`), 0644); err != nil {
@@ -2548,13 +2548,13 @@ func TestLoadOperatorRolesFile(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When roles file does not exist it should error": {
+		"When roles file does not exist, it should error": {
 			setup: func(t *testing.T) Options {
 				return Options{AWSOperatorRolesFile: "/nonexistent/path/roles.json"}
 			},
 			expectError: true,
 		},
-		"When roles file contains invalid JSON it should error": {
+		"When roles file contains invalid JSON, it should error": {
 			setup: func(t *testing.T) Options {
 				f := filepath.Join(t.TempDir(), "roles.json")
 				if err := os.WriteFile(f, []byte("not json"), 0644); err != nil {
@@ -2589,12 +2589,12 @@ func TestComplete(t *testing.T) {
 		expectError bool
 		validate    func(*GomegaWithT, Options)
 	}{
-		"When no operator roles file it should complete successfully": {
+		"When no operator roles file, it should complete successfully": {
 			setup: func(t *testing.T) Options {
 				return Options{}
 			},
 		},
-		"When ScaleFromZeroProvider has whitespace and uppercase it should normalize": {
+		"When ScaleFromZeroProvider has whitespace and uppercase, it should normalize": {
 			setup: func(t *testing.T) Options {
 				return Options{ScaleFromZeroProvider: "  AWS  "}
 			},
@@ -2602,7 +2602,7 @@ func TestComplete(t *testing.T) {
 				g.Expect(o.ScaleFromZeroProvider).To(Equal("aws"))
 			},
 		},
-		"When a valid operator roles file is specified it should load ARNs": {
+		"When a valid operator roles file is specified, it should load ARNs": {
 			setup: func(t *testing.T) Options {
 				roles := aws.CreateOperatorRolesOutput{
 					OperatorEC2RoleARN:    "arn:aws:iam::123456789012:role/op-ec2",
@@ -2623,7 +2623,7 @@ func TestComplete(t *testing.T) {
 				g.Expect(o.AWSPrivateRoleARN).To(Equal("arn:aws:iam::123456789012:role/op-ec2"))
 			},
 		},
-		"When operator roles file does not exist it should return error": {
+		"When operator roles file does not exist, it should return error": {
 			setup: func(t *testing.T) Options {
 				return Options{AWSOperatorRolesFile: "/nonexistent/path/roles.json"}
 			},

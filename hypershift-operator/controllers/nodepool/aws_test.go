@@ -58,7 +58,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 		checkError          func(*testing.T, error)
 	}{
 		{
-			name: "ebs size",
+			name: "When ebs volume is configured, it should set the root volume size",
 			nodePool: hyperv1.NodePoolSpec{
 				ClusterName: "",
 				Replicas:    nil,
@@ -78,7 +78,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			expected: defaultAWSMachineTemplate(withRootVolume(&volume)),
 		},
 		{
-			name: "Tags from nodepool get copied",
+			name: "When nodepool has resource tags, it should copy them to the template",
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 				ResourceTags: []hyperv1.AWSResourceTag{
 					{Key: "key", Value: "value"},
@@ -91,7 +91,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "Tags from cluster get copied",
+			name: "When cluster has resource tags, it should copy them to the template",
 			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				ResourceTags: []hyperv1.AWSResourceTag{
 					{Key: "key", Value: "value"},
@@ -106,7 +106,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "Cluster tags take precedence over nodepool tags",
+			name: "When both cluster and nodepool have tags, it should give cluster tags precedence",
 			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				ResourceTags: []hyperv1.AWSResourceTag{
 					{Key: "cluster-only", Value: "value"},
@@ -128,7 +128,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name:          "Cluster default sg is used when none specified",
+			name:          "When no security group is specified, it should use the cluster default sg",
 			clusterStatus: &hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "cluster-default"}}},
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 				AMI: amiName,
@@ -138,7 +138,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "NodePool sg is used in addition to cluster default",
+			name: "When nodepool has security groups, it should use them in addition to cluster default",
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 				SecurityGroups: []hyperv1.AWSResourceReference{{ID: ptr.To("nodepool-specific")}},
 				AMI:            amiName,
@@ -148,7 +148,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name:          "NotReady error is returned if no sg specified and no cluster sg is available",
+			name:          "When no sg is specified and no cluster sg is available, it should return NotReady error",
 			clusterStatus: &hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: ""}}},
 			checkError: func(t *testing.T, err error) {
 				var notReadyErr *NotReadyError
@@ -161,7 +161,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}}},
 		},
 		{
-			name: "NodePool has ec2-http-tokens annotation with 'required' as a value",
+			name: "When nodePool has ec2-http-tokens annotation set to required, it should set HTTPTokens to required",
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 				AMI: amiName,
 			}}},
@@ -173,7 +173,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "Windows ImageType without AMI specified should use Windows AMI mapping",
+			name: "When Windows ImageType is set without AMI specified, it should use Windows AMI mapping",
 			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				Region: "us-east-1",
 			}}},
@@ -188,7 +188,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "Windows ImageType with AMI specified should use specified AMI",
+			name: "When Windows ImageType is set with AMI specified, it should use the specified AMI",
 			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				Region: "us-east-1",
 			}}},
@@ -386,7 +386,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 		expectedTags     capiaws.Tags
 	}{
 		{
-			name: "Migration: should avoid rollout on existing nodepools by reusing existing template name when nothing changes",
+			name: "When nothing changes on existing nodepools, it should reuse existing template name to avoid rollout",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{Name: "stable-nodepool"},
 				Spec: hyperv1.NodePoolSpec{
@@ -407,7 +407,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			expectedTags: capiaws.Tags{"version": "stable"},
 		},
 		{
-			name: "should reuse existing template name when only tags change",
+			name: "When only tags change, it should reuse existing template name",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool"},
 				Spec: hyperv1.NodePoolSpec{
@@ -428,7 +428,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			expectedTags: capiaws.Tags{"version": "new"},
 		},
 		{
-			name: "should create a new template name when instanceType changes",
+			name: "When instanceType changes, it should create a new template name",
 			nodePool: &hyperv1.NodePool{ // Desired state has a new instance type.
 				ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool-structural"},
 				Spec: hyperv1.NodePoolSpec{
@@ -456,7 +456,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			expectedTags: capiaws.Tags{"version": "new"},
 		},
 		{
-			name: "should create new template when none exists",
+			name: "When no template exists, it should create a new template",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{Name: "new-nodepool"},
 				Spec: hyperv1.NodePoolSpec{
@@ -482,7 +482,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 		},
 
 		{
-			name: "should find template via MachineSet when UpgradeType is InPlace",
+			name: "When UpgradeType is InPlace, it should find template via MachineSet",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{Name: "inplace-nodepool"},
 				Spec: hyperv1.NodePoolSpec{
@@ -617,7 +617,7 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 		expectedError        string
 	}{
 		{
-			name:                 "If hostedCluster < 4.19 it should fail",
+			name:                 "When hostedCluster version is below 4.19, it should fail",
 			hostedClusterVersion: "4.18.0",
 			expectedError:        "capacityReservation is only supported on 4.19+ clusters",
 		},
@@ -680,14 +680,14 @@ func TestGetWindowsAMI(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name:          "nil release image",
+			name:          "When release image is nil, it should return error",
 			region:        "us-east-1",
 			arch:          hyperv1.ArchitectureAMD64,
 			releaseImage:  nil,
 			expectedError: "release image is nil",
 		},
 		{
-			name:   "nil stream metadata",
+			name:   "When stream metadata is nil, it should return error",
 			region: "us-east-1",
 			arch:   hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -701,7 +701,7 @@ func TestGetWindowsAMI(t *testing.T) {
 			expectedError: "release image stream metadata is nil",
 		},
 		{
-			name:   "architecture not found",
+			name:   "When architecture is not found, it should return error",
 			region: "us-east-1",
 			arch:   hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -755,7 +755,7 @@ func TestGetWindowsAMI(t *testing.T) {
 			expectedError: "no aws-winli regions data found in release image metadata",
 		},
 		{
-			name:   "no aws-winli regions data",
+			name:   "When aws-winli regions data is nil, it should return error",
 			region: "us-east-1",
 			arch:   hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -779,7 +779,7 @@ func TestGetWindowsAMI(t *testing.T) {
 			expectedError: "no aws-winli regions data found in release image metadata",
 		},
 		{
-			name:   "unsupported region",
+			name:   "When region is unsupported, it should return error",
 			region: "unsupported-region",
 			arch:   hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -808,7 +808,7 @@ func TestGetWindowsAMI(t *testing.T) {
 			expectedError: "no Windows AMI found for region unsupported-region in release image metadata",
 		},
 		{
-			name:   "empty AMI image",
+			name:   "When AMI image is empty for region, it should return error",
 			region: "us-east-1",
 			arch:   hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -837,7 +837,7 @@ func TestGetWindowsAMI(t *testing.T) {
 			expectedError: "windows AMI image is empty for region us-east-1 in release image metadata",
 		},
 		{
-			name:   "successful Windows AMI lookup",
+			name:   "When looking up Windows AMI for us-east-1, it should return correct AMI",
 			region: "us-east-1",
 			arch:   hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -870,7 +870,7 @@ func TestGetWindowsAMI(t *testing.T) {
 			expectedAMI: "ami-0abcdef1234567890",
 		},
 		{
-			name:   "successful Windows AMI lookup for different region",
+			name:   "When looking up Windows AMI for eu-west-1, it should return correct AMI",
 			region: "eu-west-1",
 			arch:   hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -1124,7 +1124,7 @@ func TestSetAWSConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionTrue,
 		},
 		{
-			name: "When stream metadata is nil it should set ValidPlatformImage to false",
+			name: "When stream metadata is nil, it should set ValidPlatformImage to false",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Arch:     hyperv1.ArchitectureAMD64,
@@ -1146,7 +1146,7 @@ func TestSetAWSConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionFalse,
 		},
 		{
-			name: "When region has no AMI it should set ValidPlatformImage to false",
+			name: "When region has no AMI, it should set ValidPlatformImage to false",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Arch:     hyperv1.ArchitectureAMD64,
@@ -1165,7 +1165,7 @@ func TestSetAWSConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionFalse,
 		},
 		{
-			name: "When osImageStream is invalid for the release version it should return error",
+			name: "When osImageStream is invalid for the release version, it should return error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Arch:          hyperv1.ArchitectureAMD64,
@@ -1183,7 +1183,7 @@ func TestSetAWSConditions(t *testing.T) {
 			expectError:  true,
 		},
 		{
-			name: "When HostedCluster has no AWS platform it should return error",
+			name: "When HostedCluster has no AWS platform, it should return error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Arch:     hyperv1.ArchitectureAMD64,

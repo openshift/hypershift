@@ -713,7 +713,7 @@ func TestDeriveAESCBCEncryptionConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When rotation in progress and target key should be promoted it should swap keys",
+			name: "When rotation is in progress and target key should be promoted, it should swap keys",
 			secretObjects: []*corev1.Secret{
 				newAESCBCKeySecret("old-key-secret", []byte("old-key-data")),
 				newAESCBCKeySecret("new-key-secret", []byte("new-key-data")),

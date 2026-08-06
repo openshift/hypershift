@@ -79,7 +79,7 @@ func TestAdaptServiceMonitor(t *testing.T) {
 			},
 		},
 		{
-			name:       "When metrics set is SRE with no config loaded, MetricRelabelConfigs should only contain cluster ID",
+			name:       "When metrics set is SRE with no config loaded, it should only contain cluster ID in MetricRelabelConfigs",
 			metricsSet: metrics.MetricsSetSRE,
 			clusterID:  "test-cluster",
 			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {

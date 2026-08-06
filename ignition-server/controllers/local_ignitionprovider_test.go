@@ -711,7 +711,7 @@ func TestCopyMCOOutputToMCC(t *testing.T) {
 	}
 }
 
-func Test_copyMCCConfigInputs(t *testing.T) {
+func TestCopyMCCConfigInputs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1647,7 +1647,7 @@ func TestFetchMCSIgnitionPayload(t *testing.T) {
 			expectOk: false,
 		},
 		{
-			name: "When request succeeds, the correct Accept header should be sent",
+			name: "When request succeeds, it should send the correct Accept header",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Accept") != "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1" {
 					w.WriteHeader(http.StatusBadRequest)

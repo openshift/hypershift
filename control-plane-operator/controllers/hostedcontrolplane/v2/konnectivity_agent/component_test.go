@@ -14,7 +14,7 @@ func TestKonnectivityAgentIsRequestServing(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When called it should return false",
+			name:     "When called, it should return false",
 			expected: false,
 		},
 	}
@@ -40,7 +40,7 @@ func TestKonnectivityAgentMultiZoneSpread(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When called it should return true",
+			name:     "When called, it should return true",
 			expected: true,
 		},
 	}
@@ -66,7 +66,7 @@ func TestKonnectivityAgentNeedsManagementKASAccess(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When called it should return false",
+			name:     "When called, it should return false",
 			expected: false,
 		},
 	}

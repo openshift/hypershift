@@ -73,7 +73,7 @@ func TestReconcileFeatureGate(t *testing.T) {
 		expectedFeatureGates []configv1.FeatureGateDetails
 	}{
 		{
-			name: "when the rendered feature gate is the same as the existing feature gate it should not update",
+			name: "When the rendered feature gate is the same as the existing feature gate it should not update",
 			clusterVersion: configv1.ClusterVersion{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "version",
@@ -118,7 +118,7 @@ func TestReconcileFeatureGate(t *testing.T) {
 			},
 		},
 		{
-			name: "when the rendered feature gate is different from the existing feature gate it should update appending to the status",
+			name: "When the rendered feature gate is different from the existing feature gate it should update appending to the status",
 			clusterVersion: configv1.ClusterVersion{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "version",
@@ -168,7 +168,7 @@ func TestReconcileFeatureGate(t *testing.T) {
 			},
 		},
 		{
-			name: "when the existing feature gate version is not in the clusterVersion it should be dropped from the status",
+			name: "When the existing feature gate version is not in the clusterVersion it should be dropped from the status",
 			clusterVersion: configv1.ClusterVersion{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "version",
@@ -225,7 +225,7 @@ func TestReconcileFeatureGate(t *testing.T) {
 			},
 		},
 		{
-			name: "when the clusterVersion does not exist it should not fail and append everything to the status",
+			name: "When the clusterVersion does not exist it should not fail and append everything to the status",
 			existingFeatureGate: configv1.FeatureGate{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cluster",
@@ -275,7 +275,7 @@ func TestReconcileFeatureGate(t *testing.T) {
 			},
 		},
 		{
-			name: "when clusterVersion has a completed entry, it should only keep feature gates for versions after the completed entry",
+			name: "When clusterVersion has a completed entry, it should only keep feature gates for versions after the completed entry",
 			clusterVersion: configv1.ClusterVersion{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "version",
@@ -411,14 +411,14 @@ func TestApplyManifest(t *testing.T) {
 		expectErr string
 	}{
 		{
-			name: "when the manifest file does not exist it should return an error",
+			name: "When the manifest file does not exist, it should return an error",
 			setup: func(t *testing.T, g Gomega) (Apply, string) {
 				return newFakeApplyClient(), filepath.Join(t.TempDir(), "nonexistent.yaml")
 			},
 			expectErr: "failed to read file",
 		},
 		{
-			name: "when the manifest file contains invalid YAML it should return a decode error",
+			name: "When the manifest file contains invalid YAML, it should return a decode error",
 			setup: func(t *testing.T, g Gomega) (Apply, string) {
 				invalidPath := filepath.Join(t.TempDir(), "invalid.yaml")
 				g.Expect(os.WriteFile(invalidPath, []byte("not: a: valid: k8s: resource"), 0644)).To(Succeed())
@@ -427,14 +427,14 @@ func TestApplyManifest(t *testing.T) {
 			expectErr: "failed to decode file",
 		},
 		{
-			name: "when the apply client returns an error it should propagate",
+			name: "When the apply client returns an error, it should propagate",
 			setup: func(t *testing.T, g Gomega) (Apply, string) {
 				return &errorApplyClient{err: fmt.Errorf("connection refused")}, filepath.Join(".", "testdata", kasBootstrapContainerRolebindingManifest)
 			},
 			expectErr: "failed to apply file",
 		},
 		{
-			name: "when the manifest is valid it should apply successfully",
+			name: "When the manifest is valid, it should apply successfully",
 			setup: func(t *testing.T, g Gomega) (Apply, string) {
 				return newFakeApplyClient(), "./testdata/0000_10_config-operator_01_featuregates.crd.yaml"
 			},

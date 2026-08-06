@@ -24,7 +24,7 @@ func TestValidate(t *testing.T) {
 		expectValid bool
 	}{
 		{
-			name: "valid options",
+			name: "When all required options are provided it should be valid",
 			o: Options{
 				CAFile:           "test-ca",
 				ClientCertBytes:  []byte("test-cert"),
@@ -36,7 +36,7 @@ func TestValidate(t *testing.T) {
 			expectValid: true,
 		},
 		{
-			name: "missing CA",
+			name: "When CA is missing it should be invalid",
 			o: Options{
 				ClientCertBytes:  []byte("test-cert"),
 				ClientKeyFile:    "test-key-name",
@@ -47,7 +47,7 @@ func TestValidate(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "missing KonnectivityPort",
+			name: "When KonnectivityPort is missing it should be invalid",
 			o: Options{
 				CABytes:          []byte("test-ca"),
 				ClientCertBytes:  []byte("test-cert"),
@@ -58,7 +58,7 @@ func TestValidate(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "client cert file and bytes",
+			name: "When both client cert file and bytes are provided it should be invalid",
 			o: Options{
 				CAFile:           "test-ca",
 				ClientCertFile:   "test-cert-file",
@@ -93,13 +93,13 @@ func TestKonnectivityHealth(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When healthy it should allow retry",
+			name:     "When healthy, it should allow retry",
 			setup:    func(kh *konnectivityHealth) {},
 			action:   func(kh *konnectivityHealth) bool { return kh.beginRetry() },
 			expected: true,
 		},
 		{
-			name: "When in fallback and too soon it should not retry",
+			name: "When in fallback and too soon, it should not retry",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 			},
@@ -107,7 +107,7 @@ func TestKonnectivityHealth(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When in fallback and enough time passed it should retry",
+			name: "When in fallback and enough time passed, it should retry",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 				// Set lastRetryTime to past
@@ -117,7 +117,7 @@ func TestKonnectivityHealth(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When another retry is active it should not retry",
+			name: "When another retry is active, it should not retry",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 				kh.lastRetryTime = time.Now().Add(-31 * time.Second)
@@ -127,7 +127,7 @@ func TestKonnectivityHealth(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "After success it should be healthy",
+			name: "When the check succeeds, it should be healthy",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 				kh.markSuccess()
@@ -136,7 +136,7 @@ func TestKonnectivityHealth(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "After failure it should be unhealthy",
+			name: "When the check fails, it should be unhealthy",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 			},
@@ -208,7 +208,7 @@ func TestKonnectivityHealthEndRetry(t *testing.T) {
 		expectRetry bool
 	}{
 		{
-			name: "When endRetry is called it should clear activeRetry flag",
+			name: "When endRetry is called, it should clear activeRetry flag",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 				kh.lastRetryTime = time.Now().Add(-31 * time.Second)
@@ -220,7 +220,7 @@ func TestKonnectivityHealthEndRetry(t *testing.T) {
 			expectRetry: true, // Should allow retry since activeRetry was cleared
 		},
 		{
-			name: "When endRetry is called after beginRetry it should allow subsequent retries",
+			name: "When endRetry is called after beginRetry, it should allow subsequent retries",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 				kh.lastRetryTime = time.Now().Add(-31 * time.Second)
@@ -232,7 +232,7 @@ func TestKonnectivityHealthEndRetry(t *testing.T) {
 			expectRetry: true, // Should allow new retry after endRetry was called
 		},
 		{
-			name: "When multiple endRetry calls it should remain safe",
+			name: "When multiple endRetry calls, it should remain safe",
 			setup: func(kh *konnectivityHealth) {
 				kh.markFailure()
 				kh.lastRetryTime = time.Now().Add(-31 * time.Second)
@@ -434,25 +434,25 @@ func TestIsCloudAPI(t *testing.T) {
 	}{
 		// Valid cloud API hosts
 		{
-			name:        "When host is valid AWS API it should return true",
+			name:        "When host is valid AWS API, it should return true",
 			host:        "ec2.amazonaws.com",
 			expected:    true,
 			description: "AWS API endpoints should be detected",
 		},
 		{
-			name:        "When host is valid Azure API it should return true",
+			name:        "When host is valid Azure API, it should return true",
 			host:        "management.azure.com",
 			expected:    true,
 			description: "Azure API endpoints should be detected",
 		},
 		{
-			name:        "When host is valid Microsoft API it should return true",
+			name:        "When host is valid Microsoft API, it should return true",
 			host:        "login.microsoftonline.com",
 			expected:    true,
 			description: "Microsoft API endpoints should be detected",
 		},
 		{
-			name:        "When host is valid IBM API it should return true",
+			name:        "When host is valid IBM API, it should return true",
 			host:        "iam.cloud.ibm.com",
 			expected:    true,
 			description: "IBM Cloud API endpoints should be detected",
@@ -460,19 +460,19 @@ func TestIsCloudAPI(t *testing.T) {
 
 		// Valid AWS ISO cloud API hosts
 		{
-			name:        "When host is valid AWS ISO C2S API it should return true",
+			name:        "When host is valid AWS ISO C2S API, it should return true",
 			host:        "s3.c2s.ic.gov",
 			expected:    true,
 			description: "AWS ISO C2S endpoints should be detected",
 		},
 		{
-			name:        "When host is valid AWS ISO HCI API it should return true",
+			name:        "When host is valid AWS ISO HCI API, it should return true",
 			host:        "iam.hci.ic.gov",
 			expected:    true,
 			description: "AWS ISO HCI endpoints should be detected",
 		},
 		{
-			name:        "When host is valid AWS ISO-B SC2S API it should return true",
+			name:        "When host is valid AWS ISO-B SC2S API, it should return true",
 			host:        "s3.sc2s.sgov.gov",
 			expected:    true,
 			description: "AWS ISO-B SC2S endpoints should be detected",
@@ -480,25 +480,25 @@ func TestIsCloudAPI(t *testing.T) {
 
 		// False positive scenarios that were fixed
 		{
-			name:        "When host contains azure.com but is not azure.com it should return false",
+			name:        "When host contains azure.com but is not azure.com, it should return false",
 			host:        "notazure.com",
 			expected:    false,
 			description: "False positive: hosts ending with azure.com but not actually Azure",
 		},
 		{
-			name:        "When host contains cloud.ibm.com but is not IBM it should return false",
+			name:        "When host contains cloud.ibm.com but is not IBM, it should return false",
 			host:        "fakecloud.ibm.com",
 			expected:    false,
 			description: "False positive: hosts ending with cloud.ibm.com but not actually IBM",
 		},
 		{
-			name:        "When host is malicious azure lookalike it should return false",
+			name:        "When host is malicious azure lookalike, it should return false",
 			host:        "evilazure.com",
 			expected:    false,
 			description: "Malicious hosts trying to mimic Azure should not be detected as cloud API",
 		},
 		{
-			name:        "When host is malicious IBM lookalike it should return false",
+			name:        "When host is malicious IBM lookalike, it should return false",
 			host:        "badcloud.ibm.com",
 			expected:    false,
 			description: "Malicious hosts trying to mimic IBM should not be detected as cloud API",
@@ -506,13 +506,13 @@ func TestIsCloudAPI(t *testing.T) {
 
 		// Edge cases
 		{
-			name:        "When host is exactly azure.com it should return false",
+			name:        "When host is exactly azure.com, it should return false",
 			host:        "azure.com",
 			expected:    false,
 			description: "Bare azure.com without subdomain should not be cloud API",
 		},
 		{
-			name:        "When host is exactly cloud.ibm.com it should return false",
+			name:        "When host is exactly cloud.ibm.com, it should return false",
 			host:        "cloud.ibm.com",
 			expected:    false,
 			description: "Bare cloud.ibm.com without subdomain should not be cloud API",
@@ -520,13 +520,13 @@ func TestIsCloudAPI(t *testing.T) {
 
 		// Non-cloud hosts
 		{
-			name:        "When host is not cloud API it should return false",
+			name:        "When host is not cloud API, it should return false",
 			host:        "example.com",
 			expected:    false,
 			description: "Regular hosts should not be detected as cloud API",
 		},
 		{
-			name:        "When host is empty it should return false",
+			name:        "When host is empty, it should return false",
 			host:        "",
 			expected:    false,
 			description: "Empty host should not be detected as cloud API",
