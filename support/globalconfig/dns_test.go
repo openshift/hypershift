@@ -126,6 +126,88 @@ func TestReconcileDNSConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:           "When Azure platform topology is Private, it should include both zones",
+			inputDNSConfig: DNSConfig(),
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Name: fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain:    fakeBaseDomain,
+						PublicZoneID:  fakePublicZoneID,
+						PrivateZoneID: fakePrivateZoneID,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+						},
+					},
+				},
+			},
+			expectedDNSConfig: &configv1.DNS{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.DNSSpec{
+					BaseDomain: fmt.Sprintf("%s.%s", fakeHCPName, fakeBaseDomain),
+					PublicZone: &configv1.DNSZone{
+						ID: fakePublicZoneID,
+					},
+					PrivateZone: &configv1.DNSZone{
+						ID: fakePrivateZoneID,
+					},
+				},
+			},
+		},
+		{
+			name:           "When AWS SharedVPC is configured, it should set PrivateZoneIAMRole",
+			inputDNSConfig: DNSConfig(),
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Name: fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain:    fakeBaseDomain,
+						PublicZoneID:  fakePublicZoneID,
+						PrivateZoneID: fakePrivateZoneID,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							SharedVPC: &hyperv1.AWSSharedVPC{
+								RolesRef: hyperv1.AWSSharedVPCRolesRef{
+									IngressARN: "arn:aws:iam::123456789012:role/ingress-role",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedDNSConfig: &configv1.DNS{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.DNSSpec{
+					BaseDomain: fmt.Sprintf("%s.%s", fakeHCPName, fakeBaseDomain),
+					PublicZone: &configv1.DNSZone{
+						ID: fakePublicZoneID,
+					},
+					PrivateZone: &configv1.DNSZone{
+						ID: fakePrivateZoneID,
+					},
+					Platform: configv1.DNSPlatformSpec{
+						Type: configv1.AWSPlatformType,
+						AWS: &configv1.AWSDNSSpec{
+							PrivateZoneIAMRole: "arn:aws:iam::123456789012:role/ingress-role",
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -202,7 +202,7 @@ type resourceToDelete struct {
 // deleteClusterResourcesInGroup deletes cluster-specific resources within a resource group
 // while preserving the resource group itself and any non-cluster resources.
 // Resources are identified as cluster-specific if they contain the infraID in their name OR
-// if they match the cluster naming pattern (e.g., {name}-azurecluster.{baseDomain} for DNS zones).
+// if they match the cluster naming pattern (e.g., {name}.{baseDomain} for DNS zones).
 // Resources are deleted in dependency order to avoid conflicts.
 func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context, logger logr.Logger, resourcesClient *armresources.Client, resourceGroupName string) error {
 	// List all resources in the resource group
@@ -222,8 +222,10 @@ func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context,
 
 			// Only delete resources that are cluster-specific
 			// Resources are identified as cluster-specific if they contain the InfraID OR
-			// if they match the cluster naming pattern (e.g., {name}-azurecluster.{baseDomain} for DNS zones)
+			// if they match the cluster naming pattern for DNS zones (both current {name}.{baseDomain}
+			// and legacy {name}-azurecluster.{baseDomain} formats)
 			isClusterResource := strings.Contains(*resource.Name, o.InfraID) ||
+				strings.HasPrefix(*resource.Name, o.Name+".") ||
 				strings.HasPrefix(*resource.Name, o.Name+"-azurecluster.")
 
 			if isClusterResource {

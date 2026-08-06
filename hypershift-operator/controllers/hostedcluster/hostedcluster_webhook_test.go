@@ -496,7 +496,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 // util function used to generate a service map that is different than the defaults
 func customKubeVirtServiceMap() []v1beta1.ServicePublishingStrategyMapping {
 	// use the defaults as a basis
-	defaults := core.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false)
+	defaults := core.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false, false)
 
 	custom := []v1beta1.ServicePublishingStrategyMapping{}
 	for _, cur := range defaults {
@@ -537,7 +537,7 @@ func TestKubevirtClusterServiceDefaulting(t *testing.T) {
 					},
 				},
 			},
-			expectedServices: core.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false),
+			expectedServices: core.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false, false),
 		},
 		{
 			name: "don't default when services already exist",

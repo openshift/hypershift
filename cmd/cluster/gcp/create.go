@@ -306,7 +306,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 		}
 	}
 
-	hostedCluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(hostedCluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
+	hostedCluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(hostedCluster.Spec.Networking.NetworkType, o.externalDNSDomain != "", false)
 
 	if o.externalDNSDomain != "" {
 		// Only APIServer and OAuthServer need external DNS routes.

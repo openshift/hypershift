@@ -210,7 +210,7 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 		}
 	}
 
-	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
+	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false, false)
 
 	// MachineNetwork has no default in Hypershift, but it's convenient to have one for OpenStack:
 	// * To specify the subnet that CAPO will manage.
