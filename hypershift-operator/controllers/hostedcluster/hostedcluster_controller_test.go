@@ -7278,7 +7278,7 @@ func TestValidateAzureConfig(t *testing.T) {
 }
 
 func TestValidateManagedHSMVersion(t *testing.T) {
-	managedHSMCluster := func(version string) (*hyperv1.HostedCluster, semver.Version) {
+	managedHSMCluster := func() *hyperv1.HostedCluster {
 		return &hyperv1.HostedCluster{
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
@@ -7295,7 +7295,7 @@ func TestValidateManagedHSMVersion(t *testing.T) {
 					},
 				},
 			},
-		}, semver.MustParse(version)
+		}
 	}
 
 	testCases := []struct {
@@ -7340,26 +7340,29 @@ func TestValidateManagedHSMVersion(t *testing.T) {
 		},
 		{
 			name:        "When the release version is 4.21, it should reject ManagedHSM",
+			hc:          managedHSMCluster(),
+			version:     semver.MustParse("4.21.3"),
 			expectError: true,
 		},
 		{
 			name:        "When the release version is exactly 4.22.0, it should accept ManagedHSM",
+			hc:          managedHSMCluster(),
+			version:     semver.MustParse("4.22.0"),
 			expectError: false,
 		},
 		{
 			name:        "When the release version is newer than 4.22, it should accept ManagedHSM",
+			hc:          managedHSMCluster(),
+			version:     semver.MustParse("4.23.0"),
 			expectError: false,
 		},
 		{
 			name:        "When the release version has a newer major version, it should accept ManagedHSM",
+			hc:          managedHSMCluster(),
+			version:     semver.MustParse("5.0.0"),
 			expectError: false,
 		},
 	}
-
-	testCases[2].hc, testCases[2].version = managedHSMCluster("4.21.3")
-	testCases[3].hc, testCases[3].version = managedHSMCluster("4.22.0")
-	testCases[4].hc, testCases[4].version = managedHSMCluster("4.23.0")
-	testCases[5].hc, testCases[5].version = managedHSMCluster("5.0.0")
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
