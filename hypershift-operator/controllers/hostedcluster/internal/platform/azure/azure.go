@@ -369,11 +369,6 @@ const deletionFailedThreshold = 10 * time.Minute
 // for a Ready=False condition with Reason=DeletionFailed. Orphaning the machine allows management
 // cluster cleanup to proceed without requiring valid cloud credentials.
 func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	// This orphaning behavior is intended for managed-identity cleanup flow.
-	if hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities == nil {
-		return nil
-	}
-
 	azureMachineList := capiazure.AzureMachineList{}
 	if err := c.List(ctx, &azureMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
 		return fmt.Errorf("failed to list AzureMachines in %s: %w", controlPlaneNamespace, err)
@@ -403,7 +398,7 @@ func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hy
 				azureMachine.Namespace, azureMachine.Name, err))
 			continue
 		}
-		logger.Info("orphaning azuremachine stuck in deletion due to credential failure",
+		logger.Info("orphaning AzureMachine stuck in deletion due to deletion failure",
 			"machine", client.ObjectKeyFromObject(azureMachine))
 	}
 
