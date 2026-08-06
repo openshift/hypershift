@@ -492,7 +492,6 @@ func (r *reconciler) reconcileStorageAndMisc(ctx context.Context, log logr.Logge
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
-	errs = append(errs, r.ensureGuestAdmissionWebhooksAreValid(ctx))
 	return errs
 }
 
@@ -2935,61 +2934,6 @@ func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.
 	return false, nil
 }
 
-func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {
-	log := ctrl.LoggerFrom(ctx)
-
-	cpServices := &corev1.ServiceList{}
-	if err := r.cpClient.List(ctx, cpServices, client.InNamespace(r.hcpNamespace)); err != nil {
-		return fmt.Errorf("failed to list control plane services: %w", err)
-	}
-
-	// disallow all urls targeting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
-	disallowedUrls := make([]string, 0)
-	for _, svc := range cpServices.Items {
-		if _, exist := svc.Labels[hyperv1.AllowGuestWebhooksServiceLabel]; exist {
-			continue
-		}
-
-		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s", svc.Name))
-		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc", svc.Name, svc.Namespace))
-		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc.cluster.local", svc.Name, svc.Namespace))
-	}
-
-	validatingWebhookConfigurations := &admissionregistrationv1.ValidatingWebhookConfigurationList{}
-	if err := r.client.List(ctx, validatingWebhookConfigurations); err != nil {
-		return fmt.Errorf("failed to list validatingWebhookConfigurations: %w", err)
-	}
-
-	errs := make([]error, 0)
-	for _, configuration := range validatingWebhookConfigurations.Items {
-		for _, webhook := range configuration.Webhooks {
-			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
-				log.Info("deleting validating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
-				errs = append(errs, r.client.Delete(ctx, &configuration))
-				break
-			}
-		}
-	}
-
-	mutatingWebhookConfigurations := &admissionregistrationv1.MutatingWebhookConfigurationList{}
-	if err := r.client.List(ctx, mutatingWebhookConfigurations); err != nil {
-		errs = append(errs, fmt.Errorf("failed to list mutatingWebhookConfigurations: %w", err))
-		return utilerrors.NewAggregate(errs)
-	}
-
-	for _, configuration := range mutatingWebhookConfigurations.Items {
-		for _, webhook := range configuration.Webhooks {
-			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
-				log.Info("deleting mutating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
-				errs = append(errs, r.client.Delete(ctx, &configuration))
-				break
-			}
-		}
-	}
-
-	return utilerrors.NewAggregate(errs)
-}
-
 // reconcileKubeletConfig Lists the KubeletConfig ConfigMaps from the controlPlane cluster
 // and copies them to the hosted cluster.
 // In addition, it deletes KubeletConfig ConfigMaps from the hosted cluster which are no longer relevant.
@@ -3116,16 +3060,6 @@ func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.C
 	})
 	hostedClusterConfigMap.Data = controlPlaneConfigMap.Data
 	return nil
-}
-
-func isAllowedWebhookUrl(disallowedUrls []string, url string) bool {
-	for i := range disallowedUrls {
-		if strings.Contains(url, disallowedUrls[i]) {
-			return false
-		}
-	}
-
-	return true
 }
 
 func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
