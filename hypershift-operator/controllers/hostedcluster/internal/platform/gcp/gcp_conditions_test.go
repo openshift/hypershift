@@ -138,7 +138,7 @@ func TestGetCredentialStatus(t *testing.T) {
 		description string
 	}{
 		{
-			name: "When both conditions are true, status is Valid (0)",
+			name: "When both conditions are true, it should return Valid (0)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
 				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
@@ -147,7 +147,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "Both conditions present and true → Valid",
 		},
 		{
-			name: "When ValidGCPWorkloadIdentity is false, status is Invalid (1)",
+			name: "When ValidGCPWorkloadIdentity is false, it should return Invalid (1)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
 				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
@@ -156,7 +156,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "ValidGCPWorkloadIdentity false → Invalid",
 		},
 		{
-			name: "When ValidGCPCredentials is false, status is Invalid (1)",
+			name: "When ValidGCPCredentials is false, it should return Invalid (1)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
 				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
@@ -165,7 +165,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "ValidGCPCredentials false → Invalid",
 		},
 		{
-			name: "When both conditions are false, status is Invalid (1)",
+			name: "When both conditions are false, it should return Invalid (1)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
 				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
@@ -174,7 +174,25 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "Both false → Invalid",
 		},
 		{
-			name: "When ValidGCPWorkloadIdentity is unknown, status is Unknown (2)",
+			name: "When ValidGCPWorkloadIdentity is false and ValidGCPCredentials is unknown, it should return Invalid (1)",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionUnknown},
+			},
+			expected:    CredentialStatusInvalid,
+			description: "ValidGCPWorkloadIdentity false overrides ValidGCPCredentials unknown → Invalid",
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is unknown and ValidGCPCredentials is false, it should return Invalid (1)",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionUnknown},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+			},
+			expected:    CredentialStatusInvalid,
+			description: "ValidGCPCredentials false overrides ValidGCPWorkloadIdentity unknown → Invalid",
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is unknown, it should return Unknown (2)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionUnknown},
 				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
@@ -183,7 +201,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "ValidGCPWorkloadIdentity unknown → Unknown",
 		},
 		{
-			name: "When ValidGCPCredentials is unknown, status is Unknown (2)",
+			name: "When ValidGCPCredentials is unknown, it should return Unknown (2)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
 				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionUnknown},
@@ -192,7 +210,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "ValidGCPCredentials unknown → Unknown",
 		},
 		{
-			name: "When ValidGCPWorkloadIdentity is missing, status is Unknown (2)",
+			name: "When ValidGCPWorkloadIdentity is missing, it should return Unknown (2)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
 			},
@@ -200,7 +218,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "ValidGCPWorkloadIdentity missing → Unknown",
 		},
 		{
-			name: "When ValidGCPCredentials is missing, status is Unknown (2)",
+			name: "When ValidGCPCredentials is missing, it should return Unknown (2)",
 			conditions: []metav1.Condition{
 				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
 			},
@@ -208,7 +226,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			description: "ValidGCPCredentials missing → Unknown",
 		},
 		{
-			name:        "When no conditions exist, status is Unknown (2)",
+			name:        "When no conditions exist, it should return Unknown (2)",
 			conditions:  []metav1.Condition{},
 			expected:    CredentialStatusUnknown,
 			description: "No conditions → Unknown (covers non-GCP clusters)",
