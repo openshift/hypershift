@@ -2,6 +2,8 @@ module github.com/openshift/hypershift/api
 
 go 1.26.0
 
+toolchain go1.26.5
+
 require (
 	github.com/openshift/api v0.0.0-20260715165912-72066cc9718b
 	k8s.io/api v0.36.2

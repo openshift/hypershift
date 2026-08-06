@@ -2,6 +2,8 @@ module github.com/openshift/hypershift/hack/tools
 
 go 1.25.7
 
+toolchain go1.25.12
+
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
 	github.com/go-git/go-git/v5 v5.19.1
