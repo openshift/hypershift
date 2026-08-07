@@ -25,7 +25,6 @@ func TestCheckCatalogImageOverrides(t *testing.T) {
 			name: "When all images are empty, it should return false with no error",
 			images: map[string]string{
 				"redhat-operators":    "",
-				"redhat-marketplace":  "",
 				"community-operators": "",
 				"certified-operators": "",
 			},
@@ -36,7 +35,6 @@ func TestCheckCatalogImageOverrides(t *testing.T) {
 			name: "When all images are provided with sha256, it should return true with no error",
 			images: map[string]string{
 				"redhat-operators":    "registry.io/repo@sha256:abc123",
-				"redhat-marketplace":  "registry.io/repo@sha256:def456",
 				"community-operators": "registry.io/repo@sha256:ghi789",
 				"certified-operators": "registry.io/repo@sha256:jkl012",
 			},
@@ -47,7 +45,6 @@ func TestCheckCatalogImageOverrides(t *testing.T) {
 			name: "When image is provided without sha256, it should return error",
 			images: map[string]string{
 				"redhat-operators":    "registry.io/repo:latest",
-				"redhat-marketplace":  "",
 				"community-operators": "",
 				"certified-operators": "",
 			},
@@ -58,12 +55,11 @@ func TestCheckCatalogImageOverrides(t *testing.T) {
 			name: "When some images are missing, it should return error",
 			images: map[string]string{
 				"redhat-operators":    "registry.io/repo@sha256:abc123",
-				"redhat-marketplace":  "registry.io/repo@sha256:def456",
 				"community-operators": "",
 				"certified-operators": "",
 			},
 			expectedOverride: false,
-			expectedError:    errors.New("if OLM catalog images are overridden, all the values for the 4 default catalogs should be provided"),
+			expectedError:    errors.New("if OLM catalog images are overridden, all the values for the 3 default catalogs should be provided"),
 		},
 	}
 
@@ -97,7 +93,6 @@ func TestGetCatalogImagesOverrides(t *testing.T) {
 			name: "When all catalog annotations are set with sha256, it should return overrides",
 			annotations: map[string]string{
 				hyperv1.RedHatOperatorsCatalogImageAnnotation:    "registry.io/redhat@sha256:abc",
-				hyperv1.RedHatMarketplaceCatalogImageAnnotation:  "registry.io/marketplace@sha256:def",
 				hyperv1.CommunityOperatorsCatalogImageAnnotation: "registry.io/community@sha256:ghi",
 				hyperv1.CertifiedOperatorsCatalogImageAnnotation: "registry.io/certified@sha256:jkl",
 			},
@@ -105,7 +100,6 @@ func TestGetCatalogImagesOverrides(t *testing.T) {
 			validate: func(g Gomega, result map[string]string, err error) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(result).To(HaveKeyWithValue("redhat-operators", "registry.io/redhat@sha256:abc"))
-				g.Expect(result).To(HaveKeyWithValue("redhat-marketplace", "registry.io/marketplace@sha256:def"))
 				g.Expect(result).To(HaveKeyWithValue("community-operators", "registry.io/community@sha256:ghi"))
 				g.Expect(result).To(HaveKeyWithValue("certified-operators", "registry.io/certified@sha256:jkl"))
 			},

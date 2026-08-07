@@ -11,10 +11,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/blang/semver"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/podspec"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -24,6 +26,7 @@ type WorkloadSpec struct {
 	Type        string
 	Name        string
 	Platform    *hyperv1.PlatformType
+	MaxVersion  *semver.Version // if set, workload is only expected on clusters < this version
 	PodSelector map[string]string
 }
 
@@ -348,8 +351,9 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			},
 		},
 		{
-			Type: "Deployment",
-			Name: "redhat-marketplace-catalog",
+			Type:       "Deployment",
+			Name:       "redhat-marketplace-catalog",
+			MaxVersion: &semver.Version{Major: 4, Minor: 22, Patch: 0},
 			PodSelector: map[string]string{
 				"olm.catalogSource": "redhat-marketplace",
 			},
@@ -515,12 +519,24 @@ func ShouldSkipWorkloadForPlatform(workload WorkloadSpec, hostedCluster *hyperv1
 	return false
 }
 
+// ShouldSkipWorkloadForVersion determines whether the workload should be skipped
+// based on the cluster version exceeding the workload's MaxVersion.
+func ShouldSkipWorkloadForVersion(workload WorkloadSpec) bool {
+	if workload.MaxVersion != nil && e2eutil.IsGreaterThanOrEqualTo(*workload.MaxVersion) {
+		return true
+	}
+	return false
+}
+
 // validateControlPlaneWorkloadsByType validates control plane workloads of specified types.
 // This is a generic function that handles both Deployments and StatefulSets.
 func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []string, excludeWorkloads []string) error {
 	workloads := GetControlPlaneWorkloads()
 	for _, workload := range workloads {
 		if ShouldSkipWorkloadForPlatform(workload, testCtx.GetHostedCluster()) {
+			continue
+		}
+		if ShouldSkipWorkloadForVersion(workload) {
 			continue
 		}
 		if !slices.Contains(workloadTypes, workload.Type) {

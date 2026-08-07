@@ -1209,6 +1209,10 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return err
 	}
 
+	if err := r.cleanupOldRedHatMarketplaceCatalogResources(ctx, hcp); err != nil {
+		return err
+	}
+
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 		role := ignitionmanifests.ProxyRole(hcp.Namespace)
 		sa := ignitionmanifests.ProxyServiceAccount(hcp.Namespace)
@@ -2078,6 +2082,20 @@ func (r *HostedControlPlaneReconciler) cleanupOldPKIOperatorDeployment(ctx conte
 		return d.Spec.Selector != nil && d.Spec.Selector.MatchLabels["name"] == "control-plane-pki-operator"
 	}); err != nil {
 		return fmt.Errorf("failed to remove pki-operator deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) cleanupOldRedHatMarketplaceCatalogResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	oldResources := []client.Object{
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "redhat-marketplace-catalog"}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "redhat-marketplace-catalog"}},
+		&hyperv1.ControlPlaneComponent{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "redhat-marketplace-catalog"}},
+	}
+	for _, resource := range oldResources {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
+			return fmt.Errorf("failed to delete %T %s: %w", resource, resource.GetName(), err)
+		}
 	}
 	return nil
 }
