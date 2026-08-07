@@ -49,6 +49,8 @@ data:
   profile: Default
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: a35581fcd04bff680ae3f7faa04c658ed9390336500a341141e734606f5cce4c
   name: openshift-apiserver-audit
   namespace: hcp-namespace
   ownerReferences:
