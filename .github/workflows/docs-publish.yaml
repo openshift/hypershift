@@ -7,6 +7,9 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/docs-publish.yaml'
+      - '.github/workflows/docs-build-reusable.yaml'
+      - '.github/workflows/docs-deploy-reusable.yaml'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
