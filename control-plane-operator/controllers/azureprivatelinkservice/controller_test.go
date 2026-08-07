@@ -672,11 +672,12 @@ func TestReconcile_WhenFinalizerNotPresent_ItShouldAddFinalizer(t *testing.T) {
 	scheme := newTestScheme(t, g)
 
 	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "kas.example.com")
 	// No finalizer set
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(azPLS).
+		WithObjects(azPLS, hcp).
 		WithStatusSubresource(azPLS).
 		Build()
 
@@ -1374,6 +1375,327 @@ func TestReconcile_WhenHCPIsBeingDeleted_ItShouldTriggerCleanupInsteadOfCreation
 	}
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(updatedHCP.Finalizers).ToNot(ContainElement(hcpAzurePLSFinalizerName), "HCP finalizer should be removed")
+}
+
+func newTestReconciler(fakeClient client.Client) *AzurePrivateLinkServiceReconciler {
+	return &AzurePrivateLinkServiceReconciler{
+		Client:              fakeClient,
+		PrivateEndpoints:    &mockPrivateEndpoints{},
+		PrivateDNSZones:     &mockPrivateDNSZones{},
+		VirtualNetworkLinks: &mockVirtualNetworkLinks{},
+		RecordSets:          &mockRecordSets{},
+	}
+}
+
+func TestReconcileHCPDeletion_WhenMultipleCRsExist_ItShouldRemoveAllPerCRFinalizers(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS1 := newTestAzurePLS(t, privateRouterCRName, "test-ns")
+	azPLS1.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS1.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	azPLS2 := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS2.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS2.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS1, azPLS2, hcp).
+		WithStatusSubresource(azPLS1, azPLS2).
+		Build()
+
+	mockDNS := &mockPrivateDNSZones{}
+	r := newTestReconciler(fakeClient)
+	r.PrivateDNSZones = mockDNS
+
+	result, err := r.reconcileHCPDeletion(t.Context(), azPLS1, hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile HCP deletion with multiple AzurePrivateLinkService CRs")
+	g.Expect(result.IsZero()).To(BeTrue(), "expected zero requeue result after successful multi-CR HCP deletion cleanup")
+
+	// Neither CR has BaseDomain set, so deleteBaseDomainDNSZone should be a no-op.
+	// Only the internal hypershift.local zones should be deleted (one per CR).
+	for _, zoneName := range mockDNS.deletedZoneNames {
+		g.Expect(zoneName).To(Equal("test-hcp.hypershift.local"),
+			"only internal DNS zones should be deleted when no BaseDomain is set")
+	}
+
+	// Both CRs should have per-CR finalizer removed
+	updated1 := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: privateRouterCRName, Namespace: "test-ns"}, updated1)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get first AzurePrivateLinkService CR after HCP deletion reconciliation")
+	g.Expect(updated1.Finalizers).ToNot(ContainElement(azurePrivateLinkServiceFinalizer),
+		"per-CR finalizer should be removed from first CR")
+
+	updated2 := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"}, updated2)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get second AzurePrivateLinkService CR after HCP deletion reconciliation")
+	g.Expect(updated2.Finalizers).ToNot(ContainElement(azurePrivateLinkServiceFinalizer),
+		"per-CR finalizer should be removed from second CR")
+
+	// Shared HCP finalizer should be removed. The fake client garbage-collects
+	// objects whose DeletionTimestamp is set and all finalizers are removed,
+	// so a NotFound error confirms the finalizer was successfully removed.
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	if apierrors.IsNotFound(err) {
+		return
+	}
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get HCP after multi-CR HCP deletion reconciliation")
+	g.Expect(updatedHCP.Finalizers).ToNot(ContainElement(hcpAzurePLSFinalizerName),
+		"shared HCP finalizer should be removed after all CRs are cleaned up")
+}
+
+func TestReconcileHCPDeletion_WhenMultipleCRsShareBaseDomain_ItShouldDeleteBaseDomainZone(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS1 := newTestAzurePLS(t, privateRouterCRName, "test-ns")
+	azPLS1.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS1.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS1.Spec.BaseDomain = "example.com"
+
+	azPLS2 := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS2.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS2.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS2.Spec.BaseDomain = "example.com"
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS1, azPLS2, hcp).
+		WithStatusSubresource(azPLS1, azPLS2).
+		Build()
+
+	mockDNS := &mockPrivateDNSZones{}
+	r := newTestReconciler(fakeClient)
+	r.PrivateDNSZones = mockDNS
+
+	result, err := r.reconcileHCPDeletion(t.Context(), azPLS1, hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+
+	// The base domain zone should be explicitly deleted by deleteBaseDomainDNSZone,
+	// even though hasSiblingCR prevented each CR's reconcileDelete from doing it.
+	g.Expect(mockDNS.deletedZoneNames).To(ContainElement("example.com"),
+		"base domain DNS zone should be deleted during HCP deletion with multiple CRs")
+}
+
+func TestReconcileHCPDeletion_WhenSingleCRHasBaseDomain_ItShouldDeleteBaseDomainZoneIdempotently(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	// Single CR with BaseDomain: reconcileDelete already deletes the zone (hasSiblingCR
+	// returns false), then deleteBaseDomainDNSZone tries again and gets NotFound (no-op).
+	azPLS := newTestAzurePLS(t, privateRouterCRName, "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS.Spec.BaseDomain = "example.com"
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	mockDNS := &mockPrivateDNSZones{}
+	r := newTestReconciler(fakeClient)
+	r.PrivateDNSZones = mockDNS
+
+	result, err := r.reconcileHCPDeletion(t.Context(), azPLS, hcp, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+
+	// The base domain zone should appear in deletedZoneNames (called by both
+	// deleteBaseDomainResources and deleteBaseDomainDNSZone). The second call
+	// is idempotent: in production Azure returns NotFound, in the mock it succeeds.
+	g.Expect(mockDNS.deletedZoneNames).To(ContainElement("example.com"),
+		"base domain DNS zone should be deleted for single-CR HCP deletion")
+}
+
+func TestReconcileHCPDeletion_WhenBaseDomainZoneDeletionFails_ItShouldPreserveFinalizers(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS1 := newTestAzurePLS(t, privateRouterCRName, "test-ns")
+	azPLS1.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS1.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS1.Spec.BaseDomain = "example.com"
+
+	azPLS2 := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS2.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS2.Status.DNSZoneName = "test-hcp.hypershift.local"
+	azPLS2.Spec.BaseDomain = "example.com"
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS1, azPLS2, hcp).
+		WithStatusSubresource(azPLS1, azPLS2).
+		Build()
+
+	// deleteDNSZone fails only for the base domain zone (called by deleteBaseDomainDNSZone).
+	// The internal zones and per-CR cleanup succeed because the error is scoped.
+	mockDNS := &mockPrivateDNSZones{
+		deleteErr: fmt.Errorf("simulated zone deletion failure"),
+	}
+	r := newTestReconciler(fakeClient)
+	r.PrivateDNSZones = mockDNS
+
+	_, err := r.reconcileHCPDeletion(t.Context(), azPLS1, hcp, testr.New(t))
+
+	// The error may come from cleanupAllAzureResources (internal zone deletion)
+	// or deleteBaseDomainDNSZone. Either way, the HCP finalizer must be preserved.
+	g.Expect(err).To(HaveOccurred(), "expected error when DNS zone deletion fails")
+
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(updatedHCP.Finalizers).To(ContainElement(hcpAzurePLSFinalizerName),
+		"HCP finalizer should be preserved when base domain zone deletion fails")
+}
+
+func TestReconcileHCPDeletion_WhenSiblingCleanupFails_ItShouldPreserveAllFinalizers(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS1 := newTestAzurePLS(t, privateRouterCRName, "test-ns")
+	azPLS1.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS1.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	azPLS2 := newTestAzurePLS(t, "oauth-openshift", "test-ns")
+	azPLS2.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	azPLS2.Status.DNSZoneName = "test-hcp.hypershift.local"
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS1, azPLS2, hcp).
+		WithStatusSubresource(azPLS1, azPLS2).
+		Build()
+
+	r := newTestReconciler(fakeClient)
+	r.RecordSets = &mockRecordSets{deleteErr: fmt.Errorf("simulated Azure API failure")}
+
+	_, err := r.reconcileHCPDeletion(t.Context(), azPLS1, hcp, testr.New(t))
+	g.Expect(err).To(HaveOccurred(), "expected error when sibling Azure cleanup fails")
+	g.Expect(err.Error()).To(ContainSubstring("simulated Azure API failure"),
+		"error should originate from the injected Azure cleanup failure")
+
+	// Per-CR finalizers should be preserved (cleanup didn't complete)
+	updated1 := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: privateRouterCRName, Namespace: "test-ns"}, updated1)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get first CR after partial failure")
+	g.Expect(updated1.Finalizers).To(ContainElement(azurePrivateLinkServiceFinalizer),
+		"per-CR finalizer should be preserved when cleanup fails")
+
+	updated2 := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "oauth-openshift", Namespace: "test-ns"}, updated2)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get second CR after partial failure")
+	g.Expect(updated2.Finalizers).To(ContainElement(azurePrivateLinkServiceFinalizer),
+		"per-CR finalizer should be preserved when cleanup fails")
+
+	// Shared HCP finalizer should be preserved
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get HCP after partial failure")
+	g.Expect(updatedHCP.Finalizers).To(ContainElement(hcpAzurePLSFinalizerName),
+		"shared HCP finalizer should be preserved when cleanup fails")
+}
+
+func TestReconcile_WhenHCPIsGone_ItShouldRemoveOrphanedPerCRFinalizer(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	azPLS.Finalizers = []string{azurePrivateLinkServiceFinalizer}
+	// HCP referenced by owner ref does NOT exist in the fake client
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := newTestReconciler(fakeClient)
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile AzurePrivateLinkService when HCP is gone")
+	g.Expect(result.IsZero()).To(BeTrue(), "expected zero requeue result when HCP is gone")
+
+	// Per-CR finalizer should be removed when HCP is gone
+	updated := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get AzurePrivateLinkService CR after reconciliation with missing HCP")
+	g.Expect(updated.Finalizers).ToNot(ContainElement(azurePrivateLinkServiceFinalizer),
+		"per-CR finalizer should be removed when HCP is gone")
+}
+
+func TestReconcile_WhenHCPIsBeingDeleted_ItShouldNotReAddPerCRFinalizer(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	// Simulate the state after reconcileHCPDeletion has run:
+	// per-CR finalizer is already removed, shared HCP finalizer is gone
+	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	// No per-CR finalizer (already removed by reconcileHCPDeletion)
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{"some-other-finalizer"} // Another controller's finalizer keeps HCP alive
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(azPLS, hcp).
+		WithStatusSubresource(azPLS).
+		Build()
+
+	r := newTestReconciler(fakeClient)
+
+	result, err := r.Reconcile(log.IntoContext(t.Context(), testr.New(t)), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-pls", Namespace: "test-ns"},
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile AzurePrivateLinkService when HCP is being deleted")
+	g.Expect(result.IsZero()).To(BeTrue(), "expected zero requeue result when HCP is being deleted")
+
+	// Verify per-CR finalizer was NOT re-added
+	updated := &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updated)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get AzurePrivateLinkService CR after reconciliation during HCP deletion")
+	g.Expect(updated.Finalizers).ToNot(ContainElement(azurePrivateLinkServiceFinalizer),
+		"per-CR finalizer should NOT be re-added when HCP is being deleted")
 }
 
 func TestReconcile_WhenPEConnectionNotApproved_ItShouldRequeueWithWarning(t *testing.T) {
@@ -3396,6 +3718,7 @@ func TestReconcile_WhenFinalizerAddConflicts_ItShouldRequeue(t *testing.T) {
 	scheme := newTestScheme(t, g)
 
 	azPLS := newTestAzurePLS(t, "test-pls", "test-ns")
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "kas.example.com")
 	// No finalizer → Reconcile will try to add one
 
 	conflictErr := apierrors.NewConflict(
@@ -3403,7 +3726,7 @@ func TestReconcile_WhenFinalizerAddConflicts_ItShouldRequeue(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(azPLS).
+		WithObjects(azPLS, hcp).
 		WithStatusSubresource(azPLS).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
