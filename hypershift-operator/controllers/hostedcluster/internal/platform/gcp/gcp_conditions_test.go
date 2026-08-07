@@ -128,6 +128,150 @@ func TestValidCredentials(t *testing.T) {
 	}
 }
 
+// TestGetCredentialStatus tests the tri-state GetCredentialStatus function.
+func TestGetCredentialStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		conditions  []metav1.Condition
+		expected    CredentialStatus
+		description string
+	}{
+		{
+			name: "When both conditions are true, status is valid (0)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+					Status: metav1.ConditionTrue,
+				},
+				{
+					Type:   string(hyperv1.ValidGCPCredentials),
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expected:    CredentialStatusValid,
+			description: "Both conditions present and true → valid",
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is false, status is invalid (1)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+					Status: metav1.ConditionFalse,
+				},
+				{
+					Type:   string(hyperv1.ValidGCPCredentials),
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expected:    CredentialStatusInvalid,
+			description: "ValidGCPWorkloadIdentity false → invalid",
+		},
+		{
+			name: "When ValidGCPCredentials is false, status is invalid (1)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+					Status: metav1.ConditionTrue,
+				},
+				{
+					Type:   string(hyperv1.ValidGCPCredentials),
+					Status: metav1.ConditionFalse,
+				},
+			},
+			expected:    CredentialStatusInvalid,
+			description: "ValidGCPCredentials false → invalid",
+		},
+		{
+			name: "When both conditions are false, status is invalid (1)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+					Status: metav1.ConditionFalse,
+				},
+				{
+					Type:   string(hyperv1.ValidGCPCredentials),
+					Status: metav1.ConditionFalse,
+				},
+			},
+			expected:    CredentialStatusInvalid,
+			description: "Both conditions false → invalid",
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is missing, status is unknown (2)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPCredentials),
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expected:    CredentialStatusUnknown,
+			description: "ValidGCPWorkloadIdentity missing → unknown",
+		},
+		{
+			name: "When ValidGCPCredentials is missing, status is unknown (2)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expected:    CredentialStatusUnknown,
+			description: "ValidGCPCredentials missing → unknown",
+		},
+		{
+			name:        "When no conditions exist, status is unknown (2)",
+			conditions:  []metav1.Condition{},
+			expected:    CredentialStatusUnknown,
+			description: "No conditions present → unknown (covers non-GCP clusters)",
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is unknown, status is unknown (2)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+					Status: metav1.ConditionUnknown,
+				},
+				{
+					Type:   string(hyperv1.ValidGCPCredentials),
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expected:    CredentialStatusUnknown,
+			description: "ValidGCPWorkloadIdentity unknown → unknown",
+		},
+		{
+			name: "When ValidGCPCredentials is unknown, status is unknown (2)",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+					Status: metav1.ConditionTrue,
+				},
+				{
+					Type:   string(hyperv1.ValidGCPCredentials),
+					Status: metav1.ConditionUnknown,
+				},
+			},
+			expected:    CredentialStatusUnknown,
+			description: "ValidGCPCredentials unknown → unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tt.conditions,
+				},
+			}
+
+			result := GetCredentialStatus(hc)
+			g.Expect(result).To(Equal(tt.expected), tt.description)
+		})
+	}
+}
+
 // TestWorkloadIdentityValidationScenarios tests additional edge cases for WIF validation.
 // This expands on the existing TestValidateWorkloadIdentityConfiguration with more comprehensive coverage.
 func TestWorkloadIdentityValidationScenarios(t *testing.T) {
