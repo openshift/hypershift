@@ -61,3 +61,6 @@ __pycache__/
 .venv/
 venv/
 *.egg
+
+# Node.js
+node_modules/
