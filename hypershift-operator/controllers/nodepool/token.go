@@ -56,8 +56,10 @@ type Token struct {
 	upsert.CreateOrUpdateProvider
 	cpoCapabilities *CPOCapabilities
 	*ConfigGenerator
-	// Content hashes for trust bundle ConfigMaps referenced by the HostedCluster are included in the
-	// rollout config hash so in-place updates trigger a NodePool rollout.
+	// These content hashes are stored in the token Secret for the ignition-server
+	// token-secret controller. They are separate from the rolloutConfig hash that
+	// drives NodePool rollouts (see ConfigGenerator.Hash / HashWithoutVersion).
+	// NOTE: proxy.trustedCA content is tracked in rolloutConfig but not hashed here yet.
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
 	globalConfigHash          []byte

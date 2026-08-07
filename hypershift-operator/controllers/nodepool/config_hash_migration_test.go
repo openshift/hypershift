@@ -20,6 +20,7 @@ func TestMaybeSeedTrustBundleContentHashBaseline(t *testing.T) {
 	pullSecretName := "pull-secret"
 	atbName := "user-ca"
 	atbContentHash := supportutil.HashSimple("bundle-content")
+	proxyContentHash := supportutil.HashSimple("proxy-ca-content")
 	globalConfig := "global-config"
 	rhelStream := ""
 	version := "4.18.0"
@@ -118,6 +119,35 @@ func TestMaybeSeedTrustBundleContentHashBaseline(t *testing.T) {
 				},
 			},
 			expectSeeded: false,
+		},
+		{
+			name: "When annotations match the legacy hash and only proxy.trustedCA content differs, it should seed",
+			annotations: map[string]string{
+				nodePoolAnnotationCurrentConfig:        legacyHashWithoutVersion(mcoRawConfig, pullSecretName, "", rhelStream),
+				nodePoolAnnotationCurrentConfigVersion: legacyHash(mcoRawConfig, version, pullSecretName, "", globalConfig, rhelStream),
+			},
+			cg: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					Spec: hyperv1.HostedClusterSpec{
+						PullSecret: corev1.LocalObjectReference{Name: pullSecretName},
+					},
+				},
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{Name: version},
+						},
+					},
+					pullSecretName:     pullSecretName,
+					proxyTrustedCAHash: proxyContentHash,
+					globalConfig:       globalConfig,
+					mcoRawConfig:       mcoRawConfig,
+					rhelStream:         rhelStream,
+				},
+			},
+			expectSeeded:    true,
+			expectedCurrent: supportutil.HashSimple(mcoRawConfig + pullSecretName + "" + proxyContentHash + rhelStream),
+			expectedVersion: supportutil.HashSimple(mcoRawConfig + version + pullSecretName + "" + proxyContentHash + globalConfig + rhelStream),
 		},
 		{
 			name:         "When annotations are missing, it should not seed",
