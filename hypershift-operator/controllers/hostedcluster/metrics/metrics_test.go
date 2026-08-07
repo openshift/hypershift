@@ -1509,6 +1509,137 @@ func TestReportTransitionDurationForAWSEndpointConditions(t *testing.T) {
 	}
 }
 
+func TestReportTransitionDurationForGCPEndpointConditions(t *testing.T) {
+	testCases := []struct {
+		name               string
+		conditions         []metav1.Condition
+		expectedConditions []string
+	}{
+		{
+			name:               "When no GCP endpoint conditions are set, no transition duration is recorded",
+			conditions:         nil,
+			expectedConditions: nil,
+		},
+		{
+			name: "When GCPServiceAttachmentAvailable is true, it should be observed",
+			conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.GCPServiceAttachmentAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: now.Add(2 * time.Minute)},
+				},
+			},
+			expectedConditions: []string{string(hyperv1.GCPServiceAttachmentAvailable)},
+		},
+		{
+			name: "When GCPEndpointAvailable is true, it should be observed",
+			conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.GCPEndpointAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: now.Add(3 * time.Minute)},
+				},
+			},
+			expectedConditions: []string{string(hyperv1.GCPEndpointAvailable)},
+		},
+		{
+			name: "When both GCP endpoint conditions are true, both should be observed",
+			conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.GCPServiceAttachmentAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: now.Add(2 * time.Minute)},
+				},
+				{
+					Type:               string(hyperv1.GCPEndpointAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: now.Add(5 * time.Minute)},
+				},
+			},
+			expectedConditions: []string{
+				string(hyperv1.GCPServiceAttachmentAvailable),
+				string(hyperv1.GCPEndpointAvailable),
+			},
+		},
+		{
+			name: "When GCPServiceAttachmentAvailable is false, it should not be observed",
+			conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.GCPServiceAttachmentAvailable),
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: metav1.Time{Time: now.Add(2 * time.Minute)},
+				},
+			},
+			expectedConditions: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					CreationTimestamp: metav1.Time{Time: now},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			// Use a collect time after all transition times so observations fall in the window
+			collectTime := now.Add(10 * time.Minute)
+
+			reg := prometheus.NewPedanticRegistry()
+			reg.MustRegister(createHostedClustersMetricsCollector(
+				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
+				clocktesting.NewFakeClock(collectTime),
+			))
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			metricFamily := findMetricValue(&result, TransitionDurationMetricName)
+			observedConditions := map[string]bool{}
+			if metricFamily != nil {
+				for _, m := range metricFamily.Metric {
+					for _, label := range m.Label {
+						if label.GetName() == "condition" && m.Histogram != nil && m.Histogram.GetSampleCount() > 0 {
+							observedConditions[label.GetValue()] = true
+						}
+					}
+				}
+			}
+
+			for _, expected := range tc.expectedConditions {
+				if !observedConditions[expected] {
+					t.Errorf("expected condition %q to be observed in transition duration metric, but it was not", expected)
+				}
+			}
+
+			// Verify no unexpected GCP endpoint conditions were observed
+			gcpConditions := map[string]bool{
+				string(hyperv1.GCPServiceAttachmentAvailable): true,
+				string(hyperv1.GCPEndpointAvailable):          true,
+			}
+			expectedSet := map[string]bool{}
+			for _, c := range tc.expectedConditions {
+				expectedSet[c] = true
+			}
+			for condition := range observedConditions {
+				if gcpConditions[condition] && !expectedSet[condition] {
+					t.Errorf("unexpected GCP condition %q was observed in transition duration metric", condition)
+				}
+			}
+		})
+	}
+}
+
 func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) {
 	ca := &x509.Certificate{
 		SerialNumber: big.NewInt(2019),
