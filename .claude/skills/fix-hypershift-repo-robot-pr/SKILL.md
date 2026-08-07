@@ -1,20 +1,19 @@
 ---
+name: fix-hypershift-repo-robot-pr
 description: Fix robot/bot PRs in HyperShift repo by regenerating files and creating a new PR with passing verification
 ---
 
 Fix robot/bot-authored PRs in the HyperShift repository that have failing CI due to missing generated files.
-
-[Extended thinking: This command validates a PR is from a bot, checks out the bot's branch, creates a fix branch, cherry-picks commits with conventional commit format, runs make verify to regenerate files, organizes changes into logical commits, runs validation, and if successful creates a new PR while closing/commenting on the original. If validation fails, the original PR is preserved.]
 
 **Fix HyperShift Repo Robot PR**
 
 ## Usage Examples:
 
 1. **Fix a dependabot PR by number**:
-   `/fix-hypershift-repo-robot-pr 7435`
+   `/skill:fix-hypershift-repo-robot-pr 7435`
 
 2. **Fix a konflux PR by URL**:
-   `/fix-hypershift-repo-robot-pr https://github.com/openshift/hypershift/pull/7332`
+   `/skill:fix-hypershift-repo-robot-pr https://github.com/openshift/hypershift/pull/7332`
 
 ## What This Command Does:
 
@@ -36,7 +35,7 @@ Fix robot/bot-authored PRs in the HyperShift repository that have failing CI due
 Extract the PR number from the argument (handles both number and URL formats):
 
 ```bash
-PR_NUMBER=$(echo "{{args.0}}" | grep -oE '[0-9]+$')
+PR_NUMBER=$(echo "<pr-number-or-url>" | grep -oE '[0-9]+$')
 ```
 
 Fetch PR details and validate:
@@ -359,7 +358,7 @@ NO-JIRA: chore(deps): bump misc-dependencies group with 2 updates
 
 ## Arguments:
 
-- {{args.0}}: PR number or full GitHub URL (required)
+- `<pr-number-or-url>`: PR number or full GitHub URL (required)
   - Examples: `7435`, `https://github.com/openshift/hypershift/pull/7435`
 
 The command will provide progress updates through the TodoWrite tool and report success or failure with detailed information.

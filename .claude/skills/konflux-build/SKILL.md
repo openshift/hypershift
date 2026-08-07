@@ -1,6 +1,6 @@
 ---
+name: konflux-build
 description: Create a manual Konflux build from a PR with configurable image expiry (default 30 days)
-argument-hint: "<PR-number-or-URL> [component-name or pipeline-file] [--non-expiring]"
 ---
 
 # Create a manual Konflux build from a PR
@@ -10,19 +10,19 @@ Given a PR and a component name, create a manual PipelineRun that produces a con
 ## Usage Examples
 
 1. **Build a specific component from a PR number** (expires in 30 days):
-   `/konflux-build 7813 hypershift-release-mce-26`
+   `/skill:konflux-build 7813 hypershift-release-mce-26`
 
 2. **Build from a PR URL** (will prompt for component):
-   `/konflux-build https://github.com/openshift/hypershift/pull/7813`
+   `/skill:konflux-build https://github.com/openshift/hypershift/pull/7813`
 
 3. **Build a non-expiring image for a hotfix**:
-   `/konflux-build 7813 hypershift-operator --non-expiring`
+   `/skill:konflux-build 7813 hypershift-operator --non-expiring`
 
 4. **Build using a specific pipeline template**:
-   `/konflux-build 7813 .tekton/hypershift-release-mce-26-push.yaml`
+   `/skill:konflux-build 7813 .tekton/hypershift-release-mce-26-push.yaml`
 
 5. **Build the main operator from a PR**:
-   `/konflux-build 7500 hypershift-operator`
+   `/skill:konflux-build 7500 hypershift-operator`
 
 ## What This Command Does
 
@@ -36,7 +36,7 @@ Given a PR and a component name, create a manual PipelineRun that produces a con
 
 ## Input
 
-- **PR**: $ARGUMENTS (GitHub PR URL or number for openshift/hypershift)
+- **PR**: GitHub PR URL or number for openshift/hypershift
 - **Component or pipeline file**: either a component name (e.g., `hypershift-operator`) or a path to a specific pipeline template (e.g., `.tekton/hypershift-release-mce-26-push.yaml`). If not specified, ask the user which component to build.
 - If `--non-expiring` is present in the arguments, produce a permanent image; otherwise set `image-expires-after: 30d`
 

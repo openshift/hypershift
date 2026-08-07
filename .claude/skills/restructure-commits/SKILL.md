@@ -1,7 +1,8 @@
 ---
+name: restructure-commits
 description: Restructure branch commits into logical component-based commits for HyperShift PRs
-user_invocable: true
 ---
+
 
 # Restructure Commits by Component
 

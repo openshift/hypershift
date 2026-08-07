@@ -1,10 +1,11 @@
 ---
+name: update-konflux-tasks
 description: Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs.
 ---
 
+
 Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs or by detecting updates directly.
 
-[Extended thinking: This command can either parse enterprise contract logs or use the update_trusted_task_bundles.py script to identify outdated Tekton tasks, uses skopeo to map digests to version tags, checks migration notes for breaking changes, and updates all pipeline YAML files in the .tekton/ directory with the latest versions.]
 
 **Konflux Tekton Tasks Update**
 
@@ -27,7 +28,7 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
 ## Process Flow:
 
 1. **Detect Outdated Tasks**:
-   - If a log file is provided ({{args.0}}):
+   - If a log file is provided (<log-file-path>):
      - Read the provided log file
      - Extract all outdated Tekton task warnings that mention "newer version exists"
      - Parse out task names, current digests, and latest digests
@@ -116,6 +117,6 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
 - Internet connectivity (to check migration notes and inspect container images)
 
 ## Arguments:
-- {{args.0}}: Path to the enterprise contract verification log file that contains outdated task warnings (optional). When not provided, the skill uses `hack/tools/scripts/update_trusted_task_bundles.py --dry-run --json` to automatically detect outdated tasks.
+- <log-file-path>: Path to the enterprise contract verification log file that contains outdated task warnings (optional). When not provided, the skill uses `hack/tools/scripts/update_trusted_task_bundles.py --dry-run --json` to automatically detect outdated tasks.
 
 The command will provide progress updates and automatically update all relevant Tekton pipeline files with the latest task versions.

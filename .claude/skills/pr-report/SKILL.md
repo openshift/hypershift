@@ -1,7 +1,8 @@
 ---
+name: pr-report
 description: "PR Report Generator"
-argument-hint: "[--start YYYY-MM-DD] [--end YYYY-MM-DD] [--deep] [--progress-report] [--blog] - Date range with optional deep analysis, progress report, and blog post"
 ---
+
 
 # PR Report Generator
 
@@ -116,7 +117,7 @@ Parse the arguments and run the script. The script accepts:
 # Example: python3 contrib/repo_metrics/weekly_pr_report.py 2026-02-05 --end 2026-02-12 --output-dir /tmp
 # If --blog is specified, also pass --blog-data to generate blog_data.json
 
-python3 contrib/repo_metrics/weekly_pr_report.py $ARGUMENTS --output-dir $OUTPUT_DIR
+python3 contrib/repo_metrics/weekly_pr_report.py <arguments> --output-dir $OUTPUT_DIR
 ```
 
 Note: The script's positional argument is the start date. The `--start` flag in the skill

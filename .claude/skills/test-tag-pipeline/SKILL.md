@@ -1,3 +1,8 @@
+---
+name: test-tag-pipeline
+description: Create a manual PipelineRun to test tag pipeline changes before merging.
+---
+
 Create a manual PipelineRun to test tag pipeline changes before merging.
 
 **Usage**: `/test-tag-pipeline <tag-name> [branch-spec]`
@@ -30,7 +35,7 @@ Create a manual PipelineRun to test tag pipeline changes before merging.
 
 **Implementation**:
 
-IMPORTANT: Execute the commands exactly as shown with only the arguments provided by the user. If no branch argument is specified, the template `{{args.1:-main}}` will correctly default to `main`. Do NOT substitute the current git branch or any other inferred values.
+IMPORTANT: Execute the commands exactly as shown with only the arguments provided by the user. If no branch argument is specified, the template `<branch-spec (default: main)>` will correctly default to `main`. Do NOT substitute the current git branch or any other inferred values.
 
 Step 1: Verify authentication to Konflux
 ```bash
@@ -44,7 +49,7 @@ oc login --web https://api.stone-prd-rh01.pg1f.p1.openshiftapps.com:6443
 
 Step 2: Create the PipelineRun
 ```bash
-bash hack/tools/scripts/create-manual-tag-pipelinerun.sh {{args.0}} {{args.1:-main}}
+bash hack/tools/scripts/create-manual-tag-pipelinerun.sh <tag-name> <branch-spec (default: main)>
 ```
 
 After the PipelineRun is created, extract the name from the output and construct the web UI URL:
