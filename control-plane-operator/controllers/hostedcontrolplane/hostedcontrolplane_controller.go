@@ -244,7 +244,6 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		kcmv2.NewComponent(),
 		schedulerv2.NewComponent(),
 		oapiv2.NewComponent(),
-		routerv2.NewComponent(),
 		oauthapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
@@ -275,6 +274,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
 		endpointresolverv2.NewComponent(),
 		metricsproxyv2.NewComponent(r.DefaultIngressDomain),
+		routerv2.NewComponent(),
 		kubestorageversionmigratorv2.NewComponent(),
 	)
 	r.components = append(r.components,
