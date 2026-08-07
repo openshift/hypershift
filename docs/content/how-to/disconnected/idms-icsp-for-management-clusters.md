@@ -1,3 +1,7 @@
+---
+title: IDMS/ICSP Config for Management Cluster
+---
+
 ## Configuring disconnected HostedControlPlanes deployments
 
 !!! Note

@@ -1,0 +1,13 @@
+{
+  "name": "docs-compare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compare": "node compare.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.52.0",
+    "pixelmatch": "6.0.0",
+    "pngjs": "7.0.0"
+  }
+}

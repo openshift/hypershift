@@ -1,3 +1,7 @@
+---
+title: Image Content Policies
+---
+
 Once the mirroring process is complete, you will have two main objects that need to be applied in the Management Cluster:
 
 1. ICSP (Image Content Source Policies) or IDMS (Image Digest Mirror Set).

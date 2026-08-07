@@ -1,3 +1,7 @@
+---
+title: Mirroring
+---
+
 The mirroring step can take some time to complete, so we recommend starting with this part once the Registry server is up and running.
 
 For this purpose, we will use the `oc-mirror` tool, a binary that utilizes an object called `ImageSetConfiguration`.

@@ -105,7 +105,7 @@ These checks only run when relevant files change:
 |------------|-------------|-----------------|
 | **Envtest OCP API Validation** | `api/`, `test/envtest/`, CRD test assets | `FAIL` with the test name — see `test/envtest/README.md` for details |
 | **Envtest Vanilla Kube API Validation** | Same as above | Same as above |
-| **Docs Build** | `docs/**` changes | MkDocs build errors — usually a broken link or YAML syntax error |
+| **Docs Build** | `docs/**` changes | Zensical build errors — usually a broken link or YAML syntax error |
 | **Validate CPO Overrides** | `hypershift-operator/controlplaneoperator-overrides/assets/overrides.yaml` changes | Validation error for the CPO overrides file |
 | **gocacheprog Tests** | `contrib/ci/gocacheprog/**` changes | `FAIL` with the test name |
 

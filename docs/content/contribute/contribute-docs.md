@@ -4,10 +4,9 @@ title: Contribute documentation
 
 # Contributing documentation
 
-HyperShift's documentation is based on [MkDocs](https://www.mkdocs.org) with the
-[Material theme](https://squidfunk.github.io) and roughly follows the
-[Diátaxis Framework](https://diataxis.fr) for content organization and stylistic
-approach.
+HyperShift's documentation is based on [Zensical](https://zensical.org) and
+roughly follows the [Diátaxis Framework](https://diataxis.fr) for content
+organization and stylistic approach.
 
 The documentation site is built and published automatically to [https://hypershift.pages.dev/](https://hypershift.pages.dev/).
 
@@ -17,12 +16,8 @@ All documentation lives in the [`docs` directory](https://github.com/openshift/h
 
 All content should be Markdown files placed in the [`docs/content` directory](https://github.com/openshift/hypershift/tree/main/docs/content).
 The [MkDocs configuration file](https://github.com/openshift/hypershift/blob/main/docs/mkdocs.yml)
-contains all the MkDocs and Material theme configuration, including the navigation
-structure for the site.
-
-The `quay.io/hypershift/mkdocs-material:latest` image ([Dockerfile](https://github.com/openshift/hypershift/blob/main/docs/Dockerfile))
-is published to provide an easy and portable way to run `mkdocs` fully configured
-to preview the site equivalent to the published site.
+contains all the Zensical configuration, including the navigation structure for
+the site.
 
 !!! note
 
@@ -53,20 +48,77 @@ To start a live preview of the site which automatically rebuilds and refreshes i
 response to local content and configuration changes, run the following from the
 `docs` directory:
 
+=== "Native"
+
+    ```shell
+    uv run --frozen zensical serve
+    ```
+
+=== "Containerized"
+
+    ```shell
+    make serve-containerized
+    ```
+
+Visit the site at [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+## Visual comparison
+
+When making changes that affect the site's appearance (theme updates, layout
+changes, navigation restructuring), you can generate a visual diff against the
+current `main` branch:
+
 ```shell
-make serve-containerized
+cd docs
+make compare
 ```
 
-Visit the site at [http://0.0.0.0:8000](http://0.0.0.0:8000).
+This builds both the base site (from `main`, using mkdocs-material) and the head
+site (from your working tree, using Zensical), screenshots every page with
+Playwright, and produces a pixel-diff report at `compare/output/index.html`.
 
-!!! note
+To view the report locally:
 
-    The `serve-containerized` Make target runs the `quay.io/hypershift/mkdocs-material:latest`
-    image with the local container runtime. Running `mkdocs` natively is possible
-    but not supported.
+```shell
+make compare-serve
+```
 
-    If you need more control over the local preview server, consult [the Makefile](https://github.com/openshift/hypershift/blob/main/docs/Makefile)
-    as a guide to constructing your own local server command.
+You can also compare against a different ref:
+
+```shell
+make compare BASE=v4.18
+```
+
+To share the report, you can host the `compare/output/` directory on any static
+hosting service. For example, using a GitHub Pages repository:
+
+```shell
+# Clone or create a repo with a gh-pages branch
+git clone git@github.com:<user>/<repo>.git /tmp/compare-site
+cd /tmp/compare-site && git checkout gh-pages
+
+# Copy the report
+rm -rf screenshots-* index.html results.json
+cp -r <hypershift>/docs/compare/output/* .
+
+# Commit and push
+git add -A && git commit -m "Update comparison report"
+git push origin gh-pages
+```
+
+The report will be available at `https://<user>.github.io/<repo>/`.
+
+To start fresh, run:
+
+```shell
+make compare-clean
+```
+
+!!! tip
+
+    The base site is cached in `site-base/` and reused across runs. If you only
+    changed your working tree, the next `make compare` will only rebuild
+    `site-head` and regenerate the diffs.
 
 ## Generate the API reference
 
