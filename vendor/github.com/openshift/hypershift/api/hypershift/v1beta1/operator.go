@@ -283,4 +283,38 @@ type IngressOperatorSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	EndpointPublishingStrategy *operatorv1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
+
+	// defaultCertificate is a reference to a secret in the HostedCluster namespace
+	// that contains the default certificate served by the default ingress controller.
+	// When Routes don't specify their own certificate, defaultCertificate is used.
+	//
+	// The secret must contain the following keys and data:
+	//   tls.crt: certificate file contents
+	//   tls.key: key file contents
+	//
+	// When set, this certificate replaces the auto-generated wildcard certificate
+	// that is normally created by the control plane operator. The secret is synced
+	// from the HostedCluster namespace to the control plane, and then propagated
+	// to the hosted cluster's openshift-ingress namespace.
+	//
+	// When the referenced secret is updated, the new certificate data is
+	// automatically propagated to the hosted cluster.
+	//
+	// When not set, the control plane operator generates a wildcard certificate
+	// signed by the cluster's root CA.
+	//
+	// +optional
+	DefaultCertificate IngressDefaultCertificateReference `json:"defaultCertificate,omitzero,omitempty"`
+}
+
+// IngressDefaultCertificateReference contains a reference to a TLS Secret
+// in the HostedCluster namespace used as the default serving certificate
+// for the ingress controller.
+type IngressDefaultCertificateReference struct {
+	// name is the name of the Secret containing tls.crt and tls.key.
+	// The Secret must exist in the same namespace as the HostedCluster.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name,omitempty"`
 }

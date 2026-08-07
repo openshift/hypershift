@@ -1427,10 +1427,23 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
 
-	sourceCert := cpomanifests.IngressCert(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
-		errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+	// When the user provides a custom default certificate, use it as the source.
+	// Otherwise, fall back to the CPO-generated wildcard cert.
+	var sourceCert *corev1.Secret
+	if len(p.DefaultCertificate.Name) > 0 {
+		sourceCert = cpomanifests.ServiceProviderDefaultIngressServingCert(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
+			errs = append(errs, fmt.Errorf("failed to get user-provided ingress default certificate (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+			sourceCert = nil
+		}
 	} else {
+		sourceCert = cpomanifests.IngressCert(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
+			errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+			sourceCert = nil
+		}
+	}
+	if sourceCert != nil {
 		ingressControllerCert := manifests.IngressDefaultIngressControllerCert()
 		if _, err := r.CreateOrUpdate(ctx, r.client, ingressControllerCert, func() error {
 			return ingress.ReconcileDefaultIngressControllerCertSecret(ingressControllerCert, sourceCert)
