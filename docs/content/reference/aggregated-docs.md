@@ -39758,7 +39758,9 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes.
+Labels are re-synced additively whenever the desired state changes;
+labels set by other controllers (kubelet, autoscaler) are preserved.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -39773,8 +39775,9 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
-These taints are additive to the ones applied by other controllers</p>
+<p>taints if specified, propagates a list of taints to Nodes.
+Taints are re-synced whenever the desired state changes.
+These taints are additive to the ones applied by other controllers.</p>
 </td>
 </tr>
 <tr>
@@ -52853,7 +52856,9 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes.
+Labels are re-synced additively whenever the desired state changes;
+labels set by other controllers (kubelet, autoscaler) are preserved.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -52868,8 +52873,9 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
-These taints are additive to the ones applied by other controllers</p>
+<p>taints if specified, propagates a list of taints to Nodes.
+Taints are re-synced whenever the desired state changes.
+These taints are additive to the ones applied by other controllers.</p>
 </td>
 </tr>
 <tr>
