@@ -2,7 +2,10 @@
 
 package lifecycle
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 	t.Parallel()
@@ -39,6 +42,11 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 			want:    1,
 		},
 		{
+			name:    "When OAuth LoadBalancer private Azure variant is configured, it should request one initial replica",
+			variant: "oauth-lb-private",
+			want:    1,
+		},
+		{
 			name:    "When autoscaling Azure variant is configured, it should request one initial replica",
 			variant: "autoscaling",
 			want:    1,
@@ -70,5 +78,35 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 				t.Errorf("Azure variant %q requests %d initial replicas, want %d", tt.variant, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAzureOAuthLBPrivateExtraArgs(t *testing.T) {
+	t.Parallel()
+
+	specs := (&AzurePlatformConfig{}).ClusterSpecs("release-image", "n1-image")
+	var spec *ClusterSpec
+	for i := range specs {
+		if specs[i].Variant == "oauth-lb-private" {
+			spec = &specs[i]
+			break
+		}
+	}
+	if spec == nil {
+		t.Fatal("oauth-lb-private variant was not configured")
+	}
+
+	// The oauth-lb-private variant combines private endpoint access with the
+	// LoadBalancer OAuth publishing strategy; each flag encodes a distinct
+	// contract that a regression could silently drop.
+	wantArgs := []string{
+		"--endpoint-access=Private",
+		"--endpoint-access-private-nat-subnet-id=", // empty subnet id with zero-value config
+		"--oauth-publishing-strategy=LoadBalancer",
+	}
+	for _, arg := range wantArgs {
+		if !slices.Contains(spec.ExtraArgs, arg) {
+			t.Errorf("oauth-lb-private ExtraArgs %v missing %q", spec.ExtraArgs, arg)
+		}
 	}
 }
