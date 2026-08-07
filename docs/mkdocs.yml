@@ -122,6 +122,7 @@ nav:
     - how-to/configure-ocp-components/kubeapi-server.md
     - how-to/configure-ocp-components/oauth-serving-certificates.md
     - how-to/configure-ocp-components/custom-kas-kubeconfig.md
+    - how-to/configure-ocp-components/configurable-log-levels.md
   - how-to/per-hostedcluster-dashboard.md
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
