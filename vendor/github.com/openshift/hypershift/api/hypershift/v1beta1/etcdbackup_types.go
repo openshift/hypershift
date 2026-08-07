@@ -204,6 +204,8 @@ type HCPEtcdBackupStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// snapshotURL is the URL of the completed backup snapshot in cloud storage.
+	// This field contains the default shard's snapshot URL for backward compatibility.
+	// New consumers should prefer shardSnapshots.
 	// Must be a valid URL with scheme https or s3.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
@@ -211,10 +213,38 @@ type HCPEtcdBackupStatus struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="snapshotURL must be a valid URL with scheme https or s3"
 	SnapshotURL string `json:"snapshotURL,omitempty"`
 
+	// shardSnapshots contains the snapshot URLs for each etcd shard that was
+	// backed up. When etcd sharding is not enabled, this list contains a single
+	// entry for the default shard. Each entry maps a shard name to its snapshot URL.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MinItems=1
+	// MaxItems is 11: 1 default shard + up to 10 named shards.
+	// +kubebuilder:validation:MaxItems=11
+	ShardSnapshots []HCPEtcdShardSnapshot `json:"shardSnapshots,omitempty"`
+
 	// encryptionMetadata contains metadata about the encryption of the backup.
 	// When present, at least one platform-specific encryption block must be set.
 	// +optional
 	EncryptionMetadata HCPEtcdBackupEncryptionMetadata `json:"encryptionMetadata,omitzero"`
+}
+
+// HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.
+type HCPEtcdShardSnapshot struct {
+	// name is the shard name (e.g., "etcd" for the default, "etcd-events" for a named shard).
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name,omitempty"`
+
+	// snapshotURL is the URL of the snapshot in cloud storage.
+	// Must be a valid URL with scheme https or s3.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="snapshotURL must be a valid URL with scheme https or s3"
+	SnapshotURL string `json:"snapshotURL,omitempty"`
 }
 
 // HCPEtcdBackupEncryptionMetadata contains platform-specific metadata about the

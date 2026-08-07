@@ -480,19 +480,17 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 
 	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed &&
-		hostedControlPlane.Spec.Etcd.Managed != nil && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+		hostedControlPlane.Spec.Etcd.Managed != nil && r.hasRestoreURLs(hostedControlPlane) {
 		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 		if restoreCondition == nil {
 			r.Log.Info("Reconciling etcd cluster restore status")
-			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
-			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
-				rc := metav1.Condition{}
-				conditionPtr := r.etcdRestoredCondition(ctx, sts)
-				if conditionPtr != nil {
-					rc = *conditionPtr
-					rc.ObservedGeneration = hostedControlPlane.Generation
-					meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, rc)
-				}
+			conditionPtr := r.aggregateEtcdRestoredCondition(ctx, hostedControlPlane)
+			if conditionPtr != nil {
+				rc := *conditionPtr
+				rc.ObservedGeneration = hostedControlPlane.Generation
+				meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, rc)
+			} else {
+				r.Log.Info("Etcd restore not yet complete; one or more shard StatefulSets are not ready or not found")
 			}
 		}
 	}
@@ -2467,14 +2465,24 @@ func (r *HostedControlPlaneReconciler) hostedControlPlaneInNamespace(ctx context
 	return result
 }
 
+// Deprecated: etcdRestoredCondition is a convenience wrapper retained for
+// pre-existing tests. Production code should use aggregateEtcdRestoredCondition
+// (which handles multiple shards) or etcdRestoredConditionForSTS directly.
 func (r *HostedControlPlaneReconciler) etcdRestoredCondition(ctx context.Context, sts *appsv1.StatefulSet) *metav1.Condition {
+	return r.etcdRestoredConditionForSTS(ctx, sts, sts.Name)
+}
+
+// etcdRestoredConditionForSTS checks if the etcd-init containers have completed
+// for all pods in the given StatefulSet. The appLabel is used to select pods
+// (e.g., "etcd" for the default shard, "etcd-events" for a named shard).
+func (r *HostedControlPlaneReconciler) etcdRestoredConditionForSTS(ctx context.Context, sts *appsv1.StatefulSet, appLabel string) *metav1.Condition {
 	if sts.Status.ReadyReplicas == *sts.Spec.Replicas {
 		// Check that all etcd pods have initContainers that started
 		podList := &corev1.PodList{}
 		initContainerCount := int32(0)
 		if err := r.List(ctx, podList, &client.ListOptions{
 			Namespace:     sts.Namespace,
-			LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": "etcd"}),
+			LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": appLabel}),
 		}); err == nil {
 			for _, pod := range podList.Items {
 				for _, status := range pod.Status.InitContainerStatuses {
@@ -2504,6 +2512,86 @@ func (r *HostedControlPlaneReconciler) etcdRestoredCondition(ctx context.Context
 		}
 	}
 	return nil
+}
+
+// hasRestoreURLs returns true if any etcd shard (default or named) has a
+// restore snapshot URL configured.
+func (r *HostedControlPlaneReconciler) hasRestoreURLs(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Etcd.Managed == nil {
+		return false
+	}
+	if len(hcp.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+		return true
+	}
+	for _, shard := range hcp.Spec.Etcd.Managed.Shards {
+		if shard.RestoreSnapshotURL != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// aggregateEtcdRestoredCondition checks restore completion across all etcd
+// shard StatefulSets that have a restore URL configured. It returns True only
+// when ALL shards with restore URLs have completed their etcd-init containers.
+func (r *HostedControlPlaneReconciler) aggregateEtcdRestoredCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane) *metav1.Condition {
+	managed := hcp.Spec.Etcd.Managed
+	if managed == nil {
+		return nil
+	}
+
+	type shardToCheck struct {
+		stsName  string
+		appLabel string
+	}
+
+	var shardsToCheck []shardToCheck
+
+	// Check default etcd
+	if len(managed.Storage.RestoreSnapshotURL) > 0 {
+		shardsToCheck = append(shardsToCheck, shardToCheck{stsName: "etcd", appLabel: "etcd"})
+	}
+
+	// Check named shards
+	for _, shard := range managed.Shards {
+		if shard.RestoreSnapshotURL != "" {
+			shardName := fmt.Sprintf("etcd-%s", shard.Name)
+			shardsToCheck = append(shardsToCheck, shardToCheck{stsName: shardName, appLabel: shardName})
+		}
+	}
+
+	if len(shardsToCheck) == 0 {
+		return nil
+	}
+
+	for _, sc := range shardsToCheck {
+		sts := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, types.NamespacedName{Name: sc.stsName, Namespace: hcp.Namespace}, sts); err != nil {
+			// StatefulSet not found yet — not ready
+			return nil
+		}
+		cond := r.etcdRestoredConditionForSTS(ctx, sts, sc.appLabel)
+		if cond == nil {
+			// This shard hasn't completed restore yet
+			return nil
+		}
+		if cond.Status == metav1.ConditionFalse {
+			// This shard failed restore — include shard name for debuggability
+			if cond.Message != "" {
+				cond.Message = fmt.Sprintf("shard %q: %s", sc.stsName, cond.Message)
+			} else {
+				cond.Message = fmt.Sprintf("shard %q restore failed", sc.stsName)
+			}
+			return cond
+		}
+	}
+
+	// All shards restored successfully
+	return &metav1.Condition{
+		Type:   string(hyperv1.EtcdSnapshotRestored),
+		Status: metav1.ConditionTrue,
+		Reason: hyperv1.AsExpectedReason,
+	}
 }
 
 func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Context, sts *appsv1.StatefulSet) (*metav1.Condition, error) {
