@@ -12,6 +12,10 @@ permissions:
   contents: read
   deployments: write
 
+concurrency:
+  group: docs-production
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build Docs
