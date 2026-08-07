@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
@@ -74,6 +75,9 @@ const (
 
 	InvalidAwsCredsMetricName = "hypershift_cluster_invalid_aws_creds"
 	invalidAwsCredsMetricHelp = "AWS credential status for the HostedCluster: 0=valid, 1=invalid, 2=unknown"
+
+	InvalidGcpCredsMetricName = "hypershift_cluster_invalid_gcp_creds"
+	invalidGcpCredsMetricHelp = "GCP credential status for the HostedCluster: 0=valid, 1=invalid, 2=unknown"
 
 	DeletingDurationMetricName = "hypershift_cluster_deleting_duration_seconds"
 	deletingDurationMetricHelp = "Time in seconds it is taking to delete the HostedCluster since the beginning of the delete. " +
@@ -175,6 +179,10 @@ var (
 
 	invalidAwsCredsMetricDesc = prometheus.NewDesc(
 		InvalidAwsCredsMetricName, invalidAwsCredsMetricHelp,
+		hclusterLabels, nil)
+
+	invalidGcpCredsMetricDesc = prometheus.NewDesc(
+		InvalidGcpCredsMetricName, invalidGcpCredsMetricHelp,
 		hclusterLabels, nil)
 
 	deletingDurationMetricDesc = prometheus.NewDesc(
@@ -378,6 +386,7 @@ func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prom
 	collectAzureInfoMetrics(ch, hcluster, hclusterLabelValues)
 	collectAcrPullIdentityMetric(ch, hcluster, hclusterLabelValues)
 	collectAwsCredsMetric(ch, hcluster, hclusterLabelValues)
+	collectGcpCredsMetric(ch, hcluster, hclusterLabelValues)
 	collectDeletingMetrics(ch, c.clock, hcluster, hclusterLabelValues)
 }
 
@@ -592,6 +601,17 @@ func collectAwsCredsMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.Hosted
 	credStatus := platformaws.GetCredentialStatus(hcluster)
 	ch <- prometheus.MustNewConstMetric(
 		invalidAwsCredsMetricDesc,
+		prometheus.GaugeValue,
+		float64(credStatus),
+		hclusterLabelValues...,
+	)
+}
+
+// Use detailed credential status: 0=valid, 1=invalid, 2=unknown
+func collectGcpCredsMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	credStatus := platformgcp.GetCredentialStatus(hcluster)
+	ch <- prometheus.MustNewConstMetric(
+		invalidGcpCredsMetricDesc,
 		prometheus.GaugeValue,
 		float64(credStatus),
 		hclusterLabelValues...,
