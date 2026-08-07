@@ -39,6 +39,7 @@ spec:
         - 5s
         - --sync-interval-cap
         - 30s
+        - --sync-force-reconnect
         - --v
         - "3"
         command:

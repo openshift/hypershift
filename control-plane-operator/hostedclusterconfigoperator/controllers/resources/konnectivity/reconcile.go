@@ -159,6 +159,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 			"5s",
 			"--sync-interval-cap",
 			"30s",
+			"--sync-force-reconnect",
 			"--v",
 			"3",
 		}
