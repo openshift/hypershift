@@ -32,6 +32,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/reencryption"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/spotremediation"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/webhookvalidation"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -64,16 +65,17 @@ func NewCommand() *cobra.Command {
 }
 
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
-	"controller-manager-ca":        cmca.Setup,
-	resources.ControllerName:       resources.Setup,
-	"inplaceupgrader":              inplaceupgrader.Setup,
-	"node":                         node.Setup,
-	nodecount.ControllerName:       nodecount.Setup,
-	"machine":                      machine.Setup,
-	"drainer":                      drainer.Setup,
-	hcpstatus.ControllerName:       hcpstatus.Setup,
-	spotremediation.ControllerName: spotremediation.Setup,
-	reencryption.ControllerName:    reencryption.Setup,
+	"controller-manager-ca":          cmca.Setup,
+	resources.ControllerName:         resources.Setup,
+	"inplaceupgrader":                inplaceupgrader.Setup,
+	"node":                           node.Setup,
+	nodecount.ControllerName:         nodecount.Setup,
+	"machine":                        machine.Setup,
+	"drainer":                        drainer.Setup,
+	hcpstatus.ControllerName:         hcpstatus.Setup,
+	spotremediation.ControllerName:   spotremediation.Setup,
+	reencryption.ControllerName:      reencryption.Setup,
+	webhookvalidation.ControllerName: webhookvalidation.Setup,
 }
 
 type HostedClusterConfigOperator struct {
