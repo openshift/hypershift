@@ -69,6 +69,11 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		// GCP credentials validation - indicates WIF readiness
 		conditions[hyperv1.ValidGCPCredentials] = metav1.ConditionTrue
 
+		// GCP Private Service Connect conditions - both GCP endpoint access modes
+		// (Private and PublicAndPrivate) use PSC, so no EndpointAccess gate is needed.
+		conditions[hyperv1.GCPEndpointAvailable] = metav1.ConditionTrue
+		conditions[hyperv1.GCPServiceAttachmentAvailable] = metav1.ConditionTrue
+
 		// GCP KMS validation - future support for GCP KMS secret encryption
 		// Following the same pattern as AWS and Azure
 		// Note: GCP KMS integration is not yet implemented but prepared for future use
