@@ -5,12 +5,10 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/netutil"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -62,7 +60,7 @@ func routerPredicate(cpContext component.WorkloadContext) (bool, error) {
 	if !util.UseHCPRouter(cpContext.HCP) {
 		return false, nil
 	}
-	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
+	if azureutil.IsAroHCP() {
 		if err := ensureHCPRouterRoutesExist(cpContext); err != nil {
 			return false, err
 		}
@@ -109,7 +107,7 @@ var aroBaseHCPRouterRouteNames = []string{
 }
 
 func aroExpectedHCPRouterRouteNames(hcp *hyperv1.HostedControlPlane) []string {
-	if !azureutil.IsAroHCPByHCP(hcp) {
+	if !azureutil.IsAroHCP() {
 		return nil
 	}
 
@@ -117,18 +115,7 @@ func aroExpectedHCPRouterRouteNames(hcp *hyperv1.HostedControlPlane) []string {
 	if supportutil.HCPOAuthEnabled(hcp) {
 		names = append(names, "oauth-internal")
 	}
-	if metricsProxyRouteRequired(hcp) {
-		names = append(names, "metrics-proxy")
-	}
 	return names
-}
-
-func metricsProxyRouteRequired(hcp *hyperv1.HostedControlPlane) bool {
-	enabled, err := endpointresolverv2.Predicate(component.WorkloadContext{HCP: hcp})
-	if err != nil || !enabled {
-		return false
-	}
-	return netutil.LabelHCPRoutes(hcp) || netutil.IsPrivateHCP(hcp)
 }
 
 func hcpRouterRouteReady(route *routev1.Route) bool {

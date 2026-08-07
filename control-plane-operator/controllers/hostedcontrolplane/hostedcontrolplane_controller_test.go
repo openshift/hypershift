@@ -2175,7 +2175,6 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 	}
 }
 
-
 func TestRouterComponentComesAfterRouteCreatingComponents(t *testing.T) {
 	t.Parallel()
 

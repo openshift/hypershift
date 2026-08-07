@@ -333,12 +333,14 @@ func aroHCP() *hyperv1.HostedControlPlane {
 	return &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "test-ns",
+			Annotations: map[string]string{
+				hyperv1.SwiftPodNetworkInstanceAnnotation: "test-instance",
+			},
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
 			Platform: hyperv1.PlatformSpec{
 				Type: hyperv1.AzurePlatform,
 				Azure: &hyperv1.AzurePlatformSpec{
-					Topology: hyperv1.AzureTopologyPrivate,
 					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
 						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
 					},
@@ -352,6 +354,7 @@ func TestAroExpectedHCPRouterRouteNames(t *testing.T) {
 	tests := []struct {
 		name     string
 		hcp      *hyperv1.HostedControlPlane
+		setupEnv func(t *testing.T)
 		expected []string
 	}{
 		{
@@ -376,6 +379,9 @@ func TestAroExpectedHCPRouterRouteNames(t *testing.T) {
 				}
 				return hcp
 			}(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
 			expected: []string{
 				"kube-apiserver-internal",
 				"konnectivity-server",
@@ -383,40 +389,11 @@ func TestAroExpectedHCPRouterRouteNames(t *testing.T) {
 			},
 		},
 		{
-			name: "When ARO HCP has no metrics forwarding, it should return base routes plus oauth",
+			name: "When ARO HCP has OAuth enabled, it should return base routes plus oauth",
 			hcp:  aroHCP(),
-			expected: []string{
-				"kube-apiserver-internal",
-				"konnectivity-server",
-				"ignition-server",
-				"oauth-internal",
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
 			},
-		},
-		{
-			name: "When ARO HCP has metrics forwarding enabled, it should include metrics-proxy",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := aroHCP()
-				hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
-				return hcp
-			}(),
-			expected: []string{
-				"kube-apiserver-internal",
-				"konnectivity-server",
-				"ignition-server",
-				"oauth-internal",
-				"metrics-proxy",
-			},
-		},
-		{
-			name: "When ARO HCP has disabled monitoring, it should exclude metrics-proxy",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := aroHCP()
-				hcp.Annotations = map[string]string{
-					hyperv1.DisableMonitoringServices: "true",
-				}
-				hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
-				return hcp
-			}(),
 			expected: []string{
 				"kube-apiserver-internal",
 				"konnectivity-server",
@@ -428,64 +405,15 @@ func TestAroExpectedHCPRouterRouteNames(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
 			got := aroExpectedHCPRouterRouteNames(tc.hcp)
 			if tc.expected == nil {
 				g.Expect(got).To(BeNil())
 			} else {
 				g.Expect(got).To(Equal(tc.expected))
 			}
-		})
-	}
-}
-
-func TestMetricsProxyRouteRequired(t *testing.T) {
-	tests := []struct {
-		name     string
-		hcp      *hyperv1.HostedControlPlane
-		expected bool
-	}{
-		{
-			name: "When platform is not Azure, it should return false",
-			hcp: &hyperv1.HostedControlPlane{
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-					},
-				},
-			},
-			expected: false,
-		},
-		{
-			name:     "When ARO HCP has no metrics forwarding, it should return false",
-			hcp:      aroHCP(),
-			expected: false,
-		},
-		{
-			name: "When ARO HCP has metrics forwarding enabled, it should return true",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := aroHCP()
-				hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
-				return hcp
-			}(),
-			expected: true,
-		},
-		{
-			name: "When ARO HCP has disabled monitoring, it should return false",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := aroHCP()
-				hcp.Annotations = map[string]string{
-					hyperv1.DisableMonitoringServices: "true",
-				}
-				hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
-				return hcp
-			}(),
-			expected: false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			g.Expect(metricsProxyRouteRequired(tc.hcp)).To(Equal(tc.expected))
 		})
 	}
 }
@@ -542,12 +470,16 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 	tests := []struct {
 		name        string
 		hcp         *hyperv1.HostedControlPlane
+		setupEnv    func(t *testing.T)
 		routes      []runtime.Object
 		expectedErr string
 	}{
 		{
 			name: "When all base routes are present and ready, it should succeed",
 			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
 			routes: []runtime.Object{
 				readyRoute("kube-apiserver-internal"),
 				readyRoute("konnectivity-server"),
@@ -558,6 +490,9 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 		{
 			name: "When ignition-server route is missing, it should return an error",
 			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
 			routes: []runtime.Object{
 				readyRoute("kube-apiserver-internal"),
 				readyRoute("konnectivity-server"),
@@ -568,6 +503,9 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 		{
 			name: "When route exists but has no host, it should return an error",
 			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
 			routes: []runtime.Object{
 				readyRoute("kube-apiserver-internal"),
 				readyRoute("konnectivity-server"),
@@ -582,45 +520,21 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			expectedErr: "waiting for HCP router routes: ignition-server",
 		},
 		{
-			name:        "When all routes are missing, it should return an error listing all",
-			hcp:         aroHCP(),
+			name: "When all routes are missing, it should return an error listing all",
+			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
 			routes:      []runtime.Object{},
 			expectedErr: "waiting for HCP router routes: kube-apiserver-internal, konnectivity-server, ignition-server, oauth-internal",
-		},
-		{
-			name: "When metrics forwarding is enabled and metrics-proxy is missing, it should return an error",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := aroHCP()
-				hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
-				return hcp
-			}(),
-			routes: []runtime.Object{
-				readyRoute("kube-apiserver-internal"),
-				readyRoute("konnectivity-server"),
-				readyRoute("oauth-internal"),
-				readyRoute("ignition-server"),
-			},
-			expectedErr: "waiting for HCP router routes: metrics-proxy",
-		},
-		{
-			name: "When metrics forwarding is enabled and all routes are present, it should succeed",
-			hcp: func() *hyperv1.HostedControlPlane {
-				hcp := aroHCP()
-				hcp.Spec.Monitoring.MetricsForwarding.Mode = hyperv1.MetricsForwardingModeForward
-				return hcp
-			}(),
-			routes: []runtime.Object{
-				readyRoute("kube-apiserver-internal"),
-				readyRoute("konnectivity-server"),
-				readyRoute("oauth-internal"),
-				readyRoute("ignition-server"),
-				readyRoute("metrics-proxy"),
-			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithRuntimeObjects(tc.routes...).
@@ -661,6 +575,7 @@ func TestRouterPredicate(t *testing.T) {
 	tests := []struct {
 		name      string
 		hcp       *hyperv1.HostedControlPlane
+		setupEnv  func(t *testing.T)
 		routes    []runtime.Object
 		expected  bool
 		expectErr bool
@@ -679,6 +594,9 @@ func TestRouterPredicate(t *testing.T) {
 		{
 			name: "When ARO HCP has all routes ready, it should return true",
 			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
 			routes: []runtime.Object{
 				readyRoute("kube-apiserver-internal"),
 				readyRoute("konnectivity-server"),
@@ -688,8 +606,11 @@ func TestRouterPredicate(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:      "When ARO HCP has missing routes, it should return false with error",
-			hcp:       aroHCP(),
+			name: "When ARO HCP has missing routes, it should return false with error",
+			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
 			routes:    []runtime.Object{},
 			expected:  false,
 			expectErr: true,
@@ -715,6 +636,9 @@ func TestRouterPredicate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithRuntimeObjects(tc.routes...).
