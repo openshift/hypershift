@@ -1,101 +1,94 @@
 ---
 name: test-tag-pipeline
-description: Create a manual PipelineRun to test tag pipeline changes before merging.
+description: >
+  Create a manual Konflux PipelineRun to test tag pipeline changes before merging.
+  Use when you have modified a Tekton tag pipeline definition and want to validate it
+  by rebuilding an existing tag without merging first. Requires oc CLI login to the
+  Konflux cluster and the tag to already exist.
 ---
 
-Create a manual PipelineRun to test tag pipeline changes before merging.
+# Test Tag Pipeline
 
-**Usage**: `/test-tag-pipeline <tag-name> [branch-spec]`
+Create a manual PipelineRun to test tag pipeline changes before merging, using an
+existing tag's commit with an updated pipeline definition from a branch.
 
-**Arguments**:
+## Usage
+
+```
+/skill:test-tag-pipeline <tag-name> [branch-spec]
+```
+
+**Arguments:**
 - `tag-name` (required): The existing tag to rebuild (e.g., `v0.1.69`)
-- `branch-spec` (optional): The branch containing the updated pipeline (defaults to `main`)
+- `branch-spec` (optional): Branch containing the updated pipeline (defaults to `main`)
   - Format: `[fork:]branch-name`
   - If no fork specified, defaults to `openshift`
 
-**What this does**:
-1. Verifies you are logged into the Konflux instance
-2. Gets the commit SHA that the tag points to
-3. Fetches the tag pipeline definition from the specified branch/fork
-4. Replaces template variables with actual values for the tag
-5. Creates a manual PipelineRun that uses the updated pipeline to build the tag's commit
-6. Outputs the PipelineRun name for monitoring
-
-**Examples**:
-```bash
-# Test main branch pipeline with v0.1.69 tag
-/test-tag-pipeline v0.1.69
-
-# Test PR branch pipeline with v0.1.69 tag
-/test-tag-pipeline v0.1.69 build-gomaxprocs-image
-
-# Test fork branch pipeline with v0.1.69 tag
-/test-tag-pipeline v0.1.69 celebdor:OCPBUGS-63194-part2
+**Examples:**
+```
+/skill:test-tag-pipeline v0.1.69
+/skill:test-tag-pipeline v0.1.69 build-gomaxprocs-image
+/skill:test-tag-pipeline v0.1.69 celebdor:OCPBUGS-63194-part2
 ```
 
-**Implementation**:
+## Steps
 
-IMPORTANT: Execute the commands exactly as shown with only the arguments provided by the user. If no branch argument is specified, the template `<branch-spec (default: main)>` will correctly default to `main`. Do NOT substitute the current git branch or any other inferred values.
+### 1. Verify Authentication to Konflux
 
-Step 1: Verify authentication to Konflux
 ```bash
 oc whoami
 ```
 
-If the authentication check fails, inform the user they need to log in first:
+If authentication fails, tell the user to log in:
 ```bash
 oc login --web https://api.stone-prd-rh01.pg1f.p1.openshiftapps.com:6443
 ```
 
-Step 2: Create the PipelineRun
+### 2. Create the PipelineRun
+
+**Important:** Use only the arguments provided by the user. If no branch argument is
+given, default to `main`. Do NOT substitute the current git branch.
+
 ```bash
-bash hack/tools/scripts/create-manual-tag-pipelinerun.sh <tag-name> <branch-spec (default: main)>
+bash hack/tools/scripts/create-manual-tag-pipelinerun.sh <tag-name> <branch-spec:-main>
 ```
 
-After the PipelineRun is created, extract the name from the output and construct the web UI URL:
-- Base URL: https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com
-- Pattern: /ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/{pipelinerun-name}
+After creation, extract the PipelineRun name and construct the web UI URL:
+- Base: `https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com`
+- Pattern: `/ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/{name}`
 
-Example: https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/hypershift-operator-main-manual-v0.1.69-xxxxx
+Display the full URL for the user to monitor progress.
 
-Display the full URL to the user so they can monitor progress in the web UI.
-
-You can also monitor it from the CLI with:
+CLI monitoring:
 ```bash
-# Watch the PipelineRun status
 oc get pipelinerun <name> -w
 ```
 
-Step 3: After the PipelineRun completes successfully, create a Snapshot to trigger Enterprise Contract validation:
+### 3. Create Snapshot for Enterprise Contract Validation
+
+After the PipelineRun completes successfully:
+
 ```bash
 bash hack/tools/scripts/create-snapshot-from-pipelinerun.sh <pipelinerun-name>
 ```
 
-After the Snapshot is created, extract the snapshot name from the output and get the EC PipelineRuns:
+Get the EC PipelineRuns:
 ```bash
 oc get pipelinerun -l appstudio.openshift.io/snapshot=<snapshot-name> -o name
 ```
 
-For each EC PipelineRun, construct and display the web UI URL:
-- Base URL: https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com
-- Pattern: /ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/{ec-pipelinerun-name}
+Display web UI URLs for each EC PipelineRun (same base URL pattern).
 
-Example: https://konflux-ui.apps.stone-prd-rh01.pg1f.p1.openshiftapps.com/ns/crt-redhat-acm-tenant/applications/hypershift-operator/pipelineruns/hypershift-operator-enterprise-contract-xxxxx
-
-Display the full URLs to the user so they can monitor EC validation in the web UI.
-
-You can also monitor from the CLI with:
+CLI monitoring:
 ```bash
-# Watch the snapshot status
 oc get snapshot <snapshot-name> -w
-
-# Check EC test results
 oc get pipelinerun -l appstudio.openshift.io/snapshot=<snapshot-name>
 ```
 
-**Notes**:
-- This is useful for testing pipeline fixes before merging PRs
+## Notes
+
+- Useful for testing pipeline fixes before merging PRs
 - The PipelineRun uses the updated pipeline definition but builds the original tag's commit
-- The two-step process allows the PipelineRun to complete (20+ minutes) before creating the Snapshot
-- Requires `yq` and `oc` CLI tools to be installed
+- Two-step process: PipelineRun completes (20+ minutes), then Snapshot triggers EC validation
+- Requires `yq` and `oc` CLI tools
 - See `hack/tools/scripts/create-manual-tag-pipelinerun.sh` and `hack/tools/scripts/create-snapshot-from-pipelinerun.sh` for implementation details

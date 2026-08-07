@@ -1,72 +1,79 @@
 ---
 name: update-konflux-tasks
-description: Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs.
+description: >
+  Automatically update outdated Konflux Tekton tasks in pipeline YAML files. Use when
+  enterprise contract verification reports outdated task bundles, or when you want to
+  proactively detect and apply Tekton task updates. Maps digests to version tags, checks
+  migration notes for breaking changes, and updates all pipeline files in .tekton/.
 ---
 
+# Update Konflux Tekton Tasks
 
-Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs or by detecting updates directly.
+Detect outdated Tekton tasks and update all pipeline YAML files with the latest versions,
+checking migration notes for breaking changes along the way.
 
+## Usage
 
-**Konflux Tekton Tasks Update**
+```
+/skill:update-konflux-tasks [log-file-path]
+```
 
-## Usage Examples:
+**Arguments:**
+- `log-file-path` (optional): Path to an enterprise contract verification log file. When omitted, uses the detection script to find updates automatically.
 
-1. **Update tasks from enterprise contract log**:
-   `/update-konflux-tasks ../../hypershift-operator-enterprise-contract-lxgvw-verify.log`
+**Examples:**
+```
+/skill:update-konflux-tasks ../../hypershift-operator-enterprise-contract-lxgvw-verify.log
+/skill:update-konflux-tasks
+```
 
-2. **Detect and update tasks automatically (no log file)**:
-   `/update-konflux-tasks`
+## Process Flow
 
-## Implementation Details:
+### 1. Detect Outdated Tasks
 
-- When a log file is provided: Parses Konflux enterprise contract verification logs for outdated task warnings
-- When no log file is provided: Uses `hack/tools/scripts/update_trusted_task_bundles.py --dry-run --json` to detect updates
-- Uses `skopeo inspect` to map SHA256 digests to proper version tags
-- Checks migration documentation for version bumps
-- Requires `skopeo` and `jq` to be installed
+**With log file:**
+- Read the provided log file
+- Extract all outdated Tekton task warnings mentioning "newer version exists"
+- Parse task names, current digests, and latest digests
 
-## Process Flow:
+**Without log file:**
+- Run the detection script:
+  ```bash
+  hack/tools/scripts/update_trusted_task_bundles.py $(find .tekton -name '*.yaml') \
+    --dry-run --json --upgrade-versions
+  ```
+- Parse JSON output for tasks needing updates (includes `task_name`, `current_version`, `current_digest`, `latest_version`, `latest_digest`, `is_version_bump`)
 
-1. **Detect Outdated Tasks**:
-   - If a log file is provided (<log-file-path>):
-     - Read the provided log file
-     - Extract all outdated Tekton task warnings that mention "newer version exists"
-     - Parse out task names, current digests, and latest digests
-   - If no log file is provided:
-     - Run `hack/tools/scripts/update_trusted_task_bundles.py $(find .tekton -name '*.yaml') --dry-run --json --upgrade-versions`
-     - Parse the JSON output to identify tasks needing updates
-     - The JSON output contains updates and available_upgrades per file with task_name, current_version, current_digest, latest_version, latest_digest, and is_version_bump fields
+### 2. Map Latest Digests to Version Tags
 
-2. **Map Latest Digests to Version Tags**:
-   - For each outdated task, use the helper script `hack/tools/scripts/find_task_version_by_digest.sh <task-name> <digest>` to determine the proper version tag for the latest digest
-   - The helper script uses `skopeo list-tags` and `skopeo inspect` to find which semantic version tag (e.g., 0.2, 0.3) matches the given digest
-   - It filters out commit-hash style tags (e.g., "0.2-f788d9b...") and only returns clean semantic versions
-   - Create a mapping of: task-name → current-version@digest → latest-version@digest
+For each outdated task:
+```bash
+hack/tools/scripts/find_task_version_by_digest.sh <task-name> <digest>
+```
 
-3. **Check for Migration Notes**:
-   - For any tasks with version bumps (not just digest updates), check for migration notes
-   - If a task matches quay.io/redhat-appstudio-tekton-catalog/ rather than quay.io/konflux-ci/tekton-catalog, we should check if it is available in quay.io/konflux-ci/tekton-catalog and change to use the latter.
-   - Use URL pattern: `https://github.com/konflux-ci/build-definitions/blob/main/task/{task-name}/{version}/MIGRATION.md`
-   - If the migration notes reference a migration script, check their availability with the pattern: `https://github.com/konflux-ci/build-definitions/blob/main/task/{task-name}/{version}/migrations/{version}.sh`. If it is available:
-     - Run the migration script on the identified pipeline files
-   - Extract any breaking changes, new parameters, or manual steps required
-   - Ask the user for input in any manual steps are required
-   - Report if "No action required" or list specific migration steps
+The helper script uses `skopeo list-tags` and `skopeo inspect` to find which semantic version tag (e.g., 0.2, 0.3) matches the digest. It filters out commit-hash style tags.
 
-4. **Update Pipeline Files**:
-   - Discover all Tekton pipeline YAML files using the glob `.tekton/**/*.yaml`
-   - Replace old `quay.io/konflux-ci/tekton-catalog/task-{name}:{old-version}@{old-digest}` with new versions
-   - Use MultiEdit for efficiency when updating multiple tasks per file
+Create a mapping: task-name → current-version@digest → latest-version@digest
 
-5. **Provide Comprehensive Summary**:
-   - List all outdated tasks found and their update status
-   - Show current vs. latest version mappings
-   - Highlight any version bumps vs. digest-only updates
-   - Report any migration notes or manual steps required
-   - List all files updated
-   - Provide before/after examples for key changes
+### 3. Check for Migration Notes
 
-## Expected Output Format:
+For tasks with version bumps (not just digest updates):
+- Check if task uses `quay.io/redhat-appstudio-tekton-catalog/` — if so, check if available in `quay.io/konflux-ci/tekton-catalog` and switch to the latter
+- Check migration notes at: `https://github.com/konflux-ci/build-definitions/blob/main/task/{task-name}/{version}/MIGRATION.md`
+- Check for migration scripts at: `https://github.com/konflux-ci/build-definitions/blob/main/task/{task-name}/{version}/migrations/{version}.sh`
+  - If available, run the migration script on identified pipeline files
+- Extract breaking changes, new parameters, or manual steps
+- Ask the user about any manual steps required
+- Report "No action required" or list specific migration steps
+
+### 4. Update Pipeline Files
+
+- Discover all Tekton pipeline YAML files: `.tekton/**/*.yaml`
+- Replace old `quay.io/konflux-ci/tekton-catalog/task-{name}:{old-version}@{old-digest}` with new versions
+- Edit multiple locations efficiently when updating multiple tasks per file
+
+### 5. Provide Summary
+
 ```markdown
 ## 🔄 Konflux Tekton Tasks Update Complete
 
@@ -74,12 +81,10 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
 - ✅ apply-tags: 0.2@old-digest → 0.2@new-digest (digest update)
 - ✅ buildah-remote-oci-ta: 0.4@old-digest → 0.5@new-digest (VERSION BUMP - migration notes checked)
 - ✅ init: 0.2@old-digest → 0.2@new-digest (digest update)
-[... etc for all tasks]
 
 ### Files Updated:
 - ✅ .tekton/hypershift-operator-main-push.yaml (8 tasks updated)
 - ✅ .tekton/hypershift-operator-main-pull-request.yaml (8 tasks updated)
-[... etc for all files]
 
 ### Migration Notes:
 - buildah-remote-oci-ta v0.4→v0.5: ✅ No action required (bug fix for SBOM generation)
@@ -92,31 +97,30 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
 - Manual steps required: None / [list steps]
 ```
 
-## Error Handling:
-- If log file is provided but doesn't exist, provide clear error message
-- If no log file is provided and update_trusted_task_bundles.py fails, provide error details
-- If skopeo is not installed, provide installation instructions
-- If jq is not installed, provide installation instructions
-- If yq is not installed, provide installation instructions
-- If PyYAML is not installed (required for update_trusted_task_bundles.py), provide installation instructions: `pip install pyyaml`
-- If no outdated tasks found, report success with no changes needed
-- If migration notes URL returns 404, note that no migration documentation exists
-- If migration notes include changes that to parameters, output or manual steps, prompt the user about them 
+## Error Handling
 
-## Safety Features:
-- ✅ Preserves version tags (e.g., keeps `0.2` in `task:0.2@sha256:...`)
-- ✅ Checks migration notes for breaking changes before major version bumps
-- ✅ Provides detailed summary of all changes made
-- ✅ Use TodoWrite to track progress through complex multi-file updates
+| Scenario | Action |
+|----------|--------|
+| Log file doesn't exist | Clear error message |
+| Detection script fails | Show error details |
+| `skopeo` not installed | Provide installation instructions |
+| `jq` not installed | Provide installation instructions |
+| `yq` not installed | Provide installation instructions |
+| `pyyaml` not installed | `pip install pyyaml` |
+| No outdated tasks found | Report success, no changes needed |
+| Migration notes 404 | Note no migration documentation exists |
+| Migration notes have manual steps | Ask the user about them |
 
-## Requirements:
-- `skopeo` must be installed (for container image inspection)
-- `jq` must be installed (for JSON parsing)
-- `yq` must be installed (for YAML parsing and checking multi-platform builds)
-- `pyyaml` Python package must be installed when running without a log file (for update_trusted_task_bundles.py)
-- Internet connectivity (to check migration notes and inspect container images)
+## Safety Features
 
-## Arguments:
-- <log-file-path>: Path to the enterprise contract verification log file that contains outdated task warnings (optional). When not provided, the skill uses `hack/tools/scripts/update_trusted_task_bundles.py --dry-run --json` to automatically detect outdated tasks.
+- Preserves version tags (e.g., keeps `0.2` in `task:0.2@sha256:...`)
+- Checks migration notes for breaking changes before major version bumps
+- Provides detailed summary of all changes
 
-The command will provide progress updates and automatically update all relevant Tekton pipeline files with the latest task versions.
+## Requirements
+
+- `skopeo` (container image inspection)
+- `jq` (JSON parsing)
+- `yq` (YAML parsing and multi-platform build checks)
+- `pyyaml` Python package (when running without a log file)
+- Internet connectivity (migration notes and image inspection)

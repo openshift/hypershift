@@ -1,27 +1,56 @@
 ---
 name: e2e-analyze
-description: "Analyze test errors"
+description: >
+  Analyze e2e test failures from CI runs. Use when a CI job has failed and you need to
+  download artifacts, identify the root cause of a specific test failure, and produce a
+  structured failure analysis with evidence. Requires a CI run URL, test name, and an
+  existing local directory for storing artifacts.
 ---
 
-# General instructions
+# Analyze E2E Test Failures
 
-- Validate that the artifact directory argument is an existing directory; fail if it is not. Do NOT create the directory.
-- Extract {BUILD_NUMBER} from the CI run URL argument by matching a 10–20 digit sequence; fail if none is found.
-- Use the extracted number as {BUILD_NUMBER}.
-- Use curl to download the file build-log.txt under the CI run URL. Only allow HTTPS URLs (reject HTTP).
-- When fetching, use: `curl -fsSL --max-time 20 --retry 3 --retry-connrefused --proto '=https' --max-filesize 100M "<ci-run-url>/build-log.txt"`.
-- The build-log.txt file contains e2e failures, store the artifacts related to the specified test name under the artifact directory to determine a possible root cause for the failure.
-- Use the "gcloud storage" command to fetch given artifacts under the artifact directory and make sure to use {BUILD_NUMBER} in URLs.
-- Provide evidence for the failure.
-- Try to find additional evidence. For example, in logs and events.
-- Do not delete downloaded artifacts during the cleanup phase.
+Download and analyze CI test artifacts to determine the root cause of an e2e test failure.
 
-# Output format
+## Usage
 
-- The output should be formatted as:
-  ```text
-  Error: {Error message here}
-  Summary: {Failure analysis here}
-  Evidence: {Evidence here}
-  Additional evidence: {Additional evidence here}
-  ```
+```
+/skill:e2e-analyze <ci-run-url> <test-name> <artifact-directory>
+```
+
+**Arguments:**
+- `ci-run-url` (required): HTTPS URL of the CI run (e.g., a Prow job URL)
+- `test-name` (required): Name of the failing test to analyze
+- `artifact-directory` (required): Path to an **existing** local directory where artifacts will be stored
+
+## Procedure
+
+### 1. Validate inputs
+
+- Confirm the artifact directory exists. **Do not create it** — fail if missing.
+- Extract `{BUILD_NUMBER}` from the CI URL by matching a 10–20 digit sequence. Fail if none is found.
+- Only allow HTTPS URLs (reject HTTP).
+
+### 2. Download the build log
+
+```bash
+curl -fsSL --max-time 20 --retry 3 --retry-connrefused \
+  --proto '=https' --max-filesize 100M \
+  "${CI_RUN_URL}/build-log.txt"
+```
+
+### 3. Analyze the failure
+
+- Parse `build-log.txt` for failures related to the specified test name.
+- Use `gcloud storage` to fetch relevant artifacts into the artifact directory, incorporating `{BUILD_NUMBER}` in URLs.
+- Gather primary evidence for the failure.
+- Search for additional evidence in logs and events.
+- **Do not delete downloaded artifacts** after analysis.
+
+## Output Format
+
+```text
+Error: {Error message here}
+Summary: {Failure analysis here}
+Evidence: {Evidence here}
+Additional evidence: {Additional evidence here}
+```
