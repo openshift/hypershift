@@ -61,6 +61,8 @@ ignore:
   - "pkg/etcdcli/interfaces.go"
   - "hypershift-operator/controllers/nodepool/instancetype/instancetype.go"
   - "api/ibmcapi/types.go"
+  # CRD migrator adapted from upstream CAPI — tested via e2e (not unit tests)
+  - "support/capi-crdmigrator/crd_migrator.go"
 
 comment:
   layout: "condensed_header, diff, files, flags, components"
