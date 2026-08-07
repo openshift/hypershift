@@ -39,7 +39,20 @@ const (
 
 // AzureKMSProviderName computes the EncryptionConfiguration KMS provider name for an Azure KMS key.
 func AzureKMSProviderName(key hyperv1.AzureKMSKey) (string, error) {
-	h, err := util.HashStruct(key)
+	keyIdentity := struct {
+		KeyVaultName string                       `json:"keyVaultName,omitempty"`
+		KeyName      string                       `json:"keyName,omitempty"`
+		KeyVersion   string                       `json:"keyVersion,omitempty"`
+		KeyVaultType hyperv1.AzureKMSKeyVaultType `json:"keyVaultType,omitempty"`
+	}{
+		KeyVaultName: key.KeyVaultName,
+		KeyName:      key.KeyName,
+		KeyVersion:   key.KeyVersion,
+	}
+	if key.KeyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		keyIdentity.KeyVaultType = key.KeyVaultType
+	}
+	h, err := util.HashStruct(keyIdentity)
 	if err != nil {
 		return "", err
 	}
@@ -223,6 +236,9 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 			"--healthz-path=/healthz",
 			fmt.Sprintf("--config-file-path=%s/%s", azureKMSVolumeMounts.Path(c.Name, kasVolumeAzureKMSCredentials().Name), azureKMSCredsFileKey),
 			"-v=1",
+		}
+		if kmsKey.KeyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+			c.Args = append(c.Args, "--managed-hsm")
 		}
 		c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
 

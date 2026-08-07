@@ -447,6 +447,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 				KeyVaultName: o.encryptionKey.KeyVaultName,
 				KeyName:      o.encryptionKey.KeyName,
 				KeyVersion:   o.encryptionKey.KeyVersion,
+				KeyVaultType: o.encryptionKey.KeyVaultType,
 			},
 		}
 

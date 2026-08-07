@@ -322,12 +322,17 @@ func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crc
 }
 
 func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+	publicLabelFilter := "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security"
+	if strings.Contains(strings.ToLower(a.encryptionKeyID), ".managedhsm.") {
+		publicLabelFilter += " || azure-managed-hsm"
+	}
+
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
 				Name:        "public",
 				Variant:     "public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security",
+				LabelFilter: publicLabelFilter,
 				Skip:        "KAS allowed CIDRs",
 				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},

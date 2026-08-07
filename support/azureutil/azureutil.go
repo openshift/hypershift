@@ -31,12 +31,12 @@ import (
 // Azure SDK has a 24-character limit for ApplicationID, and spaces are replaced with "/".
 const CPOUserAgent = "hypershift-cpo"
 
-// AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault
-// This information comes from the encryption key ID, which is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+// AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault or Managed HSM.
 type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+	KeyVaultType hyperv1.AzureKMSKeyVaultType
 }
 
 // NewARMClientOptions creates Azure ARM client options with proper cloud configuration
@@ -389,19 +389,59 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 // GetKeyVaultDNSSuffixFromCloudType simply mimics the functionality in environments.go from the Azure SDK, github.com/Azure/go-autorest.
 // This function is used to get the DNS suffix for the Key Vault based on the cloud type.
 func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
-	cloud = strings.ToUpper(cloud)
+	return GetKeyVaultDNSSuffix(cloud, hyperv1.AzureKMSKeyVaultTypeKeyVault)
+}
 
-	switch cloud {
+const (
+	azurePublicKeyVaultDNSSuffix       = "vault.azure.net"
+	azurePublicManagedHSMDNSSuffix     = "managedhsm.azure.net"
+	azureGovernmentKeyVaultDNSSuffix   = "vault.usgovcloudapi.net"
+	azureGovernmentManagedHSMDNSSuffix = "managedhsm.usgovcloudapi.net"
+	azureChinaKeyVaultDNSSuffix        = "vault.azure.cn"
+)
+
+// GetKeyVaultDNSSuffix returns the cloud-specific DNS suffix for Azure Key Vault or Managed HSM.
+// An empty keyVaultType is treated as KeyVault for compatibility with existing API objects.
+// Managed HSM support is intentionally limited to Azure Public Cloud and Azure US Government Cloud.
+// Supporting another cloud requires adding its suffix here, allowing it in GetAzureEncryptionKeyInfo,
+// and updating the HCPEtcdBackup encryptionKeyURL API validation.
+func GetKeyVaultDNSSuffix(cloud string, keyVaultType hyperv1.AzureKMSKeyVaultType) (string, error) {
+	normalizedCloud := strings.ToUpper(cloud)
+	managedHSM := false
+	switch keyVaultType {
+	case "", hyperv1.AzureKMSKeyVaultTypeKeyVault:
+	case hyperv1.AzureKMSKeyVaultTypeManagedHSM:
+		managedHSM = true
+	default:
+		return "", fmt.Errorf("unknown Azure KMS key vault type %q", keyVaultType)
+	}
+
+	switch normalizedCloud {
 	case "AZURECHINACLOUD":
-		return "vault.azure.cn", nil
+		if managedHSM {
+			return "", fmt.Errorf("Azure Managed HSM is not supported in cloud type %q", cloud) //nolint:staticcheck // Azure Managed HSM is a proper noun
+		}
+		return azureChinaKeyVaultDNSSuffix, nil
 	case "AZURECLOUD":
-		return "vault.azure.net", nil
+		if managedHSM {
+			return azurePublicManagedHSMDNSSuffix, nil
+		}
+		return azurePublicKeyVaultDNSSuffix, nil
 	case "AZUREPUBLICCLOUD":
-		return "vault.azure.net", nil
+		if managedHSM {
+			return azurePublicManagedHSMDNSSuffix, nil
+		}
+		return azurePublicKeyVaultDNSSuffix, nil
 	case "AZUREUSGOVERNMENT":
-		return "vault.usgovcloudapi.net", nil
+		if managedHSM {
+			return azureGovernmentManagedHSMDNSSuffix, nil
+		}
+		return azureGovernmentKeyVaultDNSSuffix, nil
 	case "AZUREUSGOVERNMENTCLOUD":
-		return "vault.usgovcloudapi.net", nil
+		if managedHSM {
+			return azureGovernmentManagedHSMDNSSuffix, nil
+		}
+		return azureGovernmentKeyVaultDNSSuffix, nil
 	default:
 		return "", fmt.Errorf("unknown cloud type %q", cloud)
 	}
@@ -416,16 +456,15 @@ func GetKeyVaultFQDN(hcp *hyperv1.HostedControlPlane) (string, error) {
 		return "", fmt.Errorf("azure KMS is not configured")
 	}
 
-	vaultName := hcp.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName
-	suffix, err := GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
+	activeKey := hcp.Spec.SecretEncryption.KMS.Azure.ActiveKey
+	suffix, err := GetKeyVaultDNSSuffix(hcp.Spec.Platform.Azure.Cloud, activeKey.KeyVaultType)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to resolve Azure KMS DNS suffix: %w", err)
 	}
-	return fmt.Sprintf("%s.%s", vaultName, suffix), nil
+	return fmt.Sprintf("%s.%s", activeKey.KeyVaultName, suffix), nil
 }
 
-// GetAzureEncryptionKeyInfo extracts the key vault name, key name, and key version from an encryption key ID
-// The encryption key ID is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+// GetAzureEncryptionKeyInfo extracts the vault name, key name, key version, and vault type from an encryption key ID.
 func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, error) {
 	parsed, err := url.Parse(encryptionKeyID)
 	if err != nil {
@@ -433,7 +472,7 @@ func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, err
 	}
 
 	// Ensure the host is present
-	host := parsed.Hostname()
+	host := strings.ToLower(parsed.Hostname())
 	if host == "" {
 		return nil, fmt.Errorf("invalid encryption key identifier %q: missing host", encryptionKeyID)
 
@@ -450,16 +489,26 @@ func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, err
 		return nil, fmt.Errorf("invalid encryption key identifier %q: expected /keys/<keyName>/<keyVersion>", encryptionKeyID)
 	}
 
-	// Ensure the vault name is present
-	vaultName := strings.Split(host, ".")[0]
-	if vaultName == "" {
-		return nil, fmt.Errorf("invalid encryption key identifier %q: could not derive vault name from host %q", encryptionKeyID, host)
+	vaultName, suffix, found := strings.Cut(host, ".")
+	if !found || vaultName == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: could not derive vault name and service suffix from host %q", encryptionKeyID, host)
+	}
+
+	var keyVaultType hyperv1.AzureKMSKeyVaultType
+	switch suffix {
+	case azurePublicKeyVaultDNSSuffix, azureGovernmentKeyVaultDNSSuffix, azureChinaKeyVaultDNSSuffix:
+		keyVaultType = hyperv1.AzureKMSKeyVaultTypeKeyVault
+	case azurePublicManagedHSMDNSSuffix, azureGovernmentManagedHSMDNSSuffix:
+		keyVaultType = hyperv1.AzureKMSKeyVaultTypeManagedHSM
+	default:
+		return nil, fmt.Errorf("invalid encryption key identifier %q: unsupported Azure Key Vault host %q", encryptionKeyID, host)
 	}
 
 	return &AzureEncryptionKey{
 		KeyVaultName: vaultName,
 		KeyName:      parts[0],
 		KeyVersion:   parts[1],
+		KeyVaultType: keyVaultType,
 	}, nil
 }
 

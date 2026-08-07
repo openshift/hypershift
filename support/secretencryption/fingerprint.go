@@ -16,7 +16,11 @@ func DataHash(data []byte) string {
 
 // FingerprintAzureKMSKey computes the SHA-256 fingerprint for an Azure KMS key.
 func FingerprintAzureKMSKey(key hyperv1.AzureKMSKey) string {
-	return DataHash([]byte(key.KeyVaultName + "/" + key.KeyName + "/" + key.KeyVersion))
+	identity := key.KeyVaultName + "/" + key.KeyName + "/" + key.KeyVersion
+	if key.KeyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		identity += "/" + string(key.KeyVaultType)
+	}
+	return DataHash([]byte(identity))
 }
 
 // FingerprintAWSKMSKey computes the SHA-256 fingerprint for an AWS KMS key.

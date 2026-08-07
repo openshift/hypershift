@@ -144,11 +144,13 @@ func deriveKMSKeys(kmsSpec *hyperv1.KMSSpec, encStatus *hyperv1.SecretEncryption
 			KeyVaultName: encStatus.TargetKey.Azure.KeyVaultName,
 			KeyName:      encStatus.TargetKey.Azure.KeyName,
 			KeyVersion:   encStatus.TargetKey.Azure.KeyVersion,
+			KeyVaultType: encStatus.TargetKey.Azure.KeyVaultType,
 		}
 		oldKey := &hyperv1.AzureKMSKey{
 			KeyVaultName: encStatus.ActiveKey.Azure.KeyVaultName,
 			KeyName:      encStatus.ActiveKey.Azure.KeyName,
 			KeyVersion:   encStatus.ActiveKey.Azure.KeyVersion,
+			KeyVaultType: encStatus.ActiveKey.Azure.KeyVaultType,
 		}
 		targetName, err := kms.AzureKMSProviderName(*targetKey)
 		if err != nil {
