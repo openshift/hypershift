@@ -110,10 +110,17 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+	// Parse EXTRA_ARGS from environment if provided
+	var extraArgs []string
+	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
+		extraArgs = strings.Fields(envArgs)
+	}
+
 	var publicExtraArgs []string
 	if a.encryptionKeyID != "" {
 		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
 	}
+	publicExtraArgs = append(publicExtraArgs, extraArgs...)
 
 	return []ClusterSpec{
 		{
@@ -122,25 +129,27 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 		},
 		{
 			Variant: "private",
-			ExtraArgs: []string{
+			ExtraArgs: append([]string{
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-			},
+			}, extraArgs...),
 		},
 		{
 			Variant:   "oauth-lb",
-			ExtraArgs: []string{"--oauth-publishing-strategy=LoadBalancer"},
+			ExtraArgs: append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
 		},
 		{
 			Variant:      "upgrade",
 			ReleaseImage: n1Image,
-			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
+			ExtraArgs:    append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
 		},
 		{
-			Variant: "autoscaling",
+			Variant:   "autoscaling",
+			ExtraArgs: extraArgs,
 		},
 		{
-			Variant: "external-oidc",
+			Variant:   "external-oidc",
+			ExtraArgs: extraArgs,
 		},
 	}
 }
