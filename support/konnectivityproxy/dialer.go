@@ -95,6 +95,9 @@ type Options struct {
 	// See https://github.com/openshift/hypershift/pull/3986
 	DisableResolver bool
 
+	// PreferIPv4 filters DNS results to IPv4 when the data plane is single-stack IPv4.
+	PreferIPv4 bool
+
 	// Client for the hosted cluster. This is used by the resolver to resolve names either via
 	// service name or via coredns. REQUIRED (unless DisableResolver is specified)
 	Client client.Client
@@ -191,6 +194,7 @@ func NewKonnectivityDialer(opts Options) (ProxyDialer, error) {
 		resolveFromGuestCluster:      opts.ResolveFromGuestClusterDNS,
 		resolveFromManagementCluster: opts.ResolveFromManagementClusterDNS,
 		mustResolve:                  opts.ResolveBeforeDial,
+		preferIPv4:                   opts.PreferIPv4,
 		konnectivityHealth:           newKonnectivityHealth(),
 		log:                          opts.Log,
 		isCloudAPI:                   proxy.IsCloudAPI,
@@ -198,6 +202,7 @@ func NewKonnectivityDialer(opts Options) (ProxyDialer, error) {
 	proxy.proxyResolver.guestClusterResolver = &guestClusterResolver{
 		client:               opts.Client,
 		konnectivityDialFunc: proxy.DialContext,
+		preferIPv4:           opts.PreferIPv4,
 		log:                  opts.Log,
 	}
 	return proxy, nil

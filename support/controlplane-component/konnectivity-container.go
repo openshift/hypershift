@@ -47,6 +47,8 @@ type HTTPSOptions struct {
 	// before worker nodes are present in the cluster.
 	// See https://github.com/openshift/hypershift/pull/1601
 	ConnectDirectlyToCloudAPIs *bool
+	// PreferIPv4 filters DNS results to IPv4 for single-stack IPv4 data planes.
+	PreferIPv4 *bool
 }
 
 type Socks5Options struct {
@@ -74,6 +76,8 @@ type Socks5Options struct {
 	// DisableResolver disables any name resolution by the resolver. This is used by the CNO.
 	// See https://github.com/openshift/hypershift/pull/3986
 	DisableResolver *bool
+	// PreferIPv4 filters DNS results to IPv4 for single-stack IPv4 data planes.
+	PreferIPv4 *bool
 }
 
 func (opts KonnectivityContainerOptions) injectKonnectivityContainer(cpContext ControlPlaneContext, podSpec *corev1.PodSpec) {
@@ -83,6 +87,13 @@ func (opts KonnectivityContainerOptions) injectKonnectivityContainer(cpContext C
 	}
 
 	hcp := cpContext.HCP
+
+	// Single-stack IPv4 HCPs need IPv4-preferred DNS on dual-stack management clusters.
+	// This overrides any caller-set PreferIPv4 value — single-stack IPv4 always needs IPv4.
+	if isSingleStackIPv4(hcp) {
+		opts.HTTPSOptions.PreferIPv4 = ptr.To(true)
+		opts.Socks5Options.PreferIPv4 = ptr.To(true)
+	}
 	var proxyAdditionalCAs []corev1.VolumeProjection
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		proxyAdditionalCAs = append(proxyAdditionalCAs, corev1.VolumeProjection{
@@ -150,6 +161,9 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		if value := opts.HTTPSOptions.ConnectDirectlyToCloudAPIs; value != nil {
 			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
 		}
+		if value := opts.HTTPSOptions.PreferIPv4; value != nil {
+			args = append(args, fmt.Sprintf("--prefer-ipv4=%t", *value))
+		}
 	case Socks5:
 		command = append(command, "konnectivity-socks5-proxy")
 		if host := opts.Socks5Options.KonnectivityHost; host != "" {
@@ -172,6 +186,9 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		}
 		if value := opts.Socks5Options.DisableResolver; value != nil {
 			args = append(args, fmt.Sprintf("--disable-resolver=%t", *value))
+		}
+		if value := opts.Socks5Options.PreferIPv4; value != nil {
+			args = append(args, fmt.Sprintf("--prefer-ipv4=%t", *value))
 		}
 	}
 
@@ -281,4 +298,16 @@ func (opts KonnectivityContainerOptions) buildVolumes(proxyAdditionalCAs []corev
 	}
 
 	return volumes
+}
+
+// isSingleStackIPv4 returns true when all HCP ServiceNetwork CIDRs are IPv4.
+// ServiceNetwork determines the IP family of ClusterIPs, which is what konnectivity resolves to.
+func isSingleStackIPv4(hcp *hyperv1.HostedControlPlane) bool {
+	for _, sn := range hcp.Spec.Networking.ServiceNetwork {
+		ipv4, err := util.IsIPv4CIDR(sn.CIDR.String())
+		if err != nil || !ipv4 {
+			return false
+		}
+	}
+	return len(hcp.Spec.Networking.ServiceNetwork) > 0
 }
