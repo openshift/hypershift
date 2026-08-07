@@ -37,15 +37,17 @@ jobs:
         if: inputs.production
         env:
           npm_config_cache: ${{ runner.temp }}/.npm
+          HOME: ${{ runner.temp }}
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site --project-name=hypershift --production --commit-dirty=true
+          command: pages deploy site --project-name=hypershift --branch=main --commit-dirty=true
       - name: Deploy to Cloudflare Pages (Preview)
         if: ${{ !inputs.production && inputs.branch != '' }}
         env:
           npm_config_cache: ${{ runner.temp }}/.npm
+          HOME: ${{ runner.temp }}
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
