@@ -39,6 +39,10 @@ spec:
         - 5s
         - --sync-interval-cap
         - 30s
+        # --sync-forever is a stopgap until the OCP fork rebases upstream PR
+        # https://github.com/kubernetes-sigs/apiserver-network-proxy/pull/643,
+        # which adds lease-based server counting (--count-server-leases).
+        - --sync-forever
         - --v
         - "3"
         command:
