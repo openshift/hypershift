@@ -21,6 +21,7 @@ MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 YQ := $(abspath $(TOOLS_BIN_DIR)/yq)
 VERIFY_API_DEPS := $(abspath $(TOOLS_BIN_DIR)/verify-api-deps)
 CRD_SCHEMA_CHECK := $(abspath $(TOOLS_BIN_DIR)/crd-schema-check)
+FIND_PUSH_PIPELINERUN := $(abspath $(TOOLS_BIN_DIR)/find-push-pipelinerun)
 
 CODESPELL_VER := 2.4.1
 CODESPELL_BIN := codespell
@@ -192,6 +193,12 @@ $(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
 
 $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/crd-schema-check ./crd-schema-check
+
+$(FIND_PUSH_PIPELINERUN): $(TOOLS_DIR)/go.mod # Build find-push-pipelinerun tool
+	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/find-push-pipelinerun ./find-push-pipelinerun
+
+.PHONY: find-push-pipelinerun
+find-push-pipelinerun: $(FIND_PUSH_PIPELINERUN) ## Build the find-push-pipelinerun tool.
 
 .PHONY: generate
 generate: $(MOCKGEN)
