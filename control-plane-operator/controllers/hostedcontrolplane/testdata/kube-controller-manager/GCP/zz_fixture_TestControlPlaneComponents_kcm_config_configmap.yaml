@@ -16,6 +16,8 @@ data:
       certFile: ""
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 9c32f184a714b24bbae7f43b807473a72bf15308ecf32bee4fab3e5110732d84
   name: kcm-config
   namespace: hcp-namespace
   ownerReferences:

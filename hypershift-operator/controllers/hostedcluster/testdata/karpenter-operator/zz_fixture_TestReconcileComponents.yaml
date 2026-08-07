@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 6d845f3d9dc1e576a4fd60836fffece0d6c68421f3aae79ff5a9ceac52e2730b
   labels:
     app: karpenter-operator
     hypershift.openshift.io/managed-by: control-plane-operator

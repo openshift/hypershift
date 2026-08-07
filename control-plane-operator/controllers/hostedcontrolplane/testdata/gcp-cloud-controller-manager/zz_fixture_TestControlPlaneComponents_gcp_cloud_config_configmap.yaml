@@ -9,6 +9,8 @@ data:
     token-url = "nil"
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 1fa11ad384c66a8e61e546d59332e6a622fdf6d4d5a51d6bbc44365df0cdd3b5
   name: gcp-cloud-config
   namespace: hcp-namespace
   ownerReferences:

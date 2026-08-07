@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 38076400ce64ef6df0086f315bdddd5a58dc98b0042ca36b03e1b101b198ac5a
   name: recording-rules
   namespace: hcp-namespace
   ownerReferences:

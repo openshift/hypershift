@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 4b649d082019c0791b1efcabd0c12deb85e2d3616b23d6f8b62b842bbffac353
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: metrics-proxy
