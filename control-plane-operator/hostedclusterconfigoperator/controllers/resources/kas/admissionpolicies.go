@@ -17,6 +17,7 @@ import (
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -35,6 +36,7 @@ const (
 	AdmissionPolicyNameICSP               = "icsp"
 	AdmissionPolicyNameInfra              = "infra"
 	AdmissionPolicyNameNTOMirroredConfigs = "ntomirroredconfigmaps"
+	AdmissionPolicyNameRBAC               = "managed-rbac"
 	cnoSAUser                             = "system:serviceaccount:openshift-network-operator:cluster-network-operator"
 
 	BaseCelExpression = "has(object.spec) && has(oldObject.spec) && object.spec == oldObject.spec"
@@ -74,6 +76,10 @@ func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.H
 
 	if err := reconcileConfigMapsValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Mirrored Configs Validating Admission Policy: %w", err)
+	}
+
+	if err := reconcileRBACValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile RBAC Validating Admission Policy: %w", err)
 	}
 
 	return nil
@@ -184,6 +190,26 @@ func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client cl
 	if err := mirroredConfigsAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling mirrored ConfigMaps Validating Admission Policy: %w", err)
 	}
+	return nil
+}
+
+func reconcileRBACValidatingAdmissionPolicy(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	rbacAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameRBAC}
+	rbacAPIVersion := []string{rbacv1.SchemeGroupVersion.Version}
+	rbacAPIGroup := []string{rbacv1.SchemeGroupVersion.Group}
+	rbacResources := []string{"clusterrolebindings"}
+
+	HCCOUserValidation.Expression = generateCelExpression(userWhiteList)
+	rbacAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
+	rbacAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(rbacResources, rbacAPIVersion, rbacAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
+	rbacAdmissionPolicy.MatchConstraints.ResourceRules[0].ResourceNames = []string{
+		"hcco-cluster-admin",
+		"kas-bootstrap-container-cluster-admin",
+	}
+	if err := rbacAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("error reconciling RBAC Validating Admission Policy: %w", err)
+	}
+
 	return nil
 }
 

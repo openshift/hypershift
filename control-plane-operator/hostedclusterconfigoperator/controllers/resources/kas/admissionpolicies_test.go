@@ -262,6 +262,12 @@ func TestReconcileKASValidatingAdmissionPolicies(t *testing.T) {
 			wantErr:        true,
 			errSubstr:      "error reconciling mirrored ConfigMaps Validating Admission Policy",
 		},
+		{
+			name:           "When RBAC VAP reconcile fails, it should return a wrapped RBAC error",
+			createOrUpdate: failOnNthCreateOrUpdate(11),
+			wantErr:        true,
+			errSubstr:      "failed to reconcile RBAC Validating Admission Policy",
+		},
 	}
 
 	for _, tt := range tests {
