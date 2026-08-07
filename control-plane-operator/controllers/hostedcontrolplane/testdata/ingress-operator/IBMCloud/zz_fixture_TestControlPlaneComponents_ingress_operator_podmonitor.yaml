@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 3b12b339f1325976abe959f32d1b58e820891ac27f11a039e56f96b0c874b507
   name: ingress-operator
   namespace: hcp-namespace
   ownerReferences:

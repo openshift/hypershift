@@ -19,6 +19,8 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: ae9eed6217ff4ba7cb7d54d91d4efb76d1ae5331b383dcfa700865637a860cc4
   name: cluster-storage-operator-config
   namespace: hcp-namespace
   ownerReferences:

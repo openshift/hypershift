@@ -4,6 +4,8 @@ data:
     = Shared\nNLBSecurityGroupMode = Managed"
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: c197f188acc298aca87cdb3a6731a0115538811ba941ec0ba4d6050550c837d3
   name: aws-cloud-config
   namespace: hcp-namespace
   ownerReferences:

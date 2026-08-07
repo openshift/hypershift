@@ -14,6 +14,8 @@ data:
       hypershift.openshift.io/infra-id: ""
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 2e59e9ac864bde67fb9172f43ed9b487da78e3abe5a0c13aecb07ece4180b439
   name: kubevirt-cloud-config
   namespace: hcp-namespace
   ownerReferences:

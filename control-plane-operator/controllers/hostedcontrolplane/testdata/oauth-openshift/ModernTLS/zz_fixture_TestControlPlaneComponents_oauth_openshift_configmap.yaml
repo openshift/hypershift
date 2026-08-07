@@ -60,6 +60,8 @@ data:
       storagePrefix: ""
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: be9d689fd55f9e087d2ac73011b46a5c4e927f4fb8c322c51d52444415b17b07
   name: oauth-openshift
   namespace: hcp-namespace
   ownerReferences:

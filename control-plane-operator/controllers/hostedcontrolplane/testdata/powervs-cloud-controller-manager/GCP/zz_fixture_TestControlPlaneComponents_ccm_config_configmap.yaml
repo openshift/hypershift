@@ -6,6 +6,8 @@ data:
     \npowerVSCloudInstanceID = \npowerVSRegion = \npowerVSZone = \n"
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 2856f5f021e076f98f3a19d092bca1afd5e5104a21b476bf02861505cef9c43f
   name: ccm-config
   namespace: hcp-namespace
   ownerReferences:

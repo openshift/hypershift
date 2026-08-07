@@ -26,6 +26,8 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 833c3b7d1af151e247c6c552df60bb966f61d85fbb8cd6047d5bafeeec5c0676
   name: csi-snapshot-controller-operator-config
   namespace: hcp-namespace
   ownerReferences:
