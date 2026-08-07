@@ -59,6 +59,7 @@ func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 	ValidateMetricsTest(getTestCtx)
 	EnsureMetricsForwarderWorkingTest(getTestCtx)
 	EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx)
+	EnsureKubeSchedulerMetricsEndpointTest(getTestCtx)
 }
 
 func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
@@ -304,6 +305,79 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 				g.Expect(output).To(ContainSubstring("# HELP"),
 					"metrics response should contain Prometheus format data")
 			}, 3*time.Minute, 10*time.Second).Should(Succeed())
+		})
+	})
+}
+
+func EnsureKubeSchedulerMetricsEndpointTest(getTestCtx internal.TestContextGetter) {
+	When("kube-scheduler is running", func() {
+		It("should have functional kube-scheduler metrics endpoints", func() {
+			tc := getTestCtx()
+			if e2eutil.IsLessThan(e2eutil.Version423) {
+				Skip("kube-scheduler metrics endpoint test requires version >= 4.23")
+			}
+
+			// 1. Validate Service exists and has the "client" port
+			svc := &corev1.Service{}
+			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Name:      "kube-scheduler",
+				Namespace: tc.ControlPlaneNamespace,
+			}, svc)
+			Expect(err).NotTo(HaveOccurred(), "failed to get kube-scheduler service")
+			Expect(svc.Spec.Ports).NotTo(BeEmpty(), "kube-scheduler service should have at least one port")
+
+			var metricsPortNum int32
+			hasClientPort := false
+			for _, port := range svc.Spec.Ports {
+				if port.Name == "client" || port.Port == 10259 {
+					hasClientPort = true
+					metricsPortNum = port.Port
+					break
+				}
+			}
+			Expect(hasClientPort).To(BeTrue(),
+				"kube-scheduler service should expose a port named 'client' or on port 10259")
+
+			// 2. Validate ServiceMonitor exists with both endpoints
+			By("Validating ServiceMonitor exists with /metrics and /metrics/resources endpoints")
+			serviceMonitor := &monitoringv1.ServiceMonitor{}
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+				Name:      "kube-scheduler",
+				Namespace: tc.ControlPlaneNamespace,
+			}, serviceMonitor)).To(Succeed(), "kube-scheduler ServiceMonitor should exist")
+
+			foundDefaultMetrics := false
+			foundResourceMetrics := false
+			for _, ep := range serviceMonitor.Spec.Endpoints {
+				if ep.Path == "" || ep.Path == "/metrics" {
+					foundDefaultMetrics = true
+				}
+				if ep.Path == "/metrics/resources" {
+					foundResourceMetrics = true
+				}
+			}
+			Expect(foundDefaultMetrics).To(BeTrue(),
+				"ServiceMonitor should have a /metrics endpoint")
+			Expect(foundResourceMetrics).To(BeTrue(),
+				"ServiceMonitor should have a /metrics/resources endpoint")
+
+			// 3. Functional test - port-forward to the kube-scheduler pod and fetch metrics
+			// using TLS certificates from the k8s API.
+			By("Verifying the HTTPS metrics endpoints return Prometheus data")
+			for _, metricsPath := range []string{"/metrics", "/metrics/resources"} {
+				metricsPath := metricsPath
+				By(fmt.Sprintf("Testing kube-scheduler %s endpoint via port-forward", metricsPath))
+				Eventually(func(g Gomega) {
+					output, err := e2eutil.FetchMetricsViaPortForward(tc.Context, tc.MgmtClient,
+						tc.ControlPlaneNamespace, "kube-scheduler", metricsPortNum, metricsPath, "kube-scheduler")
+					g.Expect(err).NotTo(HaveOccurred(),
+						"should be able to fetch kube-scheduler metrics at %s", metricsPath)
+					g.Expect(output).NotTo(BeEmpty(),
+						"metrics response should not be empty")
+					g.Expect(output).To(ContainSubstring("# HELP"),
+						"metrics response should contain Prometheus format data")
+				}, 3*time.Minute, 10*time.Second).Should(Succeed())
+			}
 		})
 	})
 }

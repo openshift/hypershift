@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"reflect"
 	"slices"
@@ -70,6 +72,8 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/transport/spdy"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
@@ -4592,6 +4596,120 @@ func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, 
 	}
 }
 
+func FetchMetricsViaPortForward(ctx context.Context, mgmtClient crclient.Client, hcpNamespace, componentLabel string, podPort int32, metricsPath, tlsServerName string) (string, error) {
+	podList := &corev1.PodList{}
+	if err := mgmtClient.List(ctx, podList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels{"app": componentLabel}); err != nil {
+		return "", fmt.Errorf("failed to list %s pods: %w", componentLabel, err)
+	}
+	var runningPod *corev1.Pod
+	for i := range podList.Items {
+		if podList.Items[i].Status.Phase == corev1.PodRunning {
+			runningPod = &podList.Items[i]
+			break
+		}
+	}
+	if runningPod == nil {
+		return "", fmt.Errorf("no running %s pod found in namespace %s", componentLabel, hcpNamespace)
+	}
+
+	rootCA := &corev1.ConfigMap{}
+	if err := mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: "root-ca"}, rootCA); err != nil {
+		return "", fmt.Errorf("failed to get root-ca ConfigMap: %w", err)
+	}
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM([]byte(rootCA.Data["ca.crt"])) {
+		return "", fmt.Errorf("failed to parse root-ca certificate")
+	}
+
+	metricsClientSecret := &corev1.Secret{}
+	if err := mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: "metrics-client"}, metricsClientSecret); err != nil {
+		return "", fmt.Errorf("failed to get metrics-client secret: %w", err)
+	}
+	clientCert, err := tls.X509KeyPair(metricsClientSecret.Data["tls.crt"], metricsClientSecret.Data["tls.key"])
+	if err != nil {
+		return "", fmt.Errorf("failed to parse metrics-client certificate: %w", err)
+	}
+
+	restConfig, err := GetConfig()
+	if err != nil {
+		return "", fmt.Errorf("failed to get rest config: %w", err)
+	}
+	kubeClient, err := kubeclient.NewForConfig(restConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+
+	transport, upgrader, err := spdy.RoundTripperFor(restConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create SPDY round tripper: %w", err)
+	}
+	req := kubeClient.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(hcpNamespace).
+		Name(runningPod.Name).
+		SubResource("portforward")
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
+
+	stopChan := make(chan struct{})
+	defer close(stopChan)
+	readyChan := make(chan struct{})
+
+	portSpec := fmt.Sprintf("0:%d", podPort)
+	fw, err := portforward.New(dialer, []string{portSpec}, stopChan, readyChan, io.Discard, io.Discard)
+	if err != nil {
+		return "", fmt.Errorf("failed to create port forwarder: %w", err)
+	}
+
+	errChan := make(chan error, 1)
+	go func() { errChan <- fw.ForwardPorts() }()
+	select {
+	case <-readyChan:
+	case err := <-errChan:
+		return "", fmt.Errorf("port-forward failed: %w", err)
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+
+	ports, err := fw.GetPorts()
+	if err != nil || len(ports) == 0 {
+		return "", fmt.Errorf("failed to get forwarded ports: %w", err)
+	}
+	localPort := ports[0].Local
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:      certPool,
+				Certificates: []tls.Certificate{clientCert},
+				ServerName:   tlsServerName,
+				MinVersion:   tls.VersionTLS12,
+			},
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	url := fmt.Sprintf("https://localhost:%d%s", localPort, metricsPath)
+	metricsReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request for %s: %w", url, err)
+	}
+	resp, err := httpClient.Do(metricsReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, url, string(body))
+	}
+
+	return string(body), nil
+}
+
 // EnsureNodeTuningOperatorMetricsEndpoint verifies that the node-tuning-operator
 // service and servicemonitor are properly configured and that the metrics endpoint
 // is accessible and returns valid metrics data. This validates the fix for OCPBUGS-72596.
@@ -4702,5 +4820,79 @@ func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, 
 		}, 3*time.Minute, 10*time.Second).Should(Succeed(), "should be able to get metrics via ServiceMonitor HTTPS configuration")
 
 		t.Logf("✅ Node-tuning-operator metrics endpoint validation completed successfully")
+	})
+}
+
+func EnsureKubeSchedulerMetricsEndpoint(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureKubeSchedulerMetricsEndpoint", func(t *testing.T) {
+		AtLeast(t, Version423)
+		g := NewWithT(t)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		t.Logf("Validating kube-scheduler metrics endpoint functionality in namespace %s", hcpNamespace)
+
+		// 1. Validate Service exists and has the "client" port
+		service := &corev1.Service{}
+		err := mgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hcpNamespace,
+			Name:      "kube-scheduler",
+		}, service)
+		g.Expect(err).NotTo(HaveOccurred(), "kube-scheduler service should exist")
+
+		var metricsPort int32
+		var foundClientPort bool
+		for _, port := range service.Spec.Ports {
+			if port.Name == "client" || port.Port == 10259 {
+				metricsPort = port.Port
+				foundClientPort = true
+				break
+			}
+		}
+		g.Expect(foundClientPort).To(BeTrue(), "service should have a port named 'client' or on port 10259")
+		t.Logf("Service has client port configured on port %d", metricsPort)
+
+		// 2. Validate ServiceMonitor exists with both /metrics and /metrics/resources endpoints
+		serviceMonitor := &monitoringv1.ServiceMonitor{}
+		err = mgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hcpNamespace,
+			Name:      "kube-scheduler",
+		}, serviceMonitor)
+		g.Expect(err).NotTo(HaveOccurred(), "kube-scheduler servicemonitor should exist")
+
+		foundDefaultMetrics := false
+		foundResourceMetrics := false
+		for _, ep := range serviceMonitor.Spec.Endpoints {
+			if ep.Path == "" || ep.Path == "/metrics" {
+				foundDefaultMetrics = true
+			}
+			if ep.Path == "/metrics/resources" {
+				foundResourceMetrics = true
+			}
+		}
+		g.Expect(foundDefaultMetrics).To(BeTrue(), "servicemonitor should have a /metrics endpoint")
+		g.Expect(foundResourceMetrics).To(BeTrue(), "servicemonitor should have a /metrics/resources endpoint")
+		t.Logf("ServiceMonitor has both /metrics and /metrics/resources endpoints configured")
+
+		// 3. Functional test - port-forward to the kube-scheduler pod and fetch metrics
+		// using TLS certificates from the k8s API.
+		for _, metricsPath := range []string{"/metrics", "/metrics/resources"} {
+			t.Logf("Testing kube-scheduler %s endpoint accessibility via port-forward...", metricsPath)
+			g.Eventually(func() error {
+				output, err := FetchMetricsViaPortForward(ctx, mgmtClient, hcpNamespace, "kube-scheduler", metricsPort, metricsPath, "kube-scheduler")
+				if err != nil {
+					return fmt.Errorf("failed to get kube-scheduler metrics at %s: %w", metricsPath, err)
+				}
+				if len(output) == 0 {
+					return fmt.Errorf("no metrics returned from kube-scheduler at %s", metricsPath)
+				}
+				if !strings.Contains(output, "# HELP") {
+					return fmt.Errorf("kube-scheduler %s did not return prometheus format metrics", metricsPath)
+				}
+				t.Logf("✓ Successfully retrieved kube-scheduler metrics at %s", metricsPath)
+				return nil
+			}, 3*time.Minute, 10*time.Second).Should(Succeed(), "should be able to get kube-scheduler metrics at %s", metricsPath)
+		}
+
+		t.Logf("✅ Kube-scheduler metrics endpoint validation completed successfully")
 	})
 }
