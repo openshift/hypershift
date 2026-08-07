@@ -356,7 +356,7 @@ func collectFailureConditionCounts(hcluster *hyperv1.HostedCluster, platform hyp
 }
 
 func (c *hostedClustersMetricsCollector) collectTransitionDurationMetrics(hcluster *hyperv1.HostedCluster, currentCollectTime time.Time) {
-	for _, conditionType := range []hyperv1.ConditionType{hyperv1.EtcdAvailable, hyperv1.InfrastructureReady, hyperv1.ExternalDNSReachable, hyperv1.AWSEndpointServiceAvailable, hyperv1.AWSEndpointAvailable} {
+	for _, conditionType := range []hyperv1.ConditionType{hyperv1.EtcdAvailable, hyperv1.InfrastructureReady, hyperv1.ExternalDNSReachable, hyperv1.AWSEndpointServiceAvailable, hyperv1.AWSEndpointAvailable, hyperv1.GCPEndpointAvailable, hyperv1.GCPServiceAttachmentAvailable} {
 		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(conditionType))
 		if condition != nil && condition.Status == metav1.ConditionTrue {
 			t := condition.LastTransitionTime.Time
