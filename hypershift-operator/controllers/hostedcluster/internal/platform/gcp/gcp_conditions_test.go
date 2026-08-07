@@ -206,7 +206,7 @@ func TestGetCredentialStatus(t *testing.T) {
 			}
 
 			result := GetCredentialStatus(hc)
-			g.Expect(result).To(Equal(tt.expected))
+			g.Expect(result).To(Equal(tt.expected), tt.name)
 		})
 	}
 }

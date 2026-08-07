@@ -647,51 +647,51 @@ func TestReportInvalidGcpCreds(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name                                      string
-		ValidGCPWorkloadIdentityConditionStatus   metav1.ConditionStatus
-		ValidGCPCredentialsConditionStatus         metav1.ConditionStatus
-		expected                                  *dto.MetricFamily
+		name                                    string
+		ValidGCPWorkloadIdentityConditionStatus metav1.ConditionStatus
+		ValidGCPCredentialsConditionStatus      metav1.ConditionStatus
+		expected                                *dto.MetricFamily
 	}{
 		{
 			name:                                    "When both conditions are true, metric is reported with a value set to 0 (valid)",
 			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionTrue,
-			ValidGCPCredentialsConditionStatus:       metav1.ConditionTrue,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionTrue,
 			expected:                                wrapExpectedValueAsMetric(0),
 		},
 		{
 			name:                                    "When ValidGCPWorkloadIdentity is false, metric is reported with a value set to 1 (invalid)",
 			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionFalse,
-			ValidGCPCredentialsConditionStatus:       metav1.ConditionTrue,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionTrue,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
 			name:                                    "When ValidGCPCredentials is false, metric is reported with a value set to 1 (invalid)",
 			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionTrue,
-			ValidGCPCredentialsConditionStatus:       metav1.ConditionFalse,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionFalse,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
 			name:                                    "When both conditions are false, metric is reported with a value set to 1 (invalid)",
 			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionFalse,
-			ValidGCPCredentialsConditionStatus:       metav1.ConditionFalse,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionFalse,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
 			name:                                    "When ValidGCPWorkloadIdentity is unknown, metric is reported with a value set to 2 (unknown)",
 			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionUnknown,
-			ValidGCPCredentialsConditionStatus:       metav1.ConditionTrue,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionTrue,
 			expected:                                wrapExpectedValueAsMetric(2),
 		},
 		{
 			name:                                    "When ValidGCPCredentials is unknown, metric is reported with a value set to 2 (unknown)",
 			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionTrue,
-			ValidGCPCredentialsConditionStatus:       metav1.ConditionUnknown,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionUnknown,
 			expected:                                wrapExpectedValueAsMetric(2),
 		},
 		{
 			name:                                    "When both conditions are unknown, metric is reported with a value set to 2 (unknown)",
 			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionUnknown,
-			ValidGCPCredentialsConditionStatus:       metav1.ConditionUnknown,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionUnknown,
 			expected:                                wrapExpectedValueAsMetric(2),
 		},
 	}
@@ -1710,7 +1710,7 @@ func TestReportTransitionDurationForGCPEndpointConditions(t *testing.T) {
 			}
 
 			gcpConditions := map[string]bool{
-				string(hyperv1.GCPEndpointAvailable):        true,
+				string(hyperv1.GCPEndpointAvailable):          true,
 				string(hyperv1.GCPServiceAttachmentAvailable): true,
 			}
 			expectedSet := map[string]bool{}
