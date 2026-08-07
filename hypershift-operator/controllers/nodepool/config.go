@@ -210,16 +210,25 @@ func rolloutTrustBundleHashes(ctx context.Context, c client.Client, hc *hyperv1.
 	return additionalTrustBundleHash, proxyTrustedCAHash, nil
 }
 
-func configMapCABundleHash(ctx context.Context, c client.Client, namespace, name string) (string, error) {
+// getConfigMapWithCABundle fetches a ConfigMap that must contain certs.UserCABundleMapKey.
+// Used by both rollout content hashing and getAdditionalTrustBundle.
+func getConfigMapWithCABundle(ctx context.Context, c client.Client, namespace, name string) (*corev1.ConfigMap, error) {
 	cm := &corev1.ConfigMap{}
 	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
+		return nil, err
+	}
+	if _, ok := cm.Data[certs.UserCABundleMapKey]; !ok {
+		return nil, fmt.Errorf("ConfigMap %s/%s missing %q key", namespace, name, certs.UserCABundleMapKey)
+	}
+	return cm, nil
+}
+
+func configMapCABundleHash(ctx context.Context, c client.Client, namespace, name string) (string, error) {
+	cm, err := getConfigMapWithCABundle(ctx, c, namespace, name)
+	if err != nil {
 		return "", &TrustBundleConfigError{err: fmt.Errorf("cannot get ConfigMap %s/%s: %w", namespace, name, err)}
 	}
-	data, ok := cm.Data[certs.UserCABundleMapKey]
-	if !ok {
-		return "", &TrustBundleConfigError{err: fmt.Errorf("ConfigMap %s/%s missing %q key", namespace, name, certs.UserCABundleMapKey)}
-	}
-	return supportutil.HashSimple(data), nil
+	return supportutil.HashSimple(cm.Data[certs.UserCABundleMapKey]), nil
 }
 
 func hostedClusterReferencesConfigMap(hc *hyperv1.HostedCluster, configMapName string) bool {
