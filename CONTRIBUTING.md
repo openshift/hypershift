@@ -36,7 +36,7 @@ This project uses [Prow](https://docs.ci.openshift.org/) and [GitHub Actions](ht
 
 **Adding CI targets:** When you add a new `make` target to `verify-parallel` or any other CI-facing Makefile target, you must also add it to the corresponding GitHub Actions workflow (e.g., `.github/workflows/verify-reusable.yaml` for verify targets, or as a new "reusable" target). GitHub Actions provide fast feedback on PRs; Prow runs heavier e2e tests. Targets that only exist in the Makefile without a matching GH Actions step will not run in CI.
 
-See hack/github-actions-runner/README.md for details.
+See [hack/github-actions-runner/README.md](hack/github-actions-runner/README.md) for details.
 
 Useful Prow commands:
 
