@@ -22,6 +22,7 @@ import (
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -2171,5 +2172,64 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRouterComponentComesAfterRouteCreatingComponents(t *testing.T) {
+	t.Parallel()
+
+	reconciler := &HostedControlPlaneReconciler{
+		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-ns",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+		},
+	}
+
+	reconciler.registerComponents(hcp)
+
+	positions := make(map[string]int, len(reconciler.components))
+	for i, c := range reconciler.components {
+		positions[c.Name()] = i
+	}
+
+	routerPos, ok := positions[routerv2.ComponentName]
+	if !ok {
+		t.Fatal("router component not found in registered components")
+	}
+
+	routeCreatingComponents := []string{
+		ignitionserverv2.ComponentName,
+	}
+	for _, name := range routeCreatingComponents {
+		pos, ok := positions[name]
+		if !ok {
+			t.Fatalf("route-creating component %q not found in registered components", name)
+		}
+		if routerPos < pos {
+			t.Errorf("router component (position %d) must be registered after %s (position %d) "+
+				"so that the HAProxy config includes %s's route on the first reconcile pass",
+				routerPos, name, pos, name)
+		}
 	}
 }
