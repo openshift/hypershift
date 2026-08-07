@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 13f2a2015d30bc547d6893c0f63618daee9db69ed82b41aa2a0f267564316fd9
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: aws-node-termination-handler

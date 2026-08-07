@@ -2,6 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   annotations:
+    hypershift.openshift.io/desired-state-hash: 5ea3d4985c3b176f7cf6f2f589edba9f66b6592b1309d461dc3c3d5f796cae55
     hypershift.openshift.io/metrics-endpoint: https
     hypershift.openshift.io/metrics-job: route-controller-manager
     hypershift.openshift.io/metrics-namespace: openshift-route-controller-manager

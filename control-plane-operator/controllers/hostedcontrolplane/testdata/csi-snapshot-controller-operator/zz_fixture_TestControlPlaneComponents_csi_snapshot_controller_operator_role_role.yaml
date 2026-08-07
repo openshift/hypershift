@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 3330fb7cd50b579420d43f36e2bac7c0dd257f375ca04c40a4fc91f0e75f06af
   name: csi-snapshot-controller-operator-role
   namespace: hcp-namespace
   ownerReferences:

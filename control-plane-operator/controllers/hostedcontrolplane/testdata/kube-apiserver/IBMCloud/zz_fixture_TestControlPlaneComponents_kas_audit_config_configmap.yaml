@@ -49,6 +49,8 @@ data:
   profile: Default
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: fc840a8f349408ee6dbcffbe615d47b42bbd82465c6b882d780a8b32cedc3824
   name: kas-audit-config
   namespace: hcp-namespace
   ownerReferences:

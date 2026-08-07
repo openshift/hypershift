@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 77a36ab8bfba6e1e7fe4f0f6298e94c9f0bd4965a9211a9c129c4a8724fe8b49
   name: kubevirt-cloud-controller-manager
   namespace: hcp-namespace
   ownerReferences:

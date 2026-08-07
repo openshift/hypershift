@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: a6afd047856dae978e232465701f7a7b6093cea5d227a2d24916efc671bed3b2
   name: cluster-autoscaler
   namespace: hcp-namespace
   ownerReferences:
