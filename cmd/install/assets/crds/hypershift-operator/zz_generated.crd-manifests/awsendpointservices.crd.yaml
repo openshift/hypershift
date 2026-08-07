@@ -48,7 +48,10 @@ spec:
                 maxLength: 255
                 type: string
               resourceTags:
-                description: resourceTags is the list of tags to apply to the EndpointService
+                description: |-
+                  resourceTags is the list of tags to apply to the EndpointService.
+                  The overridePolicy field is not supported on AWSEndpointService-level tags;
+                  it only applies to HostedCluster tags to control NodePool tag precedence.
                 items:
                   description: AWSResourceTag is a tag to apply to AWS resources created
                     for the cluster.
@@ -58,6 +61,21 @@ spec:
                       maxLength: 128
                       minLength: 1
                       pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                      type: string
+                    overridePolicy:
+                      description: |-
+                        overridePolicy controls whether a NodePool-level tag with the same key can
+                        override this HostedCluster-level tag. This field is only meaningful on
+                        tags specified in the HostedCluster AWSPlatformSpec; on NodePool-level
+                        and AWSEndpointService-level tags it is not permitted.
+
+                        When set to "Allow", a NodePool tag with the same key will take
+                        precedence over this HostedCluster tag. When set to "Deny" or
+                        omitted, the HostedCluster value is preserved and the NodePool tag is
+                        ignored for that key.
+                      enum:
+                      - Allow
+                      - Deny
                       type: string
                     value:
                       description: |-
@@ -76,6 +94,10 @@ spec:
                   type: object
                 maxItems: 25
                 type: array
+                x-kubernetes-validations:
+                - message: overridePolicy is not supported on AWSEndpointService-level
+                    tags; set it on the HostedCluster tag instead
+                  rule: self.all(t, !has(t.overridePolicy))
               subnetIDs:
                 description: subnetIDs is the list of subnet IDs to which guest nodes
                   can attach

@@ -17,11 +17,16 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // AWSResourceTagApplyConfiguration represents a declarative configuration of the AWSResourceTag type for use
 // with apply.
 type AWSResourceTagApplyConfiguration struct {
-	Key   *string `json:"key,omitempty"`
-	Value *string `json:"value,omitempty"`
+	Key            *string                                         `json:"key,omitempty"`
+	Value          *string                                         `json:"value,omitempty"`
+	OverridePolicy *hypershiftv1beta1.AWSResourceTagOverridePolicy `json:"overridePolicy,omitempty"`
 }
 
 // AWSResourceTagApplyConfiguration constructs a declarative configuration of the AWSResourceTag type for use with
@@ -43,5 +48,13 @@ func (b *AWSResourceTagApplyConfiguration) WithKey(value string) *AWSResourceTag
 // If called multiple times, the Value field is set to the value of the last call.
 func (b *AWSResourceTagApplyConfiguration) WithValue(value string) *AWSResourceTagApplyConfiguration {
 	b.Value = &value
+	return b
+}
+
+// WithOverridePolicy sets the OverridePolicy field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OverridePolicy field is set to the value of the last call.
+func (b *AWSResourceTagApplyConfiguration) WithOverridePolicy(value hypershiftv1beta1.AWSResourceTagOverridePolicy) *AWSResourceTagApplyConfiguration {
+	b.OverridePolicy = &value
 	return b
 }

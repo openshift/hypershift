@@ -6355,6 +6355,10 @@ spec:
                           Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                           These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                           Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                          For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+                          By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+                          To allow a NodePool to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
+                          Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                           These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                         items:
                           description: AWSResourceTag is a tag to apply to AWS resources
@@ -6365,6 +6369,21 @@ spec:
                               maxLength: 128
                               minLength: 1
                               pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                            overridePolicy:
+                              description: |-
+                                overridePolicy controls whether a NodePool-level tag with the same key can
+                                override this HostedCluster-level tag. This field is only meaningful on
+                                tags specified in the HostedCluster AWSPlatformSpec; on NodePool-level
+                                and AWSEndpointService-level tags it is not permitted.
+
+                                When set to "Allow", a NodePool tag with the same key will take
+                                precedence over this HostedCluster tag. When set to "Deny" or
+                                omitted, the HostedCluster value is preserved and the NodePool tag is
+                                ignored for that key.
+                              enum:
+                              - Allow
+                              - Deny
                               type: string
                             value:
                               description: |-
