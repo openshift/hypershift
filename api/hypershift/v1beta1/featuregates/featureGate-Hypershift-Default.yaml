@@ -41,6 +41,9 @@
                     },
                     {
                         "name": "OSStreams"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "enabled": [

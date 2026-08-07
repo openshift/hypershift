@@ -165,6 +165,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterVersionOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ComponentLogLevelSpec"):
+		return &hypershiftv1beta1.ComponentLogLevelSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ConfigurationStatus"):
 		return &hypershiftv1beta1.ConfigurationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
@@ -185,6 +187,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.EncryptionKeyReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EncryptionMigrationHistory"):
 		return &hypershiftv1beta1.EncryptionMigrationHistoryApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("EtcdOperatorSpec"):
+		return &hypershiftv1beta1.EtcdOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdShardResource"):
 		return &hypershiftv1beta1.EtcdShardResourceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("EtcdShardSchedulingSpec"):
@@ -281,8 +285,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.KarpenterConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KMSSpec"):
 		return &hypershiftv1beta1.KMSSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KubeAPIServerOperatorSpec"):
+		return &hypershiftv1beta1.KubeAPIServerOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubeconfigSecretRef"):
 		return &hypershiftv1beta1.KubeconfigSecretRefApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KubeControllerManagerOperatorSpec"):
+		return &hypershiftv1beta1.KubeControllerManagerOperatorSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KubeSchedulerOperatorSpec"):
+		return &hypershiftv1beta1.KubeSchedulerOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubevirtCachingStrategy"):
 		return &hypershiftv1beta1.KubevirtCachingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubevirtCompute"):
@@ -363,6 +373,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.NodePortPublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodeVersion"):
 		return &hypershiftv1beta1.NodeVersionApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OAuthServerOperatorSpec"):
+		return &hypershiftv1beta1.OAuthServerOperatorSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OpenShiftAPIServerOperatorSpec"):
+		return &hypershiftv1beta1.OpenShiftAPIServerOperatorSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OpenShiftControllerManagerOperatorSpec"):
+		return &hypershiftv1beta1.OpenShiftControllerManagerOperatorSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OpenShiftOAuthAPIServerOperatorSpec"):
+		return &hypershiftv1beta1.OpenShiftOAuthAPIServerOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackIdentityReference"):
 		return &hypershiftv1beta1.OpenStackIdentityReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackNodePoolPlatform"):

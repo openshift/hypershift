@@ -44476,6 +44476,54 @@ or invalid channel has been specified.</p>
 </tr>
 </tbody>
 </table>
+###ComponentLogLevelSpec { #hypershift.openshift.io/v1beta1.ComponentLogLevelSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdOperatorSpec">EtcdOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.KubeAPIServerOperatorSpec">KubeAPIServerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec">KubeControllerManagerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.KubeSchedulerOperatorSpec">KubeSchedulerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec">OAuthServerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftAPIServerOperatorSpec">OpenShiftAPIServerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftControllerManagerOperatorSpec">OpenShiftControllerManagerOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftOAuthAPIServerOperatorSpec">OpenShiftOAuthAPIServerOperatorSpec</a>)
+</p>
+<p>
+<p>ComponentLogLevelSpec configures the log verbosity for a hosted control plane component.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>logLevel</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.LogLevel">
+LogLevel
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>logLevel sets the log verbosity for the component.
+Valid values are: &ldquo;Normal&rdquo;, &ldquo;Debug&rdquo;, &ldquo;Trace&rdquo;, &ldquo;TraceAll&rdquo;.
+When set to Normal, standard operational log messages are produced for auditing and common operations.
+When set to Debug, more verbose logging is enabled for diagnosing problems.
+When set to Trace, very verbose logging is enabled including function-level tracing.
+When set to TraceAll, the most verbose logging is used, including full API body content,
+this can cause significant performance impact and produce large volumes of logs.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ComponentResource { #hypershift.openshift.io/v1beta1.ComponentResource }
 <p>
 (<em>Appears on:</em>
@@ -45748,6 +45796,39 @@ automatically.</p>
 and the user is responsible for doing so.</p>
 </td>
 </tr></tbody>
+</table>
+###EtcdOperatorSpec { #hypershift.openshift.io/v1beta1.EtcdOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>EtcdOperatorSpec specifies the configuration for the etcd.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###EtcdShardResource { #hypershift.openshift.io/v1beta1.EtcdShardResource }
 <p>
@@ -50329,6 +50410,105 @@ KarpenterAWSConfig
 </tr>
 </tbody>
 </table>
+###KubeAPIServerOperatorSpec { #hypershift.openshift.io/v1beta1.KubeAPIServerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>KubeAPIServerOperatorSpec specifies the configuration for the Kube API Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubeControllerManagerOperatorSpec { #hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>KubeControllerManagerOperatorSpec specifies the configuration for the Kube Controller Manager.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubeSchedulerOperatorSpec { #hypershift.openshift.io/v1beta1.KubeSchedulerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>KubeSchedulerOperatorSpec specifies the configuration for the Kube Scheduler.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubeVirtNodePoolStatus { #hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus }
 <p>
 (<em>Appears on:</em>
@@ -51321,7 +51501,8 @@ If omitted, the value will be inferred from the corev1.Service Load balancer typ
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">ClusterVersionOperatorSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">ClusterVersionOperatorSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">ComponentLogLevelSpec</a>)
 </p>
 <p>
 </p>
@@ -53162,6 +53343,39 @@ progress and detecting stuck nodes.</p>
 </tr>
 </tbody>
 </table>
+###OAuthServerOperatorSpec { #hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OAuthServerOperatorSpec specifies the configuration for the OAuth Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OLMCatalogPlacement { #hypershift.openshift.io/v1beta1.OLMCatalogPlacement }
 <p>
 (<em>Appears on:</em>
@@ -53490,6 +53704,105 @@ SecretProviderClass custom resource related to the managed identity.</p>
 <p>The default value is utf-8.</p>
 <p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
 </p>
+###OpenShiftAPIServerOperatorSpec { #hypershift.openshift.io/v1beta1.OpenShiftAPIServerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OpenShiftAPIServerOperatorSpec specifies the configuration for the OpenShift API Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OpenShiftControllerManagerOperatorSpec { #hypershift.openshift.io/v1beta1.OpenShiftControllerManagerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OpenShiftControllerManagerOperatorSpec specifies the configuration for the OpenShift Controller Manager.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OpenShiftOAuthAPIServerOperatorSpec { #hypershift.openshift.io/v1beta1.OpenShiftOAuthAPIServerOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>OpenShiftOAuthAPIServerOperatorSpec specifies the configuration for the OpenShift OAuth API Server.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ComponentLogLevelSpec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentLogLevelSpec">
+ComponentLogLevelSpec
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ComponentLogLevelSpec</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OpenStackIdentityReference { #hypershift.openshift.io/v1beta1.OpenStackIdentityReference }
 <p>
 (<em>Appears on:</em>
@@ -53839,6 +54152,152 @@ IngressOperatorSpec
 <em>(Optional)</em>
 <p>ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
 This allows configuring how the default ingress controller endpoints are published.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeAPIServer,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeAPIServerOperatorSpec">
+KubeAPIServerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeAPIServer configures the kube-apiserver component.
+Setting the logLevel field triggers a rolling restart of the component.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>etcd,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdOperatorSpec">
+EtcdOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>etcd configures the etcd component.
+Setting the logLevel field triggers a rolling restart of the component.
+Note: etcd supports fewer log levels than klog-based components,
+Debug, Trace, and TraceAll all map to etcd&rsquo;s &ldquo;debug&rdquo; log level.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeControllerManager,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec">
+KubeControllerManagerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeControllerManager configures the kube-controller-manager component.
+Setting the logLevel field triggers a rolling restart of the component.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeScheduler,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeSchedulerOperatorSpec">
+KubeSchedulerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeScheduler configures the kube-scheduler component.
+Setting the logLevel field triggers a rolling restart of the component.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>openShiftControllerManager,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftControllerManagerOperatorSpec">
+OpenShiftControllerManagerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>openShiftControllerManager configures the openshift-controller-manager component.
+Setting the logLevel field triggers a rolling restart of the component.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>openShiftAPIServer,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftAPIServerOperatorSpec">
+OpenShiftAPIServerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>openShiftAPIServer configures the openshift-apiserver component.
+Setting the logLevel field triggers a rolling restart of the component.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>openShiftOAuthAPIServer,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenShiftOAuthAPIServerOperatorSpec">
+OpenShiftOAuthAPIServerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+Setting the logLevel field triggers a rolling restart of the component.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>oauthServer,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec">
+OAuthServerOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>oauthServer configures the oauth-server component.
+Setting the logLevel field triggers a rolling restart of the component.
+When omitted, this means the user has no opinion and the platform
+chooses a reasonable default, which is subject to change over time.
+The current default log level is Normal.</p>
 </td>
 </tr>
 </tbody>

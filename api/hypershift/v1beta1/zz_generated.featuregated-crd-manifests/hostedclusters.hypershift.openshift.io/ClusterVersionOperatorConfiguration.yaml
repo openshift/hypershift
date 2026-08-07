@@ -3511,7 +3511,6 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           Defaults to "Normal".
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace

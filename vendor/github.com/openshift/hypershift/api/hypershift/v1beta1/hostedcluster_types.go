@@ -388,6 +388,9 @@ const (
 	RecommendedClusterSizeAnnotation = "hypershift.openshift.io/recommended-cluster-size"
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifying the log verbosity of kube-apiserver.
+	// Deprecated: Use spec.operatorConfiguration.kubeAPIServer.logLevel instead.
+	// When both are set, the OperatorConfiguration field takes precedence.
+	// This annotation will be removed in a future release.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 
 	// NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation indicates if the NodePool currently supports
@@ -2892,6 +2895,80 @@ type OperatorConfiguration struct {
 	//
 	// +optional
 	IngressOperator *IngressOperatorSpec `json:"ingressOperator,omitempty"`
+
+	// kubeAPIServer configures the kube-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
+
+	// etcd configures the etcd component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// Note: etcd supports fewer log levels than klog-based components,
+	// Debug, Trace, and TraceAll all map to etcd's "debug" log level.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	Etcd EtcdOperatorSpec `json:"etcd,omitzero"`
+
+	// kubeControllerManager configures the kube-controller-manager component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeControllerManager KubeControllerManagerOperatorSpec `json:"kubeControllerManager,omitzero"`
+
+	// kubeScheduler configures the kube-scheduler component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeScheduler KubeSchedulerOperatorSpec `json:"kubeScheduler,omitzero"`
+
+	// openShiftControllerManager configures the openshift-controller-manager component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftControllerManager OpenShiftControllerManagerOperatorSpec `json:"openShiftControllerManager,omitzero"`
+
+	// openShiftAPIServer configures the openshift-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftAPIServer OpenShiftAPIServerOperatorSpec `json:"openShiftAPIServer,omitzero"`
+
+	// openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftOAuthAPIServer OpenShiftOAuthAPIServerOperatorSpec `json:"openShiftOAuthAPIServer,omitzero"`
+
+	// oauthServer configures the oauth-server component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`
 }
 
 // +genclient
