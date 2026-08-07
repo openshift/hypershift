@@ -638,6 +638,94 @@ func TestReportInvalidAwsCreds(t *testing.T) {
 	}
 }
 
+func TestReportInvalidGcpCreds(t *testing.T) {
+	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
+		return createMetricValue(
+			InvalidGcpCredsMetricName,
+			invalidGcpCredsMetricHelp,
+			expectedValue)
+	}
+
+	testCases := []struct {
+		name                                    string
+		ValidGCPWorkloadIdentityConditionStatus metav1.ConditionStatus
+		ValidGCPCredentialsConditionStatus      metav1.ConditionStatus
+		expected                                *dto.MetricFamily
+	}{
+		{
+			name:                                    "When both conditions are true, metric is reported with a value set to 0 (valid)",
+			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionTrue,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionTrue,
+			expected:                                wrapExpectedValueAsMetric(0),
+		},
+		{
+			name:                                    "When ValidGCPWorkloadIdentity status is false, metric is reported with a value set to 1 (invalid)",
+			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionFalse,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionTrue,
+			expected:                                wrapExpectedValueAsMetric(1),
+		},
+		{
+			name:                                    "When ValidGCPCredentials status is false, metric is reported with a value set to 1 (invalid)",
+			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionTrue,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionFalse,
+			expected:                                wrapExpectedValueAsMetric(1),
+		},
+		{
+			name:                                    "When both conditions are false, metric is reported with a value set to 1 (invalid)",
+			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionFalse,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionFalse,
+			expected:                                wrapExpectedValueAsMetric(1),
+		},
+		{
+			name:                                    "When ValidGCPWorkloadIdentity status is unknown, metric is reported with a value set to 2 (unknown)",
+			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionUnknown,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionTrue,
+			expected:                                wrapExpectedValueAsMetric(2),
+		},
+		{
+			name:                                    "When ValidGCPCredentials status is unknown, metric is reported with a value set to 2 (unknown)",
+			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionTrue,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionUnknown,
+			expected:                                wrapExpectedValueAsMetric(2),
+		},
+		{
+			name:                                    "When both conditions are unknown, metric is reported with a value set to 2 (unknown)",
+			ValidGCPWorkloadIdentityConditionStatus: metav1.ConditionUnknown,
+			ValidGCPCredentialsConditionStatus:      metav1.ConditionUnknown,
+			expected:                                wrapExpectedValueAsMetric(2),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+				},
+			}
+
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:   string(hyperv1.ValidGCPWorkloadIdentity),
+				Status: tc.ValidGCPWorkloadIdentityConditionStatus,
+			})
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:   string(hyperv1.ValidGCPCredentials),
+				Status: tc.ValidGCPCredentialsConditionStatus,
+			})
+
+			checkMetric(t,
+				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
+				clock.RealClock{},
+				InvalidGcpCredsMetricName,
+				tc.expected)
+		})
+	}
+}
+
 func TestReportGuestCloudResourcesDeletionDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
