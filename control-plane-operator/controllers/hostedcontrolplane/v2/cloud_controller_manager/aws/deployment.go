@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -16,6 +17,12 @@ const (
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	podspec.UpdateContainer(containerName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		proxy.SetEnvVars(&c.Env)
+	})
+
+	hcp := cpContext.HCP
+
+	podspec.UpdateContainer("cloud-controller-manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = config.AppendTLSArgs(c.Args, hcp.Spec.Configuration.GetTLSSecurityProfile())
 	})
 	return nil
 }

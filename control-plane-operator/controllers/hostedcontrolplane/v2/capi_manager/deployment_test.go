@@ -12,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -23,6 +25,7 @@ func TestAdaptDeployment(t *testing.T) {
 		imageOverride    string
 		version          string
 		hcpAnnotations   map[string]string
+		tlsProfile       *configv1.TLSSecurityProfile
 		expectedArgs     []string
 		unexpectedArgs   []string
 		expectedImage    string
@@ -64,6 +67,28 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedImage:    "cluster-capi-controllers",
 			expectedAnnotKey: k8sutil.HostedClusterAnnotation,
 		},
+		{
+			name:           "When version is 4.22.0, it should not add TLS args",
+			version:        "4.22.0",
+			tlsProfile:     &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expectedArgs:   []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			unexpectedArgs: []string{"--tls-min-version=VersionTLS12"},
+			expectedImage:  "cluster-capi-controllers",
+		},
+		{
+			name:          "When version is 4.23.0, it should add TLS args",
+			version:       "4.23.0",
+			tlsProfile:    &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false", "--tls-min-version=VersionTLS12"},
+			expectedImage: "cluster-capi-controllers",
+		},
+		{
+			name:          "When version is 5.0.0, it should add TLS args",
+			version:       "5.0.0",
+			tlsProfile:    &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false", "--tls-min-version=VersionTLS12"},
+			expectedImage: "cluster-capi-controllers",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -76,6 +101,13 @@ func TestAdaptDeployment(t *testing.T) {
 					Name:        "test-hcp",
 					Namespace:   "test-namespace",
 					Annotations: tc.hcpAnnotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: tc.tlsProfile,
+						},
+					},
 				},
 			}
 

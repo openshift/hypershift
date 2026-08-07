@@ -2,6 +2,7 @@ package openstack
 
 import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -20,6 +21,7 @@ const (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	hcp := cpContext.HCP
 	credentialsSecret, err := getCredentialsSecret(cpContext)
 	if err != nil {
 		return err
@@ -35,6 +37,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			Name:  "OCP_INFRASTRUCTURE_NAME",
 			Value: cpContext.HCP.Spec.InfraID,
 		})
+		c.Args = config.AppendTLSArgs(c.Args, hcp.Spec.Configuration.GetTLSSecurityProfile())
 
 		if hasCACert {
 			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{

@@ -7,6 +7,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -243,7 +245,105 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 	}
 }
 
+func buildDeploymentSpec(managerArgs []string, additionalContainers ...corev1.Container) *appsv1.DeploymentSpec {
+	return &appsv1.DeploymentSpec{
+		Replicas: ptr.To[int32](1),
+		Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
+				Volumes: []corev1.Volume{
+					{
+						Name: "capi-webhooks-tls",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: ptr.To[int32](0640),
+								SecretName:  "capi-webhooks-tls",
+							},
+						},
+					},
+					{
+						Name: "svc-kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: ptr.To[int32](0640),
+								SecretName:  "service-network-admin-kubeconfig",
+							},
+						},
+					},
+				},
+				Containers: append([]corev1.Container{
+					{
+						Name:            "manager",
+						Image:           "capi-provider-image",
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Command:         []string{"/manager"},
+						Args:            managerArgs,
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("10Mi"),
+							},
+						},
+						Ports: []corev1.ContainerPort{
+							{
+								Name:          "healthz",
+								ContainerPort: 9440,
+								Protocol:      corev1.ProtocolTCP,
+							},
+						},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/healthz",
+									Port: intstr.FromString("healthz"),
+								},
+							},
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/readyz",
+									Port: intstr.FromString("healthz"),
+								},
+							},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "capi-webhooks-tls",
+								ReadOnly:  true,
+								MountPath: "/tmp/k8s-webhook-server/serving-certs",
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
+						},
+						Env: []corev1.EnvVar{
+							{
+								Name: "MY_NAMESPACE",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.namespace",
+									},
+								},
+							},
+						},
+					},
+				}, additionalContainers...),
+			},
+		},
+	}
+}
+
 func TestCAPIProviderDeploymentSpec(t *testing.T) {
+	defaultArgs := []string{
+		"--namespace=$(MY_NAMESPACE)",
+		"--leader-elect",
+		"--v=2",
+		"--skip-crd-migration-phases=StorageVersionMigration",
+		"--skip-crd-migration-phases=CleanupManagedFields",
+	}
+
 	testCases := []struct {
 		name           string
 		hcluster       *hyperv1.HostedCluster
@@ -268,99 +368,9 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 				},
 			},
 			payloadVersion: ptr.To(semver.MustParse("4.18.0")),
-			expectedSpec: &appsv1.DeploymentSpec{
-				Replicas: ptr.To[int32](1),
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						TerminationGracePeriodSeconds: ptr.To[int64](10),
-						Volumes: []corev1.Volume{
-							{
-								Name: "capi-webhooks-tls",
-								VolumeSource: corev1.VolumeSource{
-									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
-										SecretName:  "capi-webhooks-tls",
-									},
-								},
-							},
-							{
-								Name: "svc-kubeconfig",
-								VolumeSource: corev1.VolumeSource{
-									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
-										SecretName:  "service-network-admin-kubeconfig",
-									},
-								},
-							},
-						},
-						Containers: []corev1.Container{{
-							Name:            "manager",
-							Image:           "capi-provider-image",
-							ImagePullPolicy: corev1.PullIfNotPresent,
-							Command:         []string{"/manager"},
-							Args: []string{
-								"--namespace=$(MY_NAMESPACE)",
-								"--leader-elect",
-								"--v=2",
-								"--skip-crd-migration-phases=StorageVersionMigration",
-								"--skip-crd-migration-phases=CleanupManagedFields",
-							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("10m"),
-									corev1.ResourceMemory: resource.MustParse("10Mi"),
-								},
-							},
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "healthz",
-									ContainerPort: 9440,
-									Protocol:      corev1.ProtocolTCP,
-								},
-							},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/healthz",
-										Port: intstr.FromString("healthz"),
-									},
-								},
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/readyz",
-										Port: intstr.FromString("healthz"),
-									},
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "capi-webhooks-tls",
-									ReadOnly:  true,
-									MountPath: "/tmp/k8s-webhook-server/serving-certs",
-								},
-								{
-									Name:      "svc-kubeconfig",
-									MountPath: "/etc/kubernetes",
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "MY_NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-						}},
-					},
-				},
-			},
-			expectedErr: false,
-			envVars:     map[string]string{},
+			expectedSpec:   buildDeploymentSpec(defaultArgs),
+			expectedErr:    false,
+			envVars:        map[string]string{},
 		},
 		{
 			name: "deployment spec on 4.19.0 (with ORC)",
@@ -378,159 +388,66 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 				},
 			},
 			payloadVersion: ptr.To(semver.MustParse("4.19.0")),
-			expectedSpec: &appsv1.DeploymentSpec{
-				Replicas: ptr.To[int32](1),
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						TerminationGracePeriodSeconds: ptr.To[int64](10),
-						Volumes: []corev1.Volume{
-							{
-								Name: "capi-webhooks-tls",
-								VolumeSource: corev1.VolumeSource{
-									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
-										SecretName:  "capi-webhooks-tls",
-									},
-								},
-							},
-							{
-								Name: "svc-kubeconfig",
-								VolumeSource: corev1.VolumeSource{
-									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To[int32](0640),
-										SecretName:  "service-network-admin-kubeconfig",
-									},
-								},
-							},
+			expectedSpec: buildDeploymentSpec(defaultArgs, corev1.Container{
+				Name:            "orc-manager",
+				Image:           "orc-image",
+				ImagePullPolicy: corev1.PullIfNotPresent,
+				Command:         []string{"/manager"},
+				Args: []string{
+					"--namespace=$(MY_NAMESPACE)",
+					"--leader-elect",
+					"--health-probe-bind-address=:8081",
+					"--zap-log-level=4",
+				},
+				SecurityContext: &corev1.SecurityContext{
+					AllowPrivilegeEscalation: ptr.To(false),
+					Capabilities: &corev1.Capabilities{
+						Drop: []corev1.Capability{
+							"ALL",
 						},
-						Containers: []corev1.Container{
-							{
-								Name:            "manager",
-								Image:           "capi-provider-image",
-								ImagePullPolicy: corev1.PullIfNotPresent,
-								Command:         []string{"/manager"},
-								Args: []string{
-									"--namespace=$(MY_NAMESPACE)",
-									"--leader-elect",
-									"--v=2",
-									"--skip-crd-migration-phases=StorageVersionMigration",
-									"--skip-crd-migration-phases=CleanupManagedFields",
-								},
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("10m"),
-										corev1.ResourceMemory: resource.MustParse("10Mi"),
-									},
-								},
-								Ports: []corev1.ContainerPort{
-									{
-										Name:          "healthz",
-										ContainerPort: 9440,
-										Protocol:      corev1.ProtocolTCP,
-									},
-								},
-								LivenessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path: "/healthz",
-											Port: intstr.FromString("healthz"),
-										},
-									},
-								},
-								ReadinessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path: "/readyz",
-											Port: intstr.FromString("healthz"),
-										},
-									},
-								},
-								VolumeMounts: []corev1.VolumeMount{
-									{
-										Name:      "capi-webhooks-tls",
-										ReadOnly:  true,
-										MountPath: "/tmp/k8s-webhook-server/serving-certs",
-									},
-									{
-										Name:      "svc-kubeconfig",
-										MountPath: "/etc/kubernetes",
-									},
-								},
-								Env: []corev1.EnvVar{
-									{
-										Name: "MY_NAMESPACE",
-										ValueFrom: &corev1.EnvVarSource{
-											FieldRef: &corev1.ObjectFieldSelector{
-												FieldPath: "metadata.namespace",
-											},
-										},
-									},
-								},
-							},
-							{
-								Name:            "orc-manager",
-								Image:           "orc-image",
-								ImagePullPolicy: corev1.PullIfNotPresent,
-								Command:         []string{"/manager"},
-								Args: []string{
-									"--namespace=$(MY_NAMESPACE)",
-									"--leader-elect",
-									"--health-probe-bind-address=:8081",
-									"--zap-log-level=4",
-								},
-								SecurityContext: &corev1.SecurityContext{
-									AllowPrivilegeEscalation: ptr.To(false),
-									Capabilities: &corev1.Capabilities{
-										Drop: []corev1.Capability{
-											"ALL",
-										},
-									},
-								},
-								LivenessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path: "/healthz",
-											Port: intstr.FromInt(8081),
-										},
-									},
-									InitialDelaySeconds: 15,
-									PeriodSeconds:       20,
-								},
-								ReadinessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path: "/readyz",
-											Port: intstr.FromInt(8081),
-										},
-									},
-									InitialDelaySeconds: 5,
-									PeriodSeconds:       10,
-								},
-								Resources: corev1.ResourceRequirements{
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("500m"),
-										corev1.ResourceMemory: resource.MustParse("128Mi"),
-									},
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("10m"),
-										corev1.ResourceMemory: resource.MustParse("64Mi"),
-									},
-								},
-								Env: []corev1.EnvVar{
-									{
-										Name: "MY_NAMESPACE",
-										ValueFrom: &corev1.EnvVarSource{
-											FieldRef: &corev1.ObjectFieldSelector{
-												FieldPath: "metadata.namespace",
-											},
-										},
-									},
-								},
+					},
+				},
+				LivenessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
+							Path: "/healthz",
+							Port: intstr.FromInt(8081),
+						},
+					},
+					InitialDelaySeconds: 15,
+					PeriodSeconds:       20,
+				},
+				ReadinessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
+							Path: "/readyz",
+							Port: intstr.FromInt(8081),
+						},
+					},
+					InitialDelaySeconds: 5,
+					PeriodSeconds:       10,
+				},
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("500m"),
+						corev1.ResourceMemory: resource.MustParse("128Mi"),
+					},
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("64Mi"),
+					},
+				},
+				Env: []corev1.EnvVar{
+					{
+						Name: "MY_NAMESPACE",
+						ValueFrom: &corev1.EnvVarSource{
+							FieldRef: &corev1.ObjectFieldSelector{
+								FieldPath: "metadata.namespace",
 							},
 						},
 					},
 				},
-			},
+			}),
 			expectedErr: false,
 			envVars:     map[string]string{},
 		},
@@ -560,6 +477,126 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 				if diff := cmp.Diff(tc.expectedSpec, result); diff != "" {
 					t.Errorf("reconciled CAPO Provider DeploymentSpec differs from expected spec: %s", diff)
 				}
+			}
+		})
+	}
+}
+
+func buildOpenStackHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: tlsProfile,
+				},
+			},
+		},
+	}
+}
+
+func TestCAPIProviderDeploymentSpecWithTLS(t *testing.T) {
+	defaultArgs := []string{
+		"--namespace=$(MY_NAMESPACE)",
+		"--leader-elect",
+		"--v=2",
+		"--skip-crd-migration-phases=StorageVersionMigration",
+		"--skip-crd-migration-phases=CleanupManagedFields",
+	}
+
+	customTLSProfile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-ECDSA-AES128-GCM-SHA256",
+					"ECDHE-RSA-AES128-GCM-SHA256",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		payloadVersion *semver.Version
+		expectedArgs   []string
+	}{
+		{
+			name:           "When HostedControlPlane is nil it should not append TLS args",
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedArgs:   defaultArgs,
+		},
+		{
+			name: "When version is 4.22 and HCP has TLS profile it should not append TLS args",
+			hcp: buildOpenStackHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			payloadVersion: ptr.To(semver.MustParse("4.22.0")),
+			expectedArgs:   defaultArgs,
+		},
+		{
+			name: "When version is 4.23 and HCP has Modern TLS profile it should append min-version only",
+			hcp: buildOpenStackHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS13",
+			),
+		},
+		{
+			name:           "When version is 5.0 and HCP has custom TLS profile it should append custom TLS args",
+			hcp:            buildOpenStackHostedControlPlane(customTLSProfile),
+			payloadVersion: ptr.To(semver.MustParse("5.0.0")),
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			platform := OpenStack{
+				capiProviderImage: "test-capi-image",
+				orcImage:          "test-orc-image",
+				payloadVersion:    tc.payloadVersion,
+			}
+			spec, err := platform.CAPIProviderDeploymentSpec(&hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						OpenStack: &hyperv1.OpenStackPlatformSpec{},
+					},
+				},
+			}, tc.hcp)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if spec == nil {
+				t.Fatal("expected deployment spec, got nil")
+			}
+			if len(spec.Template.Spec.Containers) == 0 {
+				t.Fatal("expected at least 1 container, got 0")
+			}
+
+			var managerContainer *corev1.Container
+			for i := range spec.Template.Spec.Containers {
+				if spec.Template.Spec.Containers[i].Name == "manager" {
+					managerContainer = &spec.Template.Spec.Containers[i]
+					break
+				}
+			}
+			if managerContainer == nil {
+				t.Fatal("manager container not found")
+			}
+
+			if diff := cmp.Diff(managerContainer.Args, tc.expectedArgs); diff != "" {
+				t.Errorf("args differ (-got +want):\n%s", diff)
 			}
 		})
 	}
