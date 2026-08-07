@@ -128,6 +128,89 @@ func TestValidCredentials(t *testing.T) {
 	}
 }
 
+func TestGetCredentialStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions []metav1.Condition
+		expected   CredentialStatus
+	}{
+		{
+			name: "When both conditions are true, status is valid",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
+			},
+			expected: CredentialStatusValid,
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is false, status is invalid",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
+			},
+			expected: CredentialStatusInvalid,
+		},
+		{
+			name: "When ValidGCPCredentials is false, status is invalid",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+			},
+			expected: CredentialStatusInvalid,
+		},
+		{
+			name: "When both conditions are false, status is invalid",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+			},
+			expected: CredentialStatusInvalid,
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is missing, status is unknown",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
+			},
+			expected: CredentialStatusUnknown,
+		},
+		{
+			name: "When ValidGCPCredentials is missing, status is unknown",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
+			},
+			expected: CredentialStatusUnknown,
+		},
+		{
+			name:       "When no conditions exist, status is unknown",
+			conditions: []metav1.Condition{},
+			expected:   CredentialStatusUnknown,
+		},
+		{
+			name: "When ValidGCPWorkloadIdentity is unknown, status is unknown",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionUnknown},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
+			},
+			expected: CredentialStatusUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tt.conditions,
+				},
+			}
+
+			result := GetCredentialStatus(hc)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
 // TestWorkloadIdentityValidationScenarios tests additional edge cases for WIF validation.
 // This expands on the existing TestValidateWorkloadIdentityConfiguration with more comprehensive coverage.
 func TestWorkloadIdentityValidationScenarios(t *testing.T) {

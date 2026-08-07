@@ -459,6 +459,40 @@ func (p GCP) DeleteCredentials(ctx context.Context, c client.Client, hcluster *h
 	return nil
 }
 
+type CredentialStatus int
+
+const (
+	CredentialStatusValid   CredentialStatus = 0
+	CredentialStatusInvalid CredentialStatus = 1
+	CredentialStatusUnknown CredentialStatus = 2
+)
+
+func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
+	var wifStatus metav1.ConditionStatus
+	validWIF := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
+	if validWIF == nil {
+		wifStatus = metav1.ConditionUnknown
+	} else {
+		wifStatus = validWIF.Status
+	}
+
+	var credsStatus metav1.ConditionStatus
+	validCreds := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
+	if validCreds == nil {
+		credsStatus = metav1.ConditionUnknown
+	} else {
+		credsStatus = validCreds.Status
+	}
+
+	if wifStatus == metav1.ConditionFalse || credsStatus == metav1.ConditionFalse {
+		return CredentialStatusInvalid
+	}
+	if wifStatus == metav1.ConditionTrue && credsStatus == metav1.ConditionTrue {
+		return CredentialStatusValid
+	}
+	return CredentialStatusUnknown
+}
+
 // ValidCredentials checks if GCP credentials are valid and ready for use.
 // This function validates Workload Identity Federation configuration and status.
 func ValidCredentials(hc *hyperv1.HostedCluster) bool {
