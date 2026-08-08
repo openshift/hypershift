@@ -551,8 +551,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
-If omitted no particular upgrades are suggested.
-TODO(alberto): Consider the backend to use the default channel by default. Default channel will contain stable updates that are appropriate for production clusters.</p>
+If omitted no particular upgrades are suggested.</p>
 </td>
 </tr>
 <tr>
@@ -709,8 +708,7 @@ Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are 
 <p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
-TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
+-kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -725,13 +723,11 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.
 This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
 Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
 Updating the referenced Secret&rsquo;s data in place (without changing this reference) does not trigger that rollout.
 In AWS and Azure NodePools using the Replace upgrade strategy, the Secret&rsquo;s data in place changes
-will still propagate the updated credentials down to the guest cluster and kubelet config.
-TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
+will still propagate the updated credentials down to the guest cluster and kubelet config.</p>
 </td>
 </tr>
 <tr>
@@ -747,7 +743,6 @@ Kubernetes core/v1.LocalObjectReference
 <em>(Optional)</em>
 <p>sshKey is a local reference to a Secret that must have a &ldquo;id_rsa.pub&rdquo; key whose content must be the public part of 1..N SSH keys.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.
 When sshKey is set, the controllers will generate a machineConfig with the sshAuthorizedKeys <a href="https://coreos.github.io/ignition/configuration-v3_2/">https://coreos.github.io/ignition/configuration-v3_2/</a> populated with this value.
 This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
 Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
@@ -788,8 +783,7 @@ used by the service account token issuer.
 If not specified, a service account signing key will
 be generated automatically for the cluster.
 When specifying a service account signing key, an IssuerURL must also be specified.
-If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.</p>
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.</p>
 <p>For key rotation, the secret may optionally contain an &ldquo;old-key.pub&rdquo; key whose content is the PEM-encoded
 public key of the previous signing key. When present, the kube-apiserver will accept tokens signed by
 both the current and previous keys, allowing for graceful key rotation without invalidating existing tokens.</p>
@@ -876,7 +870,6 @@ Kubernetes core/v1.LocalObjectReference
 <p>additionalTrustBundle is a local reference to a ConfigMap that must have a &ldquo;ca-bundle.crt&rdquo; key
 whose content must be a PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.
 This will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
 Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
@@ -953,8 +946,7 @@ map[string]string
 <em>(Optional)</em>
 <p>nodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
 It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
-Changes to this field will propagate to existing Deployments and StatefulSets.
-TODO(alberto): add additional validation for the map key/values.</p>
+Changes to this field will propagate to existing Deployments and StatefulSets.</p>
 </td>
 </tr>
 <tr>
@@ -985,8 +977,7 @@ Changing this day 2 will cause a rollout of all hcp pods.
 Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 <p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
--kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
-TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -1330,9 +1321,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
-TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
-<a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a></p>
+<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.</p>
 </td>
 </tr>
 <tr>
@@ -1992,8 +1981,7 @@ AWSCloudProviderConfig
 <p>cloudProviderConfig specifies AWS networking configuration for the control
 plane.
 This is mainly used for cloud provider controller config:
-<a href="https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364">https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364</a>
-TODO(dan): should this be named AWSNetworkConfig?</p>
+<a href="https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364">https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364</a></p>
 </td>
 </tr>
 <tr>
@@ -3748,8 +3736,7 @@ string
 <em>(Optional)</em>
 <p>publisher is the name of the organization that created the image.
 It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
-It must start with a lowercase letter or a number.
-TODO: Can we explain where a user might find this value, or provide an example of one they might want to use</p>
+It must start with a lowercase letter or a number.</p>
 </td>
 </tr>
 <tr>
@@ -3761,8 +3748,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>offer specifies the name of a group of related images created by the publisher.
-TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
+<p>offer specifies the name of a group of related images created by the publisher.</p>
 </td>
 </tr>
 <tr>
@@ -3776,8 +3762,7 @@ string
 <em>(Optional)</em>
 <p>sku specifies an instance of an offer, such as a major release of a distribution.
 For example, 22<em>04-lts-gen2, 8-lvm-gen2.
-The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (</em>).
-TODO: What about length limits?</p>
+The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (</em>).</p>
 </td>
 </tr>
 <tr>
@@ -3866,8 +3851,7 @@ listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.
 The encryptionSetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Copmute/diskEncryptionSets/{resourceName}</code>.
 The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
-The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.
-TODO: Are there other encryption related options we may want to expose, should this be in a struct as well?</p>
+The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.</p>
 </td>
 </tr>
 <tr>
@@ -4872,8 +4856,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
-TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
+<p>imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.</p>
 </td>
 </tr>
 <tr>
@@ -5549,8 +5532,7 @@ github.com/openshift/api/config/v1.NetworkSpec
 <td>
 <em>(Optional)</em>
 <p>network holds cluster-wide information about the network. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
-Please view network.spec for an explanation on what applies when configuring this resource.
-TODO (csrwng): Add validation here to exclude changes that conflict with networking settings in the HostedCluster.Spec.Networking field.</p>
+Please view network.spec for an explanation on what applies when configuring this resource.</p>
 </td>
 </tr>
 <tr>
@@ -5724,9 +5706,7 @@ This is only consumed when NetworkType is OVNKubernetes.</p>
 <p>
 <p>clusterNetworking specifies network configuration for a cluster.
 All CIDRs must be unique. Additional validation to check for CIDRs overlap and consistent network stack is performed by the controllers.
-Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.
-TODO this is available in vanilla kube from 1.31 API servers and in Openshift from 4.16.
-TODO(alberto): Use CEL cidr library for all these validation when all management clusters are &gt;= 1.31.</p>
+Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.</p>
 </p>
 <table>
 <thead>
@@ -9450,8 +9430,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
-If omitted no particular upgrades are suggested.
-TODO(alberto): Consider the backend to use the default channel by default. Default channel will contain stable updates that are appropriate for production clusters.</p>
+If omitted no particular upgrades are suggested.</p>
 </td>
 </tr>
 <tr>
@@ -9608,8 +9587,7 @@ Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are 
 <p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
-TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
+-kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -9624,13 +9602,11 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.
 This pull secret is included in NodePool ignition/bootstrap payloads and applied to the container runtime when nodes provision.
 Changing this value will trigger a rollout for all existing NodePools in the cluster (for both replace and inplace upgrade types).
 Updating the referenced Secret&rsquo;s data in place (without changing this reference) does not trigger that rollout.
 In AWS and Azure NodePools using the Replace upgrade strategy, the Secret&rsquo;s data in place changes
-will still propagate the updated credentials down to the guest cluster and kubelet config.
-TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
+will still propagate the updated credentials down to the guest cluster and kubelet config.</p>
 </td>
 </tr>
 <tr>
@@ -9646,7 +9622,6 @@ Kubernetes core/v1.LocalObjectReference
 <em>(Optional)</em>
 <p>sshKey is a local reference to a Secret that must have a &ldquo;id_rsa.pub&rdquo; key whose content must be the public part of 1..N SSH keys.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.
 When sshKey is set, the controllers will generate a machineConfig with the sshAuthorizedKeys <a href="https://coreos.github.io/ignition/configuration-v3_2/">https://coreos.github.io/ignition/configuration-v3_2/</a> populated with this value.
 This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
 Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
@@ -9687,8 +9662,7 @@ used by the service account token issuer.
 If not specified, a service account signing key will
 be generated automatically for the cluster.
 When specifying a service account signing key, an IssuerURL must also be specified.
-If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.</p>
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.</p>
 <p>For key rotation, the secret may optionally contain an &ldquo;old-key.pub&rdquo; key whose content is the PEM-encoded
 public key of the previous signing key. When present, the kube-apiserver will accept tokens signed by
 both the current and previous keys, allowing for graceful key rotation without invalidating existing tokens.</p>
@@ -9775,7 +9749,6 @@ Kubernetes core/v1.LocalObjectReference
 <p>additionalTrustBundle is a local reference to a ConfigMap that must have a &ldquo;ca-bundle.crt&rdquo; key
 whose content must be a PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
-TODO(alberto): Signal this in a condition.
 This will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
 Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
@@ -9852,8 +9825,7 @@ map[string]string
 <em>(Optional)</em>
 <p>nodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
 It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
-Changes to this field will propagate to existing Deployments and StatefulSets.
-TODO(alberto): add additional validation for the map key/values.</p>
+Changes to this field will propagate to existing Deployments and StatefulSets.</p>
 </td>
 </tr>
 <tr>
@@ -9884,8 +9856,7 @@ Changing this day 2 will cause a rollout of all hcp pods.
 Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 <p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
--kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
-TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -10665,8 +10636,7 @@ Changing this day 2 will cause a rollout of all hcp pods.
 Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 <p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
--kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
-TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -14425,9 +14395,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
-TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
-<a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a></p>
+<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.</p>
 </td>
 </tr>
 <tr>
@@ -15440,8 +15408,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>storageClassName is the StorageClass of the data volume for each etcd member.
-See <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1">https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1</a>.
-TODO(alberto): This shouldn&rsquo;t really be a pointer. There&rsquo;s no real different semantic for nil and empty string. Revisit all pointer vs non-pointer choices.</p>
+See <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1">https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1</a>.</p>
 </td>
 </tr>
 <tr>
