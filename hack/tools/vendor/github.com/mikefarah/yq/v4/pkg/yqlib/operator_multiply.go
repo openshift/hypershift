@@ -30,7 +30,7 @@ func multiplyAssignOperator(d *dataTreeNavigator, context Context, expressionNod
 
 func multiplyOperator(d *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error) {
 	log.Debugf("MultiplyOperator")
-	return crossFunction(d, context, expressionNode, multiply(expressionNode.Operation.Preferences.(multiplyPreferences)), false)
+	return crossFunction(d, context.ReadOnlyClone(), expressionNode, multiply(expressionNode.Operation.Preferences.(multiplyPreferences)), false)
 }
 
 func getComments(lhs *CandidateNode, rhs *CandidateNode) (leadingContent string, headComment string, footComment string) {
@@ -153,6 +153,12 @@ func repeatString(lhs *CandidateNode, rhs *CandidateNode) (*CandidateNode, error
 	count, err := parseInt(intNode.Value)
 	if err != nil {
 		return nil, err
+	} else if count < 0 {
+		return nil, fmt.Errorf("cannot repeat string by a negative number (%v)", count)
+	}
+	maxResultLen := 10 * 1024 * 1024 // 10 MiB
+	if count > 0 && len(stringNode.Value) > maxResultLen/count {
+		return nil, fmt.Errorf("result of repeating string (%v bytes) by %v would exceed %v bytes", len(stringNode.Value), count, maxResultLen)
 	}
 	target.Value = strings.Repeat(stringNode.Value, count)
 
@@ -164,7 +170,7 @@ func mergeObjects(d *dataTreeNavigator, context Context, lhs *CandidateNode, rhs
 
 	// only need to recurse the array if we are doing a deep merge
 	prefs := recursiveDescentPreferences{RecurseArray: preferences.DeepMergeArrays,
-		TraversePreferences: traversePreferences{DontFollowAlias: true, IncludeMapKeys: true}}
+		TraversePreferences: traversePreferences{DontFollowAlias: true, IncludeMapKeys: true, ExactKeyMatch: true}}
 	log.Debugf("merge - preferences.DeepMergeArrays %v", preferences.DeepMergeArrays)
 	log.Debugf("merge - preferences.AppendArrays %v", preferences.AppendArrays)
 	err := recursiveDecent(results, context.SingleChildContext(rhs), prefs)
