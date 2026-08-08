@@ -15,7 +15,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -178,19 +177,18 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 		}
 	})
 
-	t.Log("Waiting for syncer DS rollout to complete before deploying verifier")
-	g.Expect(waitForDaemonSetRollout(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)).To(Succeed())
+	waitForDaemonSetRollout(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)
 
 	t.Log("Creating kubelet config verifier DaemonSet")
 	err := CreateKubeletConfigVerifierDaemonSet(ctx, guestClient, dsImage)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create kubelet config verifier DaemonSet")
 
 	t.Log("Waiting for OVN, GlobalPullSecret, Konnectivity and kubelet config verifier DaemonSets to be ready")
-	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", expectedNodeCount)).To(Succeed())
-	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)).To(Succeed())
+	waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", expectedNodeCount)
+	waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)
 	konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
-	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, expectedNodeCount)).To(Succeed())
-	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, KubeletConfigVerifierDaemonSetName, KubeletConfigVerifierNamespace, expectedNodeCount)).To(Succeed())
+	waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, expectedNodeCount)
+	waitForDaemonSetReady(t, ctx, guestClient, KubeletConfigVerifierDaemonSetName, KubeletConfigVerifierNamespace, expectedNodeCount)
 	t.Log("All verifier pods are Ready — on-disk kubelet config.json matches cluster pull secret on all nodes")
 }
 
@@ -198,36 +196,18 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 // must be updated with the latest template AND ready. This catches the case where
 // HCCO updates the pod template (e.g. new configSeed) and the DS controller is
 // still replacing pods.
-func waitForDaemonSetRollout(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32) error {
-	t.Logf("Waiting for %s DaemonSet rollout to complete (min expected: %d)", name, minExpected)
-
-	return wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		ds := &appsv1.DaemonSet{}
-		if err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds); err != nil {
-			t.Logf("Failed to get DaemonSet %s: %v", name, err)
-			return false, nil
-		}
-
-		if ds.Status.ObservedGeneration < ds.Generation {
-			t.Logf("DaemonSet %s generation %d not yet observed (current %d)", name, ds.Generation, ds.Status.ObservedGeneration)
-			return false, nil
-		}
-
-		desired := ds.Status.DesiredNumberScheduled
-		if desired < minExpected {
-			t.Logf("DaemonSet %s: desired=%d < minExpected=%d", name, desired, minExpected)
-			return false, nil
-		}
-
-		updated := ds.Status.UpdatedNumberScheduled
-		ready := ds.Status.NumberReady
-
-		if updated != desired || ready != desired {
-			t.Logf("DaemonSet %s rollout: %d/%d updated, %d/%d ready", name, updated, desired, ready, desired)
-			return false, nil
-		}
-
-		t.Logf("DaemonSet %s rollout complete: %d/%d pods updated and ready", name, ready, desired)
-		return true, nil
-	})
+func waitForDaemonSetRollout(t *testing.T, ctx context.Context, c crclient.Client, name, namespace string, minExpected int32) {
+	EventuallyObject(t, ctx, fmt.Sprintf("DaemonSet %s/%s rollout to complete", namespace, name),
+		func(ctx context.Context) (*appsv1.DaemonSet, error) {
+			ds := &appsv1.DaemonSet{}
+			err := c.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds)
+			return ds, err
+		},
+		[]Predicate[*appsv1.DaemonSet]{
+			daemonSetGenerationObserved(),
+			daemonSetDesiredScheduled(minExpected),
+			daemonSetAllUpdatedAndReady(),
+		},
+		WithTimeout(5*time.Minute),
+	)
 }
