@@ -25,6 +25,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/statuspatching"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -53,9 +54,10 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 		// while it was running. Since the karpenter-operator only runs when enabled, it cannot
 		// clear this itself.
 		if cpContext.HCP.Status.AutoNode != (hyperv1.AutoNodeStatus{}) {
-			patch := client.MergeFrom(cpContext.HCP.DeepCopy())
-			cpContext.HCP.Status.AutoNode = hyperv1.AutoNodeStatus{}
-			if err := cpContext.Client.Status().Patch(cpContext, cpContext.HCP, patch); err != nil {
+			if err := statuspatching.PatchStatus(cpContext, cpContext.Client, cpContext.HCP, func() error {
+				cpContext.HCP.Status.AutoNode = hyperv1.AutoNodeStatus{}
+				return nil
+			}); err != nil {
 				return fmt.Errorf("failed to clear AutoNode status: %w", err)
 			}
 		}

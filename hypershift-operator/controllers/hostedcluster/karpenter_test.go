@@ -11,6 +11,7 @@ import (
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/support/api"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/statuspatching"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -458,4 +459,45 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClearAutoNodeStatusViaPatchStatus(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-ns",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp).
+		WithStatusSubresource(hcp).
+		Build()
+
+	// Set initial stale AutoNode status.
+	hcp.Status.AutoNode = hyperv1.AutoNodeStatus{
+		NodeCount:      ptr.To[int32](5),
+		NodeClaimCount: ptr.To[int32](3),
+	}
+	g.Expect(fakeClient.Status().Update(ctx, hcp)).To(Succeed())
+
+	// Verify the stale status was persisted.
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+	g.Expect(hcp.Status.AutoNode.NodeCount).ToNot(BeNil())
+
+	// Clear AutoNode status using PatchStatus, matching reconcileKarpenterOperator.
+	g.Expect(statuspatching.PatchStatus(ctx, fakeClient, hcp, func() error {
+		hcp.Status.AutoNode = hyperv1.AutoNodeStatus{}
+		return nil
+	})).To(Succeed())
+
+	// Verify the status was cleared on the server-side object.
+	updated := &hyperv1.HostedControlPlane{}
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+	g.Expect(updated.Status.AutoNode).To(Equal(hyperv1.AutoNodeStatus{}),
+		"AutoNode status should be cleared after PatchStatus")
 }
