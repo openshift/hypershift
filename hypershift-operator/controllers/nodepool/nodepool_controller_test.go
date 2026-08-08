@@ -2305,6 +2305,66 @@ func TestTruncateReasons(t *testing.T) {
 	}
 }
 
+func TestAggregateMachineMessages(t *testing.T) {
+	shortMsg := "machine is unhealthy\n"
+	// Build a message that is exactly (1000 - len(shortMsg)) chars so the total is exactly 1000.
+	padLen := maxMessageLength - len(shortMsg)
+	paddedMsg := strings.Repeat("x", padLen-1) + "\n"
+
+	for _, tc := range []struct {
+		name   string
+		msgs   []string
+		expect string
+	}{
+		{
+			name:   "When input is nil it should return empty string",
+			msgs:   nil,
+			expect: "",
+		},
+		{
+			name:   "When input is empty it should return empty string",
+			msgs:   []string{},
+			expect: "",
+		},
+		{
+			name:   "When a single short message is given it should return it verbatim",
+			msgs:   []string{shortMsg},
+			expect: shortMsg,
+		},
+		{
+			name:   "When multiple messages fit within limit it should return them all concatenated",
+			msgs:   []string{"error one\n", "error two\n", "error three\n"},
+			expect: "error one\nerror two\nerror three\n",
+		},
+		{
+			name:   "When messages exactly hit the 1000-char boundary it should include all without truncation",
+			msgs:   []string{paddedMsg, shortMsg},
+			expect: paddedMsg + shortMsg,
+		},
+		{
+			name:   "When messages exceed the 1000-char limit it should truncate and append suffix",
+			msgs:   []string{paddedMsg, shortMsg, "this overflows\n"},
+			expect: paddedMsg + shortMsg + endOfMessage,
+		},
+		{
+			name:   "When a single message is exactly maxMessageLength it should be included",
+			msgs:   []string{strings.Repeat("z", maxMessageLength)},
+			expect: strings.Repeat("z", maxMessageLength),
+		},
+		{
+			name:   "When a single message exceeds the limit it should return only the truncation suffix",
+			msgs:   []string{strings.Repeat("a", maxMessageLength+1)},
+			expect: endOfMessage,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := aggregateMachineMessages(tc.msgs)
+			g.Expect(result).To(Equal(tc.expect))
+		})
+	}
+}
+
 func TestAggregateMachineReasonsAndMessages(t *testing.T) {
 	g := NewWithT(t)
 
