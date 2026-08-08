@@ -1,6 +1,7 @@
 package etcd
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -15,12 +16,18 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
 )
 
 func TestBuildEtcdInitContainer(t *testing.T) {
 	t.Parallel()
+
+	const (
+		testNamespace      = "test-hcp-namespace"
+		testInitialCluster = "etcd-0=https://etcd-0.etcd-discovery.test-hcp-namespace.svc:2380,etcd-1=https://etcd-1.etcd-discovery.test-hcp-namespace.svc:2380,etcd-2=https://etcd-2.etcd-discovery.test-hcp-namespace.svc:2380"
+	)
 
 	testCases := []struct {
 		name       string
@@ -29,11 +36,43 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 	}{
 		{
 			name:       "When restoreUrl is provided, it should set RESTORE_URL_ETCD env var to that URL",
-			restoreUrl: "https://example.com/snapshot.db",
+			restoreUrl: "https://etcd-backup-bucket.s3.us-east-1.amazonaws.com/backups/etcd-snapshot-2024-01-15.db",
 			validate: func(g Gomega, c corev1.Container) {
 				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
 					Name:  "RESTORE_URL_ETCD",
-					Value: "https://example.com/snapshot.db",
+					Value: "https://etcd-backup-bucket.s3.us-east-1.amazonaws.com/backups/etcd-snapshot-2024-01-15.db",
+				}))
+			},
+		},
+		{
+			name:       "When called, it should set HOSTNAME from pod metadata.name via downward API",
+			restoreUrl: "",
+			validate: func(g Gomega, c corev1.Container) {
+				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
+					Name: "HOSTNAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+					},
+				}))
+			},
+		},
+		{
+			name:       "When called, it should set HCP_NAMESPACE env var",
+			restoreUrl: "",
+			validate: func(g Gomega, c corev1.Container) {
+				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
+					Name:  "HCP_NAMESPACE",
+					Value: testNamespace,
+				}))
+			},
+		},
+		{
+			name:       "When called, it should set ETCD_INITIAL_CLUSTER env var",
+			restoreUrl: "",
+			validate: func(g Gomega, c corev1.Container) {
+				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
+					Name:  "ETCD_INITIAL_CLUSTER",
+					Value: testInitialCluster,
 				}))
 			},
 		},
@@ -74,7 +113,7 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
-			c := buildEtcdInitContainer(tc.restoreUrl)
+			c := buildEtcdInitContainer(tc.restoreUrl, testNamespace, testInitialCluster)
 			tc.validate(g, c)
 		})
 	}
@@ -306,7 +345,7 @@ func Test_minTLSVersion(t *testing.T) {
 	}
 }
 
-func Test_adaptStatefulSet(t *testing.T) {
+func TestAdaptStatefulSet(t *testing.T) {
 	t.Parallel()
 
 	testStatefulSet := &appsv1.StatefulSet{
@@ -493,6 +532,98 @@ func Test_adaptStatefulSet(t *testing.T) {
 				g.Expect(valueForFlag(metricsContainer, "--listen-cipher-suites=")).To(Equal(tc.expectedCipherSuites))
 				g.Expect(valueForFlag(healthzContainer, "--listen-cipher-suites=")).To(Equal(tc.expectedCipherSuites))
 			}
+		})
+	}
+
+	baseInitContainers := []corev1.Container{
+		{Name: "ensure-dns"},
+		{Name: "reset-member"},
+	}
+
+	initContainerTestCases := []struct {
+		name               string
+		restoreURL         string
+		snapshotRestored   bool
+		baseInitContainers []corev1.Container
+		expectedOrder      []string
+	}{
+		{
+			name:          "When restoreSnapshotURL is set, it should place etcd-init before reset-member",
+			restoreURL:    "https://etcd-backup-bucket.s3.us-east-1.amazonaws.com/backups/etcd-snapshot-2024-01-15.db",
+			expectedOrder: []string{"ensure-dns", "etcd-init", "reset-member"},
+		},
+		{
+			name:          "When restoreSnapshotURL is not set, it should not add etcd-init",
+			restoreURL:    "",
+			expectedOrder: []string{"ensure-dns", "reset-member"},
+		},
+		{
+			name:             "When EtcdSnapshotRestored condition is true, it should not add etcd-init even if restoreSnapshotURL is set",
+			restoreURL:       "https://etcd-backup-bucket.s3.us-east-1.amazonaws.com/backups/etcd-snapshot-2024-01-15.db",
+			snapshotRestored: true,
+			expectedOrder:    []string{"ensure-dns", "reset-member"},
+		},
+		{
+			name:               "When reset-member is absent, it should append etcd-init at the end",
+			restoreURL:         "https://etcd-backup-bucket.s3.us-east-1.amazonaws.com/backups/etcd-snapshot-2024-01-15.db",
+			baseInitContainers: []corev1.Container{{Name: "ensure-dns"}},
+			expectedOrder:      []string{"ensure-dns", "etcd-init"},
+		},
+	}
+
+	for _, tc := range initContainerTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								Type: hyperv1.PersistentVolumeEtcdStorage,
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{CIDR: *ipnet.MustParseCIDR("10.0.0.0/16")},
+						},
+					},
+					ControllerAvailabilityPolicy: hyperv1.SingleReplica,
+				},
+			}
+			if tc.restoreURL != "" {
+				hcp.Spec.Etcd.Managed.Storage.RestoreSnapshotURL = []string{tc.restoreURL}
+			}
+			if tc.snapshotRestored {
+				hcp.Status.Conditions = []metav1.Condition{
+					{
+						Type:   string(hyperv1.EtcdSnapshotRestored),
+						Status: metav1.ConditionTrue,
+					},
+				}
+			}
+
+			src := tc.baseInitContainers
+			if src == nil {
+				src = baseInitContainers
+			}
+			containers := make([]corev1.Container, len(src))
+			copy(containers, src)
+			sts := &appsv1.StatefulSet{}
+			sts.Spec.Template.Spec.InitContainers = containers
+			sts.Spec.Template.Spec.Containers = []corev1.Container{{Name: ComponentName}, {Name: "etcd-metrics"}}
+
+			err := adaptStatefulSet(component.WorkloadContext{Context: context.Background(), HCP: hcp}, sts)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			names := make([]string, len(sts.Spec.Template.Spec.InitContainers))
+			for i, c := range sts.Spec.Template.Spec.InitContainers {
+				names[i] = c.Name
+			}
+			g.Expect(names).To(Equal(tc.expectedOrder))
 		})
 	}
 }
