@@ -74,6 +74,7 @@ func newReconciler(objs ...client.Object) *HCPEtcdBackupReconciler {
 
 	return &HCPEtcdBackupReconciler{
 		Client:                  fakeClient,
+		APIReader:               fakeClient,
 		OperatorNamespace:       testHONamespace,
 		ReleaseProvider:         &fakeReleaseProvider{},
 		HypershiftOperatorImage: "quay.io/hypershift/hypershift:latest",
