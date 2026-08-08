@@ -451,6 +451,42 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Bubble up ValidGCPWorkloadIdentity and ValidGCPCredentials conditions from the hostedControlPlane.
+	// We set these conditions even if the HC is being deleted so that
+	// DeleteOrphanedMachines has a fresh signal for credential validity.
+	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+		updated := false
+		for _, condType := range []hyperv1.ConditionType{
+			hyperv1.ValidGCPWorkloadIdentity,
+			hyperv1.ValidGCPCredentials,
+		} {
+			var cond *metav1.Condition
+			if hcp != nil {
+				cond = meta.FindStatusCondition(hcp.Status.Conditions, string(condType))
+			}
+			if cond == nil {
+				if meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+					Type:               string(condType),
+					Status:             metav1.ConditionUnknown,
+					Reason:             hyperv1.StatusUnknownReason,
+					ObservedGeneration: hcluster.Generation,
+				}) {
+					updated = true
+				}
+			} else {
+				cond.ObservedGeneration = hcluster.Generation
+				if meta.SetStatusCondition(&hcluster.Status.Conditions, *cond) {
+					updated = true
+				}
+			}
+		}
+		if updated {
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
+		}
+	}
+
 	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane to report blocking objects on deletion.
 	if condition, changed := computeAWSDefaultSGDeletedCondition(hcluster, hcp); changed {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
