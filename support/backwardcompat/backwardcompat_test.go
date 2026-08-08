@@ -119,7 +119,7 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 		requiresBackwardCompat bool
 	}{
 		{
-			name: "test config without an image",
+			name: "When config has no image it should hash correctly",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",
@@ -128,7 +128,7 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 			expectedHashedJSONE: `{"proxy":{"httpProxy":"http://proxy.example.com"}}`,
 		},
 		{
-			name: "test config with an image and no imageStreamImportMode",
+			name: "When config has image but no imageStreamImportMode it should require backward compatibility",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",
@@ -143,7 +143,7 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 			requiresBackwardCompat: true,
 		},
 		{
-			name: "test config with an image and imageStreamImportMode",
+			name: "When config has image with imageStreamImportMode it should require backward compatibility",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",

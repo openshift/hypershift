@@ -110,7 +110,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		platform               hyperv1.PlatformType
 	}{
 		{
-			name:                   "Releases before 4.14 are not supported",
+			name:                   "When release is before 4.14 it should not be supported",
 			currentVersion:         v("4.8.0"),
 			nextVersion:            v("4.7.0"),
 			latestVersionSupported: v("4.12.0"),
@@ -119,7 +119,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:           "versions > LatestSupportedVersion are not supported",
+			name:           "When version is greater than LatestSupportedVersion it should not be supported",
 			currentVersion: v("4.15.0"),
 			nextVersion: &semver.Version{
 				Major: LatestSupportedVersion.Major,
@@ -132,7 +132,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "y-stream downgrade is not supported",
+			name:                   "When doing y-stream downgrade it should not be supported",
 			currentVersion:         v("4.10.0"),
 			nextVersion:            v("4.9.0"),
 			latestVersionSupported: v("4.12.0"),
@@ -141,7 +141,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "y-stream upgrade is not for OpenShiftSDN",
+			name:                   "When doing y-stream upgrade with OpenShiftSDN it should not be supported",
 			currentVersion:         v("4.10.0"),
 			nextVersion:            v("4.11.0"),
 			latestVersionSupported: v("4.12.0"),
@@ -151,7 +151,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "the latest HostedCluster version supported by this Operator is 4.12.0",
+			name:                   "When version exceeds latest supported by operator it should return error",
 			currentVersion:         v("4.12.0"),
 			nextVersion:            v("4.14.0"),
 			latestVersionSupported: v("4.12.0"),
@@ -160,7 +160,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "the minimum HostedCluster version supported by this Operator is 4.10.0",
+			name:                   "When version is below minimum supported by operator it should return error",
 			currentVersion:         v("4.9.0"),
 			nextVersion:            v("4.9.0"),
 			latestVersionSupported: v("4.12.0"),
@@ -170,7 +170,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Valid",
+			name:                   "When version is valid it should succeed",
 			currentVersion:         v("4.11.0"),
 			nextVersion:            v("4.11.1"),
 			latestVersionSupported: v("4.12.0"),
@@ -179,7 +179,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "When going to minimum should be valid",
+			name:                   "When going to minimum version it should be valid",
 			currentVersion:         v("4.9.0"),
 			nextVersion:            v("4.10.0"),
 			latestVersionSupported: v("4.12.0"),
@@ -188,7 +188,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Valid when going to minimum with a dev tag",
+			name:                   "When going to minimum with a dev tag it should be valid",
 			currentVersion:         v("4.9.0"),
 			nextVersion:            v("4.10.0-nightly-something"),
 			latestVersionSupported: v("4.12.0"),
@@ -197,7 +197,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Invalid when installing with OpenShiftSDN and version > 4.10",
+			name:                   "When installing with OpenShiftSDN and version > 4.10 it should be invalid",
 			currentVersion:         nil,
 			nextVersion:            v("4.11.5"),
 			latestVersionSupported: v("4.12.0"),
@@ -207,7 +207,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Valid when installing with OpenShift SDN and version <= 4.10",
+			name:                   "When installing with OpenShift SDN and version <= 4.10 it should be valid",
 			currentVersion:         nil,
 			nextVersion:            v("4.10.3"),
 			latestVersionSupported: v("4.12.0"),
@@ -217,7 +217,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Invalid when installing with OVNKubernetes and version < 4.11",
+			name:                   "When installing with OVNKubernetes and version < 4.11 it should be invalid",
 			currentVersion:         nil,
 			nextVersion:            v("4.10.5"),
 			latestVersionSupported: v("4.12.0"),
@@ -227,7 +227,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Valid when installing with OVNKubernetes and version >= 4.11",
+			name:                   "When installing with OVNKubernetes and version >= 4.11 it should be valid",
 			currentVersion:         nil,
 			nextVersion:            v("4.11.1"),
 			latestVersionSupported: v("4.12.0"),
@@ -237,7 +237,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Valid when installing with OpenShift SDN and version >= 4.11 with PowerVS platform",
+			name:                   "When installing with OpenShift SDN and version >= 4.11 with PowerVS platform it should be valid",
 			currentVersion:         nil,
 			nextVersion:            v("4.11.0"),
 			latestVersionSupported: v("4.12.0"),
@@ -399,7 +399,7 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 		expectedServerVersion string
 	}{
 		{
-			name: "When the ConfigMap is valid, expect versions to be returned successfully",
+			name: "When the ConfigMap is valid it should return versions successfully",
 			cm: &corev1.ConfigMap{
 				ObjectMeta: baseCM.ObjectMeta,
 				Data: map[string]string{
@@ -412,13 +412,13 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 			expectedServerVersion: "test-server-version",
 		},
 		{
-			name:           "When the ConfigMap is not found, expect an error",
+			name:           "When the ConfigMap is not found it should return an error",
 			cm:             nil, // No configmap will be added to the client
 			expectErr:      true,
 			expectedErrMsg: "failed to find supported versions on the server",
 		},
 		{
-			name: "When the server-version key is missing, expect an error",
+			name: "When the server-version key is missing it should return an error",
 			cm: &corev1.ConfigMap{
 				ObjectMeta: baseCM.ObjectMeta,
 				Data:       map[string]string{config.ConfigMapVersionsKey: string(validVersionsJSON)},
@@ -427,7 +427,7 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 			expectedErrMsg: "the server did not advertise its HyperShift version",
 		},
 		{
-			name: "When the supported-versions key is missing, expect an error",
+			name: "When the supported-versions key is missing it should return an error",
 			cm: &corev1.ConfigMap{
 				ObjectMeta: baseCM.ObjectMeta,
 				Data:       map[string]string{config.ConfigMapServerVersionKey: "test-server-version"},
@@ -436,7 +436,7 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 			expectedErrMsg: "the server did not advertise supported OCP versions",
 		},
 		{
-			name: "When the supported-versions JSON is malformed, expect an error",
+			name: "When the supported-versions JSON is malformed it should return an error",
 			cm: &corev1.ConfigMap{
 				ObjectMeta: baseCM.ObjectMeta,
 				Data: map[string]string{
@@ -488,42 +488,42 @@ func TestNormalizeToV4(t *testing.T) {
 		expectErr bool
 	}{
 		{
-			name:     "When version is 4.x, it should be returned unchanged",
+			name:     "When version is 4.x it should be returned unchanged",
 			input:    "4.22.0",
 			expected: "4.22.0",
 		},
 		{
-			name:     "When version is 5.0, it should normalize to 4.23",
+			name:     "When version is 5.0 it should normalize to 4.23",
 			input:    "5.0.0",
 			expected: "4.23.0",
 		},
 		{
-			name:     "When version is 5.1, it should normalize to 4.24",
+			name:     "When version is 5.1 it should normalize to 4.24",
 			input:    "5.1.0",
 			expected: "4.24.0",
 		},
 		{
-			name:     "When version has patch level, it should be preserved",
+			name:     "When version has patch level it should be preserved",
 			input:    "5.0.7",
 			expected: "4.23.7",
 		},
 		{
-			name:     "When version has pre-release metadata, it should be preserved",
+			name:     "When version has pre-release metadata it should be preserved",
 			input:    "5.0.0-nightly",
 			expected: "4.23.0-nightly",
 		},
 		{
-			name:     "When version is 4.14, it should be returned unchanged",
+			name:     "When version is 4.14 it should be returned unchanged",
 			input:    "4.14.0",
 			expected: "4.14.0",
 		},
 		{
-			name:      "When version has unsupported major 6, it should return error",
+			name:      "When version has unsupported major 6 it should return error",
 			input:     "6.0.0",
 			expectErr: true,
 		},
 		{
-			name:      "When version has unsupported major 3, it should return error",
+			name:      "When version has unsupported major 3 it should return error",
 			input:     "3.11.0",
 			expectErr: true,
 		},
@@ -602,42 +602,42 @@ func TestPreviousMinorVersion(t *testing.T) {
 		errSubstr     string
 	}{
 		{
-			name:          "When subtracting within 4.x, it should return the correct 4.x version",
+			name:          "When subtracting within 4.x it should return the correct 4.x version",
 			version:       semver.MustParse("4.20.0"),
 			n:             2,
 			expectedMajor: 4,
 			expectedMinor: 18,
 		},
 		{
-			name:          "When crossing the 5.x to 4.x bridge, it should denormalize correctly",
+			name:          "When crossing the 5.x to 4.x bridge it should denormalize correctly",
 			version:       semver.MustParse("5.0.0"),
 			n:             2,
 			expectedMajor: 4,
 			expectedMinor: 21,
 		},
 		{
-			name:          "When staying within 5.x, it should return the correct 5.x version",
+			name:          "When staying within 5.x it should return the correct 5.x version",
 			version:       semver.MustParse("5.2.0"),
 			n:             1,
 			expectedMajor: 5,
 			expectedMinor: 1,
 		},
 		{
-			name:          "When n is 0, it should return the same version",
+			name:          "When n is 0 it should return the same version",
 			version:       semver.MustParse("4.18.0"),
 			n:             0,
 			expectedMajor: 4,
 			expectedMinor: 18,
 		},
 		{
-			name:        "When n exceeds the normalized minor, it should return an underflow error",
+			name:        "When n exceeds the normalized minor it should return an underflow error",
 			version:     semver.MustParse("4.1.0"),
 			n:           5,
 			expectError: true,
 			errSubstr:   "cannot go back",
 		},
 		{
-			name:        "When major version is unsupported, it should return a normalization error",
+			name:        "When major version is unsupported it should return a normalization error",
 			version:     semver.MustParse("6.0.0"),
 			n:           1,
 			expectError: true,
@@ -905,7 +905,7 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 		expectedOCPVersion ocpVersion
 	}{
 		{
-			name:       "When latest stable release is supported, expect it to be returned",
+			name:       "When latest stable release is supported it should be returned",
 			cm:         supportedVersionsCM,
 			releaseURL: mockServer.URL + "/api/v1/releasestream/4-stable-multi/tags",
 			expectErr:  false,
@@ -915,28 +915,28 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 			},
 		},
 		{
-			name:           "When no supported release versions match, expect an error",
+			name:           "When no supported release versions match it should return an error",
 			cm:             unsupportedVersionsCM,
 			releaseURL:     mockServer.URL + "/api/v1/releasestream/4-stable-multi/tags",
 			expectErr:      true,
 			expectedErrMsg: "failed to find the latest supported OCP version",
 		},
 		{
-			name:           "When the ConfigMap is missing, expect an error",
+			name:           "When the ConfigMap is missing it should return an error",
 			cm:             nil,
 			releaseURL:     mockServer.URL + "/api/v1/releasestream/4-stable-multi/tags",
 			expectErr:      true,
 			expectedErrMsg: "failed to get supported OCP versions",
 		},
 		{
-			name:           "When the release URL is invalid, expect a request creation error",
+			name:           "When the release URL is invalid it should return a request creation error",
 			cm:             supportedVersionsCM,
 			releaseURL:     "://invalid-url",
 			expectErr:      true,
 			expectedErrMsg: "parse",
 		},
 		{
-			name:       "When the ConfigMap supports older versions, expect the latest older version to be returned",
+			name:       "When the ConfigMap supports older versions it should return the latest older version",
 			cm:         olderSupportedVersionsCM,
 			releaseURL: mockServer.URL + "/api/v1/releasestream/4-stable-multi/tags",
 			expectErr:  false,
@@ -1214,7 +1214,7 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 		expectedOCPVersion ocpVersion
 	}{
 		{
-			name:       "When multi-arch stream has RC versions, expect latest non-RC supported version",
+			name:       "When multi-arch stream has RC versions it should return latest non-RC supported version",
 			cm:         supportedVersionsCM,
 			releaseURL: mockServerWithRC.URL,
 			expectErr:  false,
@@ -1224,7 +1224,7 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 			},
 		},
 		{
-			name:       "When amd64 stream has RC versions, expect latest non-RC supported version",
+			name:       "When amd64 stream has RC versions it should return latest non-RC supported version",
 			cm:         supportedVersionsCM,
 			releaseURL: mockServerAmd64WithRC.URL,
 			expectErr:  false,
@@ -1234,7 +1234,7 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 			},
 		},
 		{
-			name:       "When arm64 stream has RC versions, expect latest non-RC supported version",
+			name:       "When arm64 stream has RC versions it should return latest non-RC supported version",
 			cm:         supportedVersionsCM,
 			releaseURL: mockServerArm64WithRC.URL,
 			expectErr:  false,
@@ -1244,7 +1244,7 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 			},
 		},
 		{
-			name:           "When stream has only RC versions, expect error",
+			name:           "When stream has only RC versions it should return error",
 			cm:             supportedVersionsCM,
 			releaseURL:     mockServerOnlyRC.URL,
 			expectErr:      true,
@@ -1302,7 +1302,7 @@ func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
 		expectedErrMsg   string
 	}{
 		{
-			name: "When tags are in random order with oldest first, expect NEWEST supported version",
+			name: "When tags are in random order with oldest first it should return NEWEST supported version",
 			tags: `[
 				{"name": "4.14.21", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.14.21-multi", "downloadURL": "https://example.com/4.14.21"},
 				{"name": "4.19.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5-multi", "downloadURL": "https://example.com/4.19.5"},
@@ -1313,7 +1313,7 @@ func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
 			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5-multi",
 		},
 		{
-			name: "When tags include RC versions, expect latest non-RC supported version",
+			name: "When tags include RC versions it should return latest non-RC supported version",
 			tags: `[
 				{"name": "4.20.0-rc.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.5-multi", "downloadURL": "https://example.com/4.20.0-rc.5"},
 				{"name": "4.19.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5-multi", "downloadURL": "https://example.com/4.19.5"},
@@ -1324,7 +1324,7 @@ func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
 			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5-multi",
 		},
 		{
-			name: "When tags are in ascending order, expect NEWEST supported version",
+			name: "When tags are in ascending order it should return NEWEST supported version",
 			tags: `[
 				{"name": "4.14.21", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.14.21-multi", "downloadURL": "https://example.com/4.14.21"},
 				{"name": "4.15.10", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.15.10-multi", "downloadURL": "https://example.com/4.15.10"},
@@ -1337,7 +1337,7 @@ func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
 			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.1-multi",
 		},
 		{
-			name: "When tags are in descending order, expect NEWEST supported version",
+			name: "When tags are in descending order it should return NEWEST supported version",
 			tags: `[
 				{"name": "4.19.1", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.1-multi", "downloadURL": "https://example.com/4.19.1"},
 				{"name": "4.18.2", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.2-multi", "downloadURL": "https://example.com/4.18.2"},
@@ -1348,7 +1348,7 @@ func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
 			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.1-multi",
 		},
 		{
-			name: "When all versions are RC, expect error",
+			name: "When all versions are RC it should return error",
 			tags: `[
 				{"name": "4.20.0-rc.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.5-multi", "downloadURL": "https://example.com/4.20.0-rc.5"},
 				{"name": "4.20.0-rc.4", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.4-multi", "downloadURL": "https://example.com/4.20.0-rc.4"},
@@ -1358,7 +1358,7 @@ func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
 			expectedErrMsg: "failed to find the latest supported OCP version",
 		},
 		{
-			name: "When RC versions are mixed throughout list, expect latest non-RC supported version",
+			name: "When RC versions are mixed throughout list it should return latest non-RC supported version",
 			tags: `[
 				{"name": "4.18.1", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.1-multi", "downloadURL": "https://example.com/4.18.1"},
 				{"name": "4.20.0-rc.3", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.3-multi", "downloadURL": "https://example.com/4.20.0-rc.3"},

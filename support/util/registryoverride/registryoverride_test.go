@@ -15,49 +15,49 @@ func TestReplace(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "nil overrides returns input unchanged",
+			name:      "When nil overrides are provided, it should return input unchanged",
 			image:     "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 			overrides: nil,
 			want:      "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 		},
 		{
-			name:      "empty overrides returns input unchanged",
+			name:      "When empty overrides are provided, it should return input unchanged",
 			image:     "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 			overrides: map[string]string{},
 			want:      "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 		},
 		{
-			name:      "no matching override returns input unchanged",
+			name:      "When no matching override exists, it should return input unchanged",
 			image:     "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 			overrides: map[string]string{"registry.redhat.io": "mirror.example.com"},
 			want:      "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 		},
 		{
-			name:      "exact-match key replaces image",
+			name:      "When exact-match key is found, it should replace image",
 			image:     "quay.io",
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
 			want:      "mirror.example.com",
 		},
 		{
-			name:      "slash-boundary prefix match preserves path and digest",
+			name:      "When slash-boundary prefix matches, it should preserve path and digest",
 			image:     "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
 			want:      "mirror.example.com/openshift-release-dev/ocp-release@sha256:abc",
 		},
 		{
-			name:      "subdomain does not match (no false positive)",
+			name:      "When subdomain looks similar, it should not match",
 			image:     "quay.io.example.com/foo/bar:latest",
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
 			want:      "quay.io.example.com/foo/bar:latest",
 		},
 		{
-			name:      "trailing path component does not match (no false positive)",
+			name:      "When trailing path component looks similar, it should not match",
 			image:     "quay.io-evil/foo:latest",
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
 			want:      "quay.io-evil/foo:latest",
 		},
 		{
-			name:  "longest matching prefix wins",
+			name:  "When multiple prefixes match, it should use longest matching prefix",
 			image: "quay.io/openshift-release-dev/ocp-release@sha256:abc",
 			overrides: map[string]string{
 				"quay.io":                       "broad.example.com",
@@ -66,7 +66,7 @@ func TestReplace(t *testing.T) {
 			want: "narrow.example.com/mirror/ocp-release@sha256:abc",
 		},
 		{
-			name:  "shorter prefix used when longer prefix does not match",
+			name:  "When longer prefix does not match, it should use shorter prefix",
 			image: "quay.io/some-other-org/image:tag",
 			overrides: map[string]string{
 				"quay.io":                       "broad.example.com",
@@ -75,7 +75,7 @@ func TestReplace(t *testing.T) {
 			want: "broad.example.com/some-other-org/image:tag",
 		},
 		{
-			name:  "empty source key is skipped",
+			name:  "When empty source key exists, it should skip it",
 			image: "quay.io/foo/bar:latest",
 			overrides: map[string]string{
 				"":        "should-never-be-used",
@@ -84,7 +84,7 @@ func TestReplace(t *testing.T) {
 			want: "mirror.example.com/foo/bar:latest",
 		},
 		{
-			name:      "tag is preserved",
+			name:      "When image has tag, it should preserve tag",
 			image:     "quay.io/foo/bar:v1.2.3",
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
 			want:      "mirror.example.com/foo/bar:v1.2.3",
@@ -129,7 +129,7 @@ func TestReplace(t *testing.T) {
 			want:      "mirror.example.com/org/repo@sha256:abc",
 		},
 		{
-			name:      "empty image returns empty",
+			name:      "When image is empty, it should return empty",
 			image:     "",
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
 			want:      "",

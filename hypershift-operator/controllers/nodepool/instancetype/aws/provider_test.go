@@ -111,7 +111,7 @@ func TestGetGpuCount(t *testing.T) {
 	}
 }
 
-func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T) {
+func TestTransformInstanceTypeInfoWhenMissingRequiredFieldsItShouldReturnError(t *testing.T) {
 	tests := []struct {
 		name          string
 		input         ec2types.InstanceTypeInfo
@@ -227,7 +227,7 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 	}
 }
 
-func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
+func TestTransformInstanceTypeInfoWhenValidInputItShouldTransformCorrectly(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    ec2types.InstanceTypeInfo

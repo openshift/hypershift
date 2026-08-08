@@ -44,17 +44,17 @@ func TestErrorMessages(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "single event",
+			name:     "When a single warning event exists, it should return the message",
 			events:   evl(ev("msg1", corev1.EventTypeWarning, "r1")),
 			expected: []string{"msg1"},
 		},
 		{
-			name:     "no warning events",
+			name:     "When no warning events exist, it should return empty list",
 			events:   evl(ev("msg1", corev1.EventTypeNormal, "r1")),
 			expected: []string{},
 		},
 		{
-			name: "warning and info events",
+			name: "When both warning and info events exist, it should return only warnings",
 			events: evl(
 				ev("msg1", corev1.EventTypeNormal, "r1"),
 				ev("msg2", corev1.EventTypeWarning, "r2"),
@@ -62,7 +62,7 @@ func TestErrorMessages(t *testing.T) {
 			expected: []string{"msg2"},
 		},
 		{
-			name: "multiple events with same reason",
+			name: "When multiple events with same reason exist, it should return the most recent",
 			events: evl(
 				ev("msg1", corev1.EventTypeWarning, "rr"),
 				ev("msg2", corev1.EventTypeWarning, "rr"),
@@ -72,7 +72,7 @@ func TestErrorMessages(t *testing.T) {
 			expected: []string{"msg3"},
 		},
 		{
-			name: "multiple events with different reasons",
+			name: "When multiple events with different reasons exist, it should return the most recent per reason",
 			events: evl(
 				ev("msg1", corev1.EventTypeWarning, "r1"),
 				ev("msg2", corev1.EventTypeWarning, "r1"),

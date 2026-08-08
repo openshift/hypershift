@@ -58,20 +58,20 @@ func TestNodeReaper(t *testing.T) {
 		expectDelete bool
 	}{
 		{
-			name: "no associated cluster",
+			name: "When there is no associated cluster it should not delete the node",
 			existing: []client.Object{
 				node(),
 			},
 		},
 		{
-			name: "associated existing cluster",
+			name: "When associated cluster exists it should not delete the node",
 			existing: []client.Object{
 				node(withCluster("c1")),
 				cluster("c1"),
 			},
 		},
 		{
-			name: "associated with non-existent cluster",
+			name: "When associated with a non-existent cluster it should delete the node",
 			existing: []client.Object{
 				node(withCluster("c1")),
 			},
@@ -174,11 +174,11 @@ func TestHostedClusterScheduler(t *testing.T) {
 		expectedPairLabel     string
 	}{
 		{
-			name: "deleted hosted cluster",
+			name: "When hosted cluster is deleted it should succeed without error",
 			hc:   hostedcluster(deletedHC),
 		},
 		{
-			name: "scheduled hosted cluster with 2 existing Nodes",
+			name: "When scheduled hosted cluster has 2 existing nodes it should succeed",
 			hc:   hostedcluster(scheduledHC),
 			nodes: nodes(
 				node("n1", "zone-a", "id1", withCluster(hostedcluster())),
@@ -186,7 +186,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 			),
 		},
 		{
-			name: "available nodes",
+			name: "When available nodes exist it should schedule them",
 			hc:   hostedcluster(),
 			nodes: nodes(
 				node("n1", "zone-a", "id1"),
@@ -198,7 +198,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 			expectedPairLabel:     "id1",
 		},
 		{
-			name: "available node, existing assigned node",
+			name: "When an available node and existing assigned node are present it should schedule",
 			hc:   hostedcluster(),
 			nodes: nodes(
 				node("n1", "zone-a", "id1", withCluster(hostedcluster())),
@@ -558,7 +558,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 	}{
 
 		{
-			name: "scheduled hosted cluster with 2 existing Nodes",
+			name: "When scheduled hosted cluster has 2 existing nodes it should keep them scheduled",
 			hc:   hostedcluster(scheduledHC),
 			nodes: nodes(
 				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
@@ -593,7 +593,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			expectPlaceholder: true,
 		},
 		{
-			name: "ensure allocated cluster node is labeled for cluster",
+			name: "When an allocated cluster node exists it should be labeled for the cluster",
 			hc:   hostedcluster(),
 			nodes: nodes(
 				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
@@ -602,7 +602,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			checkScheduledNodes: true,
 		},
 		{
-			name: "ensure hosted cluster is annotated properly when nodes are scheduled",
+			name: "When nodes are scheduled it should annotate the hosted cluster properly",
 			hc:   hostedcluster(),
 			nodes: nodes(
 				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
@@ -612,12 +612,12 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			checkScheduledNodes:   true,
 		},
 		{
-			name:              "expect placeholder deployment when no nodes are available",
+			name:              "When no nodes are available it should create a placeholder deployment",
 			hc:                hostedcluster(withSize("medium")),
 			expectPlaceholder: true,
 		},
 		{
-			name: "expect placeholder deployment when only one node is available",
+			name: "When only one node is available it should create a placeholder deployment",
 			hc:   hostedcluster(withSize("medium")),
 			nodes: nodes(
 				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
@@ -625,13 +625,13 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			expectPlaceholder: true,
 		},
 		{
-			name:                "use existing placeholders for small cluster",
+			name:                "When existing placeholders are available for a small cluster it should use them",
 			hc:                  hostedcluster(),
 			additionalObjects:   placeholderResources(3),
 			checkScheduledNodes: true,
 		},
 		{
-			name: "expect placeholder deployment when not the right size",
+			name: "When nodes are not the right size it should create a placeholder deployment",
 			hc:   hostedcluster(scheduledHC, withSize("medium")),
 			nodes: nodes(
 				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
@@ -640,7 +640,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			expectPlaceholder: true,
 		},
 		{
-			name: "label nodes when placeholder deployment is ready",
+			name: "When placeholder deployment is ready it should label the nodes",
 			hc:   hostedcluster(withSize("medium")),
 			additionalObjects: provisionedDeployment(placeholderDeployment(hostedcluster()), "medium", []corev1.Node{
 				*(node("n1", "zone-a", "medium", "pair1")),
@@ -761,7 +761,7 @@ func TestFilterNodeEvents(t *testing.T) {
 		expected      []reconcile.Request
 	}{
 		{
-			name:          "Incoming node is not a request serving node",
+			name:          "When incoming node is not a request serving node it should return nil",
 			baselineNodes: []client.Object{},
 			incomingNode: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -772,7 +772,7 @@ func TestFilterNodeEvents(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name:          "Incoming node is already a dedicated request serving node",
+			name:          "When incoming node is already a dedicated request serving node it should return its cluster request",
 			baselineNodes: []client.Object{},
 			incomingNode: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -796,7 +796,7 @@ func TestFilterNodeEvents(t *testing.T) {
 			},
 		},
 		{
-			name: "Incoming node is a request serving node, no hostedcluster label, no matching pair",
+			name: "When incoming node is a request serving node with no hostedcluster label and no matching pair it should return nil",
 			baselineNodes: []client.Object{
 				&corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
@@ -823,7 +823,7 @@ func TestFilterNodeEvents(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "Incoming node is a request serving node, no hostedcluster label, but existing pair with hostedcluster",
+			name: "When incoming node has no hostedcluster label but existing pair has one it should return the paired cluster request",
 			baselineNodes: []client.Object{
 				&corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{

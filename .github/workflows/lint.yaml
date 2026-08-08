@@ -8,6 +8,6 @@ on:
 
 jobs:
   lint:
-    uses: openshift/hypershift/.github/workflows/lint-reusable.yaml@main
+    uses: bryan-cox/hypershift/.github/workflows/lint-reusable.yaml@worktree-hypershiftlinter-plugin
     permissions:
       contents: read

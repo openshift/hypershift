@@ -37,16 +37,16 @@ func TestPredicate(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:                 "when CAPI kubeconfig secret exist predicate returns true",
+			name:                 "When CAPI kubeconfig secret exists, it should return true",
 			capiKubeconfigSecret: manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID),
 			expected:             true,
 		},
 		{
-			name:     "when CAPI kubeconfig secret doesn't exist, predicate return false",
+			name:     "When CAPI kubeconfig secret does not exist, it should return false",
 			expected: false,
 		},
 		{
-			name: "when HCP has DisableMachineManagement annotation predicate return false",
+			name: "When HCP has DisableMachineManagement annotation, it should return false",
 			hcpAnnotations: map[string]string{
 				hyperv1.DisableMachineManagement: "true",
 			},
@@ -101,14 +101,14 @@ func TestAdaptDeployment(t *testing.T) {
 		expectedReplicas  int32
 	}{
 		{
-			name: "when HCP has DisableClusterAutoscalerAnnotation annotation replicas should be 0",
+			name: "When HCP has DisableClusterAutoscalerAnnotation annotation, it should set replicas to 0",
 			hcpAnnotations: map[string]string{
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 			expectedReplicas: 0,
 		},
 		{
-			name: "when autoscaling options is set, container has optional arguments",
+			name: "When autoscaling options are set, it should include optional arguments",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				MaxNodesTotal:        ptr.To[int32](100),
 				MaxPodGracePeriod:    ptr.To[int32](300),
@@ -129,7 +129,7 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedReplicas: 1,
 		},
 		{
-			name: "when scale down is disabled, container has scale down disabled argument",
+			name: "When scale down is disabled, it should include scale-down-enabled=false argument",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				Scaling:   hyperv1.ScaleUpOnly,
 				ScaleDown: &hyperv1.ScaleDownConfig{},
@@ -140,7 +140,7 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedReplicas: 1,
 		},
 		{
-			name: "when scale down is enabled with all options, container has all scale down arguments",
+			name: "When scale down is enabled with all options, it should include all scale down arguments",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				Scaling: hyperv1.ScaleUpAndScaleDown,
 				ScaleDown: &hyperv1.ScaleDownConfig{
@@ -162,7 +162,7 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedReplicas: 1,
 		},
 		{
-			name: "when expanders are configured, container has expander arguments",
+			name: "When expanders are configured, it should include expander arguments",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				Expanders: []hyperv1.ExpanderString{
 					hyperv1.LeastWasteExpander,
@@ -176,7 +176,7 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedReplicas: 1,
 		},
 		{
-			name: "when balancing ignored labels are configured, container has balancing ignore label arguments",
+			name: "When balancing ignored labels are configured, it should include balancing-ignore-label arguments",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				BalancingIgnoredLabels: []string{
 					"custom.label/zone",
@@ -190,7 +190,7 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedReplicas: 1,
 		},
 		{
-			name: "when MaxFreeDifferenceRatioPercent is set, container has max-free-difference-ratio argument",
+			name: "When MaxFreeDifferenceRatioPercent is set, it should include max-free-difference-ratio argument",
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
 				MaxFreeDifferenceRatioPercent: ptr.To[int32](20),
 			},
