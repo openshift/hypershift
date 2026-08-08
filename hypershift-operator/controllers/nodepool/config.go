@@ -91,7 +91,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, fmt.Errorf("release image can't be nil")
 	}
 
-	globalConfig, err := globalConfigString(hostedCluster)
+	globalConfig, err := globalConfigString(hostedCluster, releaseImage)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +367,7 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 	return manifest, err
 }
 
-func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
+func globalConfigString(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	// 1. - Reconcile conditions according to current state of the world.
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
@@ -393,10 +393,45 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	}
 	globalConfigBytes.Write(imageBytes)
 
+	if err := conditionallyAddToGlobalConfigString(globalConfigBytes, hcluster, releaseImage); err != nil {
+		return "", fmt.Errorf("failed to encode apiserver global config: %w", err)
+	}
+
 	rawConfig := globalConfigBytes.String()
 
 	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
 	return backwardcompat.GetBackwardCompatibleConfigString(rawConfig), nil
+}
+
+// conditionallyAddToGlobalConfigString exists so we can add things to the
+// global config string based on the release image version. Every time this
+// global config changes the node pool controller trigger a node pool
+// rollout, this allows us a more fine grained control over the process.
+func conditionallyAddToGlobalConfigString(
+	globalConfigBytes *bytes.Buffer,
+	hcluster *hyperv1.HostedCluster,
+	releaseImage *releaseinfo.ReleaseImage,
+) error {
+	version, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("failed to parse release image version: %w", err)
+	}
+
+	// Starting on v4.23.0 we support TLS Profile configuration. The
+	// expected TLS Profile is part of the HostedCluster config.
+	if version.GTE(semver.MustParse("4.23.0")) {
+		apiServer := globalconfig.APIServerConfiguration()
+		if err := globalconfig.ReconcileAPIServerConfiguration(apiServer, hcluster.Spec.Configuration); err != nil {
+			return fmt.Errorf("failed to reconcile apiserver global config: %w", err)
+		}
+		apiServerBytes, err := api.CompatibleJSONEncode(apiServer)
+		if err != nil {
+			return fmt.Errorf("failed to encode apiserver global config: %w", err)
+		}
+		globalConfigBytes.Write(apiServerBytes)
+	}
+
+	return nil
 }
 
 // GetCloudConfigHash returns a hash of the platform-specific cloud config ConfigMap content.

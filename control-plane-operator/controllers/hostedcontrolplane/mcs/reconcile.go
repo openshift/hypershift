@@ -1,6 +1,8 @@
 package mcs
 
 import (
+	"fmt"
+
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -37,6 +39,10 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 	if err != nil {
 		return err
 	}
+	serializedAPIServer, err := serialize(p.APIServer)
+	if err != nil {
+		return fmt.Errorf("failed to serialize apiserver config: %w", err)
+	}
 	serializedMasterConfigPool, err := serializeConfigPool(masterConfigPool())
 	if err != nil {
 		return err
@@ -61,6 +67,7 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 	cm.Data["cluster-network-02-config.yaml"] = serializedNetwork
 	cm.Data["cluster-proxy-01-config.yaml"] = serializedProxy
 	cm.Data["image-config.yaml"] = serializedImage
+	cm.Data["cluster-apiserver-config.yaml"] = serializedAPIServer
 	cm.Data["install-config.yaml"] = p.InstallConfig.String()
 	cm.Data["master.machineconfigpool.yaml"] = serializedMasterConfigPool
 	cm.Data["worker.machineconfigpool.yaml"] = serializedWorkerConfigPool
