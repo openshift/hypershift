@@ -856,7 +856,7 @@ func isLeaderElectionFailure(ctx context.Context, client kubernetes.Interface, p
 	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
-		TailLines: ptr.To[int64](10),
+		TailLines: ptr.To[int64](100),
 	})
 	podLogs, err := req.Stream(ctx)
 	if err != nil {
@@ -868,11 +868,10 @@ func isLeaderElectionFailure(ctx context.Context, client kubernetes.Interface, p
 	scanner := bufio.NewScanner(podLogs)
 	scanner.Buffer(make([]byte, 256*1024), 512*1024)
 	for scanner.Scan() {
-		if strings.Contains(strings.ToLower(scanner.Text()), "election lost") {
+		if e2eutil.MatchesLeaderElectionFailure(scanner.Text()) {
 			return true
 		}
 	}
-	// Drain remaining data to avoid broken pipe
 	_, _ = io.Copy(io.Discard, podLogs)
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintf(GinkgoWriter, "failed to read pod log; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
