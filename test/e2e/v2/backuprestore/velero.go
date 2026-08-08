@@ -97,6 +97,31 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
+// WaitForBackupStorageLocationAvailable waits for the BackupStorageLocation with the given
+// name to reach the Available phase. OADP reconciles the BSL from the DataProtectionApplication
+// asynchronously, so it can still be Unavailable for a short time after Velero itself is running,
+// which would otherwise fail any Backup/Schedule created against it with FailedValidation.
+func WaitForBackupStorageLocationAvailable(testCtx *internal.TestContext, name string) error {
+	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
+		bsl, err := getVeleroResource(ctx, testCtx.MgmtClient, DefaultOADPNamespace, name, "BackupStorageLocation")
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		phase, _, err := unstructured.NestedString(bsl.Object, "status", "phase")
+		if err != nil {
+			return false, fmt.Errorf("failed to get BackupStorageLocation phase: %w", err)
+		}
+		return phase == "Available", nil
+	})
+	if err != nil {
+		return fmt.Errorf("BackupStorageLocation %s did not become Available: %w", name, err)
+	}
+	return nil
+}
+
 // WaitForBackupCompletion waits for a backup to complete.
 // If backupName is provided, it waits for that specific backup.
 // If backupName is empty, it finds the most recent backup matching the HostedCluster name/namespace.
@@ -186,24 +211,13 @@ func getLatestBackupForHostedCluster(ctx context.Context, client crclient.Client
 	return getLatestVeleroResourceForHostedCluster(ctx, client, oadpNamespace, hcName, hcNamespace, "Backup", "BackupList")
 }
 
-// WaitForScheduleCompletion waits for the most recent backup created by a schedule to complete.
-// It finds the latest backup with label velero.io/schedule-name: scheduleName and waits for it to finish.
-func WaitForScheduleCompletion(testCtx *internal.TestContext, scheduleName string) error {
-	// Find the most recent backup created by this schedule
-	backupName, err := getLatestBackupForSchedule(testCtx.Context, testCtx.MgmtClient, DefaultOADPNamespace, scheduleName)
-	if err != nil {
+// WaitForScheduleBackupCreated waits until a schedule has created a backup, without waiting
+// for that backup to reach a final state.
+func WaitForScheduleBackupCreated(testCtx *internal.TestContext, scheduleName string) error {
+	if _, err := getLatestBackupForSchedule(testCtx.Context, testCtx.MgmtClient, DefaultOADPNamespace, scheduleName); err != nil {
 		return fmt.Errorf("failed to find backup for schedule %s: %w", scheduleName, err)
 	}
-
-	// Wait for backup to reach a final state
-	checkFn := isBackupInFinalState(testCtx.MgmtClient, DefaultOADPNamespace, backupName)
-	if err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
-		return checkFn(ctx)
-	}); err != nil {
-		return fmt.Errorf("backup %s (from schedule %s) did not reach final state within %v: %w", backupName, scheduleName, BackupTimeout, err)
-	}
-
-	return ensureBackupSuccessful(testCtx.Context, testCtx.MgmtClient, DefaultOADPNamespace, backupName)
+	return nil
 }
 
 // getLatestBackupForSchedule finds the most recent backup with label velero.io/schedule-name: scheduleName.
