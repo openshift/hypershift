@@ -39,6 +39,7 @@ spec:
         - 5s
         - --sync-interval-cap
         - 30s
+        - --sync-forever
         - --v
         - "3"
         command:
