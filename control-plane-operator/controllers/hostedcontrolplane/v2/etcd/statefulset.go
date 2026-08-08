@@ -38,6 +38,9 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
 	profile := cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()
 
+	replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
+	quorumMinMembers := etcdRaftQuorumSize(int(replicas))
+
 	ipv4, err := netutil.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return fmt.Errorf("error checking the ClusterNetworkCIDR: %w", err)
@@ -50,7 +53,6 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, config.CipherSuites(profile))
 
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
 		var members []string
 		for i := range replicas {
 			name := fmt.Sprintf("etcd-%d", i)
@@ -89,6 +91,17 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 				Value: "https://[::]:2382",
 			})
 		}
+	})
+
+	podspec.UpdateContainer("reset-member", sts.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "ETCD_EXPECTED_MEMBER_COUNT",
+			Value: fmt.Sprintf("%d", replicas),
+		})
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "ETCD_QUORUM_MIN_MEMBERS",
+			Value: fmt.Sprintf("%d", quorumMinMembers),
+		})
 	})
 
 	podspec.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
