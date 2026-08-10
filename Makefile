@@ -113,6 +113,10 @@ api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
+.PHONY: precommit-api-lint-fix
+precommit-api-lint-fix: $(GOLANGCI_LINT)
+	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
+
 .PHONY: lint
 lint: generate
 	$(MAKE) api-lint; api_rc=$$?; \
@@ -122,6 +126,10 @@ lint: generate
 .PHONY: main-lint-fix
 main-lint-fix: generate $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
+
+.PHONY: precommit-main-lint-fix
+precommit-main-lint-fix: $(GOLANGCI_LINT)
+	$(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(FILES)
 
 .PHONY: lint-fix
 lint-fix: generate
@@ -392,7 +400,7 @@ test: generate
 test-changed:
 	@CHANGED_DIRS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
-		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -v '^\./api/vendor/' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./api(/|$$)' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
 	if [ -z "$$CHANGED_DIRS" ]; then \
 		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
 	else \
