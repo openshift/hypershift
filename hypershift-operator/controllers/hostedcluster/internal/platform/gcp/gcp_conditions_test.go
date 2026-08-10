@@ -248,12 +248,12 @@ func TestNetworkConfigAccessSafety(t *testing.T) {
 
 func TestComputeGCPCredentialConditions(t *testing.T) {
 	tests := []struct {
-		name              string
-		hcConditions      []metav1.Condition
-		hcp               *hyperv1.HostedControlPlane
-		expectedChanged   bool
-		expectedWIFStatus metav1.ConditionStatus
-		expectedWIFReason string
+		name               string
+		hcConditions       []metav1.Condition
+		hcp                *hyperv1.HostedControlPlane
+		expectedChanged    bool
+		expectedWIFStatus  metav1.ConditionStatus
+		expectedWIFReason  string
 		expectedCredStatus metav1.ConditionStatus
 	}{
 		{
