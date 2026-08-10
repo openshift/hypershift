@@ -49,6 +49,8 @@ func TestBuildGenericControllerConfigData(t *testing.T) {
 		profile              *configv1.TLSSecurityProfile
 		expectedMinTLS       string
 		expectedCipherSuites []string
+		expectError          bool
+		expectedErrSubstr    string
 	}{
 		{
 			name:                 "When TLS profile is nil, it should use intermediate defaults",
@@ -130,6 +132,14 @@ func TestBuildGenericControllerConfigData(t *testing.T) {
 			},
 			expectedMinTLS: "VersionTLS12",
 		},
+		{
+			name:              "When TLS profile is Custom with nil Custom field, it should return error",
+			bindAddress:       "0.0.0.0:8443",
+			bindNetwork:       "tcp",
+			profile:           &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType},
+			expectError:       true,
+			expectedErrSubstr: "Custom but Custom field is nil",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -138,6 +148,14 @@ func TestBuildGenericControllerConfigData(t *testing.T) {
 			g := NewWithT(t)
 
 			yamlStr, err := BuildGenericControllerConfigData(tc.bindAddress, tc.bindNetwork, tc.profile)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrSubstr))
+				g.Expect(yamlStr).To(BeEmpty())
+				return
+			}
+
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(yamlStr).ToNot(BeEmpty())
 
@@ -173,7 +191,10 @@ func TestSetGenericControllerConfig(t *testing.T) {
 	testCases := []struct {
 		name              string
 		existingData      map[string]string
+		profile           *configv1.TLSSecurityProfile
 		shouldPreserveKey string
+		expectError       bool
+		expectedErrSubstr string
 	}{
 		{
 			name: "When ConfigMap is empty, it should set config.yaml",
@@ -182,6 +203,12 @@ func TestSetGenericControllerConfig(t *testing.T) {
 			name:              "When ConfigMap has existing data, it should preserve other keys",
 			existingData:      map[string]string{"other-key": "other-value"},
 			shouldPreserveKey: "other-key",
+		},
+		{
+			name:              "When TLS profile is Custom with nil Custom field, it should return error",
+			profile:           &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType},
+			expectError:       true,
+			expectedErrSubstr: "Custom but Custom field is nil",
 		},
 	}
 
@@ -192,7 +219,14 @@ func TestSetGenericControllerConfig(t *testing.T) {
 
 			cm := &corev1.ConfigMap{Data: tc.existingData}
 
-			err := SetGenericControllerConfig("0.0.0.0:8443", "tcp4", nil, cm)
+			err := SetGenericControllerConfig("0.0.0.0:8443", "tcp4", tc.profile, cm)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrSubstr))
+				return
+			}
+
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(cm.Data).To(HaveKey("config.yaml"))
