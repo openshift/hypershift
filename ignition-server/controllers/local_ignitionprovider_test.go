@@ -711,6 +711,70 @@ func TestCopyMCOOutputToMCC(t *testing.T) {
 	}
 }
 
+func Test_copyMCCConfigInputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		setupDirs   func(t *testing.T, configDir string)
+		expectFiles []string
+		expectError bool
+	}{
+		{
+			name: "When config directory has both config files, it should copy them to mcc",
+			setupDirs: func(t *testing.T, configDir string) {
+				g := NewWithT(t)
+				g.Expect(os.WriteFile(filepath.Join(configDir, "cluster-apiserver-config.yaml"), []byte("apiserver-config"), 0644)).To(Succeed())
+				g.Expect(os.WriteFile(filepath.Join(configDir, "image-config.yaml"), []byte("image-config"), 0644)).To(Succeed())
+			},
+			expectFiles: []string{"cluster-apiserver-config.yaml", "image-config.yaml"},
+		},
+		{
+			name: "When cluster-apiserver-config.yaml is missing, it should return an error",
+			setupDirs: func(t *testing.T, configDir string) {
+				g := NewWithT(t)
+				g.Expect(os.WriteFile(filepath.Join(configDir, "image-config.yaml"), []byte("image-config"), 0644)).To(Succeed())
+			},
+			expectError: true,
+		},
+		{
+			name: "When image-config.yaml is missing, it should return an error",
+			setupDirs: func(t *testing.T, configDir string) {
+				g := NewWithT(t)
+				g.Expect(os.WriteFile(filepath.Join(configDir, "cluster-apiserver-config.yaml"), []byte("apiserver-config"), 0644)).To(Succeed())
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			tmpDir := t.TempDir()
+			configDir := filepath.Join(tmpDir, "config")
+			mccDir := filepath.Join(tmpDir, "mcc")
+			g.Expect(os.MkdirAll(configDir, 0755)).To(Succeed())
+			g.Expect(os.MkdirAll(mccDir, 0755)).To(Succeed())
+
+			tt.setupDirs(t, configDir)
+
+			err := copyMCCConfigInputs(configDir, mccDir)
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+
+			g.Expect(err).NotTo(HaveOccurred())
+			for _, f := range tt.expectFiles {
+				_, err := os.Stat(filepath.Join(mccDir, f))
+				g.Expect(err).NotTo(HaveOccurred(), "expected file %s to exist in mccDir", f)
+			}
+		})
+	}
+}
+
 func TestInvokeFeatureGateRenderScript(t *testing.T) {
 	t.Parallel()
 

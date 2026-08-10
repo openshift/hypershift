@@ -126,6 +126,9 @@ spec:
 	expectedGlobalConfigString := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
 `
+	// For release versions >= 4.23.0, the apiserver config is additionally included.
+	expectedGlobalConfigStringWithAPIServer := expectedGlobalConfigString + `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"servingCerts":{},"clientCA":{"name":""},"encryption":{},"audit":{}},"status":{}}
+`
 
 	hostedCluster := &hyperv1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{},
@@ -148,6 +151,7 @@ spec:
 		hostedCluster              *hyperv1.HostedCluster
 		config                     []crclient.Object
 		expectedMCORawConfig       string
+		expectedGlobalConfig       string
 		client                     bool
 		expectedHash               string
 		expectedHashWithoutVersion string
@@ -157,6 +161,7 @@ spec:
 			name:                       "When all input is given it should not return an error",
 			expectedHash:               "83935368",
 			expectedHashWithoutVersion: "0db5756d",
+			expectedGlobalConfig:       expectedGlobalConfigString,
 			nodePool:                   &hyperv1.NodePool{},
 			releaseImage: &releaseinfo.ReleaseImage{
 				ImageStream: &imageapi.ImageStream{
@@ -189,6 +194,7 @@ spec:
 			name:                       "When nodepool has configs it should populate mcoRawConfig ",
 			expectedHash:               "af67f27c",
 			expectedHashWithoutVersion: "fef02451",
+			expectedGlobalConfig:       expectedGlobalConfigString,
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -254,6 +260,7 @@ spec:
 			name:                       "When release version is 4.18.0 with no osImageStream it should produce baseline hash",
 			expectedHash:               "83935368",
 			expectedHashWithoutVersion: "0db5756d",
+			expectedGlobalConfig:       expectedGlobalConfigString,
 			nodePool:                   &hyperv1.NodePool{},
 			releaseImage: &releaseinfo.ReleaseImage{
 				ImageStream: &imageapi.ImageStream{
@@ -270,6 +277,7 @@ spec:
 			name:                       "When osImageStream is set to version-derived default it should produce the same hash as no stream",
 			expectedHash:               "83935368",
 			expectedHashWithoutVersion: "0db5756d",
+			expectedGlobalConfig:       expectedGlobalConfigString,
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
@@ -288,8 +296,9 @@ spec:
 		},
 		{
 			name:                       "When osImageStream is set to non-default it should produce a different hash",
-			expectedHash:               "ccd46cc1",
+			expectedHash:               "4ecbeb73",
 			expectedHashWithoutVersion: "3a158178",
+			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-9"},
@@ -308,8 +317,9 @@ spec:
 		},
 		{
 			name:                       "When release version is 5.0.0 with no osImageStream it should normalize rhelStream to empty",
-			expectedHash:               "ff80e2c8",
+			expectedHash:               "2d564196",
 			expectedHashWithoutVersion: "0db5756d",
+			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool:                   &hyperv1.NodePool{},
 			releaseImage: &releaseinfo.ReleaseImage{
 				ImageStream: &imageapi.ImageStream{
@@ -324,8 +334,9 @@ spec:
 		},
 		{
 			name:                       "When osImageStream is rhel-10 on 5.0.0 it should normalize to empty and match unset hash",
-			expectedHash:               "ff80e2c8",
+			expectedHash:               "2d564196",
 			expectedHashWithoutVersion: "0db5756d",
+			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					OSImageStream: hyperv1.OSImageStreamReference{Name: "rhel-10"},
@@ -344,8 +355,9 @@ spec:
 		},
 		{
 			name:                       "When runc ContainerRuntimeConfig on 5.0.0 with explicit rhel-9, it should normalize rhelStream to empty",
-			expectedHash:               "72ea1773",
+			expectedHash:               "8dc0d4f5",
 			expectedHashWithoutVersion: "6d5a7b66",
+			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -373,8 +385,9 @@ spec:
 		},
 		{
 			name:                       "When runc ContainerRuntimeConfig on 5.0.0 with no osImageStream, it should match explicit rhel-9 hash",
-			expectedHash:               "72ea1773",
+			expectedHash:               "8dc0d4f5",
 			expectedHashWithoutVersion: "6d5a7b66",
+			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -488,7 +501,7 @@ spec:
 			}
 
 			if tc.hostedCluster.Spec.Configuration != nil {
-				if diff := cmp.Diff(cg.globalConfig, expectedGlobalConfigString); diff != "" {
+				if diff := cmp.Diff(cg.globalConfig, tc.expectedGlobalConfig); diff != "" {
 					t.Errorf("actual config differs from expected: %s", diff)
 				}
 			}
@@ -1935,10 +1948,15 @@ func TestGlobalConfigString(t *testing.T) {
 	expectedGlobalConfigStringWithValues := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"httpProxy":"proxy","noProxy":"noProxy","trustedCA":{"name":""}},"status":{"httpProxy":"proxy","noProxy":".cluster.local,.local,.svc,127.0.0.1,localhost,noProxy"}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"externalRegistryHostnames":["external registry"],"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
 `
+	expectedGlobalConfigStringWithAPIServer := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"servingCerts":{},"clientCA":{"name":""},"encryption":{},"audit":{}},"status":{}}
+`
 
 	testCases := []struct {
 		name           string
 		globalConfig   *hyperv1.ClusterConfiguration
+		releaseImage   *releaseinfo.ReleaseImage
 		expectedOutput string
 	}{
 		// Expected behavior for backward compatibility for empty values is:
@@ -1946,6 +1964,7 @@ func TestGlobalConfigString(t *testing.T) {
 		{
 			name:           "When Empty GlobalConfig it should return serialized string honoring backward compatibility expectation (see code comment)",
 			globalConfig:   &hyperv1.ClusterConfiguration{},
+			releaseImage:   &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"}}},
 			expectedOutput: expectedGlobalConfigStringWhenEmpty,
 		},
 		{
@@ -1957,6 +1976,7 @@ func TestGlobalConfigString(t *testing.T) {
 				Image:          &configv1.ImageSpec{},
 				Proxy:          &configv1.ProxySpec{},
 			},
+			releaseImage:   &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"}}},
 			expectedOutput: expectedGlobalConfigStringWhenEmpty,
 		},
 		{
@@ -1979,7 +1999,14 @@ func TestGlobalConfigString(t *testing.T) {
 					TrustedCA:          configv1.ConfigMapNameReference{},
 				},
 			},
+			releaseImage:   &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"}}},
 			expectedOutput: expectedGlobalConfigStringWithValues,
+		},
+		{
+			name:           "When release image is >= 4.23 the apiserver is included in the global config string",
+			globalConfig:   &hyperv1.ClusterConfiguration{},
+			releaseImage:   &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.23.0"}}},
+			expectedOutput: expectedGlobalConfigStringWithAPIServer,
 		},
 	}
 
@@ -1992,7 +2019,7 @@ func TestGlobalConfigString(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			output, err := globalConfigString(hcluster)
+			output, err := globalConfigString(hcluster, tc.releaseImage)
 			g.Expect(err).ToNot(HaveOccurred())
 			if diff := cmp.Diff(output, tc.expectedOutput); diff != "" {
 				t.Errorf("actual config differs from expected: %s", diff)
