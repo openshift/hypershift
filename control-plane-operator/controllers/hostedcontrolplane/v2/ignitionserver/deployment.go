@@ -3,7 +3,6 @@ package ignitionserver
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
@@ -23,9 +22,10 @@ import (
 
 func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
-	profile := hcp.Spec.Configuration.GetTLSSecurityProfile()
-	ianaCiphers := config.CipherSuites(profile)
-	minVersionStr := config.MinTLSVersion(profile)
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.FeatureGate != nil {
 		featureGate := &configv1.FeatureGate{
@@ -59,11 +59,8 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
 
-		if minVersionStr != "" {
-			c.Args = append(c.Args, "--tls-min-version", minVersionStr)
-		}
-		if len(ianaCiphers) > 0 {
-			c.Args = append(c.Args, "--tls-cipher-suites", strings.Join(ianaCiphers, ","))
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
 		}
 
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
