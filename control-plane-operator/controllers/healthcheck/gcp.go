@@ -36,7 +36,7 @@ func gcpHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 	if err != nil {
 		setGCPConditions(hcp, metav1.ConditionUnknown, hyperv1.StatusUnknownReason,
 			"GCP compute client is not available")
-		return nil
+		return nil //nolint:nilerr // missing compute client is not a reconciler error; conditions are set to Unknown
 	}
 
 	project := hcp.Spec.Platform.GCP.Project

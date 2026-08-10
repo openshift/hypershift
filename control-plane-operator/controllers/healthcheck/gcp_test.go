@@ -11,12 +11,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"golang.org/x/oauth2"
-	"google.golang.org/api/googleapi"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"golang.org/x/oauth2"
+	"google.golang.org/api/googleapi"
 )
 
 func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
@@ -241,28 +241,28 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 		{
 			name: "oauth2 RetrieveError with 401 is permanent",
 			err: &oauth2.RetrieveError{
-				Response: &http.Response{StatusCode: 401},
+				Response: &http.Response{StatusCode: http.StatusUnauthorized},
 			},
 			permanent: true,
 		},
 		{
 			name: "oauth2 RetrieveError with 400 is permanent (bad WIF config)",
 			err: &oauth2.RetrieveError{
-				Response: &http.Response{StatusCode: 400},
+				Response: &http.Response{StatusCode: http.StatusBadRequest},
 			},
 			permanent: true,
 		},
 		{
 			name: "oauth2 RetrieveError with 403 is permanent (WIF pool deleted)",
 			err: &oauth2.RetrieveError{
-				Response: &http.Response{StatusCode: 403},
+				Response: &http.Response{StatusCode: http.StatusForbidden},
 			},
 			permanent: true,
 		},
 		{
 			name: "oauth2 RetrieveError with 429 is not permanent",
 			err: &oauth2.RetrieveError{
-				Response: &http.Response{StatusCode: 429},
+				Response: &http.Response{StatusCode: http.StatusTooManyRequests},
 			},
 			permanent: false,
 		},
