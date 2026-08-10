@@ -3,6 +3,8 @@ data:
   auth.json: '{"kind":"AuthenticationConfiguration","apiVersion":"apiserver.config.k8s.io/v1alpha1","jwt":[]}'
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: ffeb413214a9576439aced7d2b77e26b1a7f903790382fe9757a0620c6502f32
   name: auth-config
   namespace: hcp-namespace
   ownerReferences:

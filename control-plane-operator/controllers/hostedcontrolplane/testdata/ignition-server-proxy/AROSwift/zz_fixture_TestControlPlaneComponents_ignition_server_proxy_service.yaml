@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 765525d165e7e8d46418cb6326bba7e9585f2aa519512e0501fd0ad8e1b71e61
   name: ignition-server-proxy
   namespace: hcp-namespace
   ownerReferences:
