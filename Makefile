@@ -92,6 +92,11 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator kar
 .PHONY: update
 update: api-deps workspace-sync deps api api-docs clients docs-aggregate
 
+.PHONY: setup-hooks
+setup-hooks:
+	git config core.hooksPath hack/tools/git-hooks
+	@echo "Git hooks configured. Hooks in hack/tools/git-hooks/ will run for all worktrees."
+
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/v2/cmd/golangci-lint

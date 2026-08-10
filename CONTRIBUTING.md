@@ -16,9 +16,8 @@ The following guidelines will help ensure a smooth contribution process for both
 
 > **Tip: Install pre-commit hooks**
 >
-> Install `pre-commit` to automatically catch issues before committing. This helps catch spelling mistakes, formatting issues, and test failures early in your development process.
+> Install `pre-commit` ([installation instructions](https://pre-commit.com/#install)) and run `make setup-hooks` to automatically catch issues before committing. This helps catch spelling mistakes, formatting issues, and test failures early in your development process.
 >
-> * [Installation instructions](https://pre-commit.com/#install)
 > * [HyperShift-specific tips](docs/content/contribute/precommit-hook-help.md)
 
 ## Creating a Pull Request

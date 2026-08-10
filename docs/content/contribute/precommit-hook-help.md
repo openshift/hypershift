@@ -5,15 +5,21 @@ that catches the most common CI failures. Full verification (staticcheck, lintin
 Actions. The following sections walk you through how to install the hooks, what they do, and how to bypass them.
 
 ## Installing precommit hooks
-Once you have precommit installed on your machine([see this for more info](https://pre-commit.com/#install)), it's quite simple to install the precommit hooks.
+
+First, ensure you have `pre-commit` installed on your machine ([see this for more info](https://pre-commit.com/#install)).
+
+To install the hooks, run:
 
 ```shell
-% pre-commit install
-pre-commit installed at .git/hooks/pre-commit
-pre-commit installed at .git/hooks/pre-push
+% make setup-hooks
+Git hooks configured. Hooks in hack/tools/git-hooks/ will run for all worktrees.
 ```
 
-The hooks for each stage are defined in the `.pre-commit-config.yaml` file at the base of the HyperShift repo.
+This sets up hooks that work across all git worktrees. If you work in multiple worktrees, you only need to run this command once — it applies to the main checkout and all worktrees.
+
+The hooks for each stage are defined in the `.pre-commit-config.yaml` file at the base of the HyperShift repo. The wrapper scripts that delegate to `pre-commit` live in `hack/tools/git-hooks/`.
+
+**Note:** Do not use `pre-commit install` directly — it writes hooks to `.git/hooks/`, which won't work in worktrees. Use `make setup-hooks` instead.
 
 ## What runs on commit (pre-commit stage)
 
@@ -39,13 +45,14 @@ Full verification (staticcheck, golangci-lint, go vet, CRD schema checks, etc.) 
 run in GitHub Actions on your pull request.
 
 ## Uninstalling precommit hooks
-Sometimes it might be useful to turn off the precommit hooks briefly.
+
+To disable hooks, unset the `core.hooksPath` config:
 
 ```shell
-% pre-commit uninstall
-pre-commit uninstalled
-pre-push uninstalled
+% git config --unset core.hooksPath
 ```
+
+To re-enable them later, run `make setup-hooks` again.
 
 ## Bypassing precommit hooks
 Sometimes you may want to bypass the precommit hooks on a `git push` command, for example, if you just updated something really minor, updating your local `main` branch, or just needed to rerun a `go mod tidy` command, etc. To ignore the `pre-push` hooks, just add the `--no-verify` flag to your command.

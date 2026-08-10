@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Wrapper for pre-push hook — tracked in-repo so hooks work in all worktrees.
+#
+# Git resolves hooks from $GIT_DIR/hooks/, which for worktrees is per-worktree.
+# By setting core.hooksPath to this tracked directory, all worktrees share hooks.
+#
+# See docs/content/contribute/precommit-hook-help.md for setup info.
+
+HOOK_TYPE="pre-push"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+if command -v pre-commit > /dev/null; then
+    exec pre-commit hook-impl --config=.pre-commit-config.yaml \
+      --hook-type="$HOOK_TYPE" --hook-dir "$HERE" -- "$@"
+else
+    echo '`pre-commit` not found. Install it: https://pre-commit.com/#install' 1>&2
+    exit 1
+fi
