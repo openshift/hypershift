@@ -59,7 +59,9 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	if err != nil {
 		return err
 	}
-	adaptConfig(ocmConfig, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities, featureGates, existingControllers)
+	if err := adaptConfig(ocmConfig, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities, featureGates, existingControllers); err != nil {
+		return err
+	}
 	configStr, err := k8sutil.SerializeResource(ocmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
@@ -68,7 +70,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities, featureGates []string, existingControllers []string) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities, featureGates []string, existingControllers []string) error {
 	cfg.Build.ImageTemplateFormat.Format = releaseImageProvider.GetImage("docker-builder")
 	cfg.Deployer.ImageTemplateFormat.Format = releaseImageProvider.GetImage("deployer")
 
@@ -123,12 +125,14 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configurat
 		cfg.Ingress.IngressIPNetworkCIDR = cidrs[0]
 	}
 
-	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
-	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
+	if err := config.ApplyServingInfoFromTLSProfile(&cfg.ServingInfo.ServingInfo, configuration.GetTLSSecurityProfile()); err != nil {
+		return err
+	}
 
 	if len(featureGates) > 0 {
 		cfg.FeatureGates = featureGates
 	}
+	return nil
 }
 
 func hasBuildDefaults(cfg *configv1.Build) bool {

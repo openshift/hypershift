@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
+	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,9 +62,12 @@ func TestAdaptOAuthConfig(t *testing.T) {
 		cpEndpointPort          int32
 		kasDNSName              string
 		loginURLOverride        string
+		tlsProfile              *configv1.TLSSecurityProfile
 		expectedLoginURL        string
 		expectedMasterURL       string
 		expectedMasterPublicURL string
+		expectError             bool
+		expectedErrSubstr       string
 	}{
 		{
 			name:                    "When no custom DNS is set, it should use the control plane endpoint for LoginURL",
@@ -128,6 +132,16 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
 			expectedMasterPublicURL: "https://[2001:db8::2]:443",
 		},
+		{
+			name:              "When TLS profile is Custom with nil Custom field, it should return error",
+			oauthHost:         "oauth.example.com",
+			oauthPort:         443,
+			cpEndpointHost:    "api.example.com",
+			cpEndpointPort:    6443,
+			tlsProfile:        &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType},
+			expectError:       true,
+			expectedErrSubstr: "Custom but Custom field is nil",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -154,6 +168,13 @@ func TestAdaptOAuthConfig(t *testing.T) {
 					hyperv1.OauthLoginURLOverrideAnnotation: tc.loginURLOverride,
 				}
 			}
+			if tc.tlsProfile != nil {
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						TLSSecurityProfile: tc.tlsProfile,
+					},
+				}
+			}
 
 			cpContext := component.WorkloadContext{
 				HCP: hcp,
@@ -166,8 +187,15 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cfg := &osinv1.OsinServerConfig{}
 			cfg.OAuthConfig = osinv1.OAuthConfig{}
 
-			adaptOAuthConfig(cpContext, cfg)
+			err := adaptOAuthConfig(cpContext, cfg)
 
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrSubstr))
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(cfg.OAuthConfig.LoginURL).To(Equal(tc.expectedLoginURL))
 			g.Expect(cfg.OAuthConfig.MasterURL).To(Equal(tc.expectedMasterURL))
 			g.Expect(cfg.OAuthConfig.MasterPublicURL).To(Equal(tc.expectedMasterPublicURL))

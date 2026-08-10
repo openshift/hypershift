@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c81afa853a8e631acc5b71b23bf7f1fc9d59c37e8b0501f88434af4d6b66f22e
+    hypershift.openshift.io/desired-state-hash: cb857ee2aab78e2629f805311d6793510d049a4338b3dcbde5519d7ea701cefe
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server
@@ -91,10 +91,8 @@ spec:
         - registry=override
         - --platform
         - IBMCloud
-        - --tls-min-version
-        - VersionTLS12
-        - --tls-cipher-suites
-        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /usr/bin/control-plane-operator
         - ignition-server

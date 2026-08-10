@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 7df09364a48afbc090fd02aa7c35e4ddbfc47ea5ad7ff2796baddbac15497bbf
+    hypershift.openshift.io/desired-state-hash: 98ab5d12009b289e64738428ff438826787f51b4a4cc34cf53469010987f41db
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server
@@ -91,10 +91,8 @@ spec:
         - registry=override
         - --platform
         - AWS
-        - --tls-min-version
-        - VersionTLS12
-        - --tls-cipher-suites
-        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /usr/bin/control-plane-operator
         - ignition-server

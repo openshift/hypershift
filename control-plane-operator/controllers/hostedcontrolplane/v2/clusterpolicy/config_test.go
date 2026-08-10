@@ -16,28 +16,30 @@ func TestAdaptConfig(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name            string
-		featureGates    []string
-		configuration   *hyperv1.ClusterConfiguration
-		expectedFG      []string
-		expectedMinTLS  string
-		expectedCiphers []string
+		name              string
+		featureGates      []string
+		configuration     *hyperv1.ClusterConfiguration
+		expectedFG        []string
+		expectedMinTLS    string
+		expectedCiphers   []string
+		expectError       bool
+		expectedErrSubstr string
 	}{
 		{
 			name:            "When feature gates are provided, it should set them on the config",
 			featureGates:    []string{"FeatureA=true", "FeatureB=false"},
 			configuration:   nil,
 			expectedFG:      []string{"FeatureA=true", "FeatureB=false"},
-			expectedMinTLS:  config.MinTLSVersion(nil),
-			expectedCiphers: config.CipherSuites(nil),
+			expectedMinTLS:  string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion),
+			expectedCiphers: config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers),
 		},
 		{
 			name:            "When feature gates are empty, it should set empty slice",
 			featureGates:    []string{},
 			configuration:   nil,
 			expectedFG:      []string{},
-			expectedMinTLS:  config.MinTLSVersion(nil),
-			expectedCiphers: config.CipherSuites(nil),
+			expectedMinTLS:  string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion),
+			expectedCiphers: config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers),
 		},
 		{
 			name:            "When configuration is nil, it should set default TLS values",
@@ -45,7 +47,7 @@ func TestAdaptConfig(t *testing.T) {
 			configuration:   nil,
 			expectedFG:      []string{"SomeGate=true"},
 			expectedMinTLS:  string(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].MinTLSVersion),
-			expectedCiphers: config.CipherSuites(nil),
+			expectedCiphers: config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers),
 		},
 		{
 			name:         "When configuration has a TLS security profile, it should set MinTLSVersion and CipherSuites",
@@ -57,11 +59,22 @@ func TestAdaptConfig(t *testing.T) {
 					},
 				},
 			},
-			expectedFG:     []string{"Gate1=true"},
-			expectedMinTLS: string(configv1.TLSProfiles[configv1.TLSProfileOldType].MinTLSVersion),
-			expectedCiphers: config.CipherSuites(&configv1.TLSSecurityProfile{
-				Type: configv1.TLSProfileOldType,
-			}),
+			expectedFG:      []string{"Gate1=true"},
+			expectedMinTLS:  string(configv1.TLSProfiles[configv1.TLSProfileOldType].MinTLSVersion),
+			expectedCiphers: config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileOldType].Ciphers),
+		},
+		{
+			name:         "When TLS profile is Custom with nil Custom field, it should return error",
+			featureGates: []string{"Gate1=true"},
+			configuration: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+					},
+				},
+			},
+			expectError:       true,
+			expectedErrSubstr: "Custom but Custom field is nil",
 		},
 	}
 
@@ -74,8 +87,15 @@ func TestAdaptConfig(t *testing.T) {
 				ServingInfo: &configv1.HTTPServingInfo{},
 			}
 
-			adaptConfig(cfg, tc.configuration, tc.featureGates)
+			err := adaptConfig(cfg, tc.configuration, tc.featureGates)
 
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrSubstr))
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(cfg.FeatureGates).To(Equal(tc.expectedFG))
 			g.Expect(cfg.ServingInfo.MinTLSVersion).To(Equal(tc.expectedMinTLS))
 			g.Expect(cfg.ServingInfo.CipherSuites).To(Equal(tc.expectedCiphers))
