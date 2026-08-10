@@ -2915,6 +2915,8 @@ type OperatorConfiguration struct {
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 // +kubebuilder:printcolumn:name="CP Progress",type="string",JSONPath=".status.controlPlaneVersion.history[0].state",description="Control Plane Progress",priority=1
 // +kubebuilder:printcolumn:name="DP Progress",type="string",JSONPath=".status.version.history[0].state",description="Data Plane Progress",priority=1
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec) || !has(oldSelf.spec.infraID) || (has(self.spec) && has(self.spec.infraID))",message="infraID cannot be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec) || !has(oldSelf.spec.clusterID) || (has(self.spec) && has(self.spec.clusterID))",message="clusterID cannot be removed once set"
 type HostedCluster struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is the metadata for the HostedCluster.
