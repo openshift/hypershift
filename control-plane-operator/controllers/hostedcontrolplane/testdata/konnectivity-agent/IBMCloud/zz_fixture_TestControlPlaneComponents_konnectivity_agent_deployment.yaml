@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: f97b79143b4329ddd3fdc8339f8783e521f2038789439f7ca8445d0ed3919664
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: konnectivity-agent

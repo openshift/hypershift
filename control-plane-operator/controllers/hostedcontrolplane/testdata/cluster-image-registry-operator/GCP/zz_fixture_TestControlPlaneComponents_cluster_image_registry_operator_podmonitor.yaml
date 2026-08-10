@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 0c42d79b9667d147d1600ad2f250e5f2495ffe98c93862d4a2ae9d82ded4eae1
   name: cluster-image-registry-operator
   namespace: hcp-namespace
   ownerReferences:

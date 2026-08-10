@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 3c4e705df2c05a452148e894ee87ccfc3c7d1a7657d5b4eb6eed1a3da43ed025
   name: control-plane-pki-operator
   namespace: hcp-namespace
   ownerReferences:

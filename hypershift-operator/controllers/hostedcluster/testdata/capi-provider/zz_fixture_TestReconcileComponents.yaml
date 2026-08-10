@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
+    hypershift.openshift.io/desired-state-hash: 9e38a050997547dd945ae5ccec9c38002cd1b1470dda242dc235284a645cf147
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: capi-provider

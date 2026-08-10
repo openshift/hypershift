@@ -38,6 +38,8 @@ data:
       server kv test-kms-keyvault.vault.azure.net:443 resolvers azure_dns
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 9b43a10df3613933b3cda2de8e7d3c74b9f6ebc7f6e2efbe5564500bbd64ec8b
   name: router
   namespace: hcp-namespace
   ownerReferences:

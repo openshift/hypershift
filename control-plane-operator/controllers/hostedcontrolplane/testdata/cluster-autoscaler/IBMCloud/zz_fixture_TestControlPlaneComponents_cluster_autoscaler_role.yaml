@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 04a709a2cc57ef5a6ccaf70ee850a5295e55377db981b9f88c5cd9d08c95a201
   name: cluster-autoscaler
   namespace: hcp-namespace
   ownerReferences:

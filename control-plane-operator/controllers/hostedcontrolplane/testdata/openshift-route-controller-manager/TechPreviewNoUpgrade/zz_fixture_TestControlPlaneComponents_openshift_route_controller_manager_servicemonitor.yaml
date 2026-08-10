@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 2a30c2358331441f0bab39cc5cb5a80d939f10326cd204fd0e0bdcf5f93cf0b5
   name: openshift-route-controller-manager
   namespace: hcp-namespace
   ownerReferences:

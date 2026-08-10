@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 0a6b10b1afeed6d9da2b4aefc7e890b90aaa5007b7c13d1985a20880930d38d6
   name: ignition-server
   namespace: hcp-namespace
   ownerReferences:

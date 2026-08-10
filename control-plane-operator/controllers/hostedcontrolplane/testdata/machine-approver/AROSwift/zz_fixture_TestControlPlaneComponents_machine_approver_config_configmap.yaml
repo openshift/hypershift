@@ -5,6 +5,8 @@ data:
       disabled: false
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: df08fcee8576295ca7d4d3093ce03a670d57604f33085cfbf2ccd16ce48f0473
   name: machine-approver-config
   namespace: hcp-namespace
   ownerReferences:

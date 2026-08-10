@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: e8923fab479391449db40332560cfcb5f10f9f025c5c744f933f24e3c9f88583
   name: catalog-operator
   namespace: hcp-namespace
   ownerReferences:
