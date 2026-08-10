@@ -41,6 +41,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
 )
@@ -474,6 +475,40 @@ func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
 	return CredentialStatusUnknown
 }
 
+// ComputeGCPCredentialConditions computes the GCP credential conditions to set
+// on the HostedCluster by bubbling up ValidGCPWorkloadIdentity and
+// ValidGCPCredentials from the HostedControlPlane. Returns the conditions to
+// set and whether any condition changed from the current HC status. When the
+// HCP is nil or a condition is absent, Unknown is used as the default.
+func ComputeGCPCredentialConditions(hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (conditions []metav1.Condition, changed bool) {
+	for _, condType := range []hyperv1.ConditionType{
+		hyperv1.ValidGCPWorkloadIdentity,
+		hyperv1.ValidGCPCredentials,
+	} {
+		var cond *metav1.Condition
+		if hcp != nil {
+			cond = meta.FindStatusCondition(hcp.Status.Conditions, string(condType))
+		}
+		var fresh metav1.Condition
+		if cond == nil {
+			fresh = metav1.Condition{
+				Type:               string(condType),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hc.Generation,
+			}
+		} else {
+			fresh = *cond
+			fresh.ObservedGeneration = hc.Generation
+		}
+		if meta.SetStatusCondition(&hc.Status.Conditions, fresh) {
+			changed = true
+		}
+		conditions = append(conditions, fresh)
+	}
+	return conditions, changed
+}
+
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.
 // This ensures all required fields are present and properly formatted.
 func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {
@@ -536,17 +571,17 @@ func (GCP) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 	var errs []error
 	for i := range gcpMachineList.Items {
 		gcpMachine := &gcpMachineList.Items[i]
-		if gcpMachine.DeletionTimestamp.IsZero() ||
-			len(gcpMachine.Finalizers) == 0 {
+		if gcpMachine.DeletionTimestamp.IsZero() {
 			continue
 		}
-
-		gcpMachine.Finalizers = []string{}
+		if removed := controllerutil.RemoveFinalizer(gcpMachine, capigcp.MachineFinalizer); !removed {
+			continue
+		}
 		if err := c.Update(ctx, gcpMachine); err != nil {
-			errs = append(errs, fmt.Errorf("failed to remove finalizers from GCPMachine %s/%s: %w", gcpMachine.Namespace, gcpMachine.Name, err))
+			errs = append(errs, fmt.Errorf("failed to remove finalizer from GCPMachine %s/%s: %w", gcpMachine.Namespace, gcpMachine.Name, err))
 			continue
 		}
-		logger.Info("removed finalizers of gcpmachine because of invalid GCP credentials", "machine", client.ObjectKeyFromObject(gcpMachine))
+		logger.Info("removed CAPG finalizer from orphaned gcpmachine due to invalid GCP credentials", "machine", client.ObjectKeyFromObject(gcpMachine))
 	}
 	return utilerrors.NewAggregate(errs)
 }

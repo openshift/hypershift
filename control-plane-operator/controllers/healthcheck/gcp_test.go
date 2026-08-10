@@ -205,34 +205,31 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 			permanent: true,
 		},
 		{
-			name:      "403 googleapi error without transient reason is permanent",
+			name:      "403 googleapi error is not permanent (authorization, not authentication)",
 			err:       &googleapi.Error{Code: 403, Message: "Forbidden"},
-			permanent: true,
+			permanent: false,
 		},
 		{
-			name: "403 googleapi error with rateLimitExceeded is transient",
+			name: "403 googleapi error with rateLimitExceeded is not permanent",
 			err: &googleapi.Error{
-				Code:    403,
-				Message: "Rate Limit Exceeded",
-				Errors:  []googleapi.ErrorItem{{Reason: "rateLimitExceeded", Message: "Rate Limit Exceeded"}},
+				Code:   403,
+				Errors: []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}},
 			},
 			permanent: false,
 		},
 		{
-			name: "403 googleapi error with userRateLimitExceeded is transient",
+			name: "403 googleapi error with quotaExceeded is not permanent",
 			err: &googleapi.Error{
-				Code:    403,
-				Message: "User Rate Limit Exceeded",
-				Errors:  []googleapi.ErrorItem{{Reason: "userRateLimitExceeded", Message: "User Rate Limit Exceeded"}},
+				Code:   403,
+				Errors: []googleapi.ErrorItem{{Reason: "quotaExceeded"}},
 			},
 			permanent: false,
 		},
 		{
-			name: "403 googleapi error with dailyLimitExceeded is transient",
+			name: "403 googleapi error with accessNotConfigured is not permanent",
 			err: &googleapi.Error{
-				Code:    403,
-				Message: "Daily Limit Exceeded",
-				Errors:  []googleapi.ErrorItem{{Reason: "dailyLimitExceeded", Message: "Daily Limit Exceeded"}},
+				Code:   403,
+				Errors: []googleapi.ErrorItem{{Reason: "accessNotConfigured"}},
 			},
 			permanent: false,
 		},
@@ -249,9 +246,16 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 			permanent: true,
 		},
 		{
-			name: "oauth2 RetrieveError with 400 is permanent",
+			name: "oauth2 RetrieveError with 400 is permanent (bad WIF config)",
 			err: &oauth2.RetrieveError{
 				Response: &http.Response{StatusCode: 400},
+			},
+			permanent: true,
+		},
+		{
+			name: "oauth2 RetrieveError with 403 is permanent (WIF pool deleted)",
+			err: &oauth2.RetrieveError{
+				Response: &http.Response{StatusCode: 403},
 			},
 			permanent: true,
 		},

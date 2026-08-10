@@ -35,7 +35,7 @@ func gcpHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 	computeService, err := initGCPComputeClient(ctx)
 	if err != nil {
 		setGCPConditions(hcp, metav1.ConditionUnknown, hyperv1.StatusUnknownReason,
-			fmt.Sprintf("GCP compute client is not available: %v", err))
+			"GCP compute client is not available")
 		return nil
 	}
 
@@ -44,12 +44,12 @@ func gcpHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 	if _, err := computeService.Regions.Get(project, region).Context(ctx).Do(); err != nil {
 		if isPermanentGCPCredentialError(err) {
 			setGCPConditions(hcp, metav1.ConditionFalse, hyperv1.InvalidIdentityProvider,
-				fmt.Sprintf("GCP credential validation failed: %v", err))
+				"GCP credential validation failed")
 			return fmt.Errorf("error health checking GCP identity provider: %w", err)
 		}
 
 		setGCPConditions(hcp, metav1.ConditionUnknown, hyperv1.StatusUnknownReason,
-			fmt.Sprintf("GCP API error during credential validation: %v", err))
+			"GCP API error during credential validation")
 		return fmt.Errorf("error health checking GCP identity provider: %w", err)
 	}
 
@@ -75,36 +75,22 @@ func setGCPConditions(hcp *hyperv1.HostedControlPlane, status metav1.ConditionSt
 }
 
 // isPermanentGCPCredentialError returns true if the error indicates a
-// non-transient credential failure: HTTP 401 (always), HTTP 403 from the
-// Compute API only when it is NOT a rate-limit or quota issue, or a permanent
-// OAuth token-exchange failure (e.g. deleted WIF pool/provider).
+// non-transient credential failure. Only two categories qualify:
+//   - HTTP 401 from the Compute API (authentication rejected)
+//   - oauth2.RetrieveError with HTTP 400/401/403 (WIF token exchange failed,
+//     e.g. deleted pool/provider or invalid SA)
+//
+// Compute API 403 is NOT treated as permanent because it means authentication
+// succeeded but authorization failed (missing IAM permission, quota, etc.).
 func isPermanentGCPCredentialError(err error) bool {
 	var apiErr *googleapi.Error
-	if errors.As(err, &apiErr) {
-		if apiErr.Code == 401 {
-			return true
-		}
-		if apiErr.Code == 403 && !isTransientGCPReason(apiErr) {
-			return true
-		}
+	if errors.As(err, &apiErr) && apiErr.Code == 401 {
+		return true
 	}
 	var retrieveErr *oauth2.RetrieveError
 	if errors.As(err, &retrieveErr) && retrieveErr.Response != nil {
 		code := retrieveErr.Response.StatusCode
 		if code == 400 || code == 401 || code == 403 {
-			return true
-		}
-	}
-	return false
-}
-
-// isTransientGCPReason returns true if a 403 googleapi.Error carries a reason
-// that indicates a transient quota or rate-limit condition rather than a
-// permanent credential/permission failure.
-func isTransientGCPReason(apiErr *googleapi.Error) bool {
-	for _, item := range apiErr.Errors {
-		switch item.Reason {
-		case "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded":
 			return true
 		}
 	}

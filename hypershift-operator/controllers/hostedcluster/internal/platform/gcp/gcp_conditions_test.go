@@ -246,6 +246,125 @@ func TestNetworkConfigAccessSafety(t *testing.T) {
 	g.Expect(gcpCluster.Spec.Network.Name).To(BeNil())
 }
 
+func TestComputeGCPCredentialConditions(t *testing.T) {
+	tests := []struct {
+		name              string
+		hcConditions      []metav1.Condition
+		hcp               *hyperv1.HostedControlPlane
+		expectedChanged   bool
+		expectedWIFStatus metav1.ConditionStatus
+		expectedWIFReason string
+		expectedCredStatus metav1.ConditionStatus
+	}{
+		{
+			name: "HCP conditions are bubbled up to HC",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+					},
+				},
+			},
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionTrue,
+			expectedWIFReason:  hyperv1.AsExpectedReason,
+			expectedCredStatus: metav1.ConditionTrue,
+		},
+		{
+			name:               "HCP nil sets Unknown",
+			hcp:                nil,
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionUnknown,
+			expectedWIFReason:  hyperv1.StatusUnknownReason,
+			expectedCredStatus: metav1.ConditionUnknown,
+		},
+		{
+			name: "HCP with missing conditions sets Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{},
+				},
+			},
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionUnknown,
+			expectedWIFReason:  hyperv1.StatusUnknownReason,
+			expectedCredStatus: metav1.ConditionUnknown,
+		},
+		{
+			name: "HCP False conditions propagate to HC",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+					},
+				},
+			},
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionFalse,
+			expectedWIFReason:  hyperv1.InvalidIdentityProvider,
+			expectedCredStatus: metav1.ConditionFalse,
+		},
+		{
+			name: "No change when HC already has same conditions",
+			hcConditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: 3},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: 3},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+					},
+				},
+			},
+			expectedChanged:    false,
+			expectedWIFStatus:  metav1.ConditionTrue,
+			expectedWIFReason:  hyperv1.AsExpectedReason,
+			expectedCredStatus: metav1.ConditionTrue,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tt.hcConditions,
+				},
+			}
+
+			conditions, changed := ComputeGCPCredentialConditions(hc, tt.hcp)
+			g.Expect(changed).To(Equal(tt.expectedChanged))
+			g.Expect(conditions).To(HaveLen(2))
+
+			wifCond := findConditionByType(conditions, string(hyperv1.ValidGCPWorkloadIdentity))
+			g.Expect(wifCond).ToNot(BeNil())
+			g.Expect(wifCond.Status).To(Equal(tt.expectedWIFStatus))
+			g.Expect(wifCond.Reason).To(Equal(tt.expectedWIFReason))
+			g.Expect(wifCond.ObservedGeneration).To(Equal(int64(3)))
+
+			credCond := findConditionByType(conditions, string(hyperv1.ValidGCPCredentials))
+			g.Expect(credCond).ToNot(BeNil())
+			g.Expect(credCond.Status).To(Equal(tt.expectedCredStatus))
+			g.Expect(credCond.ObservedGeneration).To(Equal(int64(3)))
+		})
+	}
+}
+
+func findConditionByType(conditions []metav1.Condition, condType string) *metav1.Condition {
+	for i := range conditions {
+		if conditions[i].Type == condType {
+			return &conditions[i]
+		}
+	}
+	return nil
+}
+
 // TestServiceAccountEmailValidation tests that the regex pattern validation for service account emails is working correctly.
 // This addresses CodeRabbit feedback about hardening the service account email pattern.
 func TestServiceAccountEmailValidation(t *testing.T) {

@@ -542,14 +542,14 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					Name:              "test-xl-1",
 					Namespace:         "test-control-plane-namespace",
 					DeletionTimestamp: ptr.To(metav1.Now()),
-					Finalizers:        []string{"test", "testz"},
+					Finalizers:        []string{capigcp.MachineFinalizer, "other-controller-finalizer"},
 				},
 			},
 			&capigcp.GCPMachine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "test-xl-2",
 					Namespace:  "test-control-plane-namespace",
-					Finalizers: []string{"test", "testz"},
+					Finalizers: []string{capigcp.MachineFinalizer, "other-controller-finalizer"},
 				},
 			},
 		}
@@ -578,9 +578,10 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 
 		for _, gcpMachine := range gcpMachineList.Items {
 			if !gcpMachine.DeletionTimestamp.IsZero() {
-				g.Expect(gcpMachine.Finalizers).To(BeEmpty())
+				g.Expect(controllerutil.ContainsFinalizer(&gcpMachine, capigcp.MachineFinalizer)).To(BeFalse(), "CAPG finalizer should be removed")
+				g.Expect(gcpMachine.Finalizers).To(Equal([]string{"other-controller-finalizer"}), "other finalizers should be preserved")
 			} else {
-				g.Expect(gcpMachine.Finalizers).ToNot(BeEmpty())
+				g.Expect(gcpMachine.Finalizers).To(Equal([]string{capigcp.MachineFinalizer, "other-controller-finalizer"}))
 			}
 		}
 	})
@@ -607,7 +608,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		g.Expect(fakeClient.List(t.Context(), gcpMachineList)).To(Succeed())
 
 		for _, gcpMachine := range gcpMachineList.Items {
-			g.Expect(gcpMachine.Finalizers).To(Equal([]string{"test", "testz"}))
+			g.Expect(gcpMachine.Finalizers).To(Equal([]string{capigcp.MachineFinalizer, "other-controller-finalizer"}))
 		}
 	})
 
@@ -630,7 +631,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		g.Expect(fakeClient.List(t.Context(), gcpMachineList)).To(Succeed())
 
 		for _, gcpMachine := range gcpMachineList.Items {
-			g.Expect(gcpMachine.Finalizers).To(Equal([]string{"test", "testz"}))
+			g.Expect(gcpMachine.Finalizers).To(Equal([]string{capigcp.MachineFinalizer, "other-controller-finalizer"}))
 		}
 	})
 }
