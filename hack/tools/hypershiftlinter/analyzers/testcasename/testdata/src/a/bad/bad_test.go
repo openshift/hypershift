@@ -20,6 +20,14 @@ func TestBadNames(t *testing.T) {
 			want: "Y",
 		},
 		{
+			name: "when x, it should y", // want `test case name "when x, it should y" must match format "When <condition>, it should <expected behavior>"`
+			want: "y",
+		},
+		{
+			name: "When X it should Y", // want `test case name "When X it should Y" must match format "When <condition>, it should <expected behavior>"`
+			want: "Y",
+		},
+		{
 			name: "happy path", // want `test case name "happy path" must match format "When <condition>, it should <expected behavior>"`
 			want: "success",
 		},

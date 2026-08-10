@@ -49,9 +49,9 @@ func TestBuildAnalyzersNilSettingsEnablesAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got) != len(AllAnalyzers()) {
+	if len(got) != len(allAnalyzers()) {
 		t.Fatalf("expected all analyzers, got %d of %d: %s",
-			len(got), len(AllAnalyzers()), strings.Join(analyzerNames(got), ", "))
+			len(got), len(allAnalyzers()), strings.Join(analyzerNames(got), ", "))
 	}
 }
 
