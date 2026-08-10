@@ -239,28 +239,28 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 			permanent: false,
 		},
 		{
-			name: "oauth2 RetrieveError with 401 is permanent",
+			name: "When OAuth2 returns HTTP 401, it should classify the error as permanent",
 			err: &oauth2.RetrieveError{
 				Response: &http.Response{StatusCode: http.StatusUnauthorized},
 			},
 			permanent: true,
 		},
 		{
-			name: "oauth2 RetrieveError with 400 is permanent (bad WIF config)",
+			name: "When OAuth2 returns HTTP 400, it should classify the error as permanent",
 			err: &oauth2.RetrieveError{
 				Response: &http.Response{StatusCode: http.StatusBadRequest},
 			},
 			permanent: true,
 		},
 		{
-			name: "oauth2 RetrieveError with 403 is permanent (WIF pool deleted)",
+			name: "When OAuth2 returns HTTP 403, it should classify the error as permanent",
 			err: &oauth2.RetrieveError{
 				Response: &http.Response{StatusCode: http.StatusForbidden},
 			},
 			permanent: true,
 		},
 		{
-			name: "oauth2 RetrieveError with 429 is not permanent",
+			name: "When OAuth2 returns HTTP 429, it should not classify the error as permanent",
 			err: &oauth2.RetrieveError{
 				Response: &http.Response{StatusCode: http.StatusTooManyRequests},
 			},
