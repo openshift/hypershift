@@ -1,3 +1,7 @@
+---
+title: Other SDN providers
+---
+
 This document explains how to create a HostedCluster that runs an SDN provider different from OVNKubernetes. The document assumes that you already have the required infrastructure in place to create HostedClusters.
 
 !!! important

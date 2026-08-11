@@ -1,3 +1,7 @@
+---
+title: Worker Nodes
+---
+
 Regarding the worker nodes, if you are working on real bare metal, this step is crucial to ensure that the details set in the `BareMetalHost` are correctly configured. If not, you will need to debug why it's not functioning as expected.
 
 However, if you are working with virtual machines, you can follow these steps to create empty ones that will be consumed by the Metal3 operator. To achieve this, we will utilize Kcli.

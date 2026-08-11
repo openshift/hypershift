@@ -1,3 +1,7 @@
+---
+title: Network Manager Dispatcher
+---
+
 This script modifies the system DNS resolver to prioritize pointing to the `dnsmasq` service (configured later). This ensures that virtual machines can resolve the various domains, routes, and registries required for the different steps of the process.
 
 To enable this, you need to create a script named `forcedns` in `/etc/NetworkManager/dispatcher.d/` with the following content:

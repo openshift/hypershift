@@ -15,15 +15,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.x'
-      - name: Install documentation dependencies
-        run: pip install --require-hashes -r docs/requirements.txt
-        env:
-          PIP_CACHE_DIR: ${{ runner.temp }}/.pip-cache
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6.1.0
       - name: Build documentation
-        run: mkdocs build --strict
+        run: uv run --frozen zensical build --strict
         working-directory: docs
       - name: Save PR metadata
         run: echo "${{ github.event.pull_request.number }}" > docs/site/pr-number.txt

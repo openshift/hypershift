@@ -1,3 +1,7 @@
+---
+title: Expose Data Plane Ingress via MetalLB
+---
+
 ## Configure MetalLB for HostedCluster's Data Plane
 
 - Deploy the MetalLB Operator using the OLM, applying this manifest or using the UI Console:

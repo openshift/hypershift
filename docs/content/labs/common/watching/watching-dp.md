@@ -1,3 +1,7 @@
+---
+title: Watching the Data Plane
+---
+
 If you check the Hosted cluster side you can check how the Operators are progressing and what is the status. To do that we will use these commands
 
 ```bash
