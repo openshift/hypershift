@@ -21,6 +21,7 @@ import (
 	"github.com/aws/smithy-go"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -2421,4 +2422,267 @@ func TestReconcileHCPDeletion_WhenCRIsBeingDeleted_ItShouldReturnImmediately(t *
 
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(Equal(ctrl.Result{}))
+}
+
+func TestReconcileHCPDeletion_WhenSingleCRCleanupCompletes_ItShouldSetConditionOnHCP(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.NewTime(time.Now())
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+
+	awsEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "private-router",
+			Namespace:  "test-ns",
+			Finalizers: []string{finalizer},
+		},
+		Status: hyperv1.AWSEndpointServiceStatus{},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-hcp",
+			Namespace:         "test-ns",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"some-finalizer"},
+		},
+	}
+
+	mockCtrl := gomock.NewController(t)
+	mockBuilder := NewMockawsClientProvider(mockCtrl)
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+	mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
+	mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(awsEndpointService, hcp).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+
+	r := &AWSEndpointServiceReconciler{
+		Client:           fakeClient,
+		awsClientBuilder: mockBuilder,
+	}
+
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+	// Re-read so objects have ResourceVersion for OptimisticLock
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(awsEndpointService), awsEndpointService)).To(Succeed())
+
+	result, err := r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, ctrl.Log.WithName("test"))
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).To(Equal(ctrl.Result{}))
+
+	// Verify CR finalizer was removed
+	updatedAES := &hyperv1.AWSEndpointService{}
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(awsEndpointService), updatedAES)).To(Succeed())
+	g.Expect(controllerutil.ContainsFinalizer(updatedAES, finalizer)).To(BeFalse())
+
+	// Verify PrivateConnectivityCleanedUp condition was set on HCP
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), updatedHCP)).To(Succeed())
+	cond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+	g.Expect(cond).ToNot(BeNil())
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+	g.Expect(cond.Reason).To(Equal(hyperv1.PrivateConnectivityCleanupCompleteReason))
+}
+
+func TestReconcileHCPDeletion_WhenOtherCRsStillHaveFinalizers_ItShouldNotSetCondition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.NewTime(time.Now())
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+
+	// This CR's cleanup completes
+	awsEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "private-router",
+			Namespace:  "test-ns",
+			Finalizers: []string{finalizer},
+		},
+		Status: hyperv1.AWSEndpointServiceStatus{},
+	}
+
+	// Another CR still has its finalizer (cleanup not done)
+	otherAES := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "kube-apiserver-private",
+			Namespace:  "test-ns",
+			Finalizers: []string{finalizer},
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-hcp",
+			Namespace:         "test-ns",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"some-finalizer"},
+		},
+	}
+
+	mockCtrl := gomock.NewController(t)
+	mockBuilder := NewMockawsClientProvider(mockCtrl)
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+	mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
+	mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(awsEndpointService, otherAES, hcp).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+
+	r := &AWSEndpointServiceReconciler{
+		Client:           fakeClient,
+		awsClientBuilder: mockBuilder,
+	}
+
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(awsEndpointService), awsEndpointService)).To(Succeed())
+
+	result, err := r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, ctrl.Log.WithName("test"))
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).To(Equal(ctrl.Result{}))
+
+	// Verify CR finalizer was removed from this CR
+	updatedAES := &hyperv1.AWSEndpointService{}
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(awsEndpointService), updatedAES)).To(Succeed())
+	g.Expect(controllerutil.ContainsFinalizer(updatedAES, finalizer)).To(BeFalse())
+
+	// Verify condition was NOT set on HCP (other CR still pending)
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), updatedHCP)).To(Succeed())
+	cond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+	g.Expect(cond).To(BeNil())
+}
+
+func TestReconcileHCPDeletion_WhenDeleteReturnsNotCompleted_ItShouldRequeue(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.NewTime(time.Now())
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+
+	awsEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "private-router",
+			Namespace:  "test-ns",
+			Finalizers: []string{finalizer},
+		},
+		Status: hyperv1.AWSEndpointServiceStatus{
+			SecurityGroupID: "sg-12345",
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-hcp",
+			Namespace:         "test-ns",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"some-finalizer"},
+		},
+	}
+
+	mockCtrl := gomock.NewController(t)
+	mockBuilder := NewMockawsClientProvider(mockCtrl)
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+	mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
+	mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+	// SG cleanup returns DependencyViolation — delete() returns (false, nil)
+	mockEC2.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeSecurityGroupsOutput{
+		SecurityGroups: []ec2types.SecurityGroup{{
+			GroupId: aws.String("sg-12345"),
+		}},
+	}, nil)
+	mockEC2.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil,
+		&smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has a dependent object"})
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(awsEndpointService, hcp).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+
+	r := &AWSEndpointServiceReconciler{
+		Client:           fakeClient,
+		awsClientBuilder: mockBuilder,
+	}
+
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(awsEndpointService), awsEndpointService)).To(Succeed())
+
+	result, err := r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, ctrl.Log.WithName("test"))
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.RequeueAfter).To(Equal(endpointServiceDeletionRequeueDuration))
+
+	// Verify finalizer still present
+	updatedAES := &hyperv1.AWSEndpointService{}
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(awsEndpointService), updatedAES)).To(Succeed())
+	g.Expect(controllerutil.ContainsFinalizer(updatedAES, finalizer)).To(BeTrue())
+}
+
+func TestReconcileHCPDeletion_WhenCRHasNoFinalizer_ItShouldSkipCleanupAndCheckAllCRs(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	now := metav1.NewTime(time.Now())
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+
+	// CR already cleaned up (no finalizer)
+	awsEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "private-router",
+			Namespace: "test-ns",
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-hcp",
+			Namespace:         "test-ns",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"some-finalizer"},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(awsEndpointService, hcp).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+
+	// No mock needed — should skip AWS cleanup entirely
+	r := &AWSEndpointServiceReconciler{
+		Client: fakeClient,
+	}
+
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+	result, err := r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, ctrl.Log.WithName("test"))
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).To(Equal(ctrl.Result{}))
+
+	// Verify condition was set (this is the only CR and it has no finalizer)
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(fakeClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), updatedHCP)).To(Succeed())
+	cond := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+	g.Expect(cond).ToNot(BeNil())
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 }
