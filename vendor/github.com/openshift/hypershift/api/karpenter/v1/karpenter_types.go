@@ -13,6 +13,11 @@ const (
 	// a HostedControlPlane with AutoNode enabled.
 	KarpenterProviderAWSImage = "hypershift.openshift.io/karpenter-provider-aws-image"
 
+	// KarpenterProviderAWSClusterNameTagKey overrides the tag key used to identify the cluster name
+	// on Karpenter-managed AWS resources. This maps to the upstream --cluster-name-tag-key /
+	// CLUSTER_NAME_TAG_KEY option. The default upstream value is "eks:eks-cluster-name".
+	KarpenterProviderAWSClusterNameTagKey = "hypershift.openshift.io/karpenter-provider-aws-cluster-name-tag-key"
+
 	// TokenSecretNodePoolAnnotation is used to annotate the Karpenter token secret with its hyperv1.NodePool namespaced name.
 	TokenSecretNodePoolAnnotation = "hypershift.openshift.io/nodePool"
 
