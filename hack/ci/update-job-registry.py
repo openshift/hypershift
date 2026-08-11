@@ -36,7 +36,7 @@ except ImportError:
 RELEASE_REPO = "https://github.com/openshift/release.git"
 JOBS_DIR = "ci-operator/jobs/openshift/hypershift"
 DEFAULT_OUTPUT = None
-DEFAULT_NUM_VERSIONS = 3
+DEFAULT_NUM_VERSIONS = 4
 
 # ---------------------------------------------------------------------------
 # Categorization rules — first match wins
@@ -47,26 +47,32 @@ PlatformRule = tuple[str, str, Callable[[str], bool]]
 # Each entry: (platform_key, display_name, matcher)
 # matcher receives the job suffix after "release-{VERSION}-periodics-".
 PLATFORM_RULES: list[PlatformRule] = [
-    ("mce",       "MCE Agent",        lambda s: s.startswith("mce-")),
-    ("hcm",       "HCM & Other",      lambda s: s.startswith("hcm-") or "gke" in s or "backuprestore" in s),
-    ("openstack", "OpenStack",        lambda s: "openstack" in s),
-    ("azure",     "Azure & KubeVirt", lambda s: any(k in s for k in ("aks", "azure", "kubevirt"))),
-    ("ibm",       "IBM / PowerVS",    lambda s: any(k in s for k in ("ibmcloud", "powervs"))),
-    ("aws",       "AWS",              lambda s: "aws" in s),
+    ("aro",       "ARO HCP (AKS)",     lambda s: "aks" in s or s.startswith("e2e-aro-")),
+    ("kubevirt",  "KubeVirt",          lambda s: "kubevirt" in s),
+    ("azure",     "Azure Self-Managed", lambda s: "azure" in s),
+    ("mce",       "MCE Agent",          lambda s: s.startswith("mce-")),
+    ("gke",       "GKE",                lambda s: "gke" in s),
+    ("hcm",       "HCM & Other",        lambda s: s.startswith("hcm-")),
+    ("openstack", "OpenStack",          lambda s: "openstack" in s),
+    ("ibm",       "IBM / PowerVS",      lambda s: any(k in s for k in ("ibmcloud", "powervs"))),
+    ("aws",       "AWS",                lambda s: "aws" in s),
 ]
 
 # Platforms with enough jobs per version to warrant splitting into separate
 # per-version categories. Others are combined across versions.
-VERSION_SPLIT_PLATFORMS: set[str] = {"aws", "azure"}
+VERSION_SPLIT_PLATFORMS: set[str] = {"aws", "aro", "kubevirt", "azure"}
 
 # Descriptions per platform key — {version} is substituted for split platforms.
 DESCRIPTIONS: dict[str, str] = {
     "aws":       "AWS hosted control planes — OCP {version}",
-    "azure":     "Azure AKS, Azure v2, and KubeVirt platforms — OCP {version}",
+    "aro":       "ARO HCP on AKS — OCP {version}",
+    "kubevirt":  "KubeVirt hosted control planes — OCP {version}",
+    "azure":     "Azure self-managed hosted control planes — OCP {version}",
     "openstack": "OpenStack hosted control planes",
     "ibm":       "IBM Cloud and PowerVS platforms",
     "mce":       "Agent-based bare metal installs via MCE",
-    "hcm":       "Hosted Cluster Manager, GKE, and backup/restore tests",
+    "gke":       "GKE hosted control planes",
+    "hcm":       "Hosted Cluster Manager tests",
 }
 
 
