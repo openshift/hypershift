@@ -33,23 +33,42 @@ spec:
               fieldPath: status.podIP
         image: hyperkube
         imagePullPolicy: IfNotPresent
+        # livenessProbe restarts a wedged-but-alive KAS. It uses livez?exclude=etcd so a
+        # slow/unavailable etcd does not trigger restart storms. The startupProbe gates
+        # this probe until KAS has started, so no initialDelaySeconds is needed.
+        # Budget to restart = failureThreshold(3) x periodSeconds(60) = 180s of sustained
+        # livez failure, with a 30s per-probe timeout for headroom under load.
         livenessProbe:
-          failureThreshold: 6
+          failureThreshold: 3
           httpGet:
             path: livez?exclude=etcd
             port: client
             scheme: HTTPS
-          initialDelaySeconds: 300
-          periodSeconds: 180
+          periodSeconds: 60
           successThreshold: 1
-          timeoutSeconds: 160
+          timeoutSeconds: 30
         name: kube-apiserver
         ports:
         - containerPort: 6443
           name: client
           protocol: TCP
+        # startupProbe gates liveness/readiness until KAS has finished starting.
+        # Budget = failureThreshold(36) x periodSeconds(10) = 360s, covering the previous
+        # livenessProbe initialDelaySeconds(300s) plus headroom for slow starts at scale.
+        startupProbe:
+          failureThreshold: 36
+          httpGet:
+            path: readyz
+            port: client
+            scheme: HTTPS
+          periodSeconds: 10
+          timeoutSeconds: 10
+        # readinessProbe ejects a healthy-but-slow KAS from Service endpoints without
+        # killing it. Budget = failureThreshold(6) x periodSeconds(10) = ~60s of sustained
+        # slow /readyz, tuned to avoid flapping healthy pods under load while still ejecting
+        # far faster than the previous 180s.
         readinessProbe:
-          failureThreshold: 18
+          failureThreshold: 6
           httpGet:
             path: readyz
             port: client
