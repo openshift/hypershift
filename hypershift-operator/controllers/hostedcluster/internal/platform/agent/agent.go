@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
@@ -24,6 +25,8 @@ import (
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -36,7 +39,15 @@ const (
 	capiProviderAgentRBACLabelValue = "true"
 )
 
-type Agent struct{}
+type Agent struct {
+	payloadVersion *semver.Version
+}
+
+func New(payloadVersion *semver.Version) *Agent {
+	return &Agent{
+		payloadVersion: payloadVersion,
+	}
+}
 
 func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
@@ -68,7 +79,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	return agentCluster, nil
 }
 
-func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPAgent
 	if envImage := os.Getenv(images.AgentCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
@@ -76,6 +87,18 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAgentProviderImage]; ok {
 		providerImage = override
 	}
+
+	args := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--health-probe-bind-address=:8081",
+		"--metrics-bind-address=127.0.0.1:8080",
+		"--leader-elect",
+		"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
+	}
+	if hcp != nil && p.payloadVersion != nil && (p.payloadVersion.Major >= 5 || (p.payloadVersion.Major == 4 && p.payloadVersion.Minor >= 23)) {
+		args = append(args, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+	}
+
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
@@ -96,13 +119,7 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							},
 						},
 						Command: []string{"/manager"},
-						Args: []string{
-							"--namespace", "$(MY_NAMESPACE)",
-							"--health-probe-bind-address=:8081",
-							"--metrics-bind-address=127.0.0.1:8080",
-							"--leader-elect",
-							"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
-						},
+						Args:    args,
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{

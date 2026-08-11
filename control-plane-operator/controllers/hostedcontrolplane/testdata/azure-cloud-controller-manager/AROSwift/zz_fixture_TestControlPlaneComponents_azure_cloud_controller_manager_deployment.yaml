@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d101942d7403ad1b699d056798aea2aa6a60e4775abdbbe8abf2eccc7c386f27
+    hypershift.openshift.io/desired-state-hash: 0f7a20ce338d58ddcfd2167e46ae5fd7911b3d79110aede81514d792b41c8055
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: azure-cloud-controller-manager
@@ -76,6 +76,8 @@ spec:
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
         - --v=4
         - --cluster-name=
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /bin/azure-cloud-controller-manager
         image: azure-cloud-controller-manager

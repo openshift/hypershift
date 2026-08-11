@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 1d3aeab5f87901acaf738b92736e051a0bfc5e8afc05ffe36fba5a0aad60da77
+    hypershift.openshift.io/desired-state-hash: 56bbab7fed989d94d98ab1607d90e37cb65319f7c6526e2e7126e01f1edd3f24
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: gcp-cloud-controller-manager
@@ -75,6 +75,7 @@ spec:
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
         - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --tls-min-version=VersionTLS13
         command:
         - /bin/gcp-cloud-controller-manager
         env:
