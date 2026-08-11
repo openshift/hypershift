@@ -108,7 +108,7 @@ spec:
                   min:
                     description: |-
                       min is the minimum number of nodes to maintain in the pool.
-                      Can be set to 0 for scale-from-zero for AWS and Azure platforms.
+                      Can be set to 0 for scale-from-zero for AWS, Azure and GCP platforms.
                       Must be >= 0 and <= .Max.
                     format: int32
                     minimum: 0
@@ -1545,10 +1545,11 @@ spec:
             - message: ImageType 'Windows' requires arch 'amd64' (AWS only)
               rule: '!has(self.platform.aws) || !has(self.platform.aws.imageType)
                 || self.platform.aws.imageType != ''Windows'' || self.arch == ''amd64'''
-            - message: Scale-from-zero (autoScaling.min=0) is currently only supported
-                for AWS and Azure platforms
+            - message: Scale-from-zero (autoScaling.min=0) is currently supported
+                for AWS, Azure and GCP platforms
               rule: '!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type
-                == ''AWS'' || self.platform.type == ''Azure'''
+                == ''AWS'' || self.platform.type == ''Azure'' || self.platform.type
+                == ''GCP'''
           status:
             description: status is the latest observed status of the NodePool.
             properties:
