@@ -256,7 +256,8 @@ var (
 					"arn:*:ec2:*::image/*",
 					"arn:*:ec2:*::snapshot/*",
 					"arn:*:ec2:*:*:security-group/*",
-					"arn:*:ec2:*:*:subnet/*"
+					"arn:*:ec2:*:*:subnet/*",
+					"arn:*:ec2:*:*:capacity-reservation/*"
 				],
 				"Action": [
 					"ec2:RunInstances",

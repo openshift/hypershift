@@ -208,6 +208,13 @@ func init() {
 		"Azure DiskEncryptionSet resource ID for disk encryption NodePool tests.",
 		false,
 	)
+	// Karpenter test environment variables
+	RegisterEnvVarWithDefault(
+		"PULL_SECRET_FILE",
+		"Path to pull secret file for release image lookups. Used by Karpenter version field tests.",
+		false,
+		"",
+	)
 	// External OIDC test environment variables
 	RegisterEnvVar(
 		"E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE",
@@ -217,6 +224,17 @@ func init() {
 	RegisterEnvVar(
 		"E2E_EXTERNAL_OIDC_TEST_USERS",
 		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
+		false,
+	)
+	RegisterEnvVar(
+		"RUN_KARPENTER_TESTS",
+		"When the value is exactly \"true\", it lowers the minimum hosted-cluster version from 4.23 to 4.22.",
+		false,
+	)
+	// TODO: Should this be a capability check?
+	RegisterEnvVar(
+		"AWS_MULTI_ARCH",
+		"Enable multi-arch cluster tests on AWS",
 		false,
 	)
 }
