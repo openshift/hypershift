@@ -982,7 +982,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	userReleaseImageProvider := imageprovider.New(userReleaseImage)
-	releaseImageProvider := imageprovider.New(releaseImage)
+	releaseImageProvider := imageprovider.NewWithRegistryOverrides(releaseImage, r.ReleaseProvider.GetRegistryOverrides())
 
 	var errs []error
 	if err := r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImageProvider, userReleaseImageProvider, infraStatus); err != nil {
