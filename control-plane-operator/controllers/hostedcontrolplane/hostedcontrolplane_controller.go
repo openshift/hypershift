@@ -460,7 +460,7 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 }
 
 // waitForPrivateConnectivityCleanup checks whether platform controllers have finished
-// cleaning up private connectivity resources (PrivateLink, PLS, PSC). Returns done=true
+// cleaning up private connectivity resources (AWS PrivateLink, Azure PLS). Returns done=true
 // when the condition is set or the timeout has elapsed.
 func (r *HostedControlPlaneReconciler) waitForPrivateConnectivityCleanup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
 	log := ctrl.LoggerFrom(ctx).WithValues("hcp", hcp.Name)

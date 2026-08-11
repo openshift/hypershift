@@ -44747,10 +44747,10 @@ desired platform are valid.
 A failure here is unlikely to resolve without the changing user input.</p>
 </td>
 </tr><tr><td><p>&#34;PrivateConnectivityCleanedUp&#34;</p></td>
-<td><p>PrivateConnectivityCleanedUp signals whether the platform&rsquo;s private connectivity
-resources (e.g. AWS PrivateLink endpoints, Azure Private Endpoints, GCP PSC
-endpoints) have been cleaned up during HostedControlPlane deletion. Set by the
-platform controller; gated with a timeout in the CPO deletion path.</p>
+<td><p>PrivateConnectivityCleanedUp is an HCP-only condition that signals whether
+the platform&rsquo;s private connectivity resources (e.g. AWS PrivateLink endpoints,
+Azure Private Endpoints) have been cleaned up during HostedControlPlane deletion.
+Set by the platform controller; gated with a timeout in the CPO deletion path.</p>
 </td>
 </tr><tr><td><p>&#34;PublicEndpointExposed&#34;</p></td>
 <td><p>PublicEndpointExposed indicates whether public API server endpoints are

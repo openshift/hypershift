@@ -46,6 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -371,6 +372,7 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			MaxConcurrentReconciles: 10,
 		}).
 		Watches(&hyperv1.HostedControlPlane{}, handler.EnqueueRequestsFromMapFunc(r.mapHCPToAWSEndpointServices())).
+		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
@@ -399,6 +401,32 @@ func (r *AWSEndpointServiceReconciler) mapHCPToAWSEndpointServices() handler.Map
 			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&awsEndpointServiceList.Items[i])})
 		}
 		return requests
+	}
+}
+
+func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+		logger := mgr.GetLogger()
+		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnAccessChange: new resource is not of type HostedControlPlane")
+			return
+		}
+		oldHCP, isOk := e.ObjectOld.(*hyperv1.HostedControlPlane)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnAccessChange: old resource is not of type HostedControlPlane")
+			return
+		}
+		if newHCP.Spec.Platform.AWS != nil && oldHCP.Spec.Platform.AWS != nil && newHCP.Spec.Platform.AWS.EndpointAccess != oldHCP.Spec.Platform.AWS.EndpointAccess {
+			awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+			if err := r.List(context.Background(), awsEndpointServiceList, client.InNamespace(newHCP.Namespace)); err != nil {
+				logger.Error(err, "enqueueOnAccessChange: cannot list awsendpointservices")
+				return
+			}
+			for i := range awsEndpointServiceList.Items {
+				q.Add(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&awsEndpointServiceList.Items[i])})
+			}
+		}
 	}
 }
 
