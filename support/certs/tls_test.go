@@ -172,6 +172,87 @@ func TestValidateKeyPairItempotency(t *testing.T) {
 	}
 }
 
+// TestReconcileSignedCertIdempotentWithDualStackIPs asserts that repeated
+// ReconcileSignedCert calls with the same ipv4-only or dual-stack IPs leave
+// tls.crt unchanged.
+func TestReconcileSignedCertIdempotentWithDualStackIPs(t *testing.T) {
+	t.Parallel()
+
+	ca := &corev1.Secret{Type: corev1.SecretTypeTLS}
+	if err := certs.ReconcileSelfSignedCA(ca, "root-ca", "ou"); err != nil {
+		t.Fatalf("failed to reconcile CA: %v", err)
+	}
+
+	dnsNames := []string{
+		"localhost",
+		"kubernetes",
+		"kubernetes.default",
+		"kubernetes.default.svc",
+		"kubernetes.default.svc.cluster.local",
+	}
+
+	testCases := []struct {
+		name string
+		ips  []string
+	}{
+		{
+			name: "ipv4-only",
+			ips:  []string{"127.0.0.1", "172.31.0.1", "172.20.0.1"},
+		},
+		{
+			// Mirrors dual-stack serviceNetwork SANs that trigger KAS cert churn.
+			name: "dual-stack",
+			ips:  []string{"127.0.0.1", "0:0:0:0:0:0:0:1", "172.31.0.1", "2001:780:1c6:601::1", "172.20.0.1"},
+		},
+	}
+
+	const reconcileIterations = 2
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			secret := &corev1.Secret{Type: corev1.SecretTypeTLS}
+			var firstCert, firstKey []byte
+
+			for i := 0; i < reconcileIterations; i++ {
+				if err := certs.ReconcileSignedCert(
+					secret,
+					ca,
+					"kubernetes",
+					[]string{"kubernetes"},
+					pki.X509UsageServerAuth,
+					corev1.TLSCertKey,
+					corev1.TLSPrivateKeyKey,
+					"",
+					dnsNames,
+					tc.ips,
+				); err != nil {
+					t.Fatalf("ReconcileSignedCert iteration %d failed: %v", i, err)
+				}
+
+				cert := secret.Data[corev1.TLSCertKey]
+				key := secret.Data[corev1.TLSPrivateKeyKey]
+				if len(cert) == 0 || len(key) == 0 {
+					t.Fatalf("iteration %d did not populate tls.crt/tls.key", i)
+				}
+
+				if i == 0 {
+					firstCert = append([]byte(nil), cert...)
+					firstKey = append([]byte(nil), key...)
+					continue
+				}
+
+				// Later iterations revalidate; they must be a no-op.
+				if !bytes.Equal(firstCert, cert) {
+					t.Fatalf("iteration %d regenerated tls.crt for %s (revalidation should have been a no-op)", i, tc.name)
+				}
+				if !bytes.Equal(firstKey, key) {
+					t.Fatalf("iteration %d regenerated tls.key for %s (revalidation should have been a no-op)", i, tc.name)
+				}
+			}
+		})
+	}
+}
+
 func abs(i int) int {
 	if i < 0 {
 		return -i
