@@ -2624,6 +2624,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.AWSMachinePublicIPs,
 		hyperv1.AWSKarpenterDefaultInstanceProfile,
 		hyperkarpenterv1.KarpenterProviderAWSImage,
+		hyperkarpenterv1.KarpenterOperatorImage,
 		hyperv1.KubeAPIServerGoAwayChance,
 		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,

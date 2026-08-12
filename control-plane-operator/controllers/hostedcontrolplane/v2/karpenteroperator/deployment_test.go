@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
@@ -259,14 +260,15 @@ func TestAdaptDeployment(t *testing.T) {
 
 func TestAdaptStandaloneDeployment(t *testing.T) {
 	testCases := []struct {
-		name          string
-		platformType  hyperv1.PlatformType
-		awsRegion     string
-		azureLocation string
-		infraID       string
-		rhobsEnabled  bool
-		images        map[string]string
-		validateFunc  func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext)
+		name           string
+		platformType   hyperv1.PlatformType
+		awsRegion      string
+		azureLocation  string
+		infraID        string
+		rhobsEnabled   bool
+		hcpAnnotations map[string]string
+		images         map[string]string
+		validateFunc   func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext)
 	}{
 		{
 			name:         "When platform is AWS, it should configure AWS-specific env vars and karpenter image",
@@ -388,6 +390,78 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 				g.Expect(podspec.FindEnvVar(rhobsmonitoring.EnvironmentVariable, container.Env)).To(BeNil())
 			},
 		},
+		{
+			name:         "When HCP has KarpenterOperatorImage annotation, it should override the image",
+			platformType: hyperv1.AWSPlatform,
+			awsRegion:    "us-west-2",
+			infraID:      "test-infra-override",
+			hcpAnnotations: map[string]string{
+				hyperkarpenterv1.KarpenterOperatorImage: "quay.io/custom/karpenter-operator:test",
+			},
+			images: map[string]string{
+				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
+				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = adaptStandaloneDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Image).To(Equal("quay.io/custom/karpenter-operator:test"))
+			},
+		},
+		{
+			name:         "When HCP has no KarpenterOperatorImage annotation, it should use the default image",
+			platformType: hyperv1.AWSPlatform,
+			awsRegion:    "us-west-2",
+			infraID:      "test-infra-default",
+			images: map[string]string{
+				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
+				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = adaptStandaloneDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Image).To(Equal("quay.io/openshift/karpenter-operator:latest"))
+			},
+		},
+		{
+			name:         "When HCP has empty KarpenterOperatorImage annotation, it should use the default image",
+			platformType: hyperv1.AWSPlatform,
+			awsRegion:    "us-west-2",
+			infraID:      "test-infra-empty-override",
+			hcpAnnotations: map[string]string{
+				hyperkarpenterv1.KarpenterOperatorImage: "",
+			},
+			images: map[string]string{
+				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
+				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = adaptStandaloneDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Image).To(Equal("quay.io/openshift/karpenter-operator:latest"))
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -402,8 +476,9 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-hcp",
-					Namespace: "test-namespace",
+					Name:        "test-hcp",
+					Namespace:   "test-namespace",
+					Annotations: tc.hcpAnnotations,
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: tc.infraID,
