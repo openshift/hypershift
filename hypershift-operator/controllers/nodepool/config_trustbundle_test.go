@@ -169,11 +169,10 @@ func TestRolloutTrustBundleHashes(t *testing.T) {
 }
 
 func TestEnqueueNodePoolsForHostedClusterReferencedConfig(t *testing.T) {
-	g := NewWithT(t)
-
-	hostedCluster := &hyperv1.HostedCluster{
+	hostedClusterWithBoth := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "test-hc"},
 		Spec: hyperv1.HostedClusterSpec{
+			AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca"},
 			Configuration: &hyperv1.ClusterConfiguration{
 				Proxy: &configv1.ProxySpec{
 					TrustedCA: configv1.ConfigMapNameReference{Name: "proxy-ca"},
@@ -187,15 +186,66 @@ func TestEnqueueNodePoolsForHostedClusterReferencedConfig(t *testing.T) {
 			ClusterName: "test-hc",
 		},
 	}
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "proxy-ca"},
-		Data:       map[string]string{certs.UserCABundleMapKey: "updated-bundle"},
+
+	testCases := []struct {
+		name          string
+		hostedCluster *hyperv1.HostedCluster
+		configMapName string
+		expectEnqueue bool
+	}{
+		{
+			name: "When ConfigMap is referenced as proxy.trustedCA, it should enqueue the NodePool",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "test-hc"},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{Name: "proxy-ca"},
+						},
+					},
+				},
+			},
+			configMapName: "proxy-ca",
+			expectEnqueue: true,
+		},
+		{
+			name: "When ConfigMap is referenced as additionalTrustBundle, it should enqueue the NodePool",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "test-hc"},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca"},
+				},
+			},
+			configMapName: "user-ca",
+			expectEnqueue: true,
+		},
+		{
+			name:          "When ConfigMap is not referenced by HostedCluster, it should not enqueue the NodePool",
+			hostedCluster: hostedClusterWithBoth,
+			configMapName: "unrelated-ca",
+			expectEnqueue: false,
+		},
 	}
 
-	reconciler := &NodePoolReconciler{
-		Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hostedCluster, nodePool).Build(),
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 
-	requests := reconciler.enqueueNodePoolsForConfig(t.Context(), configMap)
-	g.Expect(requests).To(ConsistOf(reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(nodePool)}))
+			configMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: tc.configMapName},
+				Data:       map[string]string{certs.UserCABundleMapKey: "updated-bundle"},
+			}
+
+			reconciler := &NodePoolReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedCluster, nodePool).Build(),
+			}
+
+			requests := reconciler.enqueueNodePoolsForConfig(t.Context(), configMap)
+			if tc.expectEnqueue {
+				g.Expect(requests).To(ConsistOf(reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(nodePool)}))
+			} else {
+				g.Expect(requests).To(BeEmpty())
+			}
+		})
+	}
 }
