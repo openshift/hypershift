@@ -63,9 +63,10 @@ const (
 )
 
 type backupRestorePlatformConfig struct {
-	excludeWorkloads     []string
-	postRestoreHook      func(testCtx *internal.TestContext) error
-	additionalNamespaces []string
+	excludeWorkloads      []string
+	postRestoreHook       func(testCtx *internal.TestContext) error
+	additionalNamespaces  []string
+	supportsHCPETCDBackup bool
 }
 
 var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfig{
@@ -81,6 +82,7 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 			}
 			return backuprestore.RunFixDrOidcIam(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, fixOpts)
 		},
+		supportsHCPETCDBackup: true,
 	},
 	hyperv1.AgentPlatform: {
 		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
@@ -94,8 +96,9 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 		postRestoreHook:  nil,
 	},
 	hyperv1.AzurePlatform: {
-		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator"},
-		postRestoreHook:  nil,
+		excludeWorkloads:      []string{"router", "karpenter", "karpenter-operator"},
+		postRestoreHook:       nil,
+		supportsHCPETCDBackup: true,
 	},
 }
 
@@ -188,6 +191,10 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				})
 			}
 
+			By("Waiting for BackupStorageLocation to be Available")
+			err := backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
+			Expect(err).NotTo(HaveOccurred())
+
 			// Create schedule first to test parallel execution of backup and schedule and
 			// to speed up the test execution.
 			By("Creating schedule")
@@ -200,7 +207,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				StorageLocation:   testCtx.ClusterName,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
 			}
-			err := backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
+			err = backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
 			Expect(err).NotTo(HaveOccurred())
 
 			DeferCleanup(func() {
@@ -230,8 +237,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 			err = backuprestore.WaitForBackupCompletion(testCtx, backupName)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for schedule to have one backup completed")
-			err = backuprestore.WaitForScheduleCompletion(testCtx, scheduleName)
+			By("Waiting for schedule to create a backup")
+			err = backuprestore.WaitForScheduleBackupCreated(testCtx, scheduleName)
 			Expect(err).NotTo(HaveOccurred())
 
 		})
@@ -395,10 +402,12 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 		Expect(testCtx).NotTo(BeNil())
 		hostedCluster := testCtx.GetHostedCluster()
 		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			Skip("etcd snapshot backup test only supported on AWS")
+
+		cfg, found := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
+		if !(found && cfg.supportsHCPETCDBackup) {
+			Skip(fmt.Sprintf("etcd snapshot backup test not supported on platform %s", hostedCluster.Spec.Platform.Type))
 		}
-		platformCfg = backupRestorePlatforms[hyperv1.AWSPlatform]
+		platformCfg = cfg
 
 		By("Checking if HCPEtcdBackup feature gate is enabled")
 		hcpEtcdBackupList := &hyperv1.HCPEtcdBackupList{}
