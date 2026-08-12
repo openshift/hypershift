@@ -5,7 +5,7 @@ metadata:
     build.appstudio.openshift.io/repo: https://github.com/openshift/hypershift?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    pipelinesascode.tekton.dev/on-target-branch: "[release-*]"
+    pipelinesascode.tekton.dev/on-target-branch: "[release-5.1]"
     pipelinesascode.tekton.dev/on-event: "[push]"
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
