@@ -214,7 +214,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 				hcp := baseHCP(hyperv1.AWSPlatform)
 				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
 					Region: "us-east-1",
-					ResourceTags: []hyperv1.AWSResourceTag{
+					ResourceTags: []hyperv1.AWSClusterResourceTag{
 						{Key: "team", Value: "platform"},
 						{Key: "kubernetes.io/cluster/test", Value: "owned"},
 						{Key: "env", Value: "prod"},

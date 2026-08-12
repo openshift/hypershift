@@ -19,7 +19,7 @@ func TestIsROSAHCP(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{
 									Key:   "red-hat-managed",
 									Value: "true",
@@ -38,7 +38,7 @@ func TestIsROSAHCP(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{
 									Key:   "environment",
 									Value: "production",
@@ -65,7 +65,7 @@ func TestIsROSAHCP(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{
 									Key:   "red-hat-managed",
 									Value: "false",
@@ -84,7 +84,7 @@ func TestIsROSAHCP(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{
 									Key:   "environment",
 									Value: "dev",
@@ -103,7 +103,7 @@ func TestIsROSAHCP(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{},
+							ResourceTags: []hyperv1.AWSClusterResourceTag{},
 						},
 					},
 				},

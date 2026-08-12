@@ -1372,7 +1372,7 @@ func TestAWSSecurityGroupTags(t *testing.T) {
 					InfraID: "test-infra",
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{},
+							ResourceTags: []hyperv1.AWSClusterResourceTag{},
 						},
 					},
 				},
@@ -1389,7 +1389,7 @@ func TestAWSSecurityGroupTags(t *testing.T) {
 					InfraID: "myinfra",
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{Key: "Name", Value: "custom-name"},
 								{Key: "kubernetes.io/cluster/myinfra", Value: "shared"},
 								{Key: "foo", Value: "bar"},

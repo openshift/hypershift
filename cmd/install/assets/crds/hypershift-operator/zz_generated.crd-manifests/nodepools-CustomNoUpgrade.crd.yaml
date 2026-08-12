@@ -619,38 +619,60 @@ spec:
                             == ''Spot'')'
                       resourceTags:
                         description: |-
-                          resourceTags is an optional list of additional tags to apply to AWS node
-                          instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
-                          Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
-
-                          These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
-                          These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
+                          resourceTags is a list of additional tags to apply to AWS resources created
+                          for the NodePool. Changes to this field will be propagated in-place to AWS
+                          EC2 instances and their initial EBS volumes. Volumes created by the storage
+                          operator and attached to instances after they are created do not get these
+                          tags applied.
+                          These are merged with HostedCluster-level tags. By default, HostedCluster
+                          tags take precedence when both specify the same key. To allow a NodePool
+                          tag to override a specific HostedCluster tag, set overridePolicy to "Allow"
+                          on the HostedCluster tag.
+                          Tags that only exist at the NodePool level (no conflict) are always applied.
+                          These take precedence over tags defined out of band (i.e., tags added
+                          manually or by other tools outside of HyperShift) in AWS in case of
+                          conflicts.
 
                           See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                           information on tagging AWS resources. AWS supports a maximum of 50 tags per
                           resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
                           for the user.
                         items:
-                          description: AWSResourceTag is a tag to apply to AWS resources
-                            created for the cluster.
+                          description: |-
+                            AWSNodePoolResourceTag is a tag to apply to AWS resources created for a
+                            NodePool. These tags are merged with HostedCluster-level tags. By default,
+                            HostedCluster tags take precedence when both specify the same key. To allow
+                            a NodePool tag to override a specific HostedCluster tag, set overridePolicy
+                            to "Allow" on the HostedCluster tag.
                           properties:
                             key:
-                              description: key is the key of the tag.
+                              description: |-
+                                key is the key of the tag.
+                                Must be between 1 and 128 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
                               maxLength: 128
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: 'key must only contain letters, digits, and
+                                  the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
                             value:
                               description: |-
                                 value is the value of the tag.
+                                Must be between 1 and 256 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
                                 requirements of all services.
                               maxLength: 256
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: 'value must only contain letters, digits,
+                                  and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
                           required:
                           - key
                           - value
