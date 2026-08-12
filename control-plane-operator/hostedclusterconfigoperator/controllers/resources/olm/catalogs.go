@@ -18,10 +18,6 @@ func ReconcileCommunityOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSourc
 	reconcileCatalogSource(cs, "community-operators:50051", p.CommunityOperatorsImage, "Community Operators", -400, p.OLMCatalogPlacement)
 }
 
-func ReconcileRedHatMarketplaceCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {
-	reconcileCatalogSource(cs, "redhat-marketplace:50051", p.RedHatMarketplaceImage, "Red Hat Marketplace", -300, p.OLMCatalogPlacement)
-}
-
 func ReconcileRedHatOperatorsCatalogSource(cs *operatorsv1alpha1.CatalogSource, p *OperatorLifecycleManagerParams) {
 	reconcileCatalogSource(cs, "redhat-operators:50051", p.RedHatOperatorsImage, "Red Hat Operators", -100, p.OLMCatalogPlacement)
 }

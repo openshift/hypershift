@@ -14,7 +14,6 @@ import (
 type OperatorLifecycleManagerParams struct {
 	CertifiedOperatorsImage string
 	CommunityOperatorsImage string
-	RedHatMarketplaceImage  string
 	RedHatOperatorsImage    string
 	OLMCatalogPlacement     hyperv1.OLMCatalogPlacement
 }
@@ -29,7 +28,6 @@ func NewOperatorLifecycleManagerParams(ctx context.Context, hcp *hyperv1.HostedC
 	params := &OperatorLifecycleManagerParams{
 		CertifiedOperatorsImage: catalogImages["certified-operators"],
 		CommunityOperatorsImage: catalogImages["community-operators"],
-		RedHatMarketplaceImage:  catalogImages["redhat-marketplace"],
 		RedHatOperatorsImage:    catalogImages["redhat-operators"],
 		OLMCatalogPlacement:     hcp.Spec.OLMCatalogPlacement,
 	}

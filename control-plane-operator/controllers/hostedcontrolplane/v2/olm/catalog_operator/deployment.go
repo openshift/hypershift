@@ -14,7 +14,7 @@ import (
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	noProxy := []string{"kube-apiserver"}
 	if cpContext.HCP.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
-		noProxy = append(noProxy, "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace")
+		noProxy = append(noProxy, "certified-operators", "community-operators", "redhat-operators")
 	}
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {

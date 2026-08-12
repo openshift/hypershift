@@ -35,5 +35,4 @@ The list of components restarted are listed below:
 * openshift-controller-manager
 * openshift-oauth-apiserver
 * packageserver
-* redhat-marketplace-catalog
 * redhat-operators-catalog
