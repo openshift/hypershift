@@ -1,0 +1,46 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/openshift/hypershift?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/on-target-branch: "[release-*]"
+    pipelinesascode.tekton.dev/on-event: "[push]"
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
+  creationTimestamp:
+  labels:
+    appstudio.openshift.io/application: hypershift-operator
+    appstudio.openshift.io/component: 'hypershift-operator-{{target_branch}}-nightly'
+    pipelines.appstudio.openshift.io/type: build
+  name: hypershift-operator-release-nightly-on-push
+  namespace: crt-redhat-acm-tenant
+spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    # The image tag should end up like 5.0.0-0-nightly-20260812-123456 depending on the target branch and push event timestamp
+    value: 'quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator/hypershift-operator-{{ target_branch }}-nightly-unverified:{{ cel:pac.target_branch.replace("release-", "") + "0.0-nightly-" + body.created_at.replace("T", "-").replace(":", "").replace("Z", "")}}}'
+  - name: build-platforms
+    value:
+    - linux/x86_64
+    - linux/arm64
+    - linux/ppc64le
+  - name: dockerfile
+    value: Containerfile.operator
+  - name: path-context
+    value: .
+  pipelineRef:
+    name: hypershift-common-operator-build
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-hypershift-operator-main
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+status: {}
