@@ -1,6 +1,6 @@
 ---
+name: konflux-build
 description: Create a manual Konflux build from a PR with configurable image expiry (default 30 days)
-argument-hint: "<PR-number-or-URL> [component-name or pipeline-file] [--non-expiring]"
 ---
 
 # Create a manual Konflux build from a PR

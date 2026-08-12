@@ -1,4 +1,5 @@
 ---
+name: fix-hypershift-repo-robot-pr
 description: Fix robot/bot PRs in HyperShift repo by regenerating files and creating a new PR with passing verification
 ---
 
@@ -242,12 +243,10 @@ This PR organizes changes into logical commits:
 
 ${ORIGINAL_BODY}
 
----
 
 **Original PR:** #${PR_NUMBER}
 **Bot Author:** ${AUTHOR_LOGIN}
 
----
 
 Assisted-by: Claude (via Claude Code)"
 

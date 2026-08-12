@@ -1,6 +1,6 @@
 ---
+name: pr-report
 description: "PR Report Generator"
-argument-hint: "[--start YYYY-MM-DD] [--end YYYY-MM-DD] [--deep] [--progress-report] [--blog] - Date range with optional deep analysis, progress report, and blog post"
 ---
 
 # PR Report Generator
@@ -179,7 +179,6 @@ community members following the project.]
 
 **PRs:** #XXX, #YYY, #ZZZ
 
----
 
 ## Repository Highlights
 
@@ -219,7 +218,6 @@ community members following the project.]
 #### Automation
 [Bot improvements, workflow automation]
 
----
 
 ## Notable PRs
 
@@ -239,7 +237,6 @@ manual CI work). For each:]
 
 **Related:** [Links to related PRs, issues, or documentation]
 
----
 
 ## Risks & Breaking Changes
 
@@ -251,7 +248,6 @@ manual CI work). For each:]
 
 [Highlight changes that span multiple repositories or require coordinated updates]
 
----
 
 ## Metrics Snapshot
 
@@ -515,7 +511,6 @@ Never guess or infer authors from PR descriptions or code content.
 [Opening paragraph: 2-3 sentences setting the scene. Total PR count, major themes,
 and one hook to draw readers in.]
 
----
 
 ## [Narrative Section Title]
 **By @author -- [PR #XXXX](url)**
@@ -523,12 +518,10 @@ and one hook to draw readers in.]
 [3-8 paragraphs telling the story of this change. Start with the problem,
 explain the approach, detail interesting technical aspects, note edge cases.]
 
----
 
 ## [Next Section...]
 [Repeat for each major topic]
 
----
 
 ## Smaller Changes Worth Noting
 
@@ -643,7 +636,6 @@ cost of the break? Is this a bug fix that intentionally changes behavior?]
 - [ ] Proposed fix: [Brief description of how to maintain compatibility]
 - [ ] Target PR: [If a fix PR exists or should be created]
 
----
 
 [Repeat for each breaking change]
 

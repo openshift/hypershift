@@ -1,5 +1,6 @@
 ---
-model: opus
+name: feature-development
+description: Implement support for a new HCP feature using specialized agents.
 ---
 
 Implement support for a new HCP feature using specialized agents with explicit Task tool invocations:

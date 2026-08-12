@@ -1,4 +1,5 @@
 ---
+name: update-konflux-tasks
 description: Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs.
 ---
 
