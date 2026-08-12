@@ -11476,6 +11476,13 @@ spec:
                 type: object
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: infraID cannot be removed once set
+          rule: '!has(oldSelf.spec) || !has(oldSelf.spec.infraID) || (has(self.spec)
+            && has(self.spec.infraID))'
+        - message: clusterID cannot be removed once set
+          rule: '!has(oldSelf.spec) || !has(oldSelf.spec.clusterID) || (has(self.spec)
+            && has(self.spec.clusterID))'
     served: true
     storage: true
     subresources:
