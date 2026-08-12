@@ -1961,15 +1961,18 @@ PlacementOptions
 <td>
 <code>cpuOptions,omitzero</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.CpuOptions">
-CpuOptions
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">
+CPUOptions
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
 <p>cpuOptions specifies CPU configuration for EC2 instances.
-Supported on C8i, M8i, and R8i instance families.</p>
+Supported on C8i, M8i, and R8i instance families.
+When omitted, AWS defaults are used (nested virtualization is not enabled).
+To revert to default behavior after setting cpuOptions, remove the entire
+cpuOptions field rather than clearing individual sub-fields.</p>
 </td>
 </tr>
 </tbody>
@@ -5071,6 +5074,41 @@ used in workload identity authentication for Azure Private Link Service operatio
 </p>
 <p>
 </p>
+###CPUOptions { #hypershift.openshift.io/v1beta1.CPUOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>CPUOptions specifies CPU configuration for EC2 instances.
+At least one field must be specified when cpuOptions is present.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nestedVirtualizationPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy">
+NestedVirtualizationPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, nested virtualization is not enabled (AWS default behavior).</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
@@ -6793,40 +6831,6 @@ int64
 <td>
 <em>(Optional)</em>
 <p>observedGeneration reports which generation of the HostedControlPlane spec is being synced.</p>
-</td>
-</tr>
-</tbody>
-</table>
-###CpuOptions { #hypershift.openshift.io/v1beta1.CpuOptions }
-<p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
-</p>
-<p>
-<p>CpuOptions specifies CPU configuration for EC2 instances.
-At least one field must be specified when cpuOptions is present.</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<code>nestedVirtualization</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy">
-NestedVirtualizationPolicy
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>nestedVirtualization indicates whether to enable nested virtualization on the instance.
-Supported on C8i, M8i, and R8i instance families.</p>
 </td>
 </tr>
 </tbody>
@@ -13179,7 +13183,7 @@ Spot instances use spare EC2 capacity at reduced prices but may be interrupted.<
 ###NestedVirtualizationPolicy { #hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.CpuOptions">CpuOptions</a>)
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">CPUOptions</a>)
 </p>
 <p>
 <p>NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.</p>
@@ -13191,10 +13195,10 @@ Spot instances use spare EC2 capacity at reduced prices but may be interrupted.<
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;disabled&#34;</p></td>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
 <td><p>NestedVirtualizationDisabled disables nested virtualization on the instance.</p>
 </td>
-</tr><tr><td><p>&#34;enabled&#34;</p></td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
 <td><p>NestedVirtualizationEnabled enables nested virtualization on the instance.</p>
 </td>
 </tr></tbody>

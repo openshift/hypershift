@@ -28,7 +28,7 @@ tests:
             subnet:
               id: "subnet-any"
             cpuOptions:
-              nestedVirtualization: enabled
+              nestedVirtualizationPolicy: Enabled
           type: AWS
 
   - name: when nested virtualization is disabled it should pass
@@ -54,7 +54,7 @@ tests:
             subnet:
               id: "subnet-any"
             cpuOptions:
-              nestedVirtualization: disabled
+              nestedVirtualizationPolicy: Disabled
           type: AWS
 
   - name: when cpuOptions is empty it should fail
@@ -106,9 +106,9 @@ tests:
             subnet:
               id: "subnet-any"
             cpuOptions:
-              nestedVirtualization: unsupported
+              nestedVirtualizationPolicy: unsupported
           type: AWS
-    expectedError: "Unsupported value: \"unsupported\": supported values: \"enabled\", \"disabled\""
+    expectedError: "Unsupported value: \"unsupported\": supported values: \"Enabled\", \"Disabled\""
 
   # --- AWS Placement / Capacity Reservation validation ---
   - name: when tenancy is host and capacity reservation is specified it should fail

@@ -111,7 +111,8 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 		},
 	}
 
-	applyAWSMachineOptions(nodePool, awsMachineTemplateSpec)
+	applyAWSCPUOptions(nodePool, awsMachineTemplateSpec)
+	applyAWSPlacementOptions(nodePool, awsMachineTemplateSpec)
 
 	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
 		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
@@ -206,13 +207,22 @@ func buildAWSSecurityGroups(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.H
 	return securityGroups, nil
 }
 
-func applyAWSMachineOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+func applyAWSCPUOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
 	if nodePool.Spec.Platform.AWS == nil {
 		return
 	}
 
-	if cpuOptions := nodePool.Spec.Platform.AWS.CpuOptions; cpuOptions.NestedVirtualization != "" {
-		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicy(cpuOptions.NestedVirtualization)
+	switch nodePool.Spec.Platform.AWS.CPUOptions.NestedVirtualizationPolicy {
+	case hyperv1.NestedVirtualizationEnabled:
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyEnabled
+	case hyperv1.NestedVirtualizationDisabled:
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyDisabled
+	}
+}
+
+func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if nodePool.Spec.Platform.AWS == nil {
+		return
 	}
 
 	placement := nodePool.Spec.Platform.AWS.Placement

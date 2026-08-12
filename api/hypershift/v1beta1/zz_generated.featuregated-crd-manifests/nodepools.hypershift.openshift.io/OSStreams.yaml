@@ -446,15 +446,19 @@ spec:
                         description: |-
                           cpuOptions specifies CPU configuration for EC2 instances.
                           Supported on C8i, M8i, and R8i instance families.
+                          When omitted, AWS defaults are used (nested virtualization is not enabled).
+                          To revert to default behavior after setting cpuOptions, remove the entire
+                          cpuOptions field rather than clearing individual sub-fields.
                         minProperties: 1
                         properties:
-                          nestedVirtualization:
+                          nestedVirtualizationPolicy:
                             description: |-
-                              nestedVirtualization indicates whether to enable nested virtualization on the instance.
+                              nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
                               Supported on C8i, M8i, and R8i instance families.
+                              When omitted, nested virtualization is not enabled (AWS default behavior).
                             enum:
-                            - enabled
-                            - disabled
+                            - Enabled
+                            - Disabled
                             type: string
                         type: object
                       imageType:

@@ -21,22 +21,22 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// CpuOptionsApplyConfiguration represents a declarative configuration of the CpuOptions type for use
+// CPUOptionsApplyConfiguration represents a declarative configuration of the CPUOptions type for use
 // with apply.
-type CpuOptionsApplyConfiguration struct {
-	NestedVirtualization *hypershiftv1beta1.NestedVirtualizationPolicy `json:"nestedVirtualization,omitempty"`
+type CPUOptionsApplyConfiguration struct {
+	NestedVirtualizationPolicy *hypershiftv1beta1.NestedVirtualizationPolicy `json:"nestedVirtualizationPolicy,omitempty"`
 }
 
-// CpuOptionsApplyConfiguration constructs a declarative configuration of the CpuOptions type for use with
+// CPUOptionsApplyConfiguration constructs a declarative configuration of the CPUOptions type for use with
 // apply.
-func CpuOptions() *CpuOptionsApplyConfiguration {
-	return &CpuOptionsApplyConfiguration{}
+func CPUOptions() *CPUOptionsApplyConfiguration {
+	return &CPUOptionsApplyConfiguration{}
 }
 
-// WithNestedVirtualization sets the NestedVirtualization field in the declarative configuration to the given value
+// WithNestedVirtualizationPolicy sets the NestedVirtualizationPolicy field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the NestedVirtualization field is set to the value of the last call.
-func (b *CpuOptionsApplyConfiguration) WithNestedVirtualization(value hypershiftv1beta1.NestedVirtualizationPolicy) *CpuOptionsApplyConfiguration {
-	b.NestedVirtualization = &value
+// If called multiple times, the NestedVirtualizationPolicy field is set to the value of the last call.
+func (b *CPUOptionsApplyConfiguration) WithNestedVirtualizationPolicy(value hypershiftv1beta1.NestedVirtualizationPolicy) *CPUOptionsApplyConfiguration {
+	b.NestedVirtualizationPolicy = &value
 	return b
 }

@@ -1851,8 +1851,8 @@ func TestApplyAWSMachineOptions(t *testing.T) {
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
 						AWS: &hyperv1.AWSNodePoolPlatform{
-							CpuOptions: hyperv1.CpuOptions{
-								NestedVirtualization: hyperv1.NestedVirtualizationEnabled,
+							CPUOptions: hyperv1.CPUOptions{
+								NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled,
 							},
 						},
 					},
@@ -1866,8 +1866,8 @@ func TestApplyAWSMachineOptions(t *testing.T) {
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
 						AWS: &hyperv1.AWSNodePoolPlatform{
-							CpuOptions: hyperv1.CpuOptions{
-								NestedVirtualization: hyperv1.NestedVirtualizationDisabled,
+							CPUOptions: hyperv1.CPUOptions{
+								NestedVirtualizationPolicy: hyperv1.NestedVirtualizationDisabled,
 							},
 						},
 					},
@@ -2029,7 +2029,8 @@ func TestApplyAWSMachineOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			spec := &capiaws.AWSMachineTemplateSpec{}
-			applyAWSMachineOptions(tc.nodePool, spec)
+			applyAWSCPUOptions(tc.nodePool, spec)
+			applyAWSPlacementOptions(tc.nodePool, spec)
 
 			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization), "CPUOptions.NestedVirtualization mismatch")
 			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions), "SpotMarketOptions mismatch")

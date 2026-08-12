@@ -321,11 +321,11 @@ func TestAWSNodePoolPlatformSerializationCompatibility(t *testing.T) {
 				Subnet: AWSResourceReference{
 					ID: ptr.To("subnet-1234567890abcdef0"),
 				},
-				CpuOptions: CpuOptions{
-					NestedVirtualization: NestedVirtualizationEnabled,
+				CPUOptions: CPUOptions{
+					NestedVirtualizationPolicy: NestedVirtualizationEnabled,
 				},
 			},
-			expectedJSON: `{"instanceType":"m6i.large","subnet":{"id":"subnet-1234567890abcdef0"},"cpuOptions":{"nestedVirtualization":"enabled"}}`,
+			expectedJSON: `{"instanceType":"m6i.large","subnet":{"id":"subnet-1234567890abcdef0"},"cpuOptions":{"nestedVirtualizationPolicy":"Enabled"}}`,
 			nMinus1Result: awsNodePoolPlatformNMinus1{
 				InstanceType: "m6i.large",
 				Subnet: AWSResourceReference{
@@ -386,8 +386,8 @@ func TestAWSNodePoolPlatformSerializationCompatibility(t *testing.T) {
 			if ptr.Deref(roundTripped.Subnet.ID, "") != ptr.Deref(tt.nMinus1Result.Subnet.ID, "") {
 				t.Errorf("Subnet ID mismatch after N-1 round-trip: got %q, want %q", ptr.Deref(roundTripped.Subnet.ID, ""), ptr.Deref(tt.nMinus1Result.Subnet.ID, ""))
 			}
-			if roundTripped.CpuOptions != (CpuOptions{}) {
-				t.Errorf("CpuOptions mismatch after N-1 round-trip: got %+v, want zero value", roundTripped.CpuOptions)
+			if roundTripped.CPUOptions != (CPUOptions{}) {
+				t.Errorf("CPUOptions mismatch after N-1 round-trip: got %+v, want zero value", roundTripped.CPUOptions)
 			}
 		})
 	}
