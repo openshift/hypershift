@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: beed69d43b01c3339d875529189f5794a596467b8fbe67ea9a0ddaea4284cb6a
   name: ignition-server
   namespace: hcp-namespace
   ownerReferences:

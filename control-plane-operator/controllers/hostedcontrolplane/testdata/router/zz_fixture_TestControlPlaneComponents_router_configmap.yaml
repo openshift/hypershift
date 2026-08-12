@@ -29,6 +29,8 @@ data:
       monitor-uri /haproxy_ready
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 2714dec02d9df59b5bc9590ec6f63f52baa9aa321b1c5c387b15210ae89536b8
   name: router
   namespace: hcp-namespace
   ownerReferences:

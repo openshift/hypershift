@@ -4,6 +4,8 @@ data:
     = Shared"
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: ef982ae9192dbc09f1aba8637966774bf8db55fba45c5fb87a33e490d2ad6af7
   name: aws-cloud-config
   namespace: hcp-namespace
   ownerReferences:

@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 918df815232ce7d6fe7c03bd93b95b08e4e67bb4e87fb1cbf1dbb337aab560f3
   labels:
     app: cluster-version-operator
     k8s-app: cluster-version-operator

@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 60aea80c1761f664c04b755b67f5ced04c42c320aed70aa78a6c04de147fb2a2
   labels:
     app: etcd
   name: etcd-client

@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 0f503e1cf9de8ef77acc7090079f573a28df2f698c386f92aea04d817c9d052b
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver

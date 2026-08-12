@@ -1,6 +1,8 @@
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: d74a982c26425bdf8dcca52ab939cd6ca16540921a0b92845493b3ecb78f5b98
   name: catalogs
   namespace: hcp-namespace
   ownerReferences:

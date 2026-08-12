@@ -23,6 +23,8 @@ data:
     }
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: f1b8ce8d53d46a88dc4d57aa644a46d28bc8ef629f532280cd119b6ad0e4113b
   name: kube-scheduler
   namespace: hcp-namespace
   ownerReferences:

@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 20e5f6e1e5b5db60f7ba7d8cce50caf9998c4769be560d2a75df536ce17ddc75
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server-proxy

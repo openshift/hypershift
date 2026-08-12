@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: e014e0dc572888af4988fd252791854844b3e8f2f41405ce912aacab8830b047
   name: kubevirt-csi
   namespace: hcp-namespace
   ownerReferences:
