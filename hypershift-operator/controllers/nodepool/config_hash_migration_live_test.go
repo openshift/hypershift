@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	docker10 "github.com/openshift/api/image/docker10"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/support/api"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	. "github.com/onsi/gomega"
