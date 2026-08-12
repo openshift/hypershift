@@ -150,6 +150,17 @@ func TestMaybeSeedTrustBundleContentHashBaseline(t *testing.T) {
 			expectedVersion: supportutil.HashSimple(mcoRawConfig + version + pullSecretName + "" + proxyContentHash + globalConfig + rhelStream),
 		},
 		{
+			name: "When both additionalTrustBundle and proxy.trustedCA are configured, it should seed the combined content hash",
+			annotations: map[string]string{
+				nodePoolAnnotationCurrentConfig:        legacyHWV,
+				nodePoolAnnotationCurrentConfigVersion: legacyH,
+			},
+			cg:              newCG(atbContentHash, proxyContentHash),
+			expectSeeded:    true,
+			expectedCurrent: supportutil.HashSimple(mcoRawConfig + pullSecretName + atbContentHash + proxyContentHash + rhelStream),
+			expectedVersion: supportutil.HashSimple(mcoRawConfig + version + pullSecretName + atbContentHash + proxyContentHash + globalConfig + rhelStream),
+		},
+		{
 			name:         "When annotations are missing, it should not seed",
 			annotations:  nil,
 			cg:           newCG(atbContentHash, ""),
