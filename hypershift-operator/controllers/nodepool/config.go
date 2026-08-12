@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	coreerrors "errors"
 	"fmt"
 	"io"
@@ -416,19 +417,23 @@ func conditionallyAddToGlobalConfigString(
 	if err != nil {
 		return fmt.Errorf("failed to parse release image version: %w", err)
 	}
+	version.Pre = nil
 
-	// Starting on v4.23.0 we support TLS Profile configuration. The
-	// expected TLS Profile is part of the HostedCluster config.
+	// Starting on v4.23.0 we support TLS Profile configuration.
+	// Only TLSSecurityProfile affects worker node configuration; other
+	// APIServer fields are control-plane-only and must not be included
+	// in the hash to avoid unnecessary NodePool rollouts.
 	if version.GTE(semver.MustParse("4.23.0")) {
-		apiServer := globalconfig.APIServerConfiguration()
-		if err := globalconfig.ReconcileAPIServerConfiguration(apiServer, hcluster.Spec.Configuration); err != nil {
-			return fmt.Errorf("failed to reconcile apiserver global config: %w", err)
+		var tlsProfile *configv1.TLSSecurityProfile
+		if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.APIServer != nil {
+			tlsProfile = hcluster.Spec.Configuration.APIServer.TLSSecurityProfile
 		}
-		apiServerBytes, err := api.CompatibleJSONEncode(apiServer)
+		tlsBytes, err := json.Marshal(tlsProfile)
 		if err != nil {
-			return fmt.Errorf("failed to encode apiserver global config: %w", err)
+			return fmt.Errorf("failed to encode TLS security profile: %w", err)
 		}
-		globalConfigBytes.Write(apiServerBytes)
+		globalConfigBytes.Write(tlsBytes)
+		globalConfigBytes.WriteByte('\n')
 	}
 
 	return nil
