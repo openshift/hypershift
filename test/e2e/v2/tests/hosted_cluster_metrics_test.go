@@ -65,10 +65,9 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 	When("HyperShift operator is running", func() {
 		It("should expose expected metrics at the metrics endpoint", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-			if hostedCluster.Spec.Platform.Type == hyperv1.NonePlatform {
-				Skip("metrics test skipped for None platform")
-			}
+			tc.SkipIfPlatform(hyperv1.NonePlatform)
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			mgmtRestConfig, err := e2eutil.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
@@ -138,10 +137,9 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 	When("metrics forwarding is enabled", Label("Informing"), func() {
 		It("should deploy the metrics pipeline and scrape kube-apiserver metrics end-to-end", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-			if e2eutil.IsLessThan(e2eutil.Version422) {
-				Skip("metrics forwarder requires version >= 4.22")
-			}
+			tc.SkipIfVersionBelow(e2eutil.Version422)
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			if hostedCluster.Spec.Monitoring.MetricsForwarding.Mode != hyperv1.MetricsForwardingModeForward {
 				Skip("metrics forwarding not enabled on hosted cluster; skipping verification test")
@@ -160,10 +158,10 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Waiting for hosted cluster metrics-forwarder deployment")
-			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
-			hcRestConfig := tc.GetHostedClusterRESTConfig()
-			Expect(hcRestConfig).NotTo(BeNil(), "hosted cluster REST config should be available")
+			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
+			hcRestConfig, err := tc.GetHostedClusterRESTConfig(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
 
 			hcClientset, err := kubernetes.NewForConfig(hcRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create hosted cluster kubernetes clientset")
@@ -220,9 +218,7 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 	When("cluster has worker nodes", func() {
 		It("should have a functional node-tuning-operator metrics endpoint", func() {
 			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version422) {
-				Skip("NTO metrics endpoint test requires version >= 4.22")
-			}
+			tc.SkipIfVersionBelow(e2eutil.Version422)
 
 			svc := &corev1.Service{}
 			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
@@ -314,8 +310,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Metrics] Hosted Clus
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterMetricsTests(func() *internal.TestContext { return testCtx })

@@ -31,8 +31,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -107,13 +107,12 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStrea
 func NodePoolOSImageStreamRHEL10RejectionTest(getTestCtx internal.TestContextGetter) {
 	It("When osImageStream is set to rhel-10 on OCP < 5.0, it should set ValidMachineConfig to False", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedCluster()
-
-		if !e2eutil.IsLessThan(e2eutil.Version50) {
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		if testCtx.VersionAtLeast(e2eutil.Version50) {
 			Skip("test only applies to OCP < 5.0; rhel-10 is valid on OCP >= 5.0")
 		}
 
-		hc := testCtx.GetHostedCluster()
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
@@ -165,13 +164,11 @@ func NodePoolOSImageStreamRHEL10RejectionTest(getTestCtx internal.TestContextGet
 func NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx internal.TestContextGetter) {
 	It("When osImageStream is set to rhel-10 with runc ContainerRuntimeConfig, it should set ValidMachineConfig to False", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedCluster()
 
-		if e2eutil.IsLessThan(e2eutil.Version50) {
-			Skip("test only applies to OCP >= 5.0; on < 5.0 rhel-10 is rejected for version reasons")
-		}
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		testCtx.SkipIfVersionBelow(e2eutil.Version50)
 
-		hc := testCtx.GetHostedCluster()
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
@@ -249,9 +246,9 @@ spec:
 func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGetter) {
 	It("When no osImageStream is set, it should report a recognized RHEL stream in status", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedCluster()
 
-		hc := testCtx.GetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
@@ -370,9 +367,9 @@ func conditionMessageContains(condType string, substring string) e2eutil.Predica
 func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestContextGetter) {
 	It("When osImageStream is set to the version-derived default, it should not trigger a rollout", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedCluster()
 
-		hc := testCtx.GetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
@@ -462,10 +459,11 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContextGetter) {
 	It("When a NodePool is upgraded, it should report the correct osImageStream in status", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")

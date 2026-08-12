@@ -50,13 +50,10 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AWSSecurityGroups] a day-2 resource tag is added to the HostedCluster spec", func() {
 		It("should apply the tag to the default worker security group via AWS API", Label("AWS"), func() {
 			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version420) {
-				Skip("default security group tags test requires version >= 4.20")
-			}
-			hc := tc.GetHostedCluster()
-			if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
-				Skip("default security group tags test is only for AWS platform")
-			}
+			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			Expect(hc.Status.Platform).NotTo(BeNil(),
 				"HostedCluster %s/%s should have platform status", hc.Namespace, hc.Name)
@@ -115,8 +112,8 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore HostedCluster AWS resource tags")
 				}
 
-				tc.ValidateHostedClusterClient()
-				hcClient := tc.GetHostedClusterClient()
+				hcClient, err := tc.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
 				Eventually(func(g Gomega) {
 					infra := &configv1.Infrastructure{}
 					g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed())
@@ -145,13 +142,9 @@ func EnsureInfrastructureResourceTagsTest(getTestCtx internal.TestContextGetter)
 	When("a HostedCluster is created with additional AWS resource tags", func() {
 		It("should propagate those tags to the infrastructure resource in the hosted cluster", Label("AWS"), func() {
 			tc := getTestCtx()
-			hc := tc.GetHostedCluster()
-			if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
-				Skip("hosted cluster infrastructure resource tags test is only for AWS platform")
-			}
-			if hc.Spec.Platform.AWS == nil {
-				Skip("HostedCluster does not have AWS platform spec")
-			}
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			// Re-fetch to get current server state; the cached hc pointer may be
 			// stale if a prior test mutated it via UpdateObject.
@@ -181,8 +174,8 @@ func EnsureInfrastructureResourceTagsTest(getTestCtx internal.TestContextGetter)
 				Skip("HostedCluster has only kubernetes.io-prefixed tags which are filtered out")
 			}
 
-			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			infra := &configv1.Infrastructure{}
 			Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed(),
@@ -211,13 +204,8 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AWSNLB] AWS CCM NLB Security Group", Label("AWS", "CCM"), func() {
 		BeforeEach(func() {
 			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version423) {
-				Skip("AWS CCM NLB security group test requires version >= 4.23")
-			}
-			hc := tc.GetHostedCluster()
-			if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
-				Skip("AWS CCM test is only for AWS platform")
-			}
+			tc.SkipIfVersionBelow(e2eutil.Version423)
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		})
 
 		When("AWSServiceLBNetworkSecurityGroup feature gate is enabled", func() {
@@ -242,9 +230,10 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 		When("a LoadBalancer NLB service is created in the hosted cluster", func() {
 			It("should attach managed security groups to the NLB", func() {
 				tc := getTestCtx()
-				tc.ValidateHostedClusterClient()
-				hcClient := tc.GetHostedClusterClient()
-				hc := tc.GetHostedCluster()
+				hc, err := tc.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
+				hcClient, err := tc.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
 
 				awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
 				Expect(awsCredsFile).NotTo(BeEmpty(), "AWS_GUEST_INFRA_CREDENTIALS_FILE must be set for AWS CCM NLB test")
@@ -362,8 +351,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster AWS", Label("
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterAWSTests(func() *internal.TestContext { return testCtx })

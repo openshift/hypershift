@@ -382,20 +382,21 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		BeforeAll(func() {
 			tc = getTestCtx()
 
-			// Capture original TLS security profile from HostedCluster
-			hostedCluster := tc.GetHostedCluster()
-			if hostedCluster.Spec.Configuration != nil &&
-				hostedCluster.Spec.Configuration.APIServer != nil &&
-				hostedCluster.Spec.Configuration.APIServer.TLSSecurityProfile != nil {
-				originalTLSProfile = hostedCluster.Spec.Configuration.APIServer.TLSSecurityProfile.DeepCopy()
-			}
-
 			// Setup management cluster REST config and kubernetes client for pod exec
 			var err error
 			mgmtRestConfig, err = e2eutil.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "failed to get management cluster REST config")
 			mgmtKubeClient, err = kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes client")
+
+			// Capture original TLS security profile for AfterAll restoration
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if hostedCluster.Spec.Configuration != nil &&
+				hostedCluster.Spec.Configuration.APIServer != nil &&
+				hostedCluster.Spec.Configuration.APIServer.TLSSecurityProfile != nil {
+				originalTLSProfile = hostedCluster.Spec.Configuration.APIServer.TLSSecurityProfile.DeepCopy()
+			}
 		})
 
 		It("control-plane-pki-operator should have control-plane-pki-operator-config ConfigMap with TLS configuration", func() {
@@ -416,12 +417,13 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("control-plane-pki-operator should have minTLSVersion set to VersionTLS12 with default/intermediate profile", func() {
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
 
 			mgmtClient := tc.MgmtClient
 			cm := &corev1.ConfigMap{}
-			err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
+			err = mgmtClient.Get(tc.Context, crclient.ObjectKey{
 				Namespace: tc.ControlPlaneNamespace,
 				Name:      pkiOperatorTLSComponent.configMapName,
 			}, cm)
@@ -433,7 +435,8 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("aws-pod-identity-webhook should have --tls-min-version set to VersionTLS12 with default/intermediate profile", func() {
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
 
@@ -444,7 +447,8 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
 
 			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
@@ -455,7 +459,8 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("aws-pod-identity-webhook should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
 
@@ -761,8 +766,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneTLS] Con
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterControlPlanePKIOperatorTests(func() *internal.TestContext { return testCtx })

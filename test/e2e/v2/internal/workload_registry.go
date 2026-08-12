@@ -532,8 +532,12 @@ func ShouldSkipWorkloadForVersion(workload WorkloadSpec) bool {
 // This is a generic function that handles both Deployments and StatefulSets.
 func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []string, excludeWorkloads []string) error {
 	workloads := GetControlPlaneWorkloads()
+	hostedCluster, err := testCtx.GetHostedCluster()
+	if err != nil {
+		return fmt.Errorf("failed to get HostedCluster: %w", err)
+	}
 	for _, workload := range workloads {
-		if ShouldSkipWorkloadForPlatform(workload, testCtx.GetHostedCluster()) {
+		if ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 			continue
 		}
 		if ShouldSkipWorkloadForVersion(workload) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -62,7 +63,9 @@ const (
 // 7. Wait for hosted cluster namespace to be fully deleted
 func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger logr.Logger) error {
 	// Agent platform: prepare resources to prevent agent unbinding and node reboots
-	if testCtx.GetHostedCluster().Spec.Platform.Type == hyperv1.AgentPlatform {
+	hc, err := testCtx.GetHostedCluster()
+	Expect(err).NotTo(HaveOccurred())
+	if hc.Spec.Platform.Type == hyperv1.AgentPlatform {
 		logger.Info("Preparing Agent platform resources before break")
 		if err := prepareAgentPlatformForBreak(testCtx, logger); err != nil {
 			return fmt.Errorf("failed to prepare Agent platform for break: %w", err)
@@ -422,7 +425,8 @@ func UnpauseAgentCAPIResources(testCtx *internal.TestContext, logger logr.Logger
 // It annotates Agent CRs with skip-spoke-cleanup and sets preserveOnDelete on ClusterDeployment
 // to prevent agents from being unbound and hosts from being rebooted by Ironic.
 func prepareAgentPlatformForBreak(testCtx *internal.TestContext, logger logr.Logger) error {
-	hc := testCtx.GetHostedCluster()
+	hc, err := testCtx.GetHostedCluster()
+	Expect(err).NotTo(HaveOccurred())
 	if hc.Spec.Platform.Agent == nil || hc.Spec.Platform.Agent.AgentNamespace == "" {
 		return fmt.Errorf("agent namespace not set on HostedCluster")
 	}
