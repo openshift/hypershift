@@ -1442,7 +1442,7 @@ func TestWriteOSImageStreamManifest(t *testing.T) {
 		{
 			name:                  "When osStream is rhel-10 it should write a valid OSImageStream CR with defaultStream rhel-10",
 			osStream:              "rhel-10",
-			expectedAPIVersion:    "machineconfiguration.openshift.io/v1alpha1",
+			expectedAPIVersion:    "machineconfiguration.openshift.io/v1",
 			expectedKind:          "OSImageStream",
 			expectedName:          "cluster",
 			expectedDefaultStream: "rhel-10",
@@ -1450,7 +1450,7 @@ func TestWriteOSImageStreamManifest(t *testing.T) {
 		{
 			name:                  "When osStream is rhel-9 it should write a valid OSImageStream CR with defaultStream rhel-9",
 			osStream:              "rhel-9",
-			expectedAPIVersion:    "machineconfiguration.openshift.io/v1alpha1",
+			expectedAPIVersion:    "machineconfiguration.openshift.io/v1",
 			expectedKind:          "OSImageStream",
 			expectedName:          "cluster",
 			expectedDefaultStream: "rhel-9",

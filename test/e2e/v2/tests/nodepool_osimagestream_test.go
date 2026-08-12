@@ -19,6 +19,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -55,6 +56,7 @@ func RegisterNodePoolOSImageStreamLifecycleTests(getTestCtx internal.TestContext
 // NodePool OS image stream test cases.
 func RegisterNodePoolOSImageStreamStatusTests(getTestCtx internal.TestContextGetter) {
 	NodePoolOSImageStreamDefaultStatusTest(getTestCtx)
+	NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx)
 }
 
 // osImageStreamBeforeEach is the shared BeforeEach for all OSImageStream test suites.
@@ -299,6 +301,90 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			e2eutil.WithTimeout(10*time.Minute),
 			e2eutil.WithInterval(15*time.Second),
 		)
+
+		testCtx.ValidateHostedClusterClient()
+
+		By("verifying node OS images match the resolved osImageStream")
+		verifyNodeOSMatchesStream(testCtx, defaultNP, expectedStream)
+	})
+}
+
+// rhcosMajorVersionRe extracts the RHCOS major version from the node's OSImage
+// string (e.g. "Red Hat Enterprise Linux CoreOS 10.2.20260724-0 (Coughlan)" → "10").
+var rhcosMajorVersionRe = regexp.MustCompile(`CoreOS (\d+)\.`)
+
+func expectedRHELMajorForStream(stream string) string {
+	switch stream {
+	case hyperv1.OSImageStreamRHEL10:
+		return "10"
+	default:
+		return "9"
+	}
+}
+
+// verifyNodeOSMatchesStream verifies that the actual node OS matches the
+// expected osImageStream by checking node.Status.NodeInfo.OSImage on the
+// hosted cluster. This catches regressions where the controller reports
+// the correct stream in status but the MCO fails to apply it (e.g. due
+// to an API version mismatch in the rendered OSImageStream CR).
+func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePool, expectedStream string) {
+	hc := testCtx.GetHostedCluster()
+	hcClient := testCtx.GetHostedClusterClient()
+	Expect(hcClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
+
+	nodes := e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), testCtx.Context, hcClient, np, hc.Spec.Platform.Type)
+	Expect(nodes).NotTo(BeEmpty(), "expected at least one ready node in NodePool %s", np.Name)
+
+	expectedMajor := expectedRHELMajorForStream(expectedStream)
+	GinkgoWriter.Printf("Verifying %d nodes in NodePool %s run RHCOS major version %s (stream=%s)\n",
+		len(nodes), np.Name, expectedMajor, expectedStream)
+
+	var mismatches []string
+	for _, node := range nodes {
+		osImage := node.Status.NodeInfo.OSImage
+		m := rhcosMajorVersionRe.FindStringSubmatch(osImage)
+		if len(m) < 2 {
+			mismatches = append(mismatches, fmt.Sprintf("%s: could not parse RHCOS version from %q", node.Name, osImage))
+			continue
+		}
+		if m[1] != expectedMajor {
+			mismatches = append(mismatches, fmt.Sprintf("%s: osImage=%q (RHCOS major=%s, expected=%s)",
+				node.Name, osImage, m[1], expectedMajor))
+		}
+	}
+
+	Expect(mismatches).To(BeEmpty(),
+		"node OS version does not match resolved osImageStream %q: %s",
+		expectedStream, strings.Join(mismatches, "; "))
+}
+
+// NodePoolOSImageStreamNodeOSVerificationTest verifies that the actual node OS
+// matches the resolved osImageStream as a standalone test. This is registered
+// as a status (non-lifecycle) test since it only reads node state.
+func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContextGetter) {
+	It("When a NodePool resolves an osImageStream, it should run nodes with the matching OS version", func() {
+		testCtx := getTestCtx()
+		testCtx.ValidateHostedClusterClient()
+
+		hc := testCtx.GetHostedCluster()
+		ctx := testCtx.Context
+
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+
+		pool := &hyperv1.NodePool{}
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), pool)).
+			To(Succeed(), "failed to get NodePool %s", defaultNP.Name)
+
+		resolvedStream := pool.Status.OSImageStream.Name
+		if resolvedStream == "" {
+			resolvedStream = pool.Spec.OSImageStream.Name
+		}
+		if resolvedStream == "" {
+			resolvedStream = hyperv1.OSImageStreamRHEL10
+		}
+
+		verifyNodeOSMatchesStream(testCtx, defaultNP, resolvedStream)
 	})
 }
 
