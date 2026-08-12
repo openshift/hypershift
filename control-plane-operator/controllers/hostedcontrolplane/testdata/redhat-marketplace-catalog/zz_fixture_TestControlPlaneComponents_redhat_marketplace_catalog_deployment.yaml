@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    hypershift.openshift.io/desired-state-hash: 6a4e29ec8243c37c9c2da6a7c393ebe9dc62e8d6499313631abe0cbd1b6246f8
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-marketplace"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-marketplace"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   creationTimestamp: null

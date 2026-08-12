@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: b375029e8ba72098d47b05a9509a2e208cf7f09a0d587e595eef7e57ebef444a
   creationTimestamp: null
   labels:
     app: csi-snapshot-controller-operator

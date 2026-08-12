@@ -1,6 +1,8 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: e5f4616b5209d43cb4d6cbc4e9c9fc3df1379d28b5a7cd30403ffd41cbb4dbc1
   creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator

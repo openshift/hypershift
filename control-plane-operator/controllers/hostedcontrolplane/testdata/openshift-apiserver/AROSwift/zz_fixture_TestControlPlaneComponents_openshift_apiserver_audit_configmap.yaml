@@ -50,6 +50,8 @@ data:
   profile: Default
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: f96d1c6000d00d58b5210c54a813b9bc0eb4239b0d49cf0d32bbc41f320ebebe
   creationTimestamp: null
   name: openshift-apiserver-audit
   namespace: hcp-namespace
