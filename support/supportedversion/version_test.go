@@ -27,7 +27,7 @@ import (
 
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
-	g.Expect(Supported()).To(Equal([]string{"5.0", "4.23", "4.22", "4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
+	g.Expect(Supported()).To(Equal([]string{"5.1", "5.0", "4.23", "4.22", "4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
 }
 
 func TestString(t *testing.T) {
@@ -67,9 +67,14 @@ func TestGetKubeVersionForSupportedVersion(t *testing.T) {
 			expectedKubeVer: "1.34.0",
 		},
 		{
-			name:            "When OCP 5.0 is provided, it should normalize to 4.23 and return Kubernetes 1.36",
+			name:            "When OCP 5.0 is provided it should return Kubernetes 1.36 via direct lookup",
 			ocpVersion:      "5.0.0",
 			expectedKubeVer: "1.36.0",
+		},
+		{
+			name:            "When OCP 5.1 is provided it should return Kubernetes 1.37 via direct lookup",
+			ocpVersion:      "5.1.0",
+			expectedKubeVer: "1.37.0",
 		},
 		{
 			name:       "When an unmapped OCP version is provided it should return an error",
@@ -614,6 +619,13 @@ func TestPreviousMinorVersion(t *testing.T) {
 			n:             2,
 			expectedMajor: 4,
 			expectedMinor: 21,
+		},
+		{
+			name:          "When crossing the 5.x to 4.x bridge from 5.1, n-2 should be 4.22",
+			version:       semver.MustParse("5.1.0"),
+			n:             2,
+			expectedMajor: 4,
+			expectedMinor: 22,
 		},
 		{
 			name:          "When staying within 5.x, it should return the correct 5.x version",
