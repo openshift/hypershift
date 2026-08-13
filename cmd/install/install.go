@@ -724,7 +724,9 @@ func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, 
 	if err != nil {
 		return nil, err
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	// 10 minutes to accommodate GKE Autopilot clusters that need to scale
+	// up nodes before the operator pods can be scheduled.
+	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
 	deployment := getOperatorDeployment(opts)
