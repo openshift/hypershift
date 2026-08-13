@@ -15,6 +15,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type fakeReleaseImageProvider struct {
+	images map[string]string
+}
+
+func (f *fakeReleaseImageProvider) GetImage(name string) string {
+	return f.images[name]
+}
+
+func (f *fakeReleaseImageProvider) ImageExist(name string) (string, bool) {
+	img, ok := f.images[name]
+	return img, ok
+}
+
+func (f *fakeReleaseImageProvider) Version() string {
+	return "4.18.0"
+}
+
+func (f *fakeReleaseImageProvider) ComponentVersions() (map[string]string, error) {
+	return nil, nil
+}
+
+func (f *fakeReleaseImageProvider) ComponentImages() map[string]string {
+	return f.images
+}
+
 func TestAdaptDeployment(t *testing.T) {
 	testCases := []struct {
 		name                      string
@@ -228,6 +253,190 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 
 			tc.validateFunc(t, g, opts, cpContext)
+		})
+	}
+}
+
+func TestAdaptStandaloneDeployment(t *testing.T) {
+	testCases := []struct {
+		name          string
+		platformType  hyperv1.PlatformType
+		awsRegion     string
+		azureLocation string
+		infraID       string
+		rhobsEnabled  bool
+		images        map[string]string
+		validateFunc  func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext)
+	}{
+		{
+			name:         "When platform is AWS, it should configure AWS-specific env vars and karpenter image",
+			platformType: hyperv1.AWSPlatform,
+			awsRegion:    "us-west-2",
+			infraID:      "test-infra-123",
+			images: map[string]string{
+				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = adaptStandaloneDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+
+				g.Expect(container.Env).To(ContainElements(
+					corev1.EnvVar{Name: "CLUSTER_NAME", Value: "test-infra-123"},
+					corev1.EnvVar{Name: "CLUSTER_ENDPOINT", Value: "https://api.test-cluster.example.com:6443"},
+					corev1.EnvVar{Name: "PLATFORM", Value: "AWS"},
+					corev1.EnvVar{Name: "REGION", Value: "us-west-2"},
+					corev1.EnvVar{Name: "AWS_SHARED_CREDENTIALS_FILE", Value: "/etc/provider/credentials"},
+					corev1.EnvVar{Name: "AWS_SDK_LOAD_CONFIG", Value: "true"},
+					corev1.EnvVar{Name: KarpenterImageAWSEnvVar, Value: "quay.io/openshift/karpenter-aws:latest"},
+					corev1.EnvVar{Name: ManagementClusterEnvVar, Value: "true"},
+				))
+
+				g.Expect(container.Args).To(ContainElement(ContainSubstring("--target-kubeconfig=")))
+
+				g.Expect(container.VolumeMounts).To(ContainElement(
+					corev1.VolumeMount{Name: "provider-creds", MountPath: "/etc/provider"},
+				))
+
+				providerCredsVolume := podspec.FindVolume("provider-creds", deploymentObj.Spec.Template.Spec.Volumes)
+				g.Expect(providerCredsVolume).ToNot(BeNil())
+				g.Expect(providerCredsVolume.VolumeSource.Secret.SecretName).To(Equal("karpenter-credentials"))
+			},
+		},
+		{
+			name:          "When platform is Azure, it should configure Azure-specific env vars and karpenter image",
+			platformType:  hyperv1.AzurePlatform,
+			azureLocation: "eastus",
+			infraID:       "test-azure-456",
+			images: map[string]string{
+				"azure-karpenter-provider-azure": "quay.io/openshift/karpenter-azure:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = adaptStandaloneDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+
+				g.Expect(container.Env).To(ContainElements(
+					corev1.EnvVar{Name: "CLUSTER_NAME", Value: "test-azure-456"},
+					corev1.EnvVar{Name: "PLATFORM", Value: "Azure"},
+					corev1.EnvVar{Name: "REGION", Value: "eastus"},
+					corev1.EnvVar{Name: KarpenterImageAzureEnvVar, Value: "quay.io/openshift/karpenter-azure:latest"},
+					corev1.EnvVar{Name: ManagementClusterEnvVar, Value: "true"},
+				))
+
+				// Azure should not have AWS-specific env vars
+				g.Expect(podspec.FindEnvVar(KarpenterImageAWSEnvVar, container.Env)).To(BeNil())
+				g.Expect(podspec.FindEnvVar("AWS_SHARED_CREDENTIALS_FILE", container.Env)).To(BeNil())
+				g.Expect(podspec.FindEnvVar("AWS_SDK_LOAD_CONFIG", container.Env)).To(BeNil())
+			},
+		},
+		{
+			name:         "When RHOBS monitoring is enabled, it should set the env var",
+			platformType: hyperv1.AWSPlatform,
+			awsRegion:    "us-east-1",
+			infraID:      "test-rhobs",
+			rhobsEnabled: true,
+			images: map[string]string{
+				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = adaptStandaloneDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Env).To(ContainElement(
+					corev1.EnvVar{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"},
+				))
+			},
+		},
+		{
+			name:         "When RHOBS monitoring is disabled, it should not set the env var",
+			platformType: hyperv1.AWSPlatform,
+			awsRegion:    "us-east-1",
+			infraID:      "test-no-rhobs",
+			rhobsEnabled: false,
+			images: map[string]string{
+				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+			},
+			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = adaptStandaloneDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(podspec.FindEnvVar(rhobsmonitoring.EnvironmentVariable, container.Env)).To(BeNil())
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			if tc.rhobsEnabled {
+				t.Setenv(rhobsmonitoring.EnvironmentVariable, "1")
+			} else {
+				t.Setenv(rhobsmonitoring.EnvironmentVariable, "")
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: tc.infraID,
+					Platform: hyperv1.PlatformSpec{
+						Type: tc.platformType,
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneEndpoint: hyperv1.APIEndpoint{
+						Host: "api.test-cluster.example.com",
+						Port: 6443,
+					},
+				},
+			}
+
+			if tc.platformType == hyperv1.AWSPlatform {
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					Region: tc.awsRegion,
+				}
+			}
+			if tc.platformType == hyperv1.AzurePlatform {
+				hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+					Location: tc.azureLocation,
+				}
+			}
+
+			cpContext := controlplanecomponent.WorkloadContext{
+				Context:              t.Context(),
+				HCP:                  hcp,
+				ReleaseImageProvider: &fakeReleaseImageProvider{images: tc.images},
+			}
+
+			tc.validateFunc(t, g, cpContext)
 		})
 	}
 }
