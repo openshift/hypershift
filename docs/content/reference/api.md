@@ -9229,7 +9229,26 @@ string
 <td>
 <em>(Optional)</em>
 <p>snapshotURL is the URL of the completed backup snapshot in cloud storage.
+This field contains the default shard&rsquo;s snapshot URL for backward compatibility.
+New consumers should prefer shardSnapshots.
 Must be a valid URL with scheme https or s3.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shardSnapshots</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot">
+[]HCPEtcdShardSnapshot
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shardSnapshots contains the snapshot URLs for each etcd shard that was
+backed up. When etcd sharding is not enabled, this list contains a single
+entry for the default shard. Each entry maps a shard name to its snapshot URL.
+MaxItems is 11: 1 default shard + up to 10 named shards.</p>
 </td>
 </tr>
 <tr>
@@ -9334,6 +9353,47 @@ Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</
 <td><p>S3BackupStorage indicates that the backup is stored in AWS S3.</p>
 </td>
 </tr></tbody>
+</table>
+###HCPEtcdShardSnapshot { #hypershift.openshift.io/v1beta1.HCPEtcdShardSnapshot }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>)
+</p>
+<p>
+<p>HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the shard name (e.g., &ldquo;etcd&rdquo; for the default, &ldquo;etcd-events&rdquo; for a named shard).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>snapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>snapshotURL is the URL of the snapshot in cloud storage.
+Must be a valid URL with scheme https or s3.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###HostedClusterSpec { #hypershift.openshift.io/v1beta1.HostedClusterSpec }
 <p>
@@ -13035,6 +13095,22 @@ constraints are merged with the framework&rsquo;s control plane node
 isolation settings (nodeSelector, tolerations, topology spread).</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>restoreSnapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>restoreSnapshotURL allows an optional URL to be provided where an etcd
+snapshot for this shard can be downloaded. This snapshot will be restored
+on initial startup, only when the shard&rsquo;s PV is empty.
+Only meaningful for PersistentVolume-backed shards; EmptyDir shards are
+ephemeral and restoring into them would be lost on pod restart.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ManagedEtcdShardStorageSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdShardStorageSpec }
@@ -13199,9 +13275,6 @@ each deployed as an independent StatefulSet and ControlPlaneComponent.
 Minimum 1, maximum 10 entries. Resources must not overlap across
 shards. Immutable after creation: shards cannot be added, removed,
 or reordered.</p>
-<p>WARNING: In the current TechPreview implementation, shard data is NOT
-included in HCPEtcdBackup. Resources routed to shards will not be
-backed up. This will be addressed before promotion beyond TechPreview.</p>
 </td>
 </tr>
 </tbody>
