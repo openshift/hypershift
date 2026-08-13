@@ -519,7 +519,7 @@ endif
 test-envtest-api-all: test-envtest-ocp test-envtest-kube ## Run all envtest API tests (ENVTEST_JOBS=0|N|MAX)
 
 .PHONY: e2e
-e2e: reqserving-e2e e2ev2 backuprestore-e2e
+e2e: reqserving-e2e e2ev2 e2ev2-create-guests e2ev2-run-tests e2ev2-destroy-guests e2ev2-dump-guests backuprestore-e2e
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
