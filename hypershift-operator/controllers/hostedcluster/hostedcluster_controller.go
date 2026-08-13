@@ -2085,32 +2085,79 @@ func (r *HostedClusterReconciler) reconcileSSHKeySync(
 }
 
 // reconcileIngressDefaultCertSync syncs the user-provided ingress default
-// certificate secret from the HostedCluster namespace to the control plane namespace.
+// certificate secret from the HostedCluster namespace to the control plane
+// namespace and reports the outcome via the IngressDefaultCertificateSynced
+// condition on the HostedCluster status.
+//
+// A missing or malformed source secret is user-correctable: it is surfaced
+// through the condition (set to False) without failing reconciliation, so the
+// previously synced certificate — or the auto-generated wildcard certificate —
+// keeps serving and the HostedCluster does not become degraded.
 func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
+	log := ctrl.LoggerFrom(ctx)
+
 	if hcluster.Spec.OperatorConfiguration == nil ||
 		hcluster.Spec.OperatorConfiguration.IngressOperator == nil ||
 		len(hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name) == 0 {
+		// The feature is not in use; drop any stale condition left over from a
+		// previous configuration.
+		if meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced)) {
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return fmt.Errorf("failed to update status: %w", err)
+			}
+		}
 		return nil
 	}
+
+	// setSyncedCondition records the outcome on the HostedCluster status. It only
+	// returns an error if persisting the status fails.
+	setSyncedCondition := func(status metav1.ConditionStatus, reason, message string) error {
+		if !meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.IngressDefaultCertificateSynced),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hcluster.Generation,
+			LastTransitionTime: r.now(),
+		}) {
+			return nil
+		}
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			return fmt.Errorf("failed to update status: %w", err)
+		}
+		return nil
+	}
+
 	sourceSecretName := hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name
 	var src corev1.Secret
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: sourceSecretName}, &src); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("ingress default certificate secret not found; keeping the previously synced certificate", "secret", sourceSecretName)
+			return setSyncedCondition(metav1.ConditionFalse, hyperv1.SecretNotFoundReason,
+				fmt.Sprintf("ingress default certificate secret %q not found in namespace %q", sourceSecretName, hcluster.Namespace))
+		}
 		return fmt.Errorf("failed to get ingress default certificate secret %s: %w", sourceSecretName, err)
 	}
+
+	// Validate the source before touching the destination so a malformed secret
+	// leaves the previously synced certificate in place.
+	for _, key := range []string{corev1.TLSCertKey, corev1.TLSPrivateKeyKey} {
+		if _, ok := src.Data[key]; !ok {
+			log.Info("ingress default certificate secret is missing a required key; keeping the previously synced certificate", "secret", sourceSecretName, "key", key)
+			return setSyncedCondition(metav1.ConditionFalse, hyperv1.IngressDefaultCertificateInvalidReason,
+				fmt.Sprintf("ingress default certificate secret %q must contain a %s key", sourceSecretName, key))
+		}
+	}
+
 	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
+
 	dest := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)
-	_, err := createOrUpdate(ctx, r.Client, dest, func() error {
-		if _, ok := src.Data[corev1.TLSCertKey]; !ok {
-			return fmt.Errorf("ingress default certificate secret %q must have a %s key", sourceSecretName, corev1.TLSCertKey)
-		}
-		if _, ok := src.Data[corev1.TLSPrivateKeyKey]; !ok {
-			return fmt.Errorf("ingress default certificate secret %q must have a %s key", sourceSecretName, corev1.TLSPrivateKeyKey)
-		}
+	if _, err := createOrUpdate(ctx, r.Client, dest, func() error {
 		dest.Type = corev1.SecretTypeTLS
 		if dest.Data == nil {
 			dest.Data = map[string][]byte{}
@@ -2118,8 +2165,12 @@ func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
 		dest.Data[corev1.TLSCertKey] = src.Data[corev1.TLSCertKey]
 		dest.Data[corev1.TLSPrivateKeyKey] = src.Data[corev1.TLSPrivateKeyKey]
 		return nil
-	})
-	return err
+	}); err != nil {
+		return fmt.Errorf("failed to sync ingress default certificate to control plane namespace: %w", err)
+	}
+
+	return setSyncedCondition(metav1.ConditionTrue, hyperv1.AsExpectedReason,
+		fmt.Sprintf("ingress default certificate synced from secret %q", sourceSecretName))
 }
 
 // reconcileUnmanagedEtcdMTLSSync syncs the unmanaged etcd client MTLS secret

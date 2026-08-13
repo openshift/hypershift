@@ -6240,6 +6240,18 @@ and reports missing images if any.</p>
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
 </td>
+</tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
+<td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
+ingress certificate referenced by
+spec.operatorConfiguration.ingressOperator.defaultCertificate has been
+synced from the HostedCluster namespace into the control plane namespace.
+<strong>True</strong> means the referenced Secret was found, contains tls.crt and tls.key,
+and its data was synced.
+<strong>False</strong> means the referenced Secret is missing or malformed; in that case
+the previously synced certificate (or the auto-generated wildcard certificate)
+keeps serving and the HostedCluster does not become degraded.
+The condition is absent when no defaultCertificate is configured.</p>
+</td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td><p>KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
 A failure here often means a software bug or a non-stable cluster.</p>
