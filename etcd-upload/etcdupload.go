@@ -2,6 +2,7 @@ package etcdupload
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 
 type options struct {
 	snapshotPath    string
+	snapshotDir     string
 	storageType     string
 	bucket          string
 	region          string
@@ -45,7 +47,8 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	// Common flags
-	cmd.Flags().StringVar(&opts.snapshotPath, "snapshot-path", "", "path to the etcd snapshot file to upload")
+	cmd.Flags().StringVar(&opts.snapshotPath, "snapshot-path", "", "path to a single etcd snapshot file to upload (mutually exclusive with --snapshot-dir)")
+	cmd.Flags().StringVar(&opts.snapshotDir, "snapshot-dir", "", "directory containing per-shard snapshot .db files to upload (mutually exclusive with --snapshot-path)")
 	cmd.Flags().StringVar(&opts.storageType, "storage-type", "", "cloud storage backend type (S3 or AzureBlob)")
 	cmd.Flags().StringVar(&opts.keyPrefix, "key-prefix", "", "key prefix for the backup file in cloud storage")
 	cmd.Flags().StringVar(&opts.credentialsFile, "credentials-file", "", "path to cloud credentials file")
@@ -61,25 +64,51 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.encryptionScope, "azure-encryption-scope", "", "[Azure] encryption scope for server-side encryption (optional)")
 	cmd.Flags().StringVar(&opts.authType, "azure-auth-type", "client-secret", "[Azure] authentication type: client-secret (default) or managed-identity (ARO HCP)")
 
-	_ = cmd.MarkFlagRequired("snapshot-path")
 	_ = cmd.MarkFlagRequired("storage-type")
 	_ = cmd.MarkFlagRequired("key-prefix")
+	cmd.MarkFlagsMutuallyExclusive("snapshot-path", "snapshot-dir")
+	cmd.MarkFlagsOneRequired("snapshot-path", "snapshot-dir")
 
 	return cmd
 }
 
+// shardSnapshot is the JSON format written to the termination log when
+// uploading multiple shard snapshots.
+type shardSnapshot struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 func run(ctx context.Context, opts options) error {
-	if _, err := os.Stat(opts.snapshotPath); err != nil {
-		return fmt.Errorf("snapshot file not accessible: %w", err)
+	// Defense-in-depth: Cobra enforces these via MarkFlagsOneRequired and
+	// MarkFlagsMutuallyExclusive, but run() can be called directly from tests.
+	if opts.snapshotPath == "" && opts.snapshotDir == "" {
+		return fmt.Errorf("either --snapshot-path or --snapshot-dir must be specified")
+	}
+	if opts.snapshotPath != "" && opts.snapshotDir != "" {
+		return fmt.Errorf("--snapshot-path and --snapshot-dir are mutually exclusive")
 	}
 
 	opts.keyPrefix = strings.TrimSuffix(opts.keyPrefix, "/")
-	key := fmt.Sprintf("%s/%d%s", opts.keyPrefix, time.Now().Unix(), filepath.Ext(opts.snapshotPath))
 
 	uploader, err := newUploader(ctx, opts)
 	if err != nil {
 		return err
 	}
+
+	if opts.snapshotDir != "" {
+		return runDir(ctx, opts, uploader)
+	}
+	return runSingle(ctx, opts, uploader)
+}
+
+// runSingle uploads a single snapshot file (backward-compat with --snapshot-path).
+func runSingle(ctx context.Context, opts options, uploader Uploader) error {
+	if _, err := os.Stat(opts.snapshotPath); err != nil {
+		return fmt.Errorf("snapshot file not accessible: %w", err)
+	}
+
+	key := fmt.Sprintf("%s/%d%s", opts.keyPrefix, time.Now().Unix(), filepath.Ext(opts.snapshotPath))
 
 	result, err := uploader.Upload(ctx, opts.snapshotPath, key)
 	if err != nil {
@@ -88,10 +117,60 @@ func run(ctx context.Context, opts options) error {
 
 	fmt.Println(result.URL)
 
-	// Write the URL to the termination log so the controller can read it
-	// from pod.Status.ContainerStatuses[].State.Terminated.Message
-	// without requiring additional RBAC for the Job ServiceAccount.
+	// Write the URL to the termination log so the controller can read it.
 	if err := os.WriteFile("/dev/termination-log", []byte(result.URL), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write termination log: %v\n", err)
+	}
+
+	return nil
+}
+
+// runDir uploads all .db files in the given directory as per-shard snapshots.
+// Each file is uploaded with key <prefix>/<timestamp>/<shard-name>.db.
+// Files are processed in lexicographic order (os.ReadDir guarantees sorted results)
+// so upload order is deterministic.
+// The termination log is written as a JSON array of {name, url} objects.
+func runDir(ctx context.Context, opts options, uploader Uploader) error {
+	entries, err := os.ReadDir(opts.snapshotDir)
+	if err != nil {
+		return fmt.Errorf("failed to read snapshot directory: %w", err)
+	}
+
+	timestamp := time.Now().Unix()
+	var snapshots []shardSnapshot
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".db" {
+			continue
+		}
+
+		snapshotPath := filepath.Join(opts.snapshotDir, entry.Name())
+		shardName := strings.TrimSuffix(entry.Name(), ".db")
+		key := fmt.Sprintf("%s/%d/%s.db", opts.keyPrefix, timestamp, shardName)
+
+		result, err := uploader.Upload(ctx, snapshotPath, key)
+		if err != nil {
+			return fmt.Errorf("failed to upload shard %q snapshot: %w", shardName, err)
+		}
+
+		fmt.Printf("uploaded %s: %s\n", shardName, result.URL)
+		snapshots = append(snapshots, shardSnapshot{
+			Name: shardName,
+			URL:  result.URL,
+		})
+	}
+
+	if len(snapshots) == 0 {
+		return fmt.Errorf("no .db files found in snapshot directory %q", opts.snapshotDir)
+	}
+
+	// Write JSON array to termination log.
+	jsonBytes, err := json.Marshal(snapshots)
+	if err != nil {
+		return fmt.Errorf("failed to marshal shard snapshots: %w", err)
+	}
+
+	if err := os.WriteFile("/dev/termination-log", jsonBytes, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to write termination log: %v\n", err)
 	}
 

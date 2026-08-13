@@ -13,16 +13,11 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
-
-// TODO(etcd-sharding): Backup support for shards is not yet implemented.
-// The enhancement states PVC-backed shards should be included in backup,
-// but the current backup controller (HCPEtcdBackup) does not reference
-// shard StatefulSets. Resources routed to shards will NOT be backed up.
-// This must be addressed before promoting EtcdSharding beyond TechPreview.
 
 type etcdShard struct {
 	shard                    hyperv1.ManagedEtcdShardSpec
@@ -254,6 +249,17 @@ fi
 		defragContainer.Args = append(defragContainer.Args, "--leader-election-id", fmt.Sprintf("etcd-defrag-%s-leader-elect", shard.Name))
 		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, defragContainer)
 		sts.Spec.Template.Spec.ServiceAccountName = manifests.EtcdDefragControllerServiceAccount("").Name
+	}
+
+	// Inject restore init container for PV-backed shards with a restore URL,
+	// following the same pattern as the default etcd StatefulSet in adaptStatefulSet.
+	// The EmptyDir guard is defense-in-depth: CEL validation rejects restoreSnapshotURL
+	// on EmptyDir shards, but a manual patch or upgrade could bypass admission.
+	snapshotRestored := meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+	if shard.RestoreSnapshotURL != "" && !snapshotRestored && shard.Storage.Type != hyperv1.EmptyDirEtcdShardStorage {
+		sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
+			buildEtcdInitContainer(shard.RestoreSnapshotURL),
+		)
 	}
 
 	adaptShardStorage(sts, shard, hcp)
