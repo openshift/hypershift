@@ -11410,7 +11410,10 @@ string
 </td>
 <td>
 <p>name is the name of the Secret containing tls.crt and tls.key.
-The Secret must exist in the same namespace as the HostedCluster.</p>
+The Secret must exist in the same namespace as the HostedCluster.
+name must be a valid DNS subdomain name (RFC 1123): it must contain only
+lowercase alphanumeric characters, &lsquo;-&rsquo; or &lsquo;.&rsquo;, and start and end with an
+alphanumeric character.</p>
 </td>
 </tr>
 </tbody>
