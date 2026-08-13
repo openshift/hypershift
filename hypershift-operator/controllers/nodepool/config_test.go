@@ -126,8 +126,8 @@ spec:
 	expectedGlobalConfigString := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
 `
-	// For release versions >= 4.23.0, the apiserver config is additionally included.
-	expectedGlobalConfigStringWithAPIServer := expectedGlobalConfigString + `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"servingCerts":{},"clientCA":{"name":""},"encryption":{},"audit":{}},"status":{}}
+	// For release versions >= 4.23.0, the TLS security profile is additionally included in the config hash.
+	expectedGlobalConfigStringWithAPIServer := expectedGlobalConfigString + `null
 `
 
 	hostedCluster := &hyperv1.HostedCluster{
@@ -296,7 +296,7 @@ spec:
 		},
 		{
 			name:                       "When osImageStream is set to non-default it should produce a different hash",
-			expectedHash:               "4ecbeb73",
+			expectedHash:               "3d08ada8",
 			expectedHashWithoutVersion: "3a158178",
 			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
@@ -317,7 +317,7 @@ spec:
 		},
 		{
 			name:                       "When release version is 5.0.0 with no osImageStream it should normalize rhelStream to empty",
-			expectedHash:               "2d564196",
+			expectedHash:               "bc411add",
 			expectedHashWithoutVersion: "0db5756d",
 			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool:                   &hyperv1.NodePool{},
@@ -334,7 +334,7 @@ spec:
 		},
 		{
 			name:                       "When osImageStream is rhel-10 on 5.0.0 it should normalize to empty and match unset hash",
-			expectedHash:               "2d564196",
+			expectedHash:               "bc411add",
 			expectedHashWithoutVersion: "0db5756d",
 			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
@@ -355,7 +355,7 @@ spec:
 		},
 		{
 			name:                       "When runc ContainerRuntimeConfig on 5.0.0 with explicit rhel-9, it should normalize rhelStream to empty",
-			expectedHash:               "8dc0d4f5",
+			expectedHash:               "ff007b24",
 			expectedHashWithoutVersion: "6d5a7b66",
 			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
@@ -385,7 +385,7 @@ spec:
 		},
 		{
 			name:                       "When runc ContainerRuntimeConfig on 5.0.0 with no osImageStream, it should match explicit rhel-9 hash",
-			expectedHash:               "8dc0d4f5",
+			expectedHash:               "ff007b24",
 			expectedHashWithoutVersion: "6d5a7b66",
 			expectedGlobalConfig:       expectedGlobalConfigStringWithAPIServer,
 			nodePool: &hyperv1.NodePool{
@@ -1948,9 +1948,14 @@ func TestGlobalConfigString(t *testing.T) {
 	expectedGlobalConfigStringWithValues := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"httpProxy":"proxy","noProxy":"noProxy","trustedCA":{"name":""}},"status":{"httpProxy":"proxy","noProxy":".cluster.local,.local,.svc,127.0.0.1,localhost,noProxy"}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"externalRegistryHostnames":["external registry"],"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
 `
-	expectedGlobalConfigStringWithAPIServer := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
+	expectedGlobalConfigStringWithTLSProfile := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
-{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"servingCerts":{},"clientCA":{"name":""},"encryption":{},"audit":{}},"status":{}}
+null
+`
+
+	expectedGlobalConfigStringWithTLSProfileSet := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+{"type":"Custom","custom":{"ciphers":["TLS_AES_128_GCM_SHA256"],"minTLSVersion":"VersionTLS13"}}
 `
 
 	testCases := []struct {
@@ -2003,10 +2008,35 @@ func TestGlobalConfigString(t *testing.T) {
 			expectedOutput: expectedGlobalConfigStringWithValues,
 		},
 		{
-			name:           "When release image is >= 4.23 the apiserver is included in the global config string",
+			name:           "When release image is >= 4.23 with no TLS profile it should include null TLS profile in config string",
 			globalConfig:   &hyperv1.ClusterConfiguration{},
 			releaseImage:   &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.23.0"}}},
-			expectedOutput: expectedGlobalConfigStringWithAPIServer,
+			expectedOutput: expectedGlobalConfigStringWithTLSProfile,
+		},
+		{
+			name: "When release image is >= 4.23 with TLS profile set it should include only TLS profile in config string",
+			globalConfig: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{
+							TLSProfileSpec: configv1.TLSProfileSpec{
+								Ciphers:       []string{"TLS_AES_128_GCM_SHA256"},
+								MinTLSVersion: configv1.VersionTLS13,
+							},
+						},
+					},
+					Encryption: configv1.APIServerEncryption{Type: configv1.EncryptionTypeAESCBC},
+				},
+			},
+			releaseImage:   &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.23.0"}}},
+			expectedOutput: expectedGlobalConfigStringWithTLSProfileSet,
+		},
+		{
+			name:           "When release image is a 4.23 CI pre-release it should still include TLS profile in config string",
+			globalConfig:   &hyperv1.ClusterConfiguration{},
+			releaseImage:   &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.23.0-0.ci-2026-08-11-110857"}}},
+			expectedOutput: expectedGlobalConfigStringWithTLSProfile,
 		},
 	}
 
