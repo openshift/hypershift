@@ -91,15 +91,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
-// Returns int (not (int, bool)) to unconditionally inject --v=2 as the default,
-// keeping oauth-apiserver log verbosity consistent with the KAS baseline.
 func resolveOAuthAPIServerVerbosity(hcp *hyperv1.HostedControlPlane) int {
-	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel != "" {
-		return util.LogLevelToKlogVerbosity(
-			hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel)
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel
 	}
-	return 2
+	return util.LogLevelToKlogVerbosity(level)
 }
 
 func applyAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {

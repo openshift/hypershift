@@ -202,14 +202,16 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 }
 
 func resolveKASVerbosity(hcp *hyperv1.HostedControlPlane) int {
-	// 1. New API field takes precedence
-	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel != "" {
-		return util.LogLevelToKlogVerbosity(
-			hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel)
+	// New API field takes precedence
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel
+	}
+	if level != "" {
+		return util.LogLevelToKlogVerbosity(level)
 	}
 
-	// 2. Fallback: deprecated annotation (raw integer)
+	// Fallback: deprecated annotation (raw integer)
 	if v := hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil {
 			// TODO(CNTRLPLANE-3998): Emit deprecation warning condition on HCP status
@@ -217,8 +219,7 @@ func resolveKASVerbosity(hcp *hyperv1.HostedControlPlane) int {
 		}
 	}
 
-	// 3. Default
-	return 2
+	return util.LogLevelToKlogVerbosity(level)
 }
 
 func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {

@@ -163,11 +163,10 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 	testCases := []struct {
 		name          string
 		hcp           *hyperv1.HostedControlPlane
-		expectEnvVar  bool
 		expectedValue string
 	}{
 		{
-			name: "When LogLevel is nil it should not set ETCD_LOG_LEVEL env var",
+			name: "When LogLevel is nil it should default ETCD_LOG_LEVEL to info",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
@@ -176,10 +175,10 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 					},
 				},
 			},
-			expectEnvVar: false,
+			expectedValue: "info",
 		},
 		{
-			name: "When operatorConfiguration exists but Etcd is zero value it should not set ETCD_LOG_LEVEL",
+			name: "When operatorConfiguration exists but Etcd is zero value it should default ETCD_LOG_LEVEL to info",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
@@ -189,7 +188,7 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 					},
 				},
 			},
-			expectEnvVar: false,
+			expectedValue: "info",
 		},
 		{
 			name: "When LogLevel is Normal it should set ETCD_LOG_LEVEL to info",
@@ -204,7 +203,6 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 					},
 				},
 			},
-			expectEnvVar:  true,
 			expectedValue: "info",
 		},
 		{
@@ -220,7 +218,6 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 					},
 				},
 			},
-			expectEnvVar:  true,
 			expectedValue: "debug",
 		},
 		{
@@ -236,7 +233,6 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 					},
 				},
 			},
-			expectEnvVar:  true,
 			expectedValue: "debug",
 		},
 		{
@@ -252,7 +248,6 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 					},
 				},
 			},
-			expectEnvVar:  true,
 			expectedValue: "debug",
 		},
 	}
@@ -293,12 +288,8 @@ func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
 			g.Expect(etcdContainer).NotTo(BeNil())
 
 			envVar := findEnvVar(etcdContainer.Env, "ETCD_LOG_LEVEL")
-			if tc.expectEnvVar {
-				g.Expect(envVar).NotTo(BeNil(), "expected ETCD_LOG_LEVEL env var to be set")
-				g.Expect(envVar.Value).To(Equal(tc.expectedValue))
-			} else {
-				g.Expect(envVar).To(BeNil(), "expected ETCD_LOG_LEVEL env var to not be set")
-			}
+			g.Expect(envVar).NotTo(BeNil(), "expected ETCD_LOG_LEVEL env var to be set")
+			g.Expect(envVar.Value).To(Equal(tc.expectedValue))
 		})
 	}
 }

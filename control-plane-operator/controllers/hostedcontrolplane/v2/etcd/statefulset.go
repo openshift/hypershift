@@ -90,14 +90,14 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 				Value: "https://[::]:2382",
 			})
 		}
-		if hcp.Spec.OperatorConfiguration != nil &&
-			hcp.Spec.OperatorConfiguration.Etcd.LogLevel != "" {
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
-				Name: "ETCD_LOG_LEVEL",
-				Value: util.LogLevelToEtcdLevel(
-					hcp.Spec.OperatorConfiguration.Etcd.LogLevel),
-			})
+		var etcdLogLevel hyperv1.LogLevel
+		if hcp.Spec.OperatorConfiguration != nil {
+			etcdLogLevel = hcp.Spec.OperatorConfiguration.Etcd.LogLevel
 		}
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "ETCD_LOG_LEVEL",
+			Value: util.LogLevelToEtcdLevel(etcdLogLevel),
+		})
 	})
 
 	podspec.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {

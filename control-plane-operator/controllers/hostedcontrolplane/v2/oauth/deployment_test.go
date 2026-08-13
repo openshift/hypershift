@@ -125,28 +125,25 @@ func TestResolveOAuthVerbosity(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		hcp        *hyperv1.HostedControlPlane
-		expected   int
-		expectedOk bool
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected int
 	}{
 		{
-			name: "When no operatorConfiguration is set it should return false",
+			name: "When no operatorConfiguration is set it should default to verbosity 2",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{},
 			},
-			expected:   0,
-			expectedOk: false,
+			expected: 2,
 		},
 		{
-			name: "When operatorConfiguration exists but logLevel is nil it should return false",
+			name: "When operatorConfiguration exists but oauthServer logLevel is nil it should default to verbosity 2",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
 				},
 			},
-			expected:   0,
-			expectedOk: false,
+			expected: 2,
 		},
 		{
 			name: "When oauthServer logLevel is Normal it should return verbosity 2",
@@ -157,8 +154,7 @@ func TestResolveOAuthVerbosity(t *testing.T) {
 					},
 				},
 			},
-			expected:   2,
-			expectedOk: true,
+			expected: 2,
 		},
 		{
 			name: "When oauthServer logLevel is Debug it should return verbosity 4",
@@ -169,8 +165,7 @@ func TestResolveOAuthVerbosity(t *testing.T) {
 					},
 				},
 			},
-			expected:   4,
-			expectedOk: true,
+			expected: 4,
 		},
 		{
 			name: "When oauthServer logLevel is Trace it should return verbosity 6",
@@ -181,8 +176,7 @@ func TestResolveOAuthVerbosity(t *testing.T) {
 					},
 				},
 			},
-			expected:   6,
-			expectedOk: true,
+			expected: 6,
 		},
 		{
 			name: "When oauthServer logLevel is TraceAll it should return verbosity 8",
@@ -193,17 +187,14 @@ func TestResolveOAuthVerbosity(t *testing.T) {
 					},
 				},
 			},
-			expected:   8,
-			expectedOk: true,
+			expected: 8,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			v, ok := resolveOAuthVerbosity(tt.hcp)
-			g.Expect(ok).To(Equal(tt.expectedOk))
-			g.Expect(v).To(Equal(tt.expected))
+			g.Expect(resolveOAuthVerbosity(tt.hcp)).To(Equal(tt.expected))
 		})
 	}
 }

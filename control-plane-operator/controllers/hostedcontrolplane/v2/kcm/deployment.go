@@ -19,16 +19,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// resolveKCMVerbosity returns the klog verbosity for kube-controller-manager
-// only when explicitly configured via OperatorConfiguration. Returns false when
-// no LogLevel is set, preserving the klog default (0) for existing clusters.
-func resolveKCMVerbosity(hcp *hyperv1.HostedControlPlane) (int, bool) {
-	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel != "" {
-		return util.LogLevelToKlogVerbosity(
-			hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel), true
+func resolveKCMVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.KubeControllerManager.LogLevel
 	}
-	return 0, false
+	return util.LogLevelToKlogVerbosity(level)
 }
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -43,14 +39,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return err
 	}
 
-	// Only override verbosity when explicitly configured; preserve klog default otherwise.
-	if v, ok := resolveKCMVerbosity(hcp); ok {
-		podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-			c.Args = append(c.Args, fmt.Sprintf("--v=%d", v))
-		})
-	}
-
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveKCMVerbosity(hcp)))
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-cidr=%s", netutil.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork)),
 			fmt.Sprintf("--service-cluster-ip-range=%s", netutil.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork)),

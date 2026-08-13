@@ -57,13 +57,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		config.AuditWebhookService,
 	}
 
-	if v, ok := resolveOAPIVerbosity(cpContext.HCP); ok {
-		podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-			c.Args = append(c.Args, fmt.Sprintf("--v=%d", v))
-		})
-	}
-
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveOAPIVerbosity(cpContext.HCP)))
 		if !util.HCPOAuthEnabled(cpContext.HCP) {
 			c.Args = append(c.Args, "--internal-oauth-disabled=true")
 		}
@@ -125,13 +120,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
-func resolveOAPIVerbosity(hcp *hyperv1.HostedControlPlane) (int, bool) {
-	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.OpenShiftAPIServer.LogLevel != "" {
-		return util.LogLevelToKlogVerbosity(
-			hcp.Spec.OperatorConfiguration.OpenShiftAPIServer.LogLevel), true
+func resolveOAPIVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.OpenShiftAPIServer.LogLevel
 	}
-	return 0, false
+	return util.LogLevelToKlogVerbosity(level)
 }
 
 func applyAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {

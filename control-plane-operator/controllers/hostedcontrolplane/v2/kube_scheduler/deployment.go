@@ -37,13 +37,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
-// Returns int (not (int, bool)) to unconditionally inject --v=2 as the default,
-// keeping kube-scheduler log verbosity consistent with the KAS baseline.
 func resolveSchedulerVerbosity(hcp *hyperv1.HostedControlPlane) int {
-	if hcp.Spec.OperatorConfiguration != nil &&
-		hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel != "" {
-		return util.LogLevelToKlogVerbosity(
-			hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel)
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel
 	}
-	return 2
+	return util.LogLevelToKlogVerbosity(level)
 }
