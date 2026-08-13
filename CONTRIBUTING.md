@@ -53,7 +53,7 @@ Useful Prow commands:
 - `lgtm` - From a reviewer via `/lgtm`
 - `jira/valid-reference` - PR title contains a valid Jira ticket reference (or NO-JIRA if no associated issue)
     **Note:** NO-JIRA should be used sparingly. Please have a Jira issue associated with your PR whenever possible.
-- `area/*` - Area label (e.g., `area/documentation`, `area/control-plane`)
+- `area/*` - Area label (e.g., `area/documentation`, `area/control-plane`). These are kept in sync automatically based on the files a PR changes (see `.github/labeler.yml` and the "Refresh PR Area Labels" workflow); they can also be set manually via the `/area <name>` comment command in `.github/labels.yaml`.
 - `verified` - QA verification passed (for more information refer to the [documentation](https://docs.ci.openshift.org/docs/architecture/jira/#the-verified-label))
 
 **Conditionally required:**
