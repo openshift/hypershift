@@ -1,0 +1,142 @@
+# Path-based configuration for actions/labeler.
+#
+# This file drives the "Refresh PR Area Labels" workflow
+# (.github/workflows/refresh-area-labels.yml), which keeps `area/*` labels on
+# pull requests in sync with the files a PR actually changes. Labels listed
+# here are added when a matching file changes, and removed when it no longer
+# does (see `sync-labels: true` in the workflow).
+#
+# This is complementary to the `/area <name>` comment command described in
+# .github/labels.yaml, which is handled by Prow rather than GitHub Actions.
+#
+# Config schema: https://github.com/actions/labeler#pull-request-labeler
+
+area/api:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'api/**'
+
+area/cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**'
+          - 'product-cli/**'
+
+area/documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'
+
+area/testing:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'test/**'
+
+area/hypershift-operator:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'hypershift-operator/**'
+
+area/control-plane-operator:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'control-plane-operator/**'
+
+area/control-plane-pki-operator:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'control-plane-pki-operator/**'
+
+area/karpenter-operator:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'karpenter-operator/**'
+          - 'api/karpenter/**'
+          - 'support/karpenter/**'
+
+area/ci-tooling:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'hack/**'
+          - 'hypershift-ci-python/**'
+
+area/ai:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.claude/**'
+          - '.cursor/**'
+          - '**/AGENTS.md'
+
+area/dependency:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/vendor/**'
+          - '**/go.mod'
+          - '**/go.sum'
+
+area/platform/aws:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**/aws/**'
+          - 'hypershift-operator/**/aws/**'
+          - 'control-plane-operator/**/aws/**'
+          - 'control-plane-operator/controllers/awsprivatelink/**'
+          - 'control-plane-operator/controllers/**/awsnodeterminationhandler/**'
+          - 'support/awsutil/**'
+          - 'support/awsapi/**'
+
+area/platform/azure:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**/azure/**'
+          - 'hypershift-operator/**/azure/**'
+          - 'control-plane-operator/**/azure/**'
+          - 'control-plane-operator/controllers/azureprivatelinkservice/**'
+          - 'support/azureutil/**'
+
+area/platform/gcp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**/gcp/**'
+          - 'hypershift-operator/**/gcp/**'
+          - 'control-plane-operator/**/gcp/**'
+          - 'control-plane-operator/controllers/gcpprivateserviceconnect/**'
+          - 'support/gcpapi/**'
+          - 'support/gcputil/**'
+
+area/platform/ibmcloud:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'hypershift-operator/**/ibmcloud/**'
+          - 'api/ibmcapi/**'
+
+area/platform/openstack:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**/openstack/**'
+          - 'hypershift-operator/**/openstack/**'
+          - 'control-plane-operator/**/openstack/**'
+          - 'support/openstackutil/**'
+
+area/platform/kubevirt:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**/kubevirt/**'
+          - 'hypershift-operator/**/kubevirt/**'
+          - 'control-plane-operator/**/kubevirt/**'
+          - 'kubevirtexternalinfra/**'
+
+area/platform/powervs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/**/powervs/**'
+          - 'hypershift-operator/**/powervs/**'
+          - 'control-plane-operator/**/powervs/**'
+
+area/platform/none:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'cmd/cluster/none/**'
+          - 'hypershift-operator/**/platform/none/**'
