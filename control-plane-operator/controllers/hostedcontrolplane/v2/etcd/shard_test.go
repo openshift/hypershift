@@ -511,6 +511,158 @@ func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
 	g.Expect(hasDefrag).To(BeTrue())
 }
 
+func TestAdaptStatefulSetForShard_RestoreInitContainer(t *testing.T) {
+	t.Parallel()
+
+	baseSTS := func() *appsv1.StatefulSet {
+		return &appsv1.StatefulSet{
+			Spec: appsv1.StatefulSetSpec{
+				Selector:    &metav1.LabelSelector{MatchLabels: map[string]string{"app": "etcd-events"}},
+				ServiceName: "etcd-discovery-events",
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "etcd-events"}},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: ComponentName, Env: []corev1.EnvVar{}},
+							{Name: "etcd-metrics"},
+						},
+						InitContainers: []corev1.Container{
+							{Name: "ensure-dns", Args: []string{"-c", "placeholder"}},
+							{Name: "reset-member", Args: []string{"-c", "placeholder"}},
+						},
+						Volumes: []corev1.Volume{
+							{Name: "peer-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "etcd-peer-tls"}}},
+							{Name: "server-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "etcd-server-tls"}}},
+						},
+					},
+				},
+				VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+					{Spec: corev1.PersistentVolumeClaimSpec{}},
+				},
+			},
+		}
+	}
+
+	baseCPContext := func(conditions []metav1.Condition) component.WorkloadContext {
+		return component.WorkloadContext{
+			HCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{CIDR: mustParseCIDR("10.0.0.0/16")},
+						},
+					},
+					ControllerAvailabilityPolicy: hyperv1.SingleReplica,
+					Etcd: hyperv1.EtcdSpec{
+						Managed: &hyperv1.ManagedEtcdSpec{},
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: conditions,
+				},
+			},
+		}
+	}
+
+	t.Run("When RestoreSnapshotURL is set and EtcdSnapshotRestored is not True it should inject etcd-init", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		sts := baseSTS()
+		shard := hyperv1.ManagedEtcdShardSpec{
+			Name:               "events",
+			Replicas:           1,
+			Storage:            hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			RestoreSnapshotURL: "https://example.com/events-snapshot.db",
+		}
+
+		err := adaptStatefulSetForShard(baseCPContext(nil), sts, shard)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		var hasEtcdInit bool
+		for _, c := range sts.Spec.Template.Spec.InitContainers {
+			if c.Name == "etcd-init" {
+				hasEtcdInit = true
+				// Verify the restore URL env var
+				var foundURL bool
+				for _, env := range c.Env {
+					if env.Name == "RESTORE_URL_ETCD" && env.Value == "https://example.com/events-snapshot.db" {
+						foundURL = true
+					}
+				}
+				g.Expect(foundURL).To(BeTrue(), "etcd-init should have RESTORE_URL_ETCD env var")
+			}
+		}
+		g.Expect(hasEtcdInit).To(BeTrue(), "etcd-init container should be injected")
+	})
+
+	t.Run("When EtcdSnapshotRestored is True it should not inject etcd-init", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		sts := baseSTS()
+		shard := hyperv1.ManagedEtcdShardSpec{
+			Name:               "events",
+			Replicas:           1,
+			Storage:            hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			RestoreSnapshotURL: "https://example.com/events-snapshot.db",
+		}
+
+		conditions := []metav1.Condition{{
+			Type:   string(hyperv1.EtcdSnapshotRestored),
+			Status: metav1.ConditionTrue,
+			Reason: "AsExpected",
+		}}
+
+		err := adaptStatefulSetForShard(baseCPContext(conditions), sts, shard)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		for _, c := range sts.Spec.Template.Spec.InitContainers {
+			g.Expect(c.Name).ToNot(Equal("etcd-init"), "etcd-init should NOT be injected when EtcdSnapshotRestored is True")
+		}
+	})
+
+	t.Run("When RestoreSnapshotURL is empty it should not inject etcd-init", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		sts := baseSTS()
+		shard := hyperv1.ManagedEtcdShardSpec{
+			Name:     "events",
+			Replicas: 1,
+			Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+		}
+
+		err := adaptStatefulSetForShard(baseCPContext(nil), sts, shard)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		for _, c := range sts.Spec.Template.Spec.InitContainers {
+			g.Expect(c.Name).ToNot(Equal("etcd-init"), "etcd-init should NOT be injected when RestoreSnapshotURL is empty")
+		}
+	})
+
+	t.Run("When RestoreSnapshotURL is set on EmptyDir shard it should not inject etcd-init (defense-in-depth)", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		sts := baseSTS()
+		shard := hyperv1.ManagedEtcdShardSpec{
+			Name:               "events",
+			Replicas:           1,
+			Storage:            hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.EmptyDirEtcdShardStorage},
+			RestoreSnapshotURL: "https://example.com/events.db",
+		}
+
+		err := adaptStatefulSetForShard(baseCPContext(nil), sts, shard)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		for _, c := range sts.Spec.Template.Spec.InitContainers {
+			g.Expect(c.Name).ToNot(Equal("etcd-init"), "etcd-init should NOT be injected for EmptyDir shards even if RestoreSnapshotURL is set")
+		}
+	})
+}
+
 // mustParseCIDR parses a CIDR string for test use.
 func mustParseCIDR(cidr string) ipnet.IPNet {
 	return *ipnet.MustParseCIDR(cidr)
