@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -1020,10 +1021,53 @@ func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, no
 			condition.Reason = hyperv1.AWSErrorReason
 			condition.Message = err.Error()
 		}
+	case hyperv1.KubevirtPlatform:
+		if err := r.validateKubevirtAdditionalNetworkNamespaces(nodePool, hc); err != nil {
+			condition.Status = corev1.ConditionFalse
+			condition.Reason = hyperv1.NodePoolValidationFailedReason
+			condition.Message = err.Error()
+		}
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *condition)
 	return nil, nil
+}
+
+// validateKubevirtAdditionalNetworkNamespaces checks that each additionalNetworks entry
+// references a NAD in the namespace where virt-launcher pods will run, or in "default".
+// With Multus namespace isolation enabled (OpenShift default), pods cannot reference NADs
+// in other namespaces.
+func (r *NodePoolReconciler) validateKubevirtAdditionalNetworkNamespaces(nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) error {
+	kvPlatform := nodePool.Spec.Platform.Kubevirt
+	if kvPlatform == nil || len(kvPlatform.AdditionalNetworks) == 0 {
+		return nil
+	}
+
+	infraNS := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	if hc.Spec.Platform.Kubevirt != nil &&
+		hc.Spec.Platform.Kubevirt.Credentials != nil &&
+		len(hc.Spec.Platform.Kubevirt.Credentials.InfraNamespace) > 0 {
+		infraNS = hc.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+	}
+
+	for _, network := range kvPlatform.AdditionalNetworks {
+		parts := strings.SplitN(network.Name, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		nadNamespace := parts[0]
+		// "default" is always in Multus globalNamespaces on OCP. Other global namespaces
+		// (openshift-multus, openshift-sriov-network-operator) are also exempt from isolation
+		// but are operator-internal — user NADs should not be placed there.
+		if nadNamespace != infraNS && nadNamespace != "default" {
+			return fmt.Errorf(
+				"additionalNetwork %q references namespace %q, but virt-launcher pods run in namespace %q; "+
+					"with Multus namespace isolation (OpenShift default), this is likely to be rejected. "+
+					"Create the NetworkAttachmentDefinition in namespace %q or %q",
+				network.Name, nadNamespace, infraNS, infraNS, "default")
+		}
+	}
+	return nil
 }
 
 func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
