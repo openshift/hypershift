@@ -47,6 +47,7 @@ const (
 // RegisterNodePoolOSImageStreamLifecycleTests registers lifecycle (state-mutating)
 // NodePool OS image stream test cases.
 func RegisterNodePoolOSImageStreamLifecycleTests(getTestCtx internal.TestContextGetter) {
+	NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx)
 	NodePoolOSImageStreamRHEL10RejectionTest(getTestCtx)
 	NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx)
 	NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx)
@@ -56,7 +57,6 @@ func RegisterNodePoolOSImageStreamLifecycleTests(getTestCtx internal.TestContext
 // NodePool OS image stream test cases.
 func RegisterNodePoolOSImageStreamStatusTests(getTestCtx internal.TestContextGetter) {
 	NodePoolOSImageStreamDefaultStatusTest(getTestCtx)
-	NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx)
 }
 
 // osImageStreamBeforeEach is the shared BeforeEach for all OSImageStream test suites.
@@ -302,8 +302,6 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			e2eutil.WithInterval(15*time.Second),
 		)
 
-		testCtx.ValidateHostedClusterClient()
-
 		By("verifying node OS images match the resolved osImageStream")
 		verifyNodeOSMatchesStream(testCtx, defaultNP, expectedStream)
 	})
@@ -313,12 +311,14 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 // string (e.g. "Red Hat Enterprise Linux CoreOS 10.2.20260724-0 (Coughlan)" → "10").
 var rhcosMajorVersionRe = regexp.MustCompile(`CoreOS (\d+)\.`)
 
-func expectedRHELMajorForStream(stream string) string {
+func expectedRHELMajorForStream(stream string) (string, error) {
 	switch stream {
 	case hyperv1.OSImageStreamRHEL10:
-		return "10"
+		return "10", nil
+	case hyperv1.OSImageStreamRHEL9:
+		return "9", nil
 	default:
-		return "9"
+		return "", fmt.Errorf("unrecognized osImageStream %q", stream)
 	}
 }
 
@@ -328,63 +328,116 @@ func expectedRHELMajorForStream(stream string) string {
 // the correct stream in status but the MCO fails to apply it (e.g. due
 // to an API version mismatch in the rendered OSImageStream CR).
 func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePool, expectedStream string) {
-	hc := testCtx.GetHostedCluster()
-	hcClient := testCtx.GetHostedClusterClient()
-	Expect(hcClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
+	hc, err := testCtx.GetHostedCluster()
+	Expect(err).NotTo(HaveOccurred())
+	hcClient, err := testCtx.GetHostedClusterClient(hc)
+	Expect(err).NotTo(HaveOccurred(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
 
-	nodes := e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), testCtx.Context, hcClient, np, hc.Spec.Platform.Type)
-	Expect(nodes).NotTo(BeEmpty(), "expected at least one ready node in NodePool %s", np.Name)
+	e2eutil.EventuallyObject[*hyperv1.NodePool](
+		GinkgoTB(), testCtx.Context,
+		fmt.Sprintf("NodePool %s/%s to have all nodes ready", np.Namespace, np.Name),
+		func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+			pool := &hyperv1.NodePool{}
+			err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
+			return pool, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{allNodesReadyPredicate()},
+		e2eutil.WithTimeout(45*time.Minute),
+		e2eutil.WithInterval(30*time.Second),
+	)
 
-	expectedMajor := expectedRHELMajorForStream(expectedStream)
-	GinkgoWriter.Printf("Verifying %d nodes in NodePool %s run RHCOS major version %s (stream=%s)\n",
-		len(nodes), np.Name, expectedMajor, expectedStream)
+	expectedMajor, err := expectedRHELMajorForStream(expectedStream)
+	Expect(err).NotTo(HaveOccurred())
 
-	var mismatches []string
-	for _, node := range nodes {
+	nodeList := &corev1.NodeList{}
+	Expect(hcClient.List(testCtx.Context, nodeList,
+		crclient.MatchingLabels{hyperv1.NodePoolLabel: np.Name})).To(Succeed())
+	Expect(nodeList.Items).NotTo(BeEmpty(), "no nodes found for NodePool %s", np.Name)
+
+	for _, node := range nodeList.Items {
 		osImage := node.Status.NodeInfo.OSImage
-		m := rhcosMajorVersionRe.FindStringSubmatch(osImage)
-		if len(m) < 2 {
-			mismatches = append(mismatches, fmt.Sprintf("%s: could not parse RHCOS version from %q", node.Name, osImage))
-			continue
-		}
-		if m[1] != expectedMajor {
-			mismatches = append(mismatches, fmt.Sprintf("%s: osImage=%q (RHCOS major=%s, expected=%s)",
-				node.Name, osImage, m[1], expectedMajor))
-		}
-	}
+		GinkgoWriter.Printf("Verifying node %s in NodePool %s runs RHCOS major version %s (stream=%s, osImage=%s)\n",
+			node.Name, np.Name, expectedMajor, expectedStream, osImage)
 
-	Expect(mismatches).To(BeEmpty(),
-		"node OS version does not match resolved osImageStream %q: %s",
-		expectedStream, strings.Join(mismatches, "; "))
+		m := rhcosMajorVersionRe.FindStringSubmatch(osImage)
+		Expect(m).To(HaveLen(2), "could not parse RHCOS version from %q on node %s", osImage, node.Name)
+		Expect(m[1]).To(Equal(expectedMajor),
+			"node %s osImage=%q has RHCOS major=%s, expected=%s for stream %s",
+			node.Name, osImage, m[1], expectedMajor, expectedStream)
+	}
 }
 
-// NodePoolOSImageStreamNodeOSVerificationTest verifies that the actual node OS
-// matches the resolved osImageStream as a standalone test. This is registered
-// as a status (non-lifecycle) test since it only reads node state.
+// NodePoolOSImageStreamNodeOSVerificationTest verifies that actual node OS versions
+// match the expected osImageStream across three scenarios: the default NodePool
+// (no osImageStream set), an explicit rhel-9 NodePool, and an explicit rhel-10
+// NodePool. This is a lifecycle test because it creates additional NodePools.
 func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContextGetter) {
-	It("When a NodePool resolves an osImageStream, it should run nodes with the matching OS version", func() {
+	It("When NodePools have different osImageStream values, nodes should run the matching OS version", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+
+		// rhel-10 osImageStream is only supported on OCP 5+
+		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+		Expect(defaultNP.Spec.OSImageStream.Name).To(BeEmpty(),
+			"default NodePool %s should not have an explicit spec.osImageStream set", defaultNP.Name)
 
-		pool := &hyperv1.NodePool{}
-		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), pool)).
-			To(Succeed(), "failed to get NodePool %s", defaultNP.Name)
+		By("waiting for the default NodePool to have status.osImageStream resolved")
+		e2eutil.EventuallyObject[*hyperv1.NodePool](
+			GinkgoTB(), ctx,
+			fmt.Sprintf("NodePool %s/%s status.osImageStream to be set", defaultNP.Namespace, defaultNP.Name),
+			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				osImageStreamSetPredicate(),
+			},
+			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
+		)
 
-		resolvedStream := pool.Status.OSImageStream.Name
-		if resolvedStream == "" {
-			resolvedStream = pool.Spec.OSImageStream.Name
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), defaultNP)).To(Succeed())
+		defaultStream := defaultNP.Status.OSImageStream.Name
+		Expect(defaultStream).NotTo(BeEmpty(), "default NodePool %s should have status.osImageStream.name set", defaultNP.Name)
+
+		By(fmt.Sprintf("verifying the default NodePool (spec.osImageStream=%q, status.osImageStream=%s) runs the expected OS",
+			defaultNP.Spec.OSImageStream.Name, defaultStream))
+		verifyNodeOSMatchesStream(testCtx, defaultNP, defaultStream)
+
+		var alternateStream string
+		switch defaultStream {
+		case hyperv1.OSImageStreamRHEL10:
+			alternateStream = hyperv1.OSImageStreamRHEL9
+		case hyperv1.OSImageStreamRHEL9:
+			alternateStream = hyperv1.OSImageStreamRHEL10
+		default:
+			Fail(fmt.Sprintf("unexpected default stream %q", defaultStream))
 		}
-		if resolvedStream == "" {
-			resolvedStream = hyperv1.OSImageStreamRHEL10
-		}
 
-		verifyNodeOSMatchesStream(testCtx, defaultNP, resolvedStream)
+		By(fmt.Sprintf("creating a NodePool with osImageStream=%s", alternateStream))
+		var oneReplica int32 = 1
+		npAlternate := buildTestNodePool(defaultNP, "osstream-"+alternateStream, func(pool *hyperv1.NodePool) {
+			pool.Spec.Replicas = &oneReplica
+			pool.Spec.OSImageStream = hyperv1.OSImageStreamReference{
+				Name: alternateStream,
+			}
+		})
+		Expect(testCtx.MgmtClient.Create(ctx, npAlternate)).To(Succeed(), "failed to create NodePool %s", npAlternate.Name)
+		GinkgoWriter.Printf("Created NodePool %s with osImageStream=%s\n", npAlternate.Name, alternateStream)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, npAlternate)
+		})
+
+		By(fmt.Sprintf("verifying %s NodePool nodes run the correct OS", alternateStream))
+		verifyNodeOSMatchesStream(testCtx, npAlternate, alternateStream)
 	})
 }
 
@@ -408,6 +461,34 @@ func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 			return false, fmt.Sprintf("status.nodesInfo has %d version entries but 0 ready nodes", len(versions)), nil
 		}
 		return true, fmt.Sprintf("status.nodesInfo has %d ready nodes across %d version entries", totalReady, len(versions)), nil
+	}
+}
+
+// allNodesReadyPredicate returns a predicate that validates that all of a NodePool's
+// expected replicas are ready, as reported by status.nodesInfo.nodeVersions.
+func allNodesReadyPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+	return func(pool *hyperv1.NodePool) (bool, string, error) {
+		var expected int32
+		if pool.Spec.Replicas != nil {
+			expected = *pool.Spec.Replicas
+		}
+		if expected == 0 {
+			return false, "spec.replicas is 0 or nil", nil
+		}
+		versions := pool.Status.NodesInfo.NodeVersions
+		if len(versions) == 0 {
+			return false, fmt.Sprintf("status.nodesInfo.nodeVersions is empty, want %d ready nodes", expected), nil
+		}
+		var totalReady int32
+		for _, v := range versions {
+			if v.ReadyNodeCount != nil {
+				totalReady += *v.ReadyNodeCount
+			}
+		}
+		if totalReady < expected {
+			return false, fmt.Sprintf("status.nodesInfo has %d/%d ready nodes", totalReady, expected), nil
+		}
+		return true, fmt.Sprintf("all %d nodes ready", totalReady), nil
 	}
 }
 
