@@ -16,9 +16,6 @@
             {
                 "disabled": [
                     {
-                        "name": "ExternalOIDCWithUpstreamParity"
-                    },
-                    {
                       "name": "AROHCPManagedIdentities"
                     },
                     {
@@ -51,6 +48,9 @@
                     },
                     {
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
+                    },
+                    {
+                        "name": "ExternalOIDCWithUpstreamParity"
                     },
                     {
                         "name": "DynamicResourceAllocation"

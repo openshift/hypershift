@@ -19,9 +19,6 @@
                       "name": "AROHCPManagedIdentities"
                     },
                     {
-                        "name": "ExternalOIDCWithUpstreamParity"
-                    },
-                    {
                         "name": "OpenStack"
                     },
                     {
@@ -51,6 +48,9 @@
                     },
                     {
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
+                    },
+                    {
+                        "name": "ExternalOIDCWithUpstreamParity"
                     },
                     {
                         "name": "HyperShiftOnlyDynamicResourceAllocation"
