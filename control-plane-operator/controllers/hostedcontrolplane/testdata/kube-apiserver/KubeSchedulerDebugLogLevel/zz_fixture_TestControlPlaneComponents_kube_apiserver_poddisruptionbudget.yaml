@@ -1,6 +1,8 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 6d246e0a88dda5a7760e6dfc776d55be1311befa03ba112738622b3b8fcfa9f1
   name: kube-apiserver
   namespace: hcp-namespace
   ownerReferences:

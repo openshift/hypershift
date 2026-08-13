@@ -190,6 +190,8 @@ data:
       - https://etcd-client:2379
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 653f8f302189637879a64dca0c15a9168b0fb7217e6e4d6edebbe72d2c3766c5
   name: openshift-apiserver
   namespace: hcp-namespace
   ownerReferences:

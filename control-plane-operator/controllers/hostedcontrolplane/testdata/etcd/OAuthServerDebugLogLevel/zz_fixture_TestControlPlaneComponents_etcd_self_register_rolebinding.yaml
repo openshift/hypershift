@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 95ffdd06844a190a7d8a95ae4f2bb29433fd406138e322653fbaecaf9b4ac9bd
   name: etcd-self-register
   namespace: hcp-namespace
   ownerReferences:

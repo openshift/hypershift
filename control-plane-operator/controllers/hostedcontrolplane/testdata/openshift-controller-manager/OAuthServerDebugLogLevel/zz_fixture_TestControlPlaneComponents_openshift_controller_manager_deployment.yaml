@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 34d9feddbb832d4e9c769a2e01289afcfd318e541ea88865dd9dae7e9ec5f49c
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-controller-manager

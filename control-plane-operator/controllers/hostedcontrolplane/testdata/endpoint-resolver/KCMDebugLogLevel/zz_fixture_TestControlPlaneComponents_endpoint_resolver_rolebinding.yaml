@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 481d465c9ac0aa32980823efe98d75198b14b140456fea5a3f30cfcbf9a6cede
   name: endpoint-resolver
   namespace: hcp-namespace
   ownerReferences:

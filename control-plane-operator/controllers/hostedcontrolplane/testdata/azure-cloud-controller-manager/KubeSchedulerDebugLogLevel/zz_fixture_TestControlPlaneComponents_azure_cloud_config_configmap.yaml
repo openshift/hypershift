@@ -30,6 +30,8 @@ data:
     }
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: c3107600efa606b3dcc4fdeffdea75f3ee00d4edcd963aa257c0071a66eb956d
   name: azure-cloud-config
   namespace: hcp-namespace
   ownerReferences:

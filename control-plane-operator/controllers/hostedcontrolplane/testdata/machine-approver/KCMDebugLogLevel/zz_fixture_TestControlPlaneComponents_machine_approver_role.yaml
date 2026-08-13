@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 6ffc1f442c109741b42e956b3996990b1ef35c5073849c7acb1cad4b377f75da
   name: machine-approver
   namespace: hcp-namespace
   ownerReferences:

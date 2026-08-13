@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 6083d2abf8fef5587765d801ac8c69a1317dddc054dcfb9603cfe666c7046d4f
   name: cluster-network-operator
   namespace: hcp-namespace
   ownerReferences:

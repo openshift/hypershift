@@ -4,6 +4,8 @@ data:
     disabled: False
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: b0bf9fa9f91011e47c5ab83d6c6b2557b400454e041256e1cd82b96aac1c7222
   name: olm-collect-profiles
   namespace: hcp-namespace
   ownerReferences:

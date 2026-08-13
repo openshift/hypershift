@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    hypershift.openshift.io/desired-state-hash: a800a55076f00e27d02c78e3c748da3a68bef49115eb8fb47cf568f1df70fa72
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   labels:
