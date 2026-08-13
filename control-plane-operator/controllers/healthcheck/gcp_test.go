@@ -30,7 +30,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 		expectedMessage string
 	}{
 		{
-			name:            "KAS not available - condition missing",
+			name:            "When KAS condition is missing it should set credentials condition to Unknown",
 			kasCondition:    nil,
 			expectError:     false,
 			expectedStatus:  metav1.ConditionUnknown,
@@ -38,7 +38,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 			expectedMessage: "Cannot validate GCP credentials while KubeAPIServer is not available",
 		},
 		{
-			name: "KAS not available - condition False",
+			name: "When KAS condition is False it should set credentials condition to Unknown",
 			kasCondition: &metav1.Condition{
 				Type:   string(hyperv1.KubeAPIServerAvailable),
 				Status: metav1.ConditionFalse,
@@ -49,7 +49,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 			expectedMessage: "Cannot validate GCP credentials while KubeAPIServer is not available",
 		},
 		{
-			name: "KAS available but GCP spec missing",
+			name: "When KAS is available but GCP spec is missing it should set credentials condition to False",
 			kasCondition: &metav1.Condition{
 				Type:   string(hyperv1.KubeAPIServerAvailable),
 				Status: metav1.ConditionTrue,
@@ -61,7 +61,7 @@ func TestGCPHealthCheckIdentityProviderConditionLogic(t *testing.T) {
 			expectedMessage: "GCP platform configuration is missing from HostedControlPlane spec",
 		},
 		{
-			name: "KAS available with GCP spec but no credentials",
+			name: "When KAS is available with GCP spec but no credentials it should set credentials condition to Unknown",
 			kasCondition: &metav1.Condition{
 				Type:   string(hyperv1.KubeAPIServerAvailable),
 				Status: metav1.ConditionTrue,
@@ -200,17 +200,17 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 		permanent bool
 	}{
 		{
-			name:      "401 googleapi error is permanent",
+			name:      "When a 401 googleapi error occurs it should classify the error as permanent",
 			err:       &googleapi.Error{Code: 401, Message: "Unauthorized"},
 			permanent: true,
 		},
 		{
-			name:      "403 googleapi error is not permanent (authorization, not authentication)",
+			name:      "When a 403 googleapi error occurs it should not classify the error as permanent",
 			err:       &googleapi.Error{Code: 403, Message: "Forbidden"},
 			permanent: false,
 		},
 		{
-			name: "403 googleapi error with rateLimitExceeded is not permanent",
+			name: "When a 403 googleapi error with rateLimitExceeded occurs it should not classify the error as permanent",
 			err: &googleapi.Error{
 				Code:   403,
 				Errors: []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}},
@@ -218,7 +218,7 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 			permanent: false,
 		},
 		{
-			name: "403 googleapi error with quotaExceeded is not permanent",
+			name: "When a 403 googleapi error with quotaExceeded occurs it should not classify the error as permanent",
 			err: &googleapi.Error{
 				Code:   403,
 				Errors: []googleapi.ErrorItem{{Reason: "quotaExceeded"}},
@@ -226,7 +226,7 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 			permanent: false,
 		},
 		{
-			name: "403 googleapi error with accessNotConfigured is not permanent",
+			name: "When a 403 googleapi error with accessNotConfigured occurs it should not classify the error as permanent",
 			err: &googleapi.Error{
 				Code:   403,
 				Errors: []googleapi.ErrorItem{{Reason: "accessNotConfigured"}},
@@ -234,7 +234,7 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 			permanent: false,
 		},
 		{
-			name:      "500 googleapi error is not permanent",
+			name:      "When a 500 googleapi error occurs it should not classify the error as permanent",
 			err:       &googleapi.Error{Code: 500, Message: "Internal Server Error"},
 			permanent: false,
 		},
@@ -267,12 +267,12 @@ func TestIsPermanentGCPCredentialError(t *testing.T) {
 			permanent: false,
 		},
 		{
-			name:      "wrapped googleapi 401 error is permanent",
+			name:      "When a wrapped googleapi 401 error occurs it should classify the error as permanent",
 			err:       fmt.Errorf("compute call failed: %w", &googleapi.Error{Code: 401}),
 			permanent: true,
 		},
 		{
-			name:      "generic error is not permanent",
+			name:      "When a generic error occurs it should not classify the error as permanent",
 			err:       fmt.Errorf("network timeout"),
 			permanent: false,
 		},
