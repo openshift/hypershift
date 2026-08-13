@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 6c80a3980e81e6c6c9703849839ea249ad40b2719dc44a8d4452cea5a65cd225
   creationTimestamp: null
   labels:
     app: karpenter-operator
