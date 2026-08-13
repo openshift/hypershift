@@ -41,7 +41,7 @@ func TestTODOInItBlock(t *testing.T) {
 	})
 }
 
-// Invalid: context.Background() in BeforeEach (not exempt, only BeforeSuite and DeferCleanup are)
+// Invalid: context.Background() in BeforeEach (not exempt, only suite-level hooks are)
 func TestBeforeEachNotExempt(t *testing.T) {
 	BeforeEach(func() {
 		ctx := context.Background() // want `use tc\.Context instead of context\.Background\(\)/context\.TODO\(\)`
@@ -49,7 +49,29 @@ func TestBeforeEachNotExempt(t *testing.T) {
 	})
 }
 
+// Invalid: context.Background() in DeferCleanup is NOT exempt — TestContext.Context
+// is initialized once in BeforeSuite and not canceled during cleanup, so cleanup
+// callbacks must use tc.Context.
+func TestDeferCleanupNotExempt(t *testing.T) {
+	DeferCleanup(func() {
+		ctx := context.Background() // want `use tc\.Context instead of context\.Background\(\)/context\.TODO\(\)`
+		_ = ctx
+	})
+}
+
+// Invalid: context.TODO() in DeferCleanup where tc is directly available.
+func TestDeferCleanupWithTC(t *testing.T) {
+	It("does something", func() {
+		DeferCleanup(func() {
+			ctx := context.TODO() // want `use tc\.Context instead of context\.Background\(\)/context\.TODO\(\)`
+			cleanup(ctx)
+		})
+	})
+}
+
 // Test helpers
-func It(desc string, f func()) {}
-func AfterEach(f func())       {}
-func BeforeEach(f func())      {}
+func It(desc string, f func())    {}
+func AfterEach(f func())          {}
+func BeforeEach(f func())         {}
+func DeferCleanup(f func())       {}
+func cleanup(ctx context.Context) {}

@@ -130,12 +130,7 @@ func looksLikeTestCaseStruct(comp *ast.CompositeLit) bool {
 			hasName = true
 		}
 
-		testFieldNames := []string{
-			"want", "expected", "expectError", "expectErr", "wantErr",
-			"args", "input", "output", "result", "fields", "setup",
-			"assertion", "validate", "check",
-		}
-		if slices.Contains(testFieldNames, ident.Name) {
+		if isTestFieldName(ident.Name) {
 			hasTestField = true
 		}
 
@@ -148,8 +143,11 @@ func looksLikeTestCaseStruct(comp *ast.CompositeLit) bool {
 }
 
 // looksLikeTestCaseMap returns true if the composite literal is a
-// map[string]struct{...}{...} — a common pattern for map-based test tables
-// where the map keys serve as test case names.
+// map[string]struct{...}{...} whose value struct declares at least one
+// recognized test field — a common pattern for map-based test tables where the
+// map keys serve as test case names. Requiring a recognized test field avoids
+// flagging plain lookup/fixture maps such as
+// map[string]struct{ Addr string }{...}.
 func looksLikeTestCaseMap(comp *ast.CompositeLit) bool {
 	mt, ok := comp.Type.(*ast.MapType)
 	if !ok {
@@ -162,10 +160,38 @@ func looksLikeTestCaseMap(comp *ast.CompositeLit) bool {
 		return false
 	}
 
-	// Value type must be a struct.
-	if _, ok := mt.Value.(*ast.StructType); !ok {
+	// Value type must be a struct with at least one recognized test field.
+	st, ok := mt.Value.(*ast.StructType)
+	if !ok {
 		return false
 	}
 
-	return true
+	return structHasTestField(st)
+}
+
+// structHasTestField reports whether the struct type declares at least one
+// field whose name is a recognized test field.
+func structHasTestField(st *ast.StructType) bool {
+	if st.Fields == nil {
+		return false
+	}
+	for _, field := range st.Fields.List {
+		for _, name := range field.Names {
+			if isTestFieldName(name.Name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isTestFieldName reports whether name is one of the recognized field names
+// that signal a struct is a test case rather than an arbitrary data struct.
+func isTestFieldName(name string) bool {
+	testFieldNames := []string{
+		"want", "expected", "expectError", "expectErr", "wantErr",
+		"args", "input", "output", "result", "fields", "setup",
+		"assertion", "validate", "check",
+	}
+	return slices.Contains(testFieldNames, name)
 }

@@ -70,7 +70,13 @@ func isInsideExemptFunc(file *ast.File, target *ast.CallExpr) bool {
 			return true
 		}
 		name := callName(call)
-		if name == "BeforeSuite" || name == "DeferCleanup" || name == "SynchronizedBeforeSuite" || name == "SynchronizedAfterSuite" {
+		// Only suite-level setup/teardown hooks are exempt: they run before
+		// TestContext is initialized (or after it would be meaningful), so
+		// context.Background() is the correct choice there. DeferCleanup is NOT
+		// exempt — per test/e2e/v2/AGENTS.md, TestContext.Context is initialized
+		// once in BeforeSuite and is not canceled during cleanup, so cleanup
+		// callbacks that have access to tc must use tc.Context.
+		if name == "BeforeSuite" || name == "AfterSuite" || name == "SynchronizedBeforeSuite" || name == "SynchronizedAfterSuite" {
 			for _, arg := range call.Args {
 				if containsNode(arg, target) {
 					exempt = true

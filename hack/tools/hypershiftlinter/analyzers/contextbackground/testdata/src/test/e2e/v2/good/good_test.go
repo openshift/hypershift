@@ -13,14 +13,6 @@ func TestBeforeSuiteExempt(t *testing.T) {
 	})
 }
 
-// Valid: context.Background() inside DeferCleanup is exempt
-func TestDeferCleanupExempt(t *testing.T) {
-	DeferCleanup(func() {
-		ctx := context.Background()
-		_ = ctx
-	})
-}
-
 // Valid: nested BeforeSuite with context.Background()
 func TestNestedBeforeSuite(t *testing.T) {
 	Describe("suite", func() {
@@ -28,14 +20,6 @@ func TestNestedBeforeSuite(t *testing.T) {
 			ctx := context.Background()
 			setup(ctx)
 		})
-	})
-}
-
-// Valid: DeferCleanup in cleanup chain
-func TestDeferCleanupChain(t *testing.T) {
-	DeferCleanup(func() {
-		ctx := context.Background()
-		cleanup(ctx)
 	})
 }
 
@@ -65,9 +49,25 @@ func TestTODOInBeforeSuiteExempt(t *testing.T) {
 	})
 }
 
+// Valid: context.Background() inside AfterSuite is exempt
+func TestAfterSuiteExempt(t *testing.T) {
+	AfterSuite(func() {
+		ctx := context.Background()
+		cleanup(ctx)
+	})
+}
+
+// Valid: context.Background() inside SynchronizedAfterSuite is exempt
+func TestSynchronizedAfterSuiteExempt(t *testing.T) {
+	SynchronizedAfterSuite(func() {
+		ctx := context.Background()
+		cleanup(ctx)
+	})
+}
+
 // Test helpers
 func BeforeSuite(f func())                {}
-func DeferCleanup(f func())               {}
+func AfterSuite(f func())                 {}
 func SynchronizedBeforeSuite(f ...func()) {}
 func SynchronizedAfterSuite(f ...func())  {}
 func Describe(name string, f func())      {}

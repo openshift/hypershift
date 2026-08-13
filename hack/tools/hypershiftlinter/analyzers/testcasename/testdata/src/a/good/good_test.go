@@ -120,6 +120,19 @@ func TestMapBasedGoodNames(t *testing.T) {
 	}
 }
 
+func TestPlainLookupMap(t *testing.T) {
+	// This map[string]struct{...} has no recognized test field in its value
+	// struct, so it is a plain lookup/fixture map, not a test-case table.
+	// Its keys must not be held to the "When ... it should ..." format.
+	fixtures := map[string]struct {
+		Addr string
+	}{
+		"primary":   {Addr: "10.0.0.1"},
+		"secondary": {Addr: "10.0.0.2"},
+	}
+	_ = fixtures
+}
+
 func TestNameFromVariable(t *testing.T) {
 	testName := "some dynamic name"
 	tests := []struct {
