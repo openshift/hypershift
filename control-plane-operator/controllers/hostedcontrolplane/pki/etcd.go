@@ -74,9 +74,8 @@ func ReconcileEtcdShardPeerSecret(secret, ca *corev1.Secret, ownerRef config.Own
 	dnsNames := []string{
 		fmt.Sprintf("*.%s.%s.svc", discoveryService, secret.Namespace),
 		fmt.Sprintf("*.%s.%s.svc.cluster.local", discoveryService, secret.Namespace),
-		"127.0.0.1",
-		"::1",
 	}
+	ips := []string{"127.0.0.1", "::1"}
 
-	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, discoveryService, []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, nil, "")
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, discoveryService, []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, ips, "")
 }
