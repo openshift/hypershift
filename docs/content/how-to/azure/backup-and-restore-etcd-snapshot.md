@@ -1,4 +1,4 @@
-# Etcd Snapshot Backup for Self-Managed Azure
+# Etcd Snapshot Backup and Restore for Self-Managed Azure
 
 !!! warning "Tech Preview"
 
@@ -262,8 +262,164 @@ az storage account delete \
     --yes
 ```
 
+## Restoring from an Etcd Snapshot
+
+!!! important
+
+    Only same-management-cluster restore is validated for self-managed Azure. Cross-management-cluster restore is not currently supported due to the lack of end-to-end testing coverage for that scenario.
+
+Restore is driven by OADP. The HyperShift OADP plugin orchestrates the full restore lifecycle:
+
+1. OADP recreates the HostedCluster from the Velero backup
+2. The plugin reads the etcd snapshot URL from the backup annotations and injects it into the restored HostedCluster's `spec.etcd.managed.storage.restoreSnapshotURL` field
+3. When the restored control plane boots, the control-plane-operator detects the URL and injects an `etcd-init` init container into the etcd StatefulSet
+4. The init container downloads the snapshot and restores it using `etcdutl snapshot restore`
+5. Once the restore completes, the `EtcdSnapshotRestored` condition is set on the HostedControlPlane
+
+The `restoreSnapshotURL` field is immutable — once set at HostedCluster creation time, it cannot be changed. The OADP plugin handles SAS token generation and URL injection automatically; no manual intervention is needed.
+
+For the full restore architecture and OADP plugin behavior, see [Restore Flow Architecture](../disaster-recovery/etcd-snapshot-backup/restore-flow.md).
+
+### Prerequisites
+
+- OADP 1.5+ installed with the HyperShift plugin (see [OADP Setup](#oadp-setup) below)
+- A completed OADP backup created with `--use-etcd-snapshot` mode
+- The `HCPEtcdBackup` associated with the backup must have `BackupCompleted` condition `True`
+
+### Step 1: Clean Up the Existing HostedCluster
+
+Before restoring, remove the existing HostedCluster resources:
+
+```bash
+# Delete the HostedCluster and NodePools
+kubectl delete hostedcluster my-hosted-cluster -n clusters
+
+# Verify no PVCs remain in the HostedControlPlane namespace
+kubectl get pvc -n clusters-my-hosted-cluster
+```
+
+### Step 2: Restore with the CLI
+
+```bash
+hypershift create oadp-restore \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters \
+    --from-backup <backup-name> \
+    --use-etcd-snapshot
+```
+
+The `--use-etcd-snapshot` flag sets `restorePVs: false` in the Velero Restore CR. The HyperShift OADP plugin reads the snapshot URL from the backup annotations and injects it into the restored HostedCluster's `restoreSnapshotURL` field automatically.
+
+### Step 3: Verify the Restore
+
+Monitor the restore process:
+
+```bash
+# Watch the Velero restore status
+watch "oc get restore -n openshift-adp -o jsonpath='{.items[-1].status}' | jq"
+
+# Watch etcd pods for the init container
+kubectl get pods -n <HCP_NAMESPACE> -l app=etcd -w
+
+# Check the EtcdSnapshotRestored condition on the HostedControlPlane
+kubectl get hostedcontrolplane -n <HCP_NAMESPACE> \
+    -o jsonpath='{.items[0].status.conditions[?(@.type=="EtcdSnapshotRestored")]}' | jq
+
+# Verify the hosted cluster API server becomes available
+kubectl get hostedcluster my-hosted-cluster -n clusters \
+    -o jsonpath='{.status.conditions[?(@.type=="Available")]}'
+```
+
+The restore is complete when:
+
+- The Velero Restore reaches `Completed` phase
+- The `etcd-init` init container exits successfully
+- The `EtcdSnapshotRestored` condition is `True` on the HostedControlPlane
+- The HostedCluster reaches `Available` status
+
+### Restore Troubleshooting
+
+| Symptom | Cause | Resolution |
+|---------|-------|------------|
+| `etcd-init` container shows XML error output | SAS token expired or invalid URL | Delete the HostedCluster and trigger a new OADP restore |
+| `etcd-init` container shows curl 404 | Wrong blob URL | Verify the `snapshotURL` from the HCPEtcdBackup status; ensure the storage account and container still exist |
+| `etcd-init` logs "not empty, not restoring snapshot" | Existing data in etcd PVC | Delete the PVC and let the restore recreate it |
+| Velero restore stuck | OADP plugin error | Check `oc logs -n openshift-adp -l deploy=velero -f` for details |
+
+## OADP Setup
+
+OADP (OpenShift API for Data Protection) with the HyperShift plugin is required for backup and restore operations on self-managed Azure. The `hypershift create oadp-*` CLI commands auto-detect the Azure platform and include the correct CAPI resources (`azureclusters`, `azuremachinetemplates`, `azuremachines`).
+
+### Prerequisites
+
+- OADP 1.5+ installed on the management cluster
+- DataProtectionApplication (DPA) configured with `hypershift` in `defaultPlugins`
+- Azure Blob Storage credentials configured for the BackupStorageLocation
+
+For DPA configuration details, see the [Azure DPA tab in the OADP 1.5+ guide](../disaster-recovery/backup-and-restore-oadp-1-5.md#sample-dpa-configurations).
+
+### Creating a Backup with the CLI
+
+Two backup modes are available:
+
+```bash
+# Volume snapshot mode (default) — backs up etcd PVs via CSI snapshots
+hypershift create oadp-backup \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters
+
+# Etcd snapshot mode (Tech Preview) — uses HCPEtcdBackup CRD instead of PV snapshots
+hypershift create oadp-backup \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters \
+    --use-etcd-snapshot
+```
+
+The `--use-etcd-snapshot` mode creates an `HCPEtcdBackup` CR and excludes PV-related resources from the Velero backup. This mode requires the `HCPEtcdBackup` feature gate and Azure Blob Storage configured as described in the [Setup](#setup) section.
+
+### Scheduling Backups
+
+Set up recurring backups using the OADP Schedule CR:
+
+```bash
+hypershift create oadp-schedule \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters \
+    --schedule "0 2 * * *" \
+    --ttl 168h \
+    --use-etcd-snapshot
+```
+
+### Verifying OADP Operations
+
+```bash
+# Watch backup status
+watch "oc get backup -n openshift-adp -o jsonpath='{.items[-1].status}' | jq"
+
+# Watch restore status
+watch "oc get restore -n openshift-adp -o jsonpath='{.items[-1].status}' | jq"
+
+# Follow Velero logs
+oc logs -n openshift-adp -l deploy=velero -f
+```
+
+## Known Limitations
+
+| Limitation | Details |
+|-----------|---------|
+| Same-cluster restore only | Cross-management-cluster restore is not currently supported due to the lack of end-to-end testing coverage for that scenario |
+| OADP required for restore | Restore is driven by OADP; there is no standalone manual restore path for self-managed Azure |
+| `restoreSnapshotURL` is immutable | Set by the OADP plugin at HostedCluster creation time; cannot be changed afterward |
+| No in-place restore | Etcd data cannot be restored onto an existing HostedCluster; OADP recreates it from the backup |
+| Worker node reprovisioning | After restore, Azure worker nodes are reprovisioned; node readoption is not supported |
+| Tech Preview | The `HCPEtcdBackup` feature gate is required; this feature is not for production use |
+| Single snapshot per restore | `restoreSnapshotURL` accepts at most 1 entry |
+
 ## See Also
 
 - [Etcd Snapshot Backup Overview](../disaster-recovery/etcd-snapshot-backup/index.md) - Architecture and backup flow
+- [Restore Flow Architecture](../disaster-recovery/etcd-snapshot-backup/restore-flow.md) - Detailed restore sequence and OADP plugin behavior
 - [Managed Services Credentials](../disaster-recovery/etcd-snapshot-backup/managed-services-credentials.md) - Credential auto-detection and formats
+- [OADP 1.5+ Disaster Recovery](../disaster-recovery/backup-and-restore-oadp-1-5.md) - Full OADP DR procedure with Azure DPA configuration
+- [Disaster Recovery CLI](../disaster-recovery/dr-cli.md) - CLI reference for `hypershift create oadp-*` commands
 - [Self-Managed Azure Overview](self-managed-azure-index.md) - Self-managed Azure architecture
