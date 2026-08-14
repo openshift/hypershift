@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -577,15 +578,17 @@ func EnsureOAuthWithIdentityProviderViaLoadBalancer(t *testing.T, ctx context.Co
 // podPortForward holds the state of an active port-forward to a pod.
 type podPortForward struct {
 	stopCh    chan struct{}
+	stop      func()
 	errCh     <-chan error
 	localPort uint16
 	podName   string
 }
 
 // establishPodPortForward finds a running pod matching the given labels and creates a
-// SPDY port-forward tunnel to port 6443. It returns a podPortForward whose stopCh the
-// caller must close (typically via t.Cleanup). If the pod restarts during the caller's
-// healthcheck, the caller can detect it via errCh and call this function again.
+// SPDY port-forward tunnel to port 6443. Cleanup is registered via t.Cleanup using an
+// idempotent stop function. If the pod restarts during the caller's healthcheck, the
+// caller can detect it via errCh and call this function again, using pf.stop() to close
+// the previous tunnel.
 func establishPodPortForward(
 	t testing.TB, ctx context.Context,
 	mgmtClient crclient.Client,
@@ -634,14 +637,18 @@ func establishPodPortForward(
 	fw, err := portforward.New(dialer, []string{"0:6443"}, stopCh, readyCh, io.Discard, io.Discard)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create port forwarder")
 
+	stopOnce := sync.Once{}
+	stop := func() { stopOnce.Do(func() { close(stopCh) }) }
+	t.Cleanup(stop)
+
 	errCh := make(chan error, 1)
 	go func() { errCh <- fw.ForwardPorts() }()
 	select {
 	case <-readyCh:
 	case err = <-errCh:
-		g.Expect(err).ToNot(HaveOccurred(), "%s port-forward failed to start", componentName)
+		t.Fatalf("%s port-forward exited before becoming ready: %v", componentName, err)
 	case <-ctx.Done():
-		close(stopCh)
+		stop()
 		t.Fatalf("context canceled while waiting for %s port-forward readiness: %v", componentName, ctx.Err())
 	}
 
@@ -652,6 +659,7 @@ func establishPodPortForward(
 
 	return &podPortForward{
 		stopCh:    stopCh,
+		stop:      stop,
 		errCh:     errCh,
 		localPort: ports[0].Local,
 		podName:   pod.Name,
@@ -685,7 +693,6 @@ func SetupOAuthPortForwardTransport(
 	podLabels := crclient.MatchingLabels{hyperv1.ControlPlaneComponentLabel: "oauth-openshift"}
 
 	pf := establishPodPortForward(t, ctx, mgmtClient, kubeClient, mgmtConfig, hcpNamespace, podLabels, "oauth-openshift")
-	t.Cleanup(func() { close(pf.stopCh) })
 
 	guestConfig, err := guestRestConfig(t, ctx, mgmtClient, hostedCluster)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to get guest REST config")
@@ -709,9 +716,8 @@ func SetupOAuthPortForwardTransport(
 		select {
 		case pfErr := <-pf.errCh:
 			t.Logf("OAuth port-forward to %s broke (%v), re-establishing", pf.podName, pfErr)
-			oldStop := pf.stopCh
+			pf.stop()
 			pf = establishPodPortForward(t, ctx, mgmtClient, kubeClient, mgmtConfig, hcpNamespace, podLabels, "oauth-openshift")
-			close(oldStop)
 			localAddr = fmt.Sprintf("localhost:%d", pf.localPort)
 			oauthTransport.CloseIdleConnections()
 			return false, nil
@@ -766,7 +772,6 @@ func SetupGuestKASPortForwardConfig(
 	podLabels := crclient.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponentLabel: "kube-apiserver"}
 
 	pf := establishPodPortForward(t, ctx, mgmtClient, kubeClient, mgmtConfig, hcpNamespace, podLabels, "kube-apiserver")
-	t.Cleanup(func() { close(pf.stopCh) })
 
 	guestConfig, err := guestRestConfig(t, ctx, mgmtClient, hostedCluster)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to get guest REST config")
@@ -786,9 +791,8 @@ func SetupGuestKASPortForwardConfig(
 		select {
 		case pfErr := <-pf.errCh:
 			t.Logf("KAS port-forward to %s broke (%v), re-establishing", pf.podName, pfErr)
-			oldStop := pf.stopCh
+			pf.stop()
 			pf = establishPodPortForward(t, ctx, mgmtClient, kubeClient, mgmtConfig, hcpNamespace, podLabels, "kube-apiserver")
-			close(oldStop)
 			guestConfig.Host = fmt.Sprintf("https://localhost:%d", pf.localPort)
 			testClient, err = kubernetes.NewForConfig(guestConfig)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to create test client after KAS port-forward re-establishment")
