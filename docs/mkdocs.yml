@@ -350,6 +350,8 @@ nav:
     - 'Configure SPO with Audit Logging and Seccomp': recipes/common/spo-audit-logging-seccomp.md
     - 'ACM/MCE HyperShift Operator Overrides': recipes/common/acm-mce-hypershift-operator-overrides.md
     - 'Control Plane Metrics Forwarding': recipes/common/control-plane-metrics-forwarding.md
+  - 'KubeVirt':
+    - 'Configure Custom Ingress for KubeVirt HCP': recipes/kubevirt/custom-ingress-with-metallb.md
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
