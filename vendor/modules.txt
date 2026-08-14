@@ -2627,7 +2627,7 @@ sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
 # sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
 ## explicit; go 1.24.0
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
-# sigs.k8s.io/cluster-api-provider-openstack v0.14.6
+# sigs.k8s.io/cluster-api-provider-openstack v0.14.7
 ## explicit; go 1.24.0
 sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
