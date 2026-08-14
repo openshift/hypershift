@@ -5,7 +5,6 @@ package iam
 import (
 	"context"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Gets a list of all of the context keys referenced in all the IAM policies that
@@ -24,7 +23,10 @@ import (
 // Context keys are variables maintained by Amazon Web Services and its services
 // that provide details about the context of an API query request. Context keys can
 // be evaluated by testing against a value in an IAM policy. Use [GetContextKeysForPrincipalPolicy]to understand
-// what key names and values you must supply when you call [SimulatePrincipalPolicy].
+// what key names and values you must supply when you call [SimulatePrincipalPolicy]. This operation
+// doesn't return context keys referenced by service control policies (SCPs). Only
+// context keys referenced by the identity-based policies attached to the specified
+// entity, and any additional policies that you provide, are included.
 //
 // [GetContextKeysForPrincipalPolicy]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetContextKeysForPrincipalPolicy.html
 // [GetContextKeysForCustomPolicy]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetContextKeysForCustomPolicy.html
@@ -108,9 +110,6 @@ func (c *Client) addOperationGetContextKeysForPrincipalPolicyMiddlewares(stack *
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
 	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
@@ -123,19 +122,10 @@ func (c *Client) addOperationGetContextKeysForPrincipalPolicyMiddlewares(stack *
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetContextKeysForPrincipalPolicyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetContextKeysForPrincipalPolicy"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

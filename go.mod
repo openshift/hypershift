@@ -22,23 +22,23 @@ require (
 	github.com/IBM/platform-services-go-sdk v0.91.0
 	github.com/IBM/vpc-go-sdk v0.76.2
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/aws/aws-sdk-go-v2 v1.43.0
-	github.com/aws/aws-sdk-go-v2/config v1.32.31
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.30
-	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.3.5
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.317.0
-	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.36.0
-	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.58.1
-	github.com/aws/aws-sdk-go-v2/service/iam v1.56.0
-	github.com/aws/aws-sdk-go-v2/service/kms v1.55.0
-	github.com/aws/aws-sdk-go-v2/service/ram v1.39.0
-	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.35.0
-	github.com/aws/aws-sdk-go-v2/service/route53 v1.65.2
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.0
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.46.0
-	github.com/aws/aws-sdk-go-v2/service/sts v1.45.0
+	github.com/aws/aws-sdk-go-v2 v1.43.5
+	github.com/aws/aws-sdk-go-v2/config v1.32.36
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.35
+	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.3.12
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.321.1
+	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing v1.36.5
+	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.58.6
+	github.com/aws/aws-sdk-go-v2/service/iam v1.58.2
+	github.com/aws/aws-sdk-go-v2/service/kms v1.55.5
+	github.com/aws/aws-sdk-go-v2/service/ram v1.39.5
+	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.35.5
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.65.7
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.1
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.46.5
+	github.com/aws/aws-sdk-go-v2/service/sts v1.45.5
 	github.com/aws/karpenter-provider-aws v1.8.6
-	github.com/aws/smithy-go v1.27.3
+	github.com/aws/smithy-go v1.27.7
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
@@ -46,20 +46,20 @@ require (
 	github.com/coreos/stream-metadata-go v0.4.11
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
-	github.com/elazarl/goproxy v1.8.5
+	github.com/elazarl/goproxy v1.9.0
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-jose/go-jose/v3 v3.0.5
 	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/stdr v1.2.2
 	github.com/go-logr/zapr v1.3.0
-	github.com/google/cel-go v0.30.0
+	github.com/google/cel-go v0.31.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/gofuzz v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/k-orc/openstack-resource-controller/v2 v2.6.0
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
-	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -76,7 +76,7 @@ require (
 	github.com/operator-framework/api v0.45.0
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.92.1
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.70.1
@@ -150,18 +150,18 @@ require (
 	github.com/PaesslerAG/gval v1.2.3 // indirect
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.14 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.31 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.31 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.31 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.32 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.13 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.24 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.31 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.32 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.5.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.33.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.0 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.17 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.36 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.36 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.36 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.37 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.16 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.29 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.36 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.37 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.5.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.33.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.5 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20260501204335-c49b4ca8d58d // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
