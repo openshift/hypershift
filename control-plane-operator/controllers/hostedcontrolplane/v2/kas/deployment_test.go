@@ -152,6 +152,62 @@ func findContainerByNameInPod(podSpec *corev1.PodSpec, name string) *corev1.Cont
 	return nil
 }
 
+func TestAdaptDeploymentKASLogLevel(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected string
+	}{
+		{
+			name:     "When no operatorConfiguration is set it should default to --v=2",
+			hcp:      &hyperv1.HostedControlPlane{},
+			expected: "--v=2",
+		},
+		{
+			name: "When logLevel is Debug it should set --v=4",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+							ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+						},
+					},
+				},
+			},
+			expected: "--v=4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  ComponentName,
+									Ports: []corev1.ContainerPort{{ContainerPort: 6443}},
+								},
+							},
+						},
+					},
+				},
+			}
+			cpContext := component.WorkloadContext{
+				HCP:                      tt.hcp,
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+			err := adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+			container := findContainerByNameInPod(&deployment.Spec.Template.Spec, ComponentName)
+			g.Expect(container).NotTo(BeNil())
+			g.Expect(container.Args).To(ContainElement(tt.expected))
+		})
+	}
+}
+
 func TestAddImagePrePullInitContainers(t *testing.T) {
 	testCases := []struct {
 		name                  string

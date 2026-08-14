@@ -6,6 +6,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestResolveOCMVerbosity(t *testing.T) {
@@ -86,6 +90,51 @@ func TestResolveOCMVerbosity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(resolveOCMVerbosity(tt.hcp)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestAdaptDeploymentOCMLogLevel(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected string
+	}{
+		{
+			name:     "When no operatorConfiguration is set it should default to --v=2",
+			hcp:      &hyperv1.HostedControlPlane{},
+			expected: "--v=2",
+		},
+		{
+			name: "When logLevel is Debug it should set --v=4",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						OpenShiftControllerManager: hyperv1.OpenShiftControllerManagerOperatorSpec{
+							ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+						},
+					},
+				},
+			},
+			expected: "--v=4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{Name: ComponentName}},
+						},
+					},
+				},
+			}
+			err := adaptDeployment(component.WorkloadContext{HCP: tt.hcp}, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(ContainElement(tt.expected))
 		})
 	}
 }

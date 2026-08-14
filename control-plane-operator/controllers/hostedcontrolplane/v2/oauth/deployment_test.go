@@ -198,3 +198,60 @@ func TestResolveOAuthVerbosity(t *testing.T) {
 		})
 	}
 }
+
+func TestAdaptDeploymentOAuthLogLevel(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected string
+	}{
+		{
+			name: "When no operatorConfiguration is set it should default to --v=2",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+				},
+			},
+			expected: "--v=2",
+		},
+		{
+			name: "When logLevel is Debug it should set --v=4",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						OAuthServer: hyperv1.OAuthServerOperatorSpec{
+							ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+						},
+					},
+				},
+			},
+			expected: "--v=4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cpContext := component.WorkloadContext{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				HCP:    tt.hcp,
+			}
+
+			err = adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+			g.Expect(container).ToNot(BeNil())
+			g.Expect(container.Args).To(ContainElement(tt.expected))
+		})
+	}
+}
