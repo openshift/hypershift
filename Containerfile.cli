@@ -3,7 +3,21 @@ ARG COMMIT_HASH
 
 WORKDIR /hypershift
 
-COPY . .
+# TODO: switch to COPY --parents once CNTRLPLANE-4112 lands in Konflux
+# Direct dependencies
+COPY go.mod go.mod
+COPY go.sum go.sum
+COPY Makefile Makefile
+COPY api/ api/
+COPY cmd/ cmd/
+COPY pkg/ pkg/
+COPY product-cli/ product-cli/
+COPY support/ support/
+COPY vendor/ vendor/
+# Indirect dependencies (via cmd/cluster/core/dump.go, see CNTRLPLANE-4092)
+COPY control-plane-operator/ control-plane-operator/
+COPY hypershift-operator/ hypershift-operator/
+COPY kubevirtexternalinfra/ kubevirtexternalinfra/
 
 RUN make product-cli-release && \
     # Create tar.gz files for Linux architectures \
