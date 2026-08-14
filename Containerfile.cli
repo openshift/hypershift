@@ -3,7 +3,40 @@ ARG COMMIT_HASH
 
 WORKDIR /hypershift
 
-COPY . .
+# Local builds: .git/ is not copied into the builder, so the Makefile's
+# git rev-parse fallback for COMMIT_HASH will not work. Pass it explicitly:
+#   podman build -f Containerfile.cli --build-arg COMMIT_HASH=$(git rev-parse HEAD) --no-cache .
+
+# TODO: switch to COPY --parents once CNTRLPLANE-4112 lands in Konflux
+# Direct dependencies
+COPY go.mod go.mod
+COPY go.sum go.sum
+COPY Makefile Makefile
+COPY api/ api/
+COPY pkg/ pkg/
+COPY product-cli/ product-cli/
+# cmd/ — only first-level packages reachable from product-cli's import graph.
+# Excludes: bastion/, consolelogs/, create/, destroy/, dump/, fix/, install/.
+# Within cmd/cluster/ and cmd/nodepool/, some platform sub-packages (gcp,
+# powervs) are not imported but are included at directory level to keep the
+# copy list maintainable. The Go compiler excludes unreferenced packages
+# from the binary, so they only affect build-context size.
+COPY cmd/cluster/ cmd/cluster/
+COPY cmd/infra/azure/ cmd/infra/azure/
+COPY cmd/kubeconfig/ cmd/kubeconfig/
+COPY cmd/log/ cmd/log/
+COPY cmd/nodepool/ cmd/nodepool/
+COPY cmd/oadp/ cmd/oadp/
+COPY cmd/util/ cmd/util/
+COPY cmd/version/ cmd/version/
+# support/ is a shared utility library with many transitive imports across
+# cmd/ and operator packages. Narrowing to individual sub-packages is fragile.
+COPY support/ support/
+COPY vendor/ vendor/
+# Indirect dependencies (via cmd/cluster/core/dump.go, see CNTRLPLANE-4092)
+COPY control-plane-operator/ control-plane-operator/
+COPY hypershift-operator/ hypershift-operator/
+COPY kubevirtexternalinfra/ kubevirtexternalinfra/
 
 RUN make product-cli-release && \
     # Create tar.gz files for Linux architectures \
