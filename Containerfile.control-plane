@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26.5-1786522985 AS builder
 ARG COMMIT_HASH
 
 WORKDIR /hypershift
@@ -8,7 +8,7 @@ COPY --chown=default . .
 RUN make control-plane-operator \
   && make control-plane-pki-operator
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1779770818
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1786380870
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
 COPY --from=builder /hypershift/bin/control-plane-pki-operator /usr/bin/control-plane-pki-operator
 
