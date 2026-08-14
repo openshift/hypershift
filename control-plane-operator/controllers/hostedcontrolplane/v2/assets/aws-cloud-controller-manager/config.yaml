@@ -1,0 +1,13 @@
+apiVersion: v1
+data:
+  aws.conf: |-
+    [Global]
+    Zone = %s
+    VPC = %s
+    KubernetesClusterID = %s
+    SubnetID = %s
+    ClusterServiceLoadBalancerHealthProbeMode = %s
+    NLBSecurityGroupMode = Managed
+kind: ConfigMap
+metadata:
+  name: aws-cloud-config

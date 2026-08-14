@@ -1,0 +1,423 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HCPEtcdBackup validation"
+crdName: hcpetcdbackups.hypershift.openshift.io
+featureGates:
+  - HCPEtcdBackup
+version: v1beta1
+tests:
+  onCreate:
+  # --- Valid configurations ---
+  - name: When a valid S3 backup is created it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+
+  - name: When a valid S3 backup with kmsKeyARN is created it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+            kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+
+  - name: When a valid AzureBlob backup is created it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+
+  - name: When a valid AzureBlob backup with encryptionKeyURL is created it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.azure.net/keys/my-key/abc123"
+
+  # --- Storage type union discrimination ---
+  - name: When storageType is S3 but azureBlob is provided it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "s3 configuration is required when storageType is S3, and forbidden otherwise"
+
+  - name: When storageType is AzureBlob but s3 is provided it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "azureBlob configuration is required when storageType is AzureBlob, and forbidden otherwise"
+
+  - name: When storageType is invalid it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: GCS
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: 'Unsupported value: "GCS"'
+
+  # --- S3 bucket validation ---
+  - name: When S3 bucket name is too short it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: ab
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "spec.storage.s3.bucket in body should be at least 3 chars long"
+
+  - name: When S3 bucket name exceeds max length it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "spec.storage.s3.bucket: Too long"
+
+  - name: When S3 bucket name has uppercase characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: MyBucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "bucket must consist of lowercase letters, numbers, hyphens, and periods, and must start and end with a letter or number"
+
+  - name: When S3 bucket name has consecutive periods it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my..bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "bucket must not contain consecutive periods"
+
+  # --- S3 region validation ---
+  - name: When S3 region has uppercase characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: US-EAST-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "region must consist of lowercase letters, digits, and hyphens, must start with a letter and end with an alphanumeric character"
+
+  - name: When S3 region has consecutive hyphens it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us--east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    expectedError: "region must not contain consecutive hyphens"
+
+  # --- S3 keyPrefix validation ---
+  - name: When S3 keyPrefix has invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: "backups/etcd snapshot"
+            credentials:
+              name: aws-credentials
+    expectedError: "keyPrefix must consist of safe S3 key characters"
+
+  # --- S3 kmsKeyARN validation ---
+  - name: When S3 kmsKeyARN has invalid format it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+            kmsKeyARN: "not-a-valid-arn"
+    expectedError: "kmsKeyARN must be a valid AWS KMS key ARN"
+
+  # --- AzureBlob container validation ---
+  - name: When AzureBlob container name is too short it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: ab
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "spec.storage.azureBlob.container in body should be at least 3 chars long"
+
+  - name: When AzureBlob container name has uppercase characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: MyContainer
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "container must consist of lowercase letters, numbers, and hyphens, and must start and end with a letter or number"
+
+  - name: When AzureBlob container name has consecutive hyphens it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my--container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "container must not contain consecutive hyphens"
+
+  # --- AzureBlob storageAccount validation ---
+  - name: When AzureBlob container name exceeds max length it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "spec.storage.azureBlob.container: Too long"
+
+  - name: When AzureBlob storageAccount exceeds max length it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: abcdefghijklmnopqrstuvwxy
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "spec.storage.azureBlob.storageAccount: Too long"
+
+  - name: When AzureBlob storageAccount is too short it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: ab
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "spec.storage.azureBlob.storageAccount in body should be at least 3 chars long"
+
+  - name: When AzureBlob storageAccount has hyphens it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: my-storage-account
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "storageAccount must consist of lowercase letters and numbers only"
+
+  - name: When AzureBlob storageAccount has uppercase characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: MyStorageAccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    expectedError: "storageAccount must consist of lowercase letters and numbers only"
+
+  # --- AzureBlob keyPrefix validation ---
+  - name: When AzureBlob keyPrefix has invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: "backups/etcd snapshot"
+            credentials:
+              name: azure-credentials
+    expectedError: "keyPrefix must consist of alphanumeric characters, forward slashes, hyphens, underscores, and periods"
+
+  # --- AzureBlob encryptionKeyURL validation ---
+  - name: When AzureBlob encryptionKeyURL has invalid format it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "not-a-valid-url"
+    expectedError: "encryptionKeyURL must be a valid Azure Key Vault HTTPS URL"
+
+  # --- SecretReference name validation ---
+  - name: When S3 credentials name has invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: "INVALID_NAME!"
+    expectedError: "name must consist only of lowercase alphanumeric characters, hyphens, and periods"
+
+  - name: When AzureBlob credentials name has invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: "INVALID_NAME!"
+    expectedError: "name must consist only of lowercase alphanumeric characters, hyphens, and periods"

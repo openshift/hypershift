@@ -1,0 +1,248 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "OpenshiftEC2NodeClass validation"
+crdName: openshiftec2nodeclasses.karpenter.hypershift.openshift.io
+version: v1
+tests:
+  onCreate:
+  # --- SubnetSelectorTerms validation ---
+  - name: When subnetSelectorTerms is empty it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms: []
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+    expectedError: "subnetSelectorTerms cannot be empty"
+
+  - name: When subnet term has neither tags nor id it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - {}
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+    expectedError: "expected at least one, got none, ['tags', 'id']"
+
+  - name: When subnet id has invalid format it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - id: invalid-subnet
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+    expectedError: "id must match the pattern subnet-"
+
+  - name: When subnet id and tags are both set it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - id: subnet-0123456789abcdef0
+          tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+    expectedError: "'id' is mutually exclusive"
+
+  - name: When subnet has valid tags it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            karpenter.sh/discovery: my-cluster
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+
+  # --- SecurityGroupSelectorTerms validation ---
+  - name: When securityGroupSelectorTerms is empty it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms: []
+    expectedError: "securityGroupSelectorTerms cannot be empty"
+
+  - name: When security group id has invalid format it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: invalid-sg
+    expectedError: "id must match the pattern sg-"
+
+  - name: When security group has valid id it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+
+  # --- Tags validation ---
+  - name: When tags contain restricted kubernetes.io/cluster/ key it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        tags:
+          kubernetes.io/cluster/my-cluster: owned
+    expectedError: "tag contains a restricted tag matching kubernetes.io/cluster/"
+
+  - name: When tags contain restricted karpenter.sh/nodepool key it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        tags:
+          karpenter.sh/nodepool: my-pool
+    expectedError: "tag contains a restricted tag matching karpenter.sh/nodepool"
+
+  - name: When tags have valid keys it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        tags:
+          team: platform
+          environment: staging
+
+  # --- BlockDeviceMappings validation ---
+  - name: When multiple blockDeviceMappings have rootVolume it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        blockDeviceMappings:
+        - deviceName: /dev/xvda
+          rootVolume: RootVolume
+          ebs:
+            volumeSizeGiB: 120
+        - deviceName: /dev/xvdb
+          rootVolume: RootVolume
+          ebs:
+            volumeSizeGiB: 50
+    expectedError: "must have only one blockDeviceMappings with rootVolume"
+
+  - name: When EBS has neither snapshotID nor volumeSizeGiB it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        blockDeviceMappings:
+        - deviceName: /dev/xvda
+          ebs:
+            volumeType: GP3
+    expectedError: "snapshotID or volumeSizeGiB must be defined"
+
+  # --- Version validation ---
+  - name: When version is invalid format it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        version: "invalid"
+    expectedError: "version must be a valid semantic version"
+
+  - name: When version is valid it should pass
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        version: "4.20.1"
+
+  # --- CapacityReservationSelectorTerms validation ---
+  - name: When capacity reservation id has invalid format it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        capacityReservationSelectorTerms:
+        - id: invalid-cr
+    expectedError: "id must match the pattern cr-"
+
+  - name: When capacity reservation ownerID is invalid it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        capacityReservationSelectorTerms:
+        - ownerID: "abc"
+    expectedError: "ownerID must be a 12-digit AWS account ID"
+
+  # --- MetadataOptions validation ---
+  - name: When metadata httpPutResponseHopLimit exceeds max it should fail
+    initial: |
+      apiVersion: karpenter.hypershift.openshift.io/v1
+      kind: OpenshiftEC2NodeClass
+      spec:
+        subnetSelectorTerms:
+        - tags:
+            env: test
+        securityGroupSelectorTerms:
+        - id: sg-0123456789abcdef0
+        metadataOptions:
+          httpPutResponseHopLimit: 100
+    expectedError: "httpPutResponseHopLimit"

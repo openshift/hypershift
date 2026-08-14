@@ -1,0 +1,474 @@
+package azureprivatelinkservice
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/k8sutil"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+)
+
+func TestControllerName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "private-router service",
+			input:    "private-router",
+			expected: "private-router-observer",
+		},
+		{
+			name:     "custom service name",
+			input:    "my-service",
+			expected: "my-service-observer",
+		},
+		{
+			name:     "empty service name",
+			input:    "",
+			expected: "-observer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			result := ControllerName(tt.input)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcile(t *testing.T) {
+	t.Parallel()
+	const (
+		testNamespace     = "clusters-test-hcp"
+		testServiceName   = "private-router"
+		testHCPName       = "test-hcp"
+		testHCPUID        = "test-hcp-uid"
+		testLBIP          = "10.0.0.100"
+		testUpdatedLBIP   = "10.0.0.200"
+		testSubscription  = "sub-12345"
+		testResourceGroup = "test-rg"
+		testLocation      = "eastus"
+		testNATSubnetID   = "/subscriptions/sub-12345/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/nat-subnet"
+		testSubnetID      = "/subscriptions/sub-12345/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/guest-subnet"
+		testVNetID        = "/subscriptions/sub-12345/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+	)
+
+	defaultHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testHCPName,
+				Namespace: testNamespace,
+				UID:       testHCPUID,
+				Annotations: map[string]string{
+					k8sutil.HostedClusterAnnotation: "clusters/test-cluster",
+				},
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						SubscriptionID:    testSubscription,
+						ResourceGroupName: testResourceGroup,
+						Location:          testLocation,
+						VnetID:            testVNetID,
+						SubnetID:          testSubnetID,
+						Topology:          hyperv1.AzureTopologyPrivate,
+						Private: hyperv1.AzurePrivateSpec{
+							Type: hyperv1.AzurePrivateTypePrivateLink,
+							PrivateLink: hyperv1.AzurePrivateLinkSpec{
+								NATSubnetID:                    testNATSubnetID,
+								AdditionalAllowedSubscriptions: []hyperv1.AzureSubscriptionID{testSubscription},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	defaultService := func() *corev1.Service {
+		return &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName,
+				Namespace: testNamespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: hyperv1.GroupVersion.String(),
+					Kind:       "HostedControlPlane",
+					Name:       testHCPName,
+					UID:        testHCPUID,
+				}},
+				Annotations: map[string]string{
+					"service.beta.kubernetes.io/azure-load-balancer-internal": "true",
+				},
+			},
+			Status: corev1.ServiceStatus{
+				LoadBalancer: corev1.LoadBalancerStatus{
+					Ingress: []corev1.LoadBalancerIngress{
+						{IP: testLBIP},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name                   string
+		serviceName            string
+		requestName            string
+		service                *corev1.Service
+		hcp                    *hyperv1.HostedControlPlane
+		existingPLS            *hyperv1.AzurePrivateLinkService
+		expectError            bool
+		expectRequeueAfter     time.Duration
+		expectPLSCreated       bool
+		expectedLoadBalancerIP string
+	}{
+		{
+			name:                   "When private-router Service has ILB IP, it should create AzurePrivateLinkService CR",
+			serviceName:            testServiceName,
+			requestName:            testServiceName,
+			service:                defaultService(),
+			hcp:                    defaultHCP(),
+			expectError:            false,
+			expectPLSCreated:       true,
+			expectedLoadBalancerIP: testLBIP,
+		},
+		{
+			name:        "When private-router Service has no ILB annotation, it should skip",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service: func() *corev1.Service {
+				svc := defaultService()
+				svc.Annotations = map[string]string{} // No ILB annotation
+				return svc
+			}(),
+			hcp:              defaultHCP(),
+			expectError:      false,
+			expectPLSCreated: false,
+		},
+		{
+			name:        "When private-router Service has no ingress IP yet, it should not create CR",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service: func() *corev1.Service {
+				svc := defaultService()
+				svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{}
+				return svc
+			}(),
+			hcp:                defaultHCP(),
+			expectError:        false,
+			expectRequeueAfter: 30 * time.Second,
+			expectPLSCreated:   false,
+		},
+		{
+			name:        "When HCP is being deleted, it should not create CR",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service:     defaultService(),
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := defaultHCP()
+				now := metav1.NewTime(time.Now())
+				hcp.DeletionTimestamp = &now
+				hcp.Finalizers = []string{"test-finalizer"} // Required for DeletionTimestamp to be respected
+				return hcp
+			}(),
+			expectError:      false,
+			expectPLSCreated: false,
+		},
+		{
+			name:        "When service has no OwnerReference, it should return an error",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service: func() *corev1.Service {
+				svc := defaultService()
+				svc.OwnerReferences = nil
+				return svc
+			}(),
+			hcp:              defaultHCP(),
+			expectError:      true,
+			expectPLSCreated: false,
+		},
+		{
+			name:        "When HCP has nil Azure platform it should return an error",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service:     defaultService(),
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := defaultHCP()
+				hcp.Spec.Platform.Azure = nil
+				return hcp
+			}(),
+			expectError:      true,
+			expectPLSCreated: false,
+		},
+		{
+			name:        "When HCP has empty private connectivity type it should return an error",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service:     defaultService(),
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := defaultHCP()
+				hcp.Spec.Platform.Azure.Private.Type = ""
+				return hcp
+			}(),
+			expectError:      true,
+			expectPLSCreated: false,
+		},
+		{
+			name:        "When CR already exists, it should update loadBalancerIP",
+			serviceName: testServiceName,
+			requestName: testServiceName,
+			service: func() *corev1.Service {
+				svc := defaultService()
+				svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{
+					{IP: testUpdatedLBIP},
+				}
+				return svc
+			}(),
+			hcp: defaultHCP(),
+			existingPLS: &hyperv1.AzurePrivateLinkService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testServiceName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.AzurePrivateLinkServiceSpec{
+					LoadBalancerIP:                 testLBIP, // Old IP
+					SubscriptionID:                 testSubscription,
+					ResourceGroupName:              testResourceGroup,
+					Location:                       testLocation,
+					NATSubnetID:                    testNATSubnetID,
+					AdditionalAllowedSubscriptions: []hyperv1.AzureSubscriptionID{hyperv1.AzureSubscriptionID(testSubscription)},
+					GuestSubnetID:                  testSubnetID,
+					GuestVNetID:                    testVNetID,
+				},
+			},
+			expectError:            false,
+			expectPLSCreated:       true,
+			expectedLoadBalancerIP: testUpdatedLBIP,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			ctx := t.Context()
+
+			// Create fake client with initial objects
+			scheme := runtime.NewScheme()
+			_ = corev1.AddToScheme(scheme)
+			_ = hyperv1.AddToScheme(scheme)
+
+			objects := []crclient.Object{tt.service}
+			if tt.hcp != nil {
+				objects = append(objects, tt.hcp)
+			}
+			if tt.existingPLS != nil {
+				objects = append(objects, tt.existingPLS)
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objects...).
+				Build()
+
+			// Create observer with fake client
+			observer := &AzurePrivateLinkServiceObserver{
+				Client:           fakeClient,
+				ControllerName:   "test-observer",
+				ServiceName:      tt.serviceName,
+				ServiceNamespace: testNamespace,
+				HCPNamespace:     testNamespace,
+				CreateOrUpdateProvider: &mockCreateOrUpdateProvider{
+					client: fakeClient,
+				},
+			}
+
+			// Execute reconcile
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      tt.requestName,
+					Namespace: testNamespace,
+				},
+			}
+
+			result, err := observer.Reconcile(ctx, req)
+
+			// Verify result
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			g.Expect(result.RequeueAfter).To(Equal(tt.expectRequeueAfter))
+
+			// Check if AzurePrivateLinkService CR was created/updated
+			if tt.expectPLSCreated {
+				azurePLS := &hyperv1.AzurePrivateLinkService{}
+				err := fakeClient.Get(ctx, types.NamespacedName{
+					Name:      tt.serviceName,
+					Namespace: testNamespace,
+				}, azurePLS)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(azurePLS.Spec.LoadBalancerIP).To(Equal(tt.expectedLoadBalancerIP))
+				g.Expect(azurePLS.Spec.SubscriptionID).To(Equal(hyperv1.AzureSubscriptionID(testSubscription)))
+				g.Expect(azurePLS.Spec.ResourceGroupName).To(Equal(testResourceGroup))
+				g.Expect(azurePLS.Spec.Location).To(Equal(testLocation))
+				g.Expect(azurePLS.Spec.NATSubnetID).To(Equal(hyperv1.AzureSubnetResourceID(testNATSubnetID)))
+				g.Expect(azurePLS.Spec.AdditionalAllowedSubscriptions).To(Equal([]hyperv1.AzureSubscriptionID{hyperv1.AzureSubscriptionID(testSubscription)}))
+				g.Expect(azurePLS.Spec.GuestSubnetID).To(Equal(hyperv1.AzureSubnetResourceID(testSubnetID)))
+				g.Expect(azurePLS.Spec.GuestVNetID).To(Equal(hyperv1.AzureVNetResourceID(testVNetID)))
+
+				// Verify owner reference
+				g.Expect(azurePLS.OwnerReferences).To(HaveLen(1))
+				g.Expect(azurePLS.OwnerReferences[0].Kind).To(Equal("HostedControlPlane"))
+				g.Expect(azurePLS.OwnerReferences[0].Name).To(Equal(testHCPName))
+
+				// Verify HostedCluster annotation is copied
+				g.Expect(azurePLS.Annotations).To(HaveKeyWithValue(k8sutil.HostedClusterAnnotation, "clusters/test-cluster"))
+			} else {
+				// Verify no AzurePrivateLinkService was created
+				azurePLSList := &hyperv1.AzurePrivateLinkServiceList{}
+				err := fakeClient.List(ctx, azurePLSList)
+				g.Expect(err).ToNot(HaveOccurred())
+				if tt.existingPLS == nil {
+					g.Expect(azurePLSList.Items).To(BeEmpty())
+				}
+			}
+		})
+	}
+}
+
+func TestBaseDomainFromServices(t *testing.T) {
+	t.Parallel()
+
+	const clusterName = "my-cluster"
+
+	tests := []struct {
+		name     string
+		services []hyperv1.ServicePublishingStrategyMapping
+		expected string
+	}{
+		{
+			name: "When OAuth uses Route with hostname, it should extract base domain from route hostname",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Route: &hyperv1.RoutePublishingStrategy{
+							Hostname: "oauth-my-cluster.example.hypershift.com",
+						},
+					},
+				},
+			},
+			expected: "example.hypershift.com",
+		},
+		{
+			name: "When OAuth uses LoadBalancer with hostname, it should extract base domain from LB hostname",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+							Hostname: "oauth-my-cluster.lb.example.com",
+						},
+					},
+				},
+			},
+			expected: "lb.example.com",
+		},
+		{
+			name: "When OAuth has no hostname on either Route or LoadBalancer, it should return empty string",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Route:        &hyperv1.RoutePublishingStrategy{},
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+					},
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "When no OAuthServer service exists, it should return empty string",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Route: &hyperv1.RoutePublishingStrategy{
+							Hostname: "oauth-my-cluster.example.com",
+						},
+					},
+				},
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			result := baseDomainFromServices(tt.services, clusterName)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcile_WhenServiceNotFound_ItShouldReturnNoError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = hyperv1.AddToScheme(scheme)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	observer := &AzurePrivateLinkServiceObserver{
+		Client:           fakeClient,
+		ControllerName:   "test-observer",
+		ServiceName:      "private-router",
+		ServiceNamespace: "test-ns",
+		HCPNamespace:     "test-ns",
+	}
+
+	result, err := observer.Reconcile(t.Context(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "private-router", Namespace: "test-ns"},
+	})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+}
+
+// mockCreateOrUpdateProvider implements CreateOrUpdateProvider for testing
+type mockCreateOrUpdateProvider struct {
+	client crclient.Client
+}
+
+func (m *mockCreateOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	return controllerutil.CreateOrUpdate(ctx, c, obj, f)
+}

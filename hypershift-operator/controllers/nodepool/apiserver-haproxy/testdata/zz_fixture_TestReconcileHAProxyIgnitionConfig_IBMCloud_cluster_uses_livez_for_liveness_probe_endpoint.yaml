@@ -1,0 +1,29 @@
+global
+  maxconn 7000
+  log stdout local0
+  log stdout local1 notice
+
+defaults
+  mode tcp
+  timeout client 10m
+  timeout server 10m
+  timeout connect 10s
+  timeout client-fin 5s
+  timeout server-fin 5s
+  timeout queue 5s
+  retries 3
+
+frontend local_apiserver
+  bind 172.20.0.1:443
+  log global
+  mode tcp
+  option tcplog
+  default_backend remote_apiserver
+
+backend remote_apiserver
+  mode tcp
+  log global
+  option httpchk GET /livez?exclude=etcd&amp;exclude=log
+  option log-health-checks
+  default-server inter 10s fall 3 rise 3
+  server controlplane kubeconfig-host:443

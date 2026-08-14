@@ -1,0 +1,1096 @@
+package azureutil
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"testing"
+
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+func TestGetSubnetNameFromSubnetID(t *testing.T) {
+	tests := []struct {
+		testCaseName       string
+		subnetID           string
+		expectedSubnetName string
+		expectedErr        bool
+	}{
+		{
+			testCaseName:       "empty subnet ID",
+			subnetID:           "",
+			expectedSubnetName: "",
+			expectedErr:        true,
+		},
+		{
+			testCaseName:       "improperly formed subnet ID",
+			subnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets",
+			expectedSubnetName: "",
+			expectedErr:        true,
+		},
+		{
+			testCaseName:       "properly formed subnet ID",
+			subnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
+			expectedSubnetName: "mySubnetName",
+			expectedErr:        false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.testCaseName, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			subnetID, err := GetSubnetNameFromSubnetID(tc.subnetID)
+			if tc.expectedErr {
+				g.Expect(err).To(Not(BeNil()))
+				g.Expect(err).To(HaveOccurred(), "invalid subnet ID format: "+tc.subnetID)
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(subnetID).To(Equal(tc.expectedSubnetName))
+			}
+		})
+	}
+}
+
+func TestGetNetworkSecurityGroupNameFromNetworkSecurityGroupID(t *testing.T) {
+	tests := []struct {
+		testCaseName    string
+		nsgID           string
+		expectedNSGName string
+		expectedNSGRG   string
+		expectedErr     bool
+	}{
+		{
+			testCaseName:    "empty NSG ID",
+			nsgID:           "",
+			expectedNSGName: "",
+			expectedNSGRG:   "",
+			expectedErr:     true,
+		},
+		{
+			testCaseName:    "improperly formed nsg ID",
+			nsgID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups",
+			expectedNSGName: "",
+			expectedNSGRG:   "",
+			expectedErr:     true,
+		},
+		{
+			testCaseName:    "properly formed nsg ID",
+			nsgID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
+			expectedNSGName: "myNSGName",
+			expectedNSGRG:   "myResourceGroupName",
+			expectedErr:     false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.testCaseName, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			nsgName, nsgRG, err := GetNameAndResourceGroupFromNetworkSecurityGroupID(tc.nsgID)
+			if tc.expectedErr {
+				g.Expect(err).To(Not(BeNil()))
+				g.Expect(err).To(HaveOccurred(), "invalid nsg ID format: "+tc.nsgID)
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(nsgName).To(Equal(tc.expectedNSGName))
+				g.Expect(nsgRG).To(Equal(tc.expectedNSGRG))
+			}
+		})
+	}
+}
+
+func TestGetVnetNameAndResourceGroupFromVnetID(t *testing.T) {
+	tests := []struct {
+		testCaseName     string
+		vnetID           string
+		expectedVnetName string
+		expectedVnetRG   string
+		expectedErr      bool
+	}{
+		{
+			testCaseName:     "empty VNET ID",
+			vnetID:           "",
+			expectedVnetName: "",
+			expectedVnetRG:   "",
+			expectedErr:      true,
+		},
+		{
+			testCaseName:     "improperly formed VNET ID",
+			vnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/",
+			expectedVnetName: "",
+			expectedVnetRG:   "",
+			expectedErr:      true,
+		},
+		{
+			testCaseName:     "properly formed VNET ID",
+			vnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
+			expectedVnetName: "myVnetName",
+			expectedVnetRG:   "myResourceGroupName",
+			expectedErr:      false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.testCaseName, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			vnetName, vnetRG, err := GetVnetNameAndResourceGroupFromVnetID(tc.vnetID)
+			if tc.expectedErr {
+				g.Expect(err).To(Not(BeNil()))
+				g.Expect(err).To(HaveOccurred(), "invalid VNET ID format: "+tc.vnetID)
+			} else {
+				g.Expect(err).To(BeNil())
+				g.Expect(vnetName).To(Equal(tc.expectedVnetName))
+				g.Expect(vnetRG).To(Equal(tc.expectedVnetRG))
+			}
+		})
+	}
+}
+
+func TestIsAroHCP(t *testing.T) {
+	testCases := []struct {
+		name          string
+		envVarValue   string
+		expectedValue bool
+	}{
+		{
+			name:          "Sets the managed service env var to hyperv1.AroHCP so the function should return true",
+			envVarValue:   hyperv1.AroHCP,
+			expectedValue: true,
+		},
+		{
+			name:          "Sets the managed service env var to nothing so the function should return false",
+			envVarValue:   "",
+			expectedValue: false,
+		},
+		{
+			name:          "Sets the managed service env var to 'asdf' so the function should return false",
+			envVarValue:   "asdf",
+			expectedValue: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			t.Setenv("MANAGED_SERVICE", tc.envVarValue)
+			isAroHcp := IsAroHCP()
+			g.Expect(isAroHcp).To(Equal(tc.expectedValue))
+		})
+	}
+}
+
+func TestIsAroHCPByHCP(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		envVar   string
+		expected bool
+	}{
+		{
+			name: "When AzureAuthenticationConfigType is ManagedIdentities it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When AzureAuthenticationConfigType is WorkloadIdentities it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When platform is not Azure it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Azure spec is nil it should fall back to env var",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			envVar:   hyperv1.AroHCP,
+			expected: true,
+		},
+		{
+			name: "When Azure spec is nil and env var is not set it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When WorkloadIdentities with ARO HCP env var it should return false because API takes precedence",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							},
+						},
+					},
+				},
+			},
+			envVar:   hyperv1.AroHCP,
+			expected: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			if tc.envVar != "" {
+				t.Setenv("MANAGED_SERVICE", tc.envVar)
+			}
+			g.Expect(IsAroHCPByHCP(tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestIsAroHCPByHC(t *testing.T) {
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		envVar   string
+		expected bool
+	}{
+		{
+			name: "When AzureAuthenticationConfigType is ManagedIdentities it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When AzureAuthenticationConfigType is WorkloadIdentities it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When platform is not Azure it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Azure spec is nil it should fall back to env var",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			envVar:   hyperv1.AroHCP,
+			expected: true,
+		},
+		{
+			name: "When Azure spec is nil and env var is not set it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			if tc.envVar != "" {
+				t.Setenv("MANAGED_SERVICE", tc.envVar)
+			}
+			g.Expect(IsAroHCPByHC(tc.hc)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestIsPrivateKeyVault(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "When KeyVaultAccess is Private it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When KeyVaultAccess is Public it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								KeyVaultAccess: hyperv1.AzureKeyVaultPublic,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When KeyVaultAccess is empty it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When SecretEncryption is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: false,
+		},
+		{
+			name: "When KMS is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Azure KMS is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(IsPrivateKeyVault(tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
+	type args struct {
+		azureCredentialsFilepath string
+	}
+	tests := []struct {
+		name string
+		args args
+		want []corev1.EnvVar
+	}{
+		{
+			name: "returns a slice of environment variables with the azure creds",
+			args: args{
+				azureCredentialsFilepath: "my-credentials-file",
+			},
+			want: []corev1.EnvVar{
+				{
+					Name:  config.ManagedAzureCredentialsFilePath,
+					Value: config.ManagedAzureCertificatePath + "my-credentials-file",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CreateEnvVarsForAzureManagedIdentity(tt.args.azureCredentialsFilepath); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CreateEnvVarsForAzureManagedIdentity() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateVolumeMountForAzureSecretStoreProviderClass(t *testing.T) {
+	tests := []struct {
+		name                  string
+		secretStoreVolumeName string
+		want                  corev1.VolumeMount
+	}{
+		{
+			name:                  "return a volume mount for a secret store provider",
+			secretStoreVolumeName: "my-secret-store",
+			want: corev1.VolumeMount{
+				Name:      "my-secret-store",
+				MountPath: config.ManagedAzureCertificateMountPath,
+				ReadOnly:  true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CreateVolumeMountForAzureSecretStoreProviderClass(tt.secretStoreVolumeName); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CreateVolumeMountForAzureSecretStoreProviderClass() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateVolumeForAzureSecretStoreProviderClass(t *testing.T) {
+	tests := []struct {
+		name                    string
+		secretStoreVolumeName   string
+		secretProviderClassName string
+		want                    corev1.Volume
+	}{
+		{
+			name:                    "return a volume for a secret store provider",
+			secretStoreVolumeName:   "my-secret-store",
+			secretProviderClassName: "my-secret-provider-class",
+			want: corev1.Volume{
+				Name: "my-secret-store",
+				VolumeSource: corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{
+						Driver:   config.ManagedAzureSecretsStoreCSIDriver,
+						ReadOnly: ptr.To(true),
+						VolumeAttributes: map[string]string{
+							config.ManagedAzureSecretProviderClass: "my-secret-provider-class",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CreateVolumeForAzureSecretStoreProviderClass(tt.secretStoreVolumeName, tt.secretProviderClassName); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CreateVolumeForAzureSecretStoreProviderClass() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetKeyVaultFQDN(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		wantFQDN string
+		wantErr  bool
+	}{
+		{
+			name: "When Azure KMS is configured with public cloud it should return correct FQDN",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "my-keyvault",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFQDN: "my-keyvault.vault.azure.net",
+		},
+		{
+			name: "When Azure KMS is configured with gov cloud it should return correct FQDN",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzureUSGovernmentCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "gov-vault",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFQDN: "gov-vault.vault.usgovcloudapi.net",
+		},
+		{
+			name: "When SecretEncryption is nil it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "When KMS Azure is nil it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "When KeyVaultName is empty it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got, err := GetKeyVaultFQDN(tt.hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(Equal(tt.wantFQDN))
+		})
+	}
+}
+
+func TestGetAzureEncryptionKeyInfo(t *testing.T) {
+	tests := []struct {
+		name           string
+		id             string
+		wantVaultHost  string
+		wantKeyName    string
+		wantKeyVersion string
+		wantErr        bool
+	}{
+		{
+			name:           "When given a valid key id it should parse fields",
+			id:             "https://example-kms.vault.azure.net/keys/example-key/1234abcd",
+			wantVaultHost:  "example-kms",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantErr:        false,
+		},
+		{
+			name:    "When key id missing version it should error",
+			id:      "https://example-kms.vault.azure.net/keys/example-key",
+			wantErr: true,
+		},
+		{
+			name:    "When key id path not under /keys it should error",
+			id:      "https://example-kms.vault.azure.net/secrets/example-key/1234abcd",
+			wantErr: true,
+		},
+		{
+			name:    "When key id has trailing slash it should error",
+			id:      "https://example-kms.vault.azure.net/keys/example-key/1234abcd/",
+			wantErr: true,
+		},
+		{
+			name:           "Parses govcloud suffix correctly",
+			id:             "https://example-kms.vault.usgovcloudapi.net/keys/example-key/1234abcd",
+			wantVaultHost:  "example-kms",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantErr:        false,
+		},
+		{
+			name:    "Missing scheme should error",
+			id:      "example-kms.vault.azure.net/keys/example-key/1234abcd",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got, err := GetAzureEncryptionKeyInfo(tt.id)
+			if tt.wantErr {
+				g.Expect(err).To(Not(BeNil()))
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).To(BeNil())
+			g.Expect(got).To(Not(BeNil()))
+			g.Expect(got.KeyVaultName).To(Equal(tt.wantVaultHost))
+			g.Expect(got.KeyName).To(Equal(tt.wantKeyName))
+			g.Expect(got.KeyVersion).To(Equal(tt.wantKeyVersion))
+		})
+	}
+}
+
+func TestReconcileAzureCredentials(t *testing.T) {
+	g := NewWithT(t)
+
+	baseSecretData := map[string][]byte{
+		"azure_region":          []byte("eastus"),
+		"azure_resource_prefix": []byte("test-cluster-abcd"),
+		"azure_resourcegroup":   []byte("test-rg"),
+		"azure_subscription_id": []byte("sub-123"),
+		"azure_tenant_id":       []byte("tenant-456"),
+	}
+
+	// Helper function to create a secret manifest
+	createTestSecretManifest := func(name, namespace string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+		}
+	}
+
+	tests := []struct {
+		name                 string
+		configs              []AzureCredentialConfig
+		capabilities         *hyperv1.Capabilities
+		expectedSecretsCount int
+		expectedErrors       int
+		validateSecret       func(secret *corev1.Secret, config AzureCredentialConfig)
+	}{
+		{
+			name: "creates all secrets with correct client IDs when all capabilities enabled",
+			configs: []AzureCredentialConfig{
+				{
+					Name:         "ingress",
+					ManifestFunc: func() *corev1.Secret { return createTestSecretManifest("ingress-creds", "test-ns") },
+					ClientID:     "ingress-client-id",
+					CapabilityChecker: func(caps *hyperv1.Capabilities) bool {
+						return caps == nil || !isCapabilityDisabled(caps, hyperv1.IngressCapability)
+					},
+					ErrorContext: "ingress credentials",
+				},
+				{
+					Name:              "disk-csi",
+					ManifestFunc:      func() *corev1.Secret { return createTestSecretManifest("disk-creds", "test-ns") },
+					ClientID:          "disk-client-id",
+					CapabilityChecker: nil, // Always enabled
+					ErrorContext:      "disk CSI credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{},
+			expectedSecretsCount: 2,
+			expectedErrors:       0,
+			validateSecret: func(secret *corev1.Secret, config AzureCredentialConfig) {
+				g.Expect(secret.Data["azure_client_id"]).To(Equal([]byte(config.ClientID)))
+				g.Expect(secret.Data["azure_region"]).To(Equal([]byte("eastus")))
+			},
+		},
+		{
+			name: "skips secrets when capability is disabled",
+			configs: []AzureCredentialConfig{
+				{
+					Name:         "ingress",
+					ManifestFunc: func() *corev1.Secret { return createTestSecretManifest("ingress-creds", "test-ns") },
+					ClientID:     "ingress-client-id",
+					CapabilityChecker: func(caps *hyperv1.Capabilities) bool {
+						return caps == nil || !isCapabilityDisabled(caps, hyperv1.IngressCapability)
+					},
+					ErrorContext: "ingress credentials",
+				},
+				{
+					Name:              "disk-csi",
+					ManifestFunc:      func() *corev1.Secret { return createTestSecretManifest("disk-creds", "test-ns") },
+					ClientID:          "disk-client-id",
+					CapabilityChecker: nil, // Always enabled
+					ErrorContext:      "disk CSI credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability}},
+			expectedSecretsCount: 1, // Only disk-csi should be created
+			expectedErrors:       0,
+			validateSecret: func(secret *corev1.Secret, config AzureCredentialConfig) {
+				if config.Name == "disk-csi" {
+					g.Expect(secret.Data["azure_client_id"]).To(Equal([]byte(config.ClientID)))
+				}
+			},
+		},
+		{
+			name: "creates secrets without client ID when not provided",
+			configs: []AzureCredentialConfig{
+				{
+					Name:              "test-secret",
+					ManifestFunc:      func() *corev1.Secret { return createTestSecretManifest("test-creds", "test-ns") },
+					ClientID:          "", // Empty client ID
+					CapabilityChecker: nil,
+					ErrorContext:      "test credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{},
+			expectedSecretsCount: 1,
+			expectedErrors:       0,
+			validateSecret: func(secret *corev1.Secret, config AzureCredentialConfig) {
+				// Should not have azure_client_id when ClientID is empty
+				g.Expect(secret.Data["azure_client_id"]).To(BeNil())
+				g.Expect(secret.Data["azure_region"]).To(Equal([]byte("eastus")))
+			},
+		},
+		{
+			name: "handles nil manifest function gracefully",
+			configs: []AzureCredentialConfig{
+				{
+					Name:              "broken-secret",
+					ManifestFunc:      func() *corev1.Secret { return nil }, // Returns nil
+					ClientID:          "test-client-id",
+					CapabilityChecker: nil,
+					ErrorContext:      "broken credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{},
+			expectedSecretsCount: 0,
+			expectedErrors:       1, // Should get an error for nil manifest
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a fake client for testing
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			// Mock createOrUpdate function that simulates secret creation
+			var createdSecrets []*corev1.Secret
+			mockCreateOrUpdate := func(ctx context.Context, client client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				secret, ok := obj.(*corev1.Secret)
+				if !ok {
+					return controllerutil.OperationResultNone, fmt.Errorf("expected Secret, got %T", obj)
+				}
+
+				// Call the mutate function to set up the secret data
+				if err := mutate(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+
+				// Store the secret for validation
+				createdSecrets = append(createdSecrets, secret.DeepCopy())
+				return controllerutil.OperationResultCreated, nil
+			}
+
+			// Call the function under test
+			errs := ReconcileAzureCredentials(
+				t.Context(),
+				fakeClient,
+				mockCreateOrUpdate,
+				baseSecretData,
+				tt.configs,
+				tt.capabilities,
+			)
+
+			// Validate error count
+			g.Expect(len(errs)).To(Equal(tt.expectedErrors))
+
+			// Validate secret count
+			g.Expect(len(createdSecrets)).To(Equal(tt.expectedSecretsCount))
+
+			// Validate each created secret
+			for i, secret := range createdSecrets {
+				if i < len(tt.configs) && tt.validateSecret != nil {
+					// Find the corresponding config for this secret
+					for _, config := range tt.configs {
+						if (config.CapabilityChecker == nil || config.CapabilityChecker(tt.capabilities)) &&
+							config.ManifestFunc() != nil &&
+							config.ManifestFunc().Name == secret.Name {
+							tt.validateSecret(secret, config)
+							break
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// Helper function to check if a capability is disabled
+func isCapabilityDisabled(capabilities *hyperv1.Capabilities, capability hyperv1.OptionalCapability) bool {
+	if capabilities == nil {
+		return false
+	}
+	for _, disabled := range capabilities.Disabled {
+		if disabled == capability {
+			return true
+		}
+	}
+	return false
+}
+
+func TestIsSelfManagedAzureWithWorkloadIdentity(t *testing.T) {
+	tests := []struct {
+		name         string
+		platformType hyperv1.PlatformType
+		azure        *hyperv1.AzurePlatformSpec
+		managedSvc   string
+		expected     bool
+	}{
+		{
+			name:         "When Azure platform with workload identities configured it should return true",
+			platformType: hyperv1.AzurePlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+					WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:         "When Azure platform with nil workload identities it should return false",
+			platformType: hyperv1.AzurePlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{},
+			},
+			expected: false,
+		},
+		{
+			name:         "When Azure platform with nil azure spec it should return false",
+			platformType: hyperv1.AzurePlatform,
+			azure:        nil,
+			expected:     false,
+		},
+		{
+			name:         "When non-Azure platform with workload identities it should return false",
+			platformType: hyperv1.AWSPlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+					WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name:         "When ARO-HCP managed service with workload identities it should return false",
+			platformType: hyperv1.AzurePlatform,
+			azure: &hyperv1.AzurePlatformSpec{
+				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+					WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{},
+				},
+			},
+			managedSvc: hyperv1.AroHCP,
+			expected:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			if tc.managedSvc != "" {
+				t.Setenv("MANAGED_SERVICE", tc.managedSvc)
+			}
+			g.Expect(IsSelfManagedAzureWithWorkloadIdentity(tc.platformType, tc.azure)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestNewARMClientOptions(t *testing.T) {
+	tests := []struct {
+		name               string
+		cloudConfig        cloud.Configuration
+		wantApplicationID  string
+		wantCloudActiveDir string
+	}{
+		{
+			name:               "When public cloud is provided it should return options with correct cloud and telemetry",
+			cloudConfig:        cloud.AzurePublic,
+			wantApplicationID:  CPOUserAgent,
+			wantCloudActiveDir: cloud.AzurePublic.ActiveDirectoryAuthorityHost,
+		},
+		{
+			name:               "When government cloud is provided it should return options with correct cloud and telemetry",
+			cloudConfig:        cloud.AzureGovernment,
+			wantApplicationID:  CPOUserAgent,
+			wantCloudActiveDir: cloud.AzureGovernment.ActiveDirectoryAuthorityHost,
+		},
+		{
+			name:               "When China cloud is provided it should return options with correct cloud and telemetry",
+			cloudConfig:        cloud.AzureChina,
+			wantApplicationID:  CPOUserAgent,
+			wantCloudActiveDir: cloud.AzureChina.ActiveDirectoryAuthorityHost,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got := NewARMClientOptions(tt.cloudConfig)
+
+			g.Expect(got).NotTo(BeNil())
+			g.Expect(got.Cloud.ActiveDirectoryAuthorityHost).To(Equal(tt.wantCloudActiveDir))
+			g.Expect(got.Telemetry.ApplicationID).To(Equal(tt.wantApplicationID))
+		})
+	}
+}
+
+func TestGetAzureCloudConfiguration(t *testing.T) {
+	tests := []struct {
+		name      string
+		cloudName string
+		wantCloud cloud.Configuration
+		wantErr   bool
+	}{
+		{
+			name:      "AzurePublicCloud returns public cloud configuration",
+			cloudName: "AzurePublicCloud",
+			wantCloud: cloud.AzurePublic,
+			wantErr:   false,
+		},
+		{
+			name:      "Empty string defaults to public cloud configuration",
+			cloudName: "",
+			wantCloud: cloud.AzurePublic,
+			wantErr:   false,
+		},
+		{
+			name:      "AzureUSGovernmentCloud returns government cloud configuration",
+			cloudName: "AzureUSGovernmentCloud",
+			wantCloud: cloud.AzureGovernment,
+			wantErr:   false,
+		},
+		{
+			name:      "AzureChinaCloud returns China cloud configuration",
+			cloudName: "AzureChinaCloud",
+			wantCloud: cloud.AzureChina,
+			wantErr:   false,
+		},
+		{
+			name:      "Invalid cloud name returns error",
+			cloudName: "InvalidCloud",
+			wantCloud: cloud.Configuration{},
+			wantErr:   true,
+		},
+		{
+			name:      "Unknown cloud name returns error",
+			cloudName: "AzureStackCloud",
+			wantCloud: cloud.Configuration{},
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotCloud, err := GetAzureCloudConfiguration(tt.cloudName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetAzureCloudConfiguration() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				// Compare the ActiveDirectoryAuthorityHost to verify we got the right cloud configuration
+				if gotCloud.ActiveDirectoryAuthorityHost != tt.wantCloud.ActiveDirectoryAuthorityHost {
+					t.Errorf("GetAzureCloudConfiguration() = %v, want %v", gotCloud, tt.wantCloud)
+				}
+			}
+		})
+	}
+}

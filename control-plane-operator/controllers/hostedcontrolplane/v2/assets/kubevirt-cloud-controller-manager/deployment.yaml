@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-controller-manager
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cloud-controller-manager
+  template:
+    metadata:
+      labels:
+        app: cloud-controller-manager
+    spec:
+      containers:
+      - args:
+        - --cloud-provider=kubevirt
+        - --cloud-config=/etc/cloud/cloud-config
+        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --authentication-skip-lookup
+        command:
+        - /bin/kubevirt-cloud-controller-manager
+        image: kubevirt-cloud-controller-manager
+        imagePullPolicy: IfNotPresent
+        name: cloud-controller-manager
+        resources:
+          requests:
+            cpu: 75m
+            memory: 60Mi
+        volumeMounts:
+        - mountPath: /etc/cloud
+          name: cloud-config
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+      serviceAccountName: kubevirt-cloud-controller-manager
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: kubevirt-cloud-config
+        name: cloud-config

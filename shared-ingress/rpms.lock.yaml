@@ -1,0 +1,40 @@
+---
+lockfileVersion: 1
+lockfileVendor: redhat
+arches:
+- arch: aarch64
+  packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/aarch64/appstream/os/Packages/h/haproxy-3.0.5-4.el10_1.1.aarch64.rpm
+    repoid: ubi-10-appstream-rpms
+    size: 2737587
+    checksum: sha256:d134409b5c20f96ee49c3a09638c40079711db12bec86e5d11dca8032e2c880e
+    name: haproxy
+    evr: 3.0.5-4.el10_1.1
+    sourcerpm: haproxy-3.0.5-4.el10_1.1.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/aarch64/appstream/os/Packages/s/socat-1.7.4.4-8.el10.aarch64.rpm
+    repoid: ubi-10-appstream-rpms
+    size: 309604
+    checksum: sha256:bc96af101406a9e57bee8e8cbbc8091dfd9fe59e18d8a790810f205940dbe1b5
+    name: socat
+    evr: 1.7.4.4-8.el10
+    sourcerpm: socat-1.7.4.4-8.el10.src.rpm
+  source: []
+  module_metadata: []
+- arch: x86_64
+  packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/x86_64/appstream/os/Packages/h/haproxy-3.0.5-4.el10_1.1.x86_64.rpm
+    repoid: ubi-10-appstream-rpms
+    size: 2744446
+    checksum: sha256:ab597cc91bbd2be22853054d104ba161a4f93336b9d3369000aa830fd8c1aec8
+    name: haproxy
+    evr: 3.0.5-4.el10_1.1
+    sourcerpm: haproxy-3.0.5-4.el10_1.1.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/x86_64/appstream/os/Packages/s/socat-1.7.4.4-8.el10.x86_64.rpm
+    repoid: ubi-10-appstream-rpms
+    size: 312918
+    checksum: sha256:71a11faafe0969701dc36fa28f9f2cc385151539b72e7fe884aabfb42fc5bfb4
+    name: socat
+    evr: 1.7.4.4-8.el10
+    sourcerpm: socat-1.7.4.4-8.el10.src.rpm
+  source: []
+  module_metadata: []

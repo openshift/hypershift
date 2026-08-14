@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: router
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: private-router
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: private-router
+    spec:
+      containers:
+      - args:
+        - -f
+        - /usr/local/etc/haproxy
+        command:
+        - haproxy
+        image: haproxy-router
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /haproxy_ready
+            port: 9444
+            scheme: HTTP
+          initialDelaySeconds: 50
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: router
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 40Mi
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+        volumeMounts:
+        - mountPath: /usr/local/etc/haproxy/haproxy.cfg
+          name: config
+          subPath: haproxy.cfg
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: router
+        name: config

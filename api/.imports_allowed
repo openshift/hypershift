@@ -1,0 +1,15 @@
+# Allowed direct dependencies for the HyperShift API module
+#
+# This file defines the restricted list of dependencies that the API module
+# is permitted to directly import. Any changes to this file MUST be reviewed
+# and approved by API reviewers.
+#
+# Format: one module path per line, comments start with #
+
+# Core Kubernetes API dependencies
+k8s.io/api
+k8s.io/apimachinery
+k8s.io/utils
+
+# OpenShift API dependencies
+github.com/openshift/api

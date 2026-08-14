@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: arc-monitoring
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+        isDefault: true
+        jsonData:
+          httpHeaderName1: Authorization
+          timeInterval: 30s
+          # tlsSkipVerify is acceptable here: this is internal cluster
+          # traffic (pod to thanos-querier service). The serving cert is
+          # signed by the OpenShift service-ca which is not easily inlined
+          # into Grafana datasource provisioning.
+          tlsSkipVerify: true
+        secureJsonData:
+          httpHeaderValue1: Bearer ${BEARER_TOKEN}
+        editable: false

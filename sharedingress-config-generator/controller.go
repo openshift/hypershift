@@ -1,0 +1,225 @@
+package sharedingressconfiggenerator
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/netutil"
+
+	routev1 "github.com/openshift/api/route/v1"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+)
+
+type SharedIngressConfigReconciler struct {
+	client client.Client
+
+	configPath               string
+	haProxyRuntimeSocketPath string
+	haProxyClient            haProxyClient
+
+	// lastReloadedHash stores the hash of the last successfully reloaded configuration
+	lastReloadedHash []byte
+
+	// lastConfigWriteTime tracks when the config file was last written to disk.
+	// Used to coalesce rapid config changes into a single HAProxy reload,
+	// avoiding reload storms when many HostedClusters are created simultaneously.
+	lastConfigWriteTime time.Time
+
+	// firstPendingWriteTime tracks when the first config change occurred that
+	// has not yet been reloaded. This bounds the maximum coalesce delay so that
+	// a sustained trickle of HC creations cannot starve reloads indefinitely.
+	firstPendingWriteTime time.Time
+
+	// now is a function that returns the current time. It defaults to time.Now
+	// and can be overridden in tests to control time-dependent behavior.
+	now func() time.Time
+}
+
+func (r *SharedIngressConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
+	r.haProxyClient = &defaultHAproxyClient{}
+	if r.now == nil {
+		r.now = time.Now
+	}
+
+	// A channel is used to generate an initial sync event.
+	// Afterwards, the controller syncs on HostedClusters.
+	initialSync := make(chan event.GenericEvent)
+
+	go func() {
+		initialSync <- event.GenericEvent{Object: &hyperv1.HostedCluster{}}
+	}()
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}).
+		WatchesRawSource(source.Channel(initialSync, &handler.EnqueueRequestForObject{})).
+		Watches(
+			&routev1.Route{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				if _, hasHCPLabel := obj.GetLabels()[netutil.HCPRouteLabel]; !hasHCPLabel {
+					return nil
+				}
+				return []ctrl.Request{{NamespacedName: client.ObjectKey{
+					Name:      obj.GetName(),
+					Namespace: obj.GetNamespace(),
+				}}}
+			}),
+		).
+		Named("SharedIngressConfigGenerator").
+		Complete(r)
+}
+
+const (
+	reloadTimeout = 5 * time.Second
+
+	// reloadCoalesceWindow is the minimum time to wait after a config file write
+	// before triggering an HAProxy reload. This allows rapid successive config
+	// changes (e.g. from multiple HostedClusters being created simultaneously)
+	// to be batched into a single reload, preventing reload storms that drop
+	// in-flight TLS connections.
+	reloadCoalesceWindow = 5 * time.Second
+
+	// maxCoalesceDelay is the maximum time to defer a reload after the first
+	// pending config change. This ensures that a sustained trickle of HC
+	// creations (e.g. one every 3 seconds) cannot starve reloads indefinitely.
+	maxCoalesceDelay = 30 * time.Second
+)
+
+func (r *SharedIngressConfigReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
+	logger := ctrl.LoggerFrom(ctx)
+
+	currentHash, err := r.currentConfigHash()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Create a temporary file for the new config
+	dir := filepath.Dir(r.configPath)
+	tmpFile, err := os.CreateTemp(dir, ".haproxy.*.cfg.tmp")
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create temporary config file: %w", err)
+	}
+	defer tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Use MultiWriter to write to both hash and file simultaneously
+	h := sha256.New()
+	writer := io.MultiWriter(tmpFile, h)
+
+	if err := generateRouterConfig(ctx, r.client, writer); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+	}
+	newHash := h.Sum(nil)
+
+	// Update the config file if it doesn't exist or has changed
+	if currentHash == nil || !bytes.Equal(currentHash, newHash) {
+		logger.Info("HAProxy configuration change detected!")
+
+		// Ensure the file is synced to disk before we rename it
+		if err := tmpFile.Sync(); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to sync temporary file: %w", err)
+		}
+		tmpFile.Close()
+
+		if err := os.Rename(tmpFile.Name(), r.configPath); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update config file: %w", err)
+		}
+
+		r.lastConfigWriteTime = r.now()
+		logger.Info("HAProxy configuration file updated", "hash", fmt.Sprintf("%x", newHash))
+	}
+
+	// Reload HAProxy if current config differs from last successfully reloaded config
+	if !bytes.Equal(r.lastReloadedHash, newHash) {
+		// Track when the first unreloaded config change occurred.
+		if r.firstPendingWriteTime.IsZero() {
+			r.firstPendingWriteTime = r.lastConfigWriteTime
+		}
+
+		// On first startup (no previous reload), reload immediately to serve traffic.
+		// On subsequent changes, coalesce rapid changes into a single reload by
+		// waiting for the config to stabilize. This prevents HAProxy reload storms
+		// when many HostedClusters are created simultaneously, which would drop
+		// in-flight TLS connections.
+		//
+		// The coalesce window is bounded by maxCoalesceDelay to ensure that a
+		// sustained trickle of changes cannot starve reloads indefinitely.
+		if r.lastReloadedHash != nil && !r.lastConfigWriteTime.IsZero() {
+			now := r.now()
+			sinceLastWrite := now.Sub(r.lastConfigWriteTime)
+			sinceFirstPending := now.Sub(r.firstPendingWriteTime)
+			if sinceLastWrite < reloadCoalesceWindow && sinceFirstPending < maxCoalesceDelay {
+				remaining := reloadCoalesceWindow - sinceLastWrite
+				logger.Info("Deferring HAProxy reload to coalesce changes", "remainingWait", remaining, "pendingSince", r.firstPendingWriteTime.Format(time.RFC3339))
+				return ctrl.Result{RequeueAfter: remaining}, nil
+			}
+		}
+
+		logger.Info("Reloading HAProxy configuration")
+		if err := sendHAProxyReloadCommand(ctx, r.haProxyClient, r.haProxyRuntimeSocketPath); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reload HAProxy: %w", err)
+		}
+
+		// Update the last reloaded hash only after successful reload
+		r.lastReloadedHash = make([]byte, len(newHash))
+		copy(r.lastReloadedHash, newHash)
+		r.firstPendingWriteTime = time.Time{} // reset pending tracker
+		logger.Info("HAProxy configuration reloaded successfully", "hash", fmt.Sprintf("%x", newHash))
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *SharedIngressConfigReconciler) currentConfigHash() ([]byte, error) {
+	file, err := os.Open(r.configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // File does not exist, return nil
+		}
+		return nil, fmt.Errorf("failed to open config file: %w", err)
+	}
+	defer file.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return nil, fmt.Errorf("failed to read current config: %w", err)
+	}
+
+	return h.Sum(nil), nil
+}
+
+// sendHAProxyReloadCommand connects to the specified Unix socket and sends a reload command.
+// It inspects the returned response and return an appropriate error if the reload operation failed.
+func sendHAProxyReloadCommand(ctx context.Context, client haProxyClient, socketPath string) error {
+	response, err := client.sendCommand(ctx, socketPath, "reload")
+	if err != nil {
+		return err
+	}
+
+	if response == "" {
+		return fmt.Errorf("received an empty response from socket")
+	}
+
+	// Check the first line for the success status
+	// see: https://docs.haproxy.org/3.0/management.html#9.4.1-reload
+	lines := strings.Split(strings.TrimSpace(string(response)), "\n")
+	if lines[0] != "Success=1" {
+		// Command was unsuccessful. Return the response as error.
+		return fmt.Errorf("HAProxy reload failed with response:\n%s", response)
+	}
+
+	return nil
+}

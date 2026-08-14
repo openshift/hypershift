@@ -1,0 +1,8 @@
+apiVersion: v1
+data:
+  policy.yaml: ""
+  profile: ""
+kind: ConfigMap
+metadata:
+  name: kas-audit-config
+  namespace: HCP_NAMESPACE

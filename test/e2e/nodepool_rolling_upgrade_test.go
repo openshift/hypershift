@@ -1,0 +1,202 @@
+//go:build e2e
+
+package e2e
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"testing"
+	"time"
+
+	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	"sigs.k8s.io/cluster-api/util/labels/format"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+type RollingUpgradeTest struct {
+	DummyInfraSetup
+	ctx        context.Context
+	mgmtClient crclient.Client
+
+	hostedCluster *hyperv1.HostedCluster
+}
+
+func NewRollingUpgradeTest(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) *RollingUpgradeTest {
+	return &RollingUpgradeTest{
+		ctx:           ctx,
+		mgmtClient:    mgmtClient,
+		hostedCluster: hostedCluster,
+	}
+}
+
+func (k *RollingUpgradeTest) Setup(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platforms AWS and Azure")
+	}
+}
+
+func (k *RollingUpgradeTest) getRollingUpgradeTimeout() time.Duration {
+	// Default timeout for rolling upgrades
+	upgradeTimeout := 30 * time.Minute
+
+	// Platform-specific timeouts
+	switch k.hostedCluster.Spec.Platform.Type {
+	case hyperv1.AzurePlatform:
+		// Azure VMs are experiencing slow provisioning and upgrade times.
+		// Extend timeout to account for Azure's slower platform operations.
+		upgradeTimeout = 45 * time.Minute
+	case hyperv1.KubevirtPlatform:
+		// KubeVirt also tends to be slower for upgrades
+		upgradeTimeout = 45 * time.Minute
+	}
+
+	return upgradeTimeout
+}
+
+func (k *RollingUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      k.hostedCluster.Name + "-" + "test-rolling-upgrade",
+			Namespace: k.hostedCluster.Namespace,
+		},
+	}
+	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
+
+	nodePool.Spec.Replicas = &twoReplicas
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		nodePool.Spec.Platform.AWS.InstanceType = "m5.large"
+	case hyperv1.AzurePlatform:
+		nodePool.Spec.Platform.Azure.VMSize = "Standard_D2s_v3"
+	}
+	nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+
+	return nodePool, nil
+}
+
+func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
+	g := NewWithT(t)
+
+	var instanceType string
+	var vmSize string
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		instanceType = "m5.xlarge"
+	case hyperv1.AzurePlatform:
+		vmSize = "Standard_D4s_v5"
+	}
+	// change instance type to trigger a rolling upgrade
+	err := e2eutil.UpdateObject(t, k.ctx, k.mgmtClient, &nodePool, func(obj *hyperv1.NodePool) {
+		switch globalOpts.Platform {
+		case hyperv1.AWSPlatform:
+			obj.Spec.Platform.AWS.InstanceType = instanceType
+		case hyperv1.AzurePlatform:
+			obj.Spec.Platform.Azure.VMSize = vmSize
+		}
+	})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	e2eutil.EventuallyObject(t, k.ctx, fmt.Sprintf("NodePool %s/%s to start the rolling upgrade", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+			return &nodePool, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type:   hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				Status: metav1.ConditionTrue,
+			}),
+		},
+		e2eutil.WithTimeout(2*time.Minute),
+	)
+
+	e2eutil.EventuallyObject(t, k.ctx, fmt.Sprintf("NodePool %s/%s to finish the rolling upgrade", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+			return &nodePool, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type:   hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				Status: metav1.ConditionFalse,
+			}),
+		},
+		e2eutil.WithTimeout(k.getRollingUpgradeTimeout()),
+	)
+
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
+
+	// Find the current (latest revision) MachineSet for the MachineDeployment.
+	// Currently in CAPI v1.11, after a rolling upgrade completes, the old MachineSet may still have machines
+	// that are being scaled down. As a temporary workaround We only verify machines belonging to the
+	// current MachineSet to avoid false failures from stale machines.
+	// TODO(bclement): Revert this change once the root cause is found and fixed:
+	// https://issues.redhat.com/browse/OCPBUGS-77922
+	currentMachineSetName := currentMachineSetForDeployment(t, k.ctx, k.mgmtClient, controlPlaneNamespace, nodePool.Name)
+	machineLabels := crclient.MatchingLabels{
+		capiv1.MachineDeploymentNameLabel: nodePool.Name,
+		capiv1.MachineSetNameLabel:        format.MustFormatValue(currentMachineSetName),
+	}
+
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		awsMachines := &capiaws.AWSMachineList{}
+		err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), machineLabels)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to list aws machines")
+		g.Expect(awsMachines.Items).ToNot(BeEmpty(), "expected at least one aws machine in current MachineSet")
+
+		for _, machine := range awsMachines.Items {
+			g.Expect(machine.Spec.InstanceType).To(Equal(instanceType))
+		}
+	case hyperv1.AzurePlatform:
+		azureMachines := &capiazure.AzureMachineList{}
+		err = k.mgmtClient.List(k.ctx, azureMachines, crclient.InNamespace(controlPlaneNamespace), machineLabels)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to list azure machines")
+		g.Expect(azureMachines.Items).ToNot(BeEmpty(), "expected at least one azure machine in current MachineSet")
+
+		for _, machine := range azureMachines.Items {
+			g.Expect(machine.Spec.VMSize).To(Equal(vmSize))
+		}
+	}
+}
+
+// currentMachineSetForDeployment returns the name of the current (highest revision)
+// MachineSet for the given MachineDeployment. This is needed because after a rolling
+// upgrade the old MachineSet may still have machines that haven't been fully cleaned up.
+func currentMachineSetForDeployment(t *testing.T, ctx context.Context, c crclient.Client, namespace, machineDeploymentName string) string {
+	t.Helper()
+	g := NewWithT(t)
+
+	machineSets := &capiv1.MachineSetList{}
+	err := c.List(ctx, machineSets,
+		crclient.InNamespace(namespace),
+		crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: machineDeploymentName},
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to list MachineSets")
+	g.Expect(machineSets.Items).ToNot(BeEmpty(), "expected at least one MachineSet for MachineDeployment %s", machineDeploymentName)
+
+	var current string
+	var maxRevision int64 = -1
+	for i := range machineSets.Items {
+		rev, err := strconv.ParseInt(machineSets.Items[i].Annotations[capiv1.RevisionAnnotation], 10, 64)
+		if err != nil {
+			continue
+		}
+		if rev > maxRevision {
+			maxRevision = rev
+			current = machineSets.Items[i].Name
+		}
+	}
+	g.Expect(current).ToNot(BeEmpty(), "no MachineSet with a valid revision annotation found")
+	t.Logf("Current MachineSet for MachineDeployment %s: %s (revision %d)", machineDeploymentName, current, maxRevision)
+	return current
+}

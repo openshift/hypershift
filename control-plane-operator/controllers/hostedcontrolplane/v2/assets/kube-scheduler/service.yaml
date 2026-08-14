@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kube-scheduler
+  name: kube-scheduler
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilyPolicy: PreferDualStack
+  ports:
+  - name: client
+    port: 10259
+    protocol: TCP
+    targetPort: client
+  selector:
+    app: kube-scheduler
+  sessionAffinity: None
+  type: ClusterIP

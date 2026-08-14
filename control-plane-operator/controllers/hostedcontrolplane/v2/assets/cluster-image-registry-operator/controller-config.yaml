@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: image-registry-controller-config
+data:
+  config.yaml: |-
+    apiVersion: config.openshift.io/v1
+    kind: GenericControllerConfig
+    servingInfo:
+      bindAddress: ":60000"

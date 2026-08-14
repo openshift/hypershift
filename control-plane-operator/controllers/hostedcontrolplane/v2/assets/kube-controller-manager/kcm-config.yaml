@@ -1,0 +1,27 @@
+apiVersion: v1
+data:
+  config.json: |
+    {
+      "kind": "KubeControllerManagerConfig",
+      "apiVersion": "kubecontrolplane.config.openshift.io/v1",
+      "serviceServingCert": {
+        "certFile": ""
+      },
+      "projectConfig": {
+        "defaultNodeSelector": ""
+      },
+      "extendedArguments": {
+        "leader-elect": [
+          "true"
+        ],
+        "leader-elect-renew-deadline": [
+          "12s"
+        ],
+        "leader-elect-retry-period": [
+          "3s"
+        ]
+      }
+    }
+kind: ConfigMap
+metadata:
+  name: kcm-config

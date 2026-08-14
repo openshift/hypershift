@@ -1,0 +1,9 @@
+apiVersion: v1
+data:
+  config.yaml: |
+    nodeclientcert:
+      disabled: false
+kind: ConfigMap
+metadata:
+  name: machine-approver-config
+  namespace: HCP_NAMESPACE

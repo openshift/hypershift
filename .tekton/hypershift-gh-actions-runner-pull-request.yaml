@@ -1,0 +1,48 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/openshift/hypershift?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/cancel-in-progress: "true"
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
+      == "main" && ("Dockerfile.github-actions-runner".pathChanged() || "contrib/ci/gocacheprog".pathChanged()
+      || ".tekton/hypershift-gh-actions-runner-pull-request.yaml".pathChanged())
+    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
+  creationTimestamp: null
+  labels:
+    appstudio.openshift.io/application: hypershift-actions
+    appstudio.openshift.io/component: hypershift-gh-actions-runner
+    pipelines.appstudio.openshift.io/type: build
+  name: hypershift-gh-actions-runner-on-pull-request
+  namespace: crt-redhat-acm-tenant
+spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:on-pr-{{revision}}
+  - name: image-expires-after
+    value: 5d
+  - name: build-platforms
+    value:
+    - linux/amd64
+    - linux/arm64
+  - name: hermetic
+    value: "false"
+  - name: dockerfile
+    value: Dockerfile.github-actions-runner
+  pipelineRef:
+    name: hypershift-common-operator-build
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-hypershift-gh-actions-runner
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+status: {}

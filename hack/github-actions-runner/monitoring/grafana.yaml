@@ -1,0 +1,250 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arc-monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: serving-certs-ca-bundle
+  namespace: arc-monitoring
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana
+  namespace: arc-monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: grafana-cluster-monitoring-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: grafana
+    namespace: arc-monitoring
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: arc-monitoring
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      serviceAccountName: grafana
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: oauth-proxy
+          image: registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:v4.17
+          args:
+            - --https-address=:8443
+            - --provider=openshift
+            - --client-id=grafana-arc-monitoring
+            - --client-secret-file=/etc/proxy/oauth-client/client-secret
+            - --upstream=http://localhost:3000
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --tls-key=/etc/tls/private/tls.key
+            - --cookie-secret-file=/etc/proxy/cookie-secret/session-secret
+            - --cookie-expire=24h
+            - --cookie-refresh=1h
+            - --email-domain=*
+            - --pass-basic-auth=false
+            # UPDATE per deployment: replace with your cluster's Grafana Route hostname
+            - --redirect-url=https://grafana-arc-monitoring.apps.github-actions.brcox.hypershift.devcluster.openshift.com/oauth/callback
+          ports:
+            - containerPort: 8443
+              name: proxy
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: cookie-secret
+              mountPath: /etc/proxy/cookie-secret
+              readOnly: true
+            - name: oauth-client
+              mountPath: /etc/proxy/oauth-client
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+        - name: grafana
+          image: docker.io/grafana/grafana@sha256:62d2b9d20a19714ebfe48d1bb405086081bc602aa053e28cf6d73c7537640dfb
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              export BEARER_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              exec /run.sh
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # Anonymous auth is safe here: Grafana is only reachable from
+            # the oauth-proxy sidecar on localhost. All external traffic
+            # goes through the proxy which enforces OpenShift OAuth.
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Viewer"
+            - name: GF_AUTH_BASIC_ENABLED
+              value: "false"
+            - name: GF_AUTH_DISABLE_LOGIN_FORM
+              value: "true"
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+            # UPDATE per deployment: replace with your cluster's Grafana Route hostname
+            - name: GF_SERVER_ROOT_URL
+              value: "https://grafana-arc-monitoring.apps.github-actions.brcox.hypershift.devcluster.openshift.com"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: grafana-datasource
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: grafana-dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: grafana-dashboard
+              mountPath: /etc/grafana/dashboards
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+            - name: ca-bundle
+              mountPath: /etc/pki/tls/serving-ca
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: grafana-datasource
+          configMap:
+            name: grafana-datasource
+        - name: grafana-dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: grafana-dashboard
+          configMap:
+            name: grafana-dashboard
+        - name: grafana-storage
+          emptyDir: {}
+        - name: ca-bundle
+          configMap:
+            name: serving-certs-ca-bundle
+            optional: true
+        - name: tmp
+          emptyDir: {}
+        - name: tls
+          secret:
+            secretName: grafana-tls
+        - name: cookie-secret
+          secret:
+            secretName: grafana-proxy-cookie
+        - name: oauth-client
+          secret:
+            secretName: grafana-oauth-client
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: arc-monitoring
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: true
+        editable: false
+        options:
+          path: /etc/grafana/dashboards
+          foldersFromFilesStructure: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: arc-monitoring
+  labels:
+    app: grafana
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: grafana-tls
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: proxy
+      port: 8443
+      targetPort: 8443
+      protocol: TCP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: grafana
+  namespace: arc-monitoring
+spec:
+  to:
+    kind: Service
+    name: grafana
+  port:
+    targetPort: proxy
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana
+  namespace: arc-monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress
+      ports:
+        - port: 8443
+          protocol: TCP

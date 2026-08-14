@@ -1,0 +1,11 @@
+apiVersion: projctl.konflux.dev/v1beta1
+kind: ProjectDevelopmentStream
+metadata:
+  name: control-plane-operator-v4-17-hotfix-ocpbugs-63639
+spec:
+  project: crt-redhat-acm-tenant
+  template:
+    name: hypershift-cpo-hotfix-template
+    values:
+    - name: ticketReference
+      value: "ocpbugs-63639"

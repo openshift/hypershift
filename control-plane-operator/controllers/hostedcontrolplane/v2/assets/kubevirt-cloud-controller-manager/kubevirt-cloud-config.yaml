@@ -1,0 +1,17 @@
+apiVersion: v1
+data:
+  cloud-config: |
+    kubeconfig: ""
+    loadBalancer:
+      enabled: true
+      creationPollInterval: 0
+      selectorless: true
+    instancesV2:
+      enabled: true
+      zoneAndRegionEnabled: false
+    namespace: ""
+    infraLabels:
+      hypershift.openshift.io/infra-id: ""
+kind: ConfigMap
+metadata:
+  name: kubevirt-cloud-config

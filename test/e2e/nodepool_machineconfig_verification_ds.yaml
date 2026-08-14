@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: machineconfig-update-checker
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: machineconfig-update-checker
+  template:
+    metadata:
+      labels:
+        name: machineconfig-update-checker
+    spec:
+      tolerations:
+      - operator: Exists
+      containers:
+      - name: machineconfig-update-checker
+        image: alpine
+        command:
+        - /bin/sleep
+        - 24h
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        readinessProbe:
+          exec:
+            command:
+            - /bin/cat
+            - /host/etc/custom-config
+        volumeMounts:
+        - name: host
+          mountPath: /host
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: host
+        hostPath:
+          path: /

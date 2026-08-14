@@ -1,0 +1,15 @@
+name: gocacheprog Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+    paths:
+      - contrib/ci/gocacheprog/**
+
+jobs:
+  test:
+    uses: openshift/hypershift/.github/workflows/gocacheprog-test-reusable.yaml@main
+    permissions:
+      contents: read

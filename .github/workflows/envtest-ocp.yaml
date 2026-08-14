@@ -1,0 +1,14 @@
+name: Envtest OCP API Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+  workflow_dispatch: {}
+
+jobs:
+  envtest-ocp:
+    uses: openshift/hypershift/.github/workflows/envtest-ocp-reusable.yaml@main
+    permissions:
+      contents: read

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-credential-operator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cloud-credential-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: cloud-credential-operator
+    spec:
+      containers:
+      - args:
+        - operator
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/cloud-credential-operator
+        env:
+        - name: RELEASE_VERSION
+          value: ""
+        - name: KUBECONFIG
+          value: /etc/kubernetes/kubeconfig
+        image: cloud-credential-operator
+        imagePullPolicy: IfNotPresent
+        name: cloud-credential-operator
+        resources:
+          requests:
+            cpu: 10m
+            memory: 75Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        terminationMessagePolicy: FallbackToLogsOnError

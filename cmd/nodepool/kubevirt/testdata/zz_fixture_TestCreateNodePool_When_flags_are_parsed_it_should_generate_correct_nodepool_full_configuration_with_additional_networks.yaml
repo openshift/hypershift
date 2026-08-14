@@ -1,0 +1,17 @@
+additionalNetworks:
+- name: default/nad1
+- name: default/nad2
+attachDefaultNetwork: false
+compute:
+  cores: 4
+  memory: 8Gi
+  qosClass: Guaranteed
+networkInterfaceMultiqueue: Enable
+rootVolume:
+  persistent:
+    accessModes:
+    - ReadWriteOnce
+    size: 64Gi
+    storageClass: fast-storage
+    volumeMode: Block
+  type: Persistent

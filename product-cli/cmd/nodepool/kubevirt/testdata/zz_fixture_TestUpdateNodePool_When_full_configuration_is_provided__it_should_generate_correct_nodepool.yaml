@@ -1,0 +1,24 @@
+additionalNetworks:
+- name: default/nad1
+attachDefaultNetwork: false
+compute:
+  cores: 4
+  memory: 8Gi
+  qosClass: Guaranteed
+hostDevices:
+- count: 1
+  deviceName: testdevice
+networkInterfaceMultiqueue: Enable
+nodeSelector:
+  role: kubevirt
+  size: large
+rootVolume:
+  cacheStrategy:
+    type: None
+  persistent:
+    accessModes:
+    - ReadWriteOnce
+    size: 64Gi
+    storageClass: fast-storage
+    volumeMode: Block
+  type: Persistent

@@ -1,0 +1,441 @@
+package registryclient
+
+import (
+	"archive/tar"
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+
+	dockerarchive "github.com/openshift/hypershift/support/thirdparty/docker/pkg/archive"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
+	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
+	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
+
+	"k8s.io/client-go/rest"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/manifestlist"
+	"github.com/docker/distribution/registry/client/transport"
+)
+
+const (
+	ArchitectureAMD64   = "amd64"
+	ArchitectureS390X   = "s390x"
+	ArchitecturePPC64LE = "ppc64le"
+	ArchitectureARM64   = "arm64"
+
+	DeserializeFuncName deserializeFuncCtxKey = "deserializeFunc"
+)
+
+type deserializeFuncCtxKey string
+type ManifestProvider interface {
+	GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error)
+	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error)
+	GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error)
+}
+
+// ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the
+// list of files to extract. It returns a map with file contents or an error.
+func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, files ...string) (map[string][]byte, error) {
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	fileContents := map[string][]byte{}
+	for _, file := range files {
+		fileContents[file] = nil
+	}
+	if len(fileContents) == 0 {
+		return fileContents, nil
+	}
+
+	// Iterate over layers in reverse order to find the most recent version of files
+	for i := len(layers) - 1; i >= 0; i-- {
+		layer := layers[i]
+		err := func() error {
+			r, err := fromBlobs.Open(ctx, layer.Digest)
+			if err != nil {
+				return fmt.Errorf("unable to access the source layer %s: %w", layer.Digest, err)
+			}
+			defer r.Close()
+			rc, err := dockerarchive.DecompressStream(r)
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+			tr := tar.NewReader(rc)
+			for {
+				hdr, err := tr.Next()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return err
+				}
+				if hdr.Typeflag == tar.TypeReg {
+					value, needFile := fileContents[hdr.Name]
+					if !needFile {
+						continue
+					}
+					// If value already assigned, the content was found in an earlier layer
+					if value != nil {
+						continue
+					}
+					out := &bytes.Buffer{}
+					if _, err := io.Copy(out, tr); err != nil {
+						return err
+					}
+					fileContents[hdr.Name] = out.Bytes()
+				}
+				if allFound(fileContents) {
+					break
+				}
+			}
+			return nil
+		}()
+		if err != nil {
+			return nil, err
+		}
+		if allFound(fileContents) {
+			break
+		}
+	}
+	return fileContents, nil
+}
+
+func allFound(content map[string][]byte) bool {
+	for _, v := range content {
+		if v == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
+	if err != nil {
+		return err
+	}
+
+	// Iterate over layers in reverse order to find the most recent version of files
+	found := false
+	for i := len(layers) - 1; i >= 0; i-- {
+		layer := layers[i]
+		err := func() error {
+			r, err := fromBlobs.Open(ctx, layer.Digest)
+			if err != nil {
+				return fmt.Errorf("unable to access the source layer %s: %w", layer.Digest, err)
+			}
+			defer r.Close()
+			rc, err := dockerarchive.DecompressStream(r)
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+			tr := tar.NewReader(rc)
+			for {
+				hdr, err := tr.Next()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return err
+				}
+				if hdr.Typeflag == tar.TypeReg {
+					if hdr.Name != file {
+						continue
+					}
+					found = true
+					if _, err := io.Copy(out, tr); err != nil {
+						return err
+					}
+					return nil
+				}
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
+		if found {
+			return nil
+		}
+	}
+	return fmt.Errorf("file not found")
+}
+
+func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []byte, pattern string, outputDir string) error {
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("invalid pattern: %w", err)
+	}
+
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
+	if err != nil {
+		return err
+	}
+
+	// Iterate over layers in reverse order to find the most recent version of files
+	written := map[string]struct{}{}
+	for i := len(layers) - 1; i >= 0; i-- {
+		layer := layers[i]
+		err := func() error {
+			r, err := fromBlobs.Open(ctx, layer.Digest)
+			if err != nil {
+				return fmt.Errorf("unable to access the source layer %s: %w", layer.Digest, err)
+			}
+			defer r.Close()
+			rc, err := dockerarchive.DecompressStream(r)
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+			tr := tar.NewReader(rc)
+			for {
+				hdr, err := tr.Next()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return err
+				}
+				if hdr.Typeflag == tar.TypeReg {
+					// Only copy the file once from the most recent layer
+					if _, exists := written[hdr.Name]; exists {
+						continue
+					}
+					if !regex.MatchString(hdr.Name) {
+						continue
+					}
+					dst := filepath.Join(outputDir, hdr.Name)
+					if err := os.MkdirAll(filepath.Clean(filepath.Dir(dst)), 0755); err != nil {
+						return fmt.Errorf("failed to make dir: %w", err)
+					}
+					dstfd, err := os.Create(dst)
+					if err != nil {
+						return err
+					}
+					if _, err = io.Copy(dstfd, tr); err != nil {
+						dstfd.Close()
+						return err
+					}
+					dstfd.Close()
+					written[hdr.Name] = struct{}{}
+				}
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
+	}
+	filterOptions := manifest.FilterOptions{}
+	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo, filterOptions.Include)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
+	}
+	imageConfig, layers, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to obtain image layers for %s: %w", imageRef, err)
+	}
+	return imageConfig, layers, repo.Blobs(ctx), nil
+}
+
+// GetRepoSetup connects to a repo and pulls the imageRef's docker image information from the repo. Returns the repo and the docker image.
+func GetRepoSetup(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+	var dockerImageRef *reference.DockerImageReference
+	rt, err := rest.TransportFor(&rest.Config{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create secure transport: %w", err)
+	}
+	insecureRT, err := rest.TransportFor(&rest.Config{TLSClientConfig: rest.TLSClientConfig{Insecure: true}})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create insecure transport: %w", err)
+	}
+	credStore, err := dockercredentials.NewFromBytes(pullSecret)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetRepoSetup - failed to parse docker credentials: %w", err)
+	}
+	registryContext := registryclient.NewContext(rt, insecureRT).WithCredentials(credStore).
+		WithRequestModifiers(transport.NewHeaderRequestModifier(http.Header{http.CanonicalHeaderKey("User-Agent"): []string{rest.DefaultKubernetesUserAgent()}}))
+
+	ref, err := reference.Parse(imageRef)
+	dockerImageRef = &ref
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+	}
+	repo, err := registryContext.Repository(ctx, ref.DockerClientDefaults().RegistryURL(), ref.RepositoryName(), false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
+	}
+	return repo, dockerImageRef, nil
+}
+
+// IsMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
+func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte, imageMetadataProvider ManifestProvider) (bool, error) {
+	srcManifest, err := imageMetadataProvider.GetManifest(ctx, imageRef, pullSecret)
+	if err != nil {
+		return false, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
+	}
+
+	mediaType, payload, err := srcManifest.Payload()
+	if err != nil {
+		return false, fmt.Errorf("failed to get payload %s: %w", imageRef, err)
+	}
+
+	// mediaType for manifest listed (aka fat manifest) images is either 'application/vnd.docker.distribution.manifest.list.v2+json' per the docker documentation - https://docs.docker.com/registry/spec/manifest-v2-2/
+	// or 'application/vnd.oci.image.index.v1+json' per https://github.com/opencontainers/image-spec/blob/main/media-types.md
+	if mediaType != "application/vnd.docker.distribution.manifest.list.v2+json" && mediaType != "application/vnd.oci.image.index.v1+json" {
+		return false, nil
+	}
+
+	// Default to using the deserializeManifest function, but allow for a custom deserialization function to be passed in the context for testing purposes and avoiding parallelism issues
+	deserializeFunc := deserializeManifest
+	if ctx.Value(DeserializeFuncName) != nil {
+		deserializeFunc = ctx.Value(DeserializeFuncName).(func([]byte) (*manifestlist.DeserializedManifestList, error))
+	}
+
+	manifestList, err := deserializeFunc(payload)
+	if err != nil {
+		return false, fmt.Errorf("failed to deserialize payload: %w", err)
+	}
+
+	count := 0
+	for _, arch := range manifestList.ManifestList.Manifests {
+		switch arch.Platform.Architecture {
+		case ArchitectureAMD64, ArchitectureS390X, ArchitecturePPC64LE, ArchitectureARM64:
+			count = count + 1
+		}
+	}
+
+	if count > 1 {
+		return true, nil
+	}
+	return false, nil
+}
+
+func deserializeManifest(b []byte) (*manifestlist.DeserializedManifestList, error) {
+	deserializedManifestList := new(manifestlist.DeserializedManifestList)
+	if err := deserializedManifestList.UnmarshalJSON(b); err != nil {
+		return nil, fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
+	}
+
+	return deserializedManifestList, nil
+}
+
+// findImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
+func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string, imageMetadataPorvider ManifestProvider) (manifestImageRef string, err error) {
+	manifestList, err := imageMetadataPorvider.GetManifest(ctx, imageRef, pullSecret)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve manifest from image ref, %s: %w", imageRef, err)
+	}
+
+	_, payload, err := manifestList.Payload()
+	if err != nil {
+		return "", fmt.Errorf("failed to get manifest payload: %w", err)
+	}
+
+	deserializedManifestList := new(manifestlist.DeserializedManifestList)
+	if err = deserializedManifestList.UnmarshalJSON(payload); err != nil {
+		return "", fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
+	}
+
+	matchingManifestForArch, err := findMatchingManifest(ctx, imageRef, deserializedManifestList, osToFind, archToFind)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve matching manifest for os/arch, %s/%s: %w", osToFind, archToFind, err)
+	}
+
+	return matchingManifestForArch, nil
+}
+
+// findMatchingManifest looks to find a manifest matching the current platform's OS and processor architecture from a deserialized manifest list from an image's payload
+func findMatchingManifest(ctx context.Context, imageRef string, deserializedManifestList *manifestlist.DeserializedManifestList, osToFind string, archToFind string) (string, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	var foundManifestDesc *manifestlist.ManifestDescriptor
+	for _, manifestDesc := range deserializedManifestList.ManifestList.Manifests {
+		if osToFind == manifestDesc.Platform.OS && archToFind == manifestDesc.Platform.Architecture {
+			foundManifestDesc = &manifestDesc
+			break
+		}
+	}
+
+	if foundManifestDesc == nil {
+		return "", fmt.Errorf("not found")
+	}
+
+	// Multi-arch image references look like either:
+	//	quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f
+	//	quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716
+	if strings.Contains(imageRef, "@sha") {
+		splitSHA := strings.Split(imageRef, "@")
+		if len(splitSHA) != 2 {
+			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
+		}
+
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		log.Info("Found matching manifest for: " + matchingManifestForArch)
+		return matchingManifestForArch, nil
+	}
+
+	if strings.Contains(imageRef, "ocp-release:") {
+		splitSHA := strings.Split(imageRef, ":")
+		if len(splitSHA) != 2 {
+			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
+		}
+
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		log.Info("Found matching manifest for: " + matchingManifestForArch)
+		return matchingManifestForArch, nil
+	}
+
+	return "", fmt.Errorf("imageRef is an unknown format to parse, imageRef: %s", imageRef)
+}
+
+// GetCorrectArchImage returns the appropriate image related to the system os/arch if the image reference is manifest
+// listed, else returns the original image reference
+func GetCorrectArchImage(ctx context.Context, component string, imageRef string, pullSecret []byte, imageMetadataProvider ManifestProvider) (manifestImageRef string, err error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	isMultiArchImage, err := IsMultiArchManifestList(ctx, imageRef, pullSecret, imageMetadataProvider)
+	if err != nil {
+		return "", fmt.Errorf("failed to determine if image is manifest listed: %w", err)
+	}
+
+	if isMultiArchImage {
+		operatingSystem := runtime.GOOS
+		arch := runtime.GOARCH
+		log.Info(component + " image is a manifest listed image; extracting manifest for os/arch: " + operatingSystem + "/" + arch)
+
+		// Verify MF Image has the right os/arch image
+		imageRef, err = findImageRefByArch(ctx, imageRef, pullSecret, operatingSystem, arch, imageMetadataProvider)
+		if err != nil {
+			return "", fmt.Errorf("failed to extract appropriate os/arch manifest from %s: %w", imageRef, err)
+		}
+
+		return imageRef, nil
+	}
+
+	return imageRef, nil
+}

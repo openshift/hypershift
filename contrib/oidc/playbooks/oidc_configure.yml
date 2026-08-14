@@ -1,0 +1,431 @@
+---
+- name: Configure Fedora VM as Dex OIDC provider
+  hosts: oidc_servers
+  become: true
+  vars:
+    dex_user: dex
+    dex_uid: 991
+    dex_dir: /var/dex
+    dex_tls_dir: /var/dex/tls
+    dex_config_dir: /var/dex/config
+    ldap_base_dn: "dc=example,dc=com"
+    ldap_admin_password: "admin123"  # Change this in production
+
+  handlers:
+    - name: Restart dex
+      ansible.builtin.systemd:
+        name: dex.service
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart slapd
+      ansible.builtin.systemd:
+        name: slapd
+        state: restarted
+
+  tasks:
+    - name: Install required packages
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - openssl
+          - python3-podman
+          - python3-packaging
+          - policycoreutils-python-utils
+          - openldap
+          - openldap-servers
+          - openldap-clients
+          - python3-ldap
+        state: present
+        update_cache: true
+    - name: Copy default configuration to slapd.d
+      ansible.builtin.command: cp -r /usr/share/openldap-servers/slapd.ldif /etc/openldap/slapd.d/
+      args:
+        creates: /etc/openldap/slapd.d/cn=config.ldif
+
+    - name: Set proper ownership on slapd.d
+      ansible.builtin.file:
+        path: /etc/openldap/slapd.d
+        state: directory
+        owner: ldap
+        group: ldap
+        mode: '0750'
+        recurse: true
+
+    - name: Start OpenLDAP service
+      ansible.builtin.systemd:
+        name: slapd
+        state: started
+        enabled: true
+
+    - name: Wait for LDAP to be ready
+      ansible.builtin.wait_for:
+        timeout: 5
+
+    - name: Create DB_CONFIG file
+      ansible.builtin.copy:
+        dest: /var/lib/ldap/DB_CONFIG
+        content: |
+          # Berkeley DB configuration file
+          set_cachesize 0 2097152 0
+          set_lk_max_objects 1500
+          set_lk_max_locks 1500
+          set_lk_max_lockers 1500
+        owner: ldap
+        group: ldap
+        mode: '0600'
+      notify: Restart slapd
+
+    - name: Check if schemas are already loaded
+      ansible.builtin.command: ldapsearch -Y EXTERNAL -H ldapi:/// -b cn=schema,cn=config dn
+      register: schema_check
+      changed_when: false
+      failed_when: false
+
+    - name: Add cosine schema
+      ansible.builtin.command: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/openldap/schema/cosine.ldif
+      register: cosine_result
+      failed_when:
+        - cosine_result.rc != 0
+        - not (cosine_result.stderr is search('already exists'))
+      changed_when: cosine_result.rc == 0
+
+    - name: Add nis schema
+      ansible.builtin.command: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/openldap/schema/nis.ldif
+      register: nis_result
+      failed_when:
+        - nis_result.rc != 0
+        - not (nis_result.stderr is search('already exists'))
+      changed_when: nis_result.rc == 0
+
+    - name: Add inetorgperson schema
+      ansible.builtin.command: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/openldap/schema/inetorgperson.ldif
+      register: inetorg_result
+      failed_when:
+        - inetorg_result.rc != 0
+        - not (inetorg_result.stderr is search('already exists'))
+      changed_when: inetorg_result.rc == 0
+      notify: Restart slapd
+
+    - name: Generate LDAP admin password hash
+      ansible.builtin.shell: |
+        slappasswd -s "{{ ldap_admin_password }}"
+      register: ldap_admin_pass
+      changed_when: false
+
+    - name: Check current root password
+      ansible.builtin.command: ldapsearch -Y EXTERNAL -H ldapi:/// -b olcDatabase={0}config,cn=config -LLL olcRootPW
+      register: current_root_pw
+      changed_when: false
+      failed_when: false
+
+    - name: Create root DN password configuration
+      ansible.builtin.copy:
+        dest: /tmp/chrootpw.ldif
+        mode: '0644'
+        content: |
+          dn: olcDatabase={0}config,cn=config
+          changetype: modify
+          replace: olcRootPW
+          olcRootPW: {{ ldap_admin_pass.stdout }}
+      when: current_root_pw.stdout.find(ldap_admin_pass.stdout) == -1
+
+    - name: Set LDAP root password
+      ansible.builtin.command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/chrootpw.ldif
+      when: current_root_pw.stdout.find(ldap_admin_pass.stdout) == -1
+      register: root_pw_result
+      failed_when:
+        - root_pw_result.rc != 0
+        - root_pw_result.stderr is not search('Type or value exists')
+      changed_when: root_pw_result.rc == 0
+
+    - name: Create database configuration
+      ansible.builtin.copy:
+        dest: /tmp/database.ldif
+        mode: '0644'
+        content: |
+          dn: olcDatabase={1}monitor,cn=config
+          changetype: modify
+          replace: olcAccess
+          olcAccess: {0}to *
+            by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" read
+            by dn.base="cn=admin,{{ ldap_base_dn }}" read
+            by * none
+
+          dn: olcDatabase={2}mdb,cn=config
+          changetype: modify
+          replace: olcDbDirectory
+          olcDbDirectory: /var/lib/ldap
+          -
+          replace: olcSuffix
+          olcSuffix: {{ ldap_base_dn }}
+          -
+          replace: olcRootDN
+          olcRootDN: cn=admin,{{ ldap_base_dn }}
+          -
+          replace: olcRootPW
+          olcRootPW: {{ ldap_admin_pass.stdout }}
+          -
+          add: olcDbIndex
+          olcDbIndex: uid eq
+          -
+          add: olcDbIndex
+          olcDbIndex: uidNumber,gidNumber eq
+          -
+          add: olcDbIndex
+          olcDbIndex: member,memberUid eq
+          -
+          replace: olcAccess
+          olcAccess: {0}to attrs=userPassword,shadowLastChange
+            by self write
+            by anonymous auth
+            by dn="cn=admin,{{ ldap_base_dn }}" write
+            by * none
+          olcAccess: {1}to dn.base=""
+            by * read
+          olcAccess: {2}to *
+            by self write
+            by dn="cn=admin,{{ ldap_base_dn }}" write
+            by * read
+
+    - name: Configure LDAP database
+      ansible.builtin.command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/database.ldif
+      register: db_config_result
+      failed_when:
+        - db_config_result.rc != 0
+        - db_config_result.stderr is not search('Type or value exists')
+      changed_when: db_config_result.rc == 0
+
+    - name: Create LDAP root configuration
+      community.general.ldap_entry:
+        dn: "{{ ldap_base_dn }}"
+        objectClass:
+          - dcObject
+          - organization
+        attributes:
+          o: Example Organization
+          dc: example
+        bind_dn: "cn=admin,{{ ldap_base_dn }}"
+        bind_pw: "{{ ldap_admin_password }}"
+
+    - name: Create organizational units
+      community.general.ldap_entry:
+        dn: "ou={{ item }},{{ ldap_base_dn }}"
+        objectClass: organizationalUnit
+        attributes:
+          ou: "{{ item }}"
+        bind_dn: "cn=admin,{{ ldap_base_dn }}"
+        bind_pw: "{{ ldap_admin_password }}"
+      loop:
+        - users
+        - groups
+
+    - name: Create admin user in LDAP
+      community.general.ldap_entry:
+        dn: "uid=admin,ou=users,{{ ldap_base_dn }}"
+        objectClass:
+          - inetOrgPerson
+          - posixAccount
+          - shadowAccount
+        attributes:
+          cn: admin
+          sn: Administrator
+          uid: admin
+          uidNumber: "1000"
+          gidNumber: "1000"
+          homeDirectory: /home/admin
+          loginShell: /bin/bash
+          mail: admin@example.com
+          # default admin password is admin123
+          userPassword: "{SSHA}EINvO2VlqPhYbC7leAFfKUlcERPJnSdx" # notsecret
+        bind_dn: "cn=admin,{{ ldap_base_dn }}"
+        bind_pw: "{{ ldap_admin_password }}"
+
+    - name: Create dev user in LDAP
+      community.general.ldap_entry:
+        dn: "uid=dev,ou=users,{{ ldap_base_dn }}"
+        objectClass:
+          - inetOrgPerson
+          - posixAccount
+          - shadowAccount
+        attributes:
+          cn: dev
+          sn: Developer
+          uid: dev
+          uidNumber: "2000"
+          gidNumber: "2000"
+          homeDirectory: /home/dev
+          mail: dev@example.com
+          loginShell: /bin/bash
+          # default dev password is dev123
+          userPassword: "{SSHA}8bYv07+bT2NJXMr+cWqdQcM930gwqfR4" # notsecret
+        bind_dn: "cn=admin,{{ ldap_base_dn }}"
+        bind_pw: "{{ ldap_admin_password }}"
+
+    - name: Create groups
+      community.general.ldap_entry:
+        dn: "cn={{ item }},ou=groups,{{ ldap_base_dn }}"
+        objectClass:
+          - groupOfNames
+        attributes:
+          cn: "{{ item }}"
+          member: "{{ 'uid=admin,ou=users,' + ldap_base_dn if item == 'admins' else 'uid=dev,ou=users,' + ldap_base_dn }}"
+        bind_dn: "cn=admin,{{ ldap_base_dn }}"
+        bind_pw: "{{ ldap_admin_password }}"
+      loop:
+        - admins
+        - devs
+
+    - name: Create Dex system user
+      ansible.builtin.user:
+        name: "{{ dex_user }}"
+        uid: "{{ dex_uid }}"
+        system: true
+        create_home: false
+        shell: /sbin/nologin
+        state: present
+
+    - name: Create Dex directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ dex_user }}"
+        group: "{{ dex_user }}"
+        mode: '0755'
+      loop:
+        - "{{ dex_dir }}"
+        - "{{ dex_tls_dir }}"
+        - "{{ dex_config_dir }}"
+        - "{{ dex_dir }}/data"  # Directory for SQLite database
+
+    - name: Generate private key
+      community.crypto.openssl_privatekey:
+        path: "{{ dex_tls_dir }}/tls.key"
+        owner: "{{ dex_user }}"
+        group: "{{ dex_user }}"
+        mode: '0600'
+
+    - name: Generate CSR
+      community.crypto.openssl_csr:
+        path: "{{ dex_tls_dir }}/tls.csr"
+        privatekey_path: "{{ dex_tls_dir }}/tls.key"
+        common_name: "{{ inventory_hostname }}"
+        subject_alt_name: "DNS:{{ inventory_hostname }}"
+        owner: "{{ dex_user }}"
+        group: "{{ dex_user }}"
+        mode: '0644'
+
+    - name: Generate self-signed certificate
+      community.crypto.x509_certificate:
+        path: "{{ dex_tls_dir }}/tls.crt"
+        privatekey_path: "{{ dex_tls_dir }}/tls.key"
+        csr_path: "{{ dex_tls_dir }}/tls.csr"
+        provider: selfsigned
+        selfsigned_not_after: "+365d"
+        owner: "{{ dex_user }}"
+        group: "{{ dex_user }}"
+        mode: '0644'
+
+    - name: Create Dex config file
+      ansible.builtin.copy:
+        dest: "{{ dex_config_dir }}/dex.yaml"
+        content: |
+          issuer: https://{{ inventory_hostname }}
+          storage:
+            type: sqlite3
+            config:
+              file: /var/dex/data.db
+          web:
+            http: 0.0.0.0:5556
+            https: 0.0.0.0:5554
+            tlsCert: /etc/dex/tls/tls.crt
+            tlsKey: /etc/dex/tls/tls.key
+          connectors:
+          - type: ldap
+            name: OpenLDAP
+            id: ldap
+            config:
+              host: {{ inventory_hostname }}:389
+              insecureNoSSL: true
+              bindDN: cn=admin,{{ ldap_base_dn }}
+              bindPW: {{ ldap_admin_password }}
+              userSearch:
+                baseDN: ou=users,{{ ldap_base_dn }}
+                filter: "(objectClass=inetOrgPerson)"
+                username: uid
+                idAttr: uid
+                emailAttr: mail
+                nameAttr: cn
+                preferredUsernameAttr: uid
+              groupSearch:
+                baseDN: ou=groups,{{ ldap_base_dn }}
+                filter: "(objectClass=groupOfNames)"
+                userAttr: DN
+                groupAttr: member
+                nameAttr: cn
+          oauth2:
+            skipApprovalScreen: true
+          staticClients:
+          - id: openshift-console
+            redirectURIs:
+            - https://console-openshift.example.com/oauth2/callback
+            name: OpenShift Console
+            secret: secret123
+        owner: "{{ dex_user }}"
+        group: "{{ dex_user }}"
+        mode: '0644'
+      notify: Restart dex
+
+    - name: Run Dex container
+      containers.podman.podman_container:
+        name: dex
+        image: ghcr.io/dexidp/dex
+        command: ["dex", "serve", "/etc/dex/config/dex.yaml"]
+        volumes:
+          - "{{ dex_config_dir }}:/etc/dex/config:ro,Z"
+          - "{{ dex_tls_dir }}:/etc/dex/tls:ro,Z"
+          - "{{ dex_dir }}/data:/var/dex:rw,Z"
+        ports:
+          - "80:5556"
+          - "443:5554"
+        user: "{{ dex_uid }}:{{ dex_uid }}"
+        # network: host
+        state: started
+
+    - name: Wait for Dex container HTTP port
+      ansible.builtin.wait_for:
+        host: "127.0.0.1"
+        port: 80
+        delay: 2
+        timeout: 60
+
+    - name: Generate Dex systemd unit
+      containers.podman.podman_generate_systemd:
+        name: dex
+        dest: /etc/systemd/system
+        new: true
+        container_prefix: ""
+        restart_policy: always
+
+    - name: Stop and remove temporary Dex container
+      containers.podman.podman_container:
+        name: dex
+        state: absent
+
+    - name: Enable Dex systemd service
+      ansible.builtin.systemd:
+        daemon_reload: true
+        name: dex.service
+        enabled: true
+        state: started
+
+    - name: Validate Dex OIDC endpoint
+      ansible.builtin.uri:
+        url: "https://{{ inventory_hostname }}/.well-known/openid-configuration"
+        validate_certs: false
+        return_content: true
+      register: oidc_response
+
+    - name: Show OIDC discovery response
+      ansible.builtin.debug:
+        var: oidc_response.content
