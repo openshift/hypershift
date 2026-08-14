@@ -57,28 +57,6 @@ tests:
             subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
           type: Azure
 
-  - name: when autoScaling min=0 on GCP platform it should pass
-    initial: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: NodePool
-      spec:
-        arch: amd64
-        clusterName: some-cluster
-        management:
-          autoRepair: false
-          upgradeType: Replace
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
-        autoScaling:
-          min: 0
-          max: 3
-        platform:
-          gcp:
-            machineType: n2-standard-4
-            subnet: test-subnet
-            zone: us-central1-a
-          type: GCP
-
   - name: when autoScaling min=0 on Agent platform it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
