@@ -28126,37 +28126,70 @@ spec:
 
 # Ingress and DNS configuration
 
-By default, the HyperShift operator will configure the KubeVirt platform guest
-cluster's ingress and DNS behavior to reuse what is provided by the underlying
-infra cluster that the KubeVirt VMs are running on. This section describes
-that default behavior in greater detail as well as information on advanced usage
-options.
+This guide covers how to configure ingress and DNS for KubeVirt-based Hosted
+Control Plane (HCP) clusters.
 
-## Default Ingress and DNS Behavior
+## How KubeVirt ingress works
 
-Every OpenShift cluster comes setup with a default application ingress
-controller which is expected to have an wildcard DNS record associated with it.
-By default, guest clusters created using the Hypershift KubeVirt provider
-will automatically become a subdomain of the underlying OCP cluster that
-the KubeVirt VMs run on.
+On KubeVirt HCP clusters, the guest cluster's default IngressController defaults
+to the `NodePortService` endpoint publishing strategy. This means the guest
+cluster's router pods are exposed through a NodePort Service
+(`router-nodeport-default` in the `openshift-ingress` namespace) that listens
+on dynamically assigned ports on each guest VM's network interface.
 
-For example, if an OCP cluster has a default ingress DNS entry of
-`*.apps.mgmt-cluster.example.com`, then the default ingress of a KubeVirt
-guest cluster named `guest` running on that underlying OCP cluster will
-be `*.apps.guest.apps.mgmt-cluster.example.com`.
+There are two modes for routing external traffic to these NodePorts:
 
-!!! note
+| Mode | When it applies | Who manages ingress routing |
+|------|----------------|----------------------------|
+| **baseDomainPassthrough** (default) | No `baseDomain` specified, or `baseDomainPassthrough` explicitly set to `true` | HyperShift (automatic) |
+| **Custom baseDomain** | Explicit `baseDomain` provided at creation time | User (manual) |
 
-    For this default ingress DNS to work properly, the underlying cluster
-    hosting the KubeVirt VMs must allow wildcard DNS routes. This can be
-    configured using the following cli command. ```oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'```
+### When baseDomainPassthrough is auto-enabled
 
-!!! note
+When creating a KubeVirt HostedCluster **without** specifying a `baseDomain`,
+the HyperShift webhook automatically enables `baseDomainPassthrough`:
 
-    When using the default guest cluster ingress, connectivity is limited to HTTPS
-    traffic over port 443. Plain HTTP traffic over port 80 will be rejected. This
-    limitation only applies to the default ingress behavior and not the custom ingress
-    behavior where manual creation of an ingress LoadBalancer and DNS is performed.
+- If `spec.dns.baseDomain` is empty, the webhook sets
+  `spec.platform.kubevirt.baseDomainPassthrough = true`
+- If you provide an explicit `baseDomain`, the webhook does **not** enable
+  baseDomainPassthrough, and you are responsible for configuring ingress manually
+
+!!! important
+
+    `baseDomainPassthrough` is **immutable** after HostedCluster creation. If
+    you create a cluster with a custom `baseDomain` (and therefore without
+    baseDomainPassthrough), you cannot enable it later without recreating the
+    cluster.
+
+## Default: baseDomainPassthrough
+
+When `baseDomainPassthrough` is enabled (the default when no `baseDomain` is
+specified), HyperShift automatically configures all ingress routing
+infrastructure on the management cluster. No manual LoadBalancer or DNS setup
+is required.
+
+### What HyperShift creates automatically
+
+1. **A wildcard passthrough Route** on the management cluster with
+   `TLSTerminationPassthrough` and `WildcardPolicySubdomain`. This Route
+   matches all `*.apps.<guest>.<mgmt-apps-domain>` requests and forwards
+   them without terminating TLS.
+
+2. **A ClusterIP Service** on the management cluster with an empty selector
+   (no pod selector). The Service's target port is set to the guest router's
+   HTTPS NodePort.
+
+3. **EndpointSlices** managed by the Machine controller, pointing to the VM's
+   machineNetwork IPs (not pod IPs) on the correct NodePort. These are
+   automatically updated when VMs are added, removed, or live-migrated.
+
+### Resulting DNS domain
+
+The guest cluster's base domain is auto-detected as a subdomain of the
+management cluster's `*.apps` domain. For example:
+
+- Management cluster apps domain: `*.apps.mgmt-cluster.example.com`
+- Guest cluster named `guest`: `*.apps.guest.apps.mgmt-cluster.example.com`
 
 ### How the default ingress passthrough works
 
@@ -28200,23 +28233,56 @@ The port targeted on the VMs depends on the guest default `IngressController`
     router health checks exclude the other endpoints.
 
 Other endpoint publishing strategies (e.g. `LoadBalancerService`) are not
-supported by the default ingress passthrough; use the customized ingress
+supported by the default ingress passthrough; use the custom baseDomain
 behavior described below instead.
 
-## Customized Ingress and DNS Behavior
+### Prerequisites
 
-In lieu of the default ingress and DNS behavior, it is also possible to
-configure a Hypershift KubeVirt guest cluster with a unique base domain
-at creation time. This option does require some manual configuration
-steps during creation though.
+The management cluster must allow wildcard DNS routes:
 
-This process involves three steps:
+```shell
+oc patch ingresscontroller -n openshift-ingress-operator default \
+  --type=json \
+  -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {"wildcardPolicy": "WildcardsAllowed"}}]'
+```
+
+!!! note
+
+    When using baseDomainPassthrough, connectivity is limited to HTTPS traffic
+    over port 443. Plain HTTP traffic over port 80 will be rejected. This
+    limitation only applies to the default ingress behavior, not the custom
+    baseDomain configuration described below.
+
+## Custom baseDomain (without baseDomainPassthrough)
+
+When you provide an explicit `baseDomain` at creation time, HyperShift does
+**not** enable `baseDomainPassthrough` and does **not** create any ingress
+routing infrastructure on the management cluster. You are fully responsible
+for configuring:
+
+1. A LoadBalancer Service on the management cluster
+2. An EndpointSlice pointing to the VM machineNetwork IPs
+3. A wildcard DNS record for `*.apps.<cluster-name>.<baseDomain>`
+
+The traffic flow for this configuration is:
+
+```
+Client
+  └─> *.apps.<cluster>.<baseDomain>     (DNS wildcard)
+       └─> LoadBalancer VIP              (MetalLB / external LB)
+            └─> VM machineNetwork IP     (EndpointSlice target)
+                 └─> NodePort            (guest router)
+                      └─> guest Route    (application)
+```
+
+This process involves four steps:
 
 1. Cluster creation
-2. LoadBalancer creation
+2. LoadBalancer and EndpointSlice creation
 3. Wildcard DNS configuration
+4. Verification
 
-### Step 1 - Deploying the HostedCluster specifying our base domain
+### Step 1 - Deploy the HostedCluster with a custom baseDomain
 
 ```shell linenums="1"
 export CLUSTER_NAME=example
@@ -28235,9 +28301,10 @@ hcp create cluster kubevirt \
 --base-domain $BASE_DOMAIN
 ```
 
-With above configuration we will end up having a HostedCluster with an ingress wildcard configured for `*.apps.example.hypershift.lab` (*.apps.<hostedcluster_name\>.<base_domain\>).
+This creates a HostedCluster with ingress wildcard `*.apps.example.hypershift.lab`.
 
-This time, the HostedCluster will not finish the deployment (will remain in `Partial` progress) as we saw in the previous section, since we have configured a base domain we need to make sure that the required DNS records and load balancer are in-place:
+The HostedCluster will remain in `Partial` progress until the LoadBalancer and
+DNS are configured:
 
 ```shell linenums="1"
 oc get --namespace clusters hostedclusters
@@ -28246,95 +28313,182 @@ NAME            VERSION   KUBECONFIG                       PROGRESS   AVAILABLE 
 example                   example-admin-kubeconfig         Partial    True        False         The hosted control plane is available
 ```
 
-If we access the HostedCluster this is what we will see:
+### Step 2 - Set up the LoadBalancer and EndpointSlice
 
-```shell
-hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_NAME-kubeconfig
-```
+!!! warning
 
-```shell
-oc --kubeconfig $CLUSTER_NAME-kubeconfig get co
+    Do **not** use a pod selector (such as `kubevirt.io: virt-launcher`) on the
+    LoadBalancer Service. KubeVirt VMs typically have two network interfaces: the
+    **pod network** (used by the virt-launcher pod on the management cluster) and
+    the **machineNetwork** (the VM's actual network, often on a secondary bridge
+    interface). The guest router's NodePort only listens on the machineNetwork
+    IPs, not on the pod network IPs. A pod selector resolves to pod network IPs,
+    which causes `connection refused` or `http: server gave HTTP response to
+    HTTPS client` errors.
 
-NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.14.0    False       False         False      30m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.example.hypershift.lab): Get "https://console-openshift-console.apps.example.hypershift.lab": dial tcp: lookup console-openshift-console.apps.example.hypershift.lab on 172.31.0.10:53: no such host
-.
-.
-.
-ingress                                    4.14.0    True        False         True       28m     The "default" ingress controller reports Degraded=True: DegradedConditions: One or more other status conditions indicate a degraded state: CanaryChecksSucceeding=False (CanaryChecksRepetitiveFailures: Canary route checks for the default ingress controller are failing)
-```
-
-In the next section we will fix that.
-
-### Step 2 - Set up the LoadBalancer
-
+    Instead, create a Service with no selector and manually manage an
+    EndpointSlice that points to the VM machineNetwork IPs.
 
 !!! note
 
-    If your cluster is on bare-metal you may need MetalLB to be able to provision functional LoadBalancer services. Take a look at the section Optional MetalLB Configuration Steps.
+    If your cluster is on bare metal you may need MetalLB to be able to provision
+    functional LoadBalancer services. See the
+    Optional MetalLB Configuration Steps
+    section.
 
-This option requires configuring a new LoadBalancer service that routes to the KubeVirt VMs as well as assign a wildcard DNS entry to the LoadBalancer's IP address.
+#### 1. Retrieve the guest cluster NodePorts
 
-First, we need to create a LoadBalancer Service that routes ingress traffic to the KubeVirt VMs.
+```shell
+export CLUSTER_KUBECONFIG="${CLUSTER_NAME}-kubeconfig"
+hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_KUBECONFIG
 
-A NodePort Service exposing the HostedCluster ingress already exists, we will grab the NodePorts and create the LoadBalancer service targeting these ports.
+export HTTP_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
 
-1. Grab NodePorts
+export HTTPS_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
 
-    ```sh
-    export HTTP_NODEPORT=$(oc --kubeconfig $CLUSTER_NAME-kubeconfig get services -n openshift-ingress router-nodeport-default -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-    export HTTPS_NODEPORT=$(oc --kubeconfig $CLUSTER_NAME-kubeconfig get services -n openshift-ingress router-nodeport-default -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-    ```
-
-2. Create LoadBalancer Service
-
-    ```sh
-    cat << EOF | oc apply -f -
-    apiVersion: v1
-    kind: Service
-    metadata:
-      labels:
-        app: $CLUSTER_NAME
-      name: $CLUSTER_NAME-apps
-      namespace: clusters-$CLUSTER_NAME
-    spec:
-      ports:
-      - name: https-443
-        port: 443
-        protocol: TCP
-        targetPort: ${HTTPS_NODEPORT}
-      - name: http-80
-        port: 80
-        protocol: TCP
-        targetPort: ${HTTP_NODEPORT}
-      selector:
-        kubevirt.io: virt-launcher
-      type: LoadBalancer
-    EOF
-    ```
-
-### Step 3 - Set up a wildcard DNS record for the `*.apps`
-
-Now that we have the ingress exposed, next step is configure a wildcard DNS A record or CNAME that references the LoadBalancer Service's external IP.
-
-1. Get the external IP.
-
-  ```shell
-  export EXTERNAL_IP=$(oc -n clusters-$CLUSTER_NAME get service $CLUSTER_NAME-apps -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-  ```
-
-2. Configure a wildcard `*.apps.<hostedcluster_name\>.<base_domain\>.` DNS entry referencing the IP stored in $EXTERNAL_IP that is routable both internally and externally of the cluster.
-
-For example, for the cluster used in this example and for an external ip value of `192.168.20.30` this is what DNS resolutions will look like:
-
-```sh
-dig +short test.apps.example.hypershift.lab
-
-192.168.20.30
+echo "HTTP NodePort: $HTTP_NODEPORT"
+echo "HTTPS NodePort: $HTTPS_NODEPORT"
 ```
 
-### Checking HostedCluster status after having fixed the ingress
+#### 2. Retrieve the VM machineNetwork IPs
 
-Now that we fixed the ingress, we should see our HostedCluster progress moved from `Partial` to `Completed`.
+```shell
+export HCP_NAMESPACE="clusters-${CLUSTER_NAME}"
+
+oc get vmi -n $HCP_NAMESPACE -o json | \
+  jq -r '.items[] | "\(.metadata.name)\t\(.status.interfaces[] | select(.name != "default" and .ipAddress != null and .ipAddress != "") | .ipAddress | split("/")[0])"'
+```
+
+This command filters out the pod network interface (`default`) and strips any
+CIDR suffix from the IP address. If your VMs use a different interface layout,
+list all interfaces with `oc get vmi -n $HCP_NAMESPACE -o yaml` and adjust the
+filter accordingly.
+
+Save the VM IPs for use in the EndpointSlice below. For example:
+
+```
+example-workers-abc12-xyz34    192.168.216.50
+example-workers-abc12-xyz56    192.168.216.51
+```
+
+#### 3. Create the LoadBalancer Service (no selector)
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ${CLUSTER_NAME}
+  name: ${CLUSTER_NAME}-apps
+  namespace: ${HCP_NAMESPACE}
+spec:
+  ports:
+  - name: https-443
+    port: 443
+    protocol: TCP
+    targetPort: ${HTTPS_NODEPORT}
+  - name: http-80
+    port: 80
+    protocol: TCP
+    targetPort: ${HTTP_NODEPORT}
+  type: LoadBalancer
+EOF
+```
+
+Note that the Service has **no `selector` field**. Traffic routing is handled
+by the EndpointSlice created in the next step.
+
+#### 4. Create the EndpointSlice
+
+Replace the IP addresses below with the VM machineNetwork IPs retrieved in
+step 2:
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: ${CLUSTER_NAME}-apps-endpoints
+  namespace: ${HCP_NAMESPACE}
+  labels:
+    kubernetes.io/service-name: ${CLUSTER_NAME}-apps
+    endpointslice.kubernetes.io/managed-by: manual
+addressType: IPv4
+ports:
+- name: https-443
+  port: ${HTTPS_NODEPORT}
+  protocol: TCP
+- name: http-80
+  port: ${HTTP_NODEPORT}
+  protocol: TCP
+endpoints:
+- addresses:
+  - "192.168.216.50"
+- addresses:
+  - "192.168.216.51"
+EOF
+```
+
+!!! important
+
+    The EndpointSlice must be updated manually whenever the guest cluster's
+    VMs change:
+
+    - **Scaling up**: Add new VM machineNetwork IPs to the EndpointSlice
+    - **Scaling down**: Remove decommissioned VM IPs
+    - **Live migration**: Update IPs if the VM's machineNetwork address changes
+
+    Run `oc get vmi -n $HCP_NAMESPACE` to retrieve the current VM IPs after
+    any scaling or migration event.
+
+### Step 3 - Set up a wildcard DNS record for `*.apps`
+
+Configure a wildcard DNS record that references the LoadBalancer Service's
+external address:
+
+1. Get the external address. Depending on the load balancer provider, either
+   `.ip` (IP-based, e.g., MetalLB, GCE) or `.hostname` (DNS-based, e.g., AWS
+   ELB) is populated:
+
+    ```shell
+    export EXTERNAL_IP=$(oc -n $HCP_NAMESPACE get service ${CLUSTER_NAME}-apps \
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    export EXTERNAL_HOSTNAME=$(oc -n $HCP_NAMESPACE get service ${CLUSTER_NAME}-apps \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+    ```
+
+2. Configure a wildcard `*.apps.<cluster_name>.<base_domain>.` DNS entry.
+   The DNS record must be routable both from outside the cluster **and from
+   inside the guest VMs** (see the Troubleshooting section
+   for hairpin issues).
+
+    - If `$EXTERNAL_IP` is set, create a wildcard **A record**:
+
+        ```
+        *.apps.example.hypershift.lab.  IN  A  192.168.20.30
+        ```
+
+    - If `$EXTERNAL_HOSTNAME` is set instead, create a wildcard **CNAME record**:
+
+        ```
+        *.apps.example.hypershift.lab.  IN  CNAME  a1b2c3-1234.us-east-1.elb.amazonaws.com.
+        ```
+
+    Verify DNS resolves correctly:
+
+    ```shell
+    dig +short test.apps.example.hypershift.lab
+    ```
+
+### Step 4 - Verify the HostedCluster status
+
+Once the LoadBalancer and DNS are in place, the HostedCluster progress should
+move from `Partial` to `Completed`:
 
 ```shell linenums="1"
 oc get --namespace clusters hostedclusters
@@ -28371,7 +28525,7 @@ outlining how to configure MetalLB after installing MetalLB using CLI.
       namespace: metallb-system
     spec:
       addresses:
-      - 192.168.216.32-192.168.216.122
+      - 192.168.216.200-192.168.216.220
     EOF
     ```
 
@@ -28389,6 +28543,70 @@ outlining how to configure MetalLB after installing MetalLB using CLI.
        - metallb
     EOF
     ```
+
+## Troubleshooting
+
+### CanaryChecksRepetitiveFailures with custom baseDomain
+
+When using a custom `baseDomain` (without `baseDomainPassthrough`), the ingress
+operator may report `Degraded` with errors like:
+
+```
+CanaryChecksRepetitiveFailures: Canary route checks for the default ingress
+controller are failing. Last 1 error messages:
+error sending canary HTTP request: http: server gave HTTP response to HTTPS client
+```
+
+or:
+
+```
+connection refused
+```
+
+#### Diagnostic steps
+
+1. **Verify DNS resolution from inside the guest VMs.** The canary check runs
+   from inside the guest cluster, so DNS must resolve correctly from within
+   the VMs:
+
+    ```shell
+    oc --kubeconfig $CLUSTER_KUBECONFIG debug node/<any-guest-node> -- \
+      chroot /host nslookup canary-openshift-ingress-canary.apps.${CLUSTER_NAME}.${BASE_DOMAIN}
+    ```
+
+    Compare this IP with the LoadBalancer VIP. If they differ, DNS is
+    misconfigured.
+
+2. **Verify the LoadBalancer endpoints use machineNetwork IPs, not pod IPs.**
+   Check the EndpointSlice:
+
+    ```shell
+    oc get endpointslice -n $HCP_NAMESPACE -l kubernetes.io/service-name=${CLUSTER_NAME}-apps -o yaml
+    ```
+
+    The IP addresses in the EndpointSlice must be the VM machineNetwork IPs
+    (the same IPs returned by the `oc get vmi -o json | jq` command in
+    Step 2), **not** the virt-launcher pod
+    IPs. If the EndpointSlice contains pod network IPs (typically in a
+    different CIDR than the machineNetwork), the guest router NodePort will
+    not be reachable and connections will be refused.
+
+3. **Test LoadBalancer VIP reachability from inside the guest.** Curl the
+   LoadBalancer VIP from within a guest VM:
+
+    ```shell
+    oc --kubeconfig $CLUSTER_KUBECONFIG debug node/<any-guest-node> -- \
+      chroot /host curl -vk --connect-timeout 5 https://<EXTERNAL_IP>:443
+    ```
+
+    If this returns `connection refused` but the same curl works from outside
+    the guest VMs, the issue is **VIP return-path routing** — the VMs are
+    sending traffic to a VIP that routes back to themselves, but the return
+    path is broken (asymmetric routing). Configure split-horizon DNS so
+    that guest VMs resolve `*.apps` directly to their own machineNetwork
+    IPs instead of the external VIP. See the JSON patch DNS override in
+    the recipe
+    for an automated approach.
 
 
 ---
@@ -28466,8 +28684,12 @@ KubeVirt platform.
 
 ## Ingress and Console cluster operators are not coming online
 
-* If the cluster is using the default ingress behavior, ensure that wildcard DNS routes are enabled on the OCP cluster the VMs are hosted on. `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'`
-* If a custom base domain is used for the HCP, double check that the Load Balancer is targeting the VM pods accurately, and make sure the wildcard DNS entry is targeting the Load Balancer IP.
+* If the cluster is using the default ingress behavior (baseDomainPassthrough), ensure that wildcard DNS routes are enabled on the management cluster: `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {"wildcardPolicy": "WildcardsAllowed"}}]'`
+* If a custom base domain is used for the HCP (without baseDomainPassthrough):
+    * Verify the LoadBalancer Service has **no pod selector**. Using a selector like `kubevirt.io: virt-launcher` resolves to pod network IPs, but the guest router's NodePort only listens on VM machineNetwork IPs. This mismatch causes `connection refused` or `http: server gave HTTP response to HTTPS client` errors. Use an EndpointSlice instead to target the VM machineNetwork IPs directly.
+    * Verify the EndpointSlice addresses match the VM machineNetwork IPs (`oc get vmi -n <hcp namespace>`), not the virt-launcher pod IPs.
+    * Verify the wildcard DNS entry `*.apps.<cluster>.<baseDomain>` resolves to the LoadBalancer's external IP, and that DNS resolves correctly **from inside the guest VMs** (hairpin routing).
+    * See Ingress and DNS - Troubleshooting for detailed diagnostic steps.
 
 ## Guest Cluster Load Balancer services are not becoming available
 
@@ -39801,6 +40023,355 @@ title: Recipes
 ---
 
 In this section we will expose the more frequent recipes the people could use for different use cases, separated by providers.
+
+---
+
+## Source: docs/content/recipes/kubevirt/custom-ingress-with-metallb.md
+
+---
+title: Configure Custom Ingress for KubeVirt HCP
+---
+
+# Configure Custom Ingress for KubeVirt HCP
+
+This recipe walks through deploying a KubeVirt-based Hosted Control Plane with
+a custom `baseDomain` (without `baseDomainPassthrough`) on a bare-metal
+management cluster using MetalLB for LoadBalancer services.
+
+This is the typical setup when the guest cluster needs its own DNS domain
+separate from the management cluster's `*.apps` domain, and an external load
+balancer (F5, HAProxy, etc.) or MetalLB handles VIP advertisement.
+
+## Prerequisites
+
+- A bare-metal OpenShift management cluster with KubeVirt (OpenShift
+  Virtualization) installed
+- MetalLB Operator installed (see
+  Optional MetalLB Configuration Steps)
+- A DNS zone you control for the custom `baseDomain`
+- VM network configured with a secondary bridge interface (the VMs must have
+  machineNetwork connectivity, not just pod network)
+
+## Environment Variables
+
+Set these once — all subsequent commands reference them:
+
+```shell
+export CLUSTER_NAME=my-kubevirt-hcp
+export BASE_DOMAIN=example.com
+export HCP_NAMESPACE="clusters-${CLUSTER_NAME}"
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+```
+
+## Step 1 — Create the HostedCluster
+
+```shell
+hcp create cluster kubevirt \
+  --name $CLUSTER_NAME \
+  --node-pool-replicas $WORKER_COUNT \
+  --pull-secret $PULL_SECRET \
+  --memory $MEM \
+  --cores $CPU \
+  --base-domain $BASE_DOMAIN
+```
+
+Because `--base-domain` is provided, the webhook does **not** enable
+`baseDomainPassthrough`. The cluster will stay in `Partial` progress until
+ingress is manually configured.
+
+## Step 2 — Configure MetalLB
+
+### 2.1 — Create the MetalLB instance
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: MetalLB
+metadata:
+  name: metallb
+  namespace: metallb-system
+```
+
+### 2.2 — Create the IPAddressPool
+
+Adjust the address range to match available IPs on your bare-metal network:
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: hcp-ingress-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.216.200-192.168.216.220
+```
+
+!!! warning
+
+    The MetalLB address pool must be **disjoint** from the VM machineNetwork
+    addresses. If the pool includes IPs assigned to VMs (e.g., 192.168.216.50,
+    192.168.216.51 in this example), MetalLB may allocate a VIP that conflicts
+    with an existing VM address.
+
+### 2.3 — Create the L2Advertisement
+
+If your network uses a specific bridge interface (e.g., `br-sdn`), add
+`interfaces` and `nodeSelectors` as needed:
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: hcp-ingress-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - hcp-ingress-pool
+```
+
+## Step 3 — Retrieve the Guest Router NodePorts
+
+Wait for the guest cluster to have running worker nodes, then extract the
+dynamically assigned NodePorts:
+
+```shell
+export CLUSTER_KUBECONFIG="${CLUSTER_NAME}-kubeconfig"
+hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_KUBECONFIG
+
+export HTTP_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+
+export HTTPS_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
+
+echo "HTTP NodePort: $HTTP_NODEPORT"
+echo "HTTPS NodePort: $HTTPS_NODEPORT"
+```
+
+## Step 4 — Retrieve VM machineNetwork IPs
+
+```shell
+oc get vmi -n $HCP_NAMESPACE -o json | \
+  jq -r '.items[] | "\(.metadata.name)\t\(.status.interfaces[] | select(.name != "default" and .ipAddress != null and .ipAddress != "") | .ipAddress | split("/")[0])"'
+```
+
+This filters out the pod network interface (`default`) and strips any CIDR
+suffix. If your VMs use a different interface layout, check all interfaces with
+`oc get vmi -n $HCP_NAMESPACE -o yaml` and adjust the filter.
+
+Example output:
+
+```
+my-kubevirt-hcp-workers-abc12-xyz34    192.168.216.50
+my-kubevirt-hcp-workers-abc12-xyz56    192.168.216.51
+```
+
+!!! warning
+
+    Use the **machineNetwork IPs** (the VM's network interface on the
+    secondary bridge), not the virt-launcher pod IPs. The guest router's
+    NodePort only listens on machineNetwork IPs. Using pod IPs causes
+    `connection refused` errors. See
+    Ingress and DNS - Troubleshooting
+    for details.
+
+## Step 5 — Create the LoadBalancer Service (no selector)
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ${CLUSTER_NAME}
+  name: ${CLUSTER_NAME}-apps-ingress
+  namespace: ${HCP_NAMESPACE}
+spec:
+  ports:
+  - name: https-443
+    port: 443
+    protocol: TCP
+    targetPort: ${HTTPS_NODEPORT}
+  - name: http-80
+    port: 80
+    protocol: TCP
+    targetPort: ${HTTP_NODEPORT}
+  type: LoadBalancer
+EOF
+```
+
+The Service has **no `selector`**. Traffic routing is handled entirely by the
+EndpointSlice below.
+
+## Step 6 — Create the EndpointSlice
+
+Replace IP addresses with the values from Step 4:
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: ${CLUSTER_NAME}-apps-ingress
+  namespace: ${HCP_NAMESPACE}
+  labels:
+    kubernetes.io/service-name: ${CLUSTER_NAME}-apps-ingress
+    endpointslice.kubernetes.io/managed-by: manual
+addressType: IPv4
+ports:
+- name: https-443
+  port: ${HTTPS_NODEPORT}
+  protocol: TCP
+- name: http-80
+  port: ${HTTP_NODEPORT}
+  protocol: TCP
+endpoints:
+- addresses:
+  - "192.168.216.50"
+- addresses:
+  - "192.168.216.51"
+EOF
+```
+
+## Step 7 — Configure Wildcard DNS
+
+Get the VIP assigned by MetalLB:
+
+```shell
+export EXTERNAL_IP=$(oc -n $HCP_NAMESPACE get service ${CLUSTER_NAME}-apps-ingress \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "LoadBalancer VIP: $EXTERNAL_IP"
+```
+
+Create a wildcard DNS record:
+
+```
+*.apps.my-kubevirt-hcp.example.com.  IN  A  <EXTERNAL_IP>
+```
+
+Verify:
+
+```shell
+dig +short test.apps.${CLUSTER_NAME}.${BASE_DOMAIN}
+```
+
+!!! important
+
+    DNS must resolve correctly both **externally** and **from inside the guest
+    VMs**. If the VMs resolve `*.apps` to the MetalLB VIP but the return
+    traffic path is broken (asymmetric routing), the ingress canary checks
+    will fail. Configure split-horizon DNS so guest VMs resolve directly
+    to their own machineNetwork IPs. See the JSON patch tip below for an
+    automated approach.
+
+!!! tip
+
+    As an alternative to split-horizon DNS, you can inject custom DNS
+    configuration directly into the KubeVirt VMs using a JSON patch on the
+    NodePool. This overrides the VM's DNS resolver so it points to a
+    nameserver that returns the correct IPs from inside the guest network:
+
+    ```yaml
+    apiVersion: hypershift.openshift.io/v1beta1
+    kind: NodePool
+    metadata:
+      name: my-kubevirt-hcp
+      namespace: clusters
+      annotations:
+        hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+          [
+            {
+              "op": "add",
+              "path": "/spec/template/spec/dnsPolicy",
+              "value": "None"
+            },
+            {
+              "op": "add",
+              "path": "/spec/template/spec/dnsConfig",
+              "value": {
+                "nameservers": ["10.0.0.53"]
+              }
+            }
+          ]
+    ```
+
+    !!! warning
+
+        Setting `dnsPolicy: None` removes the default cluster search domains
+        (e.g., `svc.cluster.local`). Do **not** add your external baseDomain
+        to the `searches` list — this causes internal `.svc.cluster.local`
+        lookups to be appended with the external domain and resolve to
+        public IPs, breaking services like the console. If your custom
+        nameserver at `10.0.0.53` needs search domains, include only the
+        cluster-internal ones:
+
+        ```json
+        "searches": ["svc.cluster.local", "cluster.local"]
+        ```
+
+    See Configuring VMs with JSON Patch
+    for full details on the JSON patch mechanism.
+
+## Step 8 — Verify
+
+Check HostedCluster progresses to `Completed`:
+
+```shell
+oc get --namespace clusters hostedclusters
+```
+
+Expected output:
+
+```
+NAME              VERSION   KUBECONFIG                         PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
+my-kubevirt-hcp   4.17.0    my-kubevirt-hcp-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+```
+
+Verify ingress from outside:
+
+```shell
+curl -vk https://console-openshift-console.apps.${CLUSTER_NAME}.${BASE_DOMAIN}
+```
+
+Check the ingress operator is not degraded inside the guest:
+
+```shell
+oc --kubeconfig $CLUSTER_KUBECONFIG get co ingress
+```
+
+## Maintenance
+
+The EndpointSlice is **not** automatically managed. Update it when:
+
+| Event | Action |
+|-------|--------|
+| **Scale up** (new VMs) | Add new VM machineNetwork IPs to the EndpointSlice |
+| **Scale down** | Remove decommissioned VM IPs |
+| **Live migration** | Update IPs if machineNetwork address changed |
+
+Quick command to get current VM IPs:
+
+```shell
+oc get vmi -n $HCP_NAMESPACE -o json | \
+  jq -r '.items[] | "\(.metadata.name)\t\(.status.interfaces[] | select(.name != "default" and .ipAddress != null and .ipAddress != "") | .ipAddress | split("/")[0])"'
+```
+
+## Traffic Flow
+
+```
+Client
+  └─> *.apps.my-kubevirt-hcp.example.com     (DNS wildcard)
+       └─> MetalLB VIP (e.g. 192.168.216.200) (L2 advertisement)
+            └─> VM machineNetwork IP          (EndpointSlice)
+                 └─> NodePort (e.g. 31245)    (guest router)
+                      └─> guest Route         (application)
+```
+
 
 ---
 
