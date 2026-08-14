@@ -147,6 +147,13 @@ var (
 		// until CVO catches up. This is a deterministic ordering issue, not a race.
 		// See https://issues.redhat.com/browse/OCPBUGS-78539
 		"dns-operator": 5,
+		// CVO and CNO may restart once during hosted cluster initialization due to
+		// dependency ordering and kube-apiserver availability timing.
+		// See https://issues.redhat.com/browse/OCPBUGS-109581
+		// See https://issues.redhat.com/browse/OCPBUGS-77042
+		// See https://issues.redhat.com/browse/OCPBUGS-18569
+		"cluster-version-operator": 1,
+		"cluster-network-operator": 1,
 	}
 )
 
