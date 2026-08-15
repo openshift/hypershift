@@ -3156,8 +3156,40 @@ func verifyKASCheckerTolerations(t *testing.T, dep *appsv1.Deployment) {
 
 func verifyKASCheckerAnnotations(t *testing.T, dep *appsv1.Deployment) {
 	t.Helper()
-	if dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"] != "restricted-v2" {
-		t.Errorf("Expected openshift.io/required-scc annotation 'restricted-v2', got %s", dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"])
+	// kube-system is exempt from SCC admission, so the annotation is inert there and
+	// would reject the explicit non-root UID if that exemption ever changed.
+	if got, ok := dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"]; ok {
+		t.Errorf("openshift.io/required-scc annotation should not be set, got %s", got)
+	}
+}
+
+func verifyKASCheckerSecurityContext(t *testing.T, dep *appsv1.Deployment, container corev1.Container) {
+	t.Helper()
+	// A numeric UID is required: nothing assigns one in kube-system, and RunAsNonRoot
+	// alone would fail at the kubelet because the cli image declares no user.
+	podSecurityContext := dep.Spec.Template.Spec.SecurityContext
+	if podSecurityContext == nil || podSecurityContext.RunAsUser == nil {
+		t.Fatal("Pod SecurityContext should set RunAsUser")
+	}
+	if *podSecurityContext.RunAsUser != 1000 {
+		t.Errorf("Expected RunAsUser 1000, got %d", *podSecurityContext.RunAsUser)
+	}
+
+	if container.SecurityContext == nil {
+		t.Fatal("Container SecurityContext should be set")
+	}
+	if !ptr.Deref(container.SecurityContext.RunAsNonRoot, false) {
+		t.Error("RunAsNonRoot should be true")
+	}
+	if ptr.Deref(container.SecurityContext.AllowPrivilegeEscalation, true) {
+		t.Error("AllowPrivilegeEscalation should be false")
+	}
+	if !ptr.Deref(container.SecurityContext.ReadOnlyRootFilesystem, false) {
+		t.Error("ReadOnlyRootFilesystem should be true")
+	}
+	if container.SecurityContext.Capabilities == nil ||
+		!reflect.DeepEqual(container.SecurityContext.Capabilities.Drop, []corev1.Capability{"ALL"}) {
+		t.Errorf("Expected all capabilities dropped, got %v", container.SecurityContext.Capabilities)
 	}
 }
 
@@ -3206,6 +3238,7 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 				verifyKASCheckerResources(t, container)
 				verifyKASCheckerTolerations(t, dep)
 				verifyKASCheckerAnnotations(t, dep)
+				verifyKASCheckerSecurityContext(t, dep, container)
 
 				cm := &corev1.ConfigMap{}
 				if err := c.Get(context.Background(), client.ObjectKey{Name: manifests.KASConnectionCheckerConfigMapName, Namespace: manifests.KASConnectionCheckerNamespace}, cm); err != nil {
@@ -3256,6 +3289,10 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 							Labels: map[string]string{
 								"app": "old-label",
 							},
+							// Written by an older HCCO; must be cleared on upgrade.
+							Annotations: map[string]string{
+								"openshift.io/required-scc": "restricted-v2",
+							},
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
@@ -3283,6 +3320,7 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 					t.Errorf("Expected ServiceAccountName %s, got %s", manifests.KASConnectionCheckerName, dep.Spec.Template.Spec.ServiceAccountName)
 				}
 				verifyKASCheckerAnnotations(t, dep)
+				verifyKASCheckerSecurityContext(t, dep, container)
 			},
 		},
 	}
