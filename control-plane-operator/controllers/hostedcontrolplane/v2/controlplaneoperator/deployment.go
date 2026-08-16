@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -118,6 +119,14 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			c.Env = append(c.Env,
 				corev1.EnvVar{
 					Name:  rhobsmonitoring.EnvironmentVariable,
+					Value: "1",
+				},
+			)
+		}
+		if os.Getenv(azmonitoring.EnvironmentVariable) == "1" {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  azmonitoring.EnvironmentVariable,
 					Value: "1",
 				},
 			)

@@ -26,6 +26,7 @@ rules:
   - cluster.x-k8s.io
   - monitoring.coreos.com
   - monitoring.rhobs
+  - azmonitoring.coreos.com
   - capi-provider.agent-install.openshift.io
   resources:
   - '*'

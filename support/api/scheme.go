@@ -12,6 +12,7 @@ import (
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/support/azmonitoring"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -140,6 +141,11 @@ func init() {
 		_ = apiserverconfigv1.AddToScheme(scheme)
 		if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
 			_ = rhobsmonitoring.AddToScheme(scheme)
+			if sd.includeAllMonitoring {
+				_ = prometheusoperatorv1.AddToScheme(scheme)
+			}
+		} else if os.Getenv(azmonitoring.EnvironmentVariable) == "1" {
+			_ = azmonitoring.AddToScheme(scheme)
 			if sd.includeAllMonitoring {
 				_ = prometheusoperatorv1.AddToScheme(scheme)
 			}

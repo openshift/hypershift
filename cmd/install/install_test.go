@@ -1750,6 +1750,30 @@ func TestValidateMonitoringConfig(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "When both AZ monitoring and CVO management cluster metrics access are set, it should fail",
+			opts: Options{
+				AZMonitoring:                            true,
+				EnableCVOManagementClusterMetricsAccess: true,
+			},
+			expectError: true,
+		},
+		{
+			name: "When both AZ monitoring and RHOBS monitoring are set, it should fail",
+			opts: Options{
+				AZMonitoring:    true,
+				RHOBSMonitoring: true,
+			},
+			expectError: true,
+		},
+		{
+			name: "When CVO prometheus URL is set with AZ monitoring, it should pass",
+			opts: Options{
+				CVOPrometheusURL: "https://prometheus.example.com",
+				AZMonitoring:     true,
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tc := range tests {

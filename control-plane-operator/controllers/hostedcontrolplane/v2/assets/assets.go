@@ -5,10 +5,12 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"text/template"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azmonitoring"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -84,7 +86,9 @@ func LoadManifestInto(componentName string, fileName string, into client.Object)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load %s manifest: %w", filePath, err)
 	}
-	return obj.(client.Object), gvk, err
+	clientObj := obj.(client.Object)
+	rewriteMonitoringGVK(clientObj, gvk)
+	return clientObj, gvk, err
 }
 
 // LoadManifestTemplated reads the raw asset bytes, renders them as a Go text/template
@@ -120,7 +124,9 @@ func LoadManifestTemplated(componentName, fileName string, templateData map[stri
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load templated %s manifest: %w", filePath, err)
 	}
-	return obj.(client.Object), gvk, err
+	clientObj := obj.(client.Object)
+	rewriteMonitoringGVK(clientObj, gvk)
+	return clientObj, gvk, err
 }
 
 // LoadStatefulSetManifestTemplated loads a statefulset manifest with template rendering.
@@ -138,6 +144,14 @@ func LoadStatefulSetManifestTemplated(componentName string, templateData map[str
 		return nil, fmt.Errorf("expected StatefulSet but got %T", obj)
 	}
 	return sts, nil
+}
+
+func rewriteMonitoringGVK(obj client.Object, gvk *schema.GroupVersionKind) {
+	if os.Getenv(azmonitoring.EnvironmentVariable) == "1" && gvk.Group == "monitoring.coreos.com" {
+		newGVK := schema.GroupVersionKind{Group: azmonitoring.SchemeGroupVersion.Group, Version: gvk.Version, Kind: gvk.Kind}
+		obj.GetObjectKind().SetGroupVersionKind(newGVK)
+		*gvk = newGVK
+	}
 }
 
 func ForEachManifest(componentName string, action func(manifestName string) error) error {

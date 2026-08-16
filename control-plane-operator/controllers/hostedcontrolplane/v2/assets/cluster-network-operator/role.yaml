@@ -42,6 +42,12 @@ rules:
   verbs:
   - '*'
 - apiGroups:
+  - azmonitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - '*'
+- apiGroups:
   - hypershift.openshift.io
   resources:
   - hostedcontrolplanes
