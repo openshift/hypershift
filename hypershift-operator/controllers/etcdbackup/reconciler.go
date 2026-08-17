@@ -1035,11 +1035,18 @@ func (r *HCPEtcdBackupReconciler) buildJobVolumes(creds resolvedCredentials) []c
 	}
 
 	if creds.needsCredentialsFile() {
+		credentialsKey := creds.CredentialsKey
+		if credentialsKey == "" {
+			credentialsKey = secretKeyCredentials
+		}
 		volumes = append(volumes, corev1.Volume{
 			Name: volumeCredentials,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: creds.SecretName,
+					Items: []corev1.KeyToPath{
+						{Key: credentialsKey, Path: secretKeyCredentials},
+					},
 				},
 			},
 		})

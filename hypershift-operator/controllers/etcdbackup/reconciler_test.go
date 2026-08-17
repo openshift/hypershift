@@ -968,6 +968,37 @@ func TestSetEncryptionMetadata(t *testing.T) {
 	})
 }
 
+func TestBuildJobVolumes(t *testing.T) {
+	t.Run("When Azure client-secret credentials originate from cloud it should project them as credentials", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+
+		volumes := r.buildJobVolumes(resolvedCredentials{
+			Mode:           credentialModeAzureClientSecret,
+			SecretName:     "azure-creds",
+			CredentialsKey: secretKeyCloud,
+		})
+
+		var credentialsVolume *corev1.Volume
+		for i := range volumes {
+			if volumes[i].Name == volumeCredentials {
+				credentialsVolume = &volumes[i]
+				break
+			}
+		}
+
+		g.Expect(credentialsVolume).ToNot(BeNil())
+		if credentialsVolume == nil {
+			return
+		}
+		g.Expect(credentialsVolume.Secret.SecretName).To(Equal("azure-creds"))
+		g.Expect(credentialsVolume.Secret.Items).To(ConsistOf(corev1.KeyToPath{
+			Key:  secretKeyCloud,
+			Path: secretKeyCredentials,
+		}))
+	})
+}
+
 func TestBuildUploadArgs(t *testing.T) {
 	newAzureBackup := func(encryptionKeyURL string) *hyperv1.HCPEtcdBackup {
 		return &hyperv1.HCPEtcdBackup{
