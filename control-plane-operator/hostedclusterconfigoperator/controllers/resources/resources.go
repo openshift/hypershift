@@ -550,7 +550,8 @@ func (r *reconciler) reconcilePlatformSpecificResources(ctx context.Context, log
 		errs = append(errs, r.reconcileAWSIdentityWebhook(ctx)...)
 	case hyperv1.AzurePlatform:
 		log.Info("reconciling Azure specific resources")
-		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, hcp, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
+		errs = append(errs, r.reconcileAzureCloudNodeManagerConfig(ctx, hcp)...)
+		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
 		errs = append(errs, r.reconcileAzureIdentityWebhook(ctx)...)
 	}
 	return errs
@@ -3550,7 +3551,30 @@ func allLoadBalancersRemoved(ctx context.Context, c client.Client) (bool, error)
 	return true, nil
 }
 
-func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, image string) []error {
+func (r *reconciler) reconcileAzureCloudNodeManagerConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+	var errs []error
+
+	reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
+		errs = append(errs, fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err))
+		return errs
+	}
+
+	cloudConfig := ccm.CloudNodeManagerCloudConfig()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cloudConfig, func() error {
+		if cloudConfig.Data == nil {
+			cloudConfig.Data = map[string]string{}
+		}
+		cloudConfig.Data[azure.CloudConfigKey] = reference.Data[azure.CloudConfigKey]
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", cloudConfig, cloudConfig.Name, err))
+	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image string) []error {
 	var errs []error
 
 	serviceAccount := ccm.CloudNodeManagerServiceAccount()
@@ -3603,26 +3627,6 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, hcp *hy
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
-	}
-
-	// Sync the Azure cloud config to a ConfigMap in kube-system so the
-	// cloud-node-manager can read the "location" field and format zone labels
-	// as "{region}-{zone}" instead of passing through bare IMDS zone numbers.
-	reference := cpomanifests.AzureProviderConfig(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(reference), reference); err != nil {
-		errs = append(errs, fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", reference.Namespace, reference.Name, err))
-		return errs
-	}
-
-	cloudConfig := ccm.CloudNodeManagerCloudConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, cloudConfig, func() error {
-		if cloudConfig.Data == nil {
-			cloudConfig.Data = map[string]string{}
-		}
-		cloudConfig.Data[ccm.CloudNodeManagerCloudConfigKey] = reference.Data[azure.CloudConfigKey]
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", cloudConfig, cloudConfig.Name, err))
 	}
 
 	cloudNodeManagerDaemonSet := ccm.CloudNodeManagerDaemonSet()
@@ -3710,6 +3714,7 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, hcp *hy
 									LocalObjectReference: corev1.LocalObjectReference{
 										Name: ccm.CloudNodeManagerCloudConfigName,
 									},
+									Optional: ptr.To(true),
 								},
 							},
 						},

@@ -4393,100 +4393,73 @@ func TestReconcileConfigOperatorReconciliationCondition(t *testing.T) {
 	}
 }
 
-func TestReconcileAzureCloudNodeManager(t *testing.T) {
+func TestReconcileAzureCloudNodeManagerConfig(t *testing.T) {
+	t.Parallel()
+
 	const testNamespace = "test-hcp-ns"
 	const testCloudConfig = `{"cloud":"","tenantId":"test-tenant","location":"centralus","useInstanceMetadata":true}`
 
 	tests := map[string]struct {
-		hcp             *hyperv1.HostedControlPlane
-		cpObjects       []client.Object
-		expectErrors    bool
-		verifyResources func(g Gomega, guestClient client.Client)
+		hcp          *hyperv1.HostedControlPlane
+		cpObjects    []client.Object
+		expectErrors bool
+		verify       func(g Gomega, guestClient client.Client)
 	}{
-		"When cloud config exists on management cluster, it should create ConfigMap and DaemonSet with cloud-config mount": {
+		"When cloud config exists, it should sync to guest ConfigMap": {
 			hcp: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-hcp",
-					Namespace: testNamespace,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AzurePlatform,
-					},
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: testNamespace},
 			},
-			cpObjects: []client.Object{
-				&corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "azure-cloud-config",
-						Namespace: testNamespace,
-					},
-					Data: map[string]string{
-						azure.CloudConfigKey: testCloudConfig,
-					},
-				},
-			},
+			cpObjects: func() []client.Object {
+				ref := cpomanifests.AzureProviderConfig(testNamespace)
+				ref.Data = map[string]string{azure.CloudConfigKey: testCloudConfig}
+				return []client.Object{ref}
+			}(),
 			expectErrors: false,
-			verifyResources: func(g Gomega, guestClient client.Client) {
-				cloudConfig := ccm.CloudNodeManagerCloudConfig()
-				err := guestClient.Get(context.Background(), client.ObjectKeyFromObject(cloudConfig), cloudConfig)
-				g.Expect(err).ToNot(HaveOccurred(), "cloud config ConfigMap should exist in kube-system")
-				g.Expect(cloudConfig.Data[ccm.CloudNodeManagerCloudConfigKey]).To(Equal(testCloudConfig))
-
-				ds := ccm.CloudNodeManagerDaemonSet()
-				err = guestClient.Get(context.Background(), client.ObjectKeyFromObject(ds), ds)
-				g.Expect(err).ToNot(HaveOccurred(), "DaemonSet should exist in kube-system")
-
-				container := ds.Spec.Template.Spec.Containers[0]
-				g.Expect(container.Args[1]).To(ContainSubstring("--cloud-config=/etc/azure/cloud.conf"),
-					"cloud-node-manager should have --cloud-config flag")
-
-				var hasCloudConfigMount bool
-				for _, vm := range container.VolumeMounts {
-					if vm.Name == "cloud-config" && vm.MountPath == "/etc/azure" && vm.ReadOnly {
-						hasCloudConfigMount = true
-					}
-				}
-				g.Expect(hasCloudConfigMount).To(BeTrue(), "container should mount cloud-config volume at /etc/azure")
-
-				var hasCloudConfigVolume bool
-				for _, v := range ds.Spec.Template.Spec.Volumes {
-					if v.Name == "cloud-config" && v.ConfigMap != nil && v.ConfigMap.Name == ccm.CloudNodeManagerCloudConfigName {
-						hasCloudConfigVolume = true
-					}
-				}
-				g.Expect(hasCloudConfigVolume).To(BeTrue(), "pod should have cloud-config volume from ConfigMap")
+			verify: func(g Gomega, guestClient client.Client) {
+				cm := ccm.CloudNodeManagerCloudConfig()
+				err := guestClient.Get(context.Background(), client.ObjectKeyFromObject(cm), cm)
+				g.Expect(err).ToNot(HaveOccurred(), "cloud config ConfigMap should exist")
+				g.Expect(cm.Data[azure.CloudConfigKey]).To(Equal(testCloudConfig))
 			},
 		},
-		"When cloud config is missing on management cluster, it should return errors": {
+		"When source ConfigMap is missing, it should return errors without creating guest ConfigMap": {
 			hcp: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-hcp",
-					Namespace: testNamespace,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AzurePlatform,
-					},
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: testNamespace},
 			},
 			cpObjects:    []client.Object{},
 			expectErrors: true,
+			verify: func(g Gomega, guestClient client.Client) {
+				cm := ccm.CloudNodeManagerCloudConfig()
+				err := guestClient.Get(context.Background(), client.ObjectKeyFromObject(cm), cm)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "ConfigMap should not be created")
+			},
+		},
+		"When cloud.conf key is absent, it should sync empty value": {
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: testNamespace},
+			},
+			cpObjects: func() []client.Object {
+				ref := cpomanifests.AzureProviderConfig(testNamespace)
+				ref.Data = map[string]string{}
+				return []client.Object{ref}
+			}(),
+			expectErrors: false,
+			verify: func(g Gomega, guestClient client.Client) {
+				cm := ccm.CloudNodeManagerCloudConfig()
+				err := guestClient.Get(context.Background(), client.ObjectKeyFromObject(cm), cm)
+				g.Expect(err).ToNot(HaveOccurred(), "ConfigMap should still be created")
+				g.Expect(cm.Data[azure.CloudConfigKey]).To(BeEmpty())
+			},
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 
-			cpClient := fake.NewClientBuilder().
-				WithScheme(api.Scheme).
-				WithObjects(test.cpObjects...).
-				Build()
-
-			guestClient := fake.NewClientBuilder().
-				WithScheme(api.Scheme).
-				Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.cpObjects...).Build()
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 
 			r := &reconciler{
 				client:                 guestClient,
@@ -4494,16 +4467,61 @@ func TestReconcileAzureCloudNodeManager(t *testing.T) {
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
-			errs := r.reconcileAzureCloudNodeManager(t.Context(), test.hcp, "quay.io/openshift-release-dev/ocp-v4.0-art-dev:azure-cloud-node-manager")
+			errs := r.reconcileAzureCloudNodeManagerConfig(t.Context(), test.hcp)
 			if test.expectErrors {
 				g.Expect(errs).ToNot(BeEmpty(), "should return errors")
 			} else {
 				g.Expect(errs).To(BeEmpty(), "should not return errors")
 			}
-
-			if test.verifyResources != nil {
-				test.verifyResources(g, guestClient)
+			if test.verify != nil {
+				test.verify(g, guestClient)
 			}
 		})
 	}
+}
+
+func TestReconcileAzureCloudNodeManager(t *testing.T) {
+	t.Parallel()
+
+	const testImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:azure-cloud-node-manager"
+
+	t.Run("It should create DaemonSet with cloud-config optional volume", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		r := &reconciler{
+			client:                 guestClient,
+			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		}
+
+		errs := r.reconcileAzureCloudNodeManager(t.Context(), testImage)
+		g.Expect(errs).To(BeEmpty(), "should not return errors")
+
+		ds := ccm.CloudNodeManagerDaemonSet()
+		err := guestClient.Get(context.Background(), client.ObjectKeyFromObject(ds), ds)
+		g.Expect(err).ToNot(HaveOccurred(), "DaemonSet should exist")
+
+		container := ds.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Image).To(Equal(testImage))
+		g.Expect(strings.Join(container.Args, " ")).To(ContainSubstring("--cloud-config=/etc/azure/cloud.conf"))
+
+		var hasCloudConfigMount bool
+		for _, vm := range container.VolumeMounts {
+			if vm.Name == "cloud-config" && vm.MountPath == "/etc/azure" && vm.ReadOnly {
+				hasCloudConfigMount = true
+			}
+		}
+		g.Expect(hasCloudConfigMount).To(BeTrue(), "container should mount cloud-config volume")
+
+		var hasOptionalVolume bool
+		for _, v := range ds.Spec.Template.Spec.Volumes {
+			if v.Name == "cloud-config" && v.ConfigMap != nil &&
+				v.ConfigMap.Name == ccm.CloudNodeManagerCloudConfigName &&
+				v.ConfigMap.Optional != nil && *v.ConfigMap.Optional {
+				hasOptionalVolume = true
+			}
+		}
+		g.Expect(hasOptionalVolume).To(BeTrue(), "cloud-config volume should be optional")
+	})
 }

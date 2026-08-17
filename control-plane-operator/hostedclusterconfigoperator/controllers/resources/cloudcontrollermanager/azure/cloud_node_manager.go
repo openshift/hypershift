@@ -7,9 +7,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const CloudNodeManagerName = "azure-cloud-node-manager"
-const CloudNodeManagerCloudConfigName = "azure-cloud-node-manager-config"
-const CloudNodeManagerCloudConfigKey = "cloud.conf"
+const (
+	CloudNodeManagerName            = "azure-cloud-node-manager"
+	CloudNodeManagerCloudConfigName = "azure-cloud-node-manager-config"
+)
 
 var labels = map[string]string{
 	"k8s-app": CloudNodeManagerName,
