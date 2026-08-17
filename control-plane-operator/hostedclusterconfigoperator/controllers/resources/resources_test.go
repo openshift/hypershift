@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -2712,6 +2713,36 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 	}
 }
 
+func verifyKASCheckerSecurityContext(t *testing.T, dep *appsv1.Deployment, container corev1.Container) {
+	t.Helper()
+	// A numeric UID is required: nothing assigns one in kube-system, and RunAsNonRoot
+	// alone would fail at the kubelet because the cli image declares no user.
+	podSecurityContext := dep.Spec.Template.Spec.SecurityContext
+	if podSecurityContext == nil || podSecurityContext.RunAsUser == nil {
+		t.Fatal("Pod SecurityContext should set RunAsUser")
+	}
+	if *podSecurityContext.RunAsUser != 1000 {
+		t.Errorf("Expected RunAsUser 1000, got %d", *podSecurityContext.RunAsUser)
+	}
+
+	if container.SecurityContext == nil {
+		t.Fatal("Container SecurityContext should be set")
+	}
+	if !ptr.Deref(container.SecurityContext.RunAsNonRoot, false) {
+		t.Error("RunAsNonRoot should be true")
+	}
+	if ptr.Deref(container.SecurityContext.AllowPrivilegeEscalation, true) {
+		t.Error("AllowPrivilegeEscalation should be false")
+	}
+	if !ptr.Deref(container.SecurityContext.ReadOnlyRootFilesystem, false) {
+		t.Error("ReadOnlyRootFilesystem should be true")
+	}
+	if container.SecurityContext.Capabilities == nil ||
+		!reflect.DeepEqual(container.SecurityContext.Capabilities.Drop, []corev1.Capability{"ALL"}) {
+		t.Errorf("Expected all capabilities dropped, got %v", container.SecurityContext.Capabilities)
+	}
+}
+
 func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 	const testCLIImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-test"
 
@@ -2849,10 +2880,14 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 					t.Errorf("Expected ServiceAccountName %s, got %s", manifests.KASConnectionCheckerName, dep.Spec.Template.Spec.ServiceAccountName)
 				}
 
-				// Validate required-scc annotation
-				if dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"] != "restricted-v2" {
-					t.Errorf("Expected openshift.io/required-scc annotation 'restricted-v2', got %s", dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"])
+				// Validate required-scc annotation is not set: kube-system is exempt from
+				// SCC admission, so the annotation is inert there and would reject the
+				// explicit non-root UID if that exemption ever changed.
+				if got, ok := dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"]; ok {
+					t.Errorf("openshift.io/required-scc annotation should not be set, got %s", got)
 				}
+
+				verifyKASCheckerSecurityContext(t, dep, container)
 
 				// Validate ConfigMap was created
 				cm := &corev1.ConfigMap{}
@@ -2907,6 +2942,10 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 							Labels: map[string]string{
 								"app": "old-label",
 							},
+							// Written by an older HCCO; must be cleared on upgrade.
+							Annotations: map[string]string{
+								"openshift.io/required-scc": "restricted-v2",
+							},
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
@@ -2953,10 +2992,13 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 					t.Errorf("Expected ServiceAccountName %s, got %s", manifests.KASConnectionCheckerName, dep.Spec.Template.Spec.ServiceAccountName)
 				}
 
-				// Validate required-scc annotation
-				if dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"] != "restricted-v2" {
-					t.Errorf("Expected openshift.io/required-scc annotation 'restricted-v2', got %s", dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"])
+				// Validate the stale required-scc annotation written by an older HCCO
+				// was cleared from the pre-existing Deployment.
+				if got, ok := dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"]; ok {
+					t.Errorf("openshift.io/required-scc annotation should not be set, got %s", got)
 				}
+
+				verifyKASCheckerSecurityContext(t, dep, container)
 			},
 		},
 	}
