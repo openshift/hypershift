@@ -1,7 +1,6 @@
 ---
+name: e2e-analyze
 description: "Analyze test errors"
-allowed-tools: ["Read", "Bash(curl)", "Bash(gcloud)", "Bash(echo:*)", "Bash(ls:*)", "Bash(find:*)", "Bash(grep:*)", "Bash(test:*)"]
-argument-hint: Pass URL of a CI run as $1, the test name as $2 and target directory for artifacts as $3
 ---
 
 # General instructions

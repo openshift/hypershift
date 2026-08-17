@@ -1,3 +1,7 @@
+---
+name: test-tag-pipeline
+description: Create a manual PipelineRun to test tag pipeline changes before merging.
+---
 Create a manual PipelineRun to test tag pipeline changes before merging.
 
 **Usage**: `/test-tag-pipeline <tag-name> [branch-spec]`
