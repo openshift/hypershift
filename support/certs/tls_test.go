@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"net"
 	"reflect"
 	"strconv"
@@ -224,6 +225,142 @@ func TestReconcileSignedCertWithCustomCAKeys(t *testing.T) {
 		t.Errorf("unexpected keys in cert secret: %s", diff)
 
 	}
+}
+
+// TestReconcileSignedCertReSignsOnCAMismatch reproduces ROSAENG-65488: a leaf certificate
+// that is still time-valid and has correct SANs must be re-signed when the CA secret it
+// was issued from is no longer the CA secret currently in use (e.g. after CA regeneration),
+// otherwise the leaf is orphaned against a CA nothing trusts anymore.
+func TestReconcileSignedCertReSignsOnCAMismatch(t *testing.T) {
+	t.Parallel()
+
+	newCA := func(t *testing.T, cn string) *corev1.Secret {
+		t.Helper()
+		ca := &corev1.Secret{Type: corev1.SecretTypeOpaque}
+		if err := certs.ReconcileSelfSignedCA(ca, cn, "some-ou"); err != nil {
+			t.Fatalf("failed to reconcile CA %s: %v", cn, err)
+		}
+		return ca
+	}
+
+	reconcileLeaf := func(t *testing.T, secret, ca *corev1.Secret, o ...func(*certs.CAOpts)) {
+		t.Helper()
+		if err := certs.ReconcileSignedCert(
+			secret,
+			ca,
+			"some-cn",
+			[]string{"some-ou"},
+			[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			corev1.TLSCertKey,
+			corev1.TLSPrivateKeyKey,
+			"",
+			[]string{"some.svc"},
+			nil,
+			o...,
+		); err != nil {
+			t.Fatalf("failed to reconcile cert: %v", err)
+		}
+	}
+
+	verifiesAgainst := func(t *testing.T, leafSecret, ca *corev1.Secret, caCertKey string) bool {
+		t.Helper()
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(ca.Data[caCertKey]) {
+			t.Fatalf("failed to add CA cert to pool")
+		}
+		block, _ := pem.Decode(leafSecret.Data[corev1.TLSCertKey])
+		if block == nil {
+			t.Fatalf("failed to decode leaf cert PEM")
+		}
+		leaf, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatalf("failed to parse leaf cert: %v", err)
+		}
+		_, err = leaf.Verify(x509.VerifyOptions{Roots: pool})
+		return err == nil
+	}
+
+	t.Run("When a leaf is signed by a stale CA but is still time-valid with correct SANs, it should be re-signed against the current CA", func(t *testing.T) {
+		caA := newCA(t, "ca-a")
+		caB := newCA(t, "ca-b")
+
+		leaf := &corev1.Secret{Type: corev1.SecretTypeTLS}
+		reconcileLeaf(t, leaf, caA)
+		if !verifiesAgainst(t, leaf, caA, certs.CASignerCertMapKey) {
+			t.Fatalf("leaf should verify against CA-A right after issuance")
+		}
+		originalCert := append([]byte(nil), leaf.Data[corev1.TLSCertKey]...)
+
+		// Simulate CA regeneration: reconcile the same leaf secret against a new CA.
+		// The leaf is still well within its validity window and SANs are unchanged,
+		// so the legacy behavior (skip re-sign) would leave it orphaned.
+		reconcileLeaf(t, leaf, caB)
+
+		if bytes.Equal(originalCert, leaf.Data[corev1.TLSCertKey]) {
+			t.Errorf("expected leaf to be re-signed after CA rotation, but cert bytes are unchanged")
+		}
+		if verifiesAgainst(t, leaf, caA, certs.CASignerCertMapKey) {
+			t.Errorf("leaf should no longer verify against the old CA-A")
+		}
+		if !verifiesAgainst(t, leaf, caB, certs.CASignerCertMapKey) {
+			t.Errorf("leaf should verify against the current CA-B after re-sign")
+		}
+		if !certs.HasCAHash(leaf, caB, &certs.CAOpts{}) {
+			t.Errorf("leaf's CA-hash annotation should reflect the current CA-B")
+		}
+	})
+
+	t.Run("When a leaf is signed by the current CA with validity remaining, it should remain unchanged", func(t *testing.T) {
+		ca := newCA(t, "ca-a")
+
+		leaf := &corev1.Secret{Type: corev1.SecretTypeTLS}
+		reconcileLeaf(t, leaf, ca)
+		originalCert := append([]byte(nil), leaf.Data[corev1.TLSCertKey]...)
+		originalKey := append([]byte(nil), leaf.Data[corev1.TLSPrivateKeyKey]...)
+
+		// Reconciling again against the same, unchanged CA should be a no-op.
+		reconcileLeaf(t, leaf, ca)
+
+		if !bytes.Equal(originalCert, leaf.Data[corev1.TLSCertKey]) {
+			t.Errorf("expected leaf cert to be unchanged when CA has not changed")
+		}
+		if !bytes.Equal(originalKey, leaf.Data[corev1.TLSPrivateKeyKey]) {
+			t.Errorf("expected leaf key to be unchanged when CA has not changed")
+		}
+	})
+
+	t.Run("When the CA cert is stored under the tls.crt key and the CA rotates, it should re-sign then no-op", func(t *testing.T) {
+		// endpoint_resolver, ignitionserver, and metrics_proxy override
+		// CASignerCertMapKey to tls.crt; exercise that path explicitly so a
+		// refactor that assumes the default ca.crt key can't silently break
+		// re-signing for those components.
+		withTLSKey := func(o *certs.CAOpts) { o.CASignerCertMapKey = corev1.TLSCertKey }
+
+		caA := newCA(t, "ca-a")
+		caB := newCA(t, "ca-b")
+
+		leaf := &corev1.Secret{Type: corev1.SecretTypeTLS}
+		reconcileLeaf(t, leaf, caA, withTLSKey)
+		if !verifiesAgainst(t, leaf, caA, corev1.TLSCertKey) {
+			t.Fatalf("leaf should verify against CA-A right after issuance")
+		}
+		originalCert := append([]byte(nil), leaf.Data[corev1.TLSCertKey]...)
+
+		reconcileLeaf(t, leaf, caB, withTLSKey)
+		if bytes.Equal(originalCert, leaf.Data[corev1.TLSCertKey]) {
+			t.Errorf("expected leaf to be re-signed after CA rotation, but cert bytes are unchanged")
+		}
+		if !verifiesAgainst(t, leaf, caB, corev1.TLSCertKey) {
+			t.Errorf("leaf should verify against the current CA-B after re-sign")
+		}
+
+		// Reconciling again against the unchanged CA-B should be a no-op.
+		stableCert := append([]byte(nil), leaf.Data[corev1.TLSCertKey]...)
+		reconcileLeaf(t, leaf, caB, withTLSKey)
+		if !bytes.Equal(stableCert, leaf.Data[corev1.TLSCertKey]) {
+			t.Errorf("expected leaf cert to be unchanged when CA has not changed")
+		}
+	})
 }
 
 func TestCertChainingAttributesPresent(t *testing.T) {
