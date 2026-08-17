@@ -290,3 +290,54 @@ func EC2TagsToMap(tags []ec2types.Tag) map[string]string {
 	}
 	return m
 }
+
+// DiffPermissions returns the permissions from required that are not present in actual.
+func DiffPermissions(actual, required []ec2types.IpPermission) []ec2types.IpPermission {
+	var result []ec2types.IpPermission
+	for _, req := range required {
+		if !isPermissionPresent(req, actual) {
+			result = append(result, req)
+		}
+	}
+	return result
+}
+
+func isPermissionPresent(perm ec2types.IpPermission, list []ec2types.IpPermission) bool {
+	for _, existing := range list {
+		if aws.ToInt32(existing.FromPort) == aws.ToInt32(perm.FromPort) &&
+			aws.ToInt32(existing.ToPort) == aws.ToInt32(perm.ToPort) &&
+			aws.ToString(existing.IpProtocol) == aws.ToString(perm.IpProtocol) &&
+			equalIPRanges(existing.IpRanges, perm.IpRanges) &&
+			equalUserIdGroupPairs(existing.UserIdGroupPairs, perm.UserIdGroupPairs) {
+			return true
+		}
+	}
+	return false
+}
+
+func equalIPRanges(a, b []ec2types.IpRange) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if aws.ToString(a[i].Description) != aws.ToString(b[i].Description) ||
+			aws.ToString(a[i].CidrIp) != aws.ToString(b[i].CidrIp) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalUserIdGroupPairs(a, b []ec2types.UserIdGroupPair) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if aws.ToString(a[i].GroupId) != aws.ToString(b[i].GroupId) ||
+			aws.ToString(a[i].UserId) != aws.ToString(b[i].UserId) ||
+			aws.ToString(a[i].Description) != aws.ToString(b[i].Description) {
+			return false
+		}
+	}
+	return true
+}
