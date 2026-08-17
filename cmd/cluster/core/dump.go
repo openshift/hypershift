@@ -41,7 +41,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -167,13 +167,36 @@ func NewDumpCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("dump-guest-cluster", "dump-guest-cluster-through-kube-service")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := DumpCluster(cmd.Context(), opts); err != nil {
-			opts.Log.Error(err, "Error")
-			return err
-		}
-		return nil
+		return dumpClusterWithRetry(cmd.Context(), opts)
 	}
 	return cmd
+}
+
+// dumpClusterWithRetry retries DumpCluster on a fixed 5-second interval until
+// it succeeds or the context is canceled. Every error is treated as retryable —
+// the caller controls the deadline via the context.
+func dumpClusterWithRetry(ctx context.Context, opts *DumpOptions) error {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		// 1. Attempt the operation immediately on every iteration
+		err := DumpCluster(ctx, opts)
+		if err == nil {
+			return nil
+		}
+
+		opts.Log.Info("Retrying cluster dump after error", "error", err)
+
+		// 2. Wait for either context cancellation or the next tick before looping
+		select {
+		case <-ctx.Done():
+			opts.Log.Error(err, "Context canceled during cluster dump retries")
+			return err
+		case <-ticker.C:
+			// Loop repeats to try DumpCluster again
+		}
+	}
 }
 
 func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
@@ -905,7 +928,7 @@ func shouldDumpKubevirt(nodePools []*hyperv1.NodePool) ([]kubevirtExtCluster, bo
 func isResourceRegistered(discoveryClient discovery.DiscoveryInterface, gvk schema.GroupVersionKind) (bool, error) {
 	apiResourceLists, err := discoveryClient.ServerResourcesForGroupVersion(gvk.GroupVersion().String())
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
