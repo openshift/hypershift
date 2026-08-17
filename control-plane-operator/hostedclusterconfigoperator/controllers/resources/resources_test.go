@@ -13,9 +13,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
@@ -4387,6 +4389,121 @@ func TestReconcileConfigOperatorReconciliationCondition(t *testing.T) {
 			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
 			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
 			g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+		})
+	}
+}
+
+func TestReconcileAzureCloudNodeManager(t *testing.T) {
+	const testNamespace = "test-hcp-ns"
+	const testCloudConfig = `{"cloud":"","tenantId":"test-tenant","location":"centralus","useInstanceMetadata":true}`
+
+	tests := map[string]struct {
+		hcp             *hyperv1.HostedControlPlane
+		cpObjects       []client.Object
+		expectErrors    bool
+		verifyResources func(g Gomega, guestClient client.Client)
+	}{
+		"When cloud config exists on management cluster, it should create ConfigMap and DaemonSet with cloud-config mount": {
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "azure-cloud-config",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						azure.CloudConfigKey: testCloudConfig,
+					},
+				},
+			},
+			expectErrors: false,
+			verifyResources: func(g Gomega, guestClient client.Client) {
+				cloudConfig := ccm.CloudNodeManagerCloudConfig()
+				err := guestClient.Get(context.Background(), client.ObjectKeyFromObject(cloudConfig), cloudConfig)
+				g.Expect(err).ToNot(HaveOccurred(), "cloud config ConfigMap should exist in kube-system")
+				g.Expect(cloudConfig.Data[ccm.CloudNodeManagerCloudConfigKey]).To(Equal(testCloudConfig))
+
+				ds := ccm.CloudNodeManagerDaemonSet()
+				err = guestClient.Get(context.Background(), client.ObjectKeyFromObject(ds), ds)
+				g.Expect(err).ToNot(HaveOccurred(), "DaemonSet should exist in kube-system")
+
+				container := ds.Spec.Template.Spec.Containers[0]
+				g.Expect(container.Args[1]).To(ContainSubstring("--cloud-config=/etc/azure/cloud.conf"),
+					"cloud-node-manager should have --cloud-config flag")
+
+				var hasCloudConfigMount bool
+				for _, vm := range container.VolumeMounts {
+					if vm.Name == "cloud-config" && vm.MountPath == "/etc/azure" && vm.ReadOnly {
+						hasCloudConfigMount = true
+					}
+				}
+				g.Expect(hasCloudConfigMount).To(BeTrue(), "container should mount cloud-config volume at /etc/azure")
+
+				var hasCloudConfigVolume bool
+				for _, v := range ds.Spec.Template.Spec.Volumes {
+					if v.Name == "cloud-config" && v.ConfigMap != nil && v.ConfigMap.Name == ccm.CloudNodeManagerCloudConfigName {
+						hasCloudConfigVolume = true
+					}
+				}
+				g.Expect(hasCloudConfigVolume).To(BeTrue(), "pod should have cloud-config volume from ConfigMap")
+			},
+		},
+		"When cloud config is missing on management cluster, it should return errors": {
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			cpObjects:    []client.Object{},
+			expectErrors: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(test.cpObjects...).
+				Build()
+
+			guestClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			errs := r.reconcileAzureCloudNodeManager(t.Context(), test.hcp, "quay.io/openshift-release-dev/ocp-v4.0-art-dev:azure-cloud-node-manager")
+			if test.expectErrors {
+				g.Expect(errs).ToNot(BeEmpty(), "should return errors")
+			} else {
+				g.Expect(errs).To(BeEmpty(), "should not return errors")
+			}
+
+			if test.verifyResources != nil {
+				test.verifyResources(g, guestClient)
+			}
 		})
 	}
 }

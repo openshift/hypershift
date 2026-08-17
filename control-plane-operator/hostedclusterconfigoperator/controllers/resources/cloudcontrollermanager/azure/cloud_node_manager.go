@@ -8,6 +8,8 @@ import (
 )
 
 const CloudNodeManagerName = "azure-cloud-node-manager"
+const CloudNodeManagerCloudConfigName = "azure-cloud-node-manager-config"
+const CloudNodeManagerCloudConfigKey = "cloud.conf"
 
 var labels = map[string]string{
 	"k8s-app": CloudNodeManagerName,
@@ -45,6 +47,16 @@ func CloudNodeManagerDaemonSet() *appsv1.DaemonSet {
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      CloudNodeManagerName,
+			Namespace: "kube-system",
+			Labels:    labels,
+		},
+	}
+}
+
+func CloudNodeManagerCloudConfig() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      CloudNodeManagerCloudConfigName,
 			Namespace: "kube-system",
 			Labels:    labels,
 		},
