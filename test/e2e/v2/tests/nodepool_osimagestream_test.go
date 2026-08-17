@@ -81,7 +81,7 @@ func osImageStreamBeforeEach(testCtx **internal.TestContext) {
 	}
 }
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStream] NodePool OSImageStream Lifecycle", Label("lifecycle", "nodepool-osimagestream"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][FeatureGate:OSStreams][Feature:NodePoolOSImageStream] NodePool OSImageStream Lifecycle", Label("lifecycle", "nodepool-osimagestream"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
@@ -92,7 +92,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStrea
 })
 
 // TODO(jparrill): Remove "lifecycle" label after OSStreams FG graduates to Default (openshift/api#2950)
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStream] NodePool OSImageStream Status", Label("lifecycle", "nodepool-osimagestream"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][FeatureGate:OSStreams][Feature:NodePoolOSImageStream] NodePool OSImageStream Status", Label("lifecycle", "nodepool-osimagestream"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
