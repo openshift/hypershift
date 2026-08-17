@@ -91,6 +91,13 @@ func ValidateServiceProviderDefaultIngressServingCertificate(t testing.TB, ctx c
 		Name:      sourceSecretName,
 	}, sourceSecret)).To(Succeed(), "source secret should exist in HostedCluster namespace")
 
+	// Guard against a vacuous comparison: the source secret must actually carry
+	// certificate and key data before we assert the hosted cluster matches it.
+	g.Expect(sourceSecret.Data).To(HaveKey(corev1.TLSCertKey), "source secret should contain tls.crt")
+	g.Expect(sourceSecret.Data).To(HaveKey(corev1.TLSPrivateKeyKey), "source secret should contain tls.key")
+	g.Expect(sourceSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty(), "source secret tls.crt should not be empty")
+	g.Expect(sourceSecret.Data[corev1.TLSPrivateKeyKey]).NotTo(BeEmpty(), "source secret tls.key should not be empty")
+
 	t.Logf("Validating default-ingress-cert secret in hosted cluster matches the source")
 	EventuallyObject(t, ctx, "default-ingress-cert secret in hosted cluster to match the source secret",
 		func(ctx context.Context) (*corev1.Secret, error) {

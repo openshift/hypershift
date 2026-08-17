@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -172,6 +173,16 @@ func TestReconcileIngressDefaultCertSync(t *testing.T) {
 				now:    metav1.Now,
 			}
 
+			// Guard against a vacuous pass: when a case pre-seeds the condition and
+			// then expects it removed, confirm the fake client actually persisted it
+			// before reconciliation so the case proves removal.
+			if tt.expectCondition == "" && meta.FindStatusCondition(tt.hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced)) != nil {
+				seeded := &hyperv1.HostedCluster{}
+				g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(tt.hcluster), seeded)).To(Succeed())
+				g.Expect(meta.FindStatusCondition(seeded.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))).ToNot(BeNil(),
+					"pre-seeded condition should be persisted before reconciliation")
+			}
+
 			controlPlaneNamespace := "clusters-test-cluster"
 			err := r.reconcileIngressDefaultCertSync(ctx, tt.hcluster, upsert.New(false).CreateOrUpdate, controlPlaneNamespace)
 
@@ -183,10 +194,8 @@ func TestReconcileIngressDefaultCertSync(t *testing.T) {
 
 			if tt.expectSync {
 				dest := &corev1.Secret{}
-				err := fakeClient.Get(ctx, client.ObjectKey{
-					Namespace: controlPlaneNamespace,
-					Name:      "service-provider-default-ingress-serving-cert",
-				}, dest)
+				expected := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)
+				err := fakeClient.Get(ctx, client.ObjectKeyFromObject(expected), dest)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(dest.Type).To(Equal(corev1.SecretTypeTLS))
 				g.Expect(dest.Data[corev1.TLSCertKey]).To(Equal(tt.existingSecret.Data[corev1.TLSCertKey]))

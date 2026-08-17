@@ -42,6 +42,33 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// observedDefaultIngressCertCM is the ConfigMap in the control plane namespace
+// where the ManagedCA observer records the observed default ingress certificate CA.
+const observedDefaultIngressCertCM = "observed-default-ingress-cert"
+
+// canaryURL returns the health-check URL for the openshift-ingress canary route
+// on the given ingress domain.
+func canaryURL(ingressDomain string) string {
+	return fmt.Sprintf("https://canary-openshift-ingress-canary.%s/healthz", ingressDomain)
+}
+
+// newTLSClient builds an HTTP client that trusts only the provided CA bundle.
+func newTLSClient(caBundle []byte) (*http.Client, error) {
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(caBundle) {
+		return nil, fmt.Errorf("failed to parse CA bundle")
+	}
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:    certPool,
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+		Timeout: 30 * time.Second,
+	}, nil
+}
+
 func RegisterHostedClusterIngressTests(getTestCtx internal.TestContextGetter) {
 	ValidateIngressOperatorConfigurationTest(getTestCtx)
 	ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx)
@@ -106,11 +133,24 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			hcClient, err = tc.GetHostedClusterClient(hc)
 			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
-			ingressDomain = fmt.Sprintf("apps.%s.%s", hc.Name, hc.Spec.DNS.BaseDomain)
-			if hc.Spec.DNS.BaseDomainPrefix != nil && *hc.Spec.DNS.BaseDomainPrefix != "" {
-				ingressDomain = fmt.Sprintf("apps.%s.%s", *hc.Spec.DNS.BaseDomainPrefix, hc.Spec.DNS.BaseDomain)
-			} else if hc.Spec.DNS.BaseDomainPrefix != nil && *hc.Spec.DNS.BaseDomainPrefix == "" {
-				ingressDomain = fmt.Sprintf("apps.%s", hc.Spec.DNS.BaseDomain)
+			// Honor an explicitly configured ingress domain, matching the
+			// AppsDomain-over-Domain precedence used by globalconfig.IngressDomain,
+			// and fall back to apps.<base-domain> when neither is configured.
+			ingressDomain = ""
+			if hc.Spec.Configuration != nil && hc.Spec.Configuration.Ingress != nil {
+				if len(hc.Spec.Configuration.Ingress.AppsDomain) > 0 {
+					ingressDomain = hc.Spec.Configuration.Ingress.AppsDomain
+				} else if len(hc.Spec.Configuration.Ingress.Domain) > 0 {
+					ingressDomain = hc.Spec.Configuration.Ingress.Domain
+				}
+			}
+			if ingressDomain == "" {
+				ingressDomain = fmt.Sprintf("apps.%s.%s", hc.Name, hc.Spec.DNS.BaseDomain)
+				if hc.Spec.DNS.BaseDomainPrefix != nil && *hc.Spec.DNS.BaseDomainPrefix != "" {
+					ingressDomain = fmt.Sprintf("apps.%s.%s", *hc.Spec.DNS.BaseDomainPrefix, hc.Spec.DNS.BaseDomain)
+				} else if hc.Spec.DNS.BaseDomainPrefix != nil && *hc.Spec.DNS.BaseDomainPrefix == "" {
+					ingressDomain = fmt.Sprintf("apps.%s", hc.Spec.DNS.BaseDomain)
+				}
 			}
 
 			certPEM, keyPEM, err = e2eutil.GenerateCustomCertificate(
@@ -194,17 +234,17 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 
 		It("should propagate the custom cert data to the hosted cluster's default-ingress-cert secret", func() {
 			Eventually(func(g Gomega) {
-				guestSecret := &corev1.Secret{}
+				hostedClusterSecret := &corev1.Secret{}
 				ref := manifests.IngressDefaultIngressControllerCert()
 				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{
 					Namespace: ref.Namespace,
 					Name:      ref.Name,
-				}, guestSecret)).To(Succeed())
+				}, hostedClusterSecret)).To(Succeed())
 
-				g.Expect(guestSecret.Data[corev1.TLSCertKey]).To(Equal(certPEM),
-					"guest cluster cert should match the user-provided cert")
-				g.Expect(guestSecret.Data[corev1.TLSPrivateKeyKey]).To(Equal(keyPEM),
-					"guest cluster key should match the user-provided key")
+				g.Expect(hostedClusterSecret.Data[corev1.TLSCertKey]).To(Equal(certPEM),
+					"hosted cluster cert should match the user-provided cert")
+				g.Expect(hostedClusterSecret.Data[corev1.TLSPrivateKeyKey]).To(Equal(keyPEM),
+					"hosted cluster key should match the user-provided key")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
@@ -225,7 +265,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 				cm := &corev1.ConfigMap{}
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 					Namespace: tc.ControlPlaneNamespace,
-					Name:      "observed-default-ingress-cert",
+					Name:      observedDefaultIngressCertCM,
 				}, cm)).To(Succeed(), "observed-default-ingress-cert ConfigMap should exist in control plane namespace")
 
 				caData, ok := cm.Data["ca.crt"]
@@ -245,30 +285,20 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 				cm := &corev1.ConfigMap{}
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 					Namespace: tc.ControlPlaneNamespace,
-					Name:      "observed-default-ingress-cert",
+					Name:      observedDefaultIngressCertCM,
 				}, cm)).To(Succeed())
 				caData, ok := cm.Data["ca.crt"]
 				g.Expect(ok).To(BeTrue())
 				caBundle = []byte(caData)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
-			certPool := x509.NewCertPool()
-			Expect(certPool.AppendCertsFromPEM(caBundle)).To(BeTrue(), "failed to parse observed CA bundle")
+			httpClient, err := newTLSClient(caBundle)
+			Expect(err).NotTo(HaveOccurred(), "failed to parse observed CA bundle")
 
-			httpClient := &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						RootCAs:    certPool,
-						MinVersion: tls.VersionTLS12,
-					},
-				},
-				Timeout: 30 * time.Second,
-			}
-
-			By(fmt.Sprintf("Verifying TLS handshake against https://canary-openshift-ingress-canary.%s/healthz", ingressDomain))
-			canaryURL := fmt.Sprintf("https://canary-openshift-ingress-canary.%s/healthz", ingressDomain)
+			url := canaryURL(ingressDomain)
+			By("Verifying TLS handshake against " + url)
 			Eventually(func(g Gomega) {
-				req, err := http.NewRequestWithContext(tc.Context, http.MethodGet, canaryURL, nil)
+				req, err := http.NewRequestWithContext(tc.Context, http.MethodGet, url, nil)
 				g.Expect(err).NotTo(HaveOccurred())
 				resp, err := httpClient.Do(req)
 				g.Expect(err).NotTo(HaveOccurred(), "TLS handshake should succeed using the observed CA from the management cluster")
@@ -297,19 +327,19 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 				obj.Data[corev1.TLSPrivateKeyKey] = newKeyPEM
 			})).To(Succeed(), "failed to update cert secret for rotation")
 
-			By("Verifying the rotated cert appears in the guest cluster")
+			By("Verifying the rotated cert appears in the hosted cluster")
 			Eventually(func(g Gomega) {
-				guestSecret := &corev1.Secret{}
+				hostedClusterSecret := &corev1.Secret{}
 				ref := manifests.IngressDefaultIngressControllerCert()
 				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{
 					Namespace: ref.Namespace,
 					Name:      ref.Name,
-				}, guestSecret)).To(Succeed())
+				}, hostedClusterSecret)).To(Succeed())
 
-				g.Expect(bytes.Equal(guestSecret.Data[corev1.TLSCertKey], newCertPEM)).To(BeTrue(),
-					"guest cluster cert should match the rotated cert")
-				g.Expect(bytes.Equal(guestSecret.Data[corev1.TLSPrivateKeyKey], newKeyPEM)).To(BeTrue(),
-					"guest cluster key should match the rotated key")
+				g.Expect(bytes.Equal(hostedClusterSecret.Data[corev1.TLSCertKey], newCertPEM)).To(BeTrue(),
+					"hosted cluster cert should match the rotated cert")
+				g.Expect(bytes.Equal(hostedClusterSecret.Data[corev1.TLSPrivateKeyKey], newKeyPEM)).To(BeTrue(),
+					"hosted cluster key should match the rotated key")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
 			certPEM = newCertPEM
@@ -321,7 +351,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 				cm := &corev1.ConfigMap{}
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 					Namespace: tc.ControlPlaneNamespace,
-					Name:      "observed-default-ingress-cert",
+					Name:      observedDefaultIngressCertCM,
 				}, cm)).To(Succeed())
 				caData, ok := cm.Data["ca.crt"]
 				g.Expect(ok).To(BeTrue(), "observed-default-ingress-cert should have ca.crt key")
@@ -334,20 +364,11 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 
 			By("Verifying TLS handshake succeeds with the rotated CA from the management cluster")
-			certPool := x509.NewCertPool()
-			Expect(certPool.AppendCertsFromPEM(rotatedCABundle)).To(BeTrue())
-			httpClient := &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						RootCAs:    certPool,
-						MinVersion: tls.VersionTLS12,
-					},
-				},
-				Timeout: 30 * time.Second,
-			}
-			canaryURL := fmt.Sprintf("https://canary-openshift-ingress-canary.%s/healthz", ingressDomain)
+			httpClient, err := newTLSClient(rotatedCABundle)
+			Expect(err).NotTo(HaveOccurred(), "failed to parse rotated CA bundle")
+			url := canaryURL(ingressDomain)
 			Eventually(func(g Gomega) {
-				req, err := http.NewRequestWithContext(tc.Context, http.MethodGet, canaryURL, nil)
+				req, err := http.NewRequestWithContext(tc.Context, http.MethodGet, url, nil)
 				g.Expect(err).NotTo(HaveOccurred())
 				resp, err := httpClient.Do(req)
 				g.Expect(err).NotTo(HaveOccurred(), "TLS handshake should succeed with rotated CA from management cluster")
@@ -362,10 +383,10 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Capturing the certificate currently served in the hosted cluster")
 			var lastCert []byte
 			Eventually(func(g Gomega) {
-				guestSecret := &corev1.Secret{}
-				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, guestSecret)).To(Succeed())
-				g.Expect(guestSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty())
-				lastCert = append([]byte(nil), guestSecret.Data[corev1.TLSCertKey]...)
+				hostedClusterSecret := &corev1.Secret{}
+				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, hostedClusterSecret)).To(Succeed())
+				g.Expect(hostedClusterSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty())
+				lastCert = append([]byte(nil), hostedClusterSecret.Data[corev1.TLSCertKey]...)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Deleting the source secret while defaultCertificate is still set")
@@ -386,9 +407,9 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 
 			By("Verifying the previously synced certificate remains in place in the hosted cluster")
 			Consistently(func(g Gomega) {
-				guestSecret := &corev1.Secret{}
-				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, guestSecret)).To(Succeed())
-				g.Expect(bytes.Equal(guestSecret.Data[corev1.TLSCertKey], lastCert)).To(BeTrue(),
+				hostedClusterSecret := &corev1.Secret{}
+				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, hostedClusterSecret)).To(Succeed())
+				g.Expect(bytes.Equal(hostedClusterSecret.Data[corev1.TLSCertKey], lastCert)).To(BeTrue(),
 					"the last synced certificate should remain in place after the source secret is deleted")
 			}, 1*time.Minute, 10*time.Second).Should(Succeed())
 		})
@@ -399,10 +420,10 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Capturing the custom certificate currently served")
 			var customCert []byte
 			Eventually(func(g Gomega) {
-				guestSecret := &corev1.Secret{}
-				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, guestSecret)).To(Succeed())
-				g.Expect(guestSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty())
-				customCert = append([]byte(nil), guestSecret.Data[corev1.TLSCertKey]...)
+				hostedClusterSecret := &corev1.Secret{}
+				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, hostedClusterSecret)).To(Succeed())
+				g.Expect(hostedClusterSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty())
+				customCert = append([]byte(nil), hostedClusterSecret.Data[corev1.TLSCertKey]...)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Clearing defaultCertificate on the HostedCluster")
@@ -416,11 +437,11 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 
 			By("Verifying the hosted cluster reverts to the generated wildcard certificate")
 			Eventually(func(g Gomega) {
-				guestSecret := &corev1.Secret{}
-				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, guestSecret)).To(Succeed())
-				g.Expect(guestSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty(),
+				hostedClusterSecret := &corev1.Secret{}
+				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, hostedClusterSecret)).To(Succeed())
+				g.Expect(hostedClusterSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty(),
 					"a generated wildcard certificate should be present after clearing defaultCertificate")
-				g.Expect(bytes.Equal(guestSecret.Data[corev1.TLSCertKey], customCert)).To(BeFalse(),
+				g.Expect(bytes.Equal(hostedClusterSecret.Data[corev1.TLSCertKey], customCert)).To(BeFalse(),
 					"default-ingress-cert should no longer contain the custom certificate after clearing defaultCertificate")
 			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 
