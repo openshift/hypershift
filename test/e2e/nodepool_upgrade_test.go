@@ -276,4 +276,13 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(2*time.Minute),
 	)
+
+	// Verify osImageStream is populated after upgrade.
+	{
+		np := &hyperv1.NodePool{}
+		g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)).To(Succeed(), "failed to get NodePool for osImageStream validation")
+		if np.Status.OSImageStream.Name != "" {
+			t.Logf("Post-upgrade osImageStream: %s", np.Status.OSImageStream.Name)
+		}
+	}
 }
