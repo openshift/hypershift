@@ -29,6 +29,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,6 +45,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
+	e2eutil "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +53,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/transport"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -159,6 +164,14 @@ func run(ctx context.Context, cfg envConfig) error {
 		return fmt.Errorf("writing cluster manifest: %w", err)
 	}
 	log.Printf("Wrote cluster manifest to %s/%s", cfg.sharedDir, lifecycle.ManifestFileName)
+
+	// Start the KAS health monitor once for the whole run; newMgmtClient
+	// is called multiple times below and must not spawn duplicate monitors.
+	restConfigForHealth, err := ctrl.GetConfig()
+	if err != nil {
+		return fmt.Errorf("getting management cluster kubeconfig: %w", err)
+	}
+	e2eutil.StartKASHealthLogger(ctx, restConfigForHealth, nil)
 
 	// Phase 1: Some platforms need prerequisites deployed before clusters
 	// exist (e.g., OIDC providers that the HC spec references).
@@ -318,11 +331,80 @@ func createClustersParallel(ctx context.Context, cfg envConfig, specs []namedSpe
 	return results
 }
 
+// resolveProxyFunc preserves the proxy setting client-go's own transport
+// construction would have applied: the configured proxy, or
+// http.ProxyFromEnvironment if none is configured.
+func resolveProxyFunc(transportConfig *transport.Config) func(*http.Request) (*url.URL, error) {
+	if transportConfig.Proxy != nil {
+		return transportConfig.Proxy
+	}
+	return http.ProxyFromEnvironment
+}
+
+// NOTE: All requests through this client are retried on transient network
+// errors (connection refused, reset, timeout, EOF). Callers must ensure
+// write operations are idempotent.
 func newMgmtClient() (crclient.WithWatch, error) {
 	restConfig, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("getting management cluster kubeconfig: %w", err)
 	}
+
+	// Build TLS config from the rest config so we can create a custom
+	// transport with TCP keep-alive tuning and resilient retry logic.
+	transportConfig, err := restConfig.TransportConfig()
+	if err != nil {
+		return nil, fmt.Errorf("building transport config: %w", err)
+	}
+	tlsConfig, err := transport.TLSConfigFor(transportConfig)
+	if err != nil {
+		return nil, fmt.Errorf("building TLS config: %w", err)
+	}
+
+	// TCP keep-alive at 30s prevents Azure load balancer from dropping
+	// idle connections (default idle timeout is 4 minutes).
+	baseTransport := &http.Transport{
+		Proxy: resolveProxyFunc(transportConfig),
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSClientConfig:       tlsConfig,
+		DisableCompression:    transportConfig.DisableCompression,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	// Wrap with retry logic for transient network errors (connection
+	// refused, i/o timeout, connection reset, EOF).
+	resilientTransport := e2eutil.NewResilientTransport(baseTransport)
+
+	// Apply any auth wrappers from the rest config (bearer token, etc.)
+	// on top of our resilient transport.
+	wrappedTransport, err := transport.HTTPWrappersForConfig(transportConfig, resilientTransport)
+	if err != nil {
+		return nil, fmt.Errorf("wrapping transport with auth: %w", err)
+	}
+
+	// Clear TLS-related fields so controller-runtime does not create
+	// its own transport that bypasses our keep-alive and retry tuning.
+	restConfig.TLSClientConfig.CertFile = ""
+	restConfig.TLSClientConfig.KeyFile = ""
+	restConfig.TLSClientConfig.CertData = nil
+	restConfig.TLSClientConfig.KeyData = nil
+	restConfig.TLSClientConfig.CAFile = ""
+	restConfig.TLSClientConfig.CAData = nil
+	restConfig.TLSClientConfig.Insecure = false
+	restConfig.BearerToken = ""
+	restConfig.BearerTokenFile = ""
+	restConfig.ExecProvider = nil
+	restConfig.AuthProvider = nil
+	restConfig.Transport = wrappedTransport
+
+	log.Println("Management client configured with TCP keep-alive (30s) and resilient transport")
 	return crclient.NewWithWatch(restConfig, crclient.Options{Scheme: scheme})
 }
 
