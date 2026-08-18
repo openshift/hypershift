@@ -646,3 +646,50 @@ func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
 		})
 	}
 }
+
+func TestKubevirtNodePoolManagementDefaultingBothFieldsOmitted(t *testing.T) {
+	np := &v1beta1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cluster-under-test",
+			Namespace: "myns",
+		},
+		Spec: v1beta1.NodePoolSpec{
+			Release: v1beta1.Release{
+				Image: "example",
+			},
+			Platform: v1beta1.NodePoolPlatform{
+				Type: v1beta1.KubevirtPlatform,
+			},
+		},
+	}
+
+	d := nodePoolDefaulter{}
+	err := d.Default(t.Context(), np)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	if np.Spec.Management.UpgradeType != v1beta1.UpgradeTypeReplace {
+		t.Errorf("Expected upgrade type %s, but got %s", v1beta1.UpgradeTypeReplace, np.Spec.Management.UpgradeType)
+	}
+
+	if np.Spec.Management.Replace == nil {
+		t.Error("Expected Replace config to be set, but got nil")
+	}
+
+	if np.Spec.Management.Replace.Strategy != v1beta1.UpgradeStrategyRollingUpdate {
+		t.Errorf("Expected strategy %s, but got %s", v1beta1.UpgradeStrategyRollingUpdate, np.Spec.Management.Replace.Strategy)
+	}
+
+	if np.Spec.Management.Replace.RollingUpdate == nil {
+		t.Error("Expected RollingUpdate config to be set, but got nil")
+	}
+
+	if np.Spec.Management.Replace.RollingUpdate.MaxSurge.IntValue() != 1 {
+		t.Errorf("Expected MaxSurge 1, but got %d", np.Spec.Management.Replace.RollingUpdate.MaxSurge.IntValue())
+	}
+
+	if np.Spec.Management.Replace.RollingUpdate.MaxUnavailable.IntValue() != 0 {
+		t.Errorf("Expected MaxUnavailable 0, but got %d", np.Spec.Management.Replace.RollingUpdate.MaxUnavailable.IntValue())
+	}
+}
