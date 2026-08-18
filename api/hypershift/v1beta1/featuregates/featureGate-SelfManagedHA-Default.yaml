@@ -35,9 +35,6 @@
                     },
                     {
                         "name": "EtcdSharding"
-                    },
-                    {
-                        "name": "OSStreams"
                     }
                 ],
                 "enabled": [
@@ -57,6 +54,9 @@
                     },
                     {
                         "name": "NetworkDiagnosticsConfig"
+                    },
+                    {
+                        "name": "OSStreams"
                     }
                 ],
                 "version": ""
