@@ -84,6 +84,11 @@ func TestNodePool(t *testing.T) {
 					},
 
 					{
+						name: "TestNodePoolMajorVersionUpgrade",
+						test: NewNodePoolMajorVersionUpgradeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+					},
+
+					{
 						name: "KubeVirtCacheTest",
 						test: NewKubeVirtCacheTest(ctx, mgtClient, hostedCluster),
 					},
