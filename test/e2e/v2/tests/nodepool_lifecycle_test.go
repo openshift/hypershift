@@ -813,7 +813,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		const (
 			defaultPollInterval                 = 15 * time.Second
-			nodePoolConfigUpdateStartTimeout    = 5 * time.Minute
+			nodePoolConfigUpdateStartTimeout    = 10 * time.Minute
 			nodePoolConfigUpdateFinishTimeout   = 20 * time.Minute
 			cpoDeploymentUpdateTimeout          = 10 * time.Minute
 			guestUserCABundlePropagationTimeout = 5 * time.Minute

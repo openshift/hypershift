@@ -17,10 +17,12 @@ func GetConfig() (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Increased QPS and Burst to handle multiple parallel tests and polling operations
-	// Previous values (QPS=100, Burst=100) were insufficient for concurrent NodePool polling
-	cfg.QPS = 200
-	cfg.Burst = 300
+	// Disable client-side rate limiting (QPS=-1) for e2e tests. The API server's
+	// Priority and Fairness provides server-side flow control. Client-side rate
+	// limiting produced misleading "client rate limiter Wait returned an error"
+	// messages when test contexts expired.
+	cfg.QPS = -1
+	cfg.Burst = -1
 	cfg.Timeout = 5 * time.Minute
 	return cfg, nil
 }

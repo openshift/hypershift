@@ -109,8 +109,9 @@ func (tc *TestContext) GetHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*r
 	if err != nil {
 		return nil, fmt.Errorf("failed to create REST config from kubeconfig: %w", err)
 	}
-	restConfig.QPS = 200
-	restConfig.Burst = 300
+	// Disable client-side rate limiting for e2e tests. See test/e2e/util/client.go.
+	restConfig.QPS = -1
+	restConfig.Burst = -1
 
 	return restConfig, nil
 }

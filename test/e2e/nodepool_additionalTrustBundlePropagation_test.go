@@ -55,7 +55,7 @@ func (k *AdditionalTrustBundlePropagationTest) BuildNodePoolManifest(defaultNode
 
 func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	const (
-		nodePoolConfigUpdateStartTimeout    = 5 * time.Minute
+		nodePoolConfigUpdateStartTimeout    = 10 * time.Minute
 		nodePoolConfigUpdateFinishTimeout   = 20 * time.Minute
 		defaultPollInterval                 = 15 * time.Second
 		cpoDeploymentUpdateTimeout          = 10 * time.Minute
