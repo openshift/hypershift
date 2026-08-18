@@ -100,6 +100,19 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, np *hyperv1.Nod
 		np.Spec.Release.Image = hc.Spec.Release.Image
 	}
 
+	// Default Replace management if upgradeType is Replace and replace field is nil
+	if np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace && np.Spec.Management.Replace == nil {
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(0)
+		np.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+			Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+			RollingUpdate: &hyperv1.RollingUpdate{
+				MaxSurge:       &maxSurge,
+				MaxUnavailable: &maxUnavailable,
+			},
+		}
+	}
+
 	// Default platform specific values
 	switch np.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
@@ -110,15 +123,6 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, np *hyperv1.Nod
 		}
 		if np.Spec.Management.UpgradeType == "" {
 			np.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
-			maxSurge := intstr.FromInt(1)
-			maxUnavailable := intstr.FromInt(0)
-			np.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
-				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
-				RollingUpdate: &hyperv1.RollingUpdate{
-					MaxSurge:       &maxSurge,
-					MaxUnavailable: &maxUnavailable,
-				},
-			}
 		}
 	}
 
