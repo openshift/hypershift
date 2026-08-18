@@ -695,6 +695,84 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 	}
 }
 
+func TestValidateNestedVirtualizationInstanceType(t *testing.T) {
+	testCases := []struct {
+		name          string
+		cpuOptions    hyperv1.CPUOptions
+		instanceType  string
+		expectedError string
+	}{
+		{
+			name:         "nestedVirtualizationPolicy unset, any instance type is valid",
+			cpuOptions:   hyperv1.CPUOptions{},
+			instanceType: "m5.large",
+		},
+		{
+			name:         "enabled on supported c8i family",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "c8i.2xlarge",
+		},
+		{
+			name:         "enabled on supported c8i-flex variant",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "c8i-flex.2xlarge",
+		},
+		{
+			name:         "enabled on supported m8i family",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "m8i.4xlarge",
+		},
+		{
+			name:         "enabled on supported r8i-flex variant",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "r8i-flex.xlarge",
+		},
+		{
+			name:         "disabled on unsupported family is still valid (explicit disable is a no-op everywhere)",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationDisabled},
+			instanceType: "m5.large",
+		},
+		{
+			name:          "enabled on unsupported m5 family",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "m5.large",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+		{
+			name:          "enabled on unsupported c7i family (previous generation)",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "c7i.2xlarge",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+		{
+			name:          "enabled on unsupported AMD c8a family",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "c8a.2xlarge",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateNestedVirtualizationInstanceType(tc.cpuOptions, tc.instanceType)
+			if tc.expectedError == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nothing")
+			}
+
+			if !strings.Contains(err.Error(), tc.expectedError) {
+				t.Fatalf("expected error to contain %s, got %v", tc.expectedError, err)
+			}
+		})
+	}
+}
+
 func TestGetWindowsAMI(t *testing.T) {
 	testCases := []struct {
 		name          string
