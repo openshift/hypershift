@@ -130,10 +130,20 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hc
 				log.Info("Skipping link-local address for EndpointSlice", "address", machineAddress.Address, "machine", machine.Name)
 				continue
 			}
+			// Use only the first address per family. CAPK PR #366 exposes all VMI
+			// interface IPs (for dual-stack CSR approval), including ovn-k8s-mp0
+			// management port IPs that are not routable from the management cluster.
+			// This assumes CAPK reports the pod-network IP first; if CAPK changes
+			// address ordering, this logic must be revisited.
+			// See: OCPBUGS-95615, kubernetes-sigs/cluster-api-provider-kubevirt#366
 			if parsedAddr.Is4() {
-				ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)
+				if len(ipv4MachineAddresses) == 0 {
+					ipv4MachineAddresses = append(ipv4MachineAddresses, machineAddress.Address)
+				}
 			} else {
-				ipv6MachineAddresses = append(ipv6MachineAddresses, machineAddress.Address)
+				if len(ipv6MachineAddresses) == 0 {
+					ipv6MachineAddresses = append(ipv6MachineAddresses, machineAddress.Address)
+				}
 			}
 		}
 	}
