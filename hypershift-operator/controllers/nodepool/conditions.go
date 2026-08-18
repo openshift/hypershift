@@ -1037,7 +1037,7 @@ func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, no
 // references a NAD in the namespace where virt-launcher pods will run, or in "default".
 // With Multus namespace isolation enabled (OpenShift default), pods cannot reference NADs
 // in other namespaces.
-func (r *NodePoolReconciler) validateKubevirtAdditionalNetworkNamespaces(nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) error {
+func (r NodePoolReconciler) validateKubevirtAdditionalNetworkNamespaces(nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) error {
 	kvPlatform := nodePool.Spec.Platform.Kubevirt
 	if kvPlatform == nil || len(kvPlatform.AdditionalNetworks) == 0 {
 		return nil
@@ -1052,13 +1052,13 @@ func (r *NodePoolReconciler) validateKubevirtAdditionalNetworkNamespaces(nodePoo
 
 	for _, network := range kvPlatform.AdditionalNetworks {
 		parts := strings.SplitN(network.Name, "/", 2)
+		// Bare names (no "/") are skipped because Multus resolves them in the pod's
+		// own namespace, which is already the virt-launcher namespace.
 		if len(parts) != 2 {
 			continue
 		}
 		nadNamespace := parts[0]
-		// "default" is always in Multus globalNamespaces on OCP. Other global namespaces
-		// (openshift-multus, openshift-sriov-network-operator) are also exempt from isolation
-		// but are operator-internal — user NADs should not be placed there.
+		// "default" is always in Multus globalNamespaces on OCP.
 		if nadNamespace != infraNS && nadNamespace != "default" {
 			return fmt.Errorf(
 				"additionalNetwork %q references namespace %q, but virt-launcher pods run in namespace %q; "+
