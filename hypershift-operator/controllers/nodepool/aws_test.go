@@ -173,7 +173,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name:          "When no sg is specified and no cluster sg is available, it should return NotReady error",
+			name:          "When no sg is specified and no cluster sg is available, it should return a NotReady error",
 			clusterStatus: &hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: ""}}},
 			checkError: func(t *testing.T, err error) {
 				var notReadyErr *NotReadyError

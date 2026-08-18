@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -81,7 +82,7 @@ func osImageStreamBeforeEach(testCtx **internal.TestContext) {
 	}
 }
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][FeatureGate:OSStreams][Feature:NodePoolOSImageStream] NodePool OSImageStream Lifecycle", Label("lifecycle", "nodepool-osimagestream"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:OSStreams] NodePool OSImageStream Lifecycle", Label("lifecycle", "nodepool-osimagestream"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
@@ -91,8 +92,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][FeatureGate:OSStreams][Featu
 	RegisterNodePoolOSImageStreamLifecycleTests(func() *internal.TestContext { return testCtx })
 })
 
-// TODO(jparrill): Remove "lifecycle" label after OSStreams FG graduates to Default (openshift/api#2950)
-var _ = Describe("[sig-hypershift][Jira:Hypershift][FeatureGate:OSStreams][Feature:NodePoolOSImageStream] NodePool OSImageStream Status", Label("lifecycle", "nodepool-osimagestream"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:OSStreams] NodePool OSImageStream Status", Label("lifecycle", "nodepool-osimagestream"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
@@ -620,9 +620,8 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 
 // NodePoolOSImageStreamUpgradeVerificationTest creates a NodePool at a previous
 // release image, upgrades it to the latest, and verifies that status.osImageStream
-// reports the correct version-derived stream after upgrade completes.
-// TODO(CNTRLPLANE-3871): After OSStreams FG graduation (openshift/api#2950),
-// move this verification back into the standard upgrade tests in nodepool_lifecycle_test.go.
+// reports the version-derived stream after upgrade. The RHEL version follows the
+// release version: upgrading to OCP 5.0+ results in rhel-10.
 func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContextGetter) {
 	It("When a NodePool is upgraded, it should report the correct osImageStream in status", func() {
 		testCtx := getTestCtx()
@@ -690,12 +689,17 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// Verify osImageStream status after upgrade.
-		// An upgraded NodePool preserves its existing stream — the controller
-		// uses status.osImageStream (set from the pre-upgrade nodes) rather
-		// than the version-derived default. Since the NP was created at a
-		// pre-5.0 release, nodes booted with rhel-9 and the stream stays rhel-9
-		// even after upgrading to 5.0.
+		// The RHEL version is dictated by the release version. After upgrading
+		// to OCP 5.0+, nodes get rhel-10 boot images and the stream updates
+		// accordingly. Only an explicit spec.osImageStream pin overrides this.
+		upgradedNP := &hyperv1.NodePool{}
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), upgradedNP)).To(Succeed())
+		upgradedVersion, err := semver.ParseTolerant(upgradedNP.Status.Version)
+		Expect(err).NotTo(HaveOccurred(), "failed to parse upgraded NodePool version %q", upgradedNP.Status.Version)
 		expectedStream := hyperv1.OSImageStreamRHEL9
+		if upgradedVersion.Major >= 5 {
+			expectedStream = hyperv1.OSImageStreamRHEL10
+		}
 
 		e2eutil.EventuallyObject[*hyperv1.NodePool](
 			GinkgoTB(), ctx,
