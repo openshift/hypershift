@@ -21,7 +21,7 @@ jobs:
     with:
       command-name: restructure-commits
       status-message: "Restructuring commits"
-      trusted-commands: "commands/restructure-commits.md skills/git-commit-format/SKILL.md"
+      trusted-commands: "skills/restructure-commits/SKILL.md skills/git-commit-format/SKILL.md"
       claude-prompt: >-
         Follow the "Restructure Commits by Component" instructions from the system prompt.
         You are running in CI. Do NOT push — the workflow handles pushing.
