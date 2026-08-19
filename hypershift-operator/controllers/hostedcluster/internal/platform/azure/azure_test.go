@@ -881,7 +881,7 @@ func TestValidateWorkloadIdentityConfig(t *testing.T) {
 		expectContains string
 	}{
 		{
-			name: "non-Azure platform returns nil",
+			name: "When platform is not Azure, it should return nil",
 			hcluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -892,7 +892,7 @@ func TestValidateWorkloadIdentityConfig(t *testing.T) {
 			expectNil: true,
 		},
 		{
-			name: "Azure with ManagedIdentities auth returns nil",
+			name: "When Azure uses ManagedIdentities auth, it should return nil",
 			hcluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -908,7 +908,7 @@ func TestValidateWorkloadIdentityConfig(t *testing.T) {
 			expectNil: true,
 		},
 		{
-			name: "WorkloadIdentities auth with nil WorkloadIdentities returns not configured",
+			name: "When WorkloadIdentities auth has nil WorkloadIdentities, it should return not configured",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Generation: 3},
 				Spec: hyperv1.HostedClusterSpec{
@@ -928,7 +928,7 @@ func TestValidateWorkloadIdentityConfig(t *testing.T) {
 			expectContains: "not configured",
 		},
 		{
-			name: "WorkloadIdentities with missing clientIDs returns incomplete",
+			name: "When WorkloadIdentities has missing clientIDs, it should return incomplete",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Generation: 5},
 				Spec: hyperv1.HostedClusterSpec{
@@ -1022,7 +1022,7 @@ func TestValidateWorkloadIdentityConfig(t *testing.T) {
 			expectContains: "All required",
 		},
 		{
-			name: "WorkloadIdentities with all clientIDs returns valid",
+			name: "When WorkloadIdentities has all clientIDs, it should return valid",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Generation: 7},
 				Spec: hyperv1.HostedClusterSpec{
@@ -1068,3 +1068,6 @@ func TestValidateWorkloadIdentityConfig(t *testing.T) {
 			g.Expect(condition.Reason).To(Equal(tc.expectReason))
 			g.Expect(condition.Message).To(ContainSubstring(tc.expectContains))
 			g.Expect(condition.ObservedGeneration).To(Equal(tc.hcluster.Generation))
+		})
+	}
+}
