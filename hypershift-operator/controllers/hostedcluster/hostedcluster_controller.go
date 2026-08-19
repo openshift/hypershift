@@ -1811,6 +1811,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
+	if err := validateManagedHSMVersion(hcluster, releaseImageVersion); err != nil {
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidHostedClusterConfiguration),
+			ObservedGeneration: hcluster.Generation,
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.InvalidConfigurationReason,
+			Message:            err.Error(),
+		})
+		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+			return ctrl.Result{}, fmt.Errorf("%w; failed to update status: %v", err, statusErr)
+		}
+		return ctrl.Result{}, err
+	}
 
 	// Reconcile the HostedControlPlane
 	isAutoscalingNeeded, err := r.isAutoscalingNeeded(ctx, hcluster)
@@ -3996,6 +4009,27 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 		)
 	}
 
+	return nil
+}
+
+var minManagedHSMVersion = semver.MustParse("4.22.0")
+
+func validateManagedHSMVersion(hc *hyperv1.HostedCluster, releaseVersion semver.Version) error {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+	if hc.Spec.SecretEncryption == nil ||
+		hc.Spec.SecretEncryption.KMS == nil ||
+		hc.Spec.SecretEncryption.KMS.Azure == nil {
+		return nil
+	}
+	if hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		return nil
+	}
+	releaseVersion.Pre = nil
+	if releaseVersion.LT(minManagedHSMVersion) {
+		return fmt.Errorf("release image version %s does not support Azure Managed HSM, which requires version %s or newer", releaseVersion, minManagedHSMVersion)
+	}
 	return nil
 }
 
