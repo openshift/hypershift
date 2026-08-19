@@ -31,12 +31,12 @@ import (
 // Azure SDK has a 24-character limit for ApplicationID, and spaces are replaced with "/".
 const CPOUserAgent = "hypershift-cpo"
 
-// AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault
-// This information comes from the encryption key ID, which is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+// AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault or Managed HSM.
 type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+	KeyVaultType hyperv1.AzureKMSKeyVaultType
 }
 
 // NewARMClientOptions creates Azure ARM client options with proper cloud configuration
@@ -56,7 +56,8 @@ func NewARMClientOptions(cloudConfig cloud.Configuration) *arm.ClientOptions {
 
 // GetAzureCloudConfiguration converts a cloud name string to the Azure SDK cloud.Configuration.
 // This function maps the cloud names used in the HyperShift API to the corresponding Azure SDK cloud configurations.
-// Valid cloud names are: AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud, and empty string (defaults to AzurePublicCloud).
+// Valid cloud names are AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud,
+// AzureGermanCloud, AzureBleuCloud, and empty string (defaults to AzurePublicCloud).
 // Returns an error if the cloud name is not recognized.
 func GetAzureCloudConfiguration(cloudName string) (cloud.Configuration, error) {
 	switch cloudName {
@@ -66,6 +67,26 @@ func GetAzureCloudConfiguration(cloudName string) (cloud.Configuration, error) {
 		return cloud.AzureGovernment, nil
 	case "AzureChinaCloud":
 		return cloud.AzureChina, nil
+	case "AzureGermanCloud":
+		return cloud.Configuration{
+			ActiveDirectoryAuthorityHost: "https://login.microsoftonline.de/",
+			Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+				cloud.ResourceManager: {
+					Audience: "https://management.core.cloudapi.de/",
+					Endpoint: "https://management.microsoftazure.de",
+				},
+			},
+		}, nil
+	case "AzureBleuCloud":
+		return cloud.Configuration{
+			ActiveDirectoryAuthorityHost: "https://login.sovcloud-identity.fr/",
+			Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+				cloud.ResourceManager: {
+					Audience: "https://management.sovcloud-api.fr/",
+					Endpoint: "https://management.sovcloud-api.fr",
+				},
+			},
+		}, nil
 	default:
 		return cloud.Configuration{}, fmt.Errorf("unknown Azure cloud: %s", cloudName)
 	}
@@ -389,19 +410,60 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 // GetKeyVaultDNSSuffixFromCloudType simply mimics the functionality in environments.go from the Azure SDK, github.com/Azure/go-autorest.
 // This function is used to get the DNS suffix for the Key Vault based on the cloud type.
 func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
-	cloud = strings.ToUpper(cloud)
+	return GetKeyVaultDNSSuffix(cloud, hyperv1.AzureKMSKeyVaultTypeKeyVault)
+}
 
-	switch cloud {
+// GetKeyVaultDNSSuffix returns the cloud-specific DNS suffix for Azure Key Vault or Managed HSM.
+// An empty keyVaultType is treated as KeyVault for compatibility with existing API objects.
+// Supporting another cloud requires adding its suffix here, allowing it in GetAzureEncryptionKeyInfo,
+// and updating the HCPEtcdBackup encryptionKeyURL API validation.
+func GetKeyVaultDNSSuffix(cloud string, keyVaultType hyperv1.AzureKMSKeyVaultType) (string, error) {
+	normalizedCloud := strings.ToUpper(cloud)
+	managedHSM := false
+	switch keyVaultType {
+	case "", hyperv1.AzureKMSKeyVaultTypeKeyVault:
+	case hyperv1.AzureKMSKeyVaultTypeManagedHSM:
+		managedHSM = true
+	default:
+		return "", fmt.Errorf("unknown Azure KMS key vault type %q", keyVaultType)
+	}
+
+	switch normalizedCloud {
 	case "AZURECHINACLOUD":
-		return "vault.azure.cn", nil
+		if managedHSM {
+			return azureChinaManagedHSMDNSSuffix, nil
+		}
+		return azureChinaKeyVaultDNSSuffix, nil
 	case "AZURECLOUD":
-		return "vault.azure.net", nil
+		if managedHSM {
+			return azurePublicManagedHSMDNSSuffix, nil
+		}
+		return azurePublicKeyVaultDNSSuffix, nil
 	case "AZUREPUBLICCLOUD":
-		return "vault.azure.net", nil
+		if managedHSM {
+			return azurePublicManagedHSMDNSSuffix, nil
+		}
+		return azurePublicKeyVaultDNSSuffix, nil
 	case "AZUREUSGOVERNMENT":
-		return "vault.usgovcloudapi.net", nil
+		if managedHSM {
+			return azureGovernmentManagedHSMDNSSuffix, nil
+		}
+		return azureGovernmentKeyVaultDNSSuffix, nil
 	case "AZUREUSGOVERNMENTCLOUD":
-		return "vault.usgovcloudapi.net", nil
+		if managedHSM {
+			return azureGovernmentManagedHSMDNSSuffix, nil
+		}
+		return azureGovernmentKeyVaultDNSSuffix, nil
+	case "AZUREGERMANCLOUD":
+		if managedHSM {
+			return azureGermanManagedHSMDNSSuffix, nil
+		}
+		return azureGermanKeyVaultDNSSuffix, nil
+	case "AZUREBLEUCLOUD":
+		if managedHSM {
+			return azureBleuManagedHSMDNSSuffix, nil
+		}
+		return azureBleuKeyVaultDNSSuffix, nil
 	default:
 		return "", fmt.Errorf("unknown cloud type %q", cloud)
 	}
@@ -416,16 +478,16 @@ func GetKeyVaultFQDN(hcp *hyperv1.HostedControlPlane) (string, error) {
 		return "", fmt.Errorf("azure KMS is not configured")
 	}
 
-	vaultName := hcp.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName
-	suffix, err := GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
+	azureKMS := hcp.Spec.SecretEncryption.KMS.Azure
+	activeKey := azureKMS.ActiveKey
+	suffix, err := GetKeyVaultDNSSuffix(hcp.Spec.Platform.Azure.Cloud, azureKMS.KeyVaultType)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to resolve Azure KMS DNS suffix: %w", err)
 	}
-	return fmt.Sprintf("%s.%s", vaultName, suffix), nil
+	return fmt.Sprintf("%s.%s", activeKey.KeyVaultName, suffix), nil
 }
 
-// GetAzureEncryptionKeyInfo extracts the key vault name, key name, and key version from an encryption key ID
-// The encryption key ID is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+// GetAzureEncryptionKeyInfo extracts the vault name, key name, key version, and vault type from an encryption key ID.
 func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, error) {
 	parsed, err := url.Parse(encryptionKeyID)
 	if err != nil {
@@ -433,7 +495,7 @@ func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, err
 	}
 
 	// Ensure the host is present
-	host := parsed.Hostname()
+	host := strings.ToLower(parsed.Hostname())
 	if host == "" {
 		return nil, fmt.Errorf("invalid encryption key identifier %q: missing host", encryptionKeyID)
 
@@ -450,16 +512,26 @@ func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, err
 		return nil, fmt.Errorf("invalid encryption key identifier %q: expected /keys/<keyName>/<keyVersion>", encryptionKeyID)
 	}
 
-	// Ensure the vault name is present
-	vaultName := strings.Split(host, ".")[0]
-	if vaultName == "" {
-		return nil, fmt.Errorf("invalid encryption key identifier %q: could not derive vault name from host %q", encryptionKeyID, host)
+	vaultName, suffix, found := strings.Cut(host, ".")
+	if !found || vaultName == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: could not derive vault name and service suffix from host %q", encryptionKeyID, host)
+	}
+
+	var keyVaultType hyperv1.AzureKMSKeyVaultType
+	switch suffix {
+	case azurePublicKeyVaultDNSSuffix, azureGovernmentKeyVaultDNSSuffix, azureChinaKeyVaultDNSSuffix, azureGermanKeyVaultDNSSuffix, azureBleuKeyVaultDNSSuffix:
+		keyVaultType = hyperv1.AzureKMSKeyVaultTypeKeyVault
+	case azurePublicManagedHSMDNSSuffix, azureGovernmentManagedHSMDNSSuffix, azureChinaManagedHSMDNSSuffix, azureGermanManagedHSMDNSSuffix, azureBleuManagedHSMDNSSuffix:
+		keyVaultType = hyperv1.AzureKMSKeyVaultTypeManagedHSM
+	default:
+		return nil, fmt.Errorf("invalid encryption key identifier %q: unsupported Azure Key Vault host %q", encryptionKeyID, host)
 	}
 
 	return &AzureEncryptionKey{
 		KeyVaultName: vaultName,
 		KeyName:      parts[0],
 		KeyVersion:   parts[1],
+		KeyVaultType: keyVaultType,
 	}, nil
 }
 
