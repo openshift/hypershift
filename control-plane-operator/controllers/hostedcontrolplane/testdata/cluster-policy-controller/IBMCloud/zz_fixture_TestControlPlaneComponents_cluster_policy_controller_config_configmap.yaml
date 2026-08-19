@@ -169,6 +169,8 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: cd89943312e8b28a639d904cb4aa52423bf4307e20b16c0ebbc68602e7f77f19
   creationTimestamp: null
   name: cluster-policy-controller-config
   namespace: hcp-namespace

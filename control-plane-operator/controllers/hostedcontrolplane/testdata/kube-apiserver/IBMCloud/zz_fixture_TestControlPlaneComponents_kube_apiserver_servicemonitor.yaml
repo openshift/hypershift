@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 0f18446737dbc07078183fffbbcdacbf6568aa94639aa48ba7b2b11f5dc63c35
   creationTimestamp: null
   name: kube-apiserver
   namespace: hcp-namespace

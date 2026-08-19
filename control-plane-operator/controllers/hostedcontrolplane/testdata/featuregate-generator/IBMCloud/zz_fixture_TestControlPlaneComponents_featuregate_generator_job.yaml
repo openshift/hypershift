@@ -1,6 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 13687e3fbcc774dd4ca62a8954e6bc71da41278410228102ef65db3f1bbd280b
   creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
