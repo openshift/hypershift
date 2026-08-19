@@ -118,6 +118,6 @@ func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, ro
 	return reconcileAggregateCA(cm, ownerRef, sources...)
 }
 
-func ReconcileKonnectivityConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, konnectivityCA *corev1.Secret) error {
-	return reconcileAggregateCA(cm, ownerRef, konnectivityCA)
+func ReconcileKonnectivityConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signers ...*corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, signers...)
 }
