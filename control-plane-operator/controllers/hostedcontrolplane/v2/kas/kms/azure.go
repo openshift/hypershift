@@ -38,8 +38,22 @@ const (
 )
 
 // AzureKMSProviderName computes the EncryptionConfiguration KMS provider name for an Azure KMS key.
-func AzureKMSProviderName(key hyperv1.AzureKMSKey) (string, error) {
-	h, err := util.HashStruct(key)
+func AzureKMSProviderName(key hyperv1.AzureKMSKey, keyVaultType hyperv1.AzureKMSKeyVaultType) (string, error) {
+	type keyIdentity struct {
+		KeyVaultName string                       `json:"keyVaultName,omitempty"`
+		KeyName      string                       `json:"keyName,omitempty"`
+		KeyVersion   string                       `json:"keyVersion,omitempty"`
+		KeyVaultType hyperv1.AzureKMSKeyVaultType `json:"keyVaultType,omitempty"`
+	}
+	id := keyIdentity{
+		KeyVaultName: key.KeyVaultName,
+		KeyName:      key.KeyName,
+		KeyVersion:   key.KeyVersion,
+	}
+	if keyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		id.KeyVaultType = keyVaultType
+	}
+	h, err := util.HashStruct(id)
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +127,7 @@ func NewAzureKMSProvider(writeKey hyperv1.AzureKMSKey, readKey *hyperv1.AzureKMS
 func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.EncryptionConfiguration, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 
-	writeKeyName, err := AzureKMSProviderName(p.writeKey)
+	writeKeyName, err := AzureKMSProviderName(p.writeKey, p.kmsSpec.KeyVaultType)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +140,7 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.E
 		},
 	})
 	if p.readKey != nil {
-		readKeyName, err := AzureKMSProviderName(*p.readKey)
+		readKeyName, err := AzureKMSProviderName(*p.readKey, p.kmsSpec.KeyVaultType)
 		if err != nil {
 			return nil, err
 		}
@@ -223,6 +237,9 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 			"--healthz-path=/healthz",
 			fmt.Sprintf("--config-file-path=%s/%s", azureKMSVolumeMounts.Path(c.Name, kasVolumeAzureKMSCredentials().Name), azureKMSCredsFileKey),
 			"-v=1",
+		}
+		if p.kmsSpec.KeyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+			c.Args = append(c.Args, "--managed-hsm")
 		}
 		c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
 
