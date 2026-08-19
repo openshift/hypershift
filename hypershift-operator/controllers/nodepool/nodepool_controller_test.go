@@ -188,7 +188,7 @@ func TestValidateManagement(t *testing.T) {
 		error    bool
 	}{
 		{
-			name: "it fails with bad upgradeType",
+			name: "When upgradeType is invalid, it should return an error",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -204,7 +204,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it fails with Replace type and no Replace settings",
+			name: "When upgrade type is Replace with no replace configuration, it should return an error",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -216,7 +216,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it fails with Replace type and bad strategy",
+			name: "When upgrade type is Replace with invalid strategy, it should return an error",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -235,7 +235,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it fails with Replace type, RollingUpdate strategy and no rollingUpdate settings",
+			name: "When upgrade type is Replace with RollingUpdate strategy and no rolling update settings, it should return an error",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -251,7 +251,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it passes with Replace type, RollingUpdate strategy and RollingUpdate settings",
+			name: "When upgrade type is Replace with RollingUpdate strategy and rolling update settings, it should succeed",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -270,7 +270,7 @@ func TestValidateManagement(t *testing.T) {
 			error: false,
 		},
 		{
-			name: "it passes with Replace type and OnDelete strategy",
+			name: "When upgrade type is Replace with OnDelete strategy, it should succeed",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
