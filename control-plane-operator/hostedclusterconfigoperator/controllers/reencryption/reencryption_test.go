@@ -481,8 +481,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateReadOnlyDeploy,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -523,8 +523,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateReadOnlyDeploy,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -562,8 +562,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateReadOnlyDeploy,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -600,8 +600,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateWritePromote,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -641,8 +641,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateMigrating,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -675,8 +675,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateMigrating,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -728,8 +728,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateMigrating,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -795,8 +795,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateMigrating,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -844,8 +844,8 @@ func TestReconcile(t *testing.T) {
 					withActiveKey(oldKS),
 					withTargetKey(midKS),
 					withHistory(hyperv1.EncryptionMigrationHistory{
-						From:        secretencryption.KeyReferenceFromStatus(oldKS),
-						To:          secretencryption.KeyReferenceFromStatus(midKS),
+						From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+						To:          secretencryption.KeyReferenceFromStatus(midKS, ""),
 						State:       hyperv1.EncryptionMigrationStateWritePromote,
 						StartedTime: metav1.Time{Time: fixedTime},
 					}),
@@ -894,8 +894,8 @@ func TestReconcile(t *testing.T) {
 						withActiveKey(oldKS),
 						withTargetKey(newKS),
 						withHistory(hyperv1.EncryptionMigrationHistory{
-							From:        secretencryption.KeyReferenceFromStatus(oldKS),
-							To:          secretencryption.KeyReferenceFromStatus(newKS),
+							From:        secretencryption.KeyReferenceFromStatus(oldKS, ""),
+							To:          secretencryption.KeyReferenceFromStatus(newKS, ""),
 							State:       hyperv1.EncryptionMigrationStateMigrating,
 							StartedTime: metav1.Time{Time: fixedTime},
 						}),
@@ -1079,4 +1079,89 @@ func TestEncryptedResources(t *testing.T) {
 		resources := r.encryptedResources(hcp)
 		g.Expect(resources).To(BeNil())
 	})
+}
+
+func TestComputeTargetKeyProviderName(t *testing.T) {
+	tests := []struct {
+		name         string
+		targetKey    *hyperv1.SecretEncryptionKeyStatus
+		keyVaultType hyperv1.AzureKMSKeyVaultType
+		expectName   string
+		expectErr    bool
+	}{
+		{
+			name:      "When no target key is set, it should return an error",
+			targetKey: &hyperv1.SecretEncryptionKeyStatus{},
+			expectErr: true,
+		},
+		{
+			name: "When Azure target key omits KeyVaultType, it should produce the legacy provider name",
+			targetKey: secretencryption.KeyStatusFromAzureSpec(hyperv1.AzureKMSKey{
+				KeyVaultName: "vault",
+				KeyName:      "key",
+				KeyVersion:   "1",
+			}),
+		},
+		{
+			name: "When Azure target key has KeyVaultType KeyVault, it should produce the same name as omitted",
+			targetKey: secretencryption.KeyStatusFromAzureSpec(hyperv1.AzureKMSKey{
+				KeyVaultName: "vault",
+				KeyName:      "key",
+				KeyVersion:   "1",
+			}),
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeKeyVault,
+		},
+		{
+			name: "When Azure target key has KeyVaultType ManagedHSM, it should produce a different provider name",
+			targetKey: secretencryption.KeyStatusFromAzureSpec(hyperv1.AzureKMSKey{
+				KeyVaultName: "vault",
+				KeyName:      "key",
+				KeyVersion:   "1",
+			}),
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+		},
+	}
+
+	legacyKey := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "1"}
+	legacyName, err := kms.AzureKMSProviderName(legacyKey, "")
+	if err != nil {
+		t.Fatalf("failed to compute legacy provider name: %v", err)
+	}
+
+	r := &Reconciler{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := newHCP()
+			hcp.Status.SecretEncryption.TargetKey = *tt.targetKey
+			// Set the KeyVaultType on the spec so azureKeyVaultType(hcp) returns it.
+			if tt.targetKey.Provider == hyperv1.SecretEncryptionProviderAzure {
+				hcp.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.KMS,
+					KMS: &hyperv1.KMSSpec{
+						Provider: hyperv1.AZURE,
+						Azure: &hyperv1.AzureKMSSpec{
+							ActiveKey:    tt.targetKey.Azure,
+							KeyVaultType: tt.keyVaultType,
+						},
+					},
+				}
+			}
+
+			name, err := r.computeTargetKeyProviderName(context.Background(), hcp)
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			if tt.keyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+				g.Expect(name).NotTo(Equal(legacyName),
+					"ManagedHSM target key should produce a different provider name than KeyVault")
+			} else {
+				g.Expect(name).To(Equal(legacyName),
+					"KeyVault or omitted target key should produce the legacy provider name")
+			}
+		})
+	}
 }
