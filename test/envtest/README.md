@@ -45,10 +45,10 @@ suites, err = LoadTestSuiteSpecs(assetsDir, karpenterDir)
 # Run against all supported OCP and vanilla Kubernetes versions
 make test-envtest-api-all
 
-# Run only OCP versions (4.17–4.22)
+# Run only OCP versions (4.17–4.23)
 make test-envtest-ocp
 
-# Run only vanilla Kubernetes versions (1.31–1.35)
+# Run only vanilla Kubernetes versions (1.31–1.36)
 make test-envtest-kube
 
 # Run against a single version
