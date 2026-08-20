@@ -641,5 +641,12 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
 			GinkgoWriter.Printf("RestoreSnapshotURL is set on HostedCluster\n")
 		})
+
+		It("should have all etcd members in a single cluster after restore", func() {
+			By("Verifying all etcd members form a single cluster (no split brain)")
+			err := backuprestore.VerifyEtcdClusterHealth(testCtx.Context, GinkgoLogr.WithName("etcd-cluster-health"), testCtx.MgmtClient, testCtx.ControlPlaneNamespace)
+			Expect(err).NotTo(HaveOccurred(), "all etcd members should form a single cluster after restore")
+		})
+
 	})
 })
