@@ -219,4 +219,10 @@ func init() {
 		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
 		false,
 	)
+	RegisterEnvVarWithDefault(
+		"E2E_AGENT_BM_NODE_COUNT",
+		"Number of bare metal Agent nodes available in the Agent BM test environment. Used by NodePool Agent tests that exhaust or over-scale finite hardware.",
+		false,
+		"6",
+	)
 }
