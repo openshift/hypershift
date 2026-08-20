@@ -1,0 +1,144 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hypershift-nightly-release-build
+spec:
+  description: |
+    Nightly release pipeline. Runs the shared hypershift-common-operator-build
+    pipeline to build and push the multi-arch operator image, then tags the
+    resulting image into an OpenShift imagestream on the CI cluster.
+  params:
+  - description: Source Repository URL
+    name: git-url
+    type: string
+  - default: ""
+    description: Revision of the Source Repository
+    name: revision
+    type: string
+  - description: Fully Qualified Output Image without the tag. The tag is destination-image-tag.
+      The image here will be treated as a temporary image. Once the image is tagged into the image stream,
+      the release controller will mirror the image to the appropriate production repository if the image
+      passes the verification process.
+    name: output-image
+    type: string
+  - description: Destination image tag for the resulting image to be pushed to.
+      This is just the tag, not the full image URL. Should be in the form X.Y.Z-0.nightly-YYYY-MM-DD-HHMMSS.
+    name: destination-image-tag
+    type: string
+  - description: Destination imagestream to push the image to. Should be in the form <namespace>/<imagestream>.
+    name: destination-imagestream
+    type: string
+  - default: .
+    description: Path to the source code of an application's component from where
+      to build image.
+    name: path-context
+    type: string
+  - default: Dockerfile
+    description: Path to the Dockerfile inside the context specified by parameter
+      path-context
+    name: dockerfile
+    type: string
+  - default: ""
+    description: Build dependencies to be prefetched by Cachi2
+    name: prefetch-input
+    type: string
+  - default: ""
+    description: Image tag expiration time, time values could be something like
+      1h, 2d, 3w for hours, days, and weeks, respectively.
+    name: image-expires-after
+    type: string
+  - default: "false"
+    description: Enable development package managers in Cachi2 for prefetch-dependencies
+    name: dev-package-managers
+    type: string
+  - default:
+    - linux/x86_64
+    description: List of platforms to build the container images on. The available
+      set of values is determined by the configuration of the multi-platform-controller.
+    name: build-platforms
+    type: array
+  - default: "true"
+    description: Execute the build with network isolation
+    name: hermetic
+    type: string
+  - default: []
+    description: Additional tags to apply to the built image.
+    name: additional-tags
+    type: array
+  results:
+  - description: ""
+    name: IMAGE_URL
+    value: $(tasks.build.results.IMAGE_URL)
+  - description: ""
+    name: IMAGE_DIGEST
+    value: $(tasks.build.results.IMAGE_DIGEST)
+  tasks:
+  - name: build
+    params:
+    - name: git-url
+      value: $(params.git-url)
+    - name: revision
+      value: $(params.revision)
+    - name: output-image
+      value: $(params.output-image):$(params.destination-image-tag)
+    - name: path-context
+      value: $(params.path-context)
+    - name: dockerfile
+      value: $(params.dockerfile)
+    - name: prefetch-input
+      value: $(params.prefetch-input)
+    - name: image-expires-after
+      value: $(params.image-expires-after)
+    - name: dev-package-managers
+      value: $(params.dev-package-managers)
+    - name: build-platforms
+      value:
+      - $(params.build-platforms[*])
+    - name: hermetic
+      value: $(params.hermetic)
+    - name: additional-tags
+      value:
+      - $(params.additional-tags[*])
+    pipelineRef:
+      name: hypershift-common-operator-build
+    workspaces:
+    - name: git-auth
+      workspace: git-auth
+    - name: netrc
+      workspace: netrc
+  - name: tag-image
+    params:
+    - name: source-image
+      value: $(tasks.build.results.IMAGE_DIGEST)
+    - name: image-stream-tag
+      value: $(params.destination-imagestream):$(params.destination-image-tag)
+    runAfter:
+    - build
+    taskSpec:
+      params:
+      - name: source-image
+        type: string
+      - name: image-stream-tag
+        type: string
+      workspaces:
+      - name: cluster-credentials
+      steps:
+      - name: tag
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        env:
+        - name: KUBECONFIG
+          value: $(workspaces.cluster-credentials.path)/kubeconfig
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          echo "Tagging $(params.source-image) into imagestream tag $(params.image-stream-tag)"
+          oc tag --source=docker --loglevel=2 --reference-policy='source' --import-mode='PreserveOriginal' --reference "$(params.source-image)" "$(params.image-stream-tag)"
+    workspaces:
+    - name: cluster-credentials
+      workspace: cluster-credentials
+  workspaces:
+  - name: git-auth
+    optional: true
+  - name: netrc
+    optional: true
+  - name: cluster-credentials

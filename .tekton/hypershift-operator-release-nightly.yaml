@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-event: "[push]"
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
+    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/nightly-release-build.yaml"
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: hypershift-operator
@@ -24,8 +24,12 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    # The image tag should end up like 5.0.0-0-nightly-20260812-123456 depending on the target branch and push event timestamp
-    value: 'quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator/hypershift-operator-{{ target_branch }}-nightly-unverified:{{ cel:pac.target_branch.replace("release-", "") + "0.0-nightly-" + body.created_at.replace("T", "-").replace(":", "").replace("Z", "")}}}'
+    value: 'quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator/hypershift-operator-{{ target_branch }}-nightly-unverified'
+  - name: destination-image-tag
+    # The image tag should end up like 5.0.0-0.nightly-2026-08-12-123456 depending on the target branch and push event timestamp
+    value: '{{ cel:pac.target_branch.replace("release-", "") + ".0-0.nightly-" + body.created_at.replace("T", "-").replace(":", "").replace("Z", "")}}'
+  - name: destination-imagestream
+    value: 'hypershift/hypershift-operator-{{ target_branch }}-nightly'
   - name: build-platforms
     value:
     - linux/x86_64
@@ -36,11 +40,14 @@ spec:
   - name: path-context
     value: .
   pipelineRef:
-    name: hypershift-common-operator-build
+    name: hypershift-nightly-release-build
   taskRunTemplate:
     serviceAccountName: build-pipeline-hypershift-operator-main
   workspaces:
   - name: git-auth
     secret:
       secretName: '{{ git_auth_secret }}'
+  - name: cluster-credentials
+    secret:
+      secretName: hypershift-ci-cluster-credentials
 status: {}
