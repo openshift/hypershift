@@ -36,7 +36,7 @@ func TestAutoscaling(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 
 	clusterOpts.NodePoolReplicas = 1
 	var additionalNP *hyperv1.NodePool
@@ -169,7 +169,7 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 		defer cancel()
 
 		t.Log("Starting balancing scale-up test")
-		e2eutil.AtLeast(t, e2eutil.Version420)
+		e2eutil.AtLeast(t, releaseVersion, e2eutil.Version420)
 
 		// Get the newly created NodePool
 		defaultNodePool := getOnlyNodePool(t, ctx, mgtClient, hostedCluster.Namespace)
@@ -485,7 +485,7 @@ func pollCASLogsForPausedNodeGroup(t *testing.T, ctx context.Context, controlPla
 func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, numNodes, max int32) func(t *testing.T) {
 	return func(t *testing.T) {
 		// spec.autoscaling.scaleDown requires CPO support added in 4.18 (CNTRLPLANE-952).
-		e2eutil.AtLeast(t, e2eutil.Version418)
+		e2eutil.AtLeast(t, releaseVersion, e2eutil.Version418)
 
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(ctx)
@@ -707,7 +707,7 @@ func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.NodePoolReplicas = 1
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {

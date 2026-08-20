@@ -209,7 +209,7 @@ type ConfigurableClusterOptions struct {
 	GCPBootImage                     string
 }
 
-func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
+func (o *Options) DefaultClusterOptions(t *testing.T, releaseVersion semver.Version) PlatformAgnosticOptions {
 	createOption := PlatformAgnosticOptions{
 		RawCreateOptions: core.RawCreateOptions{
 			ReleaseImage:                     o.LatestReleaseImage,
@@ -231,7 +231,7 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 			DisableClusterCapabilities:       o.ConfigurableClusterOptions.DisableClusterCapabilities,
 		},
 		NonePlatform:        o.DefaultNoneOptions(),
-		AWSPlatform:         o.DefaultAWSOptions(),
+		AWSPlatform:         o.DefaultAWSOptions(releaseVersion),
 		KubevirtPlatform:    o.DefaultKubeVirtOptions(),
 		AzurePlatform:       o.DefaultAzureOptions(),
 		PowerVSPlatform:     o.DefaultPowerVSOptions(),
@@ -302,7 +302,7 @@ func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 
 var nextAWSZoneIndex = 0
 
-func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
+func (o *Options) DefaultAWSOptions(releaseVersion semver.Version) hypershiftaws.RawCreateOptions {
 	opts := hypershiftaws.RawCreateOptions{
 		RootVolumeSize: 64,
 		RootVolumeType: "gp3",
@@ -318,13 +318,13 @@ func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		SharedRole:             true,
 	}
 
-	if IsLessThan(semver.MustParse("4.16.0")) {
+	if IsLessThan(releaseVersion, semver.MustParse("4.16.0")) {
 		opts.PublicOnly = false
 	}
 
 	// HCCO requires this fix https://github.com/openshift/hypershift/pull/7383
 	// in order for shared roles to work properly.
-	if IsLessThan(semver.MustParse("4.20.0")) {
+	if IsLessThan(releaseVersion, semver.MustParse("4.20.0")) {
 		opts.SharedRole = false
 	}
 

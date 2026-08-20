@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -85,9 +86,10 @@ type UpgradeContext struct {
 
 type hypershiftTest struct {
 	*testing.T
-	ctx         context.Context
-	client      crclient.Client
-	assetReader assets.AssetReader
+	ctx            context.Context
+	client         crclient.Client
+	assetReader    assets.AssetReader
+	releaseVersion semver.Version
 
 	test hypershiftTestFunc
 
@@ -107,6 +109,11 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 		client: client,
 		test:   test,
 	}
+}
+
+func (h *hypershiftTest) WithReleaseVersion(v semver.Version) *hypershiftTest {
+	h.releaseVersion = v
+	return h
 }
 
 func (h *hypershiftTest) WithAssetReader(reader assets.AssetReader) *hypershiftTest {
@@ -177,7 +184,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	if h.Failed() {
 		numNodes := opts.ExpectedNodeCount()
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
-		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second, h.upgradeContext)
+		ValidateHostedClusterConditions(h.T, h.ctx, h.releaseVersion, h.client, hostedCluster, numNodes > 0, 2*time.Second, h.upgradeContext)
 	}
 }
 
@@ -189,9 +196,9 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			// IsPrivateHC includes PublicAndPrivate, which has a reachable API server
 			// and should use ValidatePublicCluster.
 			if !netutil.IsPublicHC(hostedCluster) {
-				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts, h.upgradeContext)
+				ValidatePrivateCluster(t, h.ctx, h.releaseVersion, h.client, hostedCluster, opts, h.upgradeContext)
 			} else {
-				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts, h.upgradeContext)
+				ValidatePublicCluster(t, h.ctx, h.releaseVersion, h.client, hostedCluster, opts, h.upgradeContext)
 			}
 
 			// The following validation is here since TestHAEtcdChaos runs as NonePlatform and it's broken.
@@ -217,7 +224,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 				// wait hosted cluster ready
 				WaitForNReadyNodes(t, context.Background(), guestClient, opts.NodePoolReplicas, platform)
 				WaitForImageRollout(t, context.Background(), h.client, hostedCluster)
-				ValidateHostedClusterConditions(t, context.Background(), h.client, hostedCluster, true, 10*time.Minute, h.upgradeContext)
+				ValidateHostedClusterConditions(t, context.Background(), h.releaseVersion, h.client, hostedCluster, true, 10*time.Minute, h.upgradeContext)
 			}
 
 		}
@@ -234,10 +241,10 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		EnsurePayloadArchSetCorrectly(t, context.Background(), h.client, hostedCluster)
-		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
-		EnsureReadOnlyRootFilesystem(t, context.Background(), h.client, hcpNs)
+		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.releaseVersion, h.client, hcpNs)
+		EnsureReadOnlyRootFilesystem(t, context.Background(), h.releaseVersion, h.client, hcpNs)
 		EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
-		EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t, context.Background(), h.client, hostedCluster)
+		EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t, context.Background(), h.releaseVersion, h.client, hostedCluster)
 		EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)
 		EnsureNoPodsWithTooHighPriority(t, context.Background(), h.client, hostedCluster)
 		EnsureNoRapidDeploymentRollouts(t, context.Background(), h.client, hostedCluster)
@@ -245,19 +252,19 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
 		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
 		if capabilities.IsNodeTuningCapabilityEnabled(hostedCluster.Spec.Capabilities) {
-			EnsureNodeTuningOperatorMetricsEndpoint(t, context.Background(), h.client, hostedCluster)
+			EnsureNodeTuningOperatorMetricsEndpoint(t, context.Background(), h.releaseVersion, h.client, hostedCluster)
 		}
 
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
 		}
-		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
+		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.releaseVersion, h.client, hostedCluster)
 		// HCCO installs the admission policies, however, NonePlatform clusters can be ready before
 		// the HCCO is fully up and reconciling, resulting in a potential race and flaky test assertions.
 		if platform != hyperv1.NonePlatform {
-			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
+			EnsureAdmissionPolicies(t, context.Background(), h.releaseVersion, h.client, hostedCluster)
 		}
-		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(Version420) {
+		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(h.releaseVersion, Version420) {
 			EnsureSecurityContextUID(t, context.Background(), h.client, hostedCluster)
 		}
 		metricsToValidate := []string{hcmetrics.SilenceAlertsMetricName, // common metrics
@@ -316,7 +323,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 					}
 				}
 			}
-			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute, h.upgradeContext)
+			ValidateHostedClusterConditions(t, t.Context(), h.releaseVersion, h.client, hostedCluster, hasWorkerNodes, 10*time.Minute, h.upgradeContext)
 		}
 	})
 }
@@ -331,7 +338,7 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 	// t.Run() is not supported in cleanup phase
 	if cleanupPhase {
 		h.hasBeenTornedDown = true
-		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir)
+		teardownHostedCluster(h.T, context.Background(), h.releaseVersion, hostedCluster, h.client, opts, artifactDir)
 		return
 	}
 
@@ -339,7 +346,7 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 		// Set the flag inside the subtest callback to ensure it's only set
 		// when the subtest actually runs (not filtered out by -test.run)
 		h.hasBeenTornedDown = true
-		teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir)
+		teardownHostedCluster(t, h.ctx, h.releaseVersion, hostedCluster, h.client, opts, artifactDir)
 	})
 }
 
@@ -532,7 +539,7 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 }
 
 // NOTE: Do not use t.Run() here as this function can be called in the Cleanup context and will fail immediately
-func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, client crclient.Client, opts *PlatformAgnosticOptions, artifactDir string) {
+func teardownHostedCluster(t *testing.T, ctx context.Context, releaseVersion semver.Version, hc *hyperv1.HostedCluster, client crclient.Client, opts *PlatformAgnosticOptions, artifactDir string) {
 	// TODO (Mulham): dumpCluster() uses testName to construct dumpDir, since we removed sub tests from this function
 	// we should pass dumpDir to the dumpCluster() as <artifactDir>/<testName>_<suffix>
 	dumpCluster := newClusterDumper(hc, opts, artifactDir)
@@ -564,7 +571,7 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	}
 	var previousError string
 	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
-		err := destroyCluster(ctx, t, hc, opts, artifactDir)
+		err := destroyCluster(ctx, t, releaseVersion, hc, opts, artifactDir)
 		if err != nil {
 			if strings.Contains(err.Error(), "required inputs are missing") {
 				return false, err

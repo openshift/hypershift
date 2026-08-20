@@ -153,7 +153,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 	)
 	// The remainder of the assertions only work in 4.17+
 	// https://github.com/openshift/hypershift/pull/4020
-	if e2eutil.IsLessThan(e2eutil.Version417) {
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version417) {
 		return
 	}
 	e2eutil.EventuallyObjects(t, ctx, "performance profile status ConfigMap to exist",

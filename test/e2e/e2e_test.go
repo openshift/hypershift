@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
@@ -37,6 +38,10 @@ var (
 	// testContext should be used as the parent context for any test code, and will
 	// be cancelled if a SIGINT or SIGTERM is received. It's set up in TestMain.
 	testContext context.Context
+
+	// releaseVersion is the y-stream version of the release image under test,
+	// resolved once at suite startup and passed to version-gated helpers.
+	releaseVersion semver.Version
 
 	log = crzap.New(crzap.UseDevMode(true), crzap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -249,9 +254,10 @@ func main(m *testing.M) int {
 	if releaseImage == "" {
 		releaseImage = globalOpts.LatestReleaseImage
 	}
-	err := util.SetReleaseImageVersion(testContext, releaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
+	var err error
+	releaseVersion, err = util.GetReleaseImageVersion(testContext, releaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
 	if err != nil {
-		log.Error(err, "failed to set release image version")
+		log.Error(err, "failed to get release image version")
 		return -1
 	}
 

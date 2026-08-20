@@ -83,7 +83,7 @@ func (s *SpotTerminationHandlerTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
-	if e2eutil.IsLessThan(e2eutil.Version422) {
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version422) {
 		t.Skip("test only supported on version 4.22 and above")
 	}
 }

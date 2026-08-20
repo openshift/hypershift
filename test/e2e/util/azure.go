@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
@@ -100,9 +101,9 @@ func ValidateAzureWorkloadIdentityWebhookMutation(t testing.TB, ctx context.Cont
 	}).WithContext(ctx).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 
-func EnsureAzureWorkloadIdentityWebhookMutation(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+func EnsureAzureWorkloadIdentityWebhookMutation(t *testing.T, ctx context.Context, releaseVersion semver.Version, guestClient crclient.Client) {
 	t.Run("EnsureAzureWorkloadIdentityWebhookMutation", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 		ValidateAzureWorkloadIdentityWebhookMutation(t, ctx, guestClient)
 	})
 }

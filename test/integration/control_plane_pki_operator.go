@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -37,7 +38,7 @@ import (
 	"github.com/openshift/hypershift/test/integration/framework"
 )
 
-func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients) {
+func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx context.Context, releaseVersion semver.Version, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients) {
 	t.Run("break-glass-credentials", func(t *testing.T) {
 		if hostedCluster.Spec.Platform.Type == hypershiftv1beta1.KubevirtPlatform {
 			t.Skip("skipping break-glass credentials test on KubeVirt platform")
@@ -49,7 +50,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 			t.Skip("skipping break-glass credentials test on GCP platform - GKE Warden blocks system: CSRs")
 		}
 		// control-plane-pki-operator is only available in 4.15 and later
-		e2eutil.AtLeast(t, e2eutil.Version415)
+		e2eutil.AtLeast(t, releaseVersion, e2eutil.Version415)
 		hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		for _, testCase := range []struct {

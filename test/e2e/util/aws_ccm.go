@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 
@@ -36,10 +37,10 @@ type AWSCCMTestConfig struct {
 
 // EnsureAWSCCMWithCustomizations implements tests that exercise AWS CCM controller for critical features.
 // This test is only supported on platform AWS, as well runs only when the feature gate AWSServiceLBNetworkSecurityGroup is enabled.
-func EnsureAWSCCMWithCustomizations(t *testing.T, ctx context.Context, cfg *AWSCCMTestConfig) {
+func EnsureAWSCCMWithCustomizations(t *testing.T, ctx context.Context, releaseVersion semver.Version, cfg *AWSCCMTestConfig) {
 	t.Run("EnsureAWSCCMWithManagedSG", func(t *testing.T) {
 		t.Parallel()
-		AtLeast(t, Version423)
+		AtLeast(t, releaseVersion, Version423)
 		if cfg.Platform != hyperv1.AWSPlatform {
 			t.Skip("test only supported on platform AWS")
 		}

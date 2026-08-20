@@ -15,7 +15,7 @@ import (
 func TestUpgradeControlPlane(t *testing.T) {
 	t.Parallel()
 
-	if globalOpts.Platform == hyperv1.AzurePlatform && e2eutil.IsLessThan(e2eutil.Version420) {
+	if globalOpts.Platform == hyperv1.AzurePlatform && e2eutil.IsLessThan(releaseVersion, e2eutil.Version420) {
 		t.Skip("TODO: Enable this test for Azure in 4.19. Skipping for now to let the 4.20 suite be covered.")
 	}
 
@@ -24,7 +24,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	t.Logf("Starting control plane upgrade test. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
@@ -44,9 +44,10 @@ func TestUpgradeControlPlane(t *testing.T) {
 		}
 
 		// Set the semantic version to the latest release image for version gating tests
-		err := e2eutil.SetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
+		var err error
+		releaseVersion, err = e2eutil.GetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
 		if err != nil {
-			g.Expect(err).NotTo(HaveOccurred(), "failed to set latest release image version")
+			g.Expect(err).NotTo(HaveOccurred(), "failed to get latest release image version")
 		}
 
 		// Update the cluster image
@@ -64,12 +65,12 @@ func TestUpgradeControlPlane(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
 		t.Run("Wait for control plane components to complete rollout", func(t *testing.T) {
-			e2eutil.AtLeast(t, e2eutil.Version420)
+			e2eutil.AtLeast(t, releaseVersion, e2eutil.Version420)
 			e2eutil.WaitForControlPlaneComponentRollout(t, ctx, mgtClient, hostedCluster, startingVersion)
 		})
 
 		t.Run("Wait for control plane version to complete rollout", func(t *testing.T) {
-			e2eutil.AtLeast(t, e2eutil.Version422)
+			e2eutil.AtLeast(t, releaseVersion, e2eutil.Version422)
 			e2eutil.WaitForControlPlaneRollout(t, ctx, mgtClient, hostedCluster)
 		})
 

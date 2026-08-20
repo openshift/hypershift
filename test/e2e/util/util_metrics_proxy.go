@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -41,9 +42,9 @@ const (
 // The data path tested is:
 //
 //	guest Prometheus → PodMonitor → metrics-forwarder (HAProxy TCP passthrough) → Route → metrics-proxy → kube-apiserver
-func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, releaseVersion semver.Version, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureMetricsForwarderWorking", func(t *testing.T) {
-		AtLeast(t, Version422)
+		AtLeast(t, releaseVersion, Version422)
 		g := NewWithT(t)
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 

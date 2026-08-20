@@ -51,7 +51,7 @@ func TestControlPlaneAutoscalingIncreasesSize(t *testing.T) {
 	}
 
 	// Prepare cluster options based on the request-serving template, plus autoscaling annotation
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.RawCreateOptions.RedactBaseDomain = true
 	clusterOpts.Annotations = append(clusterOpts.Annotations,

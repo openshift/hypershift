@@ -51,7 +51,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 
 	t.Log("Starting HyperShift Operator upgrade test")
 	g := gomega.NewWithT(t)

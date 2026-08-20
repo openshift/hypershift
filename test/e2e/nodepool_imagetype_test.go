@@ -45,7 +45,7 @@ func (it *NodePoolImageTypeTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test is only supported for AWS platform")
 	}
-	if e2eutil.IsLessThan(e2eutil.Version419) {
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version419) {
 		t.Skip("test only supported from version 4.19")
 	}
 	t.Log("Starting test NodePoolImageTypeTest")

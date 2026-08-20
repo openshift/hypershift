@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -234,7 +235,7 @@ func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
-func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *PlatformAgnosticOptions, outputDir string) error {
+func destroyCluster(ctx context.Context, t *testing.T, releaseVersion semver.Version, hc *hyperv1.HostedCluster, createOpts *PlatformAgnosticOptions, outputDir string) error {
 	destroyLogFile := filepath.Join(outputDir, "destroy.log")
 	destroyLog, err := os.Create(destroyLogFile)
 	if err != nil {
@@ -262,7 +263,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			Credentials:      createOpts.AWSPlatform.Credentials,
 			PreserveIAM:      false,
 			Region:           createOpts.AWSPlatform.Region,
-			PostDeleteAction: validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.Credentials.AWSCredentialsFile, createOpts.AWSPlatform.Region),
+			PostDeleteAction: validateAWSGuestResourcesDeletedFunc(ctx, t, releaseVersion, hc.Spec.InfraID, createOpts.AWSPlatform.Credentials.AWSCredentialsFile, createOpts.AWSPlatform.Region),
 		}
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
@@ -297,8 +298,8 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 }
 
 // validateAWSGuestResourcesDeletedFunc waits for 15min or until the guest cluster resources are gone.
-func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, infraID, awsCreds, awsRegion string) func() {
-	if IsLessThan(Version415) {
+func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, releaseVersion semver.Version, infraID, awsCreds, awsRegion string) func() {
+	if IsLessThan(releaseVersion, Version415) {
 		return func() {
 			t.Log("SKIPPED: skipping AWS cleanup validation for OCP <= 4.14")
 		}

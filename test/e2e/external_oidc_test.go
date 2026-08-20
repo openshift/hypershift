@@ -77,7 +77,7 @@ func createTestUserWithGroup(ctx context.Context, kc *e2eutil.KeycloakAdminClien
 }
 
 func TestExternalOIDC(t *testing.T) {
-	e2eutil.AtLeast(t, e2eutil.Version419)
+	e2eutil.AtLeast(t, releaseVersion, e2eutil.Version419)
 
 	if globalOpts.ExternalOIDCProvider == "" {
 		t.Skipf("skip external OIDC test if e2e.external-oidc-provider is not provided")
@@ -88,7 +88,7 @@ func TestExternalOIDC(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.NodePoolReplicas = 1
 	clusterOpts.FeatureSet = string(configv1.Default)
 
@@ -261,7 +261,7 @@ func TestExternalOIDC(t *testing.T) {
 		// patching the auth config has no effect and the legacy prefix-based mapping persists,
 		// causing these subtests to timeout waiting for a config reload that never happens.
 		if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
-			e2eutil.AtLeast(t, e2eutil.Version423)
+			e2eutil.AtLeast(t, releaseVersion, e2eutil.Version423)
 			upstreamParityOpts := clusterOpts
 			upstreamParityOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 			upstreamParityOpts.ExtOIDCConfig.CustomizeAuthSpec = func(spec *configv1.AuthenticationSpec) {

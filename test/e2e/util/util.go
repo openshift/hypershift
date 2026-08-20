@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -351,7 +352,11 @@ func WaitForGuestRestConfig(t *testing.T, ctx context.Context, client crclient.C
 	return guestConfig
 }
 
-func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
+func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, releaseVersion ...semver.Version) crclient.Client {
+	var rv semver.Version
+	if len(releaseVersion) > 0 {
+		rv = releaseVersion[0]
+	}
 	g := NewWithT(t)
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 
@@ -373,7 +378,7 @@ func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Clien
 	if err != nil {
 		t.Fatalf("failed to create kube client for guest cluster: %v", err)
 	}
-	if IsLessThan(Version415) {
+	if IsLessThan(rv, Version415) {
 		// SelfSubjectReview API is only available in 4.15+
 		// Use the old method to check if the API server is up
 		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, connectTimeout, true, func(ctx context.Context) (done bool, err error) {
@@ -1018,9 +1023,9 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 	})
 }
 
-func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, releaseVersion, Version419)
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, &crclient.ListOptions{Namespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)}); err != nil {
 			t.Fatalf("failed to list pods in cluster: %v", err)
@@ -1065,9 +1070,9 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 
 // NOTE: This function assumes that it is not called in the middle of a version rollout
 // i.e. It expects that the first entry in ClusterVersion history is Completed
-func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, releaseVersion semver.Version, guestClient crclient.Client) {
 	t.Run("EnsureFeatureGateStatus", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, releaseVersion, Version419)
 
 		// Use EventuallyObject to handle transient DNS/network errors when talking to the guest cluster API.
 		var currentVersion string
@@ -1163,9 +1168,9 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 	})
 }
 
-func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, releaseVersion semver.Version, guestClient crclient.Client) {
 	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
-		AtLeast(t, Version421)
+		AtLeast(t, releaseVersion, Version421)
 
 		// Check if OpenShiftPodSecurityAdmission feature gate is enabled
 		featureGate := &configv1.FeatureGate{}
@@ -1307,8 +1312,8 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 // EnsureNodesRuntime ensures that all nodes in the NodePool have the expected runtime handlers.
 // This is only supported on 4.18+ when the default runtime is changed to crun.
-func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node) {
-	AtLeast(t, Version418)
+func EnsureNodesRuntime(t *testing.T, releaseVersion semver.Version, nodes []corev1.Node) {
+	AtLeast(t, releaseVersion, Version418)
 	g := NewWithT(t)
 
 	validHandlers := map[string]bool{
@@ -1439,7 +1444,7 @@ func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, 
 	})
 }
 
-func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureAPIUX(t *testing.T, ctx context.Context, releaseVersion semver.Version, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureHostedClusterImmutability", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -1467,7 +1472,7 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 	})
 
 	t.Run("EnsureHostedClusterCapabilitiesImmutability", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, releaseVersion, Version419)
 		g := NewWithT(t)
 
 		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
@@ -1492,9 +1497,9 @@ func EnsureSecretEncryptedUsingKMSV1(t *testing.T, ctx context.Context, hostedCl
 	})
 }
 
-func EnsureSecretEncryptedUsingKMSV2(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
+func EnsureSecretEncryptedUsingKMSV2(t *testing.T, ctx context.Context, releaseVersion semver.Version, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
 	t.Run("EnsureSecretEncryptedUsingKMSV2", func(t *testing.T) {
-		AtLeast(t, Version417)
+		AtLeast(t, releaseVersion, Version417)
 		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:v2")
 	})
 }
@@ -1647,8 +1652,8 @@ func GetMetricsFromPod(ctx context.Context, c crclient.Client, componentName, co
 	return parser.TextToMetricFamilies(strings.NewReader(cmdOutput))
 }
 
-func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
-	AtLeast(t, Version420)
+func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, releaseVersion semver.Version, hostClient crclient.Client, hcpNs string) {
+	AtLeast(t, releaseVersion, Version420)
 
 	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
 		g := NewWithT(t)
@@ -1765,8 +1770,8 @@ func findAuditedContainers(pod *corev1.Pod, auditedContainersSelector map[labelS
 	return nil
 }
 
-func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
-	AtLeast(t, Version420)
+func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, releaseVersion semver.Version, hostClient crclient.Client, hcpNs string) {
+	AtLeast(t, releaseVersion, Version420)
 
 	// By default, we enable readOnlyRootFilesystem in every container.
 	// This testchecks to make sure that every container has this field enabled, unless manually specified in auditedAppContainersNoRORFS
@@ -1946,9 +1951,9 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 	})
 }
 
-func skipGlobalPullSecretPreconditions(t *testing.T, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
+func skipGlobalPullSecretPreconditions(t *testing.T, releaseVersion semver.Version, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
 	t.Helper()
-	AtLeast(t, Version419)
+	AtLeast(t, releaseVersion, Version419)
 	// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
 	// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
 	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
@@ -1979,9 +1984,9 @@ func skipGlobalPullSecretPreconditions(t *testing.T, entryHostedCluster *hyperv1
 	}
 }
 
-func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
+func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, releaseVersion semver.Version, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
 	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
-		skipGlobalPullSecretPreconditions(t, entryHostedCluster, additionalPullSecretFile)
+		skipGlobalPullSecretPreconditions(t, releaseVersion, entryHostedCluster, additionalPullSecretFile)
 
 		additionalPullSecretReadOnlyE2EData, err := os.ReadFile(additionalPullSecretFile)
 		if err != nil {
@@ -2068,7 +2073,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		})
 
 		t.Run("When management-cluster hostedCluster.Spec.PullSecret is updated in-place it should propagate to guest without rollout", func(t *testing.T) {
-			CPOAtLeast(t, Version422, entryHostedCluster)
+			CPOAtLeast(t, releaseVersion, Version422, entryHostedCluster)
 			g := NewWithT(t)
 			t.Logf("Reading management-cluster pull secret %s/%s", entryHostedCluster.Namespace, entryHostedCluster.Spec.PullSecret.Name)
 
@@ -2354,9 +2359,9 @@ func waitForDaemonSetReady(t *testing.T, ctx context.Context, client crclient.Cl
 	return nil
 }
 
-func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
+func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, releaseVersion semver.Version, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
 	t.Run("EnsureKubeAPIDNSNameCustomCert", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, releaseVersion, Version419)
 
 		if entryHostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 			t.Skip("Skipping EnsureKubeAPIDNSNameCustomCert test for kubevirt")
@@ -2732,13 +2737,13 @@ func setKubeAPIDNSNameAndCert(ctx context.Context, mgmtClient crclient.Client, h
 	})
 }
 
-func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
+func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, releaseVersion semver.Version, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
 	if !netutil.IsPublicHC(hc) {
 		return // Admission policies are only validated in public clusters does not worth to test it in private ones.
 	}
 	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
 	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
-		CPOAtLeast(t, Version418, hc)
+		CPOAtLeast(t, releaseVersion, Version418, hc)
 		g := NewWithT(t)
 		t.Log("Checking that all ValidatingAdmissionPolicies are present")
 		var validatingAdmissionPolicies k8sadmissionv1.ValidatingAdmissionPolicyList
@@ -2764,7 +2769,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		}
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesCheckDeniedRequests", func(t *testing.T) {
-		CPOAtLeast(t, Version418, hc)
+		CPOAtLeast(t, releaseVersion, Version418, hc)
 		g := NewWithT(t)
 		t.Log("Checking Denied KAS Requests for ValidatingAdmissionPolicies")
 		apiServer := &configv1.APIServer{
@@ -3036,7 +3041,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	}
 }
 
-func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
+func ValidatePublicCluster(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
 	g := NewWithT(t)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
@@ -3078,7 +3083,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	if numNodes == 0 {
 		timeout = 20 * time.Minute
 	}
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
+	ValidateHostedClusterConditions(t, ctx, releaseVersion, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
@@ -3093,10 +3098,10 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
 	}
 	// Validate configuration status matches between HCP, HC, and guest cluster
-	ValidateConfigurationStatus(t, ctx, client, guestClient, hostedCluster)
+	ValidateConfigurationStatus(t, ctx, releaseVersion, client, guestClient, hostedCluster)
 }
 
-func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
+func ValidatePrivateCluster(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
 	g := NewWithT(t)
 
 	// We can't wait for a guest client since we don't have connectivity to the API server
@@ -3129,7 +3134,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	if numNodes == 0 {
 		timeout = 20 * time.Minute
 	}
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
+	ValidateHostedClusterConditions(t, ctx, releaseVersion, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
@@ -3141,7 +3146,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 // ValidateHostedClusterConditions checks that a HostedCluster's conditions and status fields
 // match expected values. Pass nil for uc when calling outside of an upgrade test context.
-func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration, upgradeContext *UpgradeContext) {
+func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration, upgradeContext *UpgradeContext) {
 	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
 	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
@@ -3154,15 +3159,15 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
 		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
 	}
-	if IsLessThan(Version415) {
+	if IsLessThan(releaseVersion, Version415) {
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 	}
-	if IsLessThan(Version421) {
+	if IsLessThan(releaseVersion, Version421) {
 		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
 	}
 
-	if IsLessThan(Version422) {
+	if IsLessThan(releaseVersion, Version422) {
 		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 	}
@@ -3174,7 +3179,7 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 	}
 
-	if IsLessThan(Version423) {
+	if IsLessThan(releaseVersion, Version423) {
 		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
 	}
 
@@ -3193,7 +3198,7 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		}))
 	}
 
-	if IsGreaterThanOrEqualTo(Version422) {
+	if IsGreaterThanOrEqualTo(releaseVersion, Version422) {
 		cpvFieldPath := "status.controlPlaneVersion"
 		cpvEnforce := controlPlaneVersionSteadyState(hasWorkerNodes)
 
@@ -3405,9 +3410,9 @@ func EnsureNoHCPPodsLandOnDefaultNode(t *testing.T, ctx context.Context, client 
 	}
 }
 
-func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, releaseVersion semver.Version, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureSATokenNotMountedUnlessNecessary", func(t *testing.T) {
-		AtLeast(t, Version416)
+		AtLeast(t, releaseVersion, Version416)
 		g := NewWithT(t)
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -3424,7 +3429,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			"shared-resource-csi-driver-operator",
 		)
 
-		if IsLessThan(Version418) {
+		if IsLessThan(releaseVersion, Version418) {
 			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
 				"csi-snapshot-webhook",
 			)
@@ -3505,9 +3510,9 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 	})
 }
 
-func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureCustomLabels(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureCustomLabels", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, releaseVersion, Version419)
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		podList := &corev1.PodList{}
@@ -3534,9 +3539,9 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 	})
 }
 
-func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureCustomTolerations(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureCustomTolerations", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, releaseVersion, Version419)
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		podList := &corev1.PodList{}
@@ -3573,9 +3578,9 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 	})
 }
 
-func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureAppLabel(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAppLabel", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, releaseVersion, Version419)
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		podList := &corev1.PodList{}
@@ -3605,9 +3610,9 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 	})
 }
 
-func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
+func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, releaseVersion semver.Version, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
 	t.Run("EnsureDefaultSecurityGroupTags", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
 			t.Skip("This test is only applicable for AWS platform")
 		}
@@ -3821,9 +3826,9 @@ func generateTestCIDRs250() []string {
 }
 
 // EnsureImageRegistryCapabilityDisabled validates the expectations for when ImageRegistryCapability is Disabled
-func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, releaseVersion semver.Version, g Gomega, clients *GuestClients) {
 	t.Run("EnsureImageRegistryCapabilityDisabled", func(t *testing.T) {
-		AtLeast(t, Version418)
+		AtLeast(t, releaseVersion, Version418)
 
 		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
@@ -3901,9 +3906,9 @@ func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byt
 }
 
 // EnsureOpenshiftSamplesCapabilityDisabled validates the expectations for when OpenShiftSamplesCapability is Disabled
-func EnsureOpenshiftSamplesCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+func EnsureOpenshiftSamplesCapabilityDisabled(ctx context.Context, t *testing.T, releaseVersion semver.Version, g Gomega, clients *GuestClients) {
 	t.Run("EnsureOpenshiftSamplesCapabilityDisabled", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 
 		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "openshift-samples", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
@@ -3917,9 +3922,9 @@ func EnsureOpenshiftSamplesCapabilityDisabled(ctx context.Context, t *testing.T,
 }
 
 // EnsureInsightsCapabilityDisabled validates the expectations for when InsightsCapability is Disabled
-func EnsureInsightsCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+func EnsureInsightsCapabilityDisabled(ctx context.Context, t *testing.T, releaseVersion semver.Version, g Gomega, clients *GuestClients) {
 	t.Run("EnsureInsightsCapabilityDisabled", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 
 		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "insights", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
@@ -3933,9 +3938,9 @@ func EnsureInsightsCapabilityDisabled(ctx context.Context, t *testing.T, g Gomeg
 }
 
 // EnsureConsoleCapabilityDisabled validates the expectations for when ConsoleCapability is Disabled
-func EnsureConsoleCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+func EnsureConsoleCapabilityDisabled(ctx context.Context, t *testing.T, releaseVersion semver.Version, g Gomega, clients *GuestClients) {
 	t.Run("EnsureConsoleCapabilityDisabled", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 
 		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "console", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
@@ -3949,9 +3954,9 @@ func EnsureConsoleCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega
 }
 
 // EnsureNodeTuningCapabilityDisabled validates the expectations for when NodeTuningCapability is Disabled
-func EnsureNodeTuningCapabilityDisabled(ctx context.Context, t *testing.T, clients *GuestClients, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureNodeTuningCapabilityDisabled(ctx context.Context, t *testing.T, releaseVersion semver.Version, clients *GuestClients, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNodeTuningCapabilityDisabled", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 		g := NewWithT(t)
 		// Check guest cluster - node-tuning cluster operator should not exist
 		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "node-tuning", metav1.GetOptions{})
@@ -4032,9 +4037,9 @@ func EnsureNodeTuningCapabilityDisabled(ctx context.Context, t *testing.T, clien
 }
 
 // EnsureIngressCapabilityDisabled validates the expectations for when IngressCapability is Disabled
-func EnsureIngressCapabilityDisabled(ctx context.Context, t *testing.T, clients *GuestClients, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureIngressCapabilityDisabled(ctx context.Context, t *testing.T, releaseVersion semver.Version, clients *GuestClients, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureIngressCapabilityDisabled", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 		g := NewWithT(t)
 
 		// Check guest cluster - ingress cluster operator should not exist
@@ -4296,9 +4301,9 @@ func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient
 
 // EnsureCNOOperatorConfiguration tests that changes to the CNO operator configuration on the HostedCluster are
 // properly reflected in the hosted cluster's API and that the CNO doesn't report any errors via HCP conditions.
-func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, releaseVersion semver.Version, mgmtClient crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureCNOOperatorConfiguration", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, releaseVersion, Version420)
 		g := NewWithT(t)
 		// Skip test if network type is not OVNKubernetes
 		if hostedCluster.Spec.Networking.NetworkType != hyperv1.OVNKubernetes {
@@ -4354,7 +4359,7 @@ func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClien
 			},
 			WithTimeout(10*time.Minute),
 		)
-		ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute, nil)
+		ValidateHostedClusterConditions(t, ctx, releaseVersion, mgmtClient, hostedCluster, true, 5*time.Minute, nil)
 		// Check that the Network.operator.openshift.io resource in the guest cluster reflects our changes
 		EventuallyObject(t, ctx, "Network.operator.openshift.io/cluster in guest cluster to reflect the custom subnet changes",
 			func(ctx context.Context) (*operatorv1.Network, error) {
@@ -4413,10 +4418,10 @@ func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClien
 
 // ValidateConfigurationStatus validates that the HCP and HC configuration status
 // matches the Authentication resource status from the hosted cluster
-func ValidateConfigurationStatus(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func ValidateConfigurationStatus(t *testing.T, ctx context.Context, releaseVersion semver.Version, mgmtClient crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("ValidateConfigurationStatus", func(t *testing.T) {
 		// Configuration status was added in 4.21
-		AtLeast(t, Version421)
+		AtLeast(t, releaseVersion, Version421)
 		g := NewWithT(t)
 
 		// Wait for both HCP and HC configuration status to be populated and validate consistency
@@ -4619,10 +4624,10 @@ func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, 
 // EnsureNodeTuningOperatorMetricsEndpoint verifies that the node-tuning-operator
 // service and servicemonitor are properly configured and that the metrics endpoint
 // is accessible and returns valid metrics data. This validates the fix for OCPBUGS-72596.
-func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, releaseVersion semver.Version, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNodeTuningOperatorMetricsEndpoint", func(t *testing.T) {
 		// This test is only relevant for 4.22 and later until the fix for OCPBUGS-72596 is backported to 4.21.
-		AtLeast(t, Version422)
+		AtLeast(t, releaseVersion, Version422)
 		g := NewWithT(t)
 
 		// Check if cluster has workers - if not, skip validation

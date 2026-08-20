@@ -521,8 +521,8 @@ func ShouldSkipWorkloadForPlatform(workload WorkloadSpec, hostedCluster *hyperv1
 
 // ShouldSkipWorkloadForVersion determines whether the workload should be skipped
 // based on the cluster version exceeding the workload's MaxVersion.
-func ShouldSkipWorkloadForVersion(workload WorkloadSpec) bool {
-	if workload.MaxVersion != nil && e2eutil.IsGreaterThanOrEqualTo(*workload.MaxVersion) {
+func ShouldSkipWorkloadForVersion(workload WorkloadSpec, releaseVersion semver.Version) bool {
+	if workload.MaxVersion != nil && e2eutil.IsGreaterThanOrEqualTo(releaseVersion, *workload.MaxVersion) {
 		return true
 	}
 	return false
@@ -536,11 +536,15 @@ func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []s
 	if err != nil {
 		return fmt.Errorf("failed to get HostedCluster: %w", err)
 	}
+	releaseVersion, err := testCtx.GetHostedClusterVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get hosted cluster version: %w", err)
+	}
 	for _, workload := range workloads {
 		if ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 			continue
 		}
-		if ShouldSkipWorkloadForVersion(workload) {
+		if ShouldSkipWorkloadForVersion(workload, releaseVersion) {
 			continue
 		}
 		if !slices.Contains(workloadTypes, workload.Type) {

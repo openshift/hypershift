@@ -39,7 +39,7 @@ func TestHAEtcdChaos(t *testing.T) {
 	defer cancel()
 
 	// Create a cluster
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 
@@ -465,13 +465,13 @@ func testSingleMemberRecovery(parentCtx context.Context, client crclient.Client,
 // RequestServingNodeAdditionalSelector) to the HostedControlPlane even when the
 // pull secret is corrupted. This is a regression test for OCPBUGS-77268.
 func TestPullSecretUnavailable(t *testing.T) {
-	e2eutil.AtLeast(t, e2eutil.Version423)
+	e2eutil.AtLeast(t, releaseVersion, e2eutil.Version423)
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 

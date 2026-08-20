@@ -59,7 +59,7 @@ func NewMirrorConfigsTest(ctx context.Context, mgmtClient crclient.Client, hoste
 func (mc *MirrorConfigsTest) Setup(t *testing.T) {
 	t.Log("Starting test MirrorConfigsTest")
 
-	if e2eutil.IsLessThan(e2eutil.Version418) {
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version418) {
 		t.Skip("test only applicable for 4.18+")
 	}
 }

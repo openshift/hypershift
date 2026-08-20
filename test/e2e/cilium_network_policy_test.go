@@ -30,7 +30,7 @@ func TestCiliumConnectivity(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 
 	if globalOpts.Platform != hyperv1.AzurePlatform {
 		t.Skip("Skipping test because it requires Azure platform")

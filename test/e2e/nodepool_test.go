@@ -211,7 +211,7 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 				nodePoolTestCases.setup(t)
 			}
 			t.Parallel()
-			clusterOpts := globalOpts.DefaultClusterOptions(t)
+			clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 			// We set replicas to 0 in order to allow the inner tests to
 			// create their own NodePools with the proper replicas
 			clusterOpts.NodePoolReplicas = 0
@@ -367,7 +367,7 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// machine-level details before machines are fully ready.
 	// The CAPI condition aggregation logic was introduced in 4.23; older operators don't produce
 	// the expected "machines are not healthy" message format during provisioning.
-	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version423) && nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas > 0 {
+	if e2eutil.IsGreaterThanOrEqualTo(releaseVersion, e2eutil.Version423) && nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas > 0 {
 		validateCAPIConditionBubblingDuringProvisioning(t, ctx, mgmtClient, nodePool)
 	}
 
@@ -381,7 +381,7 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// ValidationFailed(ConfigMap "pp-test" not found)
 	// This root cause of this failure is unknown but doesn't seem worth the time to figure out since
 	// the NTO performance profile code was heavily refactored in 4.17.
-	if e2eutil.IsLessThan(e2eutil.Version417) {
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version417) {
 		// Wait for the rollout to be complete
 		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster)
 	}
@@ -417,7 +417,7 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 		// When all machines are ready and healthy, the aggregation pipeline should produce
 		// Reason=AsExpected and Message="All is well".
 		// The CAPI condition aggregation logic was introduced in 4.23.
-		if expectedSupportedVersionSkew && e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version423) {
+		if expectedSupportedVersionSkew && e2eutil.IsGreaterThanOrEqualTo(releaseVersion, e2eutil.Version423) {
 			switch conditionType {
 			case hyperv1.NodePoolAllMachinesReadyConditionType, hyperv1.NodePoolAllNodesHealthyConditionType:
 				condition.Reason = hyperv1.AsExpectedReason

@@ -33,7 +33,7 @@ func TestAzureScheduler(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 
 	if globalOpts.Platform != "Azure" {
 		t.Skip("Skipping test because it requires Azure")

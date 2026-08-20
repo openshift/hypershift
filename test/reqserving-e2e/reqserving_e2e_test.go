@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/util/reqserving"
@@ -32,6 +33,8 @@ var (
 	}))
 
 	reqServingDryRun bool
+
+	releaseVersion semver.Version
 )
 
 // TestMain deals with global options and setting up a signal-bound context
@@ -106,9 +109,10 @@ func main(m *testing.M) int {
 	// Set the semantic version of the release image
 	releaseImage := globalOpts.LatestReleaseImage
 	if releaseImage != "" {
-		err := e2eutil.SetReleaseImageVersion(testContext, releaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
+		var err error
+		releaseVersion, err = e2eutil.GetReleaseImageVersion(testContext, releaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
 		if err != nil {
-			log.Error(err, "failed to set release image version")
+			log.Error(err, "failed to get release image version")
 			return 1
 		}
 	}

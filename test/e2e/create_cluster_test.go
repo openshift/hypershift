@@ -40,7 +40,7 @@ func TestCreateCluster(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
 	if len(zones) >= 3 {
 		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
@@ -49,7 +49,7 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 		clusterOpts.NodePoolReplicas = 1
 	}
-	if !e2eutil.IsLessThan(e2eutil.Version418) {
+	if !e2eutil.IsLessThan(releaseVersion, e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 	}
 
@@ -103,7 +103,7 @@ func TestCreateCluster(t *testing.T) {
 		guestClients, err := integrationframework.NewClients(guestConfig)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
 
-		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, releaseVersion, hostedCluster, mgmtClients, guestClients)
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
@@ -123,7 +123,7 @@ func TestCreateCluster(t *testing.T) {
 			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
 		}
 
-		e2eutil.EnsureMetricsForwarderWorking(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureMetricsForwarderWorking(t, ctx, releaseVersion, mgtClient, hostedCluster)
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
 		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
@@ -133,10 +133,10 @@ func TestCreateCluster(t *testing.T) {
 
 		if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
 			// ensure Ingress Operator configuration is properly applied
-			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
+			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, releaseVersion, guestClient, hostedCluster)
 		}
 
-		e2eutil.EnsureAWSCCMWithCustomizations(t, ctx, &e2eutil.AWSCCMTestConfig{
+		e2eutil.EnsureAWSCCMWithCustomizations(t, ctx, releaseVersion, &e2eutil.AWSCCMTestConfig{
 			MgtClient:     mgtClient,
 			GuestClient:   guestClient,
 			HostedCluster: hostedCluster,
@@ -157,7 +157,7 @@ func TestCreateClusterHABreakGlassCredentials(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 
@@ -203,7 +203,7 @@ func TestCreateClusterHABreakGlassCredentials(t *testing.T) {
 		guestClients, err := integrationframework.NewClients(guestConfig)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
 
-		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, releaseVersion, hostedCluster, mgmtClients, guestClients)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ha-break-glass-creds", globalOpts.ServiceAccountSigningKey)
 }
 
@@ -214,7 +214,7 @@ func TestCreateClusterDefaultSecurityContextUID(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AzurePlatform {
 		t.Skip("test only supported on platform Azure")
 	}
-	if e2eutil.IsLessThan(e2eutil.Version420) {
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version420) {
 		t.Skip("test only supported on version 4.20 and higher")
 	}
 
@@ -291,7 +291,7 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	nodePools := e2eutil.SetupReqServingClusterNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, globalOpts.ManagementClusterNamespace, globalOpts.ManagementClusterName)
 	defer e2eutil.TearDownNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, nodePools)
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
 	if len(zones) >= 3 {
 		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
@@ -330,7 +330,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		err                            error
 	)
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 
 	// Configure KMS settings for Azure platform (this test specifically tests KMS functionality)
 	if globalOpts.Platform == hyperv1.AzurePlatform {
@@ -357,7 +357,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 				hyperv1.InsightsCapability,
 				hyperv1.NodeTuningCapability,
 			}
-			if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version420) {
+			if e2eutil.IsGreaterThanOrEqualTo(releaseVersion, e2eutil.Version420) {
 				disabledCaps = append(disabledCaps, hyperv1.ConsoleCapability, hyperv1.IngressCapability)
 			}
 
@@ -433,13 +433,13 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		e2eutil.EnsureConsoleCapabilityDisabled(ctx, t, g, clients)
 
 		// ensure NodeTuning component is disabled
-		e2eutil.EnsureNodeTuningCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
+		e2eutil.EnsureNodeTuningCapabilityDisabled(ctx, t, releaseVersion, clients, mgtClient, hostedCluster)
 
 		// ensure ingress component is disabled
-		e2eutil.EnsureIngressCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
+		e2eutil.EnsureIngressCapabilityDisabled(ctx, t, releaseVersion, clients, mgtClient, hostedCluster)
 
 		// ensure CNO operator configuration changes are properly handled
-		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, releaseVersion, mgtClient, guestClient, hostedCluster)
 	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
@@ -452,7 +452,7 @@ func TestCreateClusterProxy(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.AWSPlatform.EnableProxy = true
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 
@@ -480,8 +480,8 @@ func testCreateClusterPrivate(t *testing.T, enableExternalDNS bool) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	if e2eutil.IsLessThan(e2eutil.Version415) {
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version415) {
 		cleanupAnnotationIndex := slices.Index(clusterOpts.Annotations, fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation))
 		if cleanupAnnotationIndex != -1 {
 			clusterOpts.Annotations = slices.Delete(clusterOpts.Annotations, cleanupAnnotationIndex, cleanupAnnotationIndex+1)

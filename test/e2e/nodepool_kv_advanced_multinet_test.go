@@ -51,7 +51,7 @@ func (k KubeVirtAdvancedMultinetTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.KubevirtPlatform {
 		t.Skip("test only supported on KubeVirt platform")
 	}
-	if e2eutil.IsLessThan(e2eutil.Version415) {
+	if e2eutil.IsLessThan(releaseVersion, e2eutil.Version415) {
 		t.Skip("test only supported from version 4.15")
 	}
 

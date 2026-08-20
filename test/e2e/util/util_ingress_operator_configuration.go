@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -63,9 +64,9 @@ func ValidateIngressOperatorConfiguration(t testing.TB, ctx context.Context, gue
 
 // EnsureIngressOperatorConfiguration tests that the Ingress Operator configuration on the HostedCluster
 // is properly reflected in the hosted cluster's IngressController and that the Ingress Operator doesn't report any errors via HCP conditions.
-func EnsureIngressOperatorConfiguration(t *testing.T, ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureIngressOperatorConfiguration(t *testing.T, ctx context.Context, releaseVersion semver.Version, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureIngressOperatorConfiguration", func(t *testing.T) {
-		AtLeast(t, Version421)
+		AtLeast(t, releaseVersion, Version421)
 		ValidateIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
 	})
 }

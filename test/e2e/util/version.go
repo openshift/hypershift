@@ -26,58 +26,38 @@ var (
 	Version416 = semver.MustParse("4.16.0")
 	Version415 = semver.MustParse("4.15.0")
 	Version414 = semver.MustParse("4.14.0")
-
-	releaseVersion semver.Version
 )
 
-func init() {
-	// Ensure that the version constants are valid semver versions
-	// This is a compile-time check to ensure that the versions are valid
-	// semver versions.
-	_ = Version51
-	_ = Version50
-	_ = Version423
-	_ = Version422
-	_ = Version421
-	_ = Version420
-	_ = Version419
-	_ = Version418
-	_ = Version417
-	_ = Version416
-	_ = Version415
-	_ = Version414
-}
-
-func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pullSecretFile string) error {
+func GetReleaseImageVersion(ctx context.Context, releaseImage string, pullSecretFile string) (semver.Version, error) {
 	data, err := os.ReadFile(pullSecretFile)
 	if err != nil {
-		return fmt.Errorf("error reading file: %w", err)
+		return semver.Version{}, fmt.Errorf("error reading file: %w", err)
 	}
 	releaseInfoProvider := releaseinfo.RegistryClientProvider{}
-	releaseImage, err := releaseInfoProvider.Lookup(ctx, latestReleaseImage, data)
+	releaseImageInfo, err := releaseInfoProvider.Lookup(ctx, releaseImage, data)
 	if err != nil {
-		return fmt.Errorf("error looking up latest release image: %w", err)
+		return semver.Version{}, fmt.Errorf("error looking up latest release image: %w", err)
 	}
-	releaseVersion, err = semver.Parse(releaseImage.Version())
+	version, err := semver.Parse(releaseImageInfo.Version())
 	if err != nil {
-		return fmt.Errorf("error parsing version: %w", err)
+		return semver.Version{}, fmt.Errorf("error parsing version: %w", err)
 	}
-	releaseVersion.Patch = 0
-	releaseVersion.Pre = nil
-	releaseVersion.Build = nil
-	return nil
+	version.Patch = 0
+	version.Pre = nil
+	version.Build = nil
+	return version, nil
 }
 
-func AtLeast(t *testing.T, version semver.Version) {
+func AtLeast(t *testing.T, releaseVersion semver.Version, version semver.Version) {
 	if releaseVersion.LT(version) {
 		t.Skipf("Only tested in %s and later", version)
 	}
 }
 
-func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster) {
+func CPOAtLeast(t *testing.T, releaseVersion semver.Version, version semver.Version, hc *hyperv1.HostedCluster) {
 	if hc.Status.Version == nil || hc.Status.Version.Desired.Version == "" {
 		t.Logf("Desired version is not set on the HostedCluster using latestReleaseImage: %s", releaseVersion)
-		AtLeast(t, version)
+		AtLeast(t, releaseVersion, version)
 	}
 	cpoVersion := semver.MustParse(hc.Status.Version.Desired.Version)
 	if cpoVersion.LT(version) {
@@ -85,11 +65,11 @@ func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster)
 	}
 }
 
-func IsLessThan(version semver.Version) bool {
+func IsLessThan(releaseVersion semver.Version, version semver.Version) bool {
 	return releaseVersion.LT(version)
 }
 
-func IsGreaterThanOrEqualTo(version semver.Version) bool {
+func IsGreaterThanOrEqualTo(releaseVersion semver.Version, version semver.Version) bool {
 	return releaseVersion.GE(version)
 }
 
@@ -97,10 +77,10 @@ func IsGreaterThanOrEqualTo(version semver.Version) bool {
 // The v1 API exists on 4.23+, but when the operator is built from main and
 // tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
 // lower the gate to 4.22.
-func ShouldRunKarpenterTests(t *testing.T) {
+func ShouldRunKarpenterTests(t *testing.T, releaseVersion semver.Version) {
 	if os.Getenv("RUN_KARPENTER_TESTS") == "true" {
-		AtLeast(t, Version422)
+		AtLeast(t, releaseVersion, Version422)
 	} else {
-		AtLeast(t, Version423)
+		AtLeast(t, releaseVersion, Version423)
 	}
 }

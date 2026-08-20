@@ -20,7 +20,7 @@ import (
 )
 
 func TestKarpenterUpgradeControlPlane(t *testing.T) {
-	e2eutil.ShouldRunKarpenterTests(t)
+	e2eutil.ShouldRunKarpenterTests(t, releaseVersion)
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
@@ -29,7 +29,7 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts := globalOpts.DefaultClusterOptions(t, releaseVersion)
 	clusterOpts.AWSPlatform.AutoNode = true
 	clusterOpts.AWSPlatform.PublicOnly = false
 	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.PublicAndPrivate)

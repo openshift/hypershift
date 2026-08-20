@@ -63,7 +63,7 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 	)
 
 	t.Run("AdditionalTrustBundlePropagationTest", func(t *testing.T) {
-		e2eutil.AtLeast(t, e2eutil.Version418)
+		e2eutil.AtLeast(t, releaseVersion, e2eutil.Version418)
 
 		additionalTrustBundle := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -209,7 +209,7 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 
 		// Ensure the user-ca-bundle configmap is deleted from the guest cluster
 		// Only applicable for >= 4.22
-		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version422) {
+		if e2eutil.IsGreaterThanOrEqualTo(releaseVersion, e2eutil.Version422) {
 			userCAConfigMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "user-ca-bundle",
