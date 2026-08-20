@@ -2627,6 +2627,120 @@ func TestPause(t *testing.T) {
 	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 }
 
+func TestPauseOwnedCAPIResources(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-nodepool",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-cluster",
+		},
+	}
+	nodePoolKey := client.ObjectKeyFromObject(nodePool).String()
+	controlPlaneNamespace := "test-cp-namespace"
+
+	extraMS := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-nodepool-extra-hash",
+			Namespace: controlPlaneNamespace,
+			Annotations: map[string]string{
+				nodePoolAnnotation: nodePoolKey,
+			},
+		},
+	}
+	otherMS := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-nodepool-ms",
+			Namespace: controlPlaneNamespace,
+			Annotations: map[string]string{
+				nodePoolAnnotation: "test-namespace/other-nodepool",
+			},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(extraMS, otherMS).Build()
+	capi := &CAPI{
+		Token: &Token{
+			ConfigGenerator: &ConfigGenerator{
+				Client:                c,
+				nodePool:              nodePool,
+				controlplaneNamespace: controlPlaneNamespace,
+			},
+		},
+	}
+
+	err := capi.Pause(t.Context())
+	g.Expect(err).NotTo(HaveOccurred())
+
+	updatedExtra := &capiv1.MachineSet{}
+	err = c.Get(t.Context(), client.ObjectKeyFromObject(extraMS), updatedExtra)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(updatedExtra.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+	updatedOther := &capiv1.MachineSet{}
+	err = c.Get(t.Context(), client.ObjectKeyFromObject(otherMS), updatedOther)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(updatedOther.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation))
+}
+
+func TestDeleteOwnedCAPIResources(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-nodepool",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-cluster",
+		},
+	}
+	nodePoolKey := client.ObjectKeyFromObject(nodePool).String()
+	controlPlaneNamespace := "test-cp-namespace"
+
+	ownedMS := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-nodepool-extra-hash",
+			Namespace: controlPlaneNamespace,
+			Annotations: map[string]string{
+				nodePoolAnnotation: nodePoolKey,
+			},
+		},
+	}
+	otherMS := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-nodepool-ms",
+			Namespace: controlPlaneNamespace,
+			Annotations: map[string]string{
+				nodePoolAnnotation: "test-namespace/other-nodepool",
+			},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(ownedMS, otherMS).Build()
+	capi := &CAPI{
+		Token: &Token{
+			ConfigGenerator: &ConfigGenerator{
+				Client:                c,
+				nodePool:              nodePool,
+				controlplaneNamespace: controlPlaneNamespace,
+			},
+		},
+	}
+
+	err := capi.deleteOwnedCAPIResources(t.Context())
+	g.Expect(err).NotTo(HaveOccurred())
+
+	err = c.Get(t.Context(), client.ObjectKeyFromObject(ownedMS), &capiv1.MachineSet{})
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+	err = c.Get(t.Context(), client.ObjectKeyFromObject(otherMS), &capiv1.MachineSet{})
+	g.Expect(err).NotTo(HaveOccurred())
+}
+
 func TestSetMachineDeploymentMetadata(t *testing.T) {
 	testCases := []struct {
 		name                string

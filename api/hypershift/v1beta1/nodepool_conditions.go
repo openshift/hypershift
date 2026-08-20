@@ -132,4 +132,9 @@ const (
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
 	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
+	// NodePoolExcessiveMachineCountReason is set on the Ready condition when a
+	// NodePool has far more Machines than its desired replica count. The
+	// controller pauses CAPI resources and skips further machine creation to
+	// prevent unbounded provisioning.
+	NodePoolExcessiveMachineCountReason = "ExcessiveMachineCount"
 )

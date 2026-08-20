@@ -3302,9 +3302,22 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			},
 		}
 	}
+	testHCP := func(infraID, clusterID string) *hyperv1.HostedControlPlane {
+		hcp := controlplaneoperator.HostedControlPlane(
+			hcpmanifests.HostedControlPlaneNamespace("fake-namespace", "fake-cluster"),
+			"fake-cluster",
+		)
+		hcp.Spec.InfraID = infraID
+		hcp.Spec.ClusterID = clusterID
+		return hcp
+	}
 	tests := []struct {
-		name string
-		hc   *hyperv1.HostedCluster
+		name           string
+		hc             *hyperv1.HostedCluster
+		hcp            *hyperv1.HostedControlPlane
+		wantInfraID    string
+		wantClusterID  string
+		expectRestored bool
 	}{
 		{
 			name: "When both IDs are missing it should generate both",
@@ -3322,12 +3335,40 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			name: "When both IDs are already set it should not generate any",
 			hc:   testHC("fake-infra", "fake-uuid"),
 		},
+		{
+			name:           "When infraID is cleared and HCP has the original it should restore infraID",
+			hc:             testHC("", "fake-uuid"),
+			hcp:            testHCP("original-infra", "fake-uuid"),
+			wantInfraID:    "original-infra",
+			wantClusterID:  "fake-uuid",
+			expectRestored: true,
+		},
+		{
+			name:           "When clusterID is cleared and HCP has the original it should restore clusterID",
+			hc:             testHC("fake-infra", ""),
+			hcp:            testHCP("fake-infra", "original-cluster-id"),
+			wantInfraID:    "fake-infra",
+			wantClusterID:  "original-cluster-id",
+			expectRestored: true,
+		},
+		{
+			name:           "When both IDs are cleared and HCP has originals it should restore both",
+			hc:             testHC("", ""),
+			hcp:            testHCP("original-infra", "original-cluster-id"),
+			wantInfraID:    "original-infra",
+			wantClusterID:  "original-cluster-id",
+			expectRestored: true,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			objects := []crclient.Object{test.hc}
+			if test.hcp != nil {
+				objects = append(objects, test.hcp)
+			}
 			r := &HostedClusterReconciler{
 				CertRotationScale: 24 * time.Hour,
-				Client:            fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.hc).Build(),
+				Client:            fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
 			}
 			g := NewGomegaWithT(t)
 			previousInfraID := test.hc.Spec.InfraID
@@ -3339,12 +3380,76 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
+			if test.expectRestored {
+				g.Expect(resultHC.Spec.InfraID).To(Equal(test.wantInfraID))
+				g.Expect(resultHC.Spec.ClusterID).To(Equal(test.wantClusterID))
+				return
+			}
 			if len(previousClusterID) > 0 {
 				g.Expect(resultHC.Spec.ClusterID).To(BeIdenticalTo(previousClusterID))
 			}
 			if len(previousInfraID) > 0 {
 				g.Expect(resultHC.Spec.InfraID).To(BeIdenticalTo(previousInfraID))
 			}
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneIDImmutability(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		hcInfraID        string
+		hcClusterID      string
+		hcpInfraID       string
+		hcpClusterID     string
+		wantHCPInfraID   string
+		wantHCPClusterID string
+	}{
+		{
+			name:             "When HCP IDs are empty it should copy them from the HostedCluster",
+			hcInfraID:        "hc-infra",
+			hcClusterID:      "hc-cluster",
+			wantHCPInfraID:   "hc-infra",
+			wantHCPClusterID: "hc-cluster",
+		},
+		{
+			name:             "When HCP already has IDs it should not overwrite them with HostedCluster values",
+			hcInfraID:        "new-infra",
+			hcClusterID:      "new-cluster",
+			hcpInfraID:       "original-infra",
+			hcpClusterID:     "original-cluster",
+			wantHCPInfraID:   "original-infra",
+			wantHCPClusterID: "original-cluster",
+		},
+		{
+			name:             "When only HCP infraID is set it should keep infraID and copy clusterID",
+			hcInfraID:        "new-infra",
+			hcClusterID:      "hc-cluster",
+			hcpInfraID:       "original-infra",
+			wantHCPInfraID:   "original-infra",
+			wantHCPClusterID: "hc-cluster",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID:   test.hcInfraID,
+					ClusterID: test.hcClusterID,
+				},
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:   test.hcpInfraID,
+					ClusterID: test.hcpClusterID,
+				},
+			}
+			err := reconcileHostedControlPlane(hcp, hc, false, false, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(hcp.Spec.InfraID).To(Equal(test.wantHCPInfraID))
+			g.Expect(hcp.Spec.ClusterID).To(Equal(test.wantHCPClusterID))
 		})
 	}
 }
