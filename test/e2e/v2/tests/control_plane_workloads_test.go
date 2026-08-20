@@ -82,9 +82,7 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					deployment := &appsv1.Deployment{}
 					err = testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
@@ -139,9 +137,7 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					// Skip if workload is in exemption list
 					if slices.Contains(exemptions, workload.Name) {
@@ -238,9 +234,7 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					// Skip if workload is in exemption list
 					if slices.Contains(exemptions, workload.Name) {
@@ -315,9 +309,7 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					// Skip if workload is in exemption list
 					if slices.Contains(exemptions, workload.Name) {
@@ -361,9 +353,7 @@ func ContainerImagePullPolicyTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					pods := getWorkloadPods(testCtx, workload)
 					if len(pods) == 0 {
@@ -415,9 +405,7 @@ func ContainerTerminationMessagePolicyTest(getTestCtx internal.TestContextGetter
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					// Skip if workload is in exemption list
 					if slices.Contains(exemptions, workload.Name) {
@@ -461,9 +449,7 @@ func ContainerResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					pods := getWorkloadPods(testCtx, workload)
 					if len(pods) == 0 {
@@ -502,9 +488,7 @@ func PodPriorityTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					pods := getWorkloadPods(testCtx, workload)
 					if len(pods) == 0 {
@@ -582,9 +566,7 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					if slices.Contains(exemptions, workload.Name) {
 						Skip(fmt.Sprintf("workload %s is exempt from service account token mounting check", workload.Name))
@@ -627,9 +609,7 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					// SRO is being removed in 4.18
 					if workload.Name == "shared-resource-csi-driver-operator" {
@@ -831,9 +811,7 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					// Skip if workload is in exemption list
 					if slices.Contains(exemptions, workload.Name) {
@@ -939,9 +917,7 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 
 					pods := getWorkloadPods(testCtx, workload)
 					if len(pods) == 0 {
@@ -1019,9 +995,7 @@ func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 					if slices.Contains(exemptions, workload.Name) {
 						Skip(fmt.Sprintf("workload %s is exempt from custom labels check", workload.Name))
 					}
@@ -1062,9 +1036,7 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
-					if internal.ShouldSkipWorkloadForVersion(workload) {
-						Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
-					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
 					if slices.Contains(exemptions, workload.Name) {
 						Skip(fmt.Sprintf("workload %s is exempt from custom tolerations check", workload.Name))
 					}

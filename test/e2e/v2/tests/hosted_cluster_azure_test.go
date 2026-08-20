@@ -236,14 +236,12 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			Expect(controlPlaneNamespace).NotTo(BeEmpty(), "control plane namespace must be set")
 
 			DeferCleanup(func() {
-				// Use context.Background() because DeferCleanup runs after the test completes,
-				// when testCtx.Context may already be canceled.
 				freshHC, err := testCtx.GetHostedCluster()
 				if err != nil {
 					GinkgoTB().Logf("WARNING: failed to fetch HostedCluster for cleanup: %v", err)
 					return
 				}
-				restoreErr := e2eutil.UpdateObject(GinkgoTB(), context.Background(), testCtx.MgmtClient, freshHC, func(obj *hyperv1.HostedCluster) {
+				restoreErr := e2eutil.UpdateObject(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, freshHC, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.Platform.Azure.Topology = hyperv1.AzureTopologyPrivate
 				})
 				if restoreErr != nil {
