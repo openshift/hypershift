@@ -457,6 +457,24 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
+	if machineCountExceedsSafetyLimit(nodePool, len(machines)) {
+		limit := maxAllowedMachinesForNodePool(nodePool)
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolReadyConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolExcessiveMachineCountReason,
+			Message:            fmt.Sprintf("halting machine creation: %d Machines exist, which exceeds the safety limit of %d for this NodePool", len(machines), limit),
+			ObservedGeneration: nodePool.Generation,
+		})
+		if err := capi.Pause(ctx); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to pause CAPI after excessive machine count: %w", err)
+		}
+		log.Info("Halting CAPI reconcile because Machine count exceeds safety limit",
+			"machineCount", len(machines),
+			"limit", limit)
+		return ctrl.Result{}, nil
+	}
+
 	if err := capi.Reconcile(ctx); err != nil {
 		var notReadyErr *NotReadyError
 		if coreerrors.As(err, &notReadyErr) {
@@ -572,6 +590,16 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 			},
 		},
 	}
+	// Pause every CAPI resource for this NodePool before deleting so the CAPI
+	// controllers cannot keep creating Machines during teardown.
+	if err := capi.Pause(ctx); err != nil {
+		return fmt.Errorf("failed to pause CAPI resources: %w", err)
+	}
+
+	if err := capi.deleteOwnedCAPIResources(ctx); err != nil {
+		return err
+	}
+
 	md := capi.machineDeployment()
 	ms := capi.machineSet()
 	mhc := capi.machineHealthCheck()
@@ -787,6 +815,44 @@ func isUpdatingMachineTemplate(nodePool *hyperv1.NodePool, targetMachineTemplate
 
 func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 	return nodePool.Spec.AutoScaling != nil
+}
+
+const (
+	// machineCountSafetyMultiplier is how many times the desired replica count a
+	// NodePool may have before CAPI reconciliation is halted.
+	machineCountSafetyMultiplier = 5
+	// machineCountSafetyFloor is the minimum Machine count that triggers the
+	// circuit breaker, so small NodePools still have headroom for Machines that
+	// are terminating.
+	machineCountSafetyFloor = 10
+)
+
+// desiredReplicaCount returns the replica count this NodePool is expected to
+// drive. Autoscaled pools use Max so a pool inside its range is never treated
+// as over-provisioned.
+func desiredReplicaCount(nodePool *hyperv1.NodePool) int32 {
+	if isAutoscalingEnabled(nodePool) {
+		return nodePool.Spec.AutoScaling.Max
+	}
+	return ptr.Deref(nodePool.Spec.Replicas, 0)
+}
+
+// maxAllowedMachinesForNodePool returns an upper bound on how many Machines
+// this NodePool may reasonably have, including rolling-update surge.
+func maxAllowedMachinesForNodePool(nodePool *hyperv1.NodePool) int {
+	desired := desiredReplicaCount(nodePool)
+	if desired < 0 {
+		desired = 0
+	}
+	limit := int(desired) * machineCountSafetyMultiplier
+	if limit < machineCountSafetyFloor {
+		return machineCountSafetyFloor
+	}
+	return limit
+}
+
+func machineCountExceedsSafetyLimit(nodePool *hyperv1.NodePool, machineCount int) bool {
+	return machineCount > maxAllowedMachinesForNodePool(nodePool)
 }
 
 // defaultNodePoolAMI resolves the default AWS AMI for a NodePool from release image stream metadata.

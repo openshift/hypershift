@@ -373,14 +373,144 @@ func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSe
 }
 
 func (c *CAPI) Pause(ctx context.Context) error {
-	// Pause MachineSet
+	// Pause every CAPI object owned by this NodePool, including MachineSets
+	// created during MachineDeployment rollouts. Canonical-name pause below
+	// covers resources that predate the nodePool annotation.
+	if err := c.pauseOwnedCAPIResources(ctx); err != nil {
+		return err
+	}
+
 	if err := c.pauseMachineSet(ctx); err != nil {
 		return fmt.Errorf("error pausing MachineSet: %w", err)
 	}
 
-	// Pause MachineDeployment
 	if err := c.pauseMachineDeployment(ctx); err != nil {
 		return fmt.Errorf("error pausing MachineDeployment: %w", err)
+	}
+
+	if err := c.pauseMachineHealthCheck(ctx, c.machineHealthCheck()); err != nil {
+		return fmt.Errorf("error pausing MachineHealthCheck: %w", err)
+	}
+	if err := c.pauseMachineHealthCheck(ctx, c.spotMachineHealthCheck()); err != nil {
+		return fmt.Errorf("error pausing spot MachineHealthCheck: %w", err)
+	}
+
+	return nil
+}
+
+func (c *CAPI) pauseOwnedCAPIResources(ctx context.Context) error {
+	nodePoolKey := client.ObjectKeyFromObject(c.nodePool).String()
+	ns := c.controlplaneNamespace
+
+	machineSets := &capiv1.MachineSetList{}
+	if err := c.Client.List(ctx, machineSets, client.InNamespace(ns)); err != nil {
+		return fmt.Errorf("failed to list MachineSets: %w", err)
+	}
+	for i := range machineSets.Items {
+		if err := setPausedAnnotation(ctx, c.Client, &machineSets.Items[i], nodePoolKey); err != nil {
+			return fmt.Errorf("error pausing MachineSet %s: %w", machineSets.Items[i].Name, err)
+		}
+	}
+
+	machineDeployments := &capiv1.MachineDeploymentList{}
+	if err := c.Client.List(ctx, machineDeployments, client.InNamespace(ns)); err != nil {
+		return fmt.Errorf("failed to list MachineDeployments: %w", err)
+	}
+	for i := range machineDeployments.Items {
+		if err := setPausedAnnotation(ctx, c.Client, &machineDeployments.Items[i], nodePoolKey); err != nil {
+			return fmt.Errorf("error pausing MachineDeployment %s: %w", machineDeployments.Items[i].Name, err)
+		}
+	}
+
+	machineHealthChecks := &capiv1.MachineHealthCheckList{}
+	if err := c.Client.List(ctx, machineHealthChecks, client.InNamespace(ns)); err != nil {
+		return fmt.Errorf("failed to list MachineHealthChecks: %w", err)
+	}
+	for i := range machineHealthChecks.Items {
+		if err := setPausedAnnotation(ctx, c.Client, &machineHealthChecks.Items[i], nodePoolKey); err != nil {
+			return fmt.Errorf("error pausing MachineHealthCheck %s: %w", machineHealthChecks.Items[i].Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (c *CAPI) pauseMachineHealthCheck(ctx context.Context, mhc *capiv1.MachineHealthCheck) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineHealthCheck: %w", err)
+	}
+	return setPausedAnnotation(ctx, c.Client, mhc, "")
+}
+
+// setPausedAnnotation sets the CAPI paused annotation on obj. When nodePoolKey
+// is non-empty, objects that do not belong to that NodePool are skipped.
+func setPausedAnnotation(ctx context.Context, c client.Client, obj client.Object, nodePoolKey string) error {
+	if nodePoolKey != "" && obj.GetAnnotations()[nodePoolAnnotation] != nodePoolKey {
+		return nil
+	}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	if annotations[capiv1.PausedAnnotation] == "true" {
+		return nil
+	}
+	annotations[capiv1.PausedAnnotation] = "true"
+	obj.SetAnnotations(annotations)
+	if err := c.Update(ctx, obj); err != nil {
+		return fmt.Errorf("failed to set paused annotation: %w", err)
+	}
+	return nil
+}
+
+func (c *CAPI) deleteOwnedCAPIResources(ctx context.Context) error {
+	nodePoolKey := client.ObjectKeyFromObject(c.nodePool).String()
+	ns := c.controlplaneNamespace
+
+	machineSets := &capiv1.MachineSetList{}
+	if err := c.Client.List(ctx, machineSets, client.InNamespace(ns)); err != nil {
+		return fmt.Errorf("failed to list MachineSets: %w", err)
+	}
+	for i := range machineSets.Items {
+		ms := &machineSets.Items[i]
+		if ms.Annotations[nodePoolAnnotation] != nodePoolKey {
+			continue
+		}
+		if err := deleteMachineSet(ctx, c.Client, ms); err != nil {
+			return fmt.Errorf("failed to delete MachineSet %s: %w", ms.Name, err)
+		}
+	}
+
+	machineDeployments := &capiv1.MachineDeploymentList{}
+	if err := c.Client.List(ctx, machineDeployments, client.InNamespace(ns)); err != nil {
+		return fmt.Errorf("failed to list MachineDeployments: %w", err)
+	}
+	for i := range machineDeployments.Items {
+		md := &machineDeployments.Items[i]
+		if md.Annotations[nodePoolAnnotation] != nodePoolKey {
+			continue
+		}
+		if err := deleteMachineDeployment(ctx, c.Client, md); err != nil {
+			return fmt.Errorf("failed to delete MachineDeployment %s: %w", md.Name, err)
+		}
+	}
+
+	machineHealthChecks := &capiv1.MachineHealthCheckList{}
+	if err := c.Client.List(ctx, machineHealthChecks, client.InNamespace(ns)); err != nil {
+		return fmt.Errorf("failed to list MachineHealthChecks: %w", err)
+	}
+	for i := range machineHealthChecks.Items {
+		mhc := &machineHealthChecks.Items[i]
+		if mhc.Annotations[nodePoolAnnotation] != nodePoolKey {
+			continue
+		}
+		if err := deleteMachineHealthCheck(ctx, c.Client, mhc); err != nil {
+			return fmt.Errorf("failed to delete MachineHealthCheck %s: %w", mhc.Name, err)
+		}
 	}
 
 	return nil

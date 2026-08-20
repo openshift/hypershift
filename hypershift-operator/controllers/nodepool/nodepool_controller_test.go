@@ -179,6 +179,93 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 	}
 }
 
+func TestMaxAllowedMachinesForNodePool(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+		expect   int
+	}{
+		{
+			name: "When replicas is 1, it should use the safety floor",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{Replicas: ptr.To[int32](1)},
+			},
+			expect: machineCountSafetyFloor,
+		},
+		{
+			name: "When replicas is 0, it should use the safety floor",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{Replicas: ptr.To[int32](0)},
+			},
+			expect: machineCountSafetyFloor,
+		},
+		{
+			name: "When replicas is 10, it should use 5x desired",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{Replicas: ptr.To[int32](10)},
+			},
+			expect: 50,
+		},
+		{
+			name: "When autoscaling is enabled, it should use 5x max",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					AutoScaling: &hyperv1.NodePoolAutoScaling{Min: ptr.To[int32](1), Max: 20},
+				},
+			},
+			expect: 100,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(maxAllowedMachinesForNodePool(tc.nodePool)).To(Equal(tc.expect))
+		})
+	}
+}
+
+func TestMachineCountExceedsSafetyLimit(t *testing.T) {
+	t.Parallel()
+	nodePool := &hyperv1.NodePool{
+		Spec: hyperv1.NodePoolSpec{Replicas: ptr.To[int32](1)},
+	}
+	testCases := []struct {
+		name         string
+		machineCount int
+		expect       bool
+	}{
+		{
+			name:         "When count is at the desired replica count, it should not exceed the limit",
+			machineCount: 1,
+			expect:       false,
+		},
+		{
+			name:         "When count is at the safety floor, it should not exceed the limit",
+			machineCount: machineCountSafetyFloor,
+			expect:       false,
+		},
+		{
+			name:         "When count is above the safety floor, it should exceed the limit",
+			machineCount: machineCountSafetyFloor + 1,
+			expect:       true,
+		},
+		{
+			name:         "When count is thousands of Machines for a 1-replica NodePool, it should exceed the limit",
+			machineCount: 4500,
+			expect:       true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(machineCountExceedsSafetyLimit(nodePool, tc.machineCount)).To(Equal(tc.expect))
+		})
+	}
+}
+
 func TestValidateManagement(t *testing.T) {
 	t.Parallel()
 	intstrPointer1 := intstr.FromInt(1)
