@@ -40,6 +40,28 @@ func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
 			PrivateZoneIAMRole: hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN,
 		}
 	}
+
+	// When managed ingress DNS is active, override the zones with the
+	// CPO-managed ingress zones so the ingress operator creates wildcard
+	// records there. The ingress operator gets the platform type from
+	// infrastructure.config, not dns.config, so no platform change is needed.
+	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.ManagedDNS != nil {
+		reconcileManagedIngressDNSZones(dns, hcp)
+	}
+}
+
+func reconcileManagedIngressDNSZones(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Status.Platform == nil || hcp.Status.Platform.AWS == nil {
+		return
+	}
+	for _, zone := range hcp.Status.Platform.AWS.DNSZones {
+		switch zone.ZoneType {
+		case hyperv1.PublicIngressZone:
+			dns.Spec.PublicZone = &configv1.DNSZone{ID: zone.ZoneID}
+		case hyperv1.PrivateIngressZone:
+			dns.Spec.PrivateZone = &configv1.DNSZone{ID: zone.ZoneID}
+		}
+	}
 }
 
 func BaseDomain(hcp *hyperv1.HostedControlPlane) string {

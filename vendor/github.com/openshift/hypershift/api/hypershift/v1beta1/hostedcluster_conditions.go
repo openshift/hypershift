@@ -273,6 +273,17 @@ const (
 	PublicEndpointSharedIngressConfiguredReason = "SharedIngressConfigured"
 	PublicEndpointTopologyPrivateReason         = "TopologyPrivate"
 	PublicEndpointConvergenceInProgressReason   = "ConvergenceInProgress"
+)
+
+// AWSManagedDNSAvailable indicates whether the managed DNS configuration
+// has been successfully created for the hosted cluster. This condition is
+// only set when spec.platform.aws.managedDNS is configured.
+const AWSManagedDNSAvailable ConditionType = "AWSManagedDNSAvailable"
+
+const (
+	AWSManagedDNSSuccessReason = "ManagedDNSSuccess"
+	AWSManagedDNSErrorReason   = "ManagedDNSError"
+	AWSManagedDNSPendingReason = "NSDelegationPending"
 	// EtcdDataEncryptionUpToDate indicates whether all etcd data is encrypted with the
 	// currently active encryption key.
 	// True: all data confirmed encrypted with the active key.

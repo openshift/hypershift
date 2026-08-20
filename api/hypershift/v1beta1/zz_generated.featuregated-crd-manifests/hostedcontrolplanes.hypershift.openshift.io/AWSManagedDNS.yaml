@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/: "true"
+    feature-gate.release.openshift.io/AWSManagedDNS: "true"
   name: hostedcontrolplanes.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -603,11 +603,6 @@ spec:
                                 3. routes.route.openshift.io
                                 4. oauthaccesstokens.oauth.openshift.io
                                 5. oauthauthorizetokens.oauth.openshift.io
-                            enum:
-                            - ""
-                            - identity
-                            - aescbc
-                            - aesgcm
                             type: string
                         type: object
                       servingCerts:
@@ -853,10 +848,6 @@ spec:
                           type identifies the cluster managed, user facing authentication mode in use.
                           Specifically, it manages the component that responds to login attempts.
                           The default is IntegratedOAuth.
-                        enum:
-                        - ""
-                        - None
-                        - IntegratedOAuth
                         type: string
                       webhookTokenAuthenticator:
                         description: |-
@@ -4225,6 +4216,45 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
+                      managedDNS:
+                        description: managedDNS configures CPO-managed Route53 DNS
+                          zones for this cluster.
+                        properties:
+                          delegation:
+                            description: |-
+                              delegation configures service-side DNS delegation for certificate generation.
+                              When set, the CPO creates an ACME DNS01 challenge CNAME in the public ingress
+                              zone and handles NS delegation based on the nsDelegation mode.
+                              When absent, only zones are created and the consuming platform handles
+                              delegation and certificate management.
+                            properties:
+                              nsDelegation:
+                                description: |-
+                                  nsDelegation specifies how NS delegation records are created in the parent zone.
+                                  "ExternalDNS": the CPO creates a DNSEndpoint CR in the control plane namespace;
+                                  external-dns creates NS records in the parent zone.
+                                  "Manual": the consuming platform handles NS delegation using nameservers
+                                  reported in HostedCluster status.
+                                enum:
+                                - ExternalDNS
+                                - Manual
+                                type: string
+                            required:
+                            - nsDelegation
+                            type: object
+                          ingressDomainPrefix:
+                            default: in
+                            description: |-
+                              ingressDomainPrefix is the subdomain prefix for ingress DNS zones.
+                              Zones are created as {prefix}.{baseDomainPrefix}.{baseDomain}.
+                              When delegation is configured, the prefix creates a DNS delegation boundary
+                              that separates the ingress zone from the cluster domain, enabling ACME
+                              challenge CNAME delegation back to the parent zone.
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                            type: string
+                        type: object
                       multiArch:
                         default: false
                         description: |-
@@ -6094,14 +6124,6 @@ spec:
                   type:
                     description: type is the type of infrastructure provider for the
                       cluster.
-                    enum:
-                    - AWS
-                    - Azure
-                    - IBMCloud
-                    - KubeVirt
-                    - Agent
-                    - PowerVS
-                    - None
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:

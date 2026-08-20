@@ -992,6 +992,9 @@ func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(strin
 		if strings.Contains(path, "hypershift-operator/") {
 			return true
 		}
+		if strings.Contains(path, "external-dns/") {
+			return true
+		}
 		if strings.Contains(path, "cluster-api/") {
 			return !existingIPAMCRDs.Has(crd.Name)
 		}

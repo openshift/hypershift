@@ -7297,6 +7297,51 @@ spec:
                           addition to any security groups specified in the NodePool.
                         maxLength: 255
                         type: string
+                      dnsZones:
+                        description: dnsZones contains DNS zone information for zones
+                          managed by the control plane operator.
+                        items:
+                          description: AWSDNSZoneStatus represents a managed Route53
+                            DNS zone and its metadata.
+                          properties:
+                            name:
+                              description: name is the DNS name of the hosted zone.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                            nameServers:
+                              description: |-
+                                nameServers are the authoritative name servers for this zone.
+                                Used for NS delegation when external-dns is not available.
+                              items:
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                              maxItems: 10
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            zoneID:
+                              description: zoneID is the Route53 hosted zone ID.
+                              maxLength: 32
+                              minLength: 1
+                              type: string
+                            zoneType:
+                              description: zoneType indicates the purpose of the zone.
+                              enum:
+                              - PublicIngress
+                              - PrivateIngress
+                              - HypershiftLocal
+                              type: string
+                          required:
+                          - name
+                          - zoneID
+                          - zoneType
+                          type: object
+                        maxItems: 5
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - zoneType
+                        x-kubernetes-list-type: map
                     type: object
                 type: object
               secretEncryption:

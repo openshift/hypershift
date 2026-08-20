@@ -193,6 +193,7 @@ type HostedControlPlaneReconciler struct {
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
 	clock                                   clock.Clock
+	lastDNSReconcile                        sync.Map
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
@@ -387,6 +388,15 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 	}
 	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
+		if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform &&
+			hostedControlPlane.Spec.Platform.AWS != nil &&
+			hostedControlPlane.Spec.Platform.AWS.ManagedDNS != nil {
+			if err := r.cleanupIngressDNSZones(ctx, hostedControlPlane); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to cleanup ingress DNS zones: %w", err)
+			}
+			r.lastDNSReconcile.Delete(hostedControlPlane.Name)
+		}
+
 		if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
 			condition.Message = "failed to delete AWS default security group"
 			if code == supportawsutil.DependencyViolation {
@@ -641,6 +651,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	switch hostedControlPlane.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		r.validateAWSKMSConfig(ctx, hostedControlPlane)
+		if hostedControlPlane.Spec.Platform.AWS != nil && hostedControlPlane.Spec.Platform.AWS.ManagedDNS != nil {
+			if err := r.reconcileIngressDNSZones(ctx, hostedControlPlane); err != nil {
+				r.Log.Error(err, "failed to reconcile ingress DNS zones")
+			}
+		}
 	case hyperv1.AzurePlatform:
 		r.validateAzureKMSConfig(ctx, hostedControlPlane)
 	}

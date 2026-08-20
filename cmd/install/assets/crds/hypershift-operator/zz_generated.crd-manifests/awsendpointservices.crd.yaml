@@ -180,6 +180,15 @@ spec:
                   management VPC
                 maxLength: 255
                 type: string
+              managedLocalZone:
+                description: |-
+                  managedLocalZone indicates that the hypershift.local zone was created
+                  by the controller and should be cleaned up on deletion.
+                  When set to "Managed", the controller owns the zone lifecycle.
+                enum:
+                - Managed
+                minLength: 1
+                type: string
               securityGroupID:
                 description: |-
                   securityGroupID is the ID for the VPC endpoint SecurityGroup

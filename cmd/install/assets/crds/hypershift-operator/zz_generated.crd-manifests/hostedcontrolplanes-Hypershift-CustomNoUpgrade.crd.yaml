@@ -6300,6 +6300,45 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
+                      managedDNS:
+                        description: managedDNS configures CPO-managed Route53 DNS
+                          zones for this cluster.
+                        properties:
+                          delegation:
+                            description: |-
+                              delegation configures service-side DNS delegation for certificate generation.
+                              When set, the CPO creates an ACME DNS01 challenge CNAME in the public ingress
+                              zone and handles NS delegation based on the nsDelegation mode.
+                              When absent, only zones are created and the consuming platform handles
+                              delegation and certificate management.
+                            properties:
+                              nsDelegation:
+                                description: |-
+                                  nsDelegation specifies how NS delegation records are created in the parent zone.
+                                  "ExternalDNS": the CPO creates a DNSEndpoint CR in the control plane namespace;
+                                  external-dns creates NS records in the parent zone.
+                                  "Manual": the consuming platform handles NS delegation using nameservers
+                                  reported in HostedCluster status.
+                                enum:
+                                - ExternalDNS
+                                - Manual
+                                type: string
+                            required:
+                            - nsDelegation
+                            type: object
+                          ingressDomainPrefix:
+                            default: in
+                            description: |-
+                              ingressDomainPrefix is the subdomain prefix for ingress DNS zones.
+                              Zones are created as {prefix}.{baseDomainPrefix}.{baseDomain}.
+                              When delegation is configured, the prefix creates a DNS delegation boundary
+                              that separates the ingress zone from the cluster domain, enabling ACME
+                              challenge CNAME delegation back to the parent zone.
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                            type: string
+                        type: object
                       multiArch:
                         default: false
                         description: |-
@@ -10360,6 +10399,51 @@ spec:
                           addition to any security groups specified in the NodePool.
                         maxLength: 255
                         type: string
+                      dnsZones:
+                        description: dnsZones contains DNS zone information for zones
+                          managed by the control plane operator.
+                        items:
+                          description: AWSDNSZoneStatus represents a managed Route53
+                            DNS zone and its metadata.
+                          properties:
+                            name:
+                              description: name is the DNS name of the hosted zone.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                            nameServers:
+                              description: |-
+                                nameServers are the authoritative name servers for this zone.
+                                Used for NS delegation when external-dns is not available.
+                              items:
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                              maxItems: 10
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            zoneID:
+                              description: zoneID is the Route53 hosted zone ID.
+                              maxLength: 32
+                              minLength: 1
+                              type: string
+                            zoneType:
+                              description: zoneType indicates the purpose of the zone.
+                              enum:
+                              - PublicIngress
+                              - PrivateIngress
+                              - HypershiftLocal
+                              type: string
+                          required:
+                          - name
+                          - zoneID
+                          - zoneType
+                          type: object
+                        maxItems: 5
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - zoneType
+                        x-kubernetes-list-type: map
                     type: object
                 type: object
               ready:

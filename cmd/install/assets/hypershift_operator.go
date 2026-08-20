@@ -429,6 +429,11 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--aws-zone-type=public",
 			"--aws-batch-change-interval=10s",
 			fmt.Sprintf("--aws-zones-cache-duration=%s", awsZonesCacheDuration),
+			"--source=crd",
+			"--managed-record-types=A",
+			"--managed-record-types=AAAA",
+			"--managed-record-types=CNAME",
+			"--managed-record-types=NS",
 		)
 	case AzureExternalDNSProvider:
 		// Increase the Azure SDK retry count from the default of 3 to handle transient
@@ -1142,6 +1147,16 @@ func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 					"pods",
 				},
 				Verbs: []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints/status"},
+				Verbs:     []string{"get", "update", "patch"},
 			},
 		},
 	}
