@@ -39963,6 +39963,95 @@ string
 </tr>
 </tbody>
 </table>
+###AWSDNSZoneStatus { #hypershift.openshift.io/v1beta1.AWSDNSZoneStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformStatus">AWSPlatformStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>zoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>zoneID is the Route53 hosted zone ID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zoneType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneType">
+AWSDNSZoneType
+</a>
+</em>
+</td>
+<td>
+<p>zoneType indicates the purpose of the zone.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the DNS name of the hosted zone.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nameServers</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nameServers are the authoritative name servers for this zone.
+Used for NS delegation when external-dns is not available.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSDNSZoneType { #hypershift.openshift.io/v1beta1.AWSDNSZoneType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">AWSDNSZoneStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneType defines the purpose of a managed DNS zone.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;hypershift-local&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;private-ingress&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;public-ingress&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###AWSEndpointAccessType { #hypershift.openshift.io/v1beta1.AWSEndpointAccessType }
 <p>
 (<em>Appears on:</em>
@@ -40526,6 +40615,20 @@ string
 <p>defaultWorkerSecurityGroupID is the ID of a security group created by
 the control plane operator. It is always added to worker machines in
 addition to any security groups specified in the NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZones</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">
+[]AWSDNSZoneStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZones contains DNS zone information for zones managed by the control plane operator.</p>
 </td>
 </tr>
 </tbody>
@@ -44427,6 +44530,11 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AWSManagedDNSAvailable&#34;</p></td>
+<td><p>AWSManagedDNSAvailable indicates whether the managed DNS configuration
+has been successfully created for the hosted cluster. This condition is
+only set when the ManagedIngressDNSAnnotation is present.</p>
 </td>
 </tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
 <td><p>AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.

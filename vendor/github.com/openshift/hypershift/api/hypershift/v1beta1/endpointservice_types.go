@@ -92,6 +92,14 @@ type AWSEndpointServiceStatus struct {
 	// SecurityGroupID is the ID of the security group.
 	// +optional
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// managedLocalZone indicates that the hypershift.local zone was created
+	// by the controller and should be cleaned up on deletion.
+	// When set to "Managed", the controller owns the zone lifecycle.
+	// +optional
+	// +kubebuilder:validation:Enum=Managed
+	// +kubebuilder:validation:MinLength=1
+	ManagedLocalZone string `json:"managedLocalZone,omitempty"`
 }
 
 // +kubebuilder:object:root=true

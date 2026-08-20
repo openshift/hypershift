@@ -204,6 +204,7 @@ hostedclusters.hypershift.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - AWSManagedDNS
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - EtcdSharding
@@ -282,6 +283,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   Capability: ""
   Category: cluster-api
   FeatureGates:
+  - AWSManagedDNS
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - EtcdSharding

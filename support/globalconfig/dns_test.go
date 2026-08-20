@@ -126,6 +126,88 @@ func TestReconcileDNSConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:           "when managed ingress DNS is active, zones are overridden with ingress zone IDs from HCP status",
+			inputDNSConfig: DNSConfig(),
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Name: fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain:    fakeBaseDomain,
+						PublicZoneID:  fakePublicZoneID,
+						PrivateZoneID: fakePrivateZoneID,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ManagedDNS: &hyperv1.AWSManagedDNSSpec{},
+						},
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Platform: &hyperv1.PlatformStatus{
+						AWS: &hyperv1.AWSPlatformStatus{
+							DNSZones: []hyperv1.AWSDNSZoneStatus{
+								{ZoneID: "Z-INGRESS-PUB", ZoneType: hyperv1.PublicIngressZone, Name: "in.cluster.example.com"},
+								{ZoneID: "Z-INGRESS-PRIV", ZoneType: hyperv1.PrivateIngressZone, Name: "in.cluster.example.com"},
+							},
+						},
+					},
+				},
+			},
+			expectedDNSConfig: &configv1.DNS{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.DNSSpec{
+					BaseDomain: fmt.Sprintf("%s.%s", fakeHCPName, fakeBaseDomain),
+					PublicZone: &configv1.DNSZone{
+						ID: "Z-INGRESS-PUB",
+					},
+					PrivateZone: &configv1.DNSZone{
+						ID: "Z-INGRESS-PRIV",
+					},
+				},
+			},
+		},
+		{
+			name:           "when managed ingress DNS is active but HCP status has no zones, HC-level zones are preserved",
+			inputDNSConfig: DNSConfig(),
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Name: fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain:    fakeBaseDomain,
+						PublicZoneID:  fakePublicZoneID,
+						PrivateZoneID: fakePrivateZoneID,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ManagedDNS: &hyperv1.AWSManagedDNSSpec{},
+						},
+					},
+				},
+			},
+			expectedDNSConfig: &configv1.DNS{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.DNSSpec{
+					BaseDomain: fmt.Sprintf("%s.%s", fakeHCPName, fakeBaseDomain),
+					PublicZone: &configv1.DNSZone{
+						ID: fakePublicZoneID,
+					},
+					PrivateZone: &configv1.DNSZone{
+						ID: fakePrivateZoneID,
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {

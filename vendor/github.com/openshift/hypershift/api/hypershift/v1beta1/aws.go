@@ -430,6 +430,10 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:validation:MaxLength=512
 	// +kubebuilder:validation:Pattern=`^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$`
 	TerminationHandlerQueueURL string `json:"terminationHandlerQueueURL,omitempty"`
+
+	// managedDNS configures CPO-managed Route53 DNS zones for this cluster.
+	// +optional
+	ManagedDNS *AWSManagedDNSSpec `json:"managedDNS,omitempty"`
 }
 
 // AWSSharedVPC contains fields needed to create a HostedCluster using a VPC that has been
@@ -1086,6 +1090,95 @@ type AWSKMSKeyEntry struct {
 	ARN string `json:"arn,omitempty"`
 }
 
+// AWSDNSZoneType defines the purpose of a managed DNS zone.
+// +kubebuilder:validation:Enum=PublicIngress;PrivateIngress;HypershiftLocal
+type AWSDNSZoneType string
+
+const (
+	PublicIngressZone   AWSDNSZoneType = "PublicIngress"
+	PrivateIngressZone  AWSDNSZoneType = "PrivateIngress"
+	HypershiftLocalZone AWSDNSZoneType = "HypershiftLocal"
+)
+
+// AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.
+type AWSDNSZoneStatus struct {
+	// zoneID is the Route53 hosted zone ID.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	ZoneID string `json:"zoneID,omitempty"`
+
+	// zoneType indicates the purpose of the zone.
+	// +required
+	ZoneType AWSDNSZoneType `json:"zoneType,omitempty"`
+
+	// name is the DNS name of the hosted zone.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name,omitempty"`
+
+	// nameServers are the authoritative name servers for this zone.
+	// Used for NS delegation when external-dns is not available.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=253
+	NameServers []string `json:"nameServers,omitempty"`
+}
+
+// NSDelegationMode specifies how NS delegation is performed for managed DNS zones.
+// +kubebuilder:validation:Enum=ExternalDNS;Manual
+type NSDelegationMode string
+
+const (
+	NSDelegationExternalDNS NSDelegationMode = "ExternalDNS"
+	NSDelegationManual      NSDelegationMode = "Manual"
+)
+
+// AWSManagedDNSDelegationSpec configures service-side DNS delegation for
+// certificate generation. When set, the CPO creates an ACME DNS01 challenge
+// CNAME in the public ingress zone pointing back to the parent zone, and
+// handles NS delegation based on the nsDelegation mode.
+type AWSManagedDNSDelegationSpec struct {
+	// nsDelegation specifies how NS delegation records are created in the parent zone.
+	// "ExternalDNS": the CPO creates a DNSEndpoint CR in the control plane namespace;
+	// external-dns creates NS records in the parent zone.
+	// "Manual": the consuming platform handles NS delegation using nameservers
+	// reported in HostedCluster status.
+	// +required
+	NSDelegation NSDelegationMode `json:"nsDelegation,omitempty"`
+}
+
+// AWSManagedDNSSpec configures CPO-managed Route53 DNS zones for ingress.
+// When set, the CPO creates public and private ingress Route53 zones in the
+// customer's AWS account using ingressDomainPrefix to form the zone domain name.
+// Delegation (ACME CNAME + NS records) is configured separately via the
+// delegation field.
+// +openshift:enable:FeatureGate=AWSManagedDNS
+type AWSManagedDNSSpec struct {
+	// ingressDomainPrefix is the subdomain prefix for ingress DNS zones.
+	// Zones are created as {prefix}.{baseDomainPrefix}.{baseDomain}.
+	// When delegation is configured, the prefix creates a DNS delegation boundary
+	// that separates the ingress zone from the cluster domain, enabling ACME
+	// challenge CNAME delegation back to the parent zone.
+	// +optional
+	// +default="in"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`
+	IngressDomainPrefix string `json:"ingressDomainPrefix,omitempty"`
+
+	// delegation configures service-side DNS delegation for certificate generation.
+	// When set, the CPO creates an ACME DNS01 challenge CNAME in the public ingress
+	// zone and handles NS delegation based on the nsDelegation mode.
+	// When absent, only zones are created and the consuming platform handles
+	// delegation and certificate management.
+	// +optional
+	Delegation AWSManagedDNSDelegationSpec `json:"delegation,omitzero,omitempty"`
+}
+
 // AWSPlatformStatus contains status specific to the AWS platform
 type AWSPlatformStatus struct {
 	// defaultWorkerSecurityGroupID is the ID of a security group created by
@@ -1094,4 +1187,11 @@ type AWSPlatformStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=255
 	DefaultWorkerSecurityGroupID string `json:"defaultWorkerSecurityGroupID,omitempty"`
+
+	// dnsZones contains DNS zone information for zones managed by the control plane operator.
+	// +optional
+	// +listType=map
+	// +listMapKey=zoneType
+	// +kubebuilder:validation:MaxItems=5
+	DNSZones []AWSDNSZoneStatus `json:"dnsZones,omitempty"`
 }
