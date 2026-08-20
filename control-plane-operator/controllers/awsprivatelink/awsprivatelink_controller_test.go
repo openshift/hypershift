@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/awsapi"
+	"github.com/openshift/hypershift/support/globalconfig"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -1983,7 +1984,7 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 		expectDNSZoneIDCleared bool
 	}{
 		{
-			name: "When Status.DNSZoneID is set and in-memory cache is empty, it should use the status value",
+			name: "When in-memory cache is populated, it should create records",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kube-apiserver-private",
@@ -2003,13 +2004,8 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 				mockBuilder := NewMockawsClientProvider(mockCtrl)
 				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
 
-				// In-memory cache is empty (simulates pod restart)
-				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
-				// Should populate the cache from status
-				mockBuilder.EXPECT().setLocalHostedZoneID("Z1234567890")
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("Z1234567890")
 
-				// Route53 ListHostedZones should NOT be called
-				// CreateRecord (ChangeResourceRecordSets) should be called with the status zone ID
 				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
 					DoAndReturn(func(_ context.Context, input *route53sdk.ChangeResourceRecordSetsInput, _ ...func(*route53sdk.Options)) (*route53sdk.ChangeResourceRecordSetsOutput, error) {
 						if aws.ToString(input.HostedZoneId) != "Z1234567890" {
@@ -2025,98 +2021,7 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 			expectFQDNCount: 1,
 		},
 		{
-			name: "When both Status.DNSZoneID and in-memory cache are empty, it should call AWS",
-			awsEndpointSvc: &hyperv1.AWSEndpointService{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "kube-apiserver-private",
-					Namespace: "clusters-test",
-				},
-				Status: hyperv1.AWSEndpointServiceStatus{},
-			},
-			hcp: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-hcp",
-					Namespace: "clusters-test",
-				},
-			},
-			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
-				mockBuilder := NewMockawsClientProvider(mockCtrl)
-				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
-
-				// In-memory cache is empty
-				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
-				// Should call lookupZoneID -> ListHostedZones (paginator passes ctx, input, optFns...)
-				mockRoute53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(
-					&route53sdk.ListHostedZonesOutput{
-						HostedZones: []route53types.HostedZone{
-							{
-								Id:     aws.String("/hostedzone/ZFROMAWS"),
-								Name:   aws.String("test-hcp.hypershift.local."),
-								Config: &route53types.HostedZoneConfig{PrivateZone: true},
-							},
-						},
-						IsTruncated: false,
-					}, nil)
-				// Should cache the result from AWS
-				mockBuilder.EXPECT().setLocalHostedZoneID("ZFROMAWS")
-
-				// CreateRecord should be called with the zone from AWS
-				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(_ context.Context, input *route53sdk.ChangeResourceRecordSetsInput, _ ...func(*route53sdk.Options)) (*route53sdk.ChangeResourceRecordSetsOutput, error) {
-						if aws.ToString(input.HostedZoneId) != "ZFROMAWS" {
-							return nil, fmt.Errorf("unexpected zone ID: %s", aws.ToString(input.HostedZoneId))
-						}
-						return &route53sdk.ChangeResourceRecordSetsOutput{}, nil
-					})
-
-				return mockBuilder, mockRoute53
-			},
-			expectedZoneID:  "ZFROMAWS",
-			expectError:     false,
-			expectFQDNCount: 1,
-		},
-		{
-			name: "When in-memory cache is populated, it should use the cache",
-			awsEndpointSvc: &hyperv1.AWSEndpointService{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "kube-apiserver-private",
-					Namespace: "clusters-test",
-				},
-				Status: hyperv1.AWSEndpointServiceStatus{
-					DNSZoneID: "ZOLDVALUE",
-				},
-			},
-			hcp: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-hcp",
-					Namespace: "clusters-test",
-				},
-			},
-			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
-				mockBuilder := NewMockawsClientProvider(mockCtrl)
-				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
-
-				// In-memory cache is populated
-				mockBuilder.EXPECT().getLocalHostedZoneID().Return("ZCACHED")
-
-				// Neither ListHostedZones nor setLocalHostedZoneID should be called
-				// CreateRecord should use the cached zone ID
-				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(_ context.Context, input *route53sdk.ChangeResourceRecordSetsInput, _ ...func(*route53sdk.Options)) (*route53sdk.ChangeResourceRecordSetsOutput, error) {
-						if aws.ToString(input.HostedZoneId) != "ZCACHED" {
-							return nil, fmt.Errorf("unexpected zone ID: %s", aws.ToString(input.HostedZoneId))
-						}
-						return &route53sdk.ChangeResourceRecordSetsOutput{}, nil
-					})
-
-				return mockBuilder, mockRoute53
-			},
-			expectedZoneID:  "ZCACHED",
-			expectError:     false,
-			expectFQDNCount: 1,
-		},
-		{
-			name: "When lookupZoneID fails, it should return error",
+			name: "When cache and status are empty, it looks up by name and errors if not found",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kube-apiserver-private",
@@ -2136,14 +2041,14 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 
 				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
 				mockRoute53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(
-					nil, fmt.Errorf("Route53 throttling: Rate exceeded"))
+					&route53sdk.ListHostedZonesOutput{}, nil)
 
 				return mockBuilder, mockRoute53
 			},
 			expectError: true,
 		},
 		{
-			name: "When CreateRecord fails, it should return error",
+			name: "When CreateRecord fails with throttle, it should return error",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kube-apiserver-private",
@@ -2163,8 +2068,7 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 				mockBuilder := NewMockawsClientProvider(mockCtrl)
 				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
 
-				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
-				mockBuilder.EXPECT().setLocalHostedZoneID("Z1234567890")
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("Z1234567890")
 
 				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(nil, &smithy.GenericAPIError{Code: "Throttling", Message: "Rate exceeded"})
@@ -2194,8 +2098,7 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 				mockBuilder := NewMockawsClientProvider(mockCtrl)
 				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
 
-				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
-				mockBuilder.EXPECT().setLocalHostedZoneID("ZSTALE")
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("ZSTALE")
 				mockBuilder.EXPECT().setLocalHostedZoneID("")
 
 				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -2236,6 +2139,348 @@ func TestReconcileEndpointDNSRecords(t *testing.T) {
 			if tc.expectDNSZoneIDCleared {
 				g.Expect(tc.awsEndpointSvc.Status.DNSZoneID).To(BeEmpty())
 			}
+		})
+	}
+}
+
+func TestEnsureLocalZone(t *testing.T) {
+	testCases := []struct {
+		name              string
+		awsEndpointSvc    *hyperv1.AWSEndpointService
+		hcp               *hyperv1.HostedControlPlane
+		setupMocks        func(*gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API)
+		expectError       bool
+		expectedDNSZoneID string
+	}{
+		{
+			name: "When cache has valid zone, GetHostedZone verifies and returns",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZCACHED"},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "clusters-test"},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("ZCACHED")
+				mockRoute53.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.GetHostedZoneOutput{}, nil)
+				mockBuilder.EXPECT().setLocalHostedZoneID("ZCACHED")
+
+				return mockBuilder, mockRoute53
+			},
+			expectedDNSZoneID: "ZCACHED",
+		},
+		{
+			name: "When cache is empty but status has valid zone, GetHostedZone verifies and caches",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZFROMSTATUS"},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "clusters-test"},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
+				mockRoute53.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.GetHostedZoneOutput{}, nil)
+				mockBuilder.EXPECT().setLocalHostedZoneID("ZFROMSTATUS")
+
+				return mockBuilder, mockRoute53
+			},
+			expectedDNSZoneID: "ZFROMSTATUS",
+		},
+		{
+			name: "When cached zone is deleted externally, it should clear and re-lookup",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZSTALE"},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "clusters-test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:              "us-east-1",
+							CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-123"},
+						},
+					},
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("ZSTALE")
+				mockRoute53.EXPECT().GetHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					nil, &route53types.NoSuchHostedZone{Message: aws.String("not found")})
+				mockBuilder.EXPECT().setLocalHostedZoneID("")
+				// lookupZoneID finds the zone re-created with a new ID
+				mockRoute53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListHostedZonesOutput{
+						HostedZones: []route53types.HostedZone{
+							{
+								Id:     aws.String("/hostedzone/ZNEW"),
+								Name:   aws.String("test-hcp.hypershift.local."),
+								Config: &route53types.HostedZoneConfig{PrivateZone: true},
+							},
+						},
+					}, nil)
+				mockBuilder.EXPECT().setLocalHostedZoneID("ZNEW")
+
+				return mockBuilder, mockRoute53
+			},
+			expectedDNSZoneID: "ZNEW",
+		},
+		{
+			name: "When both empty and lookup finds zone, it should cache it",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "clusters-test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:              "us-east-1",
+							CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-123"},
+						},
+					},
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
+				mockRoute53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListHostedZonesOutput{
+						HostedZones: []route53types.HostedZone{
+							{
+								Id:     aws.String("/hostedzone/ZFOUND"),
+								Name:   aws.String("test-hcp.hypershift.local."),
+								Config: &route53types.HostedZoneConfig{PrivateZone: true},
+							},
+						},
+					}, nil)
+				mockBuilder.EXPECT().setLocalHostedZoneID("ZFOUND")
+
+				return mockBuilder, mockRoute53
+			},
+			expectedDNSZoneID: "ZFOUND",
+		},
+		{
+			name: "When both empty and lookup fails with managedDNS, it should create zone",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "clusters-test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "infra-123",
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:              "us-east-1",
+							CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-123"},
+							ManagedDNS:          &hyperv1.AWSManagedDNSSpec{},
+						},
+					},
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) (*MockawsClientProvider, *awsapi.MockROUTE53API) {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+
+				mockBuilder.EXPECT().getLocalHostedZoneID().Return("")
+				// lookupZoneID in ensureLocalZone finds nothing
+				mockRoute53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListHostedZonesOutput{}, nil)
+				// CreatePrivateHostedZone: lookupZoneID finds nothing
+				mockRoute53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListHostedZonesOutput{}, nil)
+				// CreatePrivateHostedZone: creates successfully
+				mockRoute53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.CreateHostedZoneOutput{
+						HostedZone: &route53types.HostedZone{Id: aws.String("/hostedzone/ZCREATED")},
+					}, nil)
+				mockBuilder.EXPECT().setLocalHostedZoneID("ZCREATED")
+
+				return mockBuilder, mockRoute53
+			},
+			expectedDNSZoneID: "ZCREATED",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			mockCtrl := gomock.NewController(t)
+			mockBuilder, mockRoute53 := tc.setupMocks(mockCtrl)
+
+			reconciler := &AWSEndpointServiceReconciler{
+				awsClientBuilder: mockBuilder,
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log.WithName("test"))
+			err := reconciler.ensureLocalZone(ctx, mockRoute53, tc.awsEndpointSvc, tc.hcp, ctrl.Log.WithName("test"))
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(tc.awsEndpointSvc.Status.DNSZoneID).To(Equal(tc.expectedDNSZoneID))
+			}
+		})
+	}
+}
+
+func TestManagedIngressBaseDomain(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected string
+	}{
+		{
+			name: "When BaseDomainPrefix is nil it should use HCP name as prefix",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain: "example.com",
+					},
+				},
+			},
+			expected: "my-cluster.example.com",
+		},
+		{
+			name: "When BaseDomainPrefix is set it should use that prefix",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain:       "example.com",
+						BaseDomainPrefix: strPtr("a1b2c3"),
+					},
+				},
+			},
+			expected: "a1b2c3.example.com",
+		},
+		{
+			name: "When BaseDomainPrefix is empty string it should return just BaseDomain",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain:       "example.com",
+						BaseDomainPrefix: strPtr(""),
+					},
+				},
+			},
+			expected: "example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(globalconfig.BaseDomain(tt.hcp)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func strPtr(s string) *string {
+	return &s
+}
+
+func TestDeleteLocalZoneCleanup(t *testing.T) {
+	managedHCP := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{
+					ManagedDNS: &hyperv1.AWSManagedDNSSpec{},
+				},
+			},
+		},
+	}
+	sharedVPCHCP := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				AWS: &hyperv1.AWSPlatformSpec{
+					ManagedDNS: &hyperv1.AWSManagedDNSSpec{},
+					SharedVPC:  &hyperv1.AWSSharedVPC{},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		awsEndpointSvc *hyperv1.AWSEndpointService
+		setupMock      func(*awsapi.MockROUTE53API)
+	}{
+		{
+			name: "When the cluster does not manage the local zone it should be a no-op",
+			hcp:  sharedVPCHCP,
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "private-router", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZLOCAL"},
+			},
+			setupMock: func(m *awsapi.MockROUTE53API) {},
+		},
+		{
+			name: "When the HCP is already gone it should be a no-op",
+			hcp:  nil,
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "private-router", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZLOCAL"},
+			},
+			setupMock: func(m *awsapi.MockROUTE53API) {},
+		},
+		{
+			name: "When the cluster manages the local zone it should delete it",
+			hcp:  managedHCP,
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "private-router", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZLOCAL"},
+			},
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListResourceRecordSetsOutput{ResourceRecordSets: []route53types.ResourceRecordSet{}}, nil,
+				)
+				m.EXPECT().DeleteHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					&route53sdk.DeleteHostedZoneOutput{}, nil,
+				)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			mockCtrl := gomock.NewController(t)
+			mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+			tt.setupMock(mockRoute53)
+
+			r := &AWSEndpointServiceReconciler{
+				Client: fake.NewClientBuilder().Build(),
+			}
+			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log.WithName("test"))
+
+			completed, err := r.delete(ctx, tt.awsEndpointSvc, tt.hcp, mockEC2, mockRoute53)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(completed).To(BeTrue())
 		})
 	}
 }

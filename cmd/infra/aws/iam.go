@@ -665,8 +665,7 @@ func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool) policyBin
 	}
 }
 
-func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding {
-	hostedZone = ensureHostedZonePrefix(hostedZone)
+func controlPlaneOperatorPolicy(sharedVPC bool) policyBinding {
 	var policy string
 	if sharedVPC {
 		policy = `{
@@ -685,14 +684,27 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:RevokeSecurityGroupEgress",
 						"ec2:DescribeSecurityGroups",
 						"ec2:DescribeVpcs",
-						"ec2:DescribeSubnets"
+						"ec2:DescribeSubnets",
+						"route53:ListHostedZones",
+						"route53:GetHostedZone",
+						"route53:CreateHostedZone",
+						"route53:DeleteHostedZone",
+						"route53:ChangeTagsForResource"
 					],
 					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets",
+						"route53:ListResourceRecordSets"
+					],
+					"Resource": "arn:aws:route53:::hostedzone/*"
 				}
 			]
 		}`
 	} else {
-		policy = fmt.Sprintf(`{
+		policy = `{
 			"Version": "2012-10-17",
 			"Statement": [
 				{
@@ -704,6 +716,11 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:DeleteVpcEndpoints",
 						"ec2:CreateTags",
 						"route53:ListHostedZones",
+						"route53:ListHostedZonesByVPC",
+						"route53:GetHostedZone",
+						"route53:CreateHostedZone",
+						"route53:DeleteHostedZone",
+						"route53:ChangeTagsForResource",
 						"ec2:CreateSecurityGroup",
 						"ec2:AuthorizeSecurityGroupIngress",
 						"ec2:AuthorizeSecurityGroupEgress",
@@ -722,10 +739,10 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"route53:ChangeResourceRecordSets",
 						"route53:ListResourceRecordSets"
 					],
-					"Resource": "arn:aws:route53:::%s"
+					"Resource": "arn:aws:route53:::hostedzone/*"
 				}
 			]
-		}`, hostedZone)
+		}`
 	}
 	return policyBinding{
 		name:                 "control-plane-operator",
@@ -885,7 +902,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 		&output.Roles.StorageARN:              awsEBSCSIPermPolicy,
 		&output.Roles.KubeCloudControllerARN:  kubeControllerPolicy,
 		&output.Roles.NodePoolManagementARN:   nodePoolPolicy,
-		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID, sharedVPC),
+		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(sharedVPC),
 		&output.Roles.NetworkARN:              cloudNetworkConfigControllerPolicy,
 	}
 

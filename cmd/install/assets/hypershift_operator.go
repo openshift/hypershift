@@ -254,7 +254,7 @@ const (
 // CRD installed. Today only google delegates NS records via DNSEndpoint;
 // add providers here as they adopt --source=crd.
 func (p ExternalDNSProvider) UsesCRDSource() bool {
-	return p == GCPExternalDNSProvider
+	return p == GCPExternalDNSProvider || p == AWSExternalDNSProvider
 }
 
 type ExternalDNSDeployment struct {
@@ -443,6 +443,8 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--aws-batch-change-interval=10s",
 			fmt.Sprintf("--aws-zones-cache-duration=%s", awsZonesCacheDuration),
 		)
+		// --source=crd and NS record management are added by the shared
+		// UsesCRDSource() block below.
 	case AzureExternalDNSProvider:
 		// Increase the Azure SDK retry count from the default of 3 to handle transient
 		// 429 (Too Many Requests) responses from the Azure DNS API with exponential backoff.
@@ -1176,6 +1178,16 @@ func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 					"pods",
 				},
 				Verbs: []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints/status"},
+				Verbs:     []string{"get", "update", "patch"},
 			},
 		},
 	}

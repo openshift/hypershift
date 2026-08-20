@@ -626,11 +626,11 @@ func TestCRDIncludeFilter(t *testing.T) {
 			expect: true,
 		},
 		{
-			name:   "When path contains external-dns and ExternalDNSProvider is aws (doesn't use CRD source), it should be excluded",
+			name:   "When path contains external-dns and ExternalDNSProvider is aws (uses CRD source), it should be included",
 			opts:   Options{ExternalDNSProvider: "aws"},
 			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
 			crd:    defaultCRD(),
-			expect: false,
+			expect: true,
 		},
 		{
 			name:   "When path contains external-dns and ExternalDNSProvider is empty, it should be excluded",
