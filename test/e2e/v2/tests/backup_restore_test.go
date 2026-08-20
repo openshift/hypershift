@@ -617,5 +617,17 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 			err = backuprestore.VerifyEtcdInitLogs(testCtx.Context, GinkgoLogr.WithName("etcd-init"), kubeClient, testCtx.ControlPlaneNamespace)
 			Expect(err).NotTo(HaveOccurred(), "etcd-init container logs should confirm snapshot restore")
 		})
+
+		It("should have all etcd members in a single cluster after restore", func() {
+			By("Verifying all etcd members form a single cluster (no split brain)")
+			err := backuprestore.VerifyEtcdClusterHealth(testCtx.Context, GinkgoLogr.WithName("etcd-cluster-health"), testCtx.MgmtClient, testCtx.ControlPlaneNamespace)
+			Expect(err).NotTo(HaveOccurred(), "all etcd members should form a single cluster after restore")
+		})
+
+		It("should not have etcd pods with excessive restarts after restore", func() {
+			By("Checking etcd pod restart counts for CrashLoopBackOff")
+			err := backuprestore.VerifyNoEtcdCrashLoop(testCtx.Context, GinkgoLogr.WithName("etcd-crashloop"), testCtx.MgmtClient, testCtx.ControlPlaneNamespace, 5)
+			Expect(err).NotTo(HaveOccurred(), "etcd pods should not have excessive restarts after restore")
+		})
 	})
 })

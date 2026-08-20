@@ -19,8 +19,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -136,7 +136,7 @@ func VerifyEtcdInitLogs(ctx context.Context, logger logr.Logger, kubeClient kube
 // etcdMemberListResponse represents the JSON output of etcdctl member list -w json.
 type etcdMemberListResponse struct {
 	Header  etcdResponseHeader `json:"header"`
-	Members []etcdMember        `json:"members"`
+	Members []etcdMember       `json:"members"`
 }
 
 // etcdResponseHeader contains the cluster-level metadata from an etcd response.
@@ -231,11 +231,18 @@ func VerifyNoEtcdCrashLoop(ctx context.Context, logger logr.Logger, mgmtClient c
 	}
 
 	for _, pod := range etcdPods.Items {
+		foundEtcdStatus := false
 		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.Name == "etcd" && cs.RestartCount > maxRestarts {
-				return fmt.Errorf("etcd container in pod %s has %d restarts (threshold: %d), indicating possible CrashLoopBackOff from member ID mismatch during restore",
-					pod.Name, cs.RestartCount, maxRestarts)
+			if cs.Name == "etcd" {
+				foundEtcdStatus = true
+				if cs.RestartCount > maxRestarts {
+					return fmt.Errorf("etcd container in pod %s has %d restarts (threshold: %d), indicating possible CrashLoopBackOff from member ID mismatch during restore",
+						pod.Name, cs.RestartCount, maxRestarts)
+				}
 			}
+		}
+		if !foundEtcdStatus {
+			return fmt.Errorf("etcd pod %s has no etcd container status", pod.Name)
 		}
 	}
 
