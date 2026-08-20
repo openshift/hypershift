@@ -425,6 +425,17 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}
 			return utilerrors.NewAggregate(dumpErrors)
+		case hyperv1.AzurePlatform:
+			var dumpErrors []error
+			err := dump.DumpAzureLBStatus(ctx, hc, opts.AzurePlatform.CredentialsFile, artifactDir)
+			if err != nil {
+				t.Logf("Failed saving Azure LB status; this is nonfatal: %v", err)
+			}
+			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
+			if err != nil {
+				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
+			}
+			return utilerrors.NewAggregate(dumpErrors)
 		default:
 			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, artifactDir)
 			if err != nil {
