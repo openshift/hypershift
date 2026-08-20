@@ -575,43 +575,43 @@ func TestReportInvalidGcpCreds(t *testing.T) {
 		expected                           *dto.MetricFamily
 	}{
 		{
-			name:                               "When both GCP conditions are true, metric is reported with a value set to 0 (valid)",
+			name:                               "When both GCP conditions are true, it should report metric value 0 as valid",
 			ValidGCPWorkloadIdentityCondStatus: metav1.ConditionTrue,
 			ValidGCPCredentialsCondStatus:      metav1.ConditionTrue,
 			expected:                           wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:                               "When ValidGCPWorkloadIdentity status is false, metric is reported with a value set to 1 (invalid)",
+			name:                               "When ValidGCPWorkloadIdentity status is false, it should report metric value 1 as invalid",
 			ValidGCPWorkloadIdentityCondStatus: metav1.ConditionFalse,
 			ValidGCPCredentialsCondStatus:      metav1.ConditionTrue,
 			expected:                           wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                               "When ValidGCPCredentials status is false, metric is reported with a value set to 1 (invalid)",
+			name:                               "When ValidGCPCredentials status is false, it should report metric value 1 as invalid",
 			ValidGCPWorkloadIdentityCondStatus: metav1.ConditionTrue,
 			ValidGCPCredentialsCondStatus:      metav1.ConditionFalse,
 			expected:                           wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                               "When both GCP conditions are false, metric is reported with a value set to 1 (invalid)",
+			name:                               "When both GCP conditions are false, it should report metric value 1 as invalid",
 			ValidGCPWorkloadIdentityCondStatus: metav1.ConditionFalse,
 			ValidGCPCredentialsCondStatus:      metav1.ConditionFalse,
 			expected:                           wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                               "When ValidGCPWorkloadIdentity status is unknown, metric is reported with a value set to 2 (unknown)",
+			name:                               "When ValidGCPWorkloadIdentity status is unknown, it should report metric value 2 as unknown",
 			ValidGCPWorkloadIdentityCondStatus: metav1.ConditionUnknown,
 			ValidGCPCredentialsCondStatus:      metav1.ConditionTrue,
 			expected:                           wrapExpectedValueAsMetric(2),
 		},
 		{
-			name:                               "When ValidGCPCredentials status is unknown, metric is reported with a value set to 2 (unknown)",
+			name:                               "When ValidGCPCredentials status is unknown, it should report metric value 2 as unknown",
 			ValidGCPWorkloadIdentityCondStatus: metav1.ConditionTrue,
 			ValidGCPCredentialsCondStatus:      metav1.ConditionUnknown,
 			expected:                           wrapExpectedValueAsMetric(2),
 		},
 		{
-			name:                               "When both GCP conditions are unknown, metric is reported with a value set to 2 (unknown)",
+			name:                               "When both GCP conditions are unknown, it should report metric value 2 as unknown",
 			ValidGCPWorkloadIdentityCondStatus: metav1.ConditionUnknown,
 			ValidGCPCredentialsCondStatus:      metav1.ConditionUnknown,
 			expected:                           wrapExpectedValueAsMetric(2),
