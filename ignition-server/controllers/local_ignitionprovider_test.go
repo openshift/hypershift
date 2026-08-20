@@ -711,7 +711,7 @@ func TestCopyMCOOutputToMCC(t *testing.T) {
 	}
 }
 
-func Test_copyMCCConfigInputs(t *testing.T) {
+func TestCopyMCCConfigInputs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1442,7 +1442,7 @@ func TestWriteOSImageStreamManifest(t *testing.T) {
 		{
 			name:                  "When osStream is rhel-10 it should write a valid OSImageStream CR with defaultStream rhel-10",
 			osStream:              "rhel-10",
-			expectedAPIVersion:    "machineconfiguration.openshift.io/v1alpha1",
+			expectedAPIVersion:    "machineconfiguration.openshift.io/v1",
 			expectedKind:          "OSImageStream",
 			expectedName:          "cluster",
 			expectedDefaultStream: "rhel-10",
@@ -1450,7 +1450,7 @@ func TestWriteOSImageStreamManifest(t *testing.T) {
 		{
 			name:                  "When osStream is rhel-9 it should write a valid OSImageStream CR with defaultStream rhel-9",
 			osStream:              "rhel-9",
-			expectedAPIVersion:    "machineconfiguration.openshift.io/v1alpha1",
+			expectedAPIVersion:    "machineconfiguration.openshift.io/v1",
 			expectedKind:          "OSImageStream",
 			expectedName:          "cluster",
 			expectedDefaultStream: "rhel-9",
@@ -1647,7 +1647,7 @@ func TestFetchMCSIgnitionPayload(t *testing.T) {
 			expectOk: false,
 		},
 		{
-			name: "When request succeeds, the correct Accept header should be sent",
+			name: "When request succeeds, it should send the correct Accept header",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Accept") != "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1" {
 					w.WriteHeader(http.StatusBadRequest)

@@ -545,118 +545,118 @@ func TestValidateSchedulePace(t *testing.T) {
 	}{
 		// Valid cron expressions
 		{
-			name:      "Valid daily schedule",
+			name:      "When valid daily schedule is provided, it should pass validation",
 			schedule:  "0 2 * * *",
 			expectErr: false,
 		},
 		{
-			name:      "Valid weekly schedule",
+			name:      "When valid weekly schedule is provided, it should pass validation",
 			schedule:  "0 1 * * 0",
 			expectErr: false,
 		},
 		{
-			name:      "Valid monthly schedule",
+			name:      "When valid monthly schedule is provided, it should pass validation",
 			schedule:  "0 3 1 * *",
 			expectErr: false,
 		},
 		{
-			name:      "Valid hourly schedule",
+			name:      "When valid hourly schedule is provided, it should pass validation",
 			schedule:  "0 * * * *",
 			expectErr: false,
 		},
 		{
-			name:      "Valid specific weekday schedule",
+			name:      "When valid specific weekday schedule is provided, it should pass validation",
 			schedule:  "30 14 * * 1-5", // Monday to Friday at 2:30 PM
 			expectErr: false,
 		},
 		// Valid Velero verb schedules
 		{
-			name:      "Valid daily verb",
+			name:      "When valid daily verb is provided, it should pass validation",
 			schedule:  "daily",
 			expectErr: false,
 		},
 		{
-			name:      "Valid weekly verb",
+			name:      "When valid weekly verb is provided, it should pass validation",
 			schedule:  "weekly",
 			expectErr: false,
 		},
 		{
-			name:      "Valid monthly verb",
+			name:      "When valid monthly verb is provided, it should pass validation",
 			schedule:  "monthly",
 			expectErr: false,
 		},
 		{
-			name:      "Valid @daily verb",
+			name:      "When valid @daily verb is provided, it should pass validation",
 			schedule:  "@daily",
 			expectErr: false,
 		},
 		{
-			name:      "Valid @weekly verb",
+			name:      "When valid @weekly verb is provided, it should pass validation",
 			schedule:  "@weekly",
 			expectErr: false,
 		},
 		{
-			name:      "Valid @monthly verb",
+			name:      "When valid @monthly verb is provided, it should pass validation",
 			schedule:  "@monthly",
 			expectErr: false,
 		},
 		{
-			name:      "Valid yearly verb",
+			name:      "When valid yearly verb is provided, it should pass validation",
 			schedule:  "yearly",
 			expectErr: false,
 		},
 		{
-			name:      "Valid hourly verb",
+			name:      "When valid hourly verb is provided, it should pass validation",
 			schedule:  "hourly",
 			expectErr: false,
 		},
 		{
-			name:      "Valid daily-2am verb",
+			name:      "When valid daily-2am verb is provided, it should pass validation",
 			schedule:  "daily-2am",
 			expectErr: false,
 		},
 		{
-			name:      "Valid weekly-friday verb",
+			name:      "When valid weekly-friday verb is provided, it should pass validation",
 			schedule:  "weekly-friday",
 			expectErr: false,
 		},
 		{
-			name:      "Valid case-insensitive DAILY",
+			name:      "When valid case-insensitive DAILY is provided, it should pass validation",
 			schedule:  "DAILY",
 			expectErr: false,
 		},
 		{
-			name:      "Valid case-insensitive @Weekly",
+			name:      "When valid case-insensitive @Weekly is provided, it should pass validation",
 			schedule:  "@Weekly",
 			expectErr: false,
 		},
 		// Invalid cron expressions
 		{
-			name:      "Empty schedule",
+			name:      "When empty schedule is provided, it should return an error",
 			schedule:  "",
 			expectErr: true,
 			errMsg:    "schedule expression is required",
 		},
 		{
-			name:      "Too few fields",
+			name:      "When schedule has too few fields, it should return an error",
 			schedule:  "0 2 *",
 			expectErr: true,
 			errMsg:    "invalid cron schedule",
 		},
 		{
-			name:      "Too many fields",
+			name:      "When schedule has too many fields, it should return an error",
 			schedule:  "0 2 * * * *",
 			expectErr: true,
 			errMsg:    "invalid cron schedule",
 		},
 		{
-			name:      "Too few fields with spaces",
+			name:      "When schedule has too few fields with spaces, it should return an error",
 			schedule:  "0  * * *",
 			expectErr: true,
 			errMsg:    "invalid cron schedule",
 		},
 		{
-			name:      "Too few fields with trailing space",
+			name:      "When schedule has too few fields with trailing space, it should return an error",
 			schedule:  "0 2 * * ",
 			expectErr: true,
 			errMsg:    "invalid cron schedule",
@@ -946,7 +946,7 @@ func TestRunSchedule(t *testing.T) {
 		expect func(g Gomega, err error)
 	}{
 		{
-			name: "When client is unavailable in render mode it should fallback to AWS and render",
+			name: "When client is unavailable in render mode, it should fallback to AWS and render",
 			setup: func(t *testing.T, opts *CreateOptions) {
 				t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
 				t.Setenv("KUBERNETES_SERVICE_HOST", "")
@@ -958,7 +958,7 @@ func TestRunSchedule(t *testing.T) {
 			},
 		},
 		{
-			name: "When client is available in render mode it should render with validation warnings",
+			name: "When client is available in render mode, it should render with validation warnings",
 			setup: func(t *testing.T, opts *CreateOptions) {
 				opts.Render = true
 				scheme := runtime.NewScheme()
@@ -969,7 +969,7 @@ func TestRunSchedule(t *testing.T) {
 			},
 		},
 		{
-			name: "When client has valid resources in non-render mode it should create the schedule",
+			name: "When client has valid resources in non-render mode, it should create the schedule",
 			setup: func(t *testing.T, opts *CreateOptions) {
 				opts.Render = false
 
@@ -1039,7 +1039,7 @@ func TestRunSchedule(t *testing.T) {
 			},
 		},
 		{
-			name: "When client is unavailable in non-render mode it should return an error",
+			name: "When client is unavailable in non-render mode, it should return an error",
 			setup: func(t *testing.T, opts *CreateOptions) {
 				t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
 				t.Setenv("KUBERNETES_SERVICE_HOST", "")
@@ -1052,7 +1052,7 @@ func TestRunSchedule(t *testing.T) {
 			},
 		},
 		{
-			name: "When HostedCluster is not found in non-render mode it should return platform detection error",
+			name: "When HostedCluster is not found in non-render mode, it should return platform detection error",
 			setup: func(t *testing.T, opts *CreateOptions) {
 				opts.Render = false
 				scheme := runtime.NewScheme()
@@ -1065,7 +1065,7 @@ func TestRunSchedule(t *testing.T) {
 			},
 		},
 		{
-			name: "When OADP components are missing in non-render mode it should return OADP validation error",
+			name: "When OADP components are missing in non-render mode, it should return OADP validation error",
 			setup: func(t *testing.T, opts *CreateOptions) {
 				opts.Render = false
 				scheme := runtime.NewScheme()
@@ -1086,7 +1086,7 @@ func TestRunSchedule(t *testing.T) {
 			},
 		},
 		{
-			name: "When DPA is missing in non-render mode it should return DPA verification error",
+			name: "When DPA is missing in non-render mode, it should return DPA verification error",
 			setup: func(t *testing.T, opts *CreateOptions) {
 				opts.Render = false
 				scheme := runtime.NewScheme()
@@ -1147,52 +1147,52 @@ func TestScheduleNameValidation(t *testing.T) {
 		errorMsg     string
 	}{
 		{
-			name:         "Valid short name",
+			name:         "When valid short name is provided, it should pass validation",
 			scheduleName: "test-schedule",
 			expectError:  false,
 		},
 		{
-			name:         "Valid name with numbers",
+			name:         "When valid name with numbers is provided, it should pass validation",
 			scheduleName: "test-schedule-123",
 			expectError:  false,
 		},
 		{
-			name:         "Valid 63 character name",
+			name:         "When valid 63 character name is provided, it should pass validation",
 			scheduleName: "a1234567890123456789012345678901234567890123456789012345678901b",
 			expectError:  false,
 		},
 		{
-			name:         "Name too long (64 characters)",
+			name:         "When name is too long (64 characters), it should return an error",
 			scheduleName: "a12345678901234567890123456789012345678901234567890123456789012b",
 			expectError:  true,
 			errorMsg:     "too long (64 characters)",
 		},
 		{
-			name:         "Name with uppercase letters",
+			name:         "When name has uppercase letters, it should return an error",
 			scheduleName: "Test-schedule",
 			expectError:  true,
 			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:         "Name starting with hyphen",
+			name:         "When name starts with hyphen, it should return an error",
 			scheduleName: "-test-schedule",
 			expectError:  true,
 			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:         "Name ending with hyphen",
+			name:         "When name ends with hyphen, it should return an error",
 			scheduleName: "test-schedule-",
 			expectError:  true,
 			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:         "Name with invalid characters",
+			name:         "When name has invalid characters, it should return an error",
 			scheduleName: "test_schedule",
 			expectError:  true,
 			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:         "Empty name should be valid",
+			name:         "When name is empty, it should pass validation",
 			scheduleName: "",
 			expectError:  false,
 		},

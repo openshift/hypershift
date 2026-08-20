@@ -43,6 +43,18 @@ import (
 	"github.com/blang/semver"
 )
 
+// CredentialStatus represents the status of GCP credentials
+type CredentialStatus int
+
+const (
+	// CredentialStatusValid indicates that GCP credentials are valid
+	CredentialStatusValid CredentialStatus = 0
+	// CredentialStatusInvalid indicates that GCP credentials are invalid
+	CredentialStatusInvalid CredentialStatus = 1
+	// CredentialStatusUnknown indicates that GCP credential status is unknown
+	CredentialStatusUnknown CredentialStatus = 2
+)
+
 // GCP implements the Platform interface for Google Cloud Platform.
 //
 // This implementation enables HostedCluster reconciliation for GCP platform
@@ -479,6 +491,39 @@ func ValidCredentials(hc *hyperv1.HostedCluster) bool {
 	}
 
 	return true
+}
+
+// GetCredentialStatus returns the GCP credential status (valid/invalid/unknown)
+func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
+	// Get GCP Workload Identity Federation status
+	var wifStatus metav1.ConditionStatus
+	validWIF := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
+	if validWIF == nil {
+		wifStatus = metav1.ConditionUnknown
+	} else {
+		wifStatus = validWIF.Status
+	}
+
+	// Get GCP credentials status
+	var credsStatus metav1.ConditionStatus
+	validCreds := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
+	if validCreds == nil {
+		credsStatus = metav1.ConditionUnknown
+	} else {
+		credsStatus = validCreds.Status
+	}
+
+	// Combine the results:
+	// - If either is explicitly False → Invalid
+	// - If both are True → Valid
+	// - Otherwise → Unknown
+	if wifStatus == metav1.ConditionFalse || credsStatus == metav1.ConditionFalse {
+		return CredentialStatusInvalid
+	}
+	if wifStatus == metav1.ConditionTrue && credsStatus == metav1.ConditionTrue {
+		return CredentialStatusValid
+	}
+	return CredentialStatusUnknown
 }
 
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.

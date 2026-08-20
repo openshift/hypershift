@@ -31,19 +31,19 @@ func TestGetSubnetNameFromSubnetID(t *testing.T) {
 		expectedErr        bool
 	}{
 		{
-			testCaseName:       "empty subnet ID",
+			testCaseName:       "When subnet ID is empty it should return an error",
 			subnetID:           "",
 			expectedSubnetName: "",
 			expectedErr:        true,
 		},
 		{
-			testCaseName:       "improperly formed subnet ID",
+			testCaseName:       "When subnet ID is improperly formed it should return an error",
 			subnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets",
 			expectedSubnetName: "",
 			expectedErr:        true,
 		},
 		{
-			testCaseName:       "properly formed subnet ID",
+			testCaseName:       "When subnet ID is properly formed it should return the subnet name",
 			subnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
 			expectedSubnetName: "mySubnetName",
 			expectedErr:        false,
@@ -73,21 +73,21 @@ func TestGetNetworkSecurityGroupNameFromNetworkSecurityGroupID(t *testing.T) {
 		expectedErr     bool
 	}{
 		{
-			testCaseName:    "empty NSG ID",
+			testCaseName:    "When NSG ID is empty it should return an error",
 			nsgID:           "",
 			expectedNSGName: "",
 			expectedNSGRG:   "",
 			expectedErr:     true,
 		},
 		{
-			testCaseName:    "improperly formed nsg ID",
+			testCaseName:    "When nsg ID is improperly formed it should return an error",
 			nsgID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups",
 			expectedNSGName: "",
 			expectedNSGRG:   "",
 			expectedErr:     true,
 		},
 		{
-			testCaseName:    "properly formed nsg ID",
+			testCaseName:    "When nsg ID is properly formed it should return NSG name and resource group",
 			nsgID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
 			expectedNSGName: "myNSGName",
 			expectedNSGRG:   "myResourceGroupName",
@@ -119,21 +119,21 @@ func TestGetVnetNameAndResourceGroupFromVnetID(t *testing.T) {
 		expectedErr      bool
 	}{
 		{
-			testCaseName:     "empty VNET ID",
+			testCaseName:     "When VNET ID is empty it should return an error",
 			vnetID:           "",
 			expectedVnetName: "",
 			expectedVnetRG:   "",
 			expectedErr:      true,
 		},
 		{
-			testCaseName:     "improperly formed VNET ID",
+			testCaseName:     "When VNET ID is improperly formed it should return an error",
 			vnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/",
 			expectedVnetName: "",
 			expectedVnetRG:   "",
 			expectedErr:      true,
 		},
 		{
-			testCaseName:     "properly formed VNET ID",
+			testCaseName:     "When VNET ID is properly formed it should return VNET name and resource group",
 			vnetID:           "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
 			expectedVnetName: "myVnetName",
 			expectedVnetRG:   "myResourceGroupName",
@@ -163,17 +163,17 @@ func TestIsAroHCP(t *testing.T) {
 		expectedValue bool
 	}{
 		{
-			name:          "Sets the managed service env var to hyperv1.AroHCP so the function should return true",
+			name:          "When the managed service env var is set to AroHCP it should return true",
 			envVarValue:   hyperv1.AroHCP,
 			expectedValue: true,
 		},
 		{
-			name:          "Sets the managed service env var to nothing so the function should return false",
+			name:          "When the managed service env var is set to nothing it should return false",
 			envVarValue:   "",
 			expectedValue: false,
 		},
 		{
-			name:          "Sets the managed service env var to 'asdf' so the function should return false",
+			name:          "When the managed service env var is set to an invalid value it should return false",
 			envVarValue:   "asdf",
 			expectedValue: false,
 		},
@@ -196,7 +196,7 @@ func TestIsAroHCPByHCP(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When AzureAuthenticationConfigType is ManagedIdentities it should return true",
+			name: "When AzureAuthenticationConfigType is ManagedIdentities, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -212,7 +212,7 @@ func TestIsAroHCPByHCP(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When AzureAuthenticationConfigType is WorkloadIdentities it should return false",
+			name: "When AzureAuthenticationConfigType is WorkloadIdentities, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -228,7 +228,7 @@ func TestIsAroHCPByHCP(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When platform is not Azure it should return false",
+			name: "When platform is not Azure, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -239,7 +239,7 @@ func TestIsAroHCPByHCP(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When Azure spec is nil it should fall back to env var",
+			name: "When Azure spec is nil, it should fall back to env var",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -251,7 +251,7 @@ func TestIsAroHCPByHCP(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When Azure spec is nil and env var is not set it should return false",
+			name: "When Azure spec is nil and env var is not set, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -262,7 +262,7 @@ func TestIsAroHCPByHCP(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When WorkloadIdentities with ARO HCP env var it should return false because API takes precedence",
+			name: "When WorkloadIdentities with ARO HCP env var, it should return false because API takes precedence",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -298,7 +298,7 @@ func TestIsAroHCPByHC(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When AzureAuthenticationConfigType is ManagedIdentities it should return true",
+			name: "When AzureAuthenticationConfigType is ManagedIdentities, it should return true",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -314,7 +314,7 @@ func TestIsAroHCPByHC(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When AzureAuthenticationConfigType is WorkloadIdentities it should return false",
+			name: "When AzureAuthenticationConfigType is WorkloadIdentities, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -330,7 +330,7 @@ func TestIsAroHCPByHC(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When platform is not Azure it should return false",
+			name: "When platform is not Azure, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -341,7 +341,7 @@ func TestIsAroHCPByHC(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When Azure spec is nil it should fall back to env var",
+			name: "When Azure spec is nil, it should fall back to env var",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -353,7 +353,7 @@ func TestIsAroHCPByHC(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When Azure spec is nil and env var is not set it should return false",
+			name: "When Azure spec is nil and env var is not set, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -382,7 +382,7 @@ func TestIsPrivateKeyVault(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When KeyVaultAccess is Private it should return true",
+			name: "When KeyVaultAccess is Private, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{
@@ -397,7 +397,7 @@ func TestIsPrivateKeyVault(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When KeyVaultAccess is Public it should return false",
+			name: "When KeyVaultAccess is Public, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{
@@ -412,7 +412,7 @@ func TestIsPrivateKeyVault(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When KeyVaultAccess is empty it should return false",
+			name: "When KeyVaultAccess is empty, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{
@@ -425,14 +425,14 @@ func TestIsPrivateKeyVault(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When SecretEncryption is nil it should return false",
+			name: "When SecretEncryption is nil, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{},
 			},
 			expected: false,
 		},
 		{
-			name: "When KMS is nil it should return false",
+			name: "When KMS is nil, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
@@ -441,7 +441,7 @@ func TestIsPrivateKeyVault(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When Azure KMS is nil it should return false",
+			name: "When Azure KMS is nil, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{
@@ -470,7 +470,7 @@ func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 		want []corev1.EnvVar
 	}{
 		{
-			name: "returns a slice of environment variables with the azure creds",
+			name: "When azure credentials filepath is provided, it should return environment variables",
 			args: args{
 				azureCredentialsFilepath: "my-credentials-file",
 			},
@@ -498,7 +498,7 @@ func TestCreateVolumeMountForAzureSecretStoreProviderClass(t *testing.T) {
 		want                  corev1.VolumeMount
 	}{
 		{
-			name:                  "return a volume mount for a secret store provider",
+			name:                  "When secret store volume name is provided, it should return a volume mount",
 			secretStoreVolumeName: "my-secret-store",
 			want: corev1.VolumeMount{
 				Name:      "my-secret-store",
@@ -524,7 +524,7 @@ func TestCreateVolumeForAzureSecretStoreProviderClass(t *testing.T) {
 		want                    corev1.Volume
 	}{
 		{
-			name:                    "return a volume for a secret store provider",
+			name:                    "When secret store volume and provider class are provided, it should return a volume",
 			secretStoreVolumeName:   "my-secret-store",
 			secretProviderClassName: "my-secret-provider-class",
 			want: corev1.Volume{
@@ -602,7 +602,7 @@ func TestGetKeyVaultFQDN(t *testing.T) {
 			wantFQDN: "gov-vault.vault.usgovcloudapi.net",
 		},
 		{
-			name: "When SecretEncryption is nil it should return error",
+			name: "When SecretEncryption is nil, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -615,7 +615,7 @@ func TestGetKeyVaultFQDN(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "When KMS Azure is nil it should return error",
+			name: "When KMS Azure is nil, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -631,7 +631,7 @@ func TestGetKeyVaultFQDN(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "When KeyVaultName is empty it should return error",
+			name: "When KeyVaultName is empty, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -678,7 +678,7 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 		wantErr        bool
 	}{
 		{
-			name:           "When given a valid key id it should parse fields",
+			name:           "When given a valid key id, it should parse fields",
 			id:             "https://example-kms.vault.azure.net/keys/example-key/1234abcd",
 			wantVaultHost:  "example-kms",
 			wantKeyName:    "example-key",
@@ -686,22 +686,22 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name:    "When key id missing version it should error",
+			name:    "When key id missing version, it should error",
 			id:      "https://example-kms.vault.azure.net/keys/example-key",
 			wantErr: true,
 		},
 		{
-			name:    "When key id path not under /keys it should error",
+			name:    "When key id path not under /keys, it should error",
 			id:      "https://example-kms.vault.azure.net/secrets/example-key/1234abcd",
 			wantErr: true,
 		},
 		{
-			name:    "When key id has trailing slash it should error",
+			name:    "When key id has trailing slash, it should error",
 			id:      "https://example-kms.vault.azure.net/keys/example-key/1234abcd/",
 			wantErr: true,
 		},
 		{
-			name:           "Parses govcloud suffix correctly",
+			name:           "When key id has govcloud suffix, it should parse correctly",
 			id:             "https://example-kms.vault.usgovcloudapi.net/keys/example-key/1234abcd",
 			wantVaultHost:  "example-kms",
 			wantKeyName:    "example-key",
@@ -709,7 +709,7 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name:    "Missing scheme should error",
+			name:    "When key id is missing scheme, it should error",
 			id:      "example-kms.vault.azure.net/keys/example-key/1234abcd",
 			wantErr: true,
 		},
@@ -763,7 +763,7 @@ func TestReconcileAzureCredentials(t *testing.T) {
 		validateSecret       func(secret *corev1.Secret, config AzureCredentialConfig)
 	}{
 		{
-			name: "creates all secrets with correct client IDs when all capabilities enabled",
+			name: "When all capabilities are enabled it should create all secrets with correct client IDs",
 			configs: []AzureCredentialConfig{
 				{
 					Name:         "ingress",
@@ -791,7 +791,7 @@ func TestReconcileAzureCredentials(t *testing.T) {
 			},
 		},
 		{
-			name: "skips secrets when capability is disabled",
+			name: "When capability is disabled it should skip creating secrets",
 			configs: []AzureCredentialConfig{
 				{
 					Name:         "ingress",
@@ -820,7 +820,7 @@ func TestReconcileAzureCredentials(t *testing.T) {
 			},
 		},
 		{
-			name: "creates secrets without client ID when not provided",
+			name: "When client ID is not provided it should create secrets without client ID",
 			configs: []AzureCredentialConfig{
 				{
 					Name:              "test-secret",
@@ -840,7 +840,7 @@ func TestReconcileAzureCredentials(t *testing.T) {
 			},
 		},
 		{
-			name: "handles nil manifest function gracefully",
+			name: "When manifest function returns nil it should handle gracefully",
 			configs: []AzureCredentialConfig{
 				{
 					Name:              "broken-secret",
@@ -937,7 +937,7 @@ func TestIsSelfManagedAzureWithWorkloadIdentity(t *testing.T) {
 		expected     bool
 	}{
 		{
-			name:         "When Azure platform with workload identities configured it should return true",
+			name:         "When Azure platform with workload identities configured, it should return true",
 			platformType: hyperv1.AzurePlatform,
 			azure: &hyperv1.AzurePlatformSpec{
 				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
@@ -947,7 +947,7 @@ func TestIsSelfManagedAzureWithWorkloadIdentity(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:         "When Azure platform with nil workload identities it should return false",
+			name:         "When Azure platform with nil workload identities, it should return false",
 			platformType: hyperv1.AzurePlatform,
 			azure: &hyperv1.AzurePlatformSpec{
 				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{},
@@ -955,13 +955,13 @@ func TestIsSelfManagedAzureWithWorkloadIdentity(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:         "When Azure platform with nil azure spec it should return false",
+			name:         "When Azure platform with nil azure spec, it should return false",
 			platformType: hyperv1.AzurePlatform,
 			azure:        nil,
 			expected:     false,
 		},
 		{
-			name:         "When non-Azure platform with workload identities it should return false",
+			name:         "When non-Azure platform with workload identities, it should return false",
 			platformType: hyperv1.AWSPlatform,
 			azure: &hyperv1.AzurePlatformSpec{
 				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
@@ -971,7 +971,7 @@ func TestIsSelfManagedAzureWithWorkloadIdentity(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:         "When ARO-HCP managed service with workload identities it should return false",
+			name:         "When ARO-HCP managed service with workload identities, it should return false",
 			platformType: hyperv1.AzurePlatform,
 			azure: &hyperv1.AzurePlatformSpec{
 				AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
@@ -1041,37 +1041,37 @@ func TestGetAzureCloudConfiguration(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			name:      "AzurePublicCloud returns public cloud configuration",
+			name:      "When cloud name is AzurePublicCloud, it should return public cloud configuration",
 			cloudName: "AzurePublicCloud",
 			wantCloud: cloud.AzurePublic,
 			wantErr:   false,
 		},
 		{
-			name:      "Empty string defaults to public cloud configuration",
+			name:      "When cloud name is empty, it should default to public cloud configuration",
 			cloudName: "",
 			wantCloud: cloud.AzurePublic,
 			wantErr:   false,
 		},
 		{
-			name:      "AzureUSGovernmentCloud returns government cloud configuration",
+			name:      "When cloud name is AzureUSGovernmentCloud, it should return government cloud configuration",
 			cloudName: "AzureUSGovernmentCloud",
 			wantCloud: cloud.AzureGovernment,
 			wantErr:   false,
 		},
 		{
-			name:      "AzureChinaCloud returns China cloud configuration",
+			name:      "When cloud name is AzureChinaCloud, it should return China cloud configuration",
 			cloudName: "AzureChinaCloud",
 			wantCloud: cloud.AzureChina,
 			wantErr:   false,
 		},
 		{
-			name:      "Invalid cloud name returns error",
+			name:      "When cloud name is invalid, it should return an error",
 			cloudName: "InvalidCloud",
 			wantCloud: cloud.Configuration{},
 			wantErr:   true,
 		},
 		{
-			name:      "Unknown cloud name returns error",
+			name:      "When cloud name is unknown, it should return an error",
 			cloudName: "AzureStackCloud",
 			wantCloud: cloud.Configuration{},
 			wantErr:   true,

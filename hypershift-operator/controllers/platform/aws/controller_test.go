@@ -52,25 +52,25 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 		expectedPrincipalsToRemove  []string
 	}{
 		{
-			name:                    "no additional principals",
+			name:                    "When there are no additional principals it should add only the CPO role ARN",
 			hasInfraCapability:      true,
 			expectedPrincipalsToAdd: []string{mockControlPlaneOperatorRoleArn},
 		},
 		{
-			name:                        "additional principals",
+			name:                        "When additional principals are specified it should add them alongside the CPO role ARN",
 			hasInfraCapability:          true,
 			additionalAllowedPrincipals: []string{"additional1", "additional2"},
 			expectedPrincipalsToAdd:     []string{mockControlPlaneOperatorRoleArn, "additional1", "additional2"},
 		},
 		{
-			name:                       "removing extra principals",
+			name:                       "When extra principals exist it should remove them",
 			hasInfraCapability:         true,
 			existingAllowedPrincipals:  []string{"existing1", "existing2"},
 			expectedPrincipalsToAdd:    []string{mockControlPlaneOperatorRoleArn},
 			expectedPrincipalsToRemove: []string{"existing1", "existing2"},
 		},
 		{
-			name:                    "no infrastructure capability omits owned tag",
+			name:                    "When there is no infrastructure capability it should omit the owned tag",
 			hasInfraCapability:      false,
 			expectedPrincipalsToAdd: []string{mockControlPlaneOperatorRoleArn},
 		},
@@ -213,7 +213,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 		expectErr    bool
 	}{
 		{
-			name: "When deletion succeeds it should return completed",
+			name: "When deletion succeeds, it should return completed",
 			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
 				Unsuccessful: []ec2types.UnsuccessfulItem{},
 			},
@@ -221,7 +221,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "When endpoint service no longer exists it should return completed",
+			name: "When endpoint service no longer exists, it should return completed",
 			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
 				Unsuccessful: []ec2types.UnsuccessfulItem{
 					{
@@ -237,7 +237,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name:      "When existing connections are in Available state it should reject them",
+			name:      "When existing connections are in Available state, it should reject them",
 			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
@@ -252,7 +252,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr:    true,
 		},
 		{
-			name:      "When existing connections are in Rejected state it should not reject and return not completed without error",
+			name:      "When existing connections are in Rejected state, it should not reject and return not completed without error",
 			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
@@ -267,7 +267,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr:    false,
 		},
 		{
-			name:      "When existing connections are in Deleting state it should not reject and return not completed without error",
+			name:      "When existing connections are in Deleting state, it should not reject and return not completed without error",
 			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
@@ -282,7 +282,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr:    false,
 		},
 		{
-			name:      "When existing connections are a mix of Available and Rejected it should reject the Available ones and return not completed without error",
+			name:      "When existing connections are a mix of Available and Rejected, it should reject the Available ones and return not completed without error",
 			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
@@ -305,7 +305,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr:    false,
 		},
 		{
-			name:      "When existing connections are all in terminal states it should return not completed with error",
+			name:      "When existing connections are all in terminal states, it should return not completed with error",
 			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
@@ -324,7 +324,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr:    true,
 		},
 		{
-			name:      "When DeleteVpcEndpointServiceConfigurations returns an API error it should attempt to reject and return error",
+			name:      "When DeleteVpcEndpointServiceConfigurations returns an API error, it should attempt to reject and return error",
 			deleteErr: fmt.Errorf("aws api error"),
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{},
@@ -333,14 +333,14 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name:        "When DescribeVpcEndpointConnections fails it should return error",
+			name:        "When DescribeVpcEndpointConnections fails, it should return error",
 			deleteOut:   existingConnectionsDeleteOut,
 			describeErr: fmt.Errorf("describe connections error"),
 			expected:    false,
 			expectErr:   true,
 		},
 		{
-			name:      "When RejectVpcEndpointConnections fails it should return error",
+			name:      "When RejectVpcEndpointConnections fails, it should return error",
 			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
@@ -619,14 +619,14 @@ func TestRejectVpcEndpointConnections(t *testing.T) {
 	})
 }
 
-func Test_controlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
+func TestControlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		hc       *hyperv1.HostedCluster
 		expected string
 	}{
 		{
-			name: "ARN without path",
+			name: "When ARN has no path, it should return unchanged",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -641,7 +641,7 @@ func Test_controlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
 			expected: "arn:aws:iam::12345678910:role/test-name",
 		},
 		{
-			name: "ARN with path",
+			name: "When ARN has a path, it should strip the path prefix",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -713,7 +713,7 @@ func TestListKarpenterSubnetIDs(t *testing.T) {
 			expectedSubnets: []string{},
 		},
 		{
-			name:      "When the ConfigMap contains malformed JSON it should return an error",
+			name:      "When the ConfigMap contains malformed JSON, it should return an error",
 			namespace: "test-namespace",
 			objects: []client.Object{
 				&corev1.ConfigMap{

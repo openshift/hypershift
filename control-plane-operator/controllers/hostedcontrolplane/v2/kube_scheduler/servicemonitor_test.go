@@ -24,7 +24,7 @@ func TestAdaptServiceMonitor(t *testing.T) {
 		validate   func(*testing.T, *prometheusoperatorv1.ServiceMonitor, error)
 	}{
 		{
-			name:       "When service monitor is adapted it should set namespace selector",
+			name:       "When service monitor is adapted, it should set namespace selector",
 			metricsSet: metrics.MetricsSetTelemetry,
 			clusterID:  "test-cluster-id",
 			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {
@@ -34,7 +34,7 @@ func TestAdaptServiceMonitor(t *testing.T) {
 			},
 		},
 		{
-			name:       "When service monitor is adapted it should apply cluster ID label to both endpoints",
+			name:       "When service monitor is adapted, it should apply cluster ID label to both endpoints",
 			metricsSet: metrics.MetricsSetAll,
 			clusterID:  "cluster-abc-123",
 			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {
@@ -55,7 +55,7 @@ func TestAdaptServiceMonitor(t *testing.T) {
 			},
 		},
 		{
-			name:       "When metrics set is Telemetry it should drop all metrics on both endpoints",
+			name:       "When metrics set is Telemetry, it should drop all metrics on both endpoints",
 			metricsSet: metrics.MetricsSetTelemetry,
 			clusterID:  "test-cluster",
 			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {
@@ -73,7 +73,7 @@ func TestAdaptServiceMonitor(t *testing.T) {
 			},
 		},
 		{
-			name:       "When metrics set is All it should not add metric relabel configs on the resources endpoint",
+			name:       "When metrics set is All, it should not add metric relabel configs on the resources endpoint",
 			metricsSet: metrics.MetricsSetAll,
 			clusterID:  "test-cluster",
 			validate: func(t *testing.T, sm *prometheusoperatorv1.ServiceMonitor, err error) {

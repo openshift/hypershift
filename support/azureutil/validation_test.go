@@ -17,19 +17,19 @@ func TestValidateAzureResourceName(t *testing.T) {
 		expectErr    bool
 	}{
 		{
-			name:         "When name is under 80 characters it should pass",
+			name:         "When name is under 80 characters, it should pass",
 			resourceName: "pls-my-cluster",
 			resourceType: "Private Link Service",
 			expectErr:    false,
 		},
 		{
-			name:         "When name is exactly 80 characters it should pass",
+			name:         "When name is exactly 80 characters, it should pass",
 			resourceName: strings.Repeat("a", AzureResourceNameMaxLength),
 			resourceType: "Private Endpoint",
 			expectErr:    false,
 		},
 		{
-			name:         "When name exceeds 80 characters it should return an error",
+			name:         "When name exceeds 80 characters, it should return an error",
 			resourceName: strings.Repeat("a", AzureResourceNameMaxLength+1),
 			resourceType: "VNet Link",
 			expectErr:    true,

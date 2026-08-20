@@ -48,14 +48,14 @@ func TestDrOidcIamOptions_ValidateCredentials(t *testing.T) {
 		expectError bool
 		errorMsg    string
 	}{
-		"valid aws-creds only": {
+		"When only aws-creds is provided, it should succeed": {
 			opts: &DrOidcIamOptions{
 				InfraID:            "test-cluster",
 				Region:             "us-east-1",
 				AWSCredentialsFile: "/path/to/aws-creds",
 			},
 		},
-		"valid sts-creds and role-arn": {
+		"When sts-creds and role-arn are provided, it should succeed": {
 			opts: &DrOidcIamOptions{
 				InfraID:            "test-cluster",
 				Region:             "us-east-1",
@@ -63,7 +63,7 @@ func TestDrOidcIamOptions_ValidateCredentials(t *testing.T) {
 				RoleArn:            "arn:aws:iam::123456789:role/test",
 			},
 		},
-		"aws-creds with sts-creds conflict": {
+		"When aws-creds and sts-creds are provided, it should return a conflict error": {
 			opts: &DrOidcIamOptions{
 				InfraID:            "test-cluster",
 				Region:             "us-east-1",
@@ -73,7 +73,7 @@ func TestDrOidcIamOptions_ValidateCredentials(t *testing.T) {
 			expectError: true,
 			errorMsg:    "only one of 'aws-creds' or 'sts-creds'/'role-arn' can be provided",
 		},
-		"aws-creds with role-arn conflict": {
+		"When aws-creds and role-arn are provided, it should return a conflict error": {
 			opts: &DrOidcIamOptions{
 				InfraID:            "test-cluster",
 				Region:             "us-east-1",
@@ -83,7 +83,7 @@ func TestDrOidcIamOptions_ValidateCredentials(t *testing.T) {
 			expectError: true,
 			errorMsg:    "only one of 'aws-creds' or 'sts-creds'/'role-arn' can be provided",
 		},
-		"sts-creds without role-arn": {
+		"When sts-creds is provided without role-arn, it should return an error": {
 			opts: &DrOidcIamOptions{
 				InfraID:            "test-cluster",
 				Region:             "us-east-1",
@@ -92,7 +92,7 @@ func TestDrOidcIamOptions_ValidateCredentials(t *testing.T) {
 			expectError: true,
 			errorMsg:    "role-arn is required when using sts-creds",
 		},
-		"role-arn without sts-creds": {
+		"When role-arn is provided without sts-creds, it should return an error": {
 			opts: &DrOidcIamOptions{
 				InfraID: "test-cluster",
 				Region:  "us-east-1",
@@ -101,7 +101,7 @@ func TestDrOidcIamOptions_ValidateCredentials(t *testing.T) {
 			expectError: true,
 			errorMsg:    "sts-creds is required when using role-arn",
 		},
-		"no credentials provided": {
+		"When no credentials are provided, it should return an error": {
 			opts: &DrOidcIamOptions{
 				InfraID: "test-cluster",
 				Region:  "us-east-1",
@@ -133,28 +133,28 @@ func TestDrOidcIamOptions_Validate(t *testing.T) {
 		expectError bool
 		errorMsg    string
 	}{
-		"valid with infra-id and region": {
+		"When infra-id and region are provided, it should succeed": {
 			opts: &DrOidcIamOptions{
 				InfraID:            "test-cluster",
 				Region:             "us-east-1",
 				AWSCredentialsFile: "/path/to/creds",
 			},
 		},
-		"valid with hc-name and hc-namespace": {
+		"When hc-name and hc-namespace are provided, it should succeed": {
 			opts: &DrOidcIamOptions{
 				HostedClusterName:      "my-hc",
 				HostedClusterNamespace: "clusters",
 				AWSCredentialsFile:     "/path/to/creds",
 			},
 		},
-		"missing both infra-id and region when no hc-name": {
+		"When infra-id region and hc-name are missing, it should return an error": {
 			opts: &DrOidcIamOptions{
 				AWSCredentialsFile: "/path/to/creds",
 			},
 			expectError: true,
 			errorMsg:    "--infra-id and --region are required when --hc-name is not set",
 		},
-		"missing region when no hc-name": {
+		"When region and hc-name are missing, it should return an error": {
 			opts: &DrOidcIamOptions{
 				InfraID:            "test-cluster",
 				AWSCredentialsFile: "/path/to/creds",
@@ -162,7 +162,7 @@ func TestDrOidcIamOptions_Validate(t *testing.T) {
 			expectError: true,
 			errorMsg:    "--infra-id and --region are required when --hc-name is not set",
 		},
-		"missing infra-id when no hc-name": {
+		"When infra-id and hc-name are missing, it should return an error": {
 			opts: &DrOidcIamOptions{
 				Region:             "us-east-1",
 				AWSCredentialsFile: "/path/to/creds",
@@ -170,7 +170,7 @@ func TestDrOidcIamOptions_Validate(t *testing.T) {
 			expectError: true,
 			errorMsg:    "--infra-id and --region are required when --hc-name is not set",
 		},
-		"hc-namespace without hc-name": {
+		"When hc-namespace is provided without hc-name, it should return an error": {
 			opts: &DrOidcIamOptions{
 				HostedClusterNamespace: "clusters",
 				AWSCredentialsFile:     "/path/to/creds",
@@ -178,7 +178,7 @@ func TestDrOidcIamOptions_Validate(t *testing.T) {
 			expectError: true,
 			errorMsg:    "--hc-namespace can only be used with --hc-name",
 		},
-		"hc-name without hc-namespace": {
+		"When hc-name is provided without hc-namespace, it should return an error": {
 			opts: &DrOidcIamOptions{
 				HostedClusterName:  "my-hc",
 				AWSCredentialsFile: "/path/to/creds",
@@ -186,7 +186,7 @@ func TestDrOidcIamOptions_Validate(t *testing.T) {
 			expectError: true,
 			errorMsg:    "--hc-namespace is required when using --hc-name",
 		},
-		"hc-name with infra-id conflict": {
+		"When hc-name and infra-id are provided, it should return a conflict error": {
 			opts: &DrOidcIamOptions{
 				HostedClusterName:      "my-hc",
 				HostedClusterNamespace: "clusters",
@@ -196,7 +196,7 @@ func TestDrOidcIamOptions_Validate(t *testing.T) {
 			expectError: true,
 			errorMsg:    "when using --hc-name, --infra-id and --region should not be specified",
 		},
-		"hc-name with region conflict": {
+		"When hc-name and region are provided, it should return a conflict error": {
 			opts: &DrOidcIamOptions{
 				HostedClusterName:      "my-hc",
 				HostedClusterNamespace: "clusters",

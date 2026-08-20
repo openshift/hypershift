@@ -78,24 +78,24 @@ func TestFormatOperationErrors(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When errors is nil it should return unknown error",
+			name:     "When errors is nil, it should return unknown error",
 			errors:   nil,
 			expected: "unknown error",
 		},
 		{
-			name:     "When errors is empty it should return unknown error",
+			name:     "When errors is empty, it should return unknown error",
 			errors:   []*compute.OperationErrorErrors{},
 			expected: "unknown error",
 		},
 		{
-			name: "When single error it should format correctly",
+			name: "When single error, it should format correctly",
 			errors: []*compute.OperationErrorErrors{
 				{Code: "RESOURCE_IN_USE", Message: "Resource is in use"},
 			},
 			expected: "[RESOURCE_IN_USE: Resource is in use]",
 		},
 		{
-			name: "When multiple errors it should format all",
+			name: "When multiple errors, it should format all",
 			errors: []*compute.OperationErrorErrors{
 				{Code: "ERROR_1", Message: "First error"},
 				{Code: "ERROR_2", Message: "Second error"},

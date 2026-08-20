@@ -19,6 +19,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ const (
 // RegisterNodePoolOSImageStreamLifecycleTests registers lifecycle (state-mutating)
 // NodePool OS image stream test cases.
 func RegisterNodePoolOSImageStreamLifecycleTests(getTestCtx internal.TestContextGetter) {
+	NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx)
 	NodePoolOSImageStreamRHEL10RejectionTest(getTestCtx)
 	NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx)
 	NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx)
@@ -79,7 +81,7 @@ func osImageStreamBeforeEach(testCtx **internal.TestContext) {
 	}
 }
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStream] NodePool OSImageStream Lifecycle", Label("lifecycle", "nodepool-osimagestream"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][FeatureGate:OSStreams][Feature:NodePoolOSImageStream] NodePool OSImageStream Lifecycle", Label("lifecycle", "nodepool-osimagestream"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
@@ -90,7 +92,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStrea
 })
 
 // TODO(jparrill): Remove "lifecycle" label after OSStreams FG graduates to Default (openshift/api#2950)
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolOSImageStream] NodePool OSImageStream Status", Label("lifecycle", "nodepool-osimagestream"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][FeatureGate:OSStreams][Feature:NodePoolOSImageStream] NodePool OSImageStream Status", Label("lifecycle", "nodepool-osimagestream"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
@@ -299,6 +301,143 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 			e2eutil.WithTimeout(10*time.Minute),
 			e2eutil.WithInterval(15*time.Second),
 		)
+
+		By("verifying node OS images match the resolved osImageStream")
+		verifyNodeOSMatchesStream(testCtx, defaultNP, expectedStream)
+	})
+}
+
+// rhcosMajorVersionRe extracts the RHCOS major version from the node's OSImage
+// string (e.g. "Red Hat Enterprise Linux CoreOS 10.2.20260724-0 (Coughlan)" → "10").
+var rhcosMajorVersionRe = regexp.MustCompile(`CoreOS (\d+)\.`)
+
+func expectedRHELMajorForStream(stream string) (string, error) {
+	switch stream {
+	case hyperv1.OSImageStreamRHEL10:
+		return "10", nil
+	case hyperv1.OSImageStreamRHEL9:
+		return "9", nil
+	default:
+		return "", fmt.Errorf("unrecognized osImageStream %q", stream)
+	}
+}
+
+// verifyNodeOSMatchesStream verifies that the actual node OS matches the
+// expected osImageStream by checking node.Status.NodeInfo.OSImage on the
+// hosted cluster. This catches regressions where the controller reports
+// the correct stream in status but the MCO fails to apply it (e.g. due
+// to an API version mismatch in the rendered OSImageStream CR).
+func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePool, expectedStream string) {
+	hc, err := testCtx.GetHostedCluster()
+	Expect(err).NotTo(HaveOccurred())
+	hcClient, err := testCtx.GetHostedClusterClient(hc)
+	Expect(err).NotTo(HaveOccurred(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
+
+	e2eutil.EventuallyObject[*hyperv1.NodePool](
+		GinkgoTB(), testCtx.Context,
+		fmt.Sprintf("NodePool %s/%s to have all nodes ready", np.Namespace, np.Name),
+		func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+			pool := &hyperv1.NodePool{}
+			err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
+			return pool, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{allNodesReadyPredicate()},
+		e2eutil.WithTimeout(45*time.Minute),
+		e2eutil.WithInterval(30*time.Second),
+	)
+
+	expectedMajor, err := expectedRHELMajorForStream(expectedStream)
+	Expect(err).NotTo(HaveOccurred())
+
+	nodeList := &corev1.NodeList{}
+	Expect(hcClient.List(testCtx.Context, nodeList,
+		crclient.MatchingLabels{hyperv1.NodePoolLabel: np.Name})).To(Succeed())
+	Expect(nodeList.Items).NotTo(BeEmpty(), "no nodes found for NodePool %s", np.Name)
+
+	for _, node := range nodeList.Items {
+		osImage := node.Status.NodeInfo.OSImage
+		GinkgoWriter.Printf("Verifying node %s in NodePool %s runs RHCOS major version %s (stream=%s, osImage=%s)\n",
+			node.Name, np.Name, expectedMajor, expectedStream, osImage)
+
+		m := rhcosMajorVersionRe.FindStringSubmatch(osImage)
+		Expect(m).To(HaveLen(2), "could not parse RHCOS version from %q on node %s", osImage, node.Name)
+		Expect(m[1]).To(Equal(expectedMajor),
+			"node %s osImage=%q has RHCOS major=%s, expected=%s for stream %s",
+			node.Name, osImage, m[1], expectedMajor, expectedStream)
+	}
+}
+
+// NodePoolOSImageStreamNodeOSVerificationTest verifies that actual node OS versions
+// match the expected osImageStream across three scenarios: the default NodePool
+// (no osImageStream set), an explicit rhel-9 NodePool, and an explicit rhel-10
+// NodePool. This is a lifecycle test because it creates additional NodePools.
+func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContextGetter) {
+	It("When NodePools have different osImageStream values, nodes should run the matching OS version", func() {
+		testCtx := getTestCtx()
+
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+
+		// rhel-10 osImageStream is only supported on OCP 5+
+		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+
+		ctx := testCtx.Context
+
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+		Expect(defaultNP.Spec.OSImageStream.Name).To(BeEmpty(),
+			"default NodePool %s should not have an explicit spec.osImageStream set", defaultNP.Name)
+
+		By("waiting for the default NodePool to have status.osImageStream resolved")
+		e2eutil.EventuallyObject[*hyperv1.NodePool](
+			GinkgoTB(), ctx,
+			fmt.Sprintf("NodePool %s/%s status.osImageStream to be set", defaultNP.Namespace, defaultNP.Name),
+			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
+				pool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
+				return pool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				osImageStreamSetPredicate(),
+			},
+			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
+		)
+
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), defaultNP)).To(Succeed())
+		defaultStream := defaultNP.Status.OSImageStream.Name
+		Expect(defaultStream).NotTo(BeEmpty(), "default NodePool %s should have status.osImageStream.name set", defaultNP.Name)
+
+		By(fmt.Sprintf("verifying the default NodePool (spec.osImageStream=%q, status.osImageStream=%s) runs the expected OS",
+			defaultNP.Spec.OSImageStream.Name, defaultStream))
+		verifyNodeOSMatchesStream(testCtx, defaultNP, defaultStream)
+
+		var alternateStream string
+		switch defaultStream {
+		case hyperv1.OSImageStreamRHEL10:
+			alternateStream = hyperv1.OSImageStreamRHEL9
+		case hyperv1.OSImageStreamRHEL9:
+			alternateStream = hyperv1.OSImageStreamRHEL10
+		default:
+			Fail(fmt.Sprintf("unexpected default stream %q", defaultStream))
+		}
+
+		By(fmt.Sprintf("creating a NodePool with osImageStream=%s", alternateStream))
+		var oneReplica int32 = 1
+		npAlternate := buildTestNodePool(defaultNP, "osstream-"+alternateStream, func(pool *hyperv1.NodePool) {
+			pool.Spec.Replicas = &oneReplica
+			pool.Spec.OSImageStream = hyperv1.OSImageStreamReference{
+				Name: alternateStream,
+			}
+		})
+		Expect(testCtx.MgmtClient.Create(ctx, npAlternate)).To(Succeed(), "failed to create NodePool %s", npAlternate.Name)
+		GinkgoWriter.Printf("Created NodePool %s with osImageStream=%s\n", npAlternate.Name, alternateStream)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, npAlternate)
+		})
+
+		By(fmt.Sprintf("verifying %s NodePool nodes run the correct OS", alternateStream))
+		verifyNodeOSMatchesStream(testCtx, npAlternate, alternateStream)
 	})
 }
 
@@ -322,6 +461,34 @@ func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 			return false, fmt.Sprintf("status.nodesInfo has %d version entries but 0 ready nodes", len(versions)), nil
 		}
 		return true, fmt.Sprintf("status.nodesInfo has %d ready nodes across %d version entries", totalReady, len(versions)), nil
+	}
+}
+
+// allNodesReadyPredicate returns a predicate that validates that all of a NodePool's
+// expected replicas are ready, as reported by status.nodesInfo.nodeVersions.
+func allNodesReadyPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+	return func(pool *hyperv1.NodePool) (bool, string, error) {
+		var expected int32
+		if pool.Spec.Replicas != nil {
+			expected = *pool.Spec.Replicas
+		}
+		if expected == 0 {
+			return false, "spec.replicas is 0 or nil", nil
+		}
+		versions := pool.Status.NodesInfo.NodeVersions
+		if len(versions) == 0 {
+			return false, fmt.Sprintf("status.nodesInfo.nodeVersions is empty, want %d ready nodes", expected), nil
+		}
+		var totalReady int32
+		for _, v := range versions {
+			if v.ReadyNodeCount != nil {
+				totalReady += *v.ReadyNodeCount
+			}
+		}
+		if totalReady < expected {
+			return false, fmt.Sprintf("status.nodesInfo has %d/%d ready nodes", totalReady, expected), nil
+		}
+		return true, fmt.Sprintf("all %d nodes ready", totalReady), nil
 	}
 }
 

@@ -283,12 +283,12 @@ func TestPrivateEndpointName(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When CR name is simple it should append PE suffix",
+			name:     "When CR name is simple, it should append PE suffix",
 			crName:   "kube-apiserver-lb",
 			expected: "kube-apiserver-lb-pe",
 		},
 		{
-			name:     "When CR name is longer it should still append PE suffix",
+			name:     "When CR name is longer, it should still append PE suffix",
 			crName:   "my-hosted-cluster-kas-svc",
 			expected: "my-hosted-cluster-kas-svc-pe",
 		},
@@ -312,7 +312,7 @@ func TestVNetLinkName(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When CR name is simple it should append VNet link suffix",
+			name:     "When CR name is simple, it should append VNet link suffix",
 			crName:   "kube-apiserver-lb",
 			expected: "kube-apiserver-lb-vnet-link",
 		},
@@ -336,7 +336,7 @@ func TestExtractPrivateEndpointIP(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "When CustomDNSConfigs has IPs it should return the first IP",
+			name: "When CustomDNSConfigs has IPs, it should return the first IP",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{
 					CustomDNSConfigs: []*armnetwork.CustomDNSConfigPropertiesFormat{
@@ -349,7 +349,7 @@ func TestExtractPrivateEndpointIP(t *testing.T) {
 			expected: "10.0.1.5",
 		},
 		{
-			name: "When CustomDNSConfigs is empty it should fall back to network interfaces",
+			name: "When CustomDNSConfigs is empty, it should fall back to network interfaces",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{
 					NetworkInterfaces: []*armnetwork.Interface{
@@ -370,14 +370,14 @@ func TestExtractPrivateEndpointIP(t *testing.T) {
 			expected: "10.0.1.6",
 		},
 		{
-			name: "When Properties is nil it should return empty string",
+			name: "When Properties is nil, it should return empty string",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: nil,
 			},
 			expected: "",
 		},
 		{
-			name: "When no IPs are available it should return empty string",
+			name: "When no IPs are available, it should return empty string",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{},
 			},
@@ -784,7 +784,7 @@ func TestGetHostedControlPlane(t *testing.T) {
 		expectHCP string
 	}{
 		{
-			name: "When owner reference exists it should find the HCP",
+			name: "When owner reference exists, it should find the HCP",
 			azPLS: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -805,7 +805,7 @@ func TestGetHostedControlPlane(t *testing.T) {
 			expectHCP: "my-hcp",
 		},
 		{
-			name: "When no owner reference exists it should return error",
+			name: "When no owner reference exists, it should return error",
 			azPLS: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -816,7 +816,7 @@ func TestGetHostedControlPlane(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "When HCP does not exist it should return error",
+			name: "When HCP does not exist, it should return error",
 			azPLS: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -973,7 +973,7 @@ func TestExtractPrivateEndpointConnectionState(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "When PE connection is approved it should return Approved",
+			name: "When PE connection is approved, it should return Approved",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{
 					ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
@@ -990,7 +990,7 @@ func TestExtractPrivateEndpointConnectionState(t *testing.T) {
 			expected: "Approved",
 		},
 		{
-			name: "When PE connection is pending it should return Pending",
+			name: "When PE connection is pending, it should return Pending",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{
 					ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
@@ -1007,7 +1007,7 @@ func TestExtractPrivateEndpointConnectionState(t *testing.T) {
 			expected: "Pending",
 		},
 		{
-			name: "When PE connection is rejected it should return Rejected",
+			name: "When PE connection is rejected, it should return Rejected",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{
 					ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
@@ -1024,14 +1024,14 @@ func TestExtractPrivateEndpointConnectionState(t *testing.T) {
 			expected: "Rejected",
 		},
 		{
-			name: "When PE properties is nil it should return empty string",
+			name: "When PE properties is nil, it should return empty string",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: nil,
 			},
 			expected: "",
 		},
 		{
-			name: "When ManualPrivateLinkServiceConnections is empty it should return empty string",
+			name: "When ManualPrivateLinkServiceConnections is empty, it should return empty string",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{
 					ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{},
@@ -1040,7 +1040,7 @@ func TestExtractPrivateEndpointConnectionState(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "When connection has nil Properties it should return empty string",
+			name: "When connection has nil Properties, it should return empty string",
 			pe: armnetwork.PrivateEndpoint{
 				Properties: &armnetwork.PrivateEndpointProperties{
 					ManualPrivateLinkServiceConnections: []*armnetwork.PrivateLinkServiceConnection{
@@ -2407,12 +2407,12 @@ func TestErrMsgQualifier(t *testing.T) {
 		expected  string
 	}{
 		{
-			name:      "When logPrefix is empty it should return empty string",
+			name:      "When logPrefix is empty, it should return empty string",
 			logPrefix: "",
 			expected:  "",
 		},
 		{
-			name:      "When logPrefix is set it should return prefix with trailing space",
+			name:      "When logPrefix is set, it should return prefix with trailing space",
 			logPrefix: "base domain",
 			expected:  "base domain ",
 		},

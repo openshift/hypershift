@@ -174,7 +174,7 @@ func TestReconcileGCPOIDCDocuments(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When GCS client is nil and no signing key it should return an error",
+			name: "When GCS client is nil and no signing key, it should return an error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
 				Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
@@ -189,7 +189,7 @@ func TestReconcileGCPOIDCDocuments(t *testing.T) {
 			expectErrMsg: "GCP OIDC document management requires either a ServiceAccountSigningKey",
 		},
 		{
-			name: "When bucket name is empty and no signing key it should return an error",
+			name: "When bucket name is empty and no signing key, it should return an error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
 				Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
@@ -219,7 +219,7 @@ func TestReconcileGCPOIDCDocuments(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When sa-signing-key secret is missing the public key it should return an error",
+			name: "When sa-signing-key secret is missing the public key, it should return an error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
 				Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
@@ -257,7 +257,7 @@ func TestReconcileGCPOIDCDocuments(t *testing.T) {
 			expectFinalizer: true,
 		},
 		{
-			name: "When GCS upload fails it should return an error",
+			name: "When GCS upload fails, it should return an error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
 				Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
@@ -350,7 +350,7 @@ func TestCleanupGCPOIDCBucketData(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When GCS client is nil it should return an error",
+			name: "When GCS client is nil, it should return an error",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "test",
@@ -381,7 +381,7 @@ func TestCleanupGCPOIDCBucketData(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When GCS delete fails it should return an error and keep finalizer",
+			name: "When GCS delete fails, it should return an error and keep finalizer",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "test",

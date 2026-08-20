@@ -40,7 +40,7 @@ func TestComputeCatalogImages(t *testing.T) {
 		expected          map[string]string
 	}{
 		{
-			name:           "All current release images are available",
+			name:           "When all current release images are available, it should use them",
 			releaseVersion: semver.MustParse("4.19.2"),
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
@@ -54,7 +54,7 @@ func TestComputeCatalogImages(t *testing.T) {
 			},
 		},
 		{
-			name:           "Some catalogs only have previous release images",
+			name:           "When some catalogs only have previous release images, it should use them",
 			releaseVersion: semver.MustParse("4.19.2"),
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
@@ -68,7 +68,7 @@ func TestComputeCatalogImages(t *testing.T) {
 			},
 		},
 		{
-			name:           "image overrides are used if present",
+			name:           "When image overrides are present, it should use them",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
@@ -89,7 +89,7 @@ func TestComputeCatalogImages(t *testing.T) {
 			},
 		},
 		{
-			name:           "previous versions are used for overrides",
+			name:           "When current version overrides are not available, it should use previous versions",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
@@ -109,7 +109,7 @@ func TestComputeCatalogImages(t *testing.T) {
 			},
 		},
 		{
-			name:           "overrides with root registry and root registry with namespace mixed",
+			name:           "When overrides mix root registry and root registry with namespace, it should resolve correctly",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
@@ -186,7 +186,7 @@ func TestComputeCatalogImages(t *testing.T) {
 			},
 		},
 		{
-			name:           "overrides with root registry only",
+			name:           "When overrides use root registry only, it should resolve correctly",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
@@ -231,13 +231,13 @@ func TestImagesCacheGetImages(t *testing.T) {
 		expected  map[string]string
 	}{
 		{
-			name:      "cache empty",
+			name:      "When cache is empty, it should return nil",
 			cache:     &imagesCache{},
 			inputHash: "1234",
 			expected:  nil,
 		},
 		{
-			name: "valid entry",
+			name: "When cache has valid entry, it should return images",
 			cache: &imagesCache{
 				timeStamp: time.Now(),
 				hash:      "4567",
@@ -253,7 +253,7 @@ func TestImagesCacheGetImages(t *testing.T) {
 			},
 		},
 		{
-			name: "hash doesn't match",
+			name: "When hash does not match, it should return nil",
 			cache: &imagesCache{
 				timeStamp: time.Now(),
 				hash:      "4567",
@@ -266,7 +266,7 @@ func TestImagesCacheGetImages(t *testing.T) {
 			expected:  nil,
 		},
 		{
-			name: "cache expired",
+			name: "When cache is expired, it should return nil",
 			cache: &imagesCache{
 				timeStamp: time.Now().Add(-30 * time.Minute),
 				hash:      "4567",

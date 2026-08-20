@@ -116,13 +116,13 @@ func TestSupportedArchitectures(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name:          "AWS",
+			name:          "When platform is AWS, it should return AMD64 and ARM64 architectures",
 			platform:      hyperv1.AWSPlatform,
 			expected:      []string{hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64},
 			expectedError: nil,
 		},
 		{
-			name:          "Azure",
+			name:          "When platform is Azure, it should return unsupported platform error",
 			platform:      hyperv1.AzurePlatform,
 			expected:      nil,
 			expectedError: fmt.Errorf("unsupported platform: Azure"),
@@ -152,12 +152,12 @@ func TestArchToAMILabelKey(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "AMD64",
+			name:     "When architecture is AMD64, it should return the standard AMI label key",
 			arch:     hyperv1.ArchitectureAMD64,
 			expected: "hypershift.openshift.io/ami",
 		},
 		{
-			name:     "ARM64",
+			name:     "When architecture is ARM64, it should return the ARM64-specific AMI label key",
 			arch:     hyperv1.ArchitectureARM64,
 			expected: "hypershift.openshift.io/ami-arm64",
 		},

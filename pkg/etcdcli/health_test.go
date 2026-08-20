@@ -16,7 +16,7 @@ func TestMemberHealthStatus(t *testing.T) {
 		want         string
 	}{
 		{
-			"test all available members",
+			"When all members are available it should report all available",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -25,7 +25,7 @@ func TestMemberHealthStatus(t *testing.T) {
 			"3 members are available",
 		},
 		{
-			"test an unhealthy member",
+			"When one member is unhealthy it should report the unhealthy member",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -34,7 +34,7 @@ func TestMemberHealthStatus(t *testing.T) {
 			"2 of 3 members are available, etcd-3 is unhealthy",
 		},
 		{
-			"test an unstarted member",
+			"When one member is unstarted it should report the unstarted member",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -43,7 +43,7 @@ func TestMemberHealthStatus(t *testing.T) {
 			"2 of 3 members are available, NAME-PENDING-10.0.0.3 has not started",
 		},
 		{
-			"test an unstarted member and an unhealthy member",
+			"When one member is unstarted and one is unhealthy it should report both",
 			[]healthCheck{
 				healthyMember(1),
 				unHealthyMember(2),
@@ -52,7 +52,7 @@ func TestMemberHealthStatus(t *testing.T) {
 			"1 of 3 members are available, etcd-2 is unhealthy, NAME-PENDING-10.0.0.3 has not started",
 		},
 		{
-			"test two unhealthy members",
+			"When two members are unhealthy it should report both unhealthy members",
 			[]healthCheck{
 				healthyMember(1),
 				unHealthyMember(2),
@@ -61,7 +61,7 @@ func TestMemberHealthStatus(t *testing.T) {
 			"1 of 3 members are available, etcd-2 is unhealthy, etcd-3 is unhealthy",
 		},
 		{
-			"test two unstarted members",
+			"When two members are unstarted it should report both unstarted members",
 			[]healthCheck{
 				healthyMember(1),
 				unstartedMember(2),
@@ -86,7 +86,7 @@ func TestGetUnstartedMemberNames(t *testing.T) {
 		want         []string
 	}{
 		{
-			"test all available members",
+			"When all members are available it should return empty list",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -95,7 +95,7 @@ func TestGetUnstartedMemberNames(t *testing.T) {
 			[]string{},
 		},
 		{
-			"test an unhealthy members",
+			"When one member is unhealthy it should return empty list",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -104,7 +104,7 @@ func TestGetUnstartedMemberNames(t *testing.T) {
 			[]string{},
 		},
 		{
-			"test an unstarted and an unhealthy member",
+			"When one member is unstarted and one is unhealthy it should return unstarted member name",
 			[]healthCheck{
 				unHealthyMember(1),
 				unstartedMember(2),
@@ -130,7 +130,7 @@ func TestGetUnhealthyMemberNames(t *testing.T) {
 		want         []string
 	}{
 		{
-			"test all available members",
+			"When all members are available it should return empty list",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -139,7 +139,7 @@ func TestGetUnhealthyMemberNames(t *testing.T) {
 			[]string{},
 		},
 		{
-			"test an unhealthy members",
+			"When one member is unhealthy it should return unhealthy member name",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -148,7 +148,7 @@ func TestGetUnhealthyMemberNames(t *testing.T) {
 			[]string{"etcd-3"},
 		},
 		{
-			"test an unstarted member",
+			"When one member is unstarted it should return unstarted member name",
 			[]healthCheck{
 				healthyMember(1),
 				unstartedMember(2),
@@ -157,7 +157,7 @@ func TestGetUnhealthyMemberNames(t *testing.T) {
 			[]string{"NAME-PENDING-10.0.0.2"},
 		},
 		{
-			"test an unstarted and an unhealthy member",
+			"When one member is unstarted and one is unhealthy it should return both names",
 			[]healthCheck{
 				unHealthyMember(1),
 				unstartedMember(2),
@@ -183,7 +183,7 @@ func TestIsQuorumFaultTolerant(t *testing.T) {
 		want         bool
 	}{
 		{
-			"test all available members",
+			"When all members are available it should return true",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -192,7 +192,7 @@ func TestIsQuorumFaultTolerant(t *testing.T) {
 			true,
 		},
 		{
-			"test an unhealthy members",
+			"When one member is unhealthy it should return false",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -201,7 +201,7 @@ func TestIsQuorumFaultTolerant(t *testing.T) {
 			false,
 		},
 		{
-			"test an unstarted member",
+			"When one member is unstarted it should return false",
 			[]healthCheck{
 				healthyMember(1),
 				unstartedMember(2),
@@ -210,7 +210,7 @@ func TestIsQuorumFaultTolerant(t *testing.T) {
 			false,
 		},
 		{
-			"test an unstarted and an unhealthy member",
+			"When one member is unstarted and one is unhealthy it should return false",
 			[]healthCheck{
 				unHealthyMember(1),
 				unstartedMember(2),
@@ -219,7 +219,7 @@ func TestIsQuorumFaultTolerant(t *testing.T) {
 			false,
 		},
 		{
-			"test etcd cluster with less than 3 members",
+			"When cluster has less than 3 members it should return false",
 			[]healthCheck{
 				healthyMember(1),
 				healthyMember(2),
@@ -227,7 +227,7 @@ func TestIsQuorumFaultTolerant(t *testing.T) {
 			false,
 		},
 		{
-			"test empty health check",
+			"When health check is empty it should return false",
 			[]healthCheck{},
 			false,
 		},
@@ -270,25 +270,25 @@ func TestMinimumTolerableQuorum(t *testing.T) {
 		exp    int
 	}{
 		{
-			name:   "valid input `3`",
+			name:   "When input is 3, it should return 2",
 			input:  3,
 			expErr: nil,
 			exp:    2,
 		},
 		{
-			name:   "valid input `5`",
+			name:   "When input is 5, it should return 3",
 			input:  5,
 			expErr: nil,
 			exp:    3,
 		},
 		{
-			name:   "invalid input `0`",
+			name:   "When input is 0, it should return error",
 			input:  0,
 			expErr: fmt.Errorf("invalid etcd member length: %v", 0),
 			exp:    0,
 		},
 		{
-			name:   "invalid input `-10`",
+			name:   "When input is -10, it should return error",
 			input:  -10,
 			expErr: fmt.Errorf("invalid etcd member length: %v", -10),
 			exp:    0,

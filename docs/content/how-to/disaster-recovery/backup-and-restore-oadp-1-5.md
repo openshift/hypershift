@@ -20,6 +20,7 @@ After installation, create a DataProtectionApplication (DPA) object, which defin
 This guide focuses on the following platforms:
 
 - [AWS](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-aws.html)
+- [Azure](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-azure.html)
 - [Baremetal](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
 - [Openstack](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing/installing-on-openstack)
 - [KubeVirt](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
@@ -40,6 +41,26 @@ oc create secret generic cloud-credentials -n openshift-adp --from-file cloud=cr
 !!! note
 
     If using AWS S3, additional AWS resources must be created to enable data backup and restoration. Follow [these instructions](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-aws.html#migration-configuring-aws-s3_installing-oadp-aws) to set up the necessary configurations.
+
+For Azure Blob Storage, create the credentials in the following format:
+
+```bash
+cat << EOF > ./credentials-azure
+[default]
+AZURE_SUBSCRIPTION_ID=<subscription-id>
+AZURE_TENANT_ID=<tenant-id>
+AZURE_CLIENT_ID=<client-id>
+AZURE_CLIENT_SECRET=<client-secret>
+AZURE_RESOURCE_GROUP=<resource-group>
+AZURE_CLOUD_NAME=AzurePublicCloud
+EOF
+
+oc create secret generic cloud-credentials -n openshift-adp --from-file cloud=credentials-azure
+```
+
+!!! note
+
+    For Azure, additional resources (Storage Account, Blob Container) must be created. Follow the [Azure OADP installation guide](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-azure.html) or the [self-managed Azure etcd backup setup](../azure/backup-and-restore-etcd-snapshot.md#setup) for details.
 
 
 ### Sample DPA Configurations
@@ -183,6 +204,43 @@ Below are some samples of DPA configurations for the mentioned platforms
           defaultPlugins:
             - openshift
             - aws
+            - csi
+            - hypershift
+          resourceTimeout: 2h
+    ```
+
+=== "**Azure**"
+
+    ```yaml
+    ---
+    apiVersion: oadp.openshift.io/v1alpha1
+    kind: DataProtectionApplication
+    metadata:
+      name: dpa-instance
+      namespace: openshift-adp
+    spec:
+      backupLocations:
+        - name: default
+          velero:
+            provider: azure
+            default: true
+            objectStorage:
+              bucket: <blob_container_name>
+              prefix: hcp
+            config:
+              resourceGroup: <resource_group>
+              storageAccount: <storage_account_name>
+            credential:
+              key: cloud
+              name: cloud-credentials
+      configuration:
+        nodeAgent:
+          enable: true
+          uploaderType: kopia
+        velero:
+          defaultPlugins:
+            - openshift
+            - azure
             - csi
             - hypershift
           resourceTimeout: 2h
@@ -698,6 +756,115 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
+=== "**Azure**"
+
+    ### Data Plane workloads backup
+
+    !!! Note
+
+        If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
+
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+
+    The steps are the following:
+
+    - Deploy the OADP operator from OLM.
+      - Create the DPA (Data Protection Application), with a manifest similar to the one provided earlier. It might be beneficial to adjust the `Prefix` or/and `Bucket` fields to keep the ControlPlane and DataPlane backups separated.
+      - Create the backup manifest. This step varies depending on the complexity of the workloads in the Data Plane. It's essential to thoroughly examine how to back up the PersistentVolumes, the backend used, and ensure compatibility with our storage provisioner.
+
+      We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
+
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+
+    !!! Important
+
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+
+    Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
+
+
+    ### Control Plane backup
+
+    Now, we will apply the backup manifest. Here is how it looks like:
+
+    ```yaml
+    ---
+    apiVersion: velero.io/v1
+    kind: Backup
+    metadata:
+      name: hc-clusters-hosted-backup
+      namespace: openshift-adp
+      labels:
+        velero.io/storage-location: default
+        spec:
+      hooks: {}
+      includedNamespaces:
+      - clusters
+      - clusters-hosted
+      includedResources:
+      - sa
+      - role
+      - rolebinding
+      - pod
+      - pvc
+      - pv
+      - configmap
+      - priorityclasses
+      - pdb
+      - hostedcluster
+      - nodepool
+      - secrets
+      - services
+      - deployments
+      - statefulsets
+      - hostedcontrolplane
+      - cluster
+      - azureclusters
+      - azuremachinetemplates
+      - azuremachines
+      - machinedeployment
+      - machineset
+      - machine
+      - route
+      - clusterdeployment
+      excludedResources: []
+      storageLocation: default
+      ttl: 2h30m0s
+      snapshotMoveData: true
+      datamover: "velero"
+      defaultVolumesToFsBackup: false
+      snapshotVolumes: true
+    ```
+
+    We will emphasize the most important fields:
+
+    - These two fields enable the CSI VolumeSnapshots to be automatically uploaded to the remote cloud storage.
+
+    ```yaml
+    snapshotMoveData: true
+    datamover: "velero"
+    ```
+
+    - This field selects the namespaces from which objects will be backed up. They should include namespaces from both the HostedCluster (in the example `clusters`) and the HostedControlPlane (in the example `clusters-hosted`).
+
+    ```yaml
+    includedNamespaces:
+    - clusters
+    - clusters-hosted
+    ```
+
+    - The Azure-specific CAPI resources that must be included:
+
+    ```yaml
+    - azureclusters
+    - azuremachinetemplates
+    - azuremachines
+    ```
+
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+
+    The backup process is considered complete when the `status.phase` is `Completed`.
+
 
 ## Restore
 
@@ -781,6 +948,12 @@ The restoration process is considered complete once the `status.phase` is `Compl
 
     - Restoration in a separated Management cluster is not supported by this provider
     - Node readoption is not supported in this provider yet, so the worker nodes will be reprovisioned at restoration time
+
+=== "**Azure**"
+
+    - Restoration on the same management cluster only (cross-cluster restore is not currently supported due to the lack of end-to-end testing coverage for that scenario)
+    - Node readoption is not supported in this provider yet, so the worker nodes will be reprovisioned at restoration time
+    - For etcd snapshot backup and restore details specific to self-managed Azure, see [Etcd Snapshot Backup and Restore for Self-Managed Azure](../azure/backup-and-restore-etcd-snapshot.md)
 
 
 ## Schedule

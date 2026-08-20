@@ -419,7 +419,7 @@ func TestParseNodeSelector(t *testing.T) {
 		want map[string]string
 	}{
 		{
-			name: "When input has multiple key=value pairs it should return all entries",
+			name: "When input has multiple key=value pairs, it should return all entries",
 			str:  "key1=value1,key2=value2,key3=value3",
 			want: map[string]string{
 				"key1": "value1",
@@ -428,26 +428,26 @@ func TestParseNodeSelector(t *testing.T) {
 			},
 		},
 		{
-			name: "When entries have empty values it should skip them",
+			name: "When entries have empty values, it should skip them",
 			str:  "key1=,key2=value2,key3=",
 			want: map[string]string{
 				"key2": "value2",
 			},
 		},
 		{
-			name: "When entries have empty keys it should skip them",
+			name: "When entries have empty keys, it should skip them",
 			str:  "=value1,key2=value2,=value3",
 			want: map[string]string{
 				"key2": "value2",
 			},
 		},
 		{
-			name: "When input is empty it should return nil",
+			name: "When input is empty, it should return nil",
 			str:  "",
 			want: nil,
 		},
 		{
-			name: "When entries lack an = separator it should skip them",
+			name: "When entries lack an = separator, it should skip them",
 			str:  "key1=value1,key2,key3=value3",
 			want: map[string]string{
 				"key1": "value1",
@@ -455,7 +455,7 @@ func TestParseNodeSelector(t *testing.T) {
 			},
 		},
 		{
-			name: "When values contain = characters it should preserve them",
+			name: "When values contain = characters, it should preserve them",
 			str:  "key1=value1=one,key2,key3=value3=three",
 			want: map[string]string{
 				"key1": "value1=one",

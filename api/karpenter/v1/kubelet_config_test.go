@@ -14,7 +14,7 @@ func TestKubeletConfigurationMarshalRoundTrip(t *testing.T) {
 		config KubeletConfiguration
 	}{
 		{
-			name: "When all typed fields are set they should round-trip",
+			name: "When all typed fields are set, it should round-trip",
 			config: KubeletConfiguration{
 				MaxPods:     110,
 				PodsPerCore: 10,
@@ -42,7 +42,7 @@ func TestKubeletConfigurationMarshalRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name: "When only some fields are set they should round-trip",
+			name: "When only some fields are set, it should round-trip",
 			config: KubeletConfiguration{
 				MaxPods:     50,
 				CPUCFSQuota: ptr.To(false),

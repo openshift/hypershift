@@ -382,7 +382,7 @@ func TestReconcile(t *testing.T) {
 		validate     func(*testing.T, Gomega, client.Client, *fakeMigrator)
 	}{
 		{
-			name: "When encryption is not configured it should remove the condition and clear targetKey",
+			name: "When encryption is not configured, it should remove the condition and clear targetKey",
 			cpObjects: []client.Object{
 				newHCP(), // no encryption spec
 				convergedKASDeployment(testNamespace),
@@ -395,7 +395,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When encryption is configured with AESCBC and no active key in status it should initialize active key",
+			name: "When encryption is configured with AESCBC and no active key in status, it should initialize active key",
 			cpObjects: []client.Object{
 				newHCP(withAESCBCEncryption("aescbc-key-1")),
 				aescbcKeySecret("aescbc-key-1", testNamespace, "test-key-data-1"),
@@ -419,7 +419,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When encryption key is already up to date it should remain in steady state",
+			name: "When encryption key is already up to date, it should remain in steady state",
 			cpObjects: func() []client.Object {
 				dataHash := secretencryption.DataHash([]byte("test-key-data-1"))
 				return []client.Object{
@@ -438,7 +438,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When AESCBC key data changes it should start a new rotation",
+			name: "When AESCBC key data changes, it should start a new rotation",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				return []client.Object{
@@ -469,7 +469,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in ReadOnlyDeploy phase and KAS is not converged it should wait",
+			name: "When in ReadOnlyDeploy phase and KAS is not converged, it should wait",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
@@ -508,7 +508,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in ReadOnlyDeploy phase and KAS deployment is ready but config hash mismatches it should wait",
+			name: "When in ReadOnlyDeploy phase and KAS deployment is ready but config hash mismatches, it should wait",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
@@ -547,7 +547,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in ReadOnlyDeploy phase and KAS is converged it should advance to WritePromote",
+			name: "When in ReadOnlyDeploy phase and KAS is converged, it should advance to WritePromote",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
@@ -585,7 +585,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in WritePromote phase and KAS is converged it should advance to Migrating",
+			name: "When in WritePromote phase and KAS is converged, it should advance to Migrating",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
@@ -626,7 +626,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in Migrating phase and migrations are in progress it should wait",
+			name: "When in Migrating phase and migrations are in progress, it should wait",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
@@ -660,7 +660,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in Migrating phase and all AESCBC migrations complete it should complete rotation",
+			name: "When in Migrating phase and all AESCBC migrations complete, it should complete rotation",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
@@ -713,7 +713,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in Migrating phase and a migration fails it should set failed condition",
+			name: "When in Migrating phase and a migration fails, it should set failed condition",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				newHash := secretencryption.DataHash([]byte("new-key-data"))
@@ -759,7 +759,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When using AWS KMS and key ARN changes it should start rotation with 5 encrypted resources",
+			name: "When using AWS KMS and key ARN changes, it should start rotation with 5 encrypted resources",
 			cpObjects: func() []client.Object {
 				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
 				return []client.Object{
@@ -782,7 +782,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in Migrating phase with KMS and all 5 migrations complete it should complete rotation",
+			name: "When in Migrating phase with KMS and all 5 migrations complete, it should complete rotation",
 			cpObjects: func() []client.Object {
 				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
 				newKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/test-key-1")
@@ -833,7 +833,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When spec key changes mid-rotation it should let current rotation complete first",
+			name: "When spec key changes mid-rotation, it should let current rotation complete first",
 			cpObjects: func() []client.Object {
 				oldHash := secretencryption.DataHash([]byte("old-key-data"))
 				midHash := secretencryption.DataHash([]byte("mid-key-data"))
@@ -881,7 +881,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When in Migrating phase with KMS and some resources are not discoverable it should skip them and complete",
+			name: "When in Migrating phase with KMS and some resources are not discoverable, it should skip them and complete",
 			cpObjects: func() []client.Object {
 				oldKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/old-key")
 				newKS := awsKeyStatus("arn:aws:kms:us-east-1:123456789012:key/test-key-1")
@@ -970,27 +970,27 @@ func TestParseGroupResource(t *testing.T) {
 		expected schema.GroupResource
 	}{
 		{
-			name:     "When parsing a core resource it should return empty group",
+			name:     "When parsing a core resource, it should return empty group",
 			input:    "secrets",
 			expected: schema.GroupResource{Group: "", Resource: "secrets"},
 		},
 		{
-			name:     "When parsing a core resource configmaps it should return empty group",
+			name:     "When parsing a core resource configmaps, it should return empty group",
 			input:    "configmaps",
 			expected: schema.GroupResource{Group: "", Resource: "configmaps"},
 		},
 		{
-			name:     "When parsing a route resource it should split group correctly",
+			name:     "When parsing a route resource, it should split group correctly",
 			input:    "routes.route.openshift.io",
 			expected: schema.GroupResource{Group: "route.openshift.io", Resource: "routes"},
 		},
 		{
-			name:     "When parsing an oauth resource it should split group correctly",
+			name:     "When parsing an oauth resource, it should split group correctly",
 			input:    "oauthaccesstokens.oauth.openshift.io",
 			expected: schema.GroupResource{Group: "oauth.openshift.io", Resource: "oauthaccesstokens"},
 		},
 		{
-			name:     "When parsing oauthauthorizetokens resource it should split group correctly",
+			name:     "When parsing oauthauthorizetokens resource, it should split group correctly",
 			input:    "oauthauthorizetokens.oauth.openshift.io",
 			expected: schema.GroupResource{Group: "oauth.openshift.io", Resource: "oauthauthorizetokens"},
 		},

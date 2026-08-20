@@ -93,7 +93,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			},
 		},
 		{
-			name: "when OpenshiftEC2NodeClassSpec.spec is defined, all fields should be mirrored",
+			name: "When OpenshiftEC2NodeClassSpec.spec is defined, it should mirror all fields",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
 					{
@@ -407,7 +407,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			},
 		},
 		{
-			name: "when platform tags exist in HostedControlPlane, they should be merged with nodeclass tags with platform tags taking precedence",
+			name: "When platform tags exist in HostedControlPlane, it should merge them with nodeclass tags with platform tags taking precedence",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				Tags: map[string]string{
 					"nodeclass-tag":   "nodeclass-value",
@@ -464,7 +464,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			},
 		},
 		{
-			name: "when nodeclass has conflicting red-hat-clustertype tag, platform tag should take precedence",
+			name: "When nodeclass has conflicting red-hat-clustertype tag, it should use platform tag precedence",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				Tags: map[string]string{
 					"red-hat-clustertype": "some-other-value", // This should be overridden by platform tag

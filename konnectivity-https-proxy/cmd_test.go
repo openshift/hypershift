@@ -127,7 +127,7 @@ func TestDialDirectFunc(t *testing.T) {
 			},
 		},
 		{
-			name: "When the transport DialContext fails it should return an error",
+			name: "When the transport DialContext fails, it should return an error",
 			dialCtx: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return nil, dialErr
 			},
@@ -181,7 +181,7 @@ func TestConnectDialFunc(t *testing.T) {
 			expectDialProxy: true,
 		},
 		{
-			name:                "When shouldDialDirect returns an error it should propagate the error",
+			name:                "When shouldDialDirect returns an error, it should propagate the error",
 			shouldDialDirectErr: lookupErr,
 			expectErr:           lookupErr,
 		},

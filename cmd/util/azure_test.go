@@ -10,7 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 )
 
-func Test_SetupAzureCredentials(t *testing.T) {
+func TestSetupAzureCredentials(t *testing.T) {
 	tests := map[string]struct {
 		testName               string
 		credentials            *AzureCreds
@@ -19,7 +19,7 @@ func Test_SetupAzureCredentials(t *testing.T) {
 		expectedAzureCreds     *azidentity.DefaultAzureCredential
 		expectedError          bool
 	}{
-		"valid credentials": {
+		"When credentials are valid it should return the subscription ID": {
 			credentialsFile: "../../test/setup/fake_credentials",
 			credentials: &AzureCreds{
 				SubscriptionID: "89a",
@@ -30,7 +30,7 @@ func Test_SetupAzureCredentials(t *testing.T) {
 			expectedSubscriptionID: "89a",
 			expectedError:          false,
 		},
-		"invalid credentials": {
+		"When credentials file is invalid it should still return the subscription ID": {
 			credentialsFile: "../../test/setup/fake_credential",
 			credentials: &AzureCreds{
 				SubscriptionID: "89a",
@@ -56,13 +56,13 @@ func Test_SetupAzureCredentials(t *testing.T) {
 	}
 }
 
-func Test_ReadCredentials(t *testing.T) {
+func TestReadCredentials(t *testing.T) {
 	tests := map[string]struct {
 		path               string
 		expectedAzureCreds *AzureCreds
 		expectedError      bool
 	}{
-		"valid file": {
+		"When file is valid it should return credentials": {
 			path: "../../test/setup/fake_credentials",
 			expectedAzureCreds: &AzureCreds{
 				SubscriptionID: "89a",
@@ -72,7 +72,7 @@ func Test_ReadCredentials(t *testing.T) {
 			},
 			expectedError: false,
 		},
-		"invalid file": {
+		"When file is invalid it should return an error": {
 			path:          "../../test/setup/fake_credential",
 			expectedError: true,
 		},
@@ -91,12 +91,12 @@ func Test_ReadCredentials(t *testing.T) {
 	}
 }
 
-func Test_ValidateMarketplaceFlags(t *testing.T) {
+func TestValidateMarketplaceFlags(t *testing.T) {
 	tests := map[string]struct {
 		marketplaceImageInfo map[string]*string
 		expectedError        bool
 	}{
-		"valid marketplace image": {
+		"When marketplace image is valid it should pass validation": {
 			marketplaceImageInfo: map[string]*string{
 				"marketplace-publisher": newStringPtr("publisher"),
 				"marketplace-offer":     newStringPtr("offer"),
@@ -105,7 +105,7 @@ func Test_ValidateMarketplaceFlags(t *testing.T) {
 			},
 			expectedError: false,
 		},
-		"invalid marketplace image": {
+		"When marketplace image has empty offer it should return an error": {
 			marketplaceImageInfo: map[string]*string{
 				"marketplace-publisher": newStringPtr("publisher"),
 				"marketplace-offer":     newStringPtr(""),
@@ -114,7 +114,7 @@ func Test_ValidateMarketplaceFlags(t *testing.T) {
 			},
 			expectedError: true,
 		},
-		"empty marketplace image": {
+		"When marketplace image is empty it should pass validation": {
 			marketplaceImageInfo: map[string]*string{
 				"marketplace-publisher": newStringPtr(""),
 				"marketplace-offer":     newStringPtr(""),

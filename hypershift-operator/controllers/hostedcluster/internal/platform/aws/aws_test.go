@@ -27,7 +27,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 		expectedAWSCluster *capiaws.AWSCluster
 	}{
 		{
-			name:              "Tags get copied over",
+			name:              "When hosted cluster has resource tags it should copy them to the AWS cluster",
 			initialAWSCluster: &capiaws.AWSCluster{},
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				ResourceTags: []hyperv1.AWSResourceTag{
@@ -48,7 +48,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "Existing tags get removed",
+			name: "When AWS cluster has existing tags it should replace them with hosted cluster tags",
 			initialAWSCluster: &capiaws.AWSCluster{Spec: capiaws.AWSClusterSpec{AdditionalTags: capiaws.Tags{
 				"to-be-removed": "value",
 			}}},
@@ -71,7 +71,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "No tags on hostedcluster clears existing awscluster tags",
+			name: "When hosted cluster has no tags it should clear existing AWS cluster tags",
 			initialAWSCluster: &capiaws.AWSCluster{Spec: capiaws.AWSClusterSpec{AdditionalTags: capiaws.Tags{
 				"to-be-removed": "value",
 			}}},
@@ -211,7 +211,7 @@ func TestBuildAWSWebIdentityCredentials(t *testing.T) {
 	}
 	tests := []test{
 		{
-			name: "should fail if the role ARN is empty",
+			name: "When role ARN is empty, it should return an error",
 			args: args{
 				roleArn: "",
 				region:  "us-east-1",
@@ -219,7 +219,7 @@ func TestBuildAWSWebIdentityCredentials(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "should fail if the region is empty",
+			name:    "When region is empty, it should return an error",
 			wantErr: true,
 			args: args{
 				roleArn: "arn:aws:iam::123456789012:role/some-role",
@@ -227,7 +227,7 @@ func TestBuildAWSWebIdentityCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:    "should succeed and return the creds template populated with role arn and region otherwise",
+			name:    "When role ARN and region are provided, it should return populated credentials template",
 			wantErr: false,
 			args: args{
 				roleArn: "arn:aws:iam::123456789012:role/some-role",

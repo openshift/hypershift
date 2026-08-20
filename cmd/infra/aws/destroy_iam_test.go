@@ -126,7 +126,7 @@ func TestDestroyOIDCRole(t *testing.T) {
 			expectRemoved: true,
 		},
 		{
-			name: "When GetRole returns an API error it should return a wrapped error",
+			name: "When GetRole returns an API error, it should return a wrapped error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(roleName)}, gomock.Any()).
 					Return(nil, errors.New("api error"))
@@ -135,7 +135,7 @@ func TestDestroyOIDCRole(t *testing.T) {
 			errorContains: "cannot check for existing role",
 		},
 		{
-			name: "When ListAttachedRolePolicies fails it should return the error",
+			name: "When ListAttachedRolePolicies fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(roleName)}, gomock.Any()).
@@ -148,7 +148,7 @@ func TestDestroyOIDCRole(t *testing.T) {
 			errorContains: "failed to list attached policies",
 		},
 		{
-			name: "When DetachRolePolicy fails it should return the error",
+			name: "When DetachRolePolicy fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(roleName)}, gomock.Any()).
@@ -167,7 +167,7 @@ func TestDestroyOIDCRole(t *testing.T) {
 			errorContains: "failed to detach policy",
 		},
 		{
-			name: "When ListRolePolicies fails it should return the error",
+			name: "When ListRolePolicies fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(roleName)}, gomock.Any()).
@@ -182,7 +182,7 @@ func TestDestroyOIDCRole(t *testing.T) {
 			errorContains: "failed to list inline policies",
 		},
 		{
-			name: "When DeleteRole fails it should return the error",
+			name: "When DeleteRole fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(roleName)}, gomock.Any()).
@@ -331,7 +331,7 @@ func TestDestroyWorkerInstanceProfile(t *testing.T) {
 			},
 		},
 		{
-			name: "When GetInstanceProfile returns an API error it should return the error",
+			name: "When GetInstanceProfile returns an API error, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().GetInstanceProfile(gomock.Any(), &iam.GetInstanceProfileInput{InstanceProfileName: aws.String(profileName)}, gomock.Any()).
 					Return(nil, errors.New("api error"))
@@ -340,7 +340,7 @@ func TestDestroyWorkerInstanceProfile(t *testing.T) {
 			errorContains: "cannot check for existing instance profile",
 		},
 		{
-			name: "When RemoveRoleFromInstanceProfile fails it should return the error",
+			name: "When RemoveRoleFromInstanceProfile fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetInstanceProfile(gomock.Any(), &iam.GetInstanceProfileInput{InstanceProfileName: aws.String(profileName)}, gomock.Any()).
@@ -458,7 +458,7 @@ func TestDestroyOIDCResources(t *testing.T) {
 			},
 		},
 		{
-			name: "When ListOpenIDConnectProviders fails it should return the error",
+			name: "When ListOpenIDConnectProviders fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(nil, errors.New("api error"))
@@ -467,7 +467,7 @@ func TestDestroyOIDCResources(t *testing.T) {
 			errorContains: "api error",
 		},
 		{
-			name: "When DeleteOpenIDConnectProvider fails with a non-NSE error it should still attempt role cleanup and return the error",
+			name: "When DeleteOpenIDConnectProvider fails with a non-NSE error, it should still attempt role cleanup and return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -487,7 +487,7 @@ func TestDestroyOIDCResources(t *testing.T) {
 			errorContains: "permission denied",
 		},
 		{
-			name: "When shared-role fails it should still attempt all component role deletions and aggregate errors",
+			name: "When shared-role fails, it should still attempt all component role deletions and aggregate errors",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				sharedRoleName := testInfraID + "-shared-role"
 				ingressRoleName := testInfraID + "-openshift-ingress"
@@ -509,7 +509,7 @@ func TestDestroyOIDCResources(t *testing.T) {
 			errorContainsAll: []string{"shared-role api error", "ingress api error"},
 		},
 		{
-			name: "When multiple component role deletions fail it should aggregate all errors",
+			name: "When multiple component role deletions fail, it should aggregate all errors",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				sharedRoleName := testInfraID + "-shared-role"
 				ingressRoleName := testInfraID + "-openshift-ingress"
@@ -577,7 +577,7 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 		errorContainsAll      []string
 	}{
 		{
-			name:                  "When PrivateZonesInClusterAccount is false ingress role should use vpcOwnerClient",
+			name:                  "When PrivateZonesInClusterAccount is false, it should use vpcOwnerClient for ingress role",
 			privateZonesInCluster: false,
 			setupIAMMock:          func(_ *awsapi.MockIAMAPI) {},
 			setupVPCOwnerMock: func(m *awsapi.MockIAMAPI) {
@@ -590,7 +590,7 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 			},
 		},
 		{
-			name:                  "When PrivateZonesInClusterAccount is true ingress role should use iamClient",
+			name:                  "When PrivateZonesInClusterAccount is true, it should use iamClient for ingress role",
 			privateZonesInCluster: true,
 			setupIAMMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().GetRole(gomock.Any(), &iam.GetRoleInput{RoleName: aws.String(ingressRoleName)}, gomock.Any()).
@@ -602,7 +602,7 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 			},
 		},
 		{
-			name:                  "When destroying the ingress role fails it should still attempt control-plane role and return the error",
+			name:                  "When destroying the ingress role fails, it should still attempt control-plane role and return the error",
 			privateZonesInCluster: false,
 			setupIAMMock:          func(_ *awsapi.MockIAMAPI) {},
 			setupVPCOwnerMock: func(m *awsapi.MockIAMAPI) {
@@ -615,7 +615,7 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 			errorContains: "cannot check for existing role",
 		},
 		{
-			name:                  "When destroying the control-plane role fails it should return the error",
+			name:                  "When destroying the control-plane role fails, it should return the error",
 			privateZonesInCluster: false,
 			setupIAMMock:          func(_ *awsapi.MockIAMAPI) {},
 			setupVPCOwnerMock: func(m *awsapi.MockIAMAPI) {
@@ -630,7 +630,7 @@ func TestDestroySharedVPCRoles(t *testing.T) {
 			errorContains: "cannot check for existing role",
 		},
 		{
-			name:                  "When both ingress and control-plane role deletions fail it should aggregate all errors",
+			name:                  "When both ingress and control-plane role deletions fail, it should aggregate all errors",
 			privateZonesInCluster: false,
 			setupIAMMock:          func(_ *awsapi.MockIAMAPI) {},
 			setupVPCOwnerMock: func(m *awsapi.MockIAMAPI) {

@@ -96,7 +96,7 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 		expectedOutputSecret *corev1.Secret
 	}{
 		{
-			name: "When OAuth config specified results in no kubeadmin secret",
+			name: "When OAuth config is specified it should not create kubeadmin secret",
 			hcp: &hyperv1.HostedControlPlane{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -134,7 +134,7 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 			expectedOutputSecret: nil,
 		},
 		{
-			name: "When Oauth config not specified results in default kubeadmin secret",
+			name: "When OAuth config is not specified it should create default kubeadmin secret",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: targetNamespace,
@@ -248,13 +248,13 @@ func TestReconcileIgnitionServer(t *testing.T) {
 		servingCert *corev1.Secret
 	}{
 		{
-			name:        "No certs, no extra annotations",
+			name:        "When no certs or extra annotations exist it should reconcile successfully",
 			annotations: map[string]string{},
 			caCert:      nil,
 			servingCert: nil,
 		},
 		{
-			name: "Premade certs, DisablePKIReconciliation annotation present",
+			name: "When premade certs exist with DisablePKIReconciliation annotation it should preserve them",
 			annotations: map[string]string{
 				hyperv1.DisablePKIReconciliationAnnotation: "true",
 			},
@@ -280,7 +280,7 @@ func TestReconcileIgnitionServer(t *testing.T) {
 			},
 		},
 		{
-			name: "No certs, DisablePKIReconciliation annotation present",
+			name: "When no certs exist with DisablePKIReconciliation annotation it should skip cert creation",
 			annotations: map[string]string{
 				hyperv1.DisablePKIReconciliationAnnotation: "true",
 			},
@@ -377,7 +377,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 		expectedCondition metav1.Condition
 	}{
 		{
-			name: "single replica, pod ready - condition true",
+			name: "When single replica pod is ready it should return condition true",
 			sts: &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "etcd",
@@ -417,7 +417,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 			},
 		},
 		{
-			name: "Pod not ready - condition false",
+			name: "When pod is not ready it should return condition false",
 			sts: &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "etcd",
@@ -463,7 +463,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 			},
 		},
 		{
-			name: "multiple replica, pods ready - condition true",
+			name: "When multiple replica pods are ready it should return condition true",
 			sts: &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "etcd",
@@ -927,12 +927,12 @@ func TestIncludeServingCertificates(t *testing.T) {
 		expectError    bool
 	}{
 		{
-			name:         "APIServer servingCerts is nil",
+			name:         "When APIServer servingCerts is empty it should return only root CA cert",
 			servingCerts: &configv1.APIServerServingCerts{},
 			expectedCert: "root-ca-cert",
 		},
 		{
-			name: "APIServer servingCerts configuration with one named certificates",
+			name: "When APIServer has one named certificate it should append it to root CA",
 			servingCerts: &configv1.APIServerServingCerts{
 				NamedCertificates: []configv1.APIServerNamedServingCert{
 					{
@@ -956,7 +956,7 @@ func TestIncludeServingCertificates(t *testing.T) {
 			expectedCert: "root-ca-cert\ncert-1",
 		},
 		{
-			name: "APIServer servingCerts configuration with multiple named certificates",
+			name: "When APIServer has multiple named certificates it should append all to root CA",
 			servingCerts: &configv1.APIServerServingCerts{
 				NamedCertificates: []configv1.APIServerNamedServingCert{
 					{
@@ -994,7 +994,7 @@ func TestIncludeServingCertificates(t *testing.T) {
 			expectedCert: "root-ca-cert\ncert-1\ncert-2",
 		},
 		{
-			name: "APIServer servingCerts configuration with missing named certificate",
+			name: "When APIServer has missing named certificate, it should return error",
 			servingCerts: &configv1.APIServerServingCerts{
 				NamedCertificates: []configv1.APIServerNamedServingCert{
 					{
@@ -1057,27 +1057,27 @@ func TestControlPlaneComponents(t *testing.T) {
 		subDirSuffix   string
 	}{
 		{
-			name:         "Default feature set, default platform type",
+			name:         "When using default feature set and platform type it should reconcile components",
 			featureSet:   configv1.Default,
 			platformType: nil,
 		},
 		{
-			name:         "TechPreviewNoUpgrade feature set, default platform type",
+			name:         "When using TechPreviewNoUpgrade feature set it should reconcile components",
 			featureSet:   configv1.TechPreviewNoUpgrade,
 			platformType: nil,
 		},
 		{
-			name:         "Default feature set, IBM Cloud platform type",
+			name:         "When using IBM Cloud platform type it should reconcile components",
 			featureSet:   configv1.Default,
 			platformType: ptr.To(hyperv1.IBMCloudPlatform),
 		},
 		{
-			name:         "TechPreviewNoUpgrade feature set, GCP platform type",
+			name:         "When using TechPreviewNoUpgrade with GCP platform it should reconcile components",
 			featureSet:   configv1.TechPreviewNoUpgrade,
 			platformType: ptr.To(hyperv1.GCPPlatform),
 		},
 		{
-			name:         "Default feature set, Azure platform with ARO Swift",
+			name:         "When using Azure platform with ARO Swift, it should reconcile components",
 			featureSet:   configv1.Default,
 			platformType: ptr.To(hyperv1.AzurePlatform),
 			hcpAnnotations: map[string]string{
@@ -1141,7 +1141,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			subDirSuffix: "AROSwift",
 		},
 		{
-			name:         "Default feature set, Modern TLS profile",
+			name:         "When using Modern TLS profile it should reconcile components",
 			featureSet:   configv1.Default,
 			platformType: nil,
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
@@ -1366,7 +1366,7 @@ func TestAWSSecurityGroupTags(t *testing.T) {
 		expectedTags map[string]string
 	}{
 		{
-			name: "No additional tags, no AutoNode",
+			name: "When no additional tags or AutoNode exist it should return default tags",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "test-infra",
@@ -1383,7 +1383,7 @@ func TestAWSSecurityGroupTags(t *testing.T) {
 			},
 		},
 		{
-			name: "Additional tags override Name and cluster key",
+			name: "When additional tags override defaults it should use custom values",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "myinfra",
@@ -1405,7 +1405,7 @@ func TestAWSSecurityGroupTags(t *testing.T) {
 			},
 		},
 		{
-			name: "AutoNode with Karpenter AWS adds karpenter.sh/discovery",
+			name: "When AutoNode uses Karpenter AWS it should add discovery tag",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "karpenter-infra",
@@ -1871,7 +1871,7 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 			},
 		},
 		{
-			name: "Route with HCPRouteLabel is skipped",
+			name: "When route has HCPRouteLabel it should skip processing",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -1914,7 +1914,7 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 			},
 		},
 		{
-			name: "Route without HCPRouteLabel has router ingress removed",
+			name: "When route has no HCPRouteLabel it should remove router ingress",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -1950,7 +1950,7 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 			},
 		},
 		{
-			name: "Route without router ingress is unchanged",
+			name: "When route has no router ingress it should remain unchanged",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -1987,7 +1987,7 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 			},
 		},
 		{
-			name: "Route with only router ingress has all ingress removed",
+			name: "When route has only router ingress it should remove all ingress",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -2020,7 +2020,7 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 			},
 		},
 		{
-			name: "Multiple routes handled correctly",
+			name: "When multiple routes exist it should handle each correctly",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -2106,7 +2106,7 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 			},
 		},
 		{
-			name: "Route with empty ingress list is unchanged",
+			name: "When route has empty ingress list it should remain unchanged",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -2137,7 +2137,7 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 			},
 		},
 		{
-			name: "Route with multiple router ingress entries removes all",
+			name: "When route has multiple router ingress entries it should remove all",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -4356,7 +4356,7 @@ func TestReconcileDeletion(t *testing.T) {
 			wantCondStatus: metav1.ConditionFalse,
 		},
 		{
-			name: "When DescribeSecurityGroups returns InvalidIdentityToken it should extract the error code and skip gracefully",
+			name: "When DescribeSecurityGroups returns InvalidIdentityToken, it should extract the error code and skip gracefully",
 			setupEC2Mock: func(mockCtrl *gomock.Controller) *awsapi.MockEC2API {
 				m := awsapi.NewMockEC2API(mockCtrl)
 				m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(nil,
