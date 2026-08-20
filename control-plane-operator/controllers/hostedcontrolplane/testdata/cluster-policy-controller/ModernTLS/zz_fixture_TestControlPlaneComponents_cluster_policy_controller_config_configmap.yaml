@@ -112,7 +112,6 @@ data:
     - UserNamespacesSupport=false
     - VSphereConfigurableMaxAllowedBlockVolumesPerNode=false
     - VSphereHostVMGroupZonal=false
-    - VSphereMultiDisk=false
     - VSphereMultiNetworks=false
     - VolumeAttributesClass=false
     - VolumeGroupSnapshot=false
@@ -156,7 +155,7 @@ data:
 kind: ConfigMap
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d6d52875a880013eb077a81b89ab2fdc3b35401c621f6c575eb5cd0ab796b008
+    hypershift.openshift.io/desired-state-hash: 12806660d325252f15b2a5d8d0d91eda03a7ad2f0977d98805bb5f996215c945
   name: cluster-policy-controller-config
   namespace: hcp-namespace
   ownerReferences:
