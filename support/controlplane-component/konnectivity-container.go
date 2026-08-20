@@ -224,7 +224,25 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		}
 	}
 
+	// When connecting directly to cloud APIs, dialDirectWithProxy() reads
+	// HTTPS_PROXY from the process environment. Propagate the management
+	// cluster's proxy env vars so that path can reach cloud endpoints.
+	if opts.connectsDirectlyToCloudAPIs() {
+		proxy.SetEnvVars(&container.Env)
+	}
+
 	return container
+}
+
+func (opts KonnectivityContainerOptions) connectsDirectlyToCloudAPIs() bool {
+	switch opts.Mode {
+	case HTTPS:
+		return ptr.Deref(opts.HTTPSOptions.ConnectDirectlyToCloudAPIs, false)
+	case Socks5:
+		return ptr.Deref(opts.Socks5Options.ConnectDirectlyToCloudAPIs, false)
+	default:
+		return false
+	}
 }
 
 func (opts KonnectivityContainerOptions) buildVolumes(proxyAdditionalCAs []corev1.VolumeProjection) []corev1.Volume {
