@@ -17,7 +17,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// portForwarder starts port forwarding to a given pod
+// PortForwarder starts port forwarding to a given pod.
 type PortForwarder struct {
 	Namespace string
 	PodName   string
@@ -25,6 +25,8 @@ type PortForwarder struct {
 	Config    *restclient.Config
 	Out       io.Writer
 	ErrOut    io.Writer
+
+	fw *portforward.PortForwarder
 }
 
 // ForwardPorts will forward a set of ports from a pod, the stopChan will stop the forwarding
@@ -47,6 +49,7 @@ func (f *PortForwarder) ForwardPorts(ports []string, stopChan <-chan struct{}) e
 	if err != nil {
 		return err
 	}
+	f.fw = fw
 	errChan := make(chan error)
 	go func() { errChan <- fw.ForwardPorts() }()
 	select {
@@ -55,6 +58,15 @@ func (f *PortForwarder) ForwardPorts(ports []string, stopChan <-chan struct{}) e
 	case err = <-errChan:
 		return err
 	}
+}
+
+// GetPorts returns the locally bound ports after ForwardPorts has been called.
+// Use this to retrieve the actual local port when binding with local port 0.
+func (f *PortForwarder) GetPorts() ([]portforward.ForwardedPort, error) {
+	if f.fw == nil {
+		return nil, fmt.Errorf("port forwarding not started")
+	}
+	return f.fw.GetPorts()
 }
 
 func GetRunningKubeAPIServerPod(ctx context.Context, kbClient crclient.Client, cpNamespace string) (*corev1.Pod, error) {

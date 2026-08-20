@@ -36,6 +36,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/forwarder"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -2534,6 +2535,87 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			err := kbCrclient.Get(ctx, types.NamespacedName{Name: "cluster"}, infra)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster Infrastructure with KAS custom kubeconfig")
 			g.Expect(infra.Status.APIServerURL).To(ContainSubstring(hc.Spec.KubeAPIServerDNSName), "Infrastructure APIServerURL does not contains the KubeAPIServerDNSName set in the HostedCluster")
+		})
+		t.Run("EnsureKASReachableViaSVCURL", func(t *testing.T) {
+			g := NewWithT(t)
+			t.Log("Checking KAS is still reachable via the internal SVC URL after custom cert configuration")
+
+			// Fetch the service-network-admin-kubeconfig secret from the HCP namespace.
+			// This kubeconfig uses the in-cluster kube-apiserver service URL and validates
+			// that the KAS serving cert chain still covers the service name.
+			svcKubeconfig := cpomanifests.KASServiceKubeconfigSecret(hcpNamespace)
+			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svcKubeconfig), svcKubeconfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get service-network-admin-kubeconfig secret from HCP namespace")
+
+			svcKubeconfigData, ok := svcKubeconfig.Data["kubeconfig"]
+			g.Expect(ok).To(BeTrue(), "service-network-admin-kubeconfig secret missing 'kubeconfig' key")
+
+			svcConfig, err := clientcmd.RESTConfigFromKubeConfig(svcKubeconfigData)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to parse service-network-admin-kubeconfig")
+
+			// The kubeconfig server URL uses the short service name (kube-apiserver:<port>)
+			// which only resolves from pods in the HCP namespace. The e2e binary runs
+			// outside that namespace, so port-forward to a running KAS pod and rewrite
+			// Host to localhost. ServerName keeps the original short service name so TLS
+			// validates the serving cert against it.
+			// Same pattern as cmd/cluster/core/dump.go (--dump-guest-cluster).
+			mgmtConfig, err := GetConfig()
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get management cluster REST config")
+			mgmtClientset, err := kubeclient.NewForConfig(mgmtConfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to create management cluster clientset")
+
+			kasPod, err := forwarder.GetRunningKubeAPIServerPod(ctx, mgmtClient, hcpNamespace)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to find a running kube-apiserver pod")
+
+			podPort := netutil.KASPodPortFromHostedCluster(entryHostedCluster)
+			stopChan := make(chan struct{})
+			defer close(stopChan)
+
+			pf := &forwarder.PortForwarder{
+				Namespace: hcpNamespace,
+				PodName:   kasPod.Name,
+				Client:    mgmtClientset,
+				Config:    mgmtConfig,
+				Out:       io.Discard,
+				ErrOut:    io.Discard,
+			}
+			err = pf.ForwardPorts([]string{fmt.Sprintf("0:%d", podPort)}, stopChan)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to start port-forward to kube-apiserver pod")
+
+			forwardedPorts, err := pf.GetPorts()
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get forwarded ports")
+			g.Expect(forwardedPorts).ToNot(BeEmpty(), "no forwarded ports returned")
+			localPort := forwardedPorts[0].Local
+
+			svcConfig.Host = fmt.Sprintf("https://localhost:%d", localPort)
+			svcConfig.TLSClientConfig.ServerName = "kube-apiserver"
+			svcConfig.QPS = -1
+			svcConfig.Burst = -1
+
+			svcKubeClient, err := kubeclient.NewForConfig(svcConfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to create kube client from service-network-admin-kubeconfig")
+
+			// Validate connectivity to KAS via the SVC URL by performing a SelfSubjectReview.
+			// This confirms the KAS serving cert still covers the internal service name even
+			// after the custom DNS name and certificate have been configured.
+			// Fail fast on cert-specific x509 errors (the exact regression this test targets)
+			// and retry on transient connection errors.
+			g.Eventually(func() error {
+				_, err := svcKubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				if err != nil {
+					var unknownAuthorityErr x509.UnknownAuthorityError
+					var certInvalidErr x509.CertificateInvalidError
+					var hostnameErr x509.HostnameError
+					if errors.As(err, &unknownAuthorityErr) || errors.As(err, &certInvalidErr) || errors.As(err, &hostnameErr) {
+						t.Logf("x509 cert error detected (failing fast): %v", err)
+						return StopTrying("x509 cert error: serving cert does not cover the kube-apiserver service name").Wrap(err)
+					}
+					t.Logf("Transient connectivity error, retrying: %v", err)
+					return err
+				}
+				t.Log("Successfully verified KAS is reachable via SVC URL")
+				return nil
+			}, 5*time.Minute, 10*time.Second).Should(Succeed(), "KAS is not reachable via the internal SVC URL after custom cert configuration")
 		})
 
 		// removing KubeAPIDNSName from HC

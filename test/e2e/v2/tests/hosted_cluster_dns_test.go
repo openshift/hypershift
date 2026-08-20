@@ -28,10 +28,10 @@ import (
 
 // RegisterHostedClusterDNSTests registers DNS-related hosted cluster tests.
 func RegisterHostedClusterDNSTests(getTestCtx internal.TestContextGetter) {
-	EnsureKubeAPIDNSNameCustomCertTest(getTestCtx)
+	EnsureKubeAPIDNSNameTests(getTestCtx)
 }
 
-func EnsureKubeAPIDNSNameCustomCertTest(getTestCtx internal.TestContextGetter) {
+func EnsureKubeAPIDNSNameTests(getTestCtx internal.TestContextGetter) {
 	When("KubeAPIDNSName and custom certificate are configured", func() {
 		PIt("should make KAS reachable via the custom DNS endpoint", func() {
 			tc := getTestCtx()
@@ -55,12 +55,38 @@ func EnsureKubeAPIDNSNameCustomCertTest(getTestCtx internal.TestContextGetter) {
 			// 3. Update HC with KubeAPIDNSName and custom serving cert reference
 			// 4. Wait for custom kubeconfig status to appear (30-min timeout)
 			// 5. Create ExternalName Service with DNS annotation
-			// 6. Wait for DNS resolution and KAS reachability
+			// 6. Wait for DNS resolution and KAS reachability via custom DNS endpoint
 			// 7. Validate custom kubeconfig status and secret
 			// 8. Defer full HC state restoration
 			//
 			// This test is marked pending until the full DNS lifecycle is wired up.
 			Expect(serviceDomain).NotTo(BeEmpty())
+		})
+
+		PIt("should keep KAS reachable via the internal SVC URL", func() {
+			tc := getTestCtx()
+			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfPlatform(hyperv1.KubevirtPlatform)
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+
+			if !netutil.IsPublicHC(hostedCluster) {
+				Skip("SVC URL test requires a public hosted cluster")
+			}
+
+			// The full implementation would:
+			// 1. Set up KubeAPIDNSName + custom cert (shared setup with the custom DNS test)
+			// 2. Fetch the service-network-admin-kubeconfig from the HCP namespace
+			// 3. Port-forward to a running KAS pod (the short service name only resolves
+			//    inside the HCP namespace pod network; the e2e binary runs externally).
+			//    Rewrite Host to localhost:<forwarded-port>, keep ServerName="kube-apiserver"
+			//    so TLS validates against the original service name.
+			//    See EnsureKASReachableViaSVCURL in test/e2e/util/util.go for the v1 pattern.
+			// 4. Perform a SelfSubjectReview to confirm KAS is reachable via the SVC URL
+			// 5. Validate the serving cert chain still covers the internal service name
+			//
+			// This test is marked pending until the full DNS lifecycle is wired up.
+			Expect(hostedCluster).NotTo(BeNil())
 		})
 	})
 }
