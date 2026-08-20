@@ -266,7 +266,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When the nodepool upgrade strategy is replace, the token secret should not contain the machine payload",
+			name: "When the nodepool upgrade strategy is replace, it should not contain the machine payload in the token secret",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -327,13 +327,13 @@ func TestGetTokenIDTimeLived(t *testing.T) {
 		expectedError    bool
 	}{
 		{
-			name:             "when there's no annotation it should return nil",
+			name:             "When there is no annotation it should return nil",
 			annotations:      map[string]string{},
 			expectedDuration: nil,
 			expectedError:    false,
 		},
 		{
-			name: "when the annotation has empty value it should error",
+			name: "When the annotation has empty value it should error",
 			annotations: map[string]string{
 				TokenSecretTokenGenerationTime: "",
 			},
@@ -341,7 +341,7 @@ func TestGetTokenIDTimeLived(t *testing.T) {
 			expectedError:    true,
 		},
 		{
-			name: "when the annotation has no wrong format it should error",
+			name: "When the annotation has wrong format it should error",
 			annotations: map[string]string{
 				TokenSecretTokenGenerationTime: "wrong format",
 			},
@@ -349,7 +349,7 @@ func TestGetTokenIDTimeLived(t *testing.T) {
 			expectedError:    true,
 		},
 		{
-			name: "when the annotation has a valid format it should return a duration",
+			name: "When the annotation has a valid format it should return a duration",
 			annotations: map[string]string{
 				TokenSecretTokenGenerationTime: lastUpdated,
 			},
@@ -382,17 +382,17 @@ func TestTokenIDNeedRotation(t *testing.T) {
 		needRotation bool
 	}{
 		{
-			name:         "when the time lived is >= ttl it should return true",
+			name:         "When the time lived is >= ttl it should return true",
 			timeLived:    &timeLivedHalfTTL,
 			needRotation: true,
 		},
 		{
-			name:         "when the time lived is nil it should return true",
+			name:         "When the time lived is nil it should return true",
 			timeLived:    nil,
 			needRotation: true,
 		},
 		{
-			name:         "when the time lived is < ttl it should return true",
+			name:         "When the time lived is less than ttl it should return false",
 			timeLived:    &timeLivedLessThanTTL,
 			needRotation: false,
 		},
@@ -460,26 +460,26 @@ func TestIsTokenExpired(t *testing.T) {
 		expectedIsExpired bool
 	}{
 		{
-			name:              "when there's no token expiration timestamp annotation it should return that it is not expired (false)",
+			name:              "When there is no token expiration timestamp annotation it should return that it is not expired",
 			annotations:       map[string]string{},
 			expectedIsExpired: false,
 		},
 		{
-			name: "when the token expiration timestamp is in the past it should return that it is expired (true)",
+			name: "When the token expiration timestamp is in the past it should return that it is expired",
 			annotations: map[string]string{
 				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(-4 * time.Hour).Format(time.RFC3339),
 			},
 			expectedIsExpired: true,
 		},
 		{
-			name: "when the token expiration timestamp is in the future it should return that it is not expired (false)",
+			name: "When the token expiration timestamp is in the future it should return that it is not expired",
 			annotations: map[string]string{
 				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(4 * time.Hour).Format(time.RFC3339),
 			},
 			expectedIsExpired: false,
 		},
 		{
-			name: "when the token expiration timestamp has an invalid value it should return that it is expired (true)",
+			name: "When the token expiration timestamp has an invalid value it should return that it is expired",
 			annotations: map[string]string{
 				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: "badvalue",
 			},
@@ -511,7 +511,7 @@ func TestProcessedExpiredToken(t *testing.T) {
 		expectedEntriesToBeRemoved map[string][]byte
 	}{
 		{
-			name: "when a token secret exists and the cache is populated then the secret is deleted and the token entries removed from cache",
+			name: "When a token secret exists and the cache is populated it should delete the secret and remove the token entries from cache",
 			inputEntries: map[string][]byte{
 				fakeCurrentTokenVal: fakeTokenContent,
 				fakeOldTokenVal:     fakeTokenContent,
@@ -533,7 +533,7 @@ func TestProcessedExpiredToken(t *testing.T) {
 			},
 		},
 		{
-			name: "when a token secret exists with only one token and the cache is populated then the secret is deleted and the token entries removed from cache",
+			name: "When a token secret exists with only one token and the cache is populated it should delete the secret and remove the token entries from cache",
 			inputEntries: map[string][]byte{
 				fakeCurrentTokenVal: fakeTokenContent,
 			},
@@ -552,7 +552,7 @@ func TestProcessedExpiredToken(t *testing.T) {
 			},
 		},
 		{
-			name: "when a token secret exists and an independent secrets entry is also in the cache then only the processed tokens are removed",
+			name: "When a token secret exists and an independent secrets entry is also in the cache it should only remove the processed tokens",
 			inputEntries: map[string][]byte{
 				fakeCurrentTokenVal:     fakeTokenContent,
 				fakeIndependentTokenVal: fakeTokenContent,
@@ -619,7 +619,7 @@ func TestHasSameReasonAndMessage(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "Reason and message match",
+			name: "When reason and message match, it should return true",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					TokenSecretReasonKey:  []byte("reason1"),
@@ -631,7 +631,7 @@ func TestHasSameReasonAndMessage(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "Reason does not match",
+			name: "When reason does not match, it should return false",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					TokenSecretReasonKey:  []byte("reason1"),
@@ -643,7 +643,7 @@ func TestHasSameReasonAndMessage(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Message does not match",
+			name: "When message does not match, it should return false",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					TokenSecretReasonKey:  []byte("reason1"),
@@ -655,7 +655,7 @@ func TestHasSameReasonAndMessage(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Both reason and message do not match",
+			name: "When both reason and message do not match, it should return false",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					TokenSecretReasonKey:  []byte("reason1"),
@@ -667,7 +667,7 @@ func TestHasSameReasonAndMessage(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Reason and message are empty",
+			name: "When reason and message are empty, it should return true",
 			secret: &corev1.Secret{
 				Data: map[string][]byte{
 					TokenSecretReasonKey:  []byte(""),

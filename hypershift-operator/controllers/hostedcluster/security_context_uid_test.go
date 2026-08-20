@@ -28,14 +28,14 @@ func TestGetNextAvailableSecurityContextUID(t *testing.T) {
 		expectErr                   bool
 	}{
 		{
-			name:                        "when no namespaces, it should return first available UID",
+			name:                        "When no namespaces exist, it should return first available UID",
 			namespaces:                  []corev1.Namespace{},
 			expectedUID:                 controlplanecomponent.DefaultSecurityContextUID,
 			expectedFor3SubsequentCalls: []int64{controlplanecomponent.DefaultSecurityContextUID + 1, controlplanecomponent.DefaultSecurityContextUID + 2, controlplanecomponent.DefaultSecurityContextUID + 3},
 			expectErr:                   false,
 		},
 		{
-			name: "when there are multiple namespaces, it should allocate the lower available UID",
+			name: "When there are multiple namespaces, it should allocate the lower available UID",
 			namespaces: []corev1.Namespace{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -65,7 +65,7 @@ func TestGetNextAvailableSecurityContextUID(t *testing.T) {
 			expectErr:                   false,
 		},
 		{
-			name: "when there are namespaces with invalid annotation it should be ignored",
+			name: "When namespaces have invalid annotations, it should ignore them and return first available UID",
 			namespaces: []corev1.Namespace{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -84,7 +84,7 @@ func TestGetNextAvailableSecurityContextUID(t *testing.T) {
 			expectErr:                   false,
 		},
 		{
-			name: "when there are namespaces without the control plane label it should be ignored",
+			name: "When namespaces lack the control plane label, it should ignore them and return first available UID",
 			namespaces: []corev1.Namespace{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -187,13 +187,13 @@ func TestInitializeFromNamespaces(t *testing.T) {
 		expectedInitalized bool
 	}{
 		{
-			name:               "when namespace list is empty, it should initialize with no allocations",
+			name:               "When namespace list is empty it should initialize with no allocations",
 			namespaces:         []corev1.Namespace{},
 			expectedAllocated:  []int64{},
 			expectedInitalized: true,
 		},
 		{
-			name: "when namespaces have control plane label and valid UIDs, it should load those UIDs",
+			name: "When namespaces have control plane label and valid UIDs it should load those UIDs",
 			namespaces: []corev1.Namespace{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -222,7 +222,7 @@ func TestInitializeFromNamespaces(t *testing.T) {
 			expectedInitalized: true,
 		},
 		{
-			name: "when namespaces lack control plane label, it should ignore them",
+			name: "When namespaces lack control plane label it should ignore them",
 			namespaces: []corev1.Namespace{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -237,7 +237,7 @@ func TestInitializeFromNamespaces(t *testing.T) {
 			expectedInitalized: true,
 		},
 		{
-			name: "when namespaces have invalid UID annotations, it should ignore those UIDs",
+			name: "When namespaces have invalid UID annotations it should ignore those UIDs",
 			namespaces: []corev1.Namespace{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -266,7 +266,7 @@ func TestInitializeFromNamespaces(t *testing.T) {
 			expectedInitalized: true,
 		},
 		{
-			name: "when namespaces have UIDs outside valid range, it should ignore those UIDs",
+			name: "When namespaces have UIDs outside valid range it should ignore those UIDs",
 			namespaces: []corev1.Namespace{
 				{
 					ObjectMeta: metav1.ObjectMeta{

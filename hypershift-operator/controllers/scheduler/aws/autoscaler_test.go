@@ -34,14 +34,14 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 		expectRequeueAfter time.Duration
 	}{
 		{
-			name:          "Hosted cluster has no additional node selector - (migrating from legacy scheduler)",
+			name:          "When hosted cluster has no additional node selector it should not scale down any machinesets",
 			hostedCluster: hc,
 			machineSets:   machineSets(10),
 			nodes:         nodes(10, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3), withSizeLabel("large", 4, 5)),
 			machines:      machines(10),
 		},
 		{
-			name:          "Hosted cluster has additional node selector (small)",
+			name:          "When hosted cluster has additional node selector for small, it should scale down non-matching machinesets",
 			hostedCluster: hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=small", hyperv1.NodeSizeLabel)), withHCSizeLabel("small")),
 			machineSets:   machineSets(10, withReplicas(1)),
 			nodes:         nodes(10, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3), withSizeLabel("large", 4, 5)),
@@ -49,7 +49,7 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 			expected:      machineSets(6, withReplicas(1))[2:], // machinesets 2, 3, 4, 5
 		},
 		{
-			name:               "Hosted cluster has additional node selector (medium), some nodes are new",
+			name:               "When hosted cluster has additional node selector for medium and some nodes are new, it should defer scale down",
 			hostedCluster:      hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=medium", hyperv1.NodeSizeLabel))),
 			machineSets:        machineSets(10, withReplicas(1)),
 			nodes:              nodes(10, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3), withSizeLabel("large", 4, 5), withCreationTimestamp(twoMinutesAgo, 0, 1)),
@@ -58,7 +58,7 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 			expectRequeueAfter: nodeScaleDownDelay,
 		},
 		{
-			name:               "Hosted cluster has additional node selector (large), all nodes are new",
+			name:               "When hosted cluster has additional node selector for large and all nodes are new, it should not scale down",
 			hostedCluster:      hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=large", hyperv1.NodeSizeLabel)), withHCSizeLabel("large")),
 			machineSets:        machineSets(4, withReplicas(1)),
 			nodes:              nodes(4, withHC(hc, 0, 1, 2, 3), withPairLabel("pair1", 0, 1, 2, 3), withSizeLabel("medium", 0, 1), withSizeLabel("large", 2, 3), withCreationTimestamp(twoMinutesAgo, 0, 1, 2, 3)),
@@ -67,7 +67,7 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 			expectRequeueAfter: nodeScaleDownDelay,
 		},
 		{
-			name:          "Hosted cluster has additional node selector (medium) and size label(small)",
+			name:          "When hosted cluster has additional node selector for small and size label for medium, it should scale down large machinesets",
 			hostedCluster: hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=small", hyperv1.NodeSizeLabel)), withHCSizeLabel("medium")),
 			machineSets:   machineSets(6, withReplicas(1)),
 			nodes:         nodes(6, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3), withSizeLabel("large", 4, 5)),
@@ -75,7 +75,7 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 			expected:      machineSets(6, withReplicas(1))[4:], // machinesets 4, 5
 		},
 		{
-			name:          "Do not scale down nodes without a size label",
+			name:          "When nodes have no size label, it should not scale them down",
 			hostedCluster: hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=small", hyperv1.NodeSizeLabel)), withHCSizeLabel("small")),
 			machineSets:   machineSets(6, withReplicas(1)),
 			nodes:         nodes(6, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3)),
@@ -103,7 +103,7 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 		expected    []machinev1beta1.MachineSet
 	}{
 		{
-			name: "There are multiple nodes with the same pair label, machinesets are scaled up",
+			name: "When there are multiple nodes with the same pair label and machinesets are scaled up, it should return all paired machinesets",
 			node: &(nodes(8, withHC(hostedCluster(), 0, 1, 2, 3, 4, 5),
 				withSizeLabel("small", 0, 1, 6, 7),
 				withSizeLabel("medium", 2, 3),
@@ -119,7 +119,7 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 			expected:    machineSets(8, withReplicas(1))[:6], // machinesets 0, 1, 2, 3, 4, 5
 		},
 		{
-			name: "There are multiple nodes with the same pair label, some machinesets are scaled up",
+			name: "When there are multiple nodes with the same pair label and some machinesets are scaled up, it should return only scaled-up ones",
 			node: &(nodes(8, withHC(hostedCluster(), 0, 1, 2, 3, 4, 5),
 				withSizeLabel("small", 0, 1, 6, 7),
 				withSizeLabel("medium", 2, 3),
@@ -135,7 +135,7 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 			expected:    append(machineSets(8, withReplicas(1))[:2], machineSets(8, withReplicas(1))[4:6]...), // machinesets 0, 1, 4, 5
 		},
 		{
-			name: "The node does not have a pair label",
+			name: "When the node does not have a pair label, it should return only its own machineset",
 			node: &(nodes(8, withHC(hostedCluster(), 0, 1, 2, 3, 4, 5),
 				withSizeLabel("small", 0, 1, 6, 7),
 				withSizeLabel("medium", 2, 3),
@@ -151,7 +151,7 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 			expected:    machineSets(8, withReplicas(1))[3:4], // machineset 3
 		},
 		{
-			name: "Do not scale down nodes without a size label",
+			name: "When nodes have no size label, it should not scale them down",
 			node: &(nodes(8, withHC(hostedCluster(), 0, 1, 2, 3, 4, 5),
 				withSizeLabel("small", 0, 1, 6, 7),
 				withSizeLabel("medium", 2, 3),
@@ -188,7 +188,7 @@ func TestMachineSetsToScaleUp(t *testing.T) {
 		expected    []string
 	}{
 		{
-			name:        "No pending pods",
+			name:        "When there are no pending pods, it should return empty list",
 			pods:        pods(10),
 			machines:    machines(4),
 			machineSets: machineSets(4),
@@ -196,7 +196,7 @@ func TestMachineSetsToScaleUp(t *testing.T) {
 			expected:    []string{},
 		},
 		{
-			name:        "Pending placeholder pods, available machinesets",
+			name:        "When pending placeholder pods exist with available machinesets, it should scale up next available",
 			pods:        pods(10, pending(5, 6)),
 			machines:    machines(4),
 			machineSets: machineSets(8),
@@ -204,7 +204,7 @@ func TestMachineSetsToScaleUp(t *testing.T) {
 			expected:    []string{"machineset-4", "machineset-5"}, // 4 and 5 are the next available machinesets
 		},
 		{
-			name:        "Pending pods with pair label",
+			name:        "When pending pods have pair labels, it should scale up matching machinesets",
 			pods:        pods(10, pending(5, 6), withPodPairLabel("pair-3", 5, 6)),
 			machineSets: machineSets(10),
 			expected:    []string{"machineset-6", "machineset-7"}, // machinesets 6 and 7 have the matching pair label
@@ -403,13 +403,13 @@ func TestDetermineRequiredNodes(t *testing.T) {
 		expected []nodeRequirement
 	}{
 		{
-			name:     "No pending pods",
+			name:     "When there are no pending pods, it should return nil",
 			pods:     pods(4, scheduled(0, 1, 2, 3)),
 			nodes:    nodes(4),
 			expected: nil,
 		},
 		{
-			name:  "Paired pending pods",
+			name:  "When paired pending pods exist, it should require nodes for them",
 			pods:  pods(8, pending(0, 1, 2, 3), scheduled(4, 5, 6, 7)),
 			nodes: nodes(8),
 			expected: []nodeRequirement{
@@ -420,7 +420,7 @@ func TestDetermineRequiredNodes(t *testing.T) {
 			},
 		},
 		{
-			name:  "Single pending pod",
+			name:  "When a single pending pod exists, it should require one node with its pair label",
 			pods:  pods(4, pending(0), withPodPairLabel("foo", 0), scheduled(1, 2, 3)),
 			nodes: nodes(4),
 			expected: []nodeRequirement{
@@ -432,7 +432,7 @@ func TestDetermineRequiredNodes(t *testing.T) {
 			},
 		},
 		{
-			name:  "Single pending pod, with pending/scheduled pair",
+			name:  "When a single pending pod has a pending and scheduled pair, it should require two nodes",
 			pods:  pods(4, pending(0, 1), scheduled(0, 2, 3)),
 			nodes: nodes(4),
 			expected: []nodeRequirement{
@@ -444,7 +444,7 @@ func TestDetermineRequiredNodes(t *testing.T) {
 			},
 		},
 		{
-			name:  "Pods of different pairs pending",
+			name:  "When pods of different pairs are pending, it should require nodes for each pair",
 			pods:  pods(4, pending(0, 1, 2, 3), scheduled(1, 2)),
 			nodes: nodes(4),
 			expected: []nodeRequirement{
@@ -461,7 +461,7 @@ func TestDetermineRequiredNodes(t *testing.T) {
 			},
 		},
 		{
-			name:  "Pods of different pairs pending, along with unpaired",
+			name:  "When pods of different pairs are pending along with unpaired, it should require nodes for each group",
 			pods:  pods(6, pending(0, 1, 2, 3, 4, 5), scheduled(1, 2)),
 			nodes: nodes(4),
 			expected: []nodeRequirement{
@@ -482,7 +482,7 @@ func TestDetermineRequiredNodes(t *testing.T) {
 			},
 		},
 		{
-			name:  "ignore unpaired pods without pair selector",
+			name:  "When unpaired pods lack a pair selector, it should ignore them",
 			pods:  pods(3, pending(0, 1, 2)),
 			nodes: nodes(4),
 			expected: []nodeRequirement{
@@ -551,12 +551,12 @@ func TestValidateConfigForNonRequestServing(t *testing.T) {
 		expectValid bool
 	}{
 		{
-			name:        "Invalid config (no status)",
+			name:        "When config has no status it should be invalid",
 			cfg:         &schedulingv1alpha1.ClusterSizingConfiguration{},
 			expectValid: false,
 		},
 		{
-			name: "Invalid config (valid condition false)",
+			name: "When config valid condition is false it should be invalid",
 			cfg: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
 					Conditions: []metav1.Condition{
@@ -570,7 +570,7 @@ func TestValidateConfigForNonRequestServing(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "Invalid config (no nodes per zone on all sizes)",
+			name: "When config has no nodes per zone on all sizes it should be invalid",
 			cfg: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 					Sizes: []schedulingv1alpha1.SizeConfiguration{
@@ -603,7 +603,7 @@ func TestValidateConfigForNonRequestServing(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "Valid config",
+			name: "When config has nodes per zone on all sizes it should be valid",
 			cfg: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 					Sizes: []schedulingv1alpha1.SizeConfiguration{
@@ -679,12 +679,12 @@ func TestValidateNonRequestServingMachineSets(t *testing.T) {
 		expectValid bool
 	}{
 		{
-			name:        "Invalid machinesets, not 3",
+			name:        "When machinesets count is not 3 it should be invalid",
 			machineSets: []machinev1beta1.MachineSet{ms(1, "0", "1"), ms(2, "0", "1")},
 			expectValid: false,
 		},
 		{
-			name: "Invalid machinesets, different min/max",
+			name: "When machinesets have different min and max it should be invalid",
 			machineSets: []machinev1beta1.MachineSet{
 				ms(1, "0", "1"),
 				ms(2, "0", "2"),
@@ -693,7 +693,7 @@ func TestValidateNonRequestServingMachineSets(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "Invalid machinesets, no min/max",
+			name: "When machinesets have no min or max it should be invalid",
 			machineSets: []machinev1beta1.MachineSet{
 				ms(1, "0", "1"),
 				ms(2, "", "1"),
@@ -702,7 +702,7 @@ func TestValidateNonRequestServingMachineSets(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "Invalid machinesets, invalid min/max",
+			name: "When machinesets have min greater than max it should be invalid",
 			machineSets: []machinev1beta1.MachineSet{
 				ms(1, "0", "1"),
 				ms(2, "1", "0"),
@@ -711,7 +711,7 @@ func TestValidateNonRequestServingMachineSets(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "Invalid machinesets, parse error",
+			name: "When machinesets have unparsable min or max it should be invalid",
 			machineSets: []machinev1beta1.MachineSet{
 				ms(1, "foo", "3"),
 				ms(2, "foo", "3"),
@@ -720,7 +720,7 @@ func TestValidateNonRequestServingMachineSets(t *testing.T) {
 			expectValid: false,
 		},
 		{
-			name: "Valid machinesets",
+			name: "When machinesets have consistent valid min and max it should be valid",
 			machineSets: []machinev1beta1.MachineSet{
 				ms(1, "1", "3"),
 				ms(2, "1", "3"),
@@ -825,29 +825,29 @@ func TestNonRequestServingMachineSetsToScale(t *testing.T) {
 		expect         []machineSetReplicas
 	}{
 		{
-			name:        "No hosted clusters",
+			name:        "When there are no hosted clusters it should not change machinesets",
 			machineSets: []machinev1beta1.MachineSet{ms(1, 1), ms(2, 1), ms(3, 1)},
 			expect:      nil, // no changes
 		},
 		{
-			name:        "No hosted clusters, one machineset scaled up",
+			name:        "When there are no hosted clusters and one machineset is scaled up it should scale it down",
 			machineSets: []machinev1beta1.MachineSet{ms(1, 1), ms(2, 2), ms(3, 1)},
 			expect:      []machineSetReplicas{{ms(2, 2), 1}},
 		},
 		{
-			name:           "Small hosted clusters",
+			name:           "When small hosted clusters exist it should scale up machinesets with buffer",
 			hostedClusters: []hyperv1.HostedCluster{hc(1, "small"), hc(2, "small"), hc(3, "small")}, // 0.6 should require 1 node + 1 buffer
 			machineSets:    []machinev1beta1.MachineSet{ms(1, 1), ms(2, 1), ms(3, 1)},
 			expect:         []machineSetReplicas{{ms(1, 1), 2}, {ms(2, 1), 2}, {ms(3, 1), 2}},
 		},
 		{
-			name:           "Small and medium hosted clusters, one machineset scaled up",
+			name:           "When small and medium hosted clusters exist with one machineset already scaled up it should scale remaining",
 			hostedClusters: []hyperv1.HostedCluster{hc(1, "medium"), hc(2, "medium"), hc(3, "small")}, // 1.2 should require 2 nodes + 1 buffer
 			machineSets:    []machinev1beta1.MachineSet{ms(1, 1), ms(2, 1), ms(3, 3)},
 			expect:         []machineSetReplicas{{ms(1, 1), 3}, {ms(2, 1), 3}},
 		},
 		{
-			name:           "Large hosted clusters, more than max",
+			name:           "When large hosted clusters exceed max it should cap at max replicas",
 			hostedClusters: hcs(20, "large"), // should require 20 nodes + 1 buffer, but we're limited to 10
 			machineSets:    []machinev1beta1.MachineSet{ms(1, 1), ms(2, 1), ms(3, 1)},
 			expect:         []machineSetReplicas{{ms(1, 1), 10}, {ms(2, 1), 10}, {ms(3, 1), 10}},
@@ -877,7 +877,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 			expected: sets.New[string](),
 		},
 		{
-			name: "When nodes have cluster labels, their pair labels should be collected",
+			name: "When nodes have cluster labels, it should collect their pair labels",
 			pods: nil,
 			nodes: []corev1.Node{
 				{
@@ -902,7 +902,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 			expected: sets.New[string]("pair-a", "pair-b"),
 		},
 		{
-			name: "When nodes have no cluster label, their pair labels should not be collected",
+			name: "When nodes have no cluster label, it should not collect their pair labels",
 			pods: nil,
 			nodes: []corev1.Node{
 				{
@@ -917,7 +917,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 			expected: sets.New[string](),
 		},
 		{
-			name: "When pods are scheduled on nodes with pair labels, those labels should be collected",
+			name: "When pods are scheduled on nodes with pair labels, it should collect those labels",
 			pods: []corev1.Pod{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "p1"},
@@ -937,7 +937,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 			expected: sets.New[string]("pair-c"),
 		},
 		{
-			name: "When pods have pair label in node selector, those labels should be collected",
+			name: "When pods have pair label in node selector, it should collect those labels",
 			pods: []corev1.Pod{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "p1"},
@@ -1077,7 +1077,7 @@ func TestScaleMachineSetsForRequirement(t *testing.T) {
 			expectedNames:   []string{"ms-1b"},
 		},
 		{
-			name:        "When taken pair labels exclude some machinesets, those should be skipped",
+			name:        "When taken pair labels exclude some machinesets, it should skip those",
 			requirement: nodeRequirement{sizeLabel: "small", count: 2},
 			machineSets: []machinev1beta1.MachineSet{
 				mkMachineSet("ms-1a", "small", "pair-taken", 0, 0),

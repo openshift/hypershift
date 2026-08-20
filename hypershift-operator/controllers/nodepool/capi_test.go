@@ -104,8 +104,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 		expectAutoscalerAnnotations map[string]string
 	}{
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineSet has nil replicas",
+			name: "When autoscaling is enabled and the MachineSet has nil replicas, it should set current replicas to 1 and set annotations",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -130,8 +129,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it does not set current replicas but set annotations when autoscaling is enabled" +
-				" and the MachineSet has nil replicas",
+			name: "When autoscaling is enabled and the MachineSet has nil replicas with min=2, it should set replicas to min and set annotations",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -156,8 +154,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.min and set annotations when autoscaling is enabled" +
-				" and the MachineSet has replicas < autoScaling.min",
+			name: "When autoscaling is enabled and the MachineSet has replicas below min, it should set replicas to autoScaling.min",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -182,8 +179,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.max and set annotations when autoscaling is enabled" +
-				" and the MachineSet has replicas > autoScaling.max",
+			name: "When autoscaling is enabled and the MachineSet has replicas above max, it should set replicas to autoScaling.max",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -259,7 +255,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for KubeVirt platform even when NodePool specifies min=0",
+			name: "When KubeVirt platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -287,7 +283,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for Agent platform even when NodePool specifies min=0",
+			name: "When Agent platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -337,7 +333,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 		expectAutoscalerAnnotations map[string]string
 	}{
 		{
-			name: "it sets replicas when autoscaling is disabled",
+			name: "When autoscaling is disabled, it should set replicas directly",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -356,7 +352,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it keeps current replicas and set annotations when autoscaling is enabled",
+			name: "When autoscaling is enabled and replicas are within range, it should keep current replicas and set annotations",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -381,8 +377,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has not been created yet",
+			name: "When autoscaling is enabled and the MachineDeployment has not been created yet, it should set replicas to 1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -400,8 +395,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has 0 replicas",
+			name: "When autoscaling is enabled and the MachineDeployment has 0 replicas, it should set replicas to 1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -426,8 +420,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has nil replicas",
+			name: "When autoscaling is enabled and the MachineDeployment has nil replicas, it should set replicas to 1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -452,8 +445,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it does not set current replicas but set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has nil replicas",
+			name: "When autoscaling is enabled and the MachineDeployment has nil replicas with min=2, it should set replicas to min",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -478,8 +470,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.min and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has replicas < autoScaling.min",
+			name: "When autoscaling is enabled and the MachineDeployment has replicas below min, it should set replicas to autoScaling.min",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -504,8 +495,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.max and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has replicas > autoScaling.max",
+			name: "When autoscaling is enabled and the MachineDeployment has replicas above max, it should set replicas to autoScaling.max",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -581,7 +571,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for KubeVirt platform even when NodePool specifies min=0",
+			name: "When KubeVirt platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -609,7 +599,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for Agent platform even when NodePool specifies min=0",
+			name: "When Agent platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -1001,7 +991,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 		expect   int
 	}{
 		{
-			name: "defaults to 1 when no maxUnavailable specified",
+			name: "When no maxUnavailable is specified, it should default to 1",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1013,7 +1003,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 1,
 		},
 		{
-			name: "can handle default value of 1",
+			name: "When maxUnavailable is set to 1, it should return 1",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1027,7 +1017,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 1,
 		},
 		{
-			name: "can handle other values",
+			name: "When maxUnavailable is set to 2, it should return 2",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1041,7 +1031,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 2,
 		},
 		{
-			name: "can handle percent values",
+			name: "When maxUnavailable is set to 75 percent, it should return 3",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1055,7 +1045,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 3,
 		},
 		{
-			name: "can handle roundable values",
+			name: "When maxUnavailable is set to 10 percent, it should return 1",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1089,12 +1079,12 @@ func TestTaintsToJSON(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "",
+			name:     "When taints are empty, it should return an empty JSON array",
 			taints:   []hyperv1.Taint{},
 			expected: "[]",
 		},
 		{
-			name: "",
+			name: "When multiple taints are provided, it should return valid JSON with all taints",
 			taints: []hyperv1.Taint{
 				{
 					Key:    "foo",
@@ -1238,61 +1228,61 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 		expected *capiv1.MachineHealthCheck
 	}{
 		{
-			name:     "defaults",
+			name:     "When defaults are used, it should create MHC with default values",
 			hc:       hostedcluster(),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
 		{
-			name:     "timeout override in hc",
+			name:     "When timeout override is set in HostedCluster, it should use override value",
 			hc:       hostedcluster(withTimeoutOverride("10m")),
 			np:       nodepool(),
 			expected: healthcheck(withTimeout(10 * time.Minute)),
 		},
 		{
-			name:     "timeout override in np",
+			name:     "When timeout override is set in NodePool, it should use override value",
 			hc:       hostedcluster(),
 			np:       nodepool(withTimeoutOverride("40m")),
 			expected: healthcheck(withTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "timeout override in both, np takes precedence",
+			name:     "When timeout override is set in both, it should use NodePool value",
 			hc:       hostedcluster(withTimeoutOverride("10m")),
 			np:       nodepool(withTimeoutOverride("40m")),
 			expected: healthcheck(withTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "invalid timeout override, retains default",
+			name:     "When timeout override is invalid, it should retain default",
 			hc:       hostedcluster(withTimeoutOverride("foo")),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
 		{
-			name:     "node startup timeout override in hc",
+			name:     "When node startup timeout override is set in HostedCluster, it should use override value",
 			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
 			np:       nodepool(),
 			expected: healthcheck(withNodeStartupTimeout(10 * time.Minute)),
 		},
 		{
-			name:     "node startup timeout override in np",
+			name:     "When node startup timeout override is set in NodePool, it should use override value",
 			hc:       hostedcluster(),
 			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
 			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "node startup timeout override in both, np takes precedence",
+			name:     "When node startup timeout override is set in both, it should use NodePool value",
 			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
 			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
 			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "node startup invalid timeout override, retains default",
+			name:     "When node startup timeout override is invalid, it should retain default",
 			hc:       hostedcluster(withNodeStartupTimeoutOverride("foo")),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
 		{
-			name:     "invalid maxunhealthy override value, default is preserved",
+			name:     "When maxunhealthy override value is invalid, it should preserve default",
 			hc:       hostedcluster(),
 			np:       nodepool(withMaxUnhealthyOverride("foo")),
 			expected: healthcheck(),
@@ -1750,7 +1740,7 @@ func TestCAPIReconcile(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineDeployment",
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, it should propagate them to MachineDeployment",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-nodepool",
@@ -2032,7 +2022,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 		nodePool *hyperv1.NodePool
 	}{
 		{
-			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineSet",
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, it should propagate them to MachineSet",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-nodepool",
@@ -2057,7 +2047,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 			},
 		},
 		{
-			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are nil, they should propagate as nil to MachineSet",
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are nil, it should propagate them as nil to MachineSet",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-nodepool",
@@ -3547,13 +3537,13 @@ func TestNewCAPI(t *testing.T) {
 		expectedErrorMsg string
 	}{
 		{
-			name:             "when token is nil it should fail",
+			name:             "When token is nil, it should fail",
 			token:            nil,
 			capiClusterName:  "test-cluster",
 			expectedErrorMsg: "token can not be nil",
 		},
 		{
-			name: "when capiClusterName is empty it should fail",
+			name: "When capiClusterName is empty, it should fail",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{},
 			},
@@ -3561,7 +3551,7 @@ func TestNewCAPI(t *testing.T) {
 			expectedErrorMsg: "capiClusterName can not be empty",
 		},
 		{
-			name: "succeeds with valid parameters",
+			name: "When valid parameters are provided, it should succeed",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{},
 			},
@@ -3600,7 +3590,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When all v1beta1 and v1beta2 fields agree it should return true",
+			name: "When all v1beta1 and v1beta2 fields agree, it should return true",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3615,7 +3605,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees it should return false",
+			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3630,7 +3620,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 availableReplicas disagrees it should return false",
+			name: "When v1beta1 looks complete but v1beta2 availableReplicas disagrees, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3645,7 +3635,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta1 is not complete it should return false without checking v1beta2",
+			name: "When v1beta1 is not complete, it should return false without checking v1beta2",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3654,7 +3644,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta2 status is nil it should fall back to v1beta1 only",
+			name: "When v1beta2 status is nil, it should fall back to v1beta1 only",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 1},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3663,7 +3653,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When v1beta1 replicas does not match spec it should return false",
+			name: "When v1beta1 replicas does not match spec, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &three},
@@ -3678,7 +3668,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta2 upToDateReplicas is nil it should return false",
+			name: "When v1beta2 upToDateReplicas is nil, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3692,7 +3682,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta2 availableReplicas is nil it should return false",
+			name: "When v1beta2 availableReplicas is nil, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3706,7 +3696,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When desired replicas is zero and v1beta2 fields are nil it should return false",
+			name: "When desired replicas is zero and v1beta2 fields are nil, it should return false",
 			md: func() *capiv1.MachineDeployment {
 				zero := int32(0)
 				return &capiv1.MachineDeployment{

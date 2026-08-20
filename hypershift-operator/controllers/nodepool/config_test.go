@@ -615,7 +615,7 @@ func TestHash(t *testing.T) {
 		expected                  string
 	}{
 		{
-			name:                      "Base case",
+			name:                      "When base case inputs are used, it should produce the base case hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -624,7 +624,7 @@ func TestHash(t *testing.T) {
 			expected:                  baseCaseHash,
 		},
 		{
-			name:                      "A different version should change the hash",
+			name:                      "When a different version is used, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            "4.8.0",
 			pullSecretName:            baseCasePullSecretName,
@@ -633,7 +633,7 @@ func TestHash(t *testing.T) {
 			expected:                  "27bb7699",
 		},
 		{
-			name:                      "A different mcoRawConfig should change the hash",
+			name:                      "When a different mcoRawConfig is used, it should change the hash",
 			mcoRawConfig:              "different",
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -642,7 +642,7 @@ func TestHash(t *testing.T) {
 			expected:                  "25f99ac5",
 		},
 		{
-			name:                      "A different pullSecretName should change the hash",
+			name:                      "When a different pullSecretName is used, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            "different",
@@ -651,7 +651,7 @@ func TestHash(t *testing.T) {
 			expected:                  "d0d6f6e9",
 		},
 		{
-			name:                      "A different trust-bundle should change the hash",
+			name:                      "When a different trust-bundle is used, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -660,7 +660,7 @@ func TestHash(t *testing.T) {
 			expected:                  "42d42744",
 		},
 		{
-			name:                      "A different globalConfig should change the hash",
+			name:                      "When a different globalConfig is used, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -704,7 +704,7 @@ func TestHash(t *testing.T) {
 			hash := cg.Hash()
 			g.Expect(hash).ToNot(BeEmpty())
 			g.Expect(hash).To(Equal(tc.expected))
-			if tc.name != "Base case" {
+			if tc.name != "When base case inputs are used, it should produce the base case hash" {
 				g.Expect(hash).ToNot(Equal(baseCaseHash))
 			}
 		})
@@ -729,7 +729,7 @@ func TestHashWithoutVersion(t *testing.T) {
 		expected                  string
 	}{
 		{
-			name:                      "Base case",
+			name:                      "When base case inputs are used, it should produce the base case hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -738,7 +738,7 @@ func TestHashWithoutVersion(t *testing.T) {
 			expected:                  baseCaseHash,
 		},
 		{
-			name:                      "A different version should not change the hash",
+			name:                      "When a different version is used, it should not change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            "4.8.0",
 			pullSecretName:            baseCasePullSecretName,
@@ -747,7 +747,7 @@ func TestHashWithoutVersion(t *testing.T) {
 			expected:                  baseCaseHash,
 		},
 		{
-			name:                      "A different mcoRawConfig should change the hash",
+			name:                      "When a different mcoRawConfig is used, it should change the hash",
 			mcoRawConfig:              "different",
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -756,7 +756,7 @@ func TestHashWithoutVersion(t *testing.T) {
 			expected:                  "5ea671c5",
 		},
 		{
-			name:                      "A different pullSecretName should change the hash",
+			name:                      "When a different pullSecretName is used, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            "different",
@@ -765,7 +765,7 @@ func TestHashWithoutVersion(t *testing.T) {
 			expected:                  "f6e82eb7",
 		},
 		{
-			name:                      "A different trust-bundle should change the hash",
+			name:                      "When a different trust-bundle is used, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -776,7 +776,7 @@ func TestHashWithoutVersion(t *testing.T) {
 		{
 			// TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 			// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
-			name:                      "A different globalConfig should NOT change the hash",
+			name:                      "When a different globalConfig is used, it should NOT change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
@@ -1174,7 +1174,7 @@ status:
 		error             bool
 	}{
 		{
-			name: "gets a single valid MachineConfig",
+			name: "When a single valid MachineConfig is provided, it should return the defaulted config",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1204,7 +1204,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "gets three valid MachineConfig, two of them in a single config-map",
+			name: "When three valid MachineConfigs are provided in two config-maps, it should return all defaulted configs",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1245,7 +1245,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "fails if a non existent config is referenced",
+			name: "When a non-existent config is referenced, it should fail",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1264,7 +1264,7 @@ status:
 			error:  true,
 		},
 		{
-			name: "gets a single valid ContainerRuntimeConfig",
+			name: "When a single valid ContainerRuntimeConfig is provided, it should return the defaulted config",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1292,7 +1292,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "gets a single valid MachineConfig with a core MachineConfig",
+			name: "When a valid MachineConfig with a core MachineConfig is provided, it should return both defaulted configs",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1357,7 +1357,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "gets a single valid MachineConfig with a core MachineConfig and ignores independent namespace",
+			name: "When a valid MachineConfig with a core MachineConfig and independent namespace is provided, it should ignore the independent namespace",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1431,7 +1431,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "No configs, missingConfigs error is returned",
+			name: "When no configs are provided, it should return missingConfigs error",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1441,7 +1441,7 @@ status:
 			error:             true,
 		},
 		{
-			name: "Nodepool controller generates HAProxy config",
+			name: "When HAProxy config is set, it should include it in the generated config",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1493,7 +1493,7 @@ status:
 			expect: haproxyIgnititionConfig + "\n---\n" + machineConfig1Defaulted, // + "\n---\n" + machineConfig1Defaulted,
 		},
 		{
-			name: "gets a single valid KubeletConfig",
+			name: "When a single valid KubeletConfig is provided, it should return the defaulted config",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1523,7 +1523,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "gets two valid KubeletConfig",
+			name: "When two valid KubeletConfigs are provided, it should return both defaulted configs",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1564,7 +1564,7 @@ status:
 			error:  false,
 		},
 		{
-			name: "It should fail if spec.Configs has unsupported content",
+			name: "When spec.Configs has unsupported content, it should fail",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1873,7 +1873,7 @@ func TestDefaultAndValidateConfigManifest(t *testing.T) {
 		error          error
 	}{
 		{
-			name: "Valid MachineConfig",
+			name: "When a valid MachineConfig is provided, it should return the defaulted config",
 			input: []byte(`
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
@@ -1900,7 +1900,7 @@ spec:
 			error: nil,
 		},
 		{
-			name: "When the manifest is not valid it should fail to decode",
+			name: "When the manifest is not valid, it should fail to decode",
 			input: []byte(`
 invalid: yaml
   - content
@@ -1909,7 +1909,7 @@ invalid: yaml
 			error:          fmt.Errorf("error decoding config: Object 'Kind' is missing in '\ninvalid: yaml\n  - content\n'"),
 		},
 		{
-			name: "When the API is not supported config it should fail with unsupported type",
+			name: "When the API is not supported config, it should fail with unsupported type",
 			input: []byte(`
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster

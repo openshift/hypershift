@@ -22,7 +22,7 @@ func TestGetAdvertiseAddress(t *testing.T) {
 		want string
 	}{
 		{
-			name: "given an AdvertiseAddress in the HCP, it should return it",
+			name: "When an AdvertiseAddress is set in the HCP, it should return it",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
@@ -38,7 +38,7 @@ func TestGetAdvertiseAddress(t *testing.T) {
 			want: "192.168.1.1",
 		},
 		{
-			name: "given no AdvertiseAddress/es in the HCP, it should return IPv4 based default address",
+			name: "When no AdvertiseAddress is set in the HCP, it should return IPv4 based default address",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
@@ -51,7 +51,7 @@ func TestGetAdvertiseAddress(t *testing.T) {
 			want: DefaultAdvertiseIPv4Address,
 		},
 		{
-			name: "given no AdvertiseAddress/es in the HCP, it should return IPv6 based default address",
+			name: "When no AdvertiseAddress is set and ServiceNetwork is IPv6, it should return IPv6 based default address",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
@@ -64,7 +64,7 @@ func TestGetAdvertiseAddress(t *testing.T) {
 			want: DefaultAdvertiseIPv6Address,
 		},
 		{
-			name: "given no ServiceNetwork CIDR in the HCP, it should return IPv4 based default address",
+			name: "When no ServiceNetwork CIDR is set in the HCP, it should return IPv4 based default address",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
@@ -90,14 +90,14 @@ func TestMachineNetworksToList(t *testing.T) {
 		want           string
 	}{
 		{
-			name: "single CIDR",
+			name: "When a single CIDR is provided, it should return comma-separated list",
 			machineNetwork: []hyperv1.MachineNetworkEntry{
 				{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")},
 			},
 			want: "192.168.1.0/24",
 		},
 		{
-			name: "multiple CIDRs",
+			name: "When multiple CIDRs are provided, it should return comma-separated list",
 			machineNetwork: []hyperv1.MachineNetworkEntry{
 				{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")},
 				{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")},
@@ -105,7 +105,7 @@ func TestMachineNetworksToList(t *testing.T) {
 			want: "192.168.1.0/24,10.0.0.0/8",
 		},
 		{
-			name:           "no CIDRs",
+			name:           "When no CIDRs are provided, it should return empty string",
 			machineNetwork: []hyperv1.MachineNetworkEntry{},
 			want:           "",
 		},
@@ -126,7 +126,7 @@ func TestIsMultusDisabled(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "DisableMultiNetwork is nil - defaults to false (multus enabled)",
+			name: "When DisableMultiNetwork is nil, it should default to false (multus enabled)",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					OperatorConfiguration: &hyperv1.OperatorConfiguration{
@@ -137,7 +137,7 @@ func TestIsMultusDisabled(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "DisableMultiNetwork is explicitly false",
+			name: "When DisableMultiNetwork is explicitly false, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					OperatorConfiguration: &hyperv1.OperatorConfiguration{
@@ -150,7 +150,7 @@ func TestIsMultusDisabled(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "DisableMultiNetwork is explicitly true",
+			name: "When DisableMultiNetwork is explicitly true, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					OperatorConfiguration: &hyperv1.OperatorConfiguration{
@@ -163,14 +163,14 @@ func TestIsMultusDisabled(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "OperatorConfiguration is nil",
+			name: "When OperatorConfiguration is nil, it should default to false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{},
 			},
 			expected: false,
 		},
 		{
-			name: "ClusterNetworkOperator is nil",
+			name: "When ClusterNetworkOperator is nil, it should default to false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					OperatorConfiguration: &hyperv1.OperatorConfiguration{},

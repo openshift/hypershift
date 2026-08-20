@@ -18,7 +18,7 @@ var Analyzer = &analysis.Analyzer{
 	Run:  run,
 }
 
-var namePattern = regexp.MustCompile(`(?i)^when .+,? it should .+$`)
+var namePattern = regexp.MustCompile(`^When .+, it should .+$`)
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {

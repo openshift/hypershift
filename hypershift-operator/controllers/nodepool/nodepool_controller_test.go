@@ -57,7 +57,7 @@ func TestIsUpdatingConfig(t *testing.T) {
 		expect   bool
 	}{
 		{
-			name: "it is not updating when strings match",
+			name: "When strings match, it should not update",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -69,7 +69,7 @@ func TestIsUpdatingConfig(t *testing.T) {
 			expect: false,
 		},
 		{
-			name: "it is updating when strings does not match",
+			name: "When strings do not match, it should update",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -100,7 +100,7 @@ func TestIsUpdatingVersion(t *testing.T) {
 		expect   bool
 	}{
 		{
-			name: "it is not updating when strings match",
+			name: "When strings match, it should not update",
 			nodePool: &hyperv1.NodePool{
 				Status: hyperv1.NodePoolStatus{
 					Version: "same",
@@ -110,7 +110,7 @@ func TestIsUpdatingVersion(t *testing.T) {
 			expect: false,
 		},
 		{
-			name: "it is updating when strings does not match",
+			name: "When strings do not match, it should update",
 			nodePool: &hyperv1.NodePool{
 				Status: hyperv1.NodePoolStatus{
 					Version: "v1",
@@ -138,7 +138,7 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 		expect   bool
 	}{
 		{
-			name: "it is enabled when the struct is not nil and has no values",
+			name: "When the struct is not nil and has no values, it should be enabled",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
@@ -150,7 +150,7 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "it is enabled when the struct is not nil and has values",
+			name: "When the struct is not nil and has values, it should be enabled",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
@@ -162,7 +162,7 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "it is not enabled when the struct is nil",
+			name: "When the struct is nil, it should not be enabled",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{},
 			},
@@ -188,7 +188,7 @@ func TestValidateManagement(t *testing.T) {
 		error    bool
 	}{
 		{
-			name: "it fails with bad upgradeType",
+			name: "When bad upgradeType is set, it should fail",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -204,7 +204,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it fails with Replace type and no Replace settings",
+			name: "When Replace type has no Replace settings, it should fail",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -216,7 +216,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it fails with Replace type and bad strategy",
+			name: "When Replace type has bad strategy, it should fail",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -235,7 +235,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it fails with Replace type, RollingUpdate strategy and no rollingUpdate settings",
+			name: "When Replace type has RollingUpdate strategy and no rollingUpdate settings, it should fail",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -251,7 +251,7 @@ func TestValidateManagement(t *testing.T) {
 			error: true,
 		},
 		{
-			name: "it passes with Replace type, RollingUpdate strategy and RollingUpdate settings",
+			name: "When Replace type has RollingUpdate strategy and RollingUpdate settings, it should pass",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -270,7 +270,7 @@ func TestValidateManagement(t *testing.T) {
 			error: false,
 		},
 		{
-			name: "it passes with Replace type and OnDelete strategy",
+			name: "When Replace type has OnDelete strategy, it should pass",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -345,7 +345,7 @@ func TestGetNodePoolNamespacedName(t *testing.T) {
 		error                 bool
 	}{
 		{
-			name:                  "gets correct NodePool namespaced name",
+			name:                  "When HostedControlPlane has cluster annotation, it should return correct NodePool namespaced name",
 			nodePoolName:          testNodePoolName,
 			controlPlaneNamespace: testControlPlaneNamespace,
 			hostedControlPlane: &hyperv1.HostedControlPlane{
@@ -360,7 +360,7 @@ func TestGetNodePoolNamespacedName(t *testing.T) {
 			error:  false,
 		},
 		{
-			name:                  "fails if HostedControlPlane missing HostedClusterAnnotation",
+			name:                  "When HostedControlPlane is missing HostedClusterAnnotation, it should fail",
 			nodePoolName:          testNodePoolName,
 			controlPlaneNamespace: testControlPlaneNamespace,
 			hostedControlPlane: &hyperv1.HostedControlPlane{
@@ -372,7 +372,7 @@ func TestGetNodePoolNamespacedName(t *testing.T) {
 			error:  true,
 		},
 		{
-			name:                  "fails if HostedControlPlane does not exist",
+			name:                  "When HostedControlPlane does not exist, it should fail",
 			nodePoolName:          testNodePoolName,
 			controlPlaneNamespace: testControlPlaneNamespace,
 			hostedControlPlane:    nil,
@@ -452,7 +452,7 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 		expectedCondition       *hyperv1.NodePoolCondition
 	}{
 		{
-			name: "when token secret is not found it should report it in the condition",
+			name: "When token secret is not found, it should report it in the condition",
 			tokenSecret: &corev1.Secret{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -472,7 +472,7 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 			},
 		},
 		{
-			name: "when token secret has data it should report it in the condition",
+			name: "When token secret has data, it should report it in the condition",
 			tokenSecret: &corev1.Secret{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -495,7 +495,7 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 			},
 		},
 		{
-			name: "when token secret has no data it should report unknown in the condition",
+			name: "When token secret has no data, it should report unknown in the condition",
 			tokenSecret: &corev1.Secret{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -694,12 +694,12 @@ func TestGetHostedClusterVersion(t *testing.T) {
 		expectedVersion     string
 	}{
 		{
-			name:                "version history status is empty, should return release image version",
+			name:                "When version history status is empty, it should return release image version",
 			releaseImageVersion: "4.15.0",
 			expectedVersion:     "4.15.0",
 		},
 		{
-			name: "version history status has a completed entry, should return the completed version",
+			name: "When version history status has a completed entry, it should return the completed version",
 			versionStatus: &hyperv1.ClusterVersionStatus{
 				History: []configv1.UpdateHistory{
 					{
@@ -712,7 +712,7 @@ func TestGetHostedClusterVersion(t *testing.T) {
 			expectedVersion:     "4.14.0",
 		},
 		{
-			name: "version history status has no completed entries, should return release image version",
+			name: "When version history status has no completed entries, it should return release image version",
 			versionStatus: &hyperv1.ClusterVersionStatus{
 				History: []configv1.UpdateHistory{
 					{
@@ -725,7 +725,7 @@ func TestGetHostedClusterVersion(t *testing.T) {
 			expectedVersion:     "4.15.0",
 		},
 		{
-			name: "version history status has multiple entries, should return the first completed version",
+			name: "When version history status has multiple entries, it should return the first completed version",
 			versionStatus: &hyperv1.ClusterVersionStatus{
 				History: []configv1.UpdateHistory{
 					{
@@ -782,7 +782,7 @@ func TestFindMachineStatusCondition(t *testing.T) {
 		expected      *machineConditionResult
 	}{
 		{
-			name: "When condition is False it should return the condition values",
+			name: "When condition is False, it should return the condition values",
 			machine: &capiv1.Machine{
 				Status: capiv1.MachineStatus{
 					Conditions: []capiv1.Condition{
@@ -803,7 +803,7 @@ func TestFindMachineStatusCondition(t *testing.T) {
 			},
 		},
 		{
-			name: "When neither has condition it should return nil",
+			name: "When neither has condition, it should return nil",
 			machine: &capiv1.Machine{
 				Status: capiv1.MachineStatus{
 					Conditions: []capiv1.Condition{
@@ -818,7 +818,7 @@ func TestFindMachineStatusCondition(t *testing.T) {
 			expected:      nil,
 		},
 		{
-			name: "When condition is True it should return the condition values",
+			name: "When condition is True, it should return the condition values",
 			machine: &capiv1.Machine{
 				Status: capiv1.MachineStatus{
 					Conditions: []capiv1.Condition{
@@ -839,7 +839,7 @@ func TestFindMachineStatusCondition(t *testing.T) {
 			},
 		},
 		{
-			name: "When machine has no conditions it should return nil",
+			name: "When machine has no conditions, it should return nil",
 			machine: &capiv1.Machine{
 				Status: capiv1.MachineStatus{
 					Conditions: []capiv1.Condition{},
@@ -849,7 +849,7 @@ func TestFindMachineStatusCondition(t *testing.T) {
 			expected:      nil,
 		},
 		{
-			name: "When looking up MachineNodeHealthyCondition it should return matching values",
+			name: "When looking up MachineNodeHealthyCondition, it should return matching values",
 			machine: &capiv1.Machine{
 				Status: capiv1.MachineStatus{
 					Conditions: []capiv1.Condition{
@@ -935,7 +935,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 		expectedCIDRCollision *testCondition
 	}{
 		{
-			name:              "no cluster-api machines",
+			name:              "When there are no cluster-api machines, it should set WaitingForMachines condition",
 			machinesGenerator: func() []client.Object { return nil },
 			expectedAllMachine: &testCondition{
 				Status:   corev1.ConditionFalse,
@@ -948,7 +948,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "good machines",
+			name: "When all machines are healthy, it should set AllMachinesReady condition",
 			machinesGenerator: func() []client.Object {
 				return []client.Object{
 					&capiv1.Machine{
@@ -1007,7 +1007,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "no InfrastructureReady condition",
+			name: "When machines have no InfrastructureReady condition, it should report waiting",
 			machinesGenerator: func() []client.Object {
 				return []client.Object{
 					&capiv1.Machine{
@@ -1074,7 +1074,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "mix InfrastructureReady condition; setup counter first",
+			name: "When machines have mixed InfrastructureReady conditions with setup counter first, it should report mixed status",
 			machinesGenerator: func() []client.Object {
 				return []client.Object{
 					&capiv1.Machine{
@@ -1177,7 +1177,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "mix InfrastructureReady condition; failure text first",
+			name: "When machines have mixed InfrastructureReady conditions with failure text first, it should report mixed status",
 			machinesGenerator: func() []client.Object {
 				return []client.Object{
 					&capiv1.Machine{
@@ -1280,7 +1280,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "too many not ready machines",
+			name: "When too many machines are not ready, it should truncate the message",
 			machinesGenerator: func() []client.Object {
 				longMessage := strings.Repeat("msg ", 50)
 
@@ -1398,7 +1398,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "machine cidr collision",
+			name: "When machine has cidr collision, it should report the collision",
 			machinesGenerator: func() []client.Object {
 				return []client.Object{
 					&capiv1.Machine{
@@ -2737,7 +2737,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 		expect   bool
 	}{
 		{
-			name: "supported arch and platform used",
+			name: "When supported arch and platform are used, it should validate successfully",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2749,7 +2749,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "supported arch and platform used - s390x",
+			name: "When s390x arch and supported platform are used, it should validate successfully",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2761,7 +2761,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "supported platform with multiple arch baremetal - arm64",
+			name: "When arm64 arch is used on baremetal platform, it should validate successfully",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2773,7 +2773,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "supported platform with multiple arch - amd64",
+			name: "When amd64 arch is used on AWS platform, it should validate successfully",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2785,7 +2785,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "supported platform with multiple arch - ppc64le",
+			name: "When ppc64le arch is used on None platform, it should validate successfully",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2797,7 +2797,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "supported platform with multiple arch baremetal - arm64",
+			name: "When arm64 arch is used on agent platform, it should validate successfully",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2809,7 +2809,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "supported platform with multiple arch baremetal - amd64",
+			name: "When amd64 arch is used on agent platform, it should validate successfully",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2821,7 +2821,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
-			name: "unsupported arch and platform used",
+			name: "When unsupported arch and platform are used, it should fail validation",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -2843,7 +2843,7 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 	}
 }
 
-func Test_validateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
+func TestValidateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name        string
@@ -2852,7 +2852,7 @@ func Test_validateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
 		expectedErr bool
 	}{
 		{
-			name: "payload is multi",
+			name: "When payload is multi-arch, it should validate successfully",
 			hc: &hyperv1.HostedCluster{
 				Status: hyperv1.HostedClusterStatus{
 					PayloadArch: hyperv1.Multi,
@@ -2861,7 +2861,7 @@ func Test_validateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name: "payload is amd64; np is amd64",
+			name: "When payload is amd64 and nodepool is amd64, it should validate successfully",
 			hc: &hyperv1.HostedCluster{
 				Status: hyperv1.HostedClusterStatus{
 					PayloadArch: hyperv1.AMD64,
@@ -2875,7 +2875,7 @@ func Test_validateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name: "payload is amd64; np is arm64",
+			name: "When payload is amd64 and nodepool is arm64, it should fail validation",
 			hc: &hyperv1.HostedCluster{
 				Status: hyperv1.HostedClusterStatus{
 					PayloadArch: hyperv1.AMD64,
@@ -3285,7 +3285,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 		expectedError     string
 	}{
 		{
-			name: "when nodePool version matches control plane version it should report valid condition",
+			name: "When nodePool version matches control plane version, it should report valid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64"
@@ -3305,7 +3305,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when nodePool version is higher than control plane version it should report invalid condition",
+			name: "When nodePool version is higher than control plane version, it should report invalid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.19.0-x86_64"
@@ -3325,7 +3325,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when nodePool version is two minor versions lower than control plane (odd version) it should report valid condition with n-3 support",
+			name: "When nodePool version is two minor versions lower than control plane (odd version), it should report valid condition with n-3 support",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"
@@ -3349,7 +3349,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when nodePool version is two minor versions lower than control plane (even version) it should report valid condition",
+			name: "When nodePool version is two minor versions lower than control plane (even version), it should report valid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"
@@ -3373,7 +3373,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when hosted cluster version history is empty it should report valid condition",
+			name: "When hosted cluster version history is empty, it should report valid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64"
@@ -3400,7 +3400,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when nodePool version is three minor versions lower (n-3) it should report valid condition",
+			name: "When nodePool version is three minor versions lower (n-3), it should report valid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"
@@ -3424,7 +3424,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when nodePool version is four minor versions lower (n-4) it should report invalid condition",
+			name: "When nodePool version is four minor versions lower (n-4), it should report invalid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.14.0-x86_64"
@@ -3448,7 +3448,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when nodePool patch version is lower than control plane (same minor version) it should report valid condition",
+			name: "When nodePool patch version is lower than control plane (same minor version), it should report valid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64"
@@ -3472,7 +3472,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			expectedError: "",
 		},
 		{
-			name: "when nodePool patch version is higher than control plane (same minor version) it should report invalid condition",
+			name: "When nodePool patch version is higher than control plane (same minor version), it should report invalid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
 				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.18.10-x86_64"
@@ -3542,7 +3542,7 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name: "when NodePool and HostedCluster are valid it should reconcile successfully",
+			name: "When NodePool and HostedCluster are valid, it should reconcile successfully",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-hc",
@@ -3590,7 +3590,7 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "when reconciling it should set conditions in the expected order",
+			name: "When reconciling, it should set conditions in the expected order",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-hc",
@@ -3638,7 +3638,7 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "when ignition endpoint is missing it should exit early from condition loop",
+			name: "When ignition endpoint is missing, it should exit early from condition loop",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-hc",
@@ -3738,7 +3738,7 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 			g.Expect(got).To(Equal(tt.want))
 
 			// For the condition order test, verify conditions are set in the expected order
-			if tt.name == "when reconciling it should set conditions in the expected order" {
+			if tt.name == "When reconciling, it should set conditions in the expected order" {
 				// Expected condition order based on reconcile() signalConditions array
 				expectedConditionOrder := []string{
 					hyperv1.NodePoolAutoscalingEnabledConditionType,
@@ -3779,7 +3779,7 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 			}
 
 			// For the early exit test, verify the function exited early from the condition loop
-			if tt.name == "when ignition endpoint is missing it should exit early from condition loop" {
+			if tt.name == "When ignition endpoint is missing, it should exit early from condition loop" {
 				// Verify IgnitionEndpointAvailable condition is set to False
 				ignitionCondition := FindStatusCondition(tt.nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 				g.Expect(ignitionCondition).NotTo(BeNil(), "IgnitionEndpointAvailable condition should be set")

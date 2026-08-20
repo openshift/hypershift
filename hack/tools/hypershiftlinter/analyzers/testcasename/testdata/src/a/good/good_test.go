@@ -12,16 +12,8 @@ func TestSomething(t *testing.T) {
 			want: "Y",
 		},
 		{
-			name: "when x, it should y",
-			want: "y",
-		},
-		{
 			name: "When the user provides valid input, it should succeed",
 			want: "success",
-		},
-		{
-			name: "WHEN something happens, IT SHOULD respond",
-			want: "ok",
 		},
 	}
 
@@ -79,28 +71,6 @@ func TestNamedStructTypeDirect(t *testing.T) {
 	_ = tc
 }
 
-func TestNoCommaInName(t *testing.T) {
-	tests := []struct {
-		name string
-		want string
-	}{
-		{
-			name: "When X it should Y",
-			want: "Y",
-		},
-		{
-			name: "WHEN the condition is met IT SHOULD work",
-			want: "ok",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// test implementation
-		})
-	}
-}
-
 func TestMapBasedGoodNames(t *testing.T) {
 	tests := map[string]struct {
 		input string
@@ -108,7 +78,7 @@ func TestMapBasedGoodNames(t *testing.T) {
 		"When input is valid, it should succeed": {
 			input: "a",
 		},
-		"When nothing is provided it should use defaults": {
+		"When nothing is provided, it should use defaults": {
 			input: "",
 		},
 	}

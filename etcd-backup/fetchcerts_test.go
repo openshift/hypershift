@@ -75,21 +75,21 @@ func TestFetchAndWriteCerts(t *testing.T) {
 			},
 		},
 		{
-			name:         "When etcd-client-tls secret is missing it should return an error",
+			name:         "When etcd-client-tls secret is missing, it should return an error",
 			objects:      []crclient.Object{fullCAConfigMap},
 			outputDir:    func(t *testing.T) string { return t.TempDir() },
 			expectErr:    true,
 			errSubstring: "failed to get etcd client TLS secret",
 		},
 		{
-			name:         "When etcd-ca configmap is missing it should return an error",
+			name:         "When etcd-ca configmap is missing, it should return an error",
 			objects:      []crclient.Object{fullSecret},
 			outputDir:    func(t *testing.T) string { return t.TempDir() },
 			expectErr:    true,
 			errSubstring: "failed to get etcd CA configmap",
 		},
 		{
-			name: "When etcd-client.crt is missing from the secret it should return an error",
+			name: "When etcd-client.crt is missing from the secret, it should return an error",
 			objects: []crclient.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
@@ -107,7 +107,7 @@ func TestFetchAndWriteCerts(t *testing.T) {
 			errSubstring: "missing key",
 		},
 		{
-			name: "When etcd-client.key is missing from the secret it should return an error",
+			name: "When etcd-client.key is missing from the secret, it should return an error",
 			objects: []crclient.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
@@ -125,7 +125,7 @@ func TestFetchAndWriteCerts(t *testing.T) {
 			errSubstring: "missing key",
 		},
 		{
-			name: "When ca.crt is missing from the configmap it should return an error",
+			name: "When ca.crt is missing from the configmap, it should return an error",
 			objects: []crclient.Object{
 				fullSecret,
 				&corev1.ConfigMap{

@@ -9,12 +9,12 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 )
 
-func Test_ValidateCredentialInfo(t *testing.T) {
+func TestValidateCredentialInfo(t *testing.T) {
 	tests := map[string]struct {
 		inputOptions *core.DestroyOptions
 		expectError  bool
 	}{
-		"when CredentialSecretName is blank and aws-creds is also blank it should fall back to SDK default chain": {
+		"When CredentialSecretName is blank and aws-creds is also blank, it should fall back to SDK default chain": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
@@ -25,7 +25,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when CredentialSecretName is blank and aws-creds is not blank": {
+		"When CredentialSecretName is blank and aws-creds is not blank, it should succeed": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
@@ -36,7 +36,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"when CredentialSecretName is set and AWSCredentialsFile is empty and RoleArn is empty it should fail": {
+		"When CredentialSecretName is set and AWSCredentialsFile is empty and RoleArn is empty, it should fail": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "my-secret",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
@@ -48,7 +48,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"when CredentialSecretName is set and AWSCredentialsFile is not empty it should try to validate the secret": {
+		"When CredentialSecretName is set and AWSCredentialsFile is not empty, it should try to validate the secret": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "my-secret",
 				Kubeconfig:           "/nonexistent/kubeconfig",
@@ -60,7 +60,7 @@ func Test_ValidateCredentialInfo(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"when CredentialSecretName is set and RoleArn is set it should try to validate the secret": {
+		"When CredentialSecretName is set and RoleArn is set, it should try to validate the secret": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "my-secret",
 				Kubeconfig:           "/nonexistent/kubeconfig",

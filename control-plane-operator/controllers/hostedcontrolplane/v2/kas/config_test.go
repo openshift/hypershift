@@ -25,12 +25,12 @@ func TestGenerateConfig(t *testing.T) {
 
 	testcases := []testcase{
 		{
-			name:     "defaults",
+			name:     "When using default params, it should return default config",
 			params:   KubeAPIServerConfigParams{},
 			expected: defaultKASConfig(),
 		},
 		{
-			name: "with additional named cerfiticates",
+			name: "When additional named certificates are provided, it should add them to serving info",
 			params: KubeAPIServerConfigParams{
 				NamedCertificates: []configv1.APIServerNamedServingCert{
 					{
@@ -62,7 +62,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with ExternalIPRanger configuration, with AutoAssignCIDRs",
+			name: "When ExternalIPRanger is configured with AutoAssignCIDRs, it should enable allowIngressIP",
 			params: KubeAPIServerConfigParams{
 				ExternalIPConfig: &configv1.ExternalIPConfig{
 					Policy: &configv1.ExternalIPPolicy{
@@ -100,7 +100,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with ExternalIPRanger configuration, without AutoAssignCIDRs",
+			name: "When ExternalIPRanger is configured without AutoAssignCIDRs, it should disable allowIngressIP",
 			params: KubeAPIServerConfigParams{
 				ExternalIPConfig: &configv1.ExternalIPConfig{
 					Policy: &configv1.ExternalIPPolicy{
@@ -135,7 +135,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with ClusterNetwork and ServiceNetwork configuration",
+			name: "When ClusterNetwork and ServiceNetwork are configured, it should set restricted CIDRs and services subnet",
 			params: KubeAPIServerConfigParams{
 				ClusterNetwork: []string{
 					"10.0.0.0/16",
@@ -168,7 +168,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with KAS Pod port configuration",
+			name: "When KAS Pod port is configured, it should set bind address",
 			params: KubeAPIServerConfigParams{
 				KASPodPort: 8080,
 			},
@@ -179,7 +179,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with TLS profile configuration",
+			name: "When TLS profile is configured, it should set TLS version and cipher suites",
 			params: KubeAPIServerConfigParams{
 				TLSSecurityProfile: &configv1.TLSSecurityProfile{
 					Type: configv1.TLSProfileModernType,
@@ -195,7 +195,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with additional CORS allowed origin configuration",
+			name: "When additional CORS allowed origins are provided, it should append them to the list",
 			params: KubeAPIServerConfigParams{
 				AdditionalCORSAllowedOrigins: []string{
 					"abcdef",
@@ -208,7 +208,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with console public URL configuration",
+			name: "When console public URL is configured, it should set the console public URL",
 			params: KubeAPIServerConfigParams{
 				ConsolePublicURL: "https://console.public.io",
 			},
@@ -219,7 +219,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with image policy configuration",
+			name: "When image policy is configured, it should set registry hostnames",
 			params: KubeAPIServerConfigParams{
 				InternalRegistryHostName: "internal",
 				ExternalRegistryHostNames: []string{
@@ -240,7 +240,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with default node selector configuration",
+			name: "When default node selector is configured, it should set project config",
 			params: KubeAPIServerConfigParams{
 				DefaultNodeSelector: "foo=bar",
 			},
@@ -253,7 +253,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with feature gate OpenShiftPodSecurityAdmission=true configuration",
+			name: "When OpenShiftPodSecurityAdmission feature gate is enabled, it should configure restricted pod security defaults",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"OpenShiftPodSecurityAdmission=true",
@@ -291,7 +291,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with auth type None",
+			name: "When auth type is None, it should clear OAuth metadata file",
 			params: KubeAPIServerConfigParams{
 				Authentication: &configv1.AuthenticationSpec{
 					Type: configv1.AuthenticationTypeNone,
@@ -304,7 +304,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with advertise address",
+			name: "When advertise address is provided, it should set the advertise-address argument",
 			params: KubeAPIServerConfigParams{
 				AdvertiseAddress: "foo",
 			},
@@ -315,7 +315,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with service account issuer URL",
+			name: "When service account issuer URL is provided, it should configure SA issuer arguments",
 			params: KubeAPIServerConfigParams{
 				ServiceAccountIssuerURL: "https://issuer.io",
 			},
@@ -328,7 +328,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with cloud provider config ref",
+			name: "When cloud provider config ref is provided, it should set cloud-config argument",
 			params: KubeAPIServerConfigParams{
 				CloudProviderConfigRef: &corev1.LocalObjectReference{
 					Name: "foo",
@@ -341,7 +341,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with unrecognized cloud provider config",
+			name: "When unrecognized cloud provider is configured, it should set cloud-provider argument",
 			params: KubeAPIServerConfigParams{
 				CloudProvider: "alibaba",
 			},
@@ -352,7 +352,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with audit webhook enabled",
+			name: "When audit webhook is enabled, it should configure audit webhook arguments",
 			params: KubeAPIServerConfigParams{
 				AuditWebhookEnabled: true,
 			},
@@ -365,7 +365,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with profiling disabled",
+			name: "When profiling is disabled, it should set profiling argument to false",
 			params: KubeAPIServerConfigParams{
 				DisableProfiling: true,
 			},
@@ -376,7 +376,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with profiling disabled",
+			name: "When profiling is disabled, it should set profiling argument to false",
 			params: KubeAPIServerConfigParams{
 				DisableProfiling: true,
 			},
@@ -387,7 +387,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with OAuth disabled",
+			name: "When OAuth is disabled, it should configure OIDC authentication",
 			params: KubeAPIServerConfigParams{
 				Authentication: &configv1.AuthenticationSpec{
 					Type: configv1.AuthenticationTypeOIDC,
@@ -458,7 +458,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with etcd URL",
+			name: "When etcd URL is provided, it should set etcd-servers argument",
 			params: KubeAPIServerConfigParams{
 				EtcdURL: "https://etcd.io",
 			},
@@ -469,7 +469,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with goaway chance",
+			name: "When goaway chance is configured, it should set goaway-chance argument",
 			params: KubeAPIServerConfigParams{
 				GoAwayChance: "something",
 			},
@@ -480,7 +480,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with max mutating requests in flight",
+			name: "When max mutating requests in flight is configured, it should set the argument",
 			params: KubeAPIServerConfigParams{
 				MaxMutatingRequestsInflight: "20",
 			},
@@ -491,7 +491,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with max requests in flight",
+			name: "When max requests in flight is configured, it should set the argument",
 			params: KubeAPIServerConfigParams{
 				MaxRequestsInflight: "20",
 			},
@@ -502,7 +502,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with DynamicResourceAllocation feature gate enabled",
+			name: "When DynamicResourceAllocation feature gate is enabled, it should configure runtime-config",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"DynamicResourceAllocation=true",
@@ -516,7 +516,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with ValidatingAdmissionPolicy feature gate explicitly enabled",
+			name: "When ValidatingAdmissionPolicy feature gate is explicitly enabled, it should return default config",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"ValidatingAdmissionPolicy=true",
@@ -526,7 +526,7 @@ func TestGenerateConfig(t *testing.T) {
 			expected: defaultKASConfig(),
 		},
 		{
-			name: "with ValidatingAdmissionPolicy feature gate explicitly disabled",
+			name: "When ValidatingAdmissionPolicy feature gate is explicitly disabled, it should return default config",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"ValidatingAdmissionPolicy=false",
@@ -536,7 +536,7 @@ func TestGenerateConfig(t *testing.T) {
 			expected: defaultKASConfig(),
 		},
 		{
-			name: "with StructuredAuthenticationConfiguration feature gate explicitly disabled",
+			name: "When StructuredAuthenticationConfiguration feature gate is explicitly disabled, it should return default config",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"StructuredAuthenticationConfiguration=false",
@@ -546,7 +546,7 @@ func TestGenerateConfig(t *testing.T) {
 			expected: defaultKASConfig(),
 		},
 		{
-			name: "with strict transport security directive",
+			name: "When strict transport security directive is configured, it should set the directive argument",
 			params: KubeAPIServerConfigParams{
 				APIServerSTSDirectives: "foo",
 			},
@@ -557,7 +557,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with MutatingAdmissionPolicy feature gate enabled",
+			name: "When MutatingAdmissionPolicy feature gate is enabled, it should configure runtime-config",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"MutatingAdmissionPolicy=true",
@@ -571,7 +571,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with service account max token expiration",
+			name: "When service account max token expiration is configured, it should set the argument",
 			params: KubeAPIServerConfigParams{
 				ServiceAccountMaxTokenExpiration: "24h",
 			},

@@ -25,7 +25,7 @@ func TestCheckAndFixFile(t *testing.T) {
 		description           string
 	}{
 		{
-			name:           "When file does not exist and kubelet restart succeeds it should create file with new content",
+			name:           "When file does not exist and kubelet restart succeeds, it should create file with new content",
 			description:    "file does not exist, kubelet restart succeeds, file is created",
 			initialContent: "",
 			secretContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -37,7 +37,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:               "When file does not exist and kubelet restart fails it should rollback",
+			name:               "When file does not exist and kubelet restart fails, it should rollback",
 			description:        "file does not exist, kubelet restart fails, rollback succeeds",
 			initialContent:     "",
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -53,7 +53,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:           "When file exists with different content and kubelet restart succeeds it should update file",
+			name:           "When file exists with different content and kubelet restart succeeds, it should update file",
 			description:    "file exists with different content, kubelet restart succeeds",
 			initialContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -65,7 +65,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:               "When file exists with different content and kubelet restart fails it should rollback",
+			name:               "When file exists with different content and kubelet restart fails, it should rollback",
 			description:        "file exists with different content, kubelet restart fails, rollback succeeds",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -81,7 +81,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:                  "When file exists with same content it should not restart kubelet",
+			name:                  "When file exists with same content, it should not restart kubelet",
 			description:           "file exists with same content, no changes needed",
 			initialContent:        `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -92,7 +92,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:               "When kubelet restart fails it should rollback to original content",
+			name:               "When kubelet restart fails, it should rollback to original content",
 			description:        "kubelet restart fails but rollback succeeds, file should be restored to original content",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -108,7 +108,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "When both kubelet restart and rollback fail it should return combined error",
+			name:               "When both kubelet restart and rollback fail, it should return combined error",
 			description:        "both kubelet restart and rollback fail, file should remain with new content",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -125,7 +125,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:                  "When only trailing newline differs it should not restart kubelet",
+			name:                  "When only trailing newline differs, it should not restart kubelet",
 			description:           "file has trailing newline, new content doesn't, should not trigger restart",
 			initialContent:        "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
 			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -135,7 +135,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:           "When content differs and both have newlines it should update and restart",
+			name:           "When content differs and both have newlines, it should update and restart",
 			description:    "both original file and new content have trailing newlines, different content",
 			initialContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
 			secretContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
@@ -147,7 +147,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:           "When content differs with newline in secret it should write exact secret content",
+			name:           "When content differs with newline in secret, it should write exact secret content",
 			description:    "original file has no newline, new content has newline, should write new content exactly",
 			initialContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
@@ -159,7 +159,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:           "When content differs without newlines it should update and restart",
+			name:           "When content differs without newlines, it should update and restart",
 			description:    "neither original file nor new content have newlines, should update",
 			initialContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -171,7 +171,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:                  "When file has newline and secret does not but content is same it should not restart",
+			name:                  "When file has newline and secret does not but content is same, it should not restart",
 			description:           "file content is identical ignoring newline, no restart should be attempted",
 			initialContent:        "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
 			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -272,7 +272,7 @@ func TestRestartKubelet(t *testing.T) {
 		description   string
 	}{
 		{
-			name: "Success",
+			name: "When systemd job completes successfully it should return no error",
 			setupMock: func(mock *MockdbusConn) {
 				mock.EXPECT().
 					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -285,7 +285,7 @@ func TestRestartKubelet(t *testing.T) {
 			description:   "systemd job completed successfully",
 		},
 		{
-			name: "RestartUnit returns an error",
+			name: "When RestartUnit returns an error it should propagate the error",
 			setupMock: func(mock *MockdbusConn) {
 				mock.EXPECT().
 					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -295,7 +295,7 @@ func TestRestartKubelet(t *testing.T) {
 			description:   "dbus call itself failed",
 		},
 		{
-			name: "Job failed",
+			name: "When systemd job fails it should return failure error",
 			setupMock: func(mock *MockdbusConn) {
 				mock.EXPECT().
 					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -308,7 +308,7 @@ func TestRestartKubelet(t *testing.T) {
 			description:   "systemd job failed",
 		},
 		{
-			name: "Job timeout",
+			name: "When systemd job times out it should return timeout error",
 			setupMock: func(mock *MockdbusConn) {
 				mock.EXPECT().
 					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -321,7 +321,7 @@ func TestRestartKubelet(t *testing.T) {
 			description:   "systemd job timed out",
 		},
 		{
-			name: "Job canceled",
+			name: "When systemd job is canceled it should return canceled error",
 			setupMock: func(mock *MockdbusConn) {
 				mock.EXPECT().
 					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -334,7 +334,7 @@ func TestRestartKubelet(t *testing.T) {
 			description:   "systemd job was canceled",
 		},
 		{
-			name: "Job dependency failed",
+			name: "When systemd job dependency fails it should return dependency error",
 			setupMock: func(mock *MockdbusConn) {
 				mock.EXPECT().
 					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -347,7 +347,7 @@ func TestRestartKubelet(t *testing.T) {
 			description:   "systemd job dependency failed",
 		},
 		{
-			name: "Job skipped",
+			name: "When systemd job is skipped it should return skipped error",
 			setupMock: func(mock *MockdbusConn) {
 				mock.EXPECT().
 					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -391,121 +391,121 @@ func TestValidateDockerConfigJSON(t *testing.T) {
 		description string
 	}{
 		{
-			name:        "valid docker config with single auth",
+			name:        "When docker config has single auth, it should validate successfully",
 			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
 			expectError: false,
 			description: "valid JSON with auths key containing single registry",
 		},
 		{
-			name:        "valid docker config with multiple auths",
+			name:        "When docker config has multiple auths, it should validate successfully",
 			input:       []byte(`{"auths":{"registry1.com":{"auth":"dGVzdDp0ZXN0"},"registry2.com":{"auth":"YW5vdGhlcjphdXRo"}}}`),
 			expectError: false,
 			description: "valid JSON with auths key containing multiple registries",
 		},
 		{
-			name:        "valid docker config with empty auths",
+			name:        "When docker config has empty auths, it should validate successfully",
 			input:       []byte(`{"auths":{}}`),
 			expectError: false,
 			description: "valid JSON with empty auths object",
 		},
 		{
-			name:        "valid docker config with additional fields",
+			name:        "When docker config has additional fields, it should validate successfully",
 			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}},"credsStore":"desktop","credHelpers":{"registry.com":"registry-helper"}}`),
 			expectError: false,
 			description: "valid JSON with auths key and additional docker config fields",
 		},
 		{
-			name:        "invalid JSON - malformed",
+			name:        "When JSON is malformed, it should return validation error",
 			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}`),
 			expectError: true,
 			description: "malformed JSON missing closing brace",
 		},
 		{
-			name:        "invalid JSON - trailing comma",
+			name:        "When JSON has trailing comma, it should return validation error",
 			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}},}`),
 			expectError: true,
 			description: "malformed JSON with trailing comma",
 		},
 		{
-			name:        "invalid JSON - unquoted key",
+			name:        "When JSON has unquoted key, it should return validation error",
 			input:       []byte(`{auths:{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
 			expectError: true,
 			description: "malformed JSON with unquoted key",
 		},
 		{
-			name:        "missing auths key",
+			name:        "When auths key is missing, it should return validation error",
 			input:       []byte(`{"registries":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
 			expectError: true,
 			description: "valid JSON but missing required auths key",
 		},
 		{
-			name:        "empty input",
+			name:        "When input is empty, it should return validation error",
 			input:       []byte(``),
 			expectError: true,
 			description: "empty byte slice should fail JSON parsing",
 		},
 		{
-			name:        "null input",
+			name:        "When input is null, it should return validation error",
 			input:       []byte(`null`),
 			expectError: true,
 			description: "null JSON value should fail validation",
 		},
 		{
-			name:        "string input",
+			name:        "When input is a string, it should return validation error",
 			input:       []byte(`"some string"`),
 			expectError: true,
 			description: "string JSON value should fail validation",
 		},
 		{
-			name:        "array input",
+			name:        "When input is an array, it should return validation error",
 			input:       []byte(`[{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}]`),
 			expectError: true,
 			description: "array JSON value should fail validation",
 		},
 		{
-			name:        "number input",
+			name:        "When input is a number, it should return validation error",
 			input:       []byte(`123`),
 			expectError: true,
 			description: "number JSON value should fail validation",
 		},
 		{
-			name:        "boolean input",
+			name:        "When input is a boolean, it should return validation error",
 			input:       []byte(`true`),
 			expectError: true,
 			description: "boolean JSON value should fail validation",
 		},
 		{
-			name:        "auths key with null value",
+			name:        "When auths key has null value, it should validate successfully",
 			input:       []byte(`{"auths":null}`),
 			expectError: false,
 			description: "auths key with null value should be valid (auths key exists)",
 		},
 		{
-			name:        "auths key with string value",
+			name:        "When auths key has string value, it should validate successfully",
 			input:       []byte(`{"auths":"not an object"}`),
 			expectError: false,
 			description: "auths key with non-object value should be valid (auths key exists)",
 		},
 		{
-			name:        "auths key with array value",
+			name:        "When auths key has array value, it should validate successfully",
 			input:       []byte(`{"auths":[]}`),
 			expectError: false,
 			description: "auths key with array value should be valid (auths key exists)",
 		},
 		{
-			name:        "whitespace only",
+			name:        "When input is whitespace only, it should return validation error",
 			input:       []byte(`   `),
 			expectError: true,
 			description: "whitespace only input should fail JSON parsing",
 		},
 		{
-			name:        "empty object",
+			name:        "When input is empty object, it should return validation error",
 			input:       []byte(`{}`),
 			expectError: true,
 			description: "empty object should fail validation (missing auths key)",
 		},
 		{
-			name:        "nested auths key",
+			name:        "When auths key is nested, it should return validation error",
 			input:       []byte(`{"config":{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}}`),
 			expectError: true,
 			description: "auths key nested inside another object should fail validation",

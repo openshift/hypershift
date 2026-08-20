@@ -25,14 +25,14 @@ func TestRawCreateOptions_Validate(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "unsupported publishing strategy",
+			name: "When unsupported publishing strategy is provided, it should return an error",
 			input: RawCreateOptions{
 				ServicePublishingStrategy: "whatever",
 			},
 			expectedError: "service publish strategy whatever is not supported, supported options: Ingress, NodePort",
 		},
 		{
-			name: "api server address invalid for ingress",
+			name: "When API server address is provided with Ingress strategy, it should return an error",
 			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				APIServerAddress:          "whatever",
@@ -40,7 +40,7 @@ func TestRawCreateOptions_Validate(t *testing.T) {
 			expectedError: "external-api-server-address is supported only for NodePort service publishing strategy, service publishing strategy Ingress is used",
 		},
 		{
-			name: "invalid infra storage class mappings",
+			name: "When invalid infra storage class mappings are provided, it should return an error",
 			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				InfraStorageClassMappings: []string{"bad"},
@@ -48,7 +48,7 @@ func TestRawCreateOptions_Validate(t *testing.T) {
 			expectedError: "invalid infra storageclass mapping [bad]",
 		},
 		{
-			name: "kubeconfig present without namespace",
+			name: "When kubeconfig is provided without namespace, it should return an error",
 			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				InfraKubeConfigFile:       "something",
@@ -56,7 +56,7 @@ func TestRawCreateOptions_Validate(t *testing.T) {
 			expectedError: "external infra cluster kubeconfig was provided but an infra namespace is missing",
 		},
 		{
-			name: "kubeconfig missing with namespace",
+			name: "When namespace is provided without kubeconfig, it should return an error",
 			input: RawCreateOptions{
 				ServicePublishingStrategy: IngressServicePublishingStrategy,
 				InfraNamespace:            "something",
@@ -134,7 +134,7 @@ func TestCreateCluster(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "minimal flags necessary to render",
+			name: "When minimal flags are provided, it should render successfully",
 			args: []string{
 				"--render-sensitive",
 				"--name=example",
@@ -142,7 +142,7 @@ func TestCreateCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "test from dvossel",
+			name: "When complex configuration flags are provided, it should create cluster with all options",
 			args: []string{
 				"--name", "test1",
 				"--etcd-storage-class=gp3-csi",

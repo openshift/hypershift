@@ -34,7 +34,7 @@ func TestConstructEndpointName(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "When constructing endpoint name it should use service attachment name with endpoint suffix",
+			name: "When constructing endpoint name, it should use service attachment name with endpoint suffix",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentName: "private-router-4bcf17df-cveiga-test-3-psc-sa",
@@ -43,7 +43,7 @@ func TestConstructEndpointName(t *testing.T) {
 			expected: "private-router-4bcf17df-cveiga-test-3-psc-sa-endpoint",
 		},
 		{
-			name: "When service attachment name is short it should append endpoint suffix",
+			name: "When service attachment name is short, it should append endpoint suffix",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentName: "test-sa",
@@ -70,7 +70,7 @@ func TestConstructIPAddressName(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "When constructing IP name it should use service attachment name with ip suffix",
+			name: "When constructing IP name, it should use service attachment name with ip suffix",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentName: "private-router-4bcf17df-cveiga-test-3-psc-sa",
@@ -79,7 +79,7 @@ func TestConstructIPAddressName(t *testing.T) {
 			expected: "private-router-4bcf17df-cveiga-test-3-psc-sa-ip",
 		},
 		{
-			name: "When service attachment name is short it should append ip suffix",
+			name: "When service attachment name is short, it should append ip suffix",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentName: "test-sa",
@@ -133,21 +133,21 @@ func TestConstructAddressURL(t *testing.T) {
 		expected        string
 	}{
 		{
-			name:            "When constructing address URL it should include project, region, and name",
+			name:            "When constructing address URL, it should include project, region, and name",
 			addressName:     "clusters-test-cluster-1-private-router-psc-endpoint-ip",
 			customerProject: "customer-project-123",
 			region:          "us-central1",
 			expected:        "projects/customer-project-123/regions/us-central1/addresses/clusters-test-cluster-1-private-router-psc-endpoint-ip",
 		},
 		{
-			name:            "When using different region it should construct correctly",
+			name:            "When using different region, it should construct correctly",
 			addressName:     "test-address",
 			customerProject: "my-gcp-project",
 			region:          "europe-west1",
 			expected:        "projects/my-gcp-project/regions/europe-west1/addresses/test-address",
 		},
 		{
-			name:            "When using numeric project ID it should work",
+			name:            "When using numeric project ID, it should work",
 			addressName:     "my-psc-ip",
 			customerProject: "123456789",
 			region:          "asia-southeast1",
@@ -172,7 +172,7 @@ func TestIsServiceAttachmentReady(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When ServiceAttachmentURI is empty it should return false",
+			name: "When ServiceAttachmentURI is empty, it should return false",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentURI:  "",
@@ -182,7 +182,7 @@ func TestIsServiceAttachmentReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When ServiceAttachmentName is empty it should return false",
+			name: "When ServiceAttachmentName is empty, it should return false",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
@@ -192,7 +192,7 @@ func TestIsServiceAttachmentReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When both URI and Name exist but condition is missing it should return false",
+			name: "When both URI and Name exist but condition is missing, it should return false",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
@@ -202,7 +202,7 @@ func TestIsServiceAttachmentReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When both URI and Name exist but condition is False it should return false",
+			name: "When both URI and Name exist but condition is False, it should return false",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
@@ -218,7 +218,7 @@ func TestIsServiceAttachmentReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When both URI and Name exist and condition is True it should return true",
+			name: "When both URI and Name exist and condition is True, it should return true",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
 					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
@@ -250,32 +250,32 @@ func TestIsNotFoundError(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When given nil error it should return false",
+			name:     "When given nil error, it should return false",
 			err:      nil,
 			expected: false,
 		},
 		{
-			name:     "When given non-GCP error it should return false",
+			name:     "When given non-GCP error, it should return false",
 			err:      assert.AnError,
 			expected: false,
 		},
 		{
-			name:     "When given a GCP 404 error it should return true",
+			name:     "When given a GCP 404 error, it should return true",
 			err:      &googleapi.Error{Code: 404, Message: "not found"},
 			expected: true,
 		},
 		{
-			name:     "When given a GCP 500 error it should return false",
+			name:     "When given a GCP 500 error, it should return false",
 			err:      &googleapi.Error{Code: 500, Message: "internal error"},
 			expected: false,
 		},
 		{
-			name:     "When given a wrapped GCP 404 error it should return true",
+			name:     "When given a wrapped GCP 404 error, it should return true",
 			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 404, Message: "not found"}),
 			expected: true,
 		},
 		{
-			name:     "When given a wrapped GCP 500 error it should return false",
+			name:     "When given a wrapped GCP 500 error, it should return false",
 			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 500, Message: "internal error"}),
 			expected: false,
 		},
@@ -372,7 +372,7 @@ func TestHCPExternalNamesGCP(t *testing.T) {
 		expected map[string]string
 	}{
 		{
-			name: "When no external hostnames are configured it should return empty map",
+			name: "When no external hostnames are configured, it should return empty map",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{},
@@ -381,7 +381,7 @@ func TestHCPExternalNamesGCP(t *testing.T) {
 			expected: map[string]string{},
 		},
 		{
-			name: "When API server has Route hostname it should return api entry",
+			name: "When API server has Route hostname, it should return api entry",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -402,7 +402,7 @@ func TestHCPExternalNamesGCP(t *testing.T) {
 			},
 		},
 		{
-			name: "When OAuth server has Route hostname it should return oauth entry",
+			name: "When OAuth server has Route hostname, it should return oauth entry",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -423,7 +423,7 @@ func TestHCPExternalNamesGCP(t *testing.T) {
 			},
 		},
 		{
-			name: "When both API and OAuth have Route hostnames it should return both entries",
+			name: "When both API and OAuth have Route hostnames, it should return both entries",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -454,7 +454,7 @@ func TestHCPExternalNamesGCP(t *testing.T) {
 			},
 		},
 		{
-			name: "When API server uses LoadBalancer type it should return empty map",
+			name: "When API server uses LoadBalancer type, it should return empty map",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -470,7 +470,7 @@ func TestHCPExternalNamesGCP(t *testing.T) {
 			expected: map[string]string{},
 		},
 		{
-			name: "When Route has no hostname it should return empty map",
+			name: "When Route has no hostname, it should return empty map",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -609,25 +609,25 @@ func TestNameserverTrailingDotTrimming(t *testing.T) {
 		description string
 	}{
 		{
-			name:        "When nameservers have trailing dots they should be removed",
+			name:        "When nameservers have trailing dots, it should remove them",
 			nameservers: []string{"ns-cloud-c1.googledomains.com.", "ns-cloud-c2.googledomains.com."},
 			expected:    []string{"ns-cloud-c1.googledomains.com", "ns-cloud-c2.googledomains.com"},
 			description: "GCP Cloud DNS returns nameservers with trailing dots but external-dns rejects them",
 		},
 		{
-			name:        "When nameservers have no trailing dots they should remain unchanged",
+			name:        "When nameservers have no trailing dots, it should leave them unchanged",
 			nameservers: []string{"ns1.example.com", "ns2.example.com"},
 			expected:    []string{"ns1.example.com", "ns2.example.com"},
 			description: "Already in correct format for external-dns",
 		},
 		{
-			name:        "When nameservers list is empty it should return empty",
+			name:        "When nameservers list is empty, it should return empty",
 			nameservers: []string{},
 			expected:    []string{},
 			description: "Edge case: empty nameserver list",
 		},
 		{
-			name:        "When mixed trailing dots present only those with dots should be trimmed",
+			name:        "When mixed trailing dots present, it should trim only those with dots",
 			nameservers: []string{"ns1.example.com.", "ns2.example.com"},
 			expected:    []string{"ns1.example.com", "ns2.example.com"},
 			description: "Mixed case with some trailing dots",
@@ -658,7 +658,7 @@ func TestDNSEndpointNaming(t *testing.T) {
 			expectedName: "test-cluster-123-ingress-delegation",
 		},
 		{
-			name:         "When HCP name is long the full name should be used",
+			name:         "When HCP name is long, it should use the full name",
 			hcpName:      "very-long-hosted-control-plane-name",
 			expectedName: "very-long-hosted-control-plane-name-ingress-delegation",
 		},
@@ -684,7 +684,7 @@ func TestDNSEndpointNameserverFormat(t *testing.T) {
 		description string
 	}{
 		{
-			name: "When nameservers are GCP Cloud DNS format they should be valid",
+			name: "When nameservers are GCP Cloud DNS format, it should accept them as valid",
 			nameservers: []string{
 				"ns-cloud-a1.googledomains.com.",
 				"ns-cloud-a2.googledomains.com.",
@@ -694,7 +694,7 @@ func TestDNSEndpointNameserverFormat(t *testing.T) {
 			description: "Standard GCP Cloud DNS nameserver format with trailing dots",
 		},
 		{
-			name: "When nameservers are custom they should be accepted",
+			name: "When nameservers are custom, it should accept them",
 			nameservers: []string{
 				"ns1.custom-dns.example.com",
 				"ns2.custom-dns.example.com",
@@ -725,7 +725,7 @@ func TestDNSEndpointErrorHandling(t *testing.T) {
 		description string
 	}{
 		{
-			name: "When DNSEndpoint CRD is not installed reconciliation should continue",
+			name: "When DNSEndpoint CRD is not installed, it should continue reconciliation",
 			err: &apierrors.StatusError{
 				ErrStatus: metav1.Status{
 					Reason: metav1.StatusReasonNotFound,
@@ -738,27 +738,27 @@ func TestDNSEndpointErrorHandling(t *testing.T) {
 			description: "CRD not found - best-effort operation, continue PSC reconciliation",
 		},
 		{
-			name:        "When error mentions no matches for kind reconciliation should continue",
+			name:        "When error mentions no matches for kind, it should continue reconciliation",
 			err:         errors.New("no matches for kind \"DNSEndpoint\" in version \"externaldns.k8s.io/v1alpha1\""),
 			description: "Schema/kind match error - best-effort operation, continue PSC reconciliation",
 		},
 		{
-			name:        "When error is validation webhook failure reconciliation should continue",
+			name:        "When error is validation webhook failure, it should continue reconciliation",
 			err:         errors.New("admission webhook denied the request: invalid DNSEndpoint"),
 			description: "Validation webhook error - best-effort operation, continue PSC reconciliation",
 		},
 		{
-			name:        "When error is permission denied reconciliation should continue",
+			name:        "When error is permission denied, it should continue reconciliation",
 			err:         errors.New("forbidden: user cannot create resource \"dnsendpoints\""),
 			description: "Permission error - best-effort operation, continue PSC reconciliation",
 		},
 		{
-			name:        "When error is generic API error reconciliation should continue",
+			name:        "When error is generic API error, it should continue reconciliation",
 			err:         errors.New("failed to connect to API server"),
 			description: "API connectivity error - best-effort operation, continue PSC reconciliation",
 		},
 		{
-			name:        "When error is timeout reconciliation should continue",
+			name:        "When error is timeout, it should continue reconciliation",
 			err:         errors.New("context deadline exceeded"),
 			description: "Timeout error - best-effort operation, continue PSC reconciliation",
 		},

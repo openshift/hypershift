@@ -132,12 +132,12 @@ func TestIsPodReady(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When pod is nil it should return false",
+			name:     "When pod is nil, it should return false",
 			pod:      nil,
 			expected: false,
 		},
 		{
-			name: "When pod has Ready=True it should return true",
+			name: "When pod has Ready=True, it should return true",
 			pod: &corev1.Pod{
 				Status: corev1.PodStatus{
 					Conditions: []corev1.PodCondition{{
@@ -149,7 +149,7 @@ func TestIsPodReady(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When pod has Ready=False it should return false",
+			name: "When pod has Ready=False, it should return false",
 			pod: &corev1.Pod{
 				Status: corev1.PodStatus{
 					Conditions: []corev1.PodCondition{{
@@ -161,7 +161,7 @@ func TestIsPodReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When pod has no Ready condition it should return false",
+			name: "When pod has no Ready condition, it should return false",
 			pod: &corev1.Pod{
 				Status: corev1.PodStatus{
 					Conditions: []corev1.PodCondition{{
@@ -173,7 +173,7 @@ func TestIsPodReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When pod has no conditions it should return false",
+			name: "When pod has no conditions, it should return false",
 			pod: &corev1.Pod{
 				Status: corev1.PodStatus{},
 			},
@@ -284,7 +284,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 		expected *corev1.PodSpec
 	}{
 		{
-			name: "basic application with no exceptions",
+			name: "When container has no security context, it should apply restricted security context",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -311,7 +311,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves capabilities from deployment template",
+			name: "When container has NET_BIND_SERVICE capability, it should preserve it while applying restricted context",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -358,7 +358,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "application with init containers",
+			name: "When pod has init containers, it should apply restricted security context to all containers",
 			podSpec: &corev1.PodSpec{
 				InitContainers: []corev1.Container{
 					{
@@ -404,7 +404,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves existing security context fields",
+			name: "When container has existing RunAsUser, it should preserve it while applying restricted context",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -435,7 +435,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves different capabilities for multiple containers",
+			name: "When multiple containers have different capabilities, it should preserve each container's capabilities",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -503,7 +503,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "overrides insecure AllowPrivilegeEscalation",
+			name: "When AllowPrivilegeEscalation is true, it should override to false",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -535,7 +535,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "overrides insecure RunAsNonRoot",
+			name: "When RunAsNonRoot is false, it should override to true",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -567,7 +567,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves existing add capabilities",
+			name: "When container has existing add capabilities and drop capabilities, it should preserve add and override drop to ALL",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -601,7 +601,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "empty pod spec",
+			name: "When pod spec has no containers, it should make no changes",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{},
 			},
@@ -611,7 +611,7 @@ func TestEnforceRestrictedSecurityContextToContainers(t *testing.T) {
 			},
 		},
 		{
-			name: "containers with explicitly nil security context",
+			name: "When container has nil security context, it should apply restricted security context",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -660,7 +660,7 @@ func TestEnforceRestrictedSecurityContextToContainers_InvalidCapabilities(t *tes
 		expectedError string
 	}{
 		{
-			name: "rejects SYS_ADMIN capability",
+			name: "When container has SYS_ADMIN capability, it should return an error",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -677,7 +677,7 @@ func TestEnforceRestrictedSecurityContextToContainers_InvalidCapabilities(t *tes
 			expectedError: `container "bad-container": capability "SYS_ADMIN" is not allowed by restricted pod security standards (only NET_BIND_SERVICE is permitted)`,
 		},
 		{
-			name: "rejects NET_ADMIN capability",
+			name: "When container has NET_ADMIN capability, it should return an error",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -694,7 +694,7 @@ func TestEnforceRestrictedSecurityContextToContainers_InvalidCapabilities(t *tes
 			expectedError: `container "network-container": capability "NET_ADMIN" is not allowed by restricted pod security standards (only NET_BIND_SERVICE is permitted)`,
 		},
 		{
-			name: "rejects invalid capability in init container",
+			name: "When init container has SYS_MODULE capability, it should return an error",
 			podSpec: &corev1.PodSpec{
 				InitContainers: []corev1.Container{
 					{
@@ -711,7 +711,7 @@ func TestEnforceRestrictedSecurityContextToContainers_InvalidCapabilities(t *tes
 			expectedError: `container "bad-init-container": capability "SYS_MODULE" is not allowed by restricted pod security standards (only NET_BIND_SERVICE is permitted)`,
 		},
 		{
-			name: "rejects multiple invalid capabilities",
+			name: "When container has multiple capabilities including invalid ones, it should return an error",
 			podSpec: &corev1.PodSpec{
 				Containers: []corev1.Container{
 					{

@@ -170,7 +170,7 @@ func TestFindMatchingManifest(t *testing.T) {
 		expectedImageRef         string
 	}{
 		{
-			testName:                 "Find linux/amd64 in multi-arch ReleaseImage1",
+			testName:                 "When searching for linux/amd64 in multi-arch ReleaseImage1 it should return the correct manifest",
 			releaseImage:             ReleaseImage1,
 			deserializedManifestList: deserializedManifestList1,
 			osToFind:                 LinuxOS,
@@ -178,7 +178,7 @@ func TestFindMatchingManifest(t *testing.T) {
 			expectedImageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
 		},
 		{
-			testName:                 "Find linux/arm64 in multi-arch ReleaseImage1",
+			testName:                 "When searching for linux/arm64 in multi-arch ReleaseImage1 it should return the correct manifest",
 			releaseImage:             ReleaseImage1,
 			deserializedManifestList: deserializedManifestList1,
 			osToFind:                 LinuxOS,
@@ -186,7 +186,7 @@ func TestFindMatchingManifest(t *testing.T) {
 			expectedImageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:4fe15a54f144d0200a39a93e2dc97b8b0e989e95cc076acbe2dfe129d0c04831",
 		},
 		{
-			testName:                 "Find linux/ppc64le in multi-arch ReleaseImage1",
+			testName:                 "When searching for linux/ppc64le in multi-arch ReleaseImage1 it should return the correct manifest",
 			releaseImage:             ReleaseImage1,
 			deserializedManifestList: deserializedManifestList1,
 			osToFind:                 LinuxOS,
@@ -194,7 +194,7 @@ func TestFindMatchingManifest(t *testing.T) {
 			expectedImageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:a46358bdcf31d39c23e7389e8b75d1e5efa7181cca8832e51697b6bb3470e4a5",
 		},
 		{
-			testName:                 "Find linux/s390x in multi-arch ReleaseImage1",
+			testName:                 "When searching for linux/s390x in multi-arch ReleaseImage1 it should return the correct manifest",
 			releaseImage:             ReleaseImage1,
 			deserializedManifestList: deserializedManifestList1,
 			osToFind:                 LinuxOS,
@@ -202,7 +202,7 @@ func TestFindMatchingManifest(t *testing.T) {
 			expectedImageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:f8dcd1dadc68b85ccf8737067f73fc03b0f6a1d81633fbdcdde2e3b5bc804d6a",
 		},
 		{
-			testName:                 "Find linux/amd64 in multi-arch ReleaseImage2",
+			testName:                 "When searching for linux/amd64 in multi-arch ReleaseImage2 it should return the correct manifest",
 			releaseImage:             ReleaseImage2,
 			deserializedManifestList: deserializedManifestList2,
 			osToFind:                 LinuxOS,
@@ -210,7 +210,7 @@ func TestFindMatchingManifest(t *testing.T) {
 			expectedImageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:b593c6882f9c8d9d75f3d200fa3e02f7f8caa99cea595fd70bbdd495613fd23f",
 		},
 		{
-			testName:                 "Find linux/arm64 in multi-arch ReleaseImage2",
+			testName:                 "When searching for linux/arm64 in multi-arch ReleaseImage2 it should return the correct manifest",
 			releaseImage:             ReleaseImage2,
 			deserializedManifestList: deserializedManifestList2,
 			osToFind:                 LinuxOS,
@@ -218,7 +218,7 @@ func TestFindMatchingManifest(t *testing.T) {
 			expectedImageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:f1c97cf57c57757fcd6d4314ff4b4cc792b27b904e949b840f902c104f1acf38",
 		},
 		{
-			testName:                 "Find linux/ppc64le in multi-arch ReleaseImage2",
+			testName:                 "When searching for linux/ppc64le in multi-arch ReleaseImage2 it should return the correct manifest",
 			releaseImage:             ReleaseImage2,
 			deserializedManifestList: deserializedManifestList2,
 			osToFind:                 LinuxOS,
@@ -226,7 +226,7 @@ func TestFindMatchingManifest(t *testing.T) {
 			expectedImageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:a0f3d715a8947e45bdc9c9d2c1fcdccf8da6b216cb6efc38d75cec49a56f074b",
 		},
 		{
-			testName:                 "Find linux/s390x in multi-arch ReleaseImage2",
+			testName:                 "When searching for linux/s390x in multi-arch ReleaseImage2 it should return the correct manifest",
 			releaseImage:             ReleaseImage2,
 			deserializedManifestList: deserializedManifestList2,
 			osToFind:                 LinuxOS,
@@ -258,7 +258,7 @@ func TestIsMultiArchManifestList(t *testing.T) {
 		expectErr              bool
 	}{
 		{
-			name:                   "Check an amd64 image; no err",
+			name:                   "When checking an amd64 image, it should return false for multi-arch",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 			mediaType:              ManifestMediaType,
 			pullSecretBytes:        pullSecretBytes,
@@ -278,7 +278,7 @@ func TestIsMultiArchManifestList(t *testing.T) {
 			},
 		},
 		{
-			name:                   "Check a ppc64le image; no err",
+			name:                   "When checking a ppc64le image, it should return false for multi-arch",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
 			mediaType:              ManifestMediaType,
 			pullSecretBytes:        pullSecretBytes,
@@ -298,7 +298,7 @@ func TestIsMultiArchManifestList(t *testing.T) {
 			},
 		},
 		{
-			name:                   "Check a multi-arch image; no err",
+			name:                   "When checking a multi-arch image, it should return true",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-multi",
 			mediaType:              ManifestListMediaType,
 			pullSecretBytes:        pullSecretBytes,
@@ -328,7 +328,7 @@ func TestIsMultiArchManifestList(t *testing.T) {
 			},
 		},
 		{
-			name:                   "Bad pull secret; err",
+			name:                   "When pull secret is empty, it should return an error",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
 			mediaType:              ManifestMediaType,
 			pullSecretBytes:        []byte(""),

@@ -47,13 +47,13 @@ func TestAuthorizeClientCSR(t *testing.T) {
 		authorize bool
 	}{
 		{
-			name:      "When CSR request is invalid it should error",
+			name:      "When CSR request is invalid, it should error",
 			x509csr:   []byte("-----BEGIN??\n"),
 			wantErr:   "PEM block type must be CERTIFICATE REQUEST",
 			authorize: false,
 		},
 		{
-			name:      "When CSR common name is invalid node name it should error",
+			name:      "When CSR common name is invalid node name, it should error",
 			x509csr:   createCSR("system:node:"),
 			wantErr:   "subject common name does not have a valid node name",
 			authorize: false,
@@ -149,7 +149,7 @@ func TestAuthorizeServingCSR(t *testing.T) {
 		authorize   bool
 	}{
 		{
-			name:        "When CSR username is invalid node name it should error",
+			name:        "When CSR username is invalid node name, it should error",
 			csrUserName: "system:node:",
 			wantErr:     "csr username does not have a valid node name",
 			authorize:   false,

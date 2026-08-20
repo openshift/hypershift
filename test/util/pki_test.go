@@ -25,7 +25,7 @@ func TestGenerateTestCertificate(t *testing.T) {
 		expectedCN  string
 	}{
 		{
-			name:        "When generating a certificate with DNS names it should succeed",
+			name:        "When generating a certificate with DNS names, it should succeed",
 			dnsNames:    []string{"example.com", "test.example.com"},
 			ipAddresses: []string{"192.168.1.1"},
 			duration:    24 * time.Hour,
@@ -33,7 +33,7 @@ func TestGenerateTestCertificate(t *testing.T) {
 			expectedCN:  "example.com",
 		},
 		{
-			name:        "When generating a certificate with IP addresses only it should succeed",
+			name:        "When generating a certificate with IP addresses only, it should succeed",
 			dnsNames:    []string{},
 			ipAddresses: []string{"192.168.1.1", "10.0.0.1"},
 			duration:    24 * time.Hour,
@@ -41,21 +41,21 @@ func TestGenerateTestCertificate(t *testing.T) {
 			expectedCN:  "192.168.1.1",
 		},
 		{
-			name:        "When generating a certificate with no DNS names or IP addresses it should fail",
+			name:        "When generating a certificate with no DNS names or IP addresses, it should fail",
 			dnsNames:    []string{},
 			ipAddresses: []string{},
 			duration:    24 * time.Hour,
 			wantErr:     true,
 		},
 		{
-			name:        "When generating a certificate with invalid IP address it should fail",
+			name:        "When generating a certificate with invalid IP address, it should fail",
 			dnsNames:    []string{},
 			ipAddresses: []string{"invalid.ip.address"},
 			duration:    24 * time.Hour,
 			wantErr:     true,
 		},
 		{
-			name:        "When generating a certificate with zero duration it should succeed",
+			name:        "When generating a certificate with zero duration, it should succeed",
 			dnsNames:    []string{"example.com"},
 			ipAddresses: []string{"192.168.1.1"},
 			duration:    0,

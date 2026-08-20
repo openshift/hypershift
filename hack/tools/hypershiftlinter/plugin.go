@@ -16,16 +16,16 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-type Settings struct {
-	Analyzers *AnalyzerSettings `json:"analyzers"`
+type settings struct {
+	Analyzers *analyzerSettings `json:"analyzers"`
 }
 
-type AnalyzerSettings struct {
+type analyzerSettings struct {
 	Enable []string `json:"enable"`
 }
 
 func BuildAnalyzers(rawSettings any) ([]*analysis.Analyzer, error) {
-	all := AllAnalyzers()
+	all := allAnalyzers()
 
 	if rawSettings == nil {
 		return all, nil
@@ -56,7 +56,7 @@ func BuildAnalyzers(rawSettings any) ([]*analysis.Analyzer, error) {
 	return filtered, nil
 }
 
-func AllAnalyzers() []*analysis.Analyzer {
+func allAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
 		testcasename.Analyzer,
 		testfuncname.Analyzer,
@@ -68,18 +68,18 @@ func AllAnalyzers() []*analysis.Analyzer {
 	}
 }
 
-func decodeSettings(raw any) (Settings, error) {
+func decodeSettings(raw any) (settings, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {
-		return Settings{}, err
+		return settings{}, err
 	}
 	// Reject unknown fields so that a typo such as "enbale" surfaces as an error
 	// instead of silently leaving Enable empty and enabling every analyzer.
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	var s Settings
+	var s settings
 	if err := dec.Decode(&s); err != nil {
-		return Settings{}, err
+		return settings{}, err
 	}
 	return s, nil
 }

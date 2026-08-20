@@ -103,7 +103,7 @@ $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugi
 HYPERSHIFTLINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/hypershiftlinter.so)
 HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 2>/dev/null)
 $(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
-	cd $(TOOLS_DIR); $(GO) build -a -buildmode=plugin -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
 
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
@@ -123,13 +123,13 @@ precommit-api-lint-fix: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
 
 .PHONY: lint
-lint: generate
+lint: generate $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
 
 .PHONY: main-lint-fix
-main-lint-fix: generate $(GOLANGCI_LINT)
+main-lint-fix: generate $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
 
 .PHONY: precommit-main-lint-fix
@@ -137,7 +137,7 @@ precommit-main-lint-fix: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(FILES)
 
 .PHONY: lint-fix
-lint-fix: generate
+lint-fix: generate $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint-fix; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))

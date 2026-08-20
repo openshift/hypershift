@@ -20,7 +20,7 @@ func TestNewKonnectivityServiceParams(t *testing.T) {
 		validate func(*testing.T, *KonnectivityServiceParams)
 	}{
 		{
-			name: "When HCP is provided it should create params with owner ref",
+			name: "When HCP is provided, it should create params with owner ref",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-hcp",
@@ -38,7 +38,7 @@ func TestNewKonnectivityServiceParams(t *testing.T) {
 			},
 		},
 		{
-			name: "When HCP has empty metadata it should still create params",
+			name: "When HCP has empty metadata, it should still create params",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{},
 			},

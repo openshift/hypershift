@@ -20,32 +20,32 @@ func TestIsErrorRetryable(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When error is a generic error it should be retryable",
+			name:     "When error is a generic error, it should be retryable",
 			err:      errors.New("some transient error"),
 			expected: true,
 		},
 		{
-			name:     "When error is a credential load error it should not be retryable",
+			name:     "When error is a credential load error, it should not be retryable",
 			err:      config.SharedConfigLoadError{},
 			expected: false,
 		},
 		{
-			name:     "When error is a wrapped credential load error it should not be retryable",
+			name:     "When error is a wrapped credential load error, it should not be retryable",
 			err:      fmt.Errorf("loading config: %w", config.SharedConfigLoadError{}),
 			expected: false,
 		},
 		{
-			name:     "When aggregate has single generic error it should be retryable",
+			name:     "When aggregate has single generic error, it should be retryable",
 			err:      utilerrors.NewAggregate([]error{errors.New("transient")}),
 			expected: true,
 		},
 		{
-			name:     "When aggregate has single credential load error it should not be retryable",
+			name:     "When aggregate has single credential load error, it should not be retryable",
 			err:      utilerrors.NewAggregate([]error{config.SharedConfigLoadError{}}),
 			expected: false,
 		},
 		{
-			name: "When aggregate has only credential load errors it should not be retryable",
+			name: "When aggregate has only credential load errors, it should not be retryable",
 			err: utilerrors.NewAggregate([]error{
 				config.SharedConfigLoadError{},
 				config.SharedConfigLoadError{},
@@ -53,7 +53,7 @@ func TestIsErrorRetryable(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When aggregate has mixed errors it should be retryable",
+			name: "When aggregate has mixed errors, it should be retryable",
 			err: utilerrors.NewAggregate([]error{
 				config.SharedConfigLoadError{},
 				errors.New("some other error"),
@@ -61,7 +61,7 @@ func TestIsErrorRetryable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "When wrapped aggregate has single generic error it should be retryable",
+			name:     "When wrapped aggregate has single generic error, it should be retryable",
 			err:      fmt.Errorf("operation failed: %w", utilerrors.NewAggregate([]error{errors.New("transient")})),
 			expected: true,
 		},

@@ -102,17 +102,17 @@ func TestReportWaitingInitialAvailabilityDuration(t *testing.T) {
 		expected    *dto.MetricFamily
 	}{
 		{
-			name:      "When cluster just got created, metric is reported with a value set to 0",
+			name:      "When cluster is just created, it should report metric value 0",
 			timestamp: now,
 			expected:  wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:      "When annotation is not set, metric reports the elapsed time since the cluster has been created",
+			name:      "When annotation is not set, it should report elapsed time since cluster creation",
 			timestamp: now.Add(5 * time.Minute),
 			expected:  wrapExpectedValueAsMetric(300),
 		},
 		{
-			name:      "When annotation is set, metric is not reported anymore",
+			name:      "When annotation is set it should not report the metric",
 			timestamp: now.Add(5 * time.Minute),
 			annotations: map[string]string{
 				HasBeenAvailableAnnotation: "true",
@@ -165,12 +165,12 @@ func TestReportInitialRollingOutDuration(t *testing.T) {
 		expected      *dto.MetricFamily
 	}{
 		{
-			name:      "When cluster just got created, metric is reported with a value set to 0",
+			name:      "When cluster is just created, it should report metric value 0",
 			timestamp: now,
 			expected:  wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:      "When cluster is not yet provisioned, metric reports the elapsed time since the cluster has been created",
+			name:      "When cluster is not yet provisioned, it should report elapsed time since creation",
 			timestamp: now.Add(30 * time.Minute),
 			updateHistory: []configv1.UpdateHistory{{
 				StartedTime: metav1.Time{Time: now.Add(5 * time.Minute)},
@@ -179,7 +179,7 @@ func TestReportInitialRollingOutDuration(t *testing.T) {
 			expected: wrapExpectedValueAsMetric(1800),
 		},
 		{
-			name:      "When cluster is provisioned, metric is not reported anymore",
+			name:      "When cluster is provisioned it should not report the metric",
 			timestamp: now.Add(30 * time.Minute),
 			updateHistory: []configv1.UpdateHistory{{
 				StartedTime:    metav1.Time{Time: now.Add(5 * time.Minute)},
@@ -188,7 +188,7 @@ func TestReportInitialRollingOutDuration(t *testing.T) {
 			}},
 		},
 		{
-			name:      "When cluster is upgrading, metric is not reported",
+			name:      "When cluster is upgrading it should not report the metric",
 			timestamp: now.Add(5*time.Hour + 30*time.Minute),
 			updateHistory: []configv1.UpdateHistory{
 				{
@@ -267,11 +267,11 @@ func TestReportUpgradingDuration(t *testing.T) {
 		expected      *dto.MetricFamily
 	}{
 		{
-			name:      "When cluster just got created, metric is not reported",
+			name:      "When cluster is just created it should not report the metric",
 			timestamp: now,
 		},
 		{
-			name:      "When cluster is not yet provisioned, metric is not reported",
+			name:      "When cluster is not yet provisioned it should not report the metric",
 			timestamp: now.Add(30 * time.Minute),
 			updateHistory: []configv1.UpdateHistory{{
 				StartedTime: metav1.Time{Time: now.Add(5 * time.Minute)},
@@ -279,7 +279,7 @@ func TestReportUpgradingDuration(t *testing.T) {
 			}},
 		},
 		{
-			name:      "When cluster is provisioned, metric is not reported",
+			name:      "When cluster is provisioned it should not report the metric",
 			timestamp: now.Add(30 * time.Minute),
 			updateHistory: []configv1.UpdateHistory{{
 				StartedTime:    metav1.Time{Time: now.Add(5 * time.Minute)},
@@ -288,7 +288,7 @@ func TestReportUpgradingDuration(t *testing.T) {
 			}},
 		},
 		{
-			name:      "When cluster is upgrading, metric reports the time since the beginning of the upgrade",
+			name:      "When cluster is upgrading, it should report the time since the upgrade began",
 			timestamp: now.Add(5*time.Hour + 30*time.Minute),
 			updateHistory: []configv1.UpdateHistory{
 				{
@@ -304,7 +304,7 @@ func TestReportUpgradingDuration(t *testing.T) {
 			expected: wrapExpectedValueAsMetric(1800, "1.0", "1.1"),
 		},
 		{
-			name:      "When cluster has upgraded, metric is not reported again",
+			name:      "When cluster has upgraded it should not report the metric",
 			timestamp: now.Add(5*time.Hour + 30*time.Minute),
 			updateHistory: []configv1.UpdateHistory{
 				{
@@ -320,7 +320,7 @@ func TestReportUpgradingDuration(t *testing.T) {
 			},
 		},
 		{
-			name:      "When cluster is upgrading again, metric reports the time since the beginning of the upgrade again",
+			name:      "When cluster is upgrading again, it should report the time since the upgrade began",
 			timestamp: now.Add(12*time.Hour + 20*time.Minute),
 			updateHistory: []configv1.UpdateHistory{
 				{
@@ -383,22 +383,22 @@ func TestReportLimitedSuportEnabled(t *testing.T) {
 		expected *dto.MetricFamily
 	}{
 		{
-			name:     "When limited support label is set to true, metric is reported as one",
+			name:     "When limited support label is set to true, it should report metric as one",
 			labels:   map[string]string{hyperv1.LimitedSupportLabel: "true"},
 			expected: wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:     "When limited support label is set to false, metric is reported as zero",
+			name:     "When limited support label is set to false, it should report metric as zero",
 			labels:   map[string]string{hyperv1.LimitedSupportLabel: "false"},
 			expected: wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:     "When limited support label is set to anything unsupported, metric is reported as zero",
+			name:     "When limited support label is set to anything unsupported, it should report metric as zero",
 			labels:   map[string]string{hyperv1.LimitedSupportLabel: "foo"},
 			expected: wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:     "When limited support label is not set, metric is reported as zero",
+			name:     "When limited support label is not set, it should report metric as zero",
 			labels:   map[string]string{},
 			expected: wrapExpectedValueAsMetric(0),
 		},
@@ -441,12 +441,12 @@ func TestReportSilenceAlerts(t *testing.T) {
 		expected *dto.MetricFamily
 	}{
 		{
-			name:     "When silenced alerts label is set, metric is reported as one",
+			name:     "When silenced alerts label is set, it should report metric as one",
 			labels:   map[string]string{hyperv1.SilenceClusterAlertsLabel: "true"},
 			expected: wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:     "When silenced alerts label is not set, metric is reported as zero",
+			name:     "When silenced alerts label is not set, it should report metric as zero",
 			labels:   map[string]string{},
 			expected: wrapExpectedValueAsMetric(0),
 		},
@@ -519,7 +519,7 @@ func TestReportProxy(t *testing.T) {
 		expected    *dto.MetricFamily
 	}{
 		{
-			name: "When proxy configuration is set, metric is reported with a value set to 1, same for the metric labels",
+			name: "When proxy configuration is set, it should report metric value 1 with matching labels",
 			clusterConf: hyperv1.ClusterConfiguration{
 				Proxy: &configv1.ProxySpec{
 					HTTPProxy:  "fakeProxyServer",
@@ -532,7 +532,7 @@ func TestReportProxy(t *testing.T) {
 			expected: wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:     "When Proxy configuration is not set, metric is reported with a value set to 0, metric labels are empty",
+			name:     "When proxy configuration is not set, it should report metric value 0 with empty labels",
 			expected: wrapExpectedValueAsMetric(0),
 		},
 	}
@@ -575,43 +575,43 @@ func TestReportInvalidAwsCreds(t *testing.T) {
 		expected                                *dto.MetricFamily
 	}{
 		{
-			name:                                    "When both conditions are true, metric is reported with a value set to 0 (valid)",
+			name:                                    "When both conditions are true, it should report metric value 0 as valid",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
 			expected:                                wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:                                    "When ValidOIDCConfigurationCondition status is false, metric is reported with a value set to 1 (invalid)",
+			name:                                    "When ValidOIDCConfigurationCondition status is false, it should report metric value 1 as invalid",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionFalse,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                                    "When ValidAWSIdentityProviderCondition status is false, metric is reported with a value set to 1 (invalid)",
+			name:                                    "When ValidAWSIdentityProviderCondition status is false, it should report metric value 1 as invalid",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionFalse,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                                    "When both conditions are false, metric is reported with a value set to 1 (invalid)",
+			name:                                    "When both conditions are false, it should report metric value 1 as invalid",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionFalse,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionFalse,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                                    "When ValidOIDCConfigurationCondition status is unknown, metric is reported with a value set to 2 (unknown)",
+			name:                                    "When ValidOIDCConfigurationCondition status is unknown, it should report metric value 2 as unknown",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionUnknown,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
 			expected:                                wrapExpectedValueAsMetric(2),
 		},
 		{
-			name:                                    "When ValidAWSIdentityProviderCondition status is unknown, metric is reported with a value set to 2 (unknown)",
+			name:                                    "When ValidAWSIdentityProviderCondition status is unknown, it should report metric value 2 as unknown",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionUnknown,
 			expected:                                wrapExpectedValueAsMetric(2),
 		},
 		{
-			name:                                    "When both conditions are unknown, metric is reported with a value set to 2 (unknown)",
+			name:                                    "When both conditions are unknown, it should report metric value 2 as unknown",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionUnknown,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionUnknown,
 			expected:                                wrapExpectedValueAsMetric(2),
@@ -664,18 +664,18 @@ func TestReportGuestCloudResourcesDeletionDuration(t *testing.T) {
 		expected   *dto.MetricFamily
 	}{
 		{
-			name:      "When cluster is not yet deleting, metric is not reported",
+			name:      "When cluster is not yet deleting it should not report the metric",
 			timestamp: now,
 		},
 		{
-			name:       "When cluster just started to be deleted, metric is reported with a value set to 0",
+			name:       "When cluster just started to be deleted, it should report metric value 0",
 			timestamp:  now,
 			isDeleting: true,
 			conditions: []metav1.Condition{},
 			expected:   wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:       "When destroyed condition is false, metric reports the elapsed time since the beginning of the delete",
+			name:       "When destroyed condition is false, it should report elapsed time since delete began",
 			timestamp:  now.Add(5 * time.Minute),
 			isDeleting: true,
 			conditions: []metav1.Condition{
@@ -688,7 +688,7 @@ func TestReportGuestCloudResourcesDeletionDuration(t *testing.T) {
 			expected: wrapExpectedValueAsMetric(300),
 		},
 		{
-			name:       "When destroyed condition is true, metric is not reported anymore",
+			name:       "When destroyed condition is true it should not report the metric",
 			timestamp:  now.Add(5 * time.Minute),
 			isDeleting: true,
 			conditions: []metav1.Condition{
@@ -749,23 +749,23 @@ func TestReportDeletingDuration(t *testing.T) {
 		expected   *dto.MetricFamily
 	}{
 		{
-			name:      "When cluster is not yet deleting, metric is not reported",
+			name:      "When cluster is not yet deleting it should not report the metric",
 			timestamp: now,
 		},
 		{
-			name:       "When cluster just started to be deleted, metric is reported with a value set to 0",
+			name:       "When cluster just started to be deleted, it should report metric value 0",
 			timestamp:  now,
 			isDeleting: true,
 			expected:   wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:       "When cluster is not yet deleted, metric reports the elapsed time since the beginning of the delete",
+			name:       "When cluster is not yet deleted, it should report elapsed time since delete began",
 			timestamp:  now.Add(10 * time.Minute),
 			isDeleting: true,
 			expected:   wrapExpectedValueAsMetric(600),
 		},
 		{
-			name:      "When cluster is deleted, metric is not reported anymore",
+			name:      "When cluster is deleted it should not report the metric",
 			timestamp: now,
 			isDeleted: true,
 		},
@@ -831,11 +831,11 @@ func TestReportEtcdManualInterventionRequired(t *testing.T) {
 		expected   *dto.MetricFamily
 	}{
 		{
-			name:      "When cluster does not have the required tags, metric is not reported",
+			name:      "When cluster does not have the required tags it should not report the metric",
 			timestamp: now,
 		},
 		{
-			name:      "When cluster has the required tags but etcd recovery is not active, metric is not reported",
+			name:      "When cluster has the required tags but etcd recovery is not active it should not report the metric",
 			timestamp: now,
 			tags: map[string]string{
 				"red-hat-clustertype": "rosa",
@@ -848,7 +848,7 @@ func TestReportEtcdManualInterventionRequired(t *testing.T) {
 			},
 		},
 		{
-			name:      "When cluster has the required tags and etcd recovery job failed, metric is reported",
+			name:      "When cluster has the required tags and etcd recovery job failed, it should report the metric",
 			timestamp: now,
 			tags: map[string]string{
 				"red-hat-clustertype": "rosa",
@@ -926,20 +926,20 @@ func TestProxyCAValidity(t *testing.T) {
 		expected      *dto.MetricFamily
 	}{
 		{
-			name:          "When cluster is not setting a CA bundle, the validity it not reported",
+			name:          "When cluster is not setting a CA bundle it should not report validity",
 			timestamp:     now,
 			caCertificate: "",
 			caConfigMap:   "",
 		},
 		{
-			name:          "When the configured certificates are expired, the CA is invalid",
+			name:          "When the configured certificates are expired, it should report the CA as invalid",
 			timestamp:     now,
 			caCertificate: invalidCAPEM,
 			caConfigMap:   "my-config-map",
 			expected:      wrapExpectedValueAsMetric(0),
 		},
 		{
-			name:          "When the configured certificates are valid, the CA is valid",
+			name:          "When the configured certificates are valid, it should report the CA as valid",
 			timestamp:     now,
 			caCertificate: validCAPEM,
 			caConfigMap:   "my-config-map",
@@ -1026,20 +1026,20 @@ func TestProxyCAExpiry(t *testing.T) {
 		expected      *dto.MetricFamily
 	}{
 		{
-			name:          "When cluster is not setting a CA bundle, the validity it not reported",
+			name:          "When cluster is not setting a CA bundle it should not report validity",
 			timestamp:     now,
 			caCertificate: "",
 			caConfigMap:   "",
 		},
 		{
-			name:          "When the configured certificates are expired, the CA is invalid",
+			name:          "When the configured certificates are expired, it should report the CA as invalid",
 			timestamp:     now,
 			caCertificate: invalidCAPEM,
 			caConfigMap:   "my-config-map",
 			expected:      wrapExpectedValueAsMetric(float64(invalidCA.NotAfter.UTC().Unix())),
 		},
 		{
-			name:          "When the configured certificates are valid, the CA is valid",
+			name:          "When the configured certificates are valid, it should report the CA as valid",
 			timestamp:     now,
 			caCertificate: validCAPEM,
 			caConfigMap:   "my-config-map",
@@ -1117,11 +1117,11 @@ func TestReportClusterSizeOverride(t *testing.T) {
 		expected    *dto.MetricFamily
 	}{
 		{
-			name:      "When cluster does not have the cluster override annotation, metric is not reported",
+			name:      "When cluster does not have the cluster override annotation it should not report the metric",
 			timestamp: now,
 		},
 		{
-			name:      "When cluster has the cluster size annotation with a large value, metric is reported",
+			name:      "When cluster has the cluster size annotation with a large value, it should report the metric",
 			timestamp: now,
 			tags: map[string]string{
 				"red-hat-clustertype": "rosa",
@@ -1132,7 +1132,7 @@ func TestReportClusterSizeOverride(t *testing.T) {
 			expected: wrapExpectedValueAsMetric("large", 1.0),
 		},
 		{
-			name:      "When cluster has the cluster size annotation with a small value, metric is reported",
+			name:      "When cluster has the cluster size annotation with a small value, it should report the metric",
 			timestamp: now,
 			tags: map[string]string{
 				"red-hat-clustertype": "rosa",
@@ -1192,20 +1192,20 @@ func TestHostedClusterAzureInfo(t *testing.T) {
 		expected           *dto.MetricFamily
 	}{
 		{
-			name:               "no Azure Platform, no metric",
+			name:               "When platform is not Azure it should not emit a metric",
 			timestamp:          now,
 			platformType:       hyperv1.IBMCloudPlatform,
 			expectedMetricName: "no metric expected",
 		},
 		{
-			name:               "Azure platform but no data, no metric",
+			name:               "When Azure platform has no spec data it should not emit a metric",
 			timestamp:          now,
 			platformType:       hyperv1.AzurePlatform,
 			azureSpec:          nil,
 			expectedMetricName: "no metric expected",
 		},
 		{
-			name:         "Azure, simple unmanaged",
+			name:         "When Azure platform is unmanaged, it should emit the unmanaged metric",
 			timestamp:    now,
 			platformType: hyperv1.AzurePlatform,
 			azureSpec: &hyperv1.AzurePlatformSpec{
@@ -1234,7 +1234,7 @@ func TestHostedClusterAzureInfo(t *testing.T) {
 			},
 		},
 		{
-			name:         "Azure, simple managed",
+			name:         "When Azure platform is managed, it should emit the managed metric",
 			timestamp:    now,
 			platformType: hyperv1.AzurePlatform,
 			azureSpec: &hyperv1.AzurePlatformSpec{
@@ -1308,7 +1308,7 @@ func TestAcrPullIdentityConfigured(t *testing.T) {
 			expectedMetricName: AcrPullIdentityConfiguredMetricName,
 		},
 		{
-			name:         "When Azure has no containerRegistry configured it should emit 0",
+			name:         "When Azure has no containerRegistry configured, it should emit 0",
 			platformType: hyperv1.AzurePlatform,
 			azureSpec: &hyperv1.AzurePlatformSpec{
 				Cloud:             "AzureCloud",
@@ -1332,7 +1332,7 @@ func TestAcrPullIdentityConfigured(t *testing.T) {
 			},
 		},
 		{
-			name:         "When Azure has a containerRegistry configured it should emit 1",
+			name:         "When Azure has a containerRegistry configured, it should emit 1",
 			platformType: hyperv1.AzurePlatform,
 			azureSpec: &hyperv1.AzurePlatformSpec{
 				Cloud:             "AzureCloud",
@@ -1395,7 +1395,7 @@ func TestReportTransitionDurationForAWSEndpointConditions(t *testing.T) {
 		expectedConditions []string
 	}{
 		{
-			name:               "When no AWS endpoint conditions are set, no transition duration is recorded",
+			name:               "When no AWS endpoint conditions are set it should not record transition duration",
 			conditions:         nil,
 			expectedConditions: nil,
 		},
@@ -1422,7 +1422,7 @@ func TestReportTransitionDurationForAWSEndpointConditions(t *testing.T) {
 			expectedConditions: []string{string(hyperv1.AWSEndpointAvailable)},
 		},
 		{
-			name: "When both AWS endpoint conditions are true, both should be observed",
+			name: "When both AWS endpoint conditions are true, it should observe both",
 			conditions: []metav1.Condition{
 				{
 					Type:               string(hyperv1.AWSEndpointServiceAvailable),

@@ -28,7 +28,7 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 		mutateFN func(crclient.Object) controllerutil.MutateFn
 	}{
 		{
-			name: "No annotations",
+			name: "When object has no annotations, it should add the hosted cluster annotation",
 			obj: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "ConfigMap",
@@ -53,7 +53,7 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 			},
 		},
 		{
-			name: "Existing annotations are kept",
+			name: "When object has existing annotations, it should keep them and add the hosted cluster annotation",
 			obj: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "ConfigMap",
@@ -84,7 +84,7 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 			},
 		},
 		{
-			name: "Do not annotate cluster scoped resources",
+			name: "When object is cluster scoped, it should not add annotations",
 			obj: &corev1.Namespace{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Namespace",

@@ -27,17 +27,17 @@ func TestControllerName(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "private-router service",
+			name:     "When input is private-router, it should return private-router-observer",
 			input:    "private-router",
 			expected: "private-router-observer",
 		},
 		{
-			name:     "custom service name",
+			name:     "When input is custom service name, it should return custom name with observer suffix",
 			input:    "my-service",
 			expected: "my-service-observer",
 		},
 		{
-			name:     "empty service name",
+			name:     "When input is empty, it should return observer suffix only",
 			input:    "",
 			expected: "-observer",
 		},
@@ -59,7 +59,7 @@ func TestGetConsumerAcceptList(t *testing.T) {
 		expected []string
 	}{
 		{
-			name: "valid GCP platform with project",
+			name: "When GCP platform has valid project, it should return project in list",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -73,7 +73,7 @@ func TestGetConsumerAcceptList(t *testing.T) {
 			expected: []string{"my-gcp-project"},
 		},
 		{
-			name: "project with numeric project ID",
+			name: "When GCP platform has numeric project ID, it should return it in list",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -109,7 +109,7 @@ func TestReconcileIntegration(t *testing.T) {
 		expectGCPPSCCreated bool
 	}{
 		{
-			name:        "When reconciling target service it should create GCPPrivateServiceConnect CR",
+			name:        "When reconciling target service, it should create GCPPrivateServiceConnect CR",
 			serviceName: "private-router",
 			requestName: "private-router",
 			service: &corev1.Service{
@@ -154,7 +154,7 @@ func TestReconcileIntegration(t *testing.T) {
 			expectGCPPSCCreated: true,
 		},
 		{
-			name:        "When reconciling non-target service it should skip processing",
+			name:        "When reconciling non-target service, it should skip processing",
 			serviceName: "private-router",
 			requestName: "other-service",
 			service: &corev1.Service{
@@ -178,7 +178,7 @@ func TestReconcileIntegration(t *testing.T) {
 			expectGCPPSCCreated: false,
 		},
 		{
-			name:        "When service has no LoadBalancer IP it should skip processing",
+			name:        "When service has no LoadBalancer IP, it should skip processing",
 			serviceName: "private-router",
 			requestName: "private-router",
 			service: &corev1.Service{
@@ -200,7 +200,7 @@ func TestReconcileIntegration(t *testing.T) {
 			expectGCPPSCCreated: false,
 		},
 		{
-			name:        "When service is External LoadBalancer it should skip processing",
+			name:        "When service is External LoadBalancer, it should skip processing",
 			serviceName: "private-router",
 			requestName: "private-router",
 			service: &corev1.Service{

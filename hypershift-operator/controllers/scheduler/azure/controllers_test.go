@@ -93,14 +93,14 @@ func TestReconcile(t *testing.T) {
 		expectAnnotations map[string]string
 	}{
 		{
-			name:          "hosted cluster not found",
+			name:          "When hosted cluster is not found, it should succeed without error",
 			hc:            nil,
 			sizingConfig:  sizingConfig,
 			expectError:   false,
 			expectRequeue: false,
 		},
 		{
-			name: "hosted cluster paused",
+			name: "When hosted cluster is paused, it should requeue",
 			hc: hostedcluster(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.PausedUntil = ptr.To(time.Now().Add(time.Hour).Format(time.RFC3339Nano))
 			}),
@@ -109,7 +109,7 @@ func TestReconcile(t *testing.T) {
 			expectRequeue: true,
 		},
 		{
-			name: "hosted cluster without size label",
+			name: "When hosted cluster has no size label, it should succeed without requeue",
 			hc: hostedcluster(func(hc *hyperv1.HostedCluster) {
 				delete(hc.Labels, hyperv1.HostedClusterSizeLabel)
 			}),
@@ -118,7 +118,7 @@ func TestReconcile(t *testing.T) {
 			expectRequeue: false,
 		},
 		{
-			name: "invalid cluster sizing configuration",
+			name: "When cluster sizing configuration is invalid, it should succeed without requeue",
 			hc:   hostedcluster(),
 			sizingConfig: &schedulingv1alpha1.ClusterSizingConfiguration{
 				ObjectMeta: metav1.ObjectMeta{
@@ -137,7 +137,7 @@ func TestReconcile(t *testing.T) {
 			expectRequeue: false,
 		},
 		{
-			name: "size configuration not found",
+			name: "When size configuration is not found, it should return error",
 			hc: hostedcluster(func(hc *hyperv1.HostedCluster) {
 				hc.Labels[hyperv1.HostedClusterSizeLabel] = "extra-large"
 			}),
@@ -147,7 +147,7 @@ func TestReconcile(t *testing.T) {
 			expectRequeue: false,
 		},
 		{
-			name:          "valid hosted cluster",
+			name:          "When hosted cluster is valid, it should set scheduling annotations",
 			hc:            hostedcluster(),
 			sizingConfig:  sizingConfig,
 			expectError:   false,

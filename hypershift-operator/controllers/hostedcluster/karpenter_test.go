@@ -192,25 +192,25 @@ func TestIsKASAvailable(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:     "deployment missing",
+			name:     "When deployment is missing, it should return false",
 			expected: false,
 		},
 		{
-			name: "deployment exists, Available=True",
+			name: "When deployment exists with Available=True, it should return true",
 			objects: []crclient.Object{
 				kasDeployment(cpNamespace, true),
 			},
 			expected: true,
 		},
 		{
-			name: "deployment exists, Available=False",
+			name: "When deployment exists with Available=False, it should return false",
 			objects: []crclient.Object{
 				kasDeployment(cpNamespace, false),
 			},
 			expected: false,
 		},
 		{
-			name: "deployment exists, no Available condition",
+			name: "When deployment exists with no Available condition, it should return false",
 			objects: []crclient.Object{
 				&appsv1.Deployment{
 					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: cpNamespace},
@@ -303,7 +303,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 		want           metav1.Condition
 		wantProgessing bool
 	}{
-		"When karpenter is enabled and components not yet created it should report progressing": {
+		"When karpenter is enabled and components not yet created, it should report progressing": {
 			autoNode:       karpenterEnabledAutoNode,
 			components:     nil,
 			wantProgessing: true,
@@ -313,7 +313,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AutoNodeProgressingReason,
 			},
 		},
-		"When karpenter is enabled and only one component exists it should report progressing": {
+		"When karpenter is enabled and only one component exists, it should report progressing": {
 			autoNode: karpenterEnabledAutoNode,
 			components: []hyperv1.ControlPlaneComponent{
 				{
@@ -328,7 +328,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AutoNodeProgressingReason,
 			},
 		},
-		"When karpenter is enabled and one component is not rolled out it should report progressing": {
+		"When karpenter is enabled and one component is not rolled out, it should report progressing": {
 			autoNode: karpenterEnabledAutoNode,
 			components: []hyperv1.ControlPlaneComponent{
 				{
@@ -347,7 +347,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AutoNodeProgressingReason,
 			},
 		},
-		"When karpenter is enabled and both components are rolled out it should report ready": {
+		"When karpenter is enabled and both components are rolled out, it should report ready": {
 			autoNode: karpenterEnabledAutoNode,
 			components: []hyperv1.ControlPlaneComponent{
 				{
@@ -365,7 +365,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AsExpectedReason,
 			},
 		},
-		"When karpenter is disabled and deployments are still present it should report progressing": {
+		"When karpenter is disabled and deployments are still present, it should report progressing": {
 			autoNode: hyperv1.AutoNode{},
 			deployments: []appsv1.Deployment{
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
@@ -378,7 +378,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AutoNodeProgressingReason,
 			},
 		},
-		"When karpenter is disabled and only the karpenter deployment remains it should report progressing": {
+		"When karpenter is disabled and only the karpenter deployment remains, it should report progressing": {
 			autoNode: hyperv1.AutoNode{},
 			deployments: []appsv1.Deployment{
 				{ObjectMeta: metav1.ObjectMeta{Name: karpenterv2.ComponentName, Namespace: hcpNamespace}},
@@ -390,7 +390,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AutoNodeProgressingReason,
 			},
 		},
-		"When karpenter is disabled and CPC CRs remain but deployments are gone it should report not configured": {
+		"When karpenter is disabled and CPC CRs remain but deployments are gone, it should report not configured": {
 			// CPC CRs are deleted before pods terminate; once Deployments are gone teardown is complete.
 			autoNode: hyperv1.AutoNode{},
 			components: []hyperv1.ControlPlaneComponent{
@@ -406,7 +406,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AutoNodeNotConfiguredReason,
 			},
 		},
-		"When karpenter is disabled and no deployments are present it should report not configured": {
+		"When karpenter is disabled and no deployments are present, it should report not configured": {
 			autoNode: hyperv1.AutoNode{},
 			want: metav1.Condition{
 				Type:   string(hyperv1.AutoNodeEnabled),

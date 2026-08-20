@@ -38,7 +38,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 		wantErr                      bool
 	}{
 		{
-			name: "CAPO provisioned network and subnet",
+			name: "When using CAPO provisioned network and subnet, it should reconcile the OpenStack cluster spec",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "cluster-123",
@@ -88,7 +88,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "User provided network and subnet by ID on hosted cluster",
+			name: "When user provides network and subnet by ID, it should reconcile the OpenStack cluster spec",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "cluster-123",
@@ -134,7 +134,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "User provided network and subnet by tag on hosted cluster",
+			name: "When user provides network and subnet by tag, it should reconcile the OpenStack cluster spec",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "cluster-123",
@@ -193,7 +193,7 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Missing machine networks",
+			name: "When machine networks are missing, it should return an error",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -353,7 +353,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 		envVars        map[string]string
 	}{
 		{
-			name: "deployment spec on 4.18.0",
+			name: "When payload version is 4.18.0 it should return the expected deployment spec",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-cluster",
@@ -373,7 +373,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 			envVars:        map[string]string{},
 		},
 		{
-			name: "deployment spec on 4.19.0 (with ORC)",
+			name: "When payload version is 4.19.0 it should return the expected deployment spec with ORC",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-cluster",
