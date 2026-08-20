@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -12,11 +13,13 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func hostedClusterWithDefaultCert(name string) *hyperv1.HostedCluster {
@@ -39,10 +42,12 @@ func hostedClusterWithDefaultCert(name string) *hyperv1.HostedCluster {
 
 func TestReconcileIngressDefaultCertSync(t *testing.T) {
 	tests := []struct {
-		name string
-		// mutate allows a test to tweak the base HostedCluster (e.g. pre-seed a condition).
+		name           string
 		hcluster       *hyperv1.HostedCluster
 		existingSecret *corev1.Secret
+		// failGetSecret makes the source secret Get return a non-NotFound error to
+		// exercise the transient-failure path.
+		failGetSecret bool
 		// expectError is only for unexpected/transient failures that should retry.
 		expectError bool
 		// expectSync asserts the destination secret was written.
@@ -133,6 +138,12 @@ func TestReconcileIngressDefaultCertSync(t *testing.T) {
 			expectReason:    hyperv1.SecretNotFoundReason,
 		},
 		{
+			name:          "When getting the source secret fails unexpectedly, it should return an error",
+			hcluster:      hostedClusterWithDefaultCert("boom-cert"),
+			failGetSecret: true,
+			expectError:   true,
+		},
+		{
 			name: "When DefaultCertificate is cleared, a stale condition should be removed",
 			hcluster: func() *hyperv1.HostedCluster {
 				hc := &hyperv1.HostedCluster{
@@ -162,11 +173,22 @@ func TestReconcileIngressDefaultCertSync(t *testing.T) {
 				objs = append(objs, tt.existingSecret)
 			}
 
-			fakeClient := fake.NewClientBuilder().
+			builder := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(objs...).
-				WithStatusSubresource(tt.hcluster).
-				Build()
+				WithStatusSubresource(tt.hcluster)
+			if tt.failGetSecret {
+				secretName := tt.hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if _, ok := obj.(*corev1.Secret); ok && key.Name == secretName {
+							return apierrors.NewInternalError(fmt.Errorf("simulated get failure"))
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+				})
+			}
+			fakeClient := builder.Build()
 
 			r := &HostedClusterReconciler{
 				Client: fakeClient,

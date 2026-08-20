@@ -67,6 +67,7 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -2104,31 +2105,22 @@ func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
 		len(hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name) == 0 {
 		// The feature is not in use; drop any stale condition left over from a
 		// previous configuration.
-		if meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced)) {
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				return fmt.Errorf("failed to update status: %w", err)
-			}
-		}
-		return nil
+		return statuspatching.PatchStatus(ctx, r.Client, hcluster, func() error {
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
+			return nil
+		})
 	}
 
-	// setSyncedCondition records the outcome on the HostedCluster status. It only
-	// returns an error if persisting the status fails.
+	// setSyncedCondition records the outcome on the HostedCluster status using an
+	// optimistic-lock patch. It only returns an error if persisting the status fails.
 	setSyncedCondition := func(status metav1.ConditionStatus, reason, message string) error {
-		if !meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		return statuspatching.PatchStatusCondition(ctx, r.Client, hcluster, &hcluster.Status.Conditions, metav1.Condition{
 			Type:               string(hyperv1.IngressDefaultCertificateSynced),
 			Status:             status,
 			Reason:             reason,
 			Message:            message,
 			ObservedGeneration: hcluster.Generation,
-			LastTransitionTime: r.now(),
-		}) {
-			return nil
-		}
-		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-			return fmt.Errorf("failed to update status: %w", err)
-		}
-		return nil
+		})
 	}
 
 	sourceSecretName := hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name
@@ -2142,6 +2134,13 @@ func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
 		return fmt.Errorf("failed to get ingress default certificate secret %s: %w", sourceSecretName, err)
 	}
 
+	// Annotate the referenced secret before validating it so that a later
+	// correction to a malformed secret (or any content change) enqueues the
+	// HostedCluster for reconciliation via the secret watch.
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+
 	// Validate the source before touching the destination so a malformed secret
 	// leaves the previously synced certificate in place.
 	for _, key := range []string{corev1.TLSCertKey, corev1.TLSPrivateKeyKey} {
@@ -2150,10 +2149,6 @@ func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
 			return setSyncedCondition(metav1.ConditionFalse, hyperv1.IngressDefaultCertificateInvalidReason,
 				fmt.Sprintf("ingress default certificate secret %q must contain a %s key", sourceSecretName, key))
 		}
-	}
-
-	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
-		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
 
 	dest := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)

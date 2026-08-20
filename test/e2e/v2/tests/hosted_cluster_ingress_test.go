@@ -29,6 +29,7 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -41,10 +42,6 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// observedDefaultIngressCertCM is the ConfigMap in the control plane namespace
-// where the ManagedCA observer records the observed default ingress certificate CA.
-const observedDefaultIngressCertCM = "observed-default-ingress-cert"
 
 // canaryURL returns the health-check URL for the openshift-ingress canary route
 // on the given ingress domain.
@@ -123,12 +120,19 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 		var hcClient crclient.Client
 		var ingressDomain string
 		var certPEM, keyPEM []byte
+		var originalDefaultCert hyperv1.IngressDefaultCertificateReference
 
 		BeforeAll(func() {
 			tc = getTestCtx()
 
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+			// Capture the original defaultCertificate so AfterAll can restore it
+			// rather than unconditionally clearing a value the cluster arrived with.
+			if hc.Spec.OperatorConfiguration != nil && hc.Spec.OperatorConfiguration.IngressOperator != nil {
+				originalDefaultCert = hc.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate
+			}
 
 			hcClient, err = tc.GetHostedClusterClient(hc)
 			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
@@ -164,18 +168,26 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			if tc == nil {
 				return
 			}
-			By("Removing defaultCertificate from HostedCluster")
+			By("Restoring the original defaultCertificate on the HostedCluster")
 			hc, err := tc.GetHostedCluster()
 			if err != nil {
 				GinkgoWriter.Printf("WARNING: failed to get HostedCluster for cleanup: %v\n", err)
 			} else {
 				err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
-					if obj.Spec.OperatorConfiguration != nil && obj.Spec.OperatorConfiguration.IngressOperator != nil {
+					if originalDefaultCert.Name != "" {
+						if obj.Spec.OperatorConfiguration == nil {
+							obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+						}
+						if obj.Spec.OperatorConfiguration.IngressOperator == nil {
+							obj.Spec.OperatorConfiguration.IngressOperator = &hyperv1.IngressOperatorSpec{}
+						}
+						obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = originalDefaultCert
+					} else if obj.Spec.OperatorConfiguration != nil && obj.Spec.OperatorConfiguration.IngressOperator != nil {
 						obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{}
 					}
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
-					GinkgoWriter.Printf("WARNING: failed to clear defaultCertificate: %v\n", err)
+					GinkgoWriter.Printf("WARNING: failed to restore defaultCertificate: %v\n", err)
 				}
 			}
 
@@ -262,11 +274,8 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 
 		It("should populate the observed-default-ingress-cert ConfigMap in the control plane namespace with the custom cert's CA", func() {
 			Eventually(func(g Gomega) {
-				cm := &corev1.ConfigMap{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-					Namespace: tc.ControlPlaneNamespace,
-					Name:      observedDefaultIngressCertCM,
-				}, cm)).To(Succeed(), "observed-default-ingress-cert ConfigMap should exist in control plane namespace")
+				cm := cpomanifests.IngressObservedDefaultIngressCertCA(tc.ControlPlaneNamespace)
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(cm), cm)).To(Succeed(), "observed-default-ingress-cert ConfigMap should exist in control plane namespace")
 
 				caData, ok := cm.Data["ca.crt"]
 				g.Expect(ok).To(BeTrue(), "observed-default-ingress-cert should have ca.crt key")
@@ -282,11 +291,8 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Reading the observed CA from the management cluster")
 			var caBundle []byte
 			Eventually(func(g Gomega) {
-				cm := &corev1.ConfigMap{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-					Namespace: tc.ControlPlaneNamespace,
-					Name:      observedDefaultIngressCertCM,
-				}, cm)).To(Succeed())
+				cm := cpomanifests.IngressObservedDefaultIngressCertCA(tc.ControlPlaneNamespace)
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(cm), cm)).To(Succeed())
 				caData, ok := cm.Data["ca.crt"]
 				g.Expect(ok).To(BeTrue())
 				caBundle = []byte(caData)
@@ -348,11 +354,8 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Verifying the observed CA in the management cluster updates for the rotated cert")
 			var rotatedCABundle []byte
 			Eventually(func(g Gomega) {
-				cm := &corev1.ConfigMap{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-					Namespace: tc.ControlPlaneNamespace,
-					Name:      observedDefaultIngressCertCM,
-				}, cm)).To(Succeed())
+				cm := cpomanifests.IngressObservedDefaultIngressCertCA(tc.ControlPlaneNamespace)
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(cm), cm)).To(Succeed())
 				caData, ok := cm.Data["ca.crt"]
 				g.Expect(ok).To(BeTrue(), "observed-default-ingress-cert should have ca.crt key")
 				g.Expect(caData).NotTo(BeEmpty())
@@ -375,6 +378,66 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 				defer resp.Body.Close()
 				g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+
+		It("should report InvalidCertificateSecret and preserve the served certificate when the source secret is missing tls.key", func() {
+			const badSecretName = "e2e-custom-ingress-cert-invalid"
+			ref := manifests.IngressDefaultIngressControllerCert()
+
+			By("Capturing the certificate currently served in the hosted cluster")
+			var servedCert []byte
+			Eventually(func(g Gomega) {
+				hostedClusterSecret := &corev1.Secret{}
+				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, hostedClusterSecret)).To(Succeed())
+				g.Expect(hostedClusterSecret.Data[corev1.TLSCertKey]).NotTo(BeEmpty())
+				servedCert = append([]byte(nil), hostedClusterSecret.Data[corev1.TLSCertKey]...)
+			}, 2*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("Creating a malformed Opaque source secret that is missing tls.key")
+			badSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: badSecretName, Namespace: tc.ClusterNamespace},
+				Type:       corev1.SecretTypeOpaque,
+				Data:       map[string][]byte{corev1.TLSCertKey: certPEM},
+			}
+			Expect(tc.MgmtClient.Create(tc.Context, badSecret)).To(Succeed(), "failed to create malformed source secret")
+			DeferCleanup(func() {
+				if err := tc.MgmtClient.Delete(tc.Context, badSecret); err != nil && !apierrors.IsNotFound(err) {
+					GinkgoWriter.Printf("WARNING: failed to delete malformed source secret: %v\n", err)
+				}
+			})
+
+			By("Pointing defaultCertificate at the malformed secret")
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: badSecretName}
+			})).To(Succeed())
+
+			By("Verifying the HostedCluster reports IngressDefaultCertificateSynced=False with reason InvalidCertificateSecret")
+			Eventually(func(g Gomega) {
+				hc, err := tc.GetHostedCluster()
+				g.Expect(err).NotTo(HaveOccurred())
+				cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
+				g.Expect(cond).NotTo(BeNil(), "IngressDefaultCertificateSynced condition should be set")
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse),
+					fmt.Sprintf("expected IngressDefaultCertificateSynced=False, got %s (%s: %s)", cond.Status, cond.Reason, cond.Message))
+				g.Expect(cond.Reason).To(Equal(hyperv1.IngressDefaultCertificateInvalidReason))
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("Verifying the previously served certificate is preserved while the source is invalid")
+			Consistently(func(g Gomega) {
+				hostedClusterSecret := &corev1.Secret{}
+				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Namespace: ref.Namespace, Name: ref.Name}, hostedClusterSecret)).To(Succeed())
+				g.Expect(bytes.Equal(hostedClusterSecret.Data[corev1.TLSCertKey], servedCert)).To(BeTrue(),
+					"the previously served certificate should remain in place while the source secret is invalid")
+			}, 1*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("Restoring defaultCertificate to the valid source secret")
+			hc, err = tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: certSecretName}
+			})).To(Succeed())
 		})
 
 		It("should preserve the last synced certificate and report SecretNotFound when the source secret is deleted", func() {

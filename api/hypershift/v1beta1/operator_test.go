@@ -3,6 +3,8 @@ package v1beta1
 import (
 	"encoding/json"
 	"testing"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
 // ingressOperatorSpecNMinus1 represents the previous version of IngressOperatorSpec
@@ -34,6 +36,14 @@ func TestIngressOperatorSpecSerializationCompatibility(t *testing.T) {
 			expectedJSON:  `{"defaultCertificate":{"name":"my-cert"}}`,
 			nMinus1Result: ingressOperatorSpecNMinus1{},
 		},
+		{
+			name:         "When N-1 data carries EndpointPublishingStrategy it should survive the round-trip into N",
+			current:      IngressOperatorSpec{},
+			expectedJSON: `{}`,
+			nMinus1Result: ingressOperatorSpecNMinus1{
+				EndpointPublishingStrategy: json.RawMessage(`{"type":"LoadBalancerService"}`),
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -63,6 +73,18 @@ func TestIngressOperatorSpecSerializationCompatibility(t *testing.T) {
 			}
 			if roundTrip.DefaultCertificate.Name != "" {
 				t.Errorf("expected DefaultCertificate to be zero after N-1 round-trip, got %+v", roundTrip.DefaultCertificate)
+			}
+
+			// Sibling fields written by N-1 must survive into N unchanged; otherwise
+			// the round-trip would silently drop data the enhancement requires to be
+			// preserved.
+			if len(tt.nMinus1Result.EndpointPublishingStrategy) > 0 {
+				if roundTrip.EndpointPublishingStrategy == nil {
+					t.Errorf("expected EndpointPublishingStrategy to survive N-1 -> N round-trip, got nil")
+				} else if roundTrip.EndpointPublishingStrategy.Type != operatorv1.LoadBalancerServiceStrategyType {
+					t.Errorf("expected EndpointPublishingStrategy.Type %q to survive N-1 -> N round-trip, got %q",
+						operatorv1.LoadBalancerServiceStrategyType, roundTrip.EndpointPublishingStrategy.Type)
+				}
 			}
 		})
 	}

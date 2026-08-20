@@ -318,7 +318,7 @@ func TestNewIngressParams(t *testing.T) {
 			},
 		},
 		{
-			name: "DefaultCertificate set via OperatorConfiguration",
+			name: "When DefaultCertificate is set via OperatorConfiguration, it should propagate it to ingress parameters",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
 					Spec: hyperv1.HostedControlPlaneSpec{
