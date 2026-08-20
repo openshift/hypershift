@@ -2,6 +2,7 @@ package v1beta1
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"k8s.io/utils/ptr"
@@ -89,6 +90,208 @@ func TestNodePoolAutoScalingSerializationCompatibility(t *testing.T) {
 			}
 			if ptr.Deref(roundTripped.Min, -1) != tt.nMinus1Result.Min {
 				t.Errorf("Min mismatch after N-1 round-trip: got %v, want %d", roundTripped.Min, tt.nMinus1Result.Min)
+			}
+		})
+	}
+}
+
+// awsResourceTagNMinus1 represents the previous version of AWSResourceTag
+// (Key + Value only, no OverridePolicy). This is the N-1 fixture for both
+// the deprecated AWSResourceTag and the new per-API types.
+type awsResourceTagNMinus1 struct {
+	// key is the tag key.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	Key string `json:"key,omitempty"`
+	// value is the tag value.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Value string `json:"value,omitempty"`
+}
+
+func TestAWSClusterResourceTagSerializationCompatibility(t *testing.T) {
+	tests := []struct {
+		name          string
+		current       AWSClusterResourceTag
+		expectedJSON  string
+		nMinus1Result awsResourceTagNMinus1
+	}{
+		{
+			name:          "When all fields are zero-value it should round-trip as empty object",
+			current:       AWSClusterResourceTag{},
+			expectedJSON:  `{}`,
+			nMinus1Result: awsResourceTagNMinus1{},
+		},
+		{
+			name:          "When overridePolicy is omitted it should omit the field",
+			current:       AWSClusterResourceTag{Key: "env", Value: "prod"},
+			expectedJSON:  `{"key":"env","value":"prod"}`,
+			nMinus1Result: awsResourceTagNMinus1{Key: "env", Value: "prod"},
+		},
+		{
+			name:          "When overridePolicy is Allow it should include the field",
+			current:       AWSClusterResourceTag{Key: "env", Value: "prod", OverridePolicy: AWSResourceTagOverridePolicyAllow},
+			expectedJSON:  `{"key":"env","value":"prod","overridePolicy":"Allow"}`,
+			nMinus1Result: awsResourceTagNMinus1{Key: "env", Value: "prod"},
+		},
+		{
+			name:          "When overridePolicy is Deny it should include the field",
+			current:       AWSClusterResourceTag{Key: "env", Value: "prod", OverridePolicy: AWSResourceTagOverridePolicyDeny},
+			expectedJSON:  `{"key":"env","value":"prod","overridePolicy":"Deny"}`,
+			nMinus1Result: awsResourceTagNMinus1{Key: "env", Value: "prod"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.current)
+			if err != nil {
+				t.Fatalf("failed to marshal current struct: %v", err)
+			}
+			if string(data) != tt.expectedJSON {
+				t.Errorf("unexpected JSON output: got %s, want %s", string(data), tt.expectedJSON)
+			}
+
+			var nMinus1 awsResourceTagNMinus1
+			if err := json.Unmarshal(data, &nMinus1); err != nil {
+				t.Fatalf("N-1 failed to unmarshal JSON from N: %v", err)
+			}
+			if !reflect.DeepEqual(nMinus1, tt.nMinus1Result) {
+				t.Errorf("N-1 deserialization mismatch: got %+v, want %+v", nMinus1, tt.nMinus1Result)
+			}
+
+			nMinus1Data, err := json.Marshal(tt.nMinus1Result)
+			if err != nil {
+				t.Fatalf("failed to marshal N-1 struct: %v", err)
+			}
+			var roundTripped AWSClusterResourceTag
+			if err := json.Unmarshal(nMinus1Data, &roundTripped); err != nil {
+				t.Fatalf("N failed to unmarshal JSON from N-1: %v", err)
+			}
+			if roundTripped.Key != tt.nMinus1Result.Key {
+				t.Errorf("Key mismatch after N-1 round-trip: got %s, want %s", roundTripped.Key, tt.nMinus1Result.Key)
+			}
+			if roundTripped.Value != tt.nMinus1Result.Value {
+				t.Errorf("Value mismatch after N-1 round-trip: got %s, want %s", roundTripped.Value, tt.nMinus1Result.Value)
+			}
+			if roundTripped.OverridePolicy != "" {
+				t.Errorf("OverridePolicy should be empty after N-1 round-trip: got %v", roundTripped.OverridePolicy)
+			}
+		})
+	}
+}
+
+func TestAWSNodePoolResourceTagSerializationCompatibility(t *testing.T) {
+	tests := []struct {
+		name          string
+		current       AWSNodePoolResourceTag
+		expectedJSON  string
+		nMinus1Result awsResourceTagNMinus1
+	}{
+		{
+			name:          "When all fields are zero-value it should round-trip as empty object",
+			current:       AWSNodePoolResourceTag{},
+			expectedJSON:  `{}`,
+			nMinus1Result: awsResourceTagNMinus1{},
+		},
+		{
+			name:          "When key and value are set it should serialize correctly",
+			current:       AWSNodePoolResourceTag{Key: "env", Value: "prod"},
+			expectedJSON:  `{"key":"env","value":"prod"}`,
+			nMinus1Result: awsResourceTagNMinus1{Key: "env", Value: "prod"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.current)
+			if err != nil {
+				t.Fatalf("failed to marshal current struct: %v", err)
+			}
+			if string(data) != tt.expectedJSON {
+				t.Errorf("unexpected JSON output: got %s, want %s", string(data), tt.expectedJSON)
+			}
+
+			var nMinus1 awsResourceTagNMinus1
+			if err := json.Unmarshal(data, &nMinus1); err != nil {
+				t.Fatalf("N-1 failed to unmarshal JSON from N: %v", err)
+			}
+			if !reflect.DeepEqual(nMinus1, tt.nMinus1Result) {
+				t.Errorf("N-1 deserialization mismatch: got %+v, want %+v", nMinus1, tt.nMinus1Result)
+			}
+
+			nMinus1Data, err := json.Marshal(tt.nMinus1Result)
+			if err != nil {
+				t.Fatalf("failed to marshal N-1 struct: %v", err)
+			}
+			var roundTripped AWSNodePoolResourceTag
+			if err := json.Unmarshal(nMinus1Data, &roundTripped); err != nil {
+				t.Fatalf("N failed to unmarshal JSON from N-1: %v", err)
+			}
+			if roundTripped.Key != tt.nMinus1Result.Key {
+				t.Errorf("Key mismatch: got %s, want %s", roundTripped.Key, tt.nMinus1Result.Key)
+			}
+			if roundTripped.Value != tt.nMinus1Result.Value {
+				t.Errorf("Value mismatch: got %s, want %s", roundTripped.Value, tt.nMinus1Result.Value)
+			}
+		})
+	}
+}
+
+func TestAWSEndpointServiceResourceTagSerializationCompatibility(t *testing.T) {
+	tests := []struct {
+		name          string
+		current       AWSEndpointServiceResourceTag
+		expectedJSON  string
+		nMinus1Result awsResourceTagNMinus1
+	}{
+		{
+			name:          "When all fields are zero-value it should round-trip as empty object",
+			current:       AWSEndpointServiceResourceTag{},
+			expectedJSON:  `{}`,
+			nMinus1Result: awsResourceTagNMinus1{},
+		},
+		{
+			name:          "When key and value are set it should serialize correctly",
+			current:       AWSEndpointServiceResourceTag{Key: "env", Value: "prod"},
+			expectedJSON:  `{"key":"env","value":"prod"}`,
+			nMinus1Result: awsResourceTagNMinus1{Key: "env", Value: "prod"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.current)
+			if err != nil {
+				t.Fatalf("failed to marshal current struct: %v", err)
+			}
+			if string(data) != tt.expectedJSON {
+				t.Errorf("unexpected JSON output: got %s, want %s", string(data), tt.expectedJSON)
+			}
+
+			var nMinus1 awsResourceTagNMinus1
+			if err := json.Unmarshal(data, &nMinus1); err != nil {
+				t.Fatalf("N-1 failed to unmarshal JSON from N: %v", err)
+			}
+			if !reflect.DeepEqual(nMinus1, tt.nMinus1Result) {
+				t.Errorf("N-1 deserialization mismatch: got %+v, want %+v", nMinus1, tt.nMinus1Result)
+			}
+
+			nMinus1Data, err := json.Marshal(tt.nMinus1Result)
+			if err != nil {
+				t.Fatalf("failed to marshal N-1 struct: %v", err)
+			}
+			var roundTripped AWSEndpointServiceResourceTag
+			if err := json.Unmarshal(nMinus1Data, &roundTripped); err != nil {
+				t.Fatalf("N failed to unmarshal JSON from N-1: %v", err)
+			}
+			if roundTripped.Key != tt.nMinus1Result.Key {
+				t.Errorf("Key mismatch: got %s, want %s", roundTripped.Key, tt.nMinus1Result.Key)
+			}
+			if roundTripped.Value != tt.nMinus1Result.Value {
+				t.Errorf("Value mismatch: got %s, want %s", roundTripped.Value, tt.nMinus1Result.Value)
 			}
 		})
 	}

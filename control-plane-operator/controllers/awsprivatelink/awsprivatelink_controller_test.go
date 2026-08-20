@@ -1083,7 +1083,7 @@ func TestApiTagToEC2Tag(t *testing.T) {
 	tests := []struct {
 		name     string
 		svcName  string
-		tags     []hyperv1.AWSResourceTag
+		tags     []hyperv1.AWSClusterResourceTag
 		expected []ec2types.Tag
 	}{
 		{
@@ -1097,7 +1097,7 @@ func TestApiTagToEC2Tag(t *testing.T) {
 		{
 			name:    "When resource tags are provided, it should include them plus the AWSEndpointService tag",
 			svcName: "my-svc",
-			tags: []hyperv1.AWSResourceTag{
+			tags: []hyperv1.AWSClusterResourceTag{
 				{Key: "env", Value: "prod"},
 				{Key: "team", Value: "platform"},
 			},
@@ -1122,7 +1122,7 @@ func TestApiTagToEC2Filter(t *testing.T) {
 	tests := []struct {
 		name     string
 		svcName  string
-		tags     []hyperv1.AWSResourceTag
+		tags     []hyperv1.AWSClusterResourceTag
 		expected []ec2types.Filter
 	}{
 		{
@@ -1136,7 +1136,7 @@ func TestApiTagToEC2Filter(t *testing.T) {
 		{
 			name:    "When resource tags are provided, it should include them as tag filters plus the AWSEndpointService filter",
 			svcName: "my-svc",
-			tags: []hyperv1.AWSResourceTag{
+			tags: []hyperv1.AWSClusterResourceTag{
 				{Key: "env", Value: "prod"},
 			},
 			expected: []ec2types.Filter{

@@ -1647,7 +1647,7 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
-						ResourceTags: []hyperv1.AWSResourceTag{{
+						ResourceTags: []hyperv1.AWSClusterResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",
 						}},
@@ -1661,7 +1661,7 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
-						ResourceTags: []hyperv1.AWSResourceTag{{
+						ResourceTags: []hyperv1.AWSClusterResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",
 						}},
@@ -1672,7 +1672,7 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
-						ResourceTags: []hyperv1.AWSResourceTag{{
+						ResourceTags: []hyperv1.AWSClusterResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",
 						}},
@@ -1686,7 +1686,7 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
-						ResourceTags: []hyperv1.AWSResourceTag{{
+						ResourceTags: []hyperv1.AWSClusterResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "borked",
 						}},
@@ -1697,7 +1697,7 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				InfraID: "123",
 				Platform: hyperv1.PlatformSpec{
 					AWS: &hyperv1.AWSPlatformSpec{
-						ResourceTags: []hyperv1.AWSResourceTag{{
+						ResourceTags: []hyperv1.AWSClusterResourceTag{{
 							Key:   "kubernetes.io/cluster/123",
 							Value: "owned",
 						}},

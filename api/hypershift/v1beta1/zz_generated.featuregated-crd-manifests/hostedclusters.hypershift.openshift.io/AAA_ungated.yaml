@@ -4378,28 +4378,58 @@ spec:
                           Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                           These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                           Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                          For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+                          By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+                          To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
+                          Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                           These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                         items:
-                          description: AWSResourceTag is a tag to apply to AWS resources
-                            created for the cluster.
+                          description: |-
+                            AWSClusterResourceTag is a tag to apply to AWS resources created for a
+                            HostedCluster. It extends the base tag with an overridePolicy field that
+                            controls whether NodePool-level tags can override this tag.
                           properties:
                             key:
-                              description: key is the key of the tag.
+                              description: |-
+                                key is the key of the tag.
+                                Must be between 1 and 128 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
                               maxLength: 128
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                              x-kubernetes-validations:
+                              - message: 'key must only contain letters, digits, and
+                                  the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
+                            overridePolicy:
+                              description: |-
+                                overridePolicy controls whether a NodePool-level tag with the same key can
+                                override this HostedCluster-level tag.
+
+                                When set to "Allow", a NodePool tag with the same key will take precedence
+                                over this HostedCluster tag. When set to "Deny" or omitted, the
+                                HostedCluster value is preserved and the NodePool tag is ignored for that
+                                key.
+                              enum:
+                              - Allow
+                              - Deny
                               type: string
                             value:
                               description: |-
                                 value is the value of the tag.
+                                Must be between 1 and 256 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
                                 requirements of all services.
                               maxLength: 256
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: 'value must only contain letters, digits,
+                                  and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
                           required:
                           - key
                           - value

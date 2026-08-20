@@ -30,7 +30,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 			name:              "When hosted cluster has resource tags it should copy them to the AWS cluster",
 			initialAWSCluster: &capiaws.AWSCluster{},
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
-				ResourceTags: []hyperv1.AWSResourceTag{
+				ResourceTags: []hyperv1.AWSClusterResourceTag{
 					{Key: "foo", Value: "bar"},
 				},
 			}}}},
@@ -53,7 +53,7 @@ func TestReconcileAWSCluster(t *testing.T) {
 				"to-be-removed": "value",
 			}}},
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
-				ResourceTags: []hyperv1.AWSResourceTag{
+				ResourceTags: []hyperv1.AWSClusterResourceTag{
 					{Key: "foo", Value: "bar"},
 				},
 			}}}},

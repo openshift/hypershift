@@ -964,10 +964,10 @@ func TestReportEtcdManualInterventionRequired(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: func() []hyperv1.AWSResourceTag {
-								var tags []hyperv1.AWSResourceTag
+							ResourceTags: func() []hyperv1.AWSClusterResourceTag {
+								var tags []hyperv1.AWSClusterResourceTag
 								for k, v := range tc.tags {
-									tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+									tags = append(tags, hyperv1.AWSClusterResourceTag{Key: k, Value: v})
 								}
 								return tags
 							}(),
@@ -1245,10 +1245,10 @@ func TestReportClusterSizeOverride(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: func() []hyperv1.AWSResourceTag {
-								var tags []hyperv1.AWSResourceTag
+							ResourceTags: func() []hyperv1.AWSClusterResourceTag {
+								var tags []hyperv1.AWSClusterResourceTag
 								for k, v := range tc.tags {
-									tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+									tags = append(tags, hyperv1.AWSClusterResourceTag{Key: k, Value: v})
 								}
 								return tags
 							}(),

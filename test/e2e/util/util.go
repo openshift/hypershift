@@ -3639,7 +3639,7 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 
 		// Update the hosted cluster to add a day2 tag
 		err = UpdateObject(t, ctx, client, hostedCluster, func(object *hyperv1.HostedCluster) {
-			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 				Key:   day2TagKey,
 				Value: day2TagValue,
 			})

@@ -175,7 +175,11 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	if _, err := r.CreateOrUpdate(ctx, r, awsEndpointService, func() error {
 		awsEndpointService.Spec.NetworkLoadBalancerName = lbName
 		if hcp.Spec.Platform.AWS != nil {
-			awsEndpointService.Spec.ResourceTags = hcp.Spec.Platform.AWS.ResourceTags
+			esTags := make([]hyperv1.AWSEndpointServiceResourceTag, len(hcp.Spec.Platform.AWS.ResourceTags))
+			for i, t := range hcp.Spec.Platform.AWS.ResourceTags {
+				esTags[i] = hyperv1.AWSEndpointServiceResourceTag{Key: t.Key, Value: t.Value}
+			}
+			awsEndpointService.Spec.ResourceTags = esTags
 		}
 		return nil
 	}); err != nil {
@@ -1181,7 +1185,7 @@ func recordsForService(awsEndpointService *hyperv1.AWSEndpointService, hcp *hype
 
 }
 
-func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []ec2types.Tag {
+func apiTagToEC2Tag(name string, in []hyperv1.AWSClusterResourceTag) []ec2types.Tag {
 	result := make([]ec2types.Tag, 0, len(in)+1)
 	for _, val := range in {
 		result = append(result, ec2types.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
@@ -1191,7 +1195,7 @@ func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []ec2types.Tag {
 	return result
 }
 
-func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []ec2types.Filter {
+func apiTagToEC2Filter(name string, in []hyperv1.AWSClusterResourceTag) []ec2types.Filter {
 	result := make([]ec2types.Filter, 0, len(in)+1)
 	for _, val := range in {
 		result = append(result, ec2types.Filter{Name: aws.String("tag:" + val.Key), Values: []string{val.Value}})

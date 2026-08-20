@@ -43,10 +43,37 @@ type AWSEndpointServiceSpec struct {
 	// +kubebuilder:validation:items:MaxLength=63
 	SubnetIDs []string `json:"subnetIDs,omitempty"`
 
-	// resourceTags is the list of tags to apply to the EndpointService
+	// resourceTags is the list of tags to apply to the EndpointService.
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
-	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
+	ResourceTags []AWSEndpointServiceResourceTag `json:"resourceTags,omitempty"`
+}
+
+// AWSEndpointServiceResourceTag is a tag to apply to AWS resources created for
+// an AWSEndpointService.
+type AWSEndpointServiceResourceTag struct {
+	// key is the key of the tag.
+	// Must be between 1 and 128 characters and may only contain letters, digits,
+	// and the characters _ . : / = + - @
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="key must only contain letters, digits, and the characters _ . : / = + - @"
+	Key string `json:"key,omitempty"`
+	// value is the value of the tag.
+	// Must be between 1 and 256 characters and may only contain letters, digits,
+	// and the characters _ . : / = + - @
+	//
+	// Some AWS service do not support empty values. Since tags are added to
+	// resources in many services, the length of the tag value must meet the
+	// requirements of all services.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="value must only contain letters, digits, and the characters _ . : / = + - @"
+	Value string `json:"value,omitempty"`
 }
 
 // AWSEndpointServiceStatus defines the observed state of AWSEndpointService

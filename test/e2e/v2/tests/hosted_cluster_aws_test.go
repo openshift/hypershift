@@ -21,22 +21,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	configv1 "github.com/openshift/api/config/v1"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -44,6 +50,7 @@ func RegisterHostedClusterAWSTests(getTestCtx internal.TestContextGetter) {
 	EnsureDefaultSecurityGroupTagsTest(getTestCtx)
 	EnsureInfrastructureResourceTagsTest(getTestCtx)
 	AWSCCMWithCustomizationsTest(getTestCtx)
+	AWSResourceTagOverridePolicyTest(getTestCtx)
 }
 
 func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
@@ -95,10 +102,10 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			day2TagKey := "test-day2-tag"
 			day2TagValue := "test-day2-value"
 
-			originalTags := append([]hyperv1.AWSResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
+			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
 
 			err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
-				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 					Key:   day2TagKey,
 					Value: day2TagValue,
 				})
@@ -106,7 +113,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with day-2 tag")
 			DeferCleanup(func() {
 				err := e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
-					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSResourceTag(nil), originalTags...)
+					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore HostedCluster AWS resource tags")
@@ -331,6 +338,140 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 				Expect(lb.SecurityGroups).NotTo(BeEmpty(),
 					"load balancer should have security groups attached when NLBSecurityGroupMode = Managed")
 			})
+		})
+	})
+}
+
+func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
+	When("[Feature:AWSResourceTagOverrides] HostedCluster tags have mixed override policies", func() {
+		It("should block or allow NodePool tag overrides based on overridePolicy and reflect conflicts in the NodePool condition", Label("AWS"), func() {
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
+
+			ctx := tc.Context
+
+			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
+			err = e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags,
+					hyperv1.AWSClusterResourceTag{
+						Key:            "e2e-tag-deny",
+						Value:          "hc-deny-value",
+						OverridePolicy: hyperv1.AWSResourceTagOverridePolicyDeny,
+					},
+					hyperv1.AWSClusterResourceTag{
+						Key:            "e2e-tag-allow",
+						Value:          "hc-allow-value",
+						OverridePolicy: hyperv1.AWSResourceTagOverridePolicyAllow,
+					},
+				)
+			})
+			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with override policy tags")
+			DeferCleanup(func() {
+				err := e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
+				})
+				if err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore HostedCluster AWS resource tags")
+				}
+			})
+
+			defaultNP := getDefaultNodePool(ctx, tc.MgmtClient, hc)
+			Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+
+			var oneReplica int32 = 1
+			np := buildTestNodePool(defaultNP, "tag-override", func(pool *hyperv1.NodePool) {
+				pool.Spec.Replicas = &oneReplica
+				pool.Spec.Platform.AWS.ResourceTags = []hyperv1.AWSNodePoolResourceTag{
+					{Key: "e2e-tag-deny", Value: "np-deny-value"},
+					{Key: "e2e-tag-allow", Value: "np-allow-value"},
+				}
+			})
+
+			err = tc.MgmtClient.Create(ctx, np)
+			Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
+			GinkgoWriter.Printf("Created NodePool %s with conflicting tags\n", np.Name)
+			DeferCleanup(func() {
+				cleanupNodePool(ctx, tc.MgmtClient, np)
+			})
+
+			e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+
+			Eventually(func(g Gomega) {
+				fresh := &hyperv1.NodePool{}
+				g.Expect(tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), fresh)).To(Succeed())
+
+				var conflictCond *hyperv1.NodePoolCondition
+				for i := range fresh.Status.Conditions {
+					if fresh.Status.Conditions[i].Type == hyperv1.NodePoolAWSResourceTagConflictConditionType {
+						conflictCond = &fresh.Status.Conditions[i]
+						break
+					}
+				}
+				g.Expect(conflictCond).NotTo(BeNil(),
+					"NodePool %s should have AWSResourceTagConflict condition", np.Name)
+				g.Expect(conflictCond.Status).To(Equal(corev1.ConditionTrue),
+					"AWSResourceTagConflict should be True when a Deny conflict exists")
+				g.Expect(conflictCond.Reason).To(Equal(hyperv1.AWSResourceTagConflictDetectedReason))
+				g.Expect(conflictCond.Message).To(ContainSubstring("e2e-tag-deny"),
+					"condition message should report the blocked key")
+				g.Expect(conflictCond.Message).To(ContainSubstring("e2e-tag-allow"),
+					"condition message should report the overridden key")
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+
+			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+			Expect(awsCredsFile).NotTo(BeEmpty(), "AWS_GUEST_INFRA_CREDENTIALS_FILE must be set")
+			region := hc.Spec.Platform.AWS.Region
+
+			awsSession := awsutil.NewSession(ctx, "e2e-tag-override", awsCredsFile, "", "", region)
+			awsConfig := awsutil.NewConfig()
+			ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+				o.Retryer = awsConfig()
+			})
+
+			awsMachines := &capiaws.AWSMachineList{}
+			err = tc.MgmtClient.List(ctx, awsMachines,
+				crclient.InNamespace(tc.ControlPlaneNamespace),
+				crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: np.Name})
+			Expect(err).NotTo(HaveOccurred(), "failed to list AWSMachines")
+			Expect(awsMachines.Items).NotTo(BeEmpty(),
+				"expected at least one AWSMachine for NodePool %s", np.Name)
+
+			inspectedInstances := 0
+			for _, awsMachine := range awsMachines.Items {
+				Expect(awsMachine.Spec.AdditionalTags).To(HaveKeyWithValue("e2e-tag-deny", "hc-deny-value"),
+					"AWSMachine %s should have HC value for Deny tag", awsMachine.Name)
+				Expect(awsMachine.Spec.AdditionalTags).To(HaveKeyWithValue("e2e-tag-allow", "np-allow-value"),
+					"AWSMachine %s should have NP value for Allow tag", awsMachine.Name)
+
+				if awsMachine.Spec.InstanceID == nil {
+					continue
+				}
+				instance, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+					InstanceIds: []string{aws.ToString(awsMachine.Spec.InstanceID)},
+				})
+				Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", aws.ToString(awsMachine.Spec.InstanceID))
+				Expect(instance.Reservations).NotTo(BeEmpty())
+				Expect(instance.Reservations[0].Instances).NotTo(BeEmpty())
+				tags := instance.Reservations[0].Instances[0].Tags
+
+				Expect(tags).To(ContainElement(ec2types.Tag{
+					Key:   aws.String("e2e-tag-deny"),
+					Value: aws.String("hc-deny-value"),
+				}), "EC2 instance should have HC value for Deny tag")
+				Expect(tags).To(ContainElement(ec2types.Tag{
+					Key:   aws.String("e2e-tag-allow"),
+					Value: aws.String("np-allow-value"),
+				}), "EC2 instance should have NP value for Allow tag")
+				inspectedInstances++
+			}
+			Expect(inspectedInstances).To(BeNumerically(">=", 1),
+				"expected to inspect at least one EC2 instance but all AWSMachines had nil InstanceID")
 		})
 	})
 }

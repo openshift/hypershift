@@ -5008,7 +5008,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 		return nil
 	}
 
-	var existing *hyperv1.AWSResourceTag
+	var existing *hyperv1.AWSClusterResourceTag
 	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
 		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
 			existing = &hcluster.Spec.Platform.AWS.ResourceTags[idx]
@@ -5022,7 +5022,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	if existing != nil {
 		existing.Value = "owned"
 	} else {
-		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 			Key:   "kubernetes.io/cluster/" + hcluster.Spec.InfraID,
 			Value: "owned",
 		})

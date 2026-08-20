@@ -203,7 +203,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileStatus(ctx, ec2NodeClass, openshiftEC2NodeClass); err != nil {
+	if err := r.reconcileStatus(ctx, ec2NodeClass, openshiftEC2NodeClass, hcp); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -360,7 +360,7 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 	return nil
 }
 
-func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftNodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) error {
+func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftNodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	originalObj := openshiftNodeClass.DeepCopy()
@@ -417,6 +417,8 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 	// with version resolution status. This ensures a single controller owns the
 	// Ready semantic rather than having multiple controllers race to set it.
 	r.computeReadyCondition(openshiftNodeClass)
+
+	setAWSResourceTagConflictCondition(openshiftNodeClass, hcp)
 
 	if !reflect.DeepEqual(originalObj.Status, openshiftNodeClass.Status) {
 		if err := r.guestClient.Status().Patch(ctx, openshiftNodeClass, client.MergeFrom(originalObj)); err != nil {
@@ -714,7 +716,8 @@ func (r *EC2NodeClassReconciler) mapToOpenShiftEC2NodeClasses(ctx context.Contex
 }
 
 // mergeEC2NodeClassTags merges platform tags from HostedControlPlane with OpenshiftEC2NodeClass tags.
-// Platform tags take precedence over nodeclass tags in case of conflicts.
+// By default, platform tags take precedence over nodeclass tags.
+// Platform tags with overridePolicy "Allow" permit nodeclass tags to override them.
 // Tags matching Karpenter's restricted patterns are filtered out to prevent validation errors.
 // Karpenter restricts the patterns because it manages those tags itself, so the result is not "the karpenter-managed tags won't be present",
 // the result is "the tags will still be present and managed by Karpenter"
@@ -722,23 +725,30 @@ func mergeEC2NodeClassTags(ctx context.Context, openshiftEC2NodeClass *hyperkarp
 	log := ctrl.LoggerFrom(ctx)
 	tags := make(map[string]string)
 
-	// First add nodeclass tags
-	for k, v := range openshiftEC2NodeClass.Spec.Tags {
-		tags[k] = v
-	}
-
-	// Then add platform tags (these will override any conflicts)
+	allowOverride := make(map[string]bool)
+	// First add platform tags and track which allow override
 	if hcp.Spec.Platform.AWS != nil {
 		for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
 			tags[tag.Key] = tag.Value
+			if tag.OverridePolicy == hyperv1.AWSResourceTagOverridePolicyAllow {
+				allowOverride[tag.Key] = true
+			}
 		}
+	}
+
+	// Then add nodeclass tags, only overriding platform tags that explicitly allow it
+	for k, v := range openshiftEC2NodeClass.Spec.Tags {
+		if _, isHCTag := tags[k]; isHCTag && !allowOverride[k] {
+			continue
+		}
+		tags[k] = v
 	}
 
 	// Filter out restricted tags that Karpenter manages automatically
 	filteredTags, removedTags := filterRestrictedTags(tags)
 
 	if len(removedTags) > 0 {
-		log.V(4).Info("Filtered restricted Karpenter tags", "removedTags", removedTags)
+		log.V(4).Info("Filtered restricted Karpenter tags", "removedCount", len(removedTags))
 	}
 
 	// If we were nil coming in, we should be nil going out, test case comparisons care, {} is
@@ -748,6 +758,61 @@ func mergeEC2NodeClassTags(ctx context.Context, openshiftEC2NodeClass *hyperkarp
 	}
 
 	return filteredTags
+}
+
+func setAWSResourceTagConflictCondition(openshiftNodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Platform.AWS == nil || len(hcp.Spec.Platform.AWS.ResourceTags) == 0 || len(openshiftNodeClass.Spec.Tags) == 0 {
+		meta.RemoveStatusCondition(&openshiftNodeClass.Status.Conditions, hyperv1.NodePoolAWSResourceTagConflictConditionType)
+		return
+	}
+
+	var blocked, overridden int
+	for k, ncVal := range openshiftNodeClass.Spec.Tags {
+		var found bool
+		var hcTag hyperv1.AWSClusterResourceTag
+		for _, t := range hcp.Spec.Platform.AWS.ResourceTags {
+			if t.Key == k {
+				found = true
+				hcTag = t
+				break
+			}
+		}
+		if !found || hcTag.Value == ncVal {
+			continue
+		}
+		if hcTag.OverridePolicy == hyperv1.AWSResourceTagOverridePolicyAllow {
+			overridden++
+		} else {
+			blocked++
+		}
+	}
+
+	if blocked == 0 {
+		msg := "No AWS resource tag conflicts detected"
+		if overridden > 0 {
+			msg = fmt.Sprintf("%d AWS resource tag override(s) applied; nodeclass values used (allowed by HostedCluster)", overridden)
+		}
+		meta.SetStatusCondition(&openshiftNodeClass.Status.Conditions, metav1.Condition{
+			Type:               hyperv1.NodePoolAWSResourceTagConflictConditionType,
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.AWSResourceTagNoConflictReason,
+			Message:            msg,
+			ObservedGeneration: openshiftNodeClass.Generation,
+		})
+		return
+	}
+
+	msg := fmt.Sprintf("%d AWS resource tag conflict(s) detected; HostedCluster values preserved (override not allowed)", blocked)
+	if overridden > 0 {
+		msg += fmt.Sprintf("; %d override(s) applied (allowed by HostedCluster)", overridden)
+	}
+	meta.SetStatusCondition(&openshiftNodeClass.Status.Conditions, metav1.Condition{
+		Type:               hyperv1.NodePoolAWSResourceTagConflictConditionType,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AWSResourceTagConflictDetectedReason,
+		Message:            msg,
+		ObservedGeneration: openshiftNodeClass.Generation,
+	})
 }
 
 // filterRestrictedTags removes tags that match Karpenter's restricted tag patterns.

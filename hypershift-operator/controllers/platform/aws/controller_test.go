@@ -1081,17 +1081,17 @@ func TestListNodePools(t *testing.T) {
 func TestApiTagToEC2Tag(t *testing.T) {
 	testCases := []struct {
 		name     string
-		input    []hyperv1.AWSResourceTag
+		input    []hyperv1.AWSEndpointServiceResourceTag
 		expected []ec2types.Tag
 	}{
 		{
 			name:     "When input is empty, it should return an empty slice",
-			input:    []hyperv1.AWSResourceTag{},
+			input:    []hyperv1.AWSEndpointServiceResourceTag{},
 			expected: []ec2types.Tag{},
 		},
 		{
 			name: "When input has multiple tags, it should convert all of them",
-			input: []hyperv1.AWSResourceTag{
+			input: []hyperv1.AWSEndpointServiceResourceTag{
 				{Key: "env", Value: "prod"},
 				{Key: "team", Value: "platform"},
 			},

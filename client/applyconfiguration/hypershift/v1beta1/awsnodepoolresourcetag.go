@@ -17,23 +17,23 @@ limitations under the License.
 
 package v1beta1
 
-// AWSResourceTagApplyConfiguration represents a declarative configuration of the AWSResourceTag type for use
+// AWSNodePoolResourceTagApplyConfiguration represents a declarative configuration of the AWSNodePoolResourceTag type for use
 // with apply.
-type AWSResourceTagApplyConfiguration struct {
+type AWSNodePoolResourceTagApplyConfiguration struct {
 	Key   *string `json:"key,omitempty"`
 	Value *string `json:"value,omitempty"`
 }
 
-// AWSResourceTagApplyConfiguration constructs a declarative configuration of the AWSResourceTag type for use with
+// AWSNodePoolResourceTagApplyConfiguration constructs a declarative configuration of the AWSNodePoolResourceTag type for use with
 // apply.
-func AWSResourceTag() *AWSResourceTagApplyConfiguration {
-	return &AWSResourceTagApplyConfiguration{}
+func AWSNodePoolResourceTag() *AWSNodePoolResourceTagApplyConfiguration {
+	return &AWSNodePoolResourceTagApplyConfiguration{}
 }
 
 // WithKey sets the Key field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Key field is set to the value of the last call.
-func (b *AWSResourceTagApplyConfiguration) WithKey(value string) *AWSResourceTagApplyConfiguration {
+func (b *AWSNodePoolResourceTagApplyConfiguration) WithKey(value string) *AWSNodePoolResourceTagApplyConfiguration {
 	b.Key = &value
 	return b
 }
@@ -41,7 +41,7 @@ func (b *AWSResourceTagApplyConfiguration) WithKey(value string) *AWSResourceTag
 // WithValue sets the Value field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Value field is set to the value of the last call.
-func (b *AWSResourceTagApplyConfiguration) WithValue(value string) *AWSResourceTagApplyConfiguration {
+func (b *AWSNodePoolResourceTagApplyConfiguration) WithValue(value string) *AWSNodePoolResourceTagApplyConfiguration {
 	b.Value = &value
 	return b
 }
