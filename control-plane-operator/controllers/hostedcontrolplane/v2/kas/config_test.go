@@ -557,7 +557,7 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "When MutatingAdmissionPolicy feature gate is enabled, it should configure runtime-config",
+			name: "When MutatingAdmissionPolicy feature gate is enabled, it should not add v1alpha1 runtime-config",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"MutatingAdmissionPolicy=true",
@@ -565,7 +565,6 @@ func TestGenerateConfig(t *testing.T) {
 			},
 			expected: modifyKasConfig(defaultKASConfig(),
 				func(kasc *kcpv1.KubeAPIServerConfig) {
-					kasc.APIServerArguments["runtime-config"] = append(kcpv1.Arguments{"admissionregistration.k8s.io/v1alpha1=true"}, kasc.APIServerArguments["runtime-config"]...)
 					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"MutatingAdmissionPolicy=true"}, kasc.APIServerArguments["feature-gates"]...)
 				},
 			),
