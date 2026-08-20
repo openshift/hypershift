@@ -457,8 +457,11 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 				resourcesName:           resourcesName,
 				capiv1.ClusterNameLabel: capiClusterName,
 			},
-			// Annotations here propagate down to Machines
-			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
+			// Annotations here propagate down to Machines via CAPI in-place metadata propagation.
+			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment
+			// Note: CAPI propagates annotation changes to ALL Machines including unreplaced ones
+			// during rolling updates. nodeVersionsFromMachines handles this by overriding the
+			// annotation value for Machines in old (non-current) MachineSets with nodePool.Status.Version.
 			Annotations: map[string]string{
 				nodePoolAnnotation:                       client.ObjectKeyFromObject(nodePool).String(),
 				hyperv1.NodePoolReleaseVersionAnnotation: c.Version(),
@@ -1414,6 +1417,27 @@ func (r *NodePoolReconciler) ensureMachineDeletion(ctx context.Context, nodePool
 	}
 
 	return nil
+}
+
+// getMachineSetsForNodePool lists all MachineSets annotated with the nodePoolAnnotation
+// within the control plane namespace for that NodePool.
+func (r *NodePoolReconciler) getMachineSetsForNodePool(ctx context.Context, nodePool *hyperv1.NodePool) ([]*capiv1.MachineSet, error) {
+	npAnnotation := client.ObjectKeyFromObject(nodePool).String()
+	machineSets := capiv1.MachineSetList{}
+	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
+
+	if err := r.List(ctx, &machineSets, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil {
+		return nil, fmt.Errorf("failed to list MachineSets: %w", err)
+	}
+
+	var machineSetsForNodePool []*capiv1.MachineSet
+	for i, ms := range machineSets.Items {
+		if ms.Annotations[nodePoolAnnotation] == npAnnotation {
+			machineSetsForNodePool = append(machineSetsForNodePool, &machineSets.Items[i])
+		}
+	}
+
+	return machineSetsForNodePool, nil
 }
 
 // getMachinesForNodePool get all Machines listed with the nodePoolAnnotation

@@ -17,10 +17,11 @@ import (
 
 func TestNodeVersionsFromMachines(t *testing.T) {
 	testCases := []struct {
-		name     string
-		machines []*v1beta1.Machine
-		nodePool *hyperv1.NodePool
-		expected []hyperv1.NodeVersion
+		name           string
+		machines       []*v1beta1.Machine
+		nodePool       *hyperv1.NodePool
+		currentMSNames map[string]bool
+		expected       []hyperv1.NodeVersion
 	}{
 		{
 			name:     "When there are no machines, it should return nil",
@@ -160,6 +161,91 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 				{OCPVersion: "4.19.1", KubeletVersion: "v1.32.1", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
 			},
 		},
+		{
+			name: "When Replace upgrade is in progress, old MachineSet machines should use nodePool.Status.Version",
+			machines: []*v1beta1.Machine{
+				machineWithVersionHealthAndOwner("m1", "v1.34.6", true,
+					map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}, "ms-old"),
+				machineWithVersionHealthAndOwner("m2", "v1.35.5", true,
+					map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}, "ms-new"),
+				machineWithVersionHealthAndOwner("m3", "v1.35.5", true,
+					map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}, "ms-new"),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{Version: "4.22.0"},
+			},
+			currentMSNames: map[string]bool{"ms-new": true},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.21.10", KubeletVersion: "v1.35.5", ReadyNodeCount: ptr.To[int32](2), UnreadyNodeCount: ptr.To[int32](0)},
+				{OCPVersion: "4.22.0", KubeletVersion: "v1.34.6", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When Replace upgrade is complete (all machines in current MachineSet), annotations are trusted",
+			machines: []*v1beta1.Machine{
+				machineWithVersionHealthAndOwner("m1", "v1.35.5", true,
+					map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}, "ms-new"),
+				machineWithVersionHealthAndOwner("m2", "v1.35.5", true,
+					map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}, "ms-new"),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{Version: "4.22.0"},
+			},
+			currentMSNames: map[string]bool{"ms-new": true},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.21.10", KubeletVersion: "v1.35.5", ReadyNodeCount: ptr.To[int32](2), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When InPlace upgrade is in progress, annotations are always trusted regardless of MachineSet",
+			machines: []*v1beta1.Machine{
+				machineWithVersionHealthAndOwner("m1", "v1.34.6", true,
+					map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.22.0"}, "ms-1"),
+				machineWithVersionHealthAndOwner("m2", "v1.35.5", true,
+					map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.21.10"}, "ms-1"),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{Version: "4.22.0"},
+			},
+			currentMSNames: map[string]bool{"ms-1": true},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.21.10", KubeletVersion: "v1.35.5", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+				{OCPVersion: "4.22.0", KubeletVersion: "v1.34.6", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When currentMSNames is nil, annotations are trusted (backward compat)",
+			machines: []*v1beta1.Machine{
+				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{Version: "4.17.0"},
+			},
+			currentMSNames: nil,
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.18.12", KubeletVersion: "v1.31.4", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -167,7 +253,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			g := NewGomegaWithT(t)
 
 			r := &NodePoolReconciler{}
-			result := r.nodeVersionsFromMachines(tc.machines, tc.nodePool)
+			result := r.nodeVersionsFromMachines(tc.machines, tc.nodePool, tc.currentMSNames)
 			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
@@ -286,7 +372,7 @@ func TestSetNodesInfoStatus(t *testing.T) {
 			}
 
 			r := &NodePoolReconciler{}
-			r.setNodesInfoStatus(tc.nodePool, machines)
+			r.setNodesInfoStatus(tc.nodePool, machines, nil)
 			g.Expect(tc.nodePool.Status.NodesInfo).To(Equal(tc.expectedNodesInfo))
 		})
 	}
@@ -638,5 +724,80 @@ func machineWithVersionAndConditions(name, kubeletVersion string, conditions v1b
 			NodeInfo:   &corev1.NodeSystemInfo{KubeletVersion: kubeletVersion},
 			Conditions: conditions,
 		},
+	}
+}
+
+func machineWithVersionHealthAndOwner(name, kubeletVersion string, healthy bool, annotations map[string]string, ownerMSName string) *v1beta1.Machine {
+	m := machineWithVersionAndHealth(name, kubeletVersion, healthy, annotations)
+	if ownerMSName != "" {
+		m.OwnerReferences = []metav1.OwnerReference{
+			{
+				Kind: "MachineSet",
+				Name: ownerMSName,
+			},
+		}
+	}
+	return m
+}
+
+func TestCurrentMachineSetNames(t *testing.T) {
+	testCases := []struct {
+		name        string
+		machineSets []*v1beta1.MachineSet
+		expected    map[string]bool
+	}{
+		{
+			name:        "When there are no MachineSets, it should return nil",
+			machineSets: nil,
+			expected:    nil,
+		},
+		{
+			name: "When there is one MachineSet, it should return its name",
+			machineSets: []*v1beta1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "ms-1",
+						Annotations: map[string]string{v1beta1.RevisionAnnotation: "1"},
+					},
+				},
+			},
+			expected: map[string]bool{"ms-1": true},
+		},
+		{
+			name: "When there are two MachineSets with different revisions, it should return the highest",
+			machineSets: []*v1beta1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "ms-old",
+						Annotations: map[string]string{v1beta1.RevisionAnnotation: "1"},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "ms-new",
+						Annotations: map[string]string{v1beta1.RevisionAnnotation: "2"},
+					},
+				},
+			},
+			expected: map[string]bool{"ms-new": true},
+		},
+		{
+			name: "When MachineSets have no revision annotation, it should return nil",
+			machineSets: []*v1beta1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "ms-1",
+					},
+				},
+			},
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(currentMachineSetNames(tc.machineSets)).To(Equal(tc.expected))
+		})
 	}
 }
