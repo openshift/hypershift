@@ -34,13 +34,25 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
+)
+
+// CredentialStatus represents the status of GCP credentials.
+type CredentialStatus int
+
+const (
+	CredentialStatusValid   CredentialStatus = 0
+	CredentialStatusInvalid CredentialStatus = 1
+	CredentialStatusUnknown CredentialStatus = 2
 )
 
 // GCP implements the Platform interface for Google Cloud Platform.
@@ -298,28 +310,14 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
 ) error {
-	// Validate GCP platform configuration is present
 	if hcluster.Spec.Platform.GCP == nil {
-		setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse, "MissingGCPConfiguration", "GCP platform configuration is missing")
-		if updateErr := c.Status().Update(ctx, hcluster); updateErr != nil {
-			return fmt.Errorf("GCP platform configuration is missing (failed to update status: %w)", updateErr)
-		}
 		return fmt.Errorf("GCP platform configuration is missing")
 	}
 
-	// Validate Workload Identity Federation configuration (required)
-	if err := p.validateWorkloadIdentityConfiguration(hcluster); err != nil {
-		setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse, "InvalidWIFConfiguration", fmt.Sprintf("Workload Identity Federation configuration is invalid: %v", err))
-		if updateErr := c.Status().Update(ctx, hcluster); updateErr != nil {
-			return fmt.Errorf("invalid workload identity configuration: %w (failed to update status: %w)", err, updateErr)
-		}
+	if err := validateWorkloadIdentityConfiguration(hcluster); err != nil {
 		return fmt.Errorf("invalid workload identity configuration: %w", err)
 	}
 
-	// Set successful WIF validation condition
-	setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionTrue, "ValidWIFConfiguration", "Workload Identity Federation configuration is valid and ready")
-
-	// Create credential secrets following AWS pattern
 	var errs []error
 	syncSecret := func(secret *corev1.Secret, serviceAccountEmail string) error {
 		credentials, err := gcputil.BuildWorkloadIdentityCredentials(hcluster.Spec.Platform.GCP.WorkloadIdentity, serviceAccountEmail)
@@ -336,7 +334,6 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		return nil
 	}
 
-	// Create credential secrets for all configured service accounts
 	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
@@ -353,19 +350,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	if len(errs) > 0 {
-		setCondition(hcluster, hyperv1.ValidGCPCredentials, metav1.ConditionFalse, "CredentialsError", fmt.Sprintf("Failed to reconcile credentials: %v", errs))
-		if updateErr := c.Status().Update(ctx, hcluster); updateErr != nil {
-			return fmt.Errorf("failed to reconcile GCP credentials: %v (failed to update status: %w)", errs, updateErr)
-		}
 		return fmt.Errorf("failed to reconcile GCP credentials: %v", errs)
-	}
-
-	// Set credentials condition to indicate federation is ready
-	setCondition(hcluster, hyperv1.ValidGCPCredentials, metav1.ConditionTrue, "WIFReady", "GCP Workload Identity Federation is configured and ready")
-
-	// Persist status condition changes to the API server
-	if err := c.Status().Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update HostedCluster status conditions: %w", err)
 	}
 
 	return nil
@@ -463,27 +448,70 @@ func (p GCP) DeleteCredentials(ctx context.Context, c client.Client, hcluster *h
 	return nil
 }
 
-// ValidCredentials checks if GCP credentials are valid and ready for use.
-// This function validates Workload Identity Federation configuration and status.
-func ValidCredentials(hc *hyperv1.HostedCluster) bool {
-	// Check if GCP Workload Identity Federation is configured and valid
+// GetCredentialStatus returns the GCP credential status (valid/invalid/unknown).
+func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
+	var wifStatus metav1.ConditionStatus
 	validWIF := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
-	if validWIF == nil || validWIF.Status != metav1.ConditionTrue {
-		return false
+	if validWIF == nil {
+		wifStatus = metav1.ConditionUnknown
+	} else {
+		wifStatus = validWIF.Status
 	}
 
-	// Check if GCP credentials condition indicates WIF is ready
+	var credsStatus metav1.ConditionStatus
 	validCredentials := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
-	if validCredentials == nil || validCredentials.Status != metav1.ConditionTrue {
-		return false
+	if validCredentials == nil {
+		credsStatus = metav1.ConditionUnknown
+	} else {
+		credsStatus = validCredentials.Status
 	}
 
-	return true
+	if wifStatus == metav1.ConditionFalse || credsStatus == metav1.ConditionFalse {
+		return CredentialStatusInvalid
+	}
+	if wifStatus == metav1.ConditionTrue && credsStatus == metav1.ConditionTrue {
+		return CredentialStatusValid
+	}
+	return CredentialStatusUnknown
+}
+
+// ComputeGCPCredentialConditions computes the GCP credential conditions to set
+// on the HostedCluster by bubbling up ValidGCPWorkloadIdentity and
+// ValidGCPCredentials from the HostedControlPlane. Returns the conditions to
+// set and whether any condition changed from the current HC status. When the
+// HCP is nil or a condition is absent, Unknown is used as the default.
+func ComputeGCPCredentialConditions(hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (conditions []metav1.Condition, changed bool) {
+	for _, condType := range []hyperv1.ConditionType{
+		hyperv1.ValidGCPWorkloadIdentity,
+		hyperv1.ValidGCPCredentials,
+	} {
+		var cond *metav1.Condition
+		if hcp != nil {
+			cond = meta.FindStatusCondition(hcp.Status.Conditions, string(condType))
+		}
+		var fresh metav1.Condition
+		if cond == nil {
+			fresh = metav1.Condition{
+				Type:               string(condType),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hc.Generation,
+			}
+		} else {
+			fresh = *cond
+			fresh.ObservedGeneration = hc.Generation
+		}
+		if meta.SetStatusCondition(&hc.Status.Conditions, fresh) {
+			changed = true
+		}
+		conditions = append(conditions, fresh)
+	}
+	return conditions, changed
 }
 
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.
 // This ensures all required fields are present and properly formatted.
-func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {
+func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {
 	// Note: GCP platform configuration nil check is handled by caller
 	wif := hcluster.Spec.Platform.GCP.WorkloadIdentity
 
@@ -531,14 +559,29 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 	return nil
 }
 
-// setCondition updates or creates a condition on the HostedCluster.
-// This follows the standard HyperShift pattern for condition management.
-func setCondition(hcluster *hyperv1.HostedCluster, conditionType hyperv1.ConditionType, status metav1.ConditionStatus, reason, message string) {
-	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-		Type:               string(conditionType),
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	})
+func (GCP) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	if GetCredentialStatus(hc) != CredentialStatusInvalid {
+		return nil
+	}
+	gcpMachineList := capigcp.GCPMachineList{}
+	if err := c.List(ctx, &gcpMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("failed to list GCPMachines in %s: %w", controlPlaneNamespace, err)
+	}
+	logger := ctrl.LoggerFrom(ctx)
+	var errs []error
+	for i := range gcpMachineList.Items {
+		gcpMachine := &gcpMachineList.Items[i]
+		if gcpMachine.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if removed := controllerutil.RemoveFinalizer(gcpMachine, capigcp.MachineFinalizer); !removed {
+			continue
+		}
+		if err := c.Update(ctx, gcpMachine); err != nil {
+			errs = append(errs, fmt.Errorf("failed to remove finalizer from GCPMachine %s/%s: %w", gcpMachine.Namespace, gcpMachine.Name, err))
+			continue
+		}
+		logger.Info("removed CAPG finalizer from orphaned gcpmachine due to invalid GCP credentials", "machine", client.ObjectKeyFromObject(gcpMachine))
+	}
+	return utilerrors.NewAggregate(errs)
 }
