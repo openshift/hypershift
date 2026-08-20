@@ -154,11 +154,18 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
+		// The shared-ingress router only binds unprivileged ports, so it does not
+		// need NET_BIND_SERVICE even after dropping all other capabilities.
 		c.SecurityContext = &corev1.SecurityContext{
+			AllowPrivilegeEscalation: ptr.To(false),
+			ReadOnlyRootFilesystem:   ptr.To(true),
 			Capabilities: &corev1.Capabilities{
-				Add: []corev1.Capability{
-					"NET_BIND_SERVICE",
+				Drop: []corev1.Capability{
+					"ALL",
 				},
+			},
+			SeccompProfile: &corev1.SeccompProfile{
+				Type: corev1.SeccompProfileTypeRuntimeDefault,
 			},
 		}
 		c.VolumeMounts = append(c.VolumeMounts,
@@ -191,6 +198,14 @@ func buildConfigGeneratorContainer(hypershiftOperatorImage string) func(*corev1.
 			"--haproxy-socket-path", "/var/run/haproxy/admin.sock",
 		}
 		c.Image = hypershiftOperatorImage
+		c.SecurityContext = &corev1.SecurityContext{
+			AllowPrivilegeEscalation: ptr.To(false),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{
+					"ALL",
+				},
+			},
+		}
 
 		c.VolumeMounts = append(c.VolumeMounts,
 			corev1.VolumeMount{
