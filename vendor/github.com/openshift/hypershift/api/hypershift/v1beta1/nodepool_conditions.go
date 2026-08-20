@@ -87,6 +87,13 @@ const (
 	// KubeVirtNodesLiveMigratable indicates if all (VirtualMachines) nodes of the kubevirt
 	// hosted cluster can be live migrated without experiencing a node restart
 	NodePoolKubeVirtLiveMigratableType = "KubeVirtNodesLiveMigratable"
+
+	// NodePoolConfigUpdatePendingConditionType signals that management-side configuration
+	// has changed but no rollout has been triggered. New or replaced nodes may receive the
+	// latest management-side configuration while existing nodes retain the previous version.
+	// The full configuration will converge on the next spec-driven rollout
+	// (e.g. release upgrade, user MachineConfig change).
+	NodePoolConfigUpdatePendingConditionType = "ConfigUpdatePending"
 )
 
 // PerformanceProfile Conditions
@@ -132,4 +139,5 @@ const (
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
 	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
+	ManagementConfigDriftReason           = "ManagementConfigDrift"
 )
