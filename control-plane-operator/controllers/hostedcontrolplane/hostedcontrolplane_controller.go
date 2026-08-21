@@ -151,6 +151,8 @@ const (
 
 	resourceDeletionTimeout = 10 * time.Minute
 
+	etcdPVCBindingGracePeriod = 10 * time.Minute
+
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
@@ -2534,8 +2536,8 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 	}
 
 	var message string
+	reason := hyperv1.EtcdWaitingForQuorumReason
 
-	// Check that any etcd PVCs have been provisioned
 	pvcList := &corev1.PersistentVolumeClaimList{}
 	if err := r.List(ctx, pvcList, &client.ListOptions{
 		Namespace:     sts.Namespace,
@@ -2547,14 +2549,33 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 	messageCollector := events.NewMessageCollector(ctx, r.Client)
 	for _, pvc := range pvcList.Items {
 		if pvc.Status.Phase != corev1.ClaimBound {
+			storageClassName := "<default>"
+			if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
+				storageClassName = *pvc.Spec.StorageClassName
+			}
+
 			eventMessages, err := messageCollector.ErrorMessages(&pvc)
 			if err != nil {
 				return nil, err
 			}
-			if len(eventMessages) > 0 {
-				message = fmt.Sprintf("Etcd volume claim %s pending: %s", pvc.Name, strings.Join(eventMessages, "; "))
-				break
+
+			pendingDuration := time.Since(pvc.CreationTimestamp.Time)
+			if pendingDuration > etcdPVCBindingGracePeriod {
+				reason = hyperv1.EtcdPVCPendingReason
+				if len(eventMessages) > 0 {
+					message = fmt.Sprintf("etcd PVC %s has been pending for %s (StorageClass %q): %s. "+
+						"If the StorageClass requires zone-aware provisioning, ensure management cluster nodes are deployed into availability zones with valid topology labels",
+						pvc.Name, pendingDuration.Round(time.Minute), storageClassName, strings.Join(eventMessages, "; "))
+				} else {
+					message = fmt.Sprintf("etcd PVC %s has been pending for %s (StorageClass %q). "+
+						"If the StorageClass requires zone-aware provisioning, ensure management cluster nodes are deployed into availability zones with valid topology labels",
+						pvc.Name, pendingDuration.Round(time.Minute), storageClassName)
+				}
+			} else if len(eventMessages) > 0 {
+				message = fmt.Sprintf("Etcd volume claim %s pending (StorageClass %q): %s",
+					pvc.Name, storageClassName, strings.Join(eventMessages, "; "))
 			}
+			break
 		}
 	}
 
@@ -2564,7 +2585,7 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 	return &metav1.Condition{
 		Type:    string(hyperv1.EtcdAvailable),
 		Status:  metav1.ConditionFalse,
-		Reason:  hyperv1.EtcdWaitingForQuorumReason,
+		Reason:  reason,
 		Message: message,
 	}, nil
 }
