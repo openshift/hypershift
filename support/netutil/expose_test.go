@@ -6,6 +6,66 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
+func TestKasRouteHostname(t *testing.T) {
+	tests := []struct {
+		description string
+		hcp         *hyperv1.HostedControlPlane
+		expected    string
+	}{
+		{
+			description: "When hcp has no APIServer service entry, it should return empty string",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{},
+				},
+			},
+			expected: "",
+		},
+		{
+			description: "When hcp has APIServer entry with nil Route, it should return empty string",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			expected: "",
+		},
+		{
+			description: "When hcp has APIServer Route with hostname, it should return the hostname",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "kas.example.com",
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: "kas.example.com",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.description, func(t *testing.T) {
+			if res := KasRouteHostname(test.hcp); res != test.expected {
+				t.Errorf("KasRouteHostname() = %q, expected %q", res, test.expected)
+			}
+		})
+	}
+}
+
 func TestIsLBKASByHC(t *testing.T) {
 	tests := []struct {
 		description string

@@ -8,7 +8,7 @@ const ExternalDNSLBPort = 443
 
 func KasRouteHostname(hcp *hyperv1.HostedControlPlane) string {
 	kasPublishStrategy := ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
-	if kasPublishStrategy.Route == nil {
+	if kasPublishStrategy == nil || kasPublishStrategy.Route == nil {
 		return ""
 	}
 	return kasPublishStrategy.Route.Hostname
