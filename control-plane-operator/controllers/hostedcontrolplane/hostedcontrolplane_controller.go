@@ -2386,30 +2386,30 @@ func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, se
 }
 
 func doesServiceHaveServiceCAAnnotation(service *corev1.Service) bool {
-	// If service-ca has recorded a generation error, treat the annotation as
-	// absent so the CPO falls through to create its own cert. service-ca
-	// will not self-heal from this state, so without this check the service
-	// remains stuck with no serving certificate indefinitely.
-	if _, hasErr := service.Annotations[servingCertGenErrorAlpha]; hasErr {
-		return false
+	// A service is owned by service-ca if it carries ANY service-ca annotation.
+	// This includes the serving-cert-secret-name annotations as well as the
+	// serving-cert-generation-error and serving-cert-generation-error-num
+	// annotations that service-ca records when it cannot generate a
+	// certificate. An error annotation must NOT be treated as "no annotation":
+	// doing so makes the CPO strip serving-cert-secret-name, which
+	// cluster-storage-operator and aws-ebs-csi-driver-operator immediately
+	// re-apply via library-go ApplyServiceImproved, producing an infinite
+	// reconciliation loop. Recognizing the error annotations here preserves the
+	// intent of tracking service-ca generation errors without that loop.
+	serviceCAAnnotations := []string{
+		servingCertSecretNameAlpha,
+		servingCertSecretNameBeta,
+		servingCertGenErrorAlpha,
+		servingCertGenErrorNumAlpha,
+		servingCertGenErrorBeta,
+		servingCertGenErrorNumBeta,
 	}
-	if _, hasErr := service.Annotations[servingCertGenErrorBeta]; hasErr {
-		return false
+	for _, key := range serviceCAAnnotations {
+		if _, ok := service.Annotations[key]; ok {
+			return true
+		}
 	}
-	if _, hasErr := service.Annotations[servingCertGenErrorNumAlpha]; hasErr {
-		return false
-	}
-	if _, hasErr := service.Annotations[servingCertGenErrorNumBeta]; hasErr {
-		return false
-	}
-
-	_, ok := service.Annotations[servingCertSecretNameAlpha]
-	if ok {
-		return true
-	}
-
-	_, ok = service.Annotations[servingCertSecretNameBeta]
-	return ok
+	return false
 }
 
 func removeServiceCASecret(ctx context.Context, c client.Client, secret *corev1.Secret) error {

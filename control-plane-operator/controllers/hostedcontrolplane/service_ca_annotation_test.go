@@ -41,35 +41,56 @@ func TestDoesServiceHaveServiceCAAnnotation(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When beta cert annotation is present with beta generation error, it should return false",
+			name: "When beta cert annotation is present with beta generation error, it should return true",
 			annotations: map[string]string{
 				servingCertSecretNameBeta: "my-cert",
 				servingCertGenErrorBeta:   "secret does not have corresponding service UID",
 			},
-			expected: false,
+			expected: true,
 		},
 		{
-			name: "When alpha cert annotation is present with alpha generation error, it should return false",
+			name: "When alpha cert annotation is present with alpha generation error, it should return true",
 			annotations: map[string]string{
 				servingCertSecretNameAlpha: "my-cert",
 				servingCertGenErrorAlpha:   "secret does not have corresponding service UID",
 			},
-			expected: false,
+			expected: true,
 		},
 		{
-			name: "When beta cert annotation is present with alpha generation error, it should return false",
+			name: "When beta cert annotation is present with alpha generation error, it should return true",
 			annotations: map[string]string{
 				servingCertSecretNameBeta: "my-cert",
 				servingCertGenErrorAlpha:  "UID mismatch",
 			},
-			expected: false,
+			expected: true,
 		},
 		{
-			name: "When only generation error annotation is present without cert annotation, it should return false",
+			name: "When only a beta generation error annotation is present without cert annotation, it should return true",
 			annotations: map[string]string{
 				servingCertGenErrorBeta: "some error",
 			},
-			expected: false,
+			expected: true,
+		},
+		{
+			name: "When only an alpha generation error annotation is present without cert annotation, it should return true",
+			annotations: map[string]string{
+				servingCertGenErrorAlpha: "some error",
+			},
+			expected: true,
+		},
+		{
+			name: "When only a beta generation error num annotation is present without cert annotation, it should return true",
+			annotations: map[string]string{
+				servingCertGenErrorNumBeta: "3",
+			},
+			expected: true,
+		},
+		{
+			name: "When only an alpha generation error num annotation is present without cert annotation, it should return true",
+			annotations: map[string]string{
+				servingCertGenErrorNumAlpha: "3",
+			},
+			expected: true,
 		},
 		{
 			name: "When service has only unrelated annotations, it should return false",
@@ -79,12 +100,12 @@ func TestDoesServiceHaveServiceCAAnnotation(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When beta cert annotation is present with generation error num only, it should return false",
+			name: "When beta cert annotation is present with generation error num only, it should return true",
 			annotations: map[string]string{
 				servingCertSecretNameBeta:   "my-cert",
 				servingCertGenErrorNumAlpha: "3",
 			},
-			expected: false,
+			expected: true,
 		},
 	}
 
