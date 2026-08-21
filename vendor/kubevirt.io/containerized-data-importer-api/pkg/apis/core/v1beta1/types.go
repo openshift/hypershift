@@ -261,6 +261,9 @@ type DataVolumeSourceHTTP struct {
 	// If specified, the importer will verify the downloaded content matches this checksum
 	// +optional
 	Checksum string `json:"checksum,omitempty"`
+	// InsecureSkipVerify is a flag to skip certificate verification for the HTTP endpoint
+	// +optional
+	InsecureSkipVerify *bool `json:"insecureSkipVerify,omitempty"`
 }
 
 // DataVolumeSourceImageIO provides the parameters to create a Data Volume from an imageio source
@@ -289,6 +292,9 @@ type DataVolumeSourceVDDK struct {
 	Thumbprint string `json:"thumbprint,omitempty"`
 	// SecretRef provides a reference to a secret containing the username and password needed to access the vCenter or ESXi host
 	SecretRef string `json:"secretRef,omitempty"`
+	// CertConfigMap provides a reference to a ConfigMap containing the certificate authority (CA) certificate for the vCenter or ESXi host
+	// +optional
+	CertConfigMap string `json:"certConfigMap,omitempty"`
 	// InitImageURL is an optional URL to an image containing an extracted VDDK library, overrides v2v-vmware config map
 	InitImageURL string `json:"initImageURL,omitempty"`
 	// ExtraArgs is a reference to a ConfigMap containing extra arguments to pass directly to the VDDK library
@@ -617,7 +623,7 @@ type DataImportCronSpec struct {
 	// ManagedDataSource specifies the name of the corresponding DataSource this cron will manage.
 	// DataSource has to be in the same namespace.
 	ManagedDataSource string `json:"managedDataSource"`
-	// RetentionPolicy specifies whether the created DataVolumes and DataSources are retained when their DataImportCron is deleted. Default is RatainAll.
+	// RetentionPolicy specifies whether the created DataVolumes and DataSources are retained when their DataImportCron is deleted. Default is RetainAll.
 	// +optional
 	RetentionPolicy *DataImportCronRetentionPolicy `json:"retentionPolicy,omitempty"`
 	// ServiceAccountName is the name of the ServiceAccount for creating DataVolumes.
@@ -1044,6 +1050,17 @@ type FilesystemOverhead struct {
 	StorageClass map[string]Percent `json:"storageClass,omitempty"`
 }
 
+// WebhookPvcRenderingPolicy defines the policy for PVC mutating webhook rendering
+type WebhookPvcRenderingPolicy string
+
+const (
+	// WebhookPvcRenderingEnabled means the PVC mutating webhook is active and completes PVC specs from StorageProfiles
+	WebhookPvcRenderingEnabled WebhookPvcRenderingPolicy = "Enabled"
+	// WebhookPvcRenderingDisabled means the PVC mutating webhook is not active;
+	// only PVCs created via DataVolumes will be rendered by the controller
+	WebhookPvcRenderingDisabled WebhookPvcRenderingPolicy = "Disabled"
+)
+
 // CDIConfigSpec defines specification for user configuration
 type CDIConfigSpec struct {
 	// Override the URL used when uploading to a DataVolume
@@ -1057,6 +1074,11 @@ type CDIConfigSpec struct {
 	PodResourceRequirements *corev1.ResourceRequirements `json:"podResourceRequirements,omitempty"`
 	// FeatureGates are a list of specific enabled feature gates
 	FeatureGates []string `json:"featureGates,omitempty"`
+	// WebhookPvcRendering controls whether the PVC mutating webhook that completes
+	// PVC specs from StorageProfiles is enabled or disabled
+	// Allowed values are "Enabled" (default) and "Disabled"
+	// +optional
+	WebhookPvcRendering WebhookPvcRenderingPolicy `json:"webhookPvcRendering,omitempty"`
 	// FilesystemOverhead describes the space reserved for overhead when using Filesystem volumes. A value is between 0 and 1, if not defined it is 0.06 (6% overhead)
 	FilesystemOverhead *FilesystemOverhead `json:"filesystemOverhead,omitempty"`
 	// Preallocation controls whether storage for DataVolumes should be allocated in advance.
