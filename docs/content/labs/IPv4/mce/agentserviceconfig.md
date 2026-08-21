@@ -1,1 +1,0 @@
-../../common/mce/agentserviceconfig.md

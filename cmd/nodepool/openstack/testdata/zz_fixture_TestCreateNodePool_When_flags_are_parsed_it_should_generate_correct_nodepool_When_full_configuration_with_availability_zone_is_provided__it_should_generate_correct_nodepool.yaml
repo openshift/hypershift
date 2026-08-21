@@ -1,3 +1,0 @@
-availabilityZone: nova
-flavor: m1.xlarge
-imageName: rhcos-openstack-latest

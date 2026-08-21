@@ -1,6 +1,0 @@
-apiVersion: v1
-data:
-  haproxy.cfg: ""
-kind: ConfigMap
-metadata:
-  name: router

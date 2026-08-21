@@ -1,1 +1,0 @@
-../../common/mirror/ICSP-IDMS.md

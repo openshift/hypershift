@@ -1,1 +1,0 @@
-../common/exposing-services-from-hcp.md

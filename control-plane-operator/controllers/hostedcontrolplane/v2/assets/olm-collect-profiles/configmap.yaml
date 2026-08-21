@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: olm-collect-profiles
-data:
-  pprof-config.yaml: |
-    disabled: False

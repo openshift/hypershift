@@ -1,1 +1,0 @@
-../../common/hypervisor/requisites.md

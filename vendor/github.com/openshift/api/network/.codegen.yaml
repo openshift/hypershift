@@ -1,4 +1,0 @@
-protobuf:
-  disabled: false
-  disabledVersions:
-  - v1alpha1

@@ -1,6 +1,0 @@
-apiVersion: v1
-data:
-  cloud.conf: ""
-kind: ConfigMap
-metadata:
-  name: openstack-cloud-config
