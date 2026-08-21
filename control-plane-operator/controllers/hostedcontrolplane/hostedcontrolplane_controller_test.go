@@ -1061,6 +1061,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			featureSet:   configv1.Default,
 			platformType: nil,
 		},
+
 		{
 			name:         "When using TechPreviewNoUpgrade feature set it should reconcile components",
 			featureSet:   configv1.TechPreviewNoUpgrade,

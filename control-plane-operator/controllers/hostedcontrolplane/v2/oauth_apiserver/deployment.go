@@ -12,6 +12,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -65,6 +66,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, fmt.Sprintf("--accesstoken-inactivity-timeout=%s", tokenInactivityTimeout))
 		}
 
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveOAuthAPIServerVerbosity(cpContext.HCP)))
+
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "NO_PROXY",
 			Value: strings.Join(noProxy, ","),
@@ -86,6 +89,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	)
 
 	return nil
+}
+
+func resolveOAuthAPIServerVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel
+	}
+	return util.LogLevelToKlogVerbosity(level)
 }
 
 func applyAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {

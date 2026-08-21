@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 4ca0d704026c94e734c2c4514011697e920716c4aff00c27f9f27566b3980613
+    hypershift.openshift.io/desired-state-hash: e101870c650d2af099fd8f7ec82fca1690f6ed3957f0d091d8cc355a532fad54
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -142,6 +142,8 @@ spec:
           value: TLS1.2
         - name: ETCD_CIPHER_SUITES
           value: TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - name: ETCD_LOG_LEVEL
+          value: info
         image: etcd
         imagePullPolicy: IfNotPresent
         livenessProbe:

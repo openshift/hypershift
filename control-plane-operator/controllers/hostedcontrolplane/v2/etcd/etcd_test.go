@@ -142,6 +142,158 @@ func TestBuildEtcdDefragControllerContainer(t *testing.T) {
 	}
 }
 
+func TestAdaptStatefulSetEtcdLogLevel(t *testing.T) {
+	t.Parallel()
+
+	logLevel := func(l hyperv1.LogLevel) hyperv1.EtcdOperatorSpec {
+		return hyperv1.EtcdOperatorSpec{
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
+		}
+	}
+
+	findEnvVar := func(envs []corev1.EnvVar, name string) *corev1.EnvVar {
+		for i := range envs {
+			if envs[i].Name == name {
+				return &envs[i]
+			}
+		}
+		return nil
+	}
+
+	testCases := []struct {
+		name          string
+		hcp           *hyperv1.HostedControlPlane
+		expectedValue string
+	}{
+		{
+			name: "When LogLevel is nil it should default ETCD_LOG_LEVEL to info",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")}},
+					},
+				},
+			},
+			expectedValue: "info",
+		},
+		{
+			name: "When operatorConfiguration exists but Etcd is zero value it should default ETCD_LOG_LEVEL to info",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+					Etcd:                  hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")}},
+					},
+				},
+			},
+			expectedValue: "info",
+		},
+		{
+			name: "When LogLevel is Normal it should set ETCD_LOG_LEVEL to info",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Etcd: logLevel(hyperv1.Normal),
+					},
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")}},
+					},
+				},
+			},
+			expectedValue: "info",
+		},
+		{
+			name: "When LogLevel is Debug it should set ETCD_LOG_LEVEL to debug",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Etcd: logLevel(hyperv1.Debug),
+					},
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")}},
+					},
+				},
+			},
+			expectedValue: "debug",
+		},
+		{
+			name: "When LogLevel is Trace it should set ETCD_LOG_LEVEL to debug",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Etcd: logLevel(hyperv1.Trace),
+					},
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")}},
+					},
+				},
+			},
+			expectedValue: "debug",
+		},
+		{
+			name: "When LogLevel is TraceAll it should set ETCD_LOG_LEVEL to debug",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						Etcd: logLevel(hyperv1.TraceAll),
+					},
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.0.0.0/8")}},
+					},
+				},
+			},
+			expectedValue: "debug",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			sts := &appsv1.StatefulSet{
+				Spec: appsv1.StatefulSetSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{Name: ComponentName},
+							},
+						},
+					},
+					VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{}},
+				},
+			}
+
+			cpContext := component.WorkloadContext{
+				Context: t.Context(),
+				HCP:     tc.hcp,
+			}
+
+			err := adaptStatefulSet(cpContext, sts)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			var etcdContainer *corev1.Container
+			for i := range sts.Spec.Template.Spec.Containers {
+				if sts.Spec.Template.Spec.Containers[i].Name == ComponentName {
+					etcdContainer = &sts.Spec.Template.Spec.Containers[i]
+					break
+				}
+			}
+			g.Expect(etcdContainer).NotTo(BeNil())
+
+			envVar := findEnvVar(etcdContainer.Env, "ETCD_LOG_LEVEL")
+			g.Expect(envVar).NotTo(BeNil(), "expected ETCD_LOG_LEVEL env var to be set")
+			g.Expect(envVar.Value).To(Equal(tc.expectedValue))
+		})
+	}
+}
+
 func TestIsManagedETCD(t *testing.T) {
 	t.Parallel()
 

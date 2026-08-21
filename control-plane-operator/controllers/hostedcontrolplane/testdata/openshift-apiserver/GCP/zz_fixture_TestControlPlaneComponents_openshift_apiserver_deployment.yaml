@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a9ae96c559e42f4c9cac2875b6c7742a0406edcc680ed224fce23b4b24f13daf
+    hypershift.openshift.io/desired-state-hash: d520551ee6cdeef3b3ca4d7e52abe267f4e6cbca4c3624a2ea78e003809fd95a
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-apiserver
@@ -89,6 +89,7 @@ spec:
         - --requestheader-group-headers=X-Remote-Group
         - --requestheader-extra-headers-prefix=X-Remote-Extra-
         - --client-ca-file=/etc/kubernetes/certs/client-ca/ca.crt
+        - --v=2
         env:
         - name: HTTP_PROXY
           value: http://127.0.0.1:8090
