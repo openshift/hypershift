@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil/velerocreds"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -84,24 +85,27 @@ func resolveAWSCredentials(secret *corev1.Secret) resolvedCredentials {
 
 func resolveAzureCredentials(secret *corev1.Secret) resolvedCredentials {
 	if cloudData, ok := secret.Data["cloud"]; ok {
-		var clientID string
-		for line := range strings.SplitSeq(string(cloudData), "\n") {
-			line = strings.TrimSpace(line)
-			if v, ok := strings.CutPrefix(line, "AZURE_CLIENT_ID="); ok {
-				clientID = strings.TrimSpace(v)
-				break
-			}
-		}
-		if clientID == "" {
+		// The 'cloud' key is Velero dotenv. Presence of AZURE_CLIENT_SECRET
+		// alongside AZURE_CLIENT_ID marks a service-principal (client-secret)
+		// credential; AZURE_CLIENT_ID alone marks workload identity; neither
+		// marks managed identity.
+		parsed := velerocreds.ParseDotenv(cloudData)
+		if parsed.ClientID != "" && parsed.ClientSecret != "" {
 			return resolvedCredentials{
-				Mode:       credentialModeAzureManagedIdentity,
+				Mode:       credentialModeAzureClientSecret,
 				SecretName: secret.Name,
 			}
 		}
+		if parsed.ClientID != "" {
+			return resolvedCredentials{
+				Mode:       credentialModeAzureWorkloadIdentity,
+				SecretName: secret.Name,
+				ClientID:   parsed.ClientID,
+			}
+		}
 		return resolvedCredentials{
-			Mode:       credentialModeAzureWorkloadIdentity,
+			Mode:       credentialModeAzureManagedIdentity,
 			SecretName: secret.Name,
-			ClientID:   clientID,
 		}
 	}
 

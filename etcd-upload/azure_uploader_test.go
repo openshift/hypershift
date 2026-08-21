@@ -168,4 +168,28 @@ func TestAzureCredential(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(credential).ToNot(BeNil())
 	})
+
+	t.Run("When auth type is client-secret and credentials file is dotenv format it should parse and return credential", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		dotenv := "AZURE_SUBSCRIPTION_ID=sub-id\nAZURE_TENANT_ID=tenant-id\nAZURE_CLIENT_ID=client-id\nAZURE_CLIENT_SECRET=sp-secret\nAZURE_RESOURCE_GROUP=rg-test\n"
+		credFile := filepath.Join(t.TempDir(), "cloud")
+		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
+
+		credential, err := newClientSecretCredential(credFile)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(credential).ToNot(BeNil())
+	})
+
+	t.Run("When auth type is client-secret and dotenv file is missing AZURE_TENANT_ID it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		dotenv := "AZURE_CLIENT_ID=client-id\nAZURE_CLIENT_SECRET=sp-secret\n"
+		credFile := filepath.Join(t.TempDir(), "cloud")
+		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
+
+		_, err := newClientSecretCredential(credFile)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to parse credentials file"))
+	})
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/support/azureutil/velerocreds"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -130,8 +132,10 @@ func newAzureCredential(ctx context.Context, credentialsFile, authType string) (
 	}
 }
 
-// newClientSecretCredential reads a JSON file with clientId/clientSecret/tenantId
-// and returns a ClientSecretCredential.
+// newClientSecretCredential reads a credentials file and returns a ClientSecretCredential.
+// It accepts both JSON format ({"clientId":..., "clientSecret":..., "tenantId":...}) and
+// dotenv format (AZURE_CLIENT_ID=...\nAZURE_CLIENT_SECRET=...\nAZURE_TENANT_ID=...),
+// to support credentials files that originate from Velero BackupStorageLocation secrets.
 func newClientSecretCredential(credentialsFile string) (azcore.TokenCredential, error) {
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
@@ -139,8 +143,17 @@ func newClientSecretCredential(credentialsFile string) (azcore.TokenCredential, 
 	}
 
 	var creds azureCredentialsFile
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil, fmt.Errorf("failed to parse credentials file: %w", err)
+	if jsonErr := json.Unmarshal(data, &creds); jsonErr != nil {
+		// Fallback: parse Velero dotenv format (KEY=value lines). The strict
+		// requirement that all three fields be present stays local to the
+		// uploader; the shared parser only extracts whatever is present.
+		parsed := velerocreds.ParseDotenv(data)
+		creds.ClientID = parsed.ClientID
+		creds.ClientSecret = parsed.ClientSecret
+		creds.TenantID = parsed.TenantID
+		if creds.ClientID == "" || creds.ClientSecret == "" || creds.TenantID == "" {
+			return nil, fmt.Errorf("failed to parse credentials file: %w", jsonErr)
+		}
 	}
 
 	credential, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
