@@ -1307,13 +1307,20 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 // EnsureNodesRuntime ensures that all nodes in the NodePool have the expected runtime handlers.
 // This is only supported on 4.18+ when the default runtime is changed to crun.
-func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node) {
+// On OCP 5.0+ with RHEL-10, only crun is expected (runc is not shipped).
+// RHEL-9 nodes (pre-5.0 or explicit spec.osImageStream.name=rhel-9) ship both runc and crun.
+func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.NodePool) {
 	AtLeast(t, Version418)
 	g := NewWithT(t)
 
+	isRHEL9 := IsLessThan(Version50) ||
+		nodePool.Spec.OSImageStream.Name == string(hyperv1.OSImageStreamRHEL9)
+
 	validHandlers := map[string]bool{
-		"runc": false,
 		"crun": false,
+	}
+	if isRHEL9 {
+		validHandlers["runc"] = false
 	}
 
 	for _, node := range nodes {

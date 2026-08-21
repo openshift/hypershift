@@ -176,7 +176,7 @@ func (ru *NodePoolMajorVersionUpgradeTest) Run(t *testing.T, nodePool hyperv1.No
 	)
 
 	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
-	e2eutil.EnsureNodesRuntime(t, newNodes)
+	e2eutil.EnsureNodesRuntime(t, newNodes, &nodePool)
 
 	// Verify osImageStream is rhel-10 after major-version upgrade to OCP 5.0+.
 	expectedStream := string(hyperv1.OSImageStreamRHEL10)
