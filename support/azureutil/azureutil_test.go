@@ -602,6 +602,29 @@ func TestGetKeyVaultFQDN(t *testing.T) {
 			wantFQDN: "gov-vault.vault.usgovcloudapi.net",
 		},
 		{
+			name: "When Azure KMS uses Managed HSM, it should return the Managed HSM FQDN",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "my-hsm",
+								},
+								KeyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+							},
+						},
+					},
+				},
+			},
+			wantFQDN: "my-hsm.managedhsm.azure.net",
+		},
+		{
 			name: "When SecretEncryption is nil, it should return error",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -668,6 +691,90 @@ func TestGetKeyVaultFQDN(t *testing.T) {
 	}
 }
 
+func TestGetKeyVaultDNSSuffix(t *testing.T) {
+	tests := []struct {
+		name         string
+		cloud        string
+		keyVaultType hyperv1.AzureKMSKeyVaultType
+		wantSuffix   string
+		wantErr      bool
+	}{
+		{
+			name:       "When keyVaultType is omitted, it should return the standard Key Vault suffix",
+			cloud:      "AzurePublicCloud",
+			wantSuffix: "vault.azure.net",
+		},
+		{
+			name:         "When keyVaultType is ManagedHSM in public cloud, it should return the Managed HSM suffix",
+			cloud:        "AzurePublicCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantSuffix:   "managedhsm.azure.net",
+		},
+		{
+			name:         "When keyVaultType is ManagedHSM in government cloud, it should return the government Managed HSM suffix",
+			cloud:        "AzureUSGovernmentCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantSuffix:   "managedhsm.usgovcloudapi.net",
+		},
+		{
+			name:         "When keyVaultType is ManagedHSM in China cloud, it should return the China Managed HSM suffix",
+			cloud:        "AzureChinaCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantSuffix:   "managedhsm.azure.cn",
+		},
+		{
+			name:         "When keyVaultType is KeyVault in China cloud, it should return the China Key Vault suffix",
+			cloud:        "AzureChinaCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			wantSuffix:   "vault.azure.cn",
+		},
+		{
+			name:         "When keyVaultType is ManagedHSM in German cloud, it should return the German Managed HSM suffix",
+			cloud:        "AzureGermanCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantSuffix:   "managedhsm.microsoftazure.de",
+		},
+		{
+			name:         "When keyVaultType is KeyVault in German cloud, it should return the German Key Vault suffix",
+			cloud:        "AzureGermanCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			wantSuffix:   "vault.microsoftazure.de",
+		},
+		{
+			name:         "When keyVaultType is ManagedHSM in Bleu cloud, it should return the Bleu Managed HSM suffix",
+			cloud:        "AzureBleuCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantSuffix:   "managedhsm.sovcloud-api.fr",
+		},
+		{
+			name:         "When keyVaultType is KeyVault in Bleu cloud, it should return the Bleu Key Vault suffix",
+			cloud:        "AzureBleuCloud",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			wantSuffix:   "vault.sovcloud-api.fr",
+		},
+		{
+			// keyVaultType is validated before the cloud switch, so this errors regardless of cloud.
+			name:         "When keyVaultType is unknown, it should return an error",
+			cloud:        "AzurePublicCloud",
+			keyVaultType: "Unknown",
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			got, err := GetKeyVaultDNSSuffix(tt.cloud, tt.keyVaultType)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(got).To(Equal(tt.wantSuffix))
+		})
+	}
+}
+
 func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -675,6 +782,7 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 		wantVaultHost  string
 		wantKeyName    string
 		wantKeyVersion string
+		wantVaultType  hyperv1.AzureKMSKeyVaultType
 		wantErr        bool
 	}{
 		{
@@ -683,7 +791,64 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 			wantVaultHost:  "example-kms",
 			wantKeyName:    "example-key",
 			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeKeyVault,
 			wantErr:        false,
+		},
+		{
+			name:           "When given a Managed HSM key ID, it should identify the vault type",
+			id:             "https://example-hsm.managedhsm.azure.net/keys/example-key/1234abcd",
+			wantVaultHost:  "example-hsm",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantErr:        false,
+		},
+		{
+			name:           "When given a US Government Managed HSM key ID, it should identify the vault type",
+			id:             "https://example-hsm.managedhsm.usgovcloudapi.net/keys/example-key/1234abcd",
+			wantVaultHost:  "example-hsm",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantErr:        false,
+		},
+		{
+			name:           "When given an uppercase US Government Managed HSM key ID, it should normalize and parse the host",
+			id:             "https://EXAMPLE-HSM.MANAGEDHSM.USGOVCLOUDAPI.NET/keys/example-key/1234abcd",
+			wantVaultHost:  "example-hsm",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			wantErr:        false,
+		},
+		{
+			name:           "When given a China Managed HSM key ID, it should identify the vault type",
+			id:             "https://example-hsm.managedhsm.azure.cn/keys/example-key/1234abcd",
+			wantVaultHost:  "example-hsm",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+		},
+		{
+			name:           "When given a German Managed HSM key ID, it should identify the vault type",
+			id:             "https://example-hsm.managedhsm.microsoftazure.de/keys/example-key/1234abcd",
+			wantVaultHost:  "example-hsm",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+		},
+		{
+			name:           "When given a Bleu Managed HSM key ID, it should identify the vault type",
+			id:             "https://example-hsm.managedhsm.sovcloud-api.fr/keys/example-key/1234abcd",
+			wantVaultHost:  "example-hsm",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+		},
+		{
+			name:    "When given an unrecognized Azure key host, it should return an error",
+			id:      "https://example-hsm.managedhsm.invalid/keys/example-key/1234abcd",
+			wantErr: true,
 		},
 		{
 			name:    "When key id missing version, it should error",
@@ -706,6 +871,7 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 			wantVaultHost:  "example-kms",
 			wantKeyName:    "example-key",
 			wantKeyVersion: "1234abcd",
+			wantVaultType:  hyperv1.AzureKMSKeyVaultTypeKeyVault,
 			wantErr:        false,
 		},
 		{
@@ -729,6 +895,7 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 			g.Expect(got.KeyVaultName).To(Equal(tt.wantVaultHost))
 			g.Expect(got.KeyName).To(Equal(tt.wantKeyName))
 			g.Expect(got.KeyVersion).To(Equal(tt.wantKeyVersion))
+			g.Expect(got.KeyVaultType).To(Equal(tt.wantVaultType))
 		})
 	}
 }
@@ -1065,6 +1232,34 @@ func TestGetAzureCloudConfiguration(t *testing.T) {
 			wantErr:   false,
 		},
 		{
+			name:      "When the cloud name is AzureGermanCloud, it should return the German cloud configuration",
+			cloudName: "AzureGermanCloud",
+			wantCloud: cloud.Configuration{
+				ActiveDirectoryAuthorityHost: "https://login.microsoftonline.de/",
+				Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+					cloud.ResourceManager: {
+						Audience: "https://management.core.cloudapi.de/",
+						Endpoint: "https://management.microsoftazure.de",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:      "When the cloud name is AzureBleuCloud, it should return the Bleu cloud configuration",
+			cloudName: "AzureBleuCloud",
+			wantCloud: cloud.Configuration{
+				ActiveDirectoryAuthorityHost: "https://login.sovcloud-identity.fr/",
+				Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+					cloud.ResourceManager: {
+						Audience: "https://management.sovcloud-api.fr/",
+						Endpoint: "https://management.sovcloud-api.fr",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name:      "When cloud name is invalid, it should return an error",
 			cloudName: "InvalidCloud",
 			wantCloud: cloud.Configuration{},
@@ -1086,9 +1281,11 @@ func TestGetAzureCloudConfiguration(t *testing.T) {
 				return
 			}
 			if !tt.wantErr {
-				// Compare the ActiveDirectoryAuthorityHost to verify we got the right cloud configuration
 				if gotCloud.ActiveDirectoryAuthorityHost != tt.wantCloud.ActiveDirectoryAuthorityHost {
 					t.Errorf("GetAzureCloudConfiguration() = %v, want %v", gotCloud, tt.wantCloud)
+				}
+				if gotCloud.Services[cloud.ResourceManager] != tt.wantCloud.Services[cloud.ResourceManager] {
+					t.Errorf("GetAzureCloudConfiguration() resource manager configuration = %v, want %v", gotCloud.Services[cloud.ResourceManager], tt.wantCloud.Services[cloud.ResourceManager])
 				}
 			}
 		})

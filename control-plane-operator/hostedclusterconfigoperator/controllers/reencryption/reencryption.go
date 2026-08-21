@@ -102,9 +102,10 @@ func (r *Reconciler) reconcile(ctx context.Context, log logr.Logger, hcp *hyperv
 		return reconcile.Result{}, nil
 	}
 
-	specFingerprint := secretencryption.FingerprintFromKeyStatus(specKeyStatus)
+	kvt := azureKeyVaultType(hcp)
+	specFingerprint := secretencryption.FingerprintFromKeyStatus(specKeyStatus, kvt)
 
-	statusActiveFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.ActiveKey)
+	statusActiveFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.ActiveKey, kvt)
 
 	// Case 1: Status has no active key (first-time setup or upgrade bootstrap).
 	if hcp.Status.SecretEncryption.ActiveKey.Provider == "" {
@@ -163,8 +164,9 @@ func (r *Reconciler) startNewRotation(log logr.Logger, hcp *hyperv1.HostedContro
 
 	hcp.Status.SecretEncryption.TargetKey = *specKeyStatus.DeepCopy()
 
-	fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey)
-	toRef := secretencryption.KeyReferenceFromStatus(specKeyStatus)
+	kvt := azureKeyVaultType(hcp)
+	fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey, kvt)
+	toRef := secretencryption.KeyReferenceFromStatus(specKeyStatus, kvt)
 
 	entry := hyperv1.EncryptionMigrationHistory{
 		From:        fromRef,
@@ -191,7 +193,8 @@ func (r *Reconciler) startNewRotation(log logr.Logger, hcp *hyperv1.HostedContro
 // It inspects the EncryptionConfiguration and KAS Deployment convergence rather than
 // reading history[0].state. The history state is updated for observability only.
 func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, specFingerprint string) (reconcile.Result, error) {
-	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey)
+	kvt := azureKeyVaultType(hcp)
+	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey, kvt)
 
 	if specFingerprint != targetFingerprint {
 		log.Info("Spec key differs from target key during rotation, current rotation will complete first",
@@ -201,8 +204,8 @@ func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logg
 
 	if len(hcp.Status.SecretEncryption.History) == 0 {
 		log.Info("Target key set but no history entry found, creating one")
-		fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey)
-		toRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.TargetKey)
+		fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey, kvt)
+		toRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.TargetKey, kvt)
 		entry := hyperv1.EncryptionMigrationHistory{
 			From:        fromRef,
 			To:          toRef,
@@ -342,7 +345,7 @@ func (r *Reconciler) computeTargetKeyProviderName(ctx context.Context, hcp *hype
 			KeyVaultName: tk.Azure.KeyVaultName,
 			KeyName:      tk.Azure.KeyName,
 			KeyVersion:   tk.Azure.KeyVersion,
-		})
+		}, azureKeyVaultType(hcp))
 
 	case hyperv1.SecretEncryptionProviderAWS:
 		if tk.AWS.ARN == "" {
@@ -389,7 +392,7 @@ func (r *Reconciler) handleMigratingPhase(log logr.Logger, hcp *hyperv1.HostedCo
 	}
 
 	resources := r.encryptedResources(hcp)
-	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey)
+	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey, azureKeyVaultType(hcp))
 	writeKey := fmt.Sprintf("encryption-key-%s", targetFingerprint)
 
 	allFinished := true
@@ -555,6 +558,15 @@ func parseGroupResource(rs string) schema.GroupResource {
 		return schema.GroupResource{Resource: parts[0]}
 	}
 	return schema.GroupResource{Resource: parts[0], Group: parts[1]}
+}
+
+// azureKeyVaultType returns the vault type (Key Vault or Managed HSM) from the Azure KMS configuration.
+// Returns empty string when the HCP is not configured for Azure KMS.
+func azureKeyVaultType(hcp *hyperv1.HostedControlPlane) hyperv1.AzureKMSKeyVaultType {
+	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
+		return ""
+	}
+	return hcp.Spec.SecretEncryption.KMS.Azure.KeyVaultType
 }
 
 // prependHistory prepends a new entry to the history and trims it to maxHistoryEntries.

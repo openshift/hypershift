@@ -11235,8 +11235,17 @@ This section walks through how to:
 1. Set up the flags needed when creating the Azure HostedCluster
 1. Verify the etcd encryption is setup and working properly
 
+!!! important "Managed HSM compatibility"
+
+    Azure Managed HSM for KMS encryption requires an OpenShift 4.22 or later HostedCluster release and is supported in Azure Public Cloud, Azure US Government Cloud, Azure China Cloud, Azure German Cloud, and Azure Bleu Cloud.
+    Do not configure Managed HSM on an earlier release because its control plane operator does not configure the Managed HSM endpoint or authentication scope.
+    Downgrading a HostedCluster after enabling Managed HSM is not supported.
+
+    The KMS vault type is immutable. An existing HostedCluster that uses Azure Key Vault cannot migrate to Managed HSM through key rotation; create a new HostedCluster to change between those services.
+    Custom Azure Stack Key Vault endpoints are not supported.
+
 There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of
-steps mentioned above. However, this guide will manually walk through those steps.
+steps mentioned above. For Managed HSM, use `setup_etcd_managed_hsm.sh` instead. This guide will manually walk through the Key Vault setup steps below.
 
 1a) Create a resource group for the key vault that will house the key used for etcd encryption.
 
@@ -42790,6 +42799,7 @@ applications and dev/test.</p>
 <a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
+<p>AzureKMSKey defines an Azure Key Vault or Managed HSM key used for KMS encryption.</p>
 </p>
 <table>
 <thead>
@@ -42807,8 +42817,8 @@ string
 </em>
 </td>
 <td>
-<p>keyVaultName is the name of the keyvault. Must match criteria specified at <a href="https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name">https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name</a>
-Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+<p>keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at <a href="https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name">https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name</a>
+Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
 <code>az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn &lt;YOUR APPLICATION CLIENT ID&gt;</code></p>
 </td>
 </tr>
@@ -42820,7 +42830,7 @@ string
 </em>
 </td>
 <td>
-<p>keyName is the name of the keyvault key used for encrypt/decrypt</p>
+<p>keyName is the name of the key used for encrypt/decrypt.</p>
 </td>
 </tr>
 <tr>
@@ -42836,13 +42846,36 @@ string
 </tr>
 </tbody>
 </table>
+###AzureKMSKeyVaultType { #hypershift.openshift.io/v1beta1.AzureKMSKeyVaultType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
+</p>
+<p>
+<p>AzureKMSKeyVaultType specifies the Azure service that hosts a KMS key.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;KeyVault&#34;</p></td>
+<td><p>AzureKMSKeyVaultTypeKeyVault indicates that the key is hosted by Azure Key Vault.</p>
+</td>
+</tr><tr><td><p>&#34;ManagedHSM&#34;</p></td>
+<td><p>AzureKMSKeyVaultTypeManagedHSM indicates that the key is hosted by Azure Managed HSM.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.KMSSpec">KMSSpec</a>)
 </p>
 <p>
-<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure Key Vault or Managed HSM.</p>
 </p>
 <table>
 <thead>
@@ -42913,6 +42946,25 @@ WorkloadIdentity
 with Azure Key Vault for KMS encryption via a token-minter sidecar.
 This identity must have &ldquo;Key Vault Crypto User&rdquo; role on the Key Vault.
 kms and workloadIdentity are mutually exclusive.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyVaultType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKeyVaultType">
+AzureKMSKeyVaultType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>keyVaultType specifies whether activeKey and backupKey are hosted by Azure Key Vault or Azure Managed HSM.
+Valid values are &ldquo;KeyVault&rdquo; and &ldquo;ManagedHSM&rdquo;.
+When set to &ldquo;KeyVault&rdquo;, both keys are hosted by Azure Key Vault.
+When set to &ldquo;ManagedHSM&rdquo;, both keys are hosted by Azure Managed HSM.
+The type is immutable; key rotation must remain within the same service.
+When omitted, the keys are treated as Key Vault keys.</p>
 </td>
 </tr>
 <tr>
@@ -43318,7 +43370,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>cloud is the cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
+<p>cloud is the Azure cloud environment identifier.</p>
 </td>
 </tr>
 <tr>
@@ -48063,9 +48115,10 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption.
-Must be a valid Azure Key Vault key URL in the format
-&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.
+<p>encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key used for encryption.
+Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.
 This field is immutable once set and cannot be removed.</p>
 </td>
 </tr>
@@ -48191,9 +48244,10 @@ string
 </em>
 </td>
 <td>
-<p>encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
-Must be a valid Azure Key Vault key URL in the format
-&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+<p>encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key to use for encrypting etcd backup artifacts.
+Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.</p>
 </td>
 </tr>
 </tbody>
@@ -48327,9 +48381,10 @@ string
 </em>
 </td>
 <td>
-<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption of the backup.
-Must be a valid Azure Key Vault key URL in the format
-&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+<p>encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key used for encryption of the backup.
+Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.</p>
 </td>
 </tr>
 </tbody>

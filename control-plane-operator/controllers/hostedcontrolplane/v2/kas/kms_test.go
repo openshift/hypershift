@@ -106,8 +106,8 @@ func TestDeriveKMSKeys(t *testing.T) {
 				},
 			},
 			currentConfig: kmsEncryptionConfig(
-				mustAWSProviderName("arn:aws:kms:us-east-1:123456789:key/old-key"),
-				mustAWSProviderName("arn:aws:kms:us-east-1:123456789:key/new-key"),
+				mustAWSProviderName(t, "arn:aws:kms:us-east-1:123456789:key/old-key"),
+				mustAWSProviderName(t, "arn:aws:kms:us-east-1:123456789:key/new-key"),
 			),
 			kasConverged: true,
 			validate: func(g Gomega, keys kmsWriteReadKeys) {
@@ -116,7 +116,7 @@ func TestDeriveKMSKeys(t *testing.T) {
 			},
 		},
 		{
-			name: "When Azure rotation in progress and target key absent from config, it should use old key as write",
+			name: "When legacy Key Vault rotation is not ready for promotion, it should keep the old key as write and target as read",
 			kmsSpec: &hyperv1.KMSSpec{
 				Provider: hyperv1.AZURE,
 				Azure: &hyperv1.AzureKMSSpec{
@@ -139,6 +139,88 @@ func TestDeriveKMSKeys(t *testing.T) {
 				g.Expect(keys.azureRead.KeyVersion).To(Equal("v2"), "target key should be read-only during ReadOnlyDeploy")
 			},
 		},
+		{
+			name: "When legacy Key Vault rotation is ready for promotion, it should promote the target key and keep the old key as read",
+			kmsSpec: &hyperv1.KMSSpec{
+				Provider: hyperv1.AZURE,
+				Azure: &hyperv1.AzureKMSSpec{
+					ActiveKey: hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
+				},
+			},
+			encStatus: &hyperv1.SecretEncryptionStatus{
+				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAzure,
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
+				},
+				TargetKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAzure,
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
+				},
+			},
+			currentConfig: kmsEncryptionConfig(
+				mustAzureProviderName(t, hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}, ""),
+				mustAzureProviderName(t, hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"}, ""),
+			),
+			kasConverged: true,
+			validate: func(g Gomega, keys kmsWriteReadKeys) {
+				g.Expect(keys.azureWrite.KeyVersion).To(Equal("v2"), "target key should be write after promotion")
+				g.Expect(keys.azureRead.KeyVersion).To(Equal("v1"), "old key should be read after promotion")
+			},
+		},
+		{
+			name: "When Managed HSM rotation is not ready for promotion, it should preserve the vault type on both keys",
+			kmsSpec: &hyperv1.KMSSpec{
+				Provider: hyperv1.AZURE,
+				Azure: &hyperv1.AzureKMSSpec{
+					ActiveKey:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
+					KeyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+				},
+			},
+			encStatus: &hyperv1.SecretEncryptionStatus{
+				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAzure,
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
+				},
+				TargetKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAzure,
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
+				},
+			},
+			currentConfig: nil,
+			validate: func(g Gomega, keys kmsWriteReadKeys) {
+				g.Expect(keys.azureWrite.KeyVersion).To(Equal("v1"), "old key should be write during ReadOnlyDeploy")
+				g.Expect(keys.azureRead.KeyVersion).To(Equal("v2"), "target key should be read-only during ReadOnlyDeploy")
+			},
+		},
+		{
+			name: "When Managed HSM rotation is ready for promotion, it should preserve the vault type on both keys",
+			kmsSpec: &hyperv1.KMSSpec{
+				Provider: hyperv1.AZURE,
+				Azure: &hyperv1.AzureKMSSpec{
+					ActiveKey:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
+					KeyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+				},
+			},
+			encStatus: &hyperv1.SecretEncryptionStatus{
+				ActiveKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAzure,
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
+				},
+				TargetKey: hyperv1.SecretEncryptionKeyStatus{
+					Provider: hyperv1.SecretEncryptionProviderAzure,
+					Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"},
+				},
+			},
+			currentConfig: kmsEncryptionConfig(
+				mustAzureProviderName(t, hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}, hyperv1.AzureKMSKeyVaultTypeManagedHSM),
+				mustAzureProviderName(t, hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"}, hyperv1.AzureKMSKeyVaultTypeManagedHSM),
+			),
+			kasConverged: true,
+			validate: func(g Gomega, keys kmsWriteReadKeys) {
+				g.Expect(keys.azureWrite.KeyVersion).To(Equal("v2"), "target key should be write after promotion")
+				g.Expect(keys.azureRead.KeyVersion).To(Equal("v1"), "old key should be read after promotion")
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -153,8 +235,21 @@ func TestDeriveKMSKeys(t *testing.T) {
 	}
 }
 
-func mustAWSProviderName(arn string) string {
-	name, _ := kms.AWSKMSProviderName(arn)
+func mustAWSProviderName(t *testing.T, arn string) string {
+	t.Helper()
+	name, err := kms.AWSKMSProviderName(arn)
+	if err != nil {
+		t.Fatalf("failed to compute AWS KMS provider name: %v", err)
+	}
+	return name
+}
+
+func mustAzureProviderName(t *testing.T, key hyperv1.AzureKMSKey, keyVaultType hyperv1.AzureKMSKeyVaultType) string {
+	t.Helper()
+	name, err := kms.AzureKMSProviderName(key, keyVaultType)
+	if err != nil {
+		t.Fatalf("failed to compute Azure KMS provider name: %v", err)
+	}
 	return name
 }
 

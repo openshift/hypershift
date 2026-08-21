@@ -4180,16 +4180,17 @@ spec:
                             properties:
                               encryptionKeyURL:
                                 description: |-
-                                  encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
-                                  Must be a valid Azure Key Vault key URL in the format
-                                  "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
+                                  encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key to use for encrypting etcd backup artifacts.
+                                  Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+                                  Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+                                  Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.
                                 maxLength: 210
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
                                 - message: encryptionKeyURL must be a valid Azure
-                                    Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])
-                                  rule: self.matches('^https://[a-zA-Z0-9-]+\\.vault\\.azure\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')
+                                    Key Vault or Managed HSM HTTPS URL
+                                  rule: self.matches('^https://[a-zA-Z0-9-]+\\.(vault\\.(azure\\.net|usgovcloudapi\\.net|azure\\.cn|microsoftazure\\.de|sovcloud-api\\.fr)|managedhsm\\.(azure\\.net|usgovcloudapi\\.net|azure\\.cn|microsoftazure\\.de|sovcloud-api\\.fr))/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')
                             required:
                             - encryptionKeyURL
                             type: object
@@ -7442,13 +7443,13 @@ spec:
                             ? has(self.workloadIdentities) : !has(self.workloadIdentities)'
                       cloud:
                         default: AzurePublicCloud
-                        description: 'cloud is the cloud environment identifier, valid
-                          values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
+                        description: cloud is the Azure cloud environment identifier.
                         enum:
                         - AzurePublicCloud
                         - AzureUSGovernmentCloud
                         - AzureChinaCloud
                         - AzureGermanCloud
+                        - AzureBleuCloud
                         - AzureStackCloud
                         type: string
                       containerRegistry:
@@ -9369,15 +9370,15 @@ spec:
                               encrypt new secrets
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
@@ -9402,15 +9403,15 @@ spec:
                               The system automatically manages the previous key via the status field.
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
@@ -9436,6 +9437,18 @@ spec:
                             - Public
                             - Private
                             - ""
+                            type: string
+                          keyVaultType:
+                            description: |-
+                              keyVaultType specifies whether activeKey and backupKey are hosted by Azure Key Vault or Azure Managed HSM.
+                              Valid values are "KeyVault" and "ManagedHSM".
+                              When set to "KeyVault", both keys are hosted by Azure Key Vault.
+                              When set to "ManagedHSM", both keys are hosted by Azure Managed HSM.
+                              The type is immutable; key rotation must remain within the same service.
+                              When omitted, the keys are treated as Key Vault keys.
+                            enum:
+                            - KeyVault
+                            - ManagedHSM
                             type: string
                           kms:
                             description: |-
@@ -9520,6 +9533,10 @@ spec:
                             both keys must reside in the same Key Vault
                           rule: '!has(self.backupKey) || self.backupKey.keyVaultName
                             == self.activeKey.keyVaultName'
+                        - message: keyVaultType is immutable
+                          rule: '(has(self.keyVaultType) ? self.keyVaultType : ''KeyVault'')
+                            == (has(oldSelf.keyVaultType) ? oldSelf.keyVaultType :
+                            ''KeyVault'')'
                         - message: kms and workloadIdentity are mutually exclusive
                           rule: '!(has(self.kms) && has(self.workloadIdentity))'
                         - message: one of kms or workloadIdentity must be set
@@ -10499,15 +10516,14 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1
@@ -10734,15 +10750,14 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1
