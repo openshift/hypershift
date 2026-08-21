@@ -1,0 +1,343 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hypershift-nightly-release-tag
+spec:
+  description: |
+    Konflux managed release pipeline. Triggered by a ReleasePlan/Release: reads
+    the released Snapshot (via the release-service-catalog collect-data task),
+    extracts the operator component image (repository@digest), recomputes a fresh
+    nightly tag, and tags the image into an OpenShift imagestream on the CI
+    cluster. The release controller then mirrors it to the production repository
+    if it passes verification.
+
+    NOTE: this pipeline lives in the openshift/hypershift repo but references
+    tasks/stepactions from the release-service-catalog. Those refs use the
+    dedicated catalogGitUrl/catalogGitRevision params (NOT taskGitUrl) so that
+    release-service's automatic taskGitUrl injection - which points at the repo
+    this pipeline was resolved from - does not redirect catalog task resolution
+    to the hypershift repo. Pin catalogGitRevision to a known-good commit.
+  params:
+  # --- Konflux managed-release contract (injected by release-service) ---
+  - name: release
+    type: string
+  - name: releasePlan
+    type: string
+  - name: releasePlanAdmission
+    type: string
+  - name: releaseServiceConfig
+    type: string
+  - name: snapshot
+    type: string
+  # --- release-service-catalog coordinates (task/stepaction resolution) ---
+  - name: catalogGitUrl
+    type: string
+    default: https://github.com/konflux-ci/release-service-catalog.git
+  - name: catalogGitRevision
+    type: string
+    description: Revision of the release-service-catalog to resolve tasks from. Pin to a commit for reproducibility.
+    default: production
+  # --- trusted-artifacts plumbing (consumed by collect-data and the restore step) ---
+  - name: ociStorage
+    type: string
+    default: quay.io/konflux-ci/release-service-trusted-artifacts
+  - name: dataDir
+    type: string
+    default: /var/workdir/release
+  - name: orasOptions
+    type: string
+    default: ""
+  - name: trustedArtifactsDebug
+    type: string
+    default: ""
+  - name: caTrustConfigMapName
+    type: string
+    default: trusted-ca
+  - name: caTrustConfigMapKey
+    type: string
+    default: ca-bundle.crt
+  - name: caCertPath
+    type: string
+    default: /mnt/trusted-ca/ca-bundle.crt
+  # --- tagging inputs ---
+  # These may be set per-release via the ReleasePlanAdmission spec.data.<data-key>
+  # object (surfaced by collect-data as data.json); the params below are the
+  # fallback defaults used when a given key is absent from data.json.
+  - name: data-key
+    type: string
+    description: Top-level key in the merged RPA/ReleasePlan spec.data holding the tagging config (component-name, destination-imagestream, release-version).
+    default: releaseControllerTrigger
+  - name: component-name
+    type: string
+    description: Snapshot component to tag. Must match a component name exactly; an unmatched name is an error.
+    default: hypershift-operator-main
+  - name: destination-imagestream
+    type: string
+    description: Destination imagestream on the CI cluster, in the form <namespace>/<imagestream>.
+    default: hypershift/hypershift-operator-main-nightly
+  - name: release-version
+    type: string
+    description: Version prefix for the recomputed nightly tag (<release-version>-0.nightly-YYYY-MM-DD-HHMMSS).
+    default: 0.0.1
+  - name: ci-cluster-credentials-secret
+    type: string
+    description: Name of the Secret in the pipeline namespace holding the CI cluster kubeconfig under key 'kubeconfig'.
+    default: hypershift-ci-cluster-credentials
+  tasks:
+  - name: verify-access-to-resources
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: $(params.catalogGitUrl)
+      - name: revision
+        value: $(params.catalogGitRevision)
+      - name: pathInRepo
+        value: tasks/managed/verify-access-to-resources/verify-access-to-resources.yaml
+    params:
+    - name: release
+      value: $(params.release)
+    - name: releasePlan
+      value: $(params.releasePlan)
+    - name: releasePlanAdmission
+      value: $(params.releasePlanAdmission)
+    - name: releaseServiceConfig
+      value: $(params.releaseServiceConfig)
+    - name: snapshot
+      value: $(params.snapshot)
+    - name: requireInternalServices
+      value: "false"
+    - name: caTrustConfigMapName
+      value: $(params.caTrustConfigMapName)
+    - name: caTrustConfigMapKey
+      value: $(params.caTrustConfigMapKey)
+  - name: collect-data
+    runAfter:
+    - verify-access-to-resources
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: $(params.catalogGitUrl)
+      - name: revision
+        value: $(params.catalogGitRevision)
+      - name: pathInRepo
+        value: tasks/managed/collect-data/collect-data.yaml
+    params:
+    - name: release
+      value: $(params.release)
+    - name: releasePlan
+      value: $(params.releasePlan)
+    - name: releasePlanAdmission
+      value: $(params.releasePlanAdmission)
+    - name: releaseServiceConfig
+      value: $(params.releaseServiceConfig)
+    - name: snapshot
+      value: $(params.snapshot)
+    - name: subdirectory
+      value: $(context.pipelineRun.uid)
+    - name: ociStorage
+      value: $(params.ociStorage)
+    - name: dataDir
+      value: $(params.dataDir)
+    - name: trustedArtifactsDebug
+      value: $(params.trustedArtifactsDebug)
+    - name: taskGitUrl
+      value: $(params.catalogGitUrl)
+    - name: taskGitRevision
+      value: $(params.catalogGitRevision)
+  - name: tag-image
+    runAfter:
+    - collect-data
+    params:
+    - name: snapshotPath
+      value: $(tasks.collect-data.results.snapshotSpec)
+    - name: dataPath
+      value: $(tasks.collect-data.results.data)
+    - name: sourceDataArtifact
+      value: $(tasks.collect-data.results.sourceDataArtifact)
+    - name: ociStorage
+      value: $(params.ociStorage)
+    - name: dataDir
+      value: $(params.dataDir)
+    - name: orasOptions
+      value: $(params.orasOptions)
+    - name: trustedArtifactsDebug
+      value: $(params.trustedArtifactsDebug)
+    - name: caCertPath
+      value: $(params.caCertPath)
+    - name: catalogGitUrl
+      value: $(params.catalogGitUrl)
+    - name: catalogGitRevision
+      value: $(params.catalogGitRevision)
+    - name: data-key
+      value: $(params.data-key)
+    - name: component-name
+      value: $(params.component-name)
+    - name: destination-imagestream
+      value: $(params.destination-imagestream)
+    - name: release-version
+      value: $(params.release-version)
+    - name: ci-cluster-credentials-secret
+      value: $(params.ci-cluster-credentials-secret)
+    taskSpec:
+      params:
+      - name: snapshotPath
+        type: string
+      - name: dataPath
+        type: string
+      - name: sourceDataArtifact
+        type: string
+      - name: ociStorage
+        type: string
+      - name: dataDir
+        type: string
+      - name: orasOptions
+        type: string
+      - name: trustedArtifactsDebug
+        type: string
+      - name: caCertPath
+        type: string
+      - name: catalogGitUrl
+        type: string
+      - name: catalogGitRevision
+        type: string
+      - name: data-key
+        type: string
+      - name: component-name
+        type: string
+      - name: destination-imagestream
+        type: string
+      - name: release-version
+        type: string
+      - name: ci-cluster-credentials-secret
+        type: string
+      volumes:
+      - name: workdir
+        emptyDir: {}
+      - name: trusted-ca
+        configMap:
+          name: $(params.caTrustConfigMapName)
+          items:
+          - key: $(params.caTrustConfigMapKey)
+            path: ca-bundle.crt
+          optional: true
+      - name: cluster-credentials
+        secret:
+          secretName: $(params.ci-cluster-credentials-secret)
+      stepTemplate:
+        volumeMounts:
+        - name: workdir
+          mountPath: /var/workdir
+        - name: trusted-ca
+          mountPath: /mnt/trusted-ca
+          readOnly: true
+        env:
+        - name: ORAS_OPTIONS
+          value: $(params.orasOptions)
+        - name: DEBUG
+          value: $(params.trustedArtifactsDebug)
+        securityContext:
+          runAsUser: 1001
+      steps:
+      # Restore the collect-data trusted artifact into dataDir so snapshot_spec.json is readable.
+      - name: use-trusted-artifact
+        computeResources:
+          limits:
+            memory: 64Mi
+          requests:
+            memory: 64Mi
+            cpu: 30m
+        ref:
+          resolver: git
+          params:
+          - name: url
+            value: $(params.catalogGitUrl)
+          - name: revision
+            value: $(params.catalogGitRevision)
+          - name: pathInRepo
+            value: stepactions/use-trusted-artifact/use-trusted-artifact.yaml
+        params:
+        - name: workDir
+          value: $(params.dataDir)
+        - name: sourceDataArtifact
+          value: $(params.sourceDataArtifact)
+        - name: caCertPath
+          value: $(params.caCertPath)
+      - name: tag
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        volumeMounts:
+        - name: cluster-credentials
+          mountPath: /credentials
+          readOnly: true
+        env:
+        - name: HOME
+          value: /tekton/home
+        - name: KUBECONFIG
+          value: /credentials/kubeconfig
+        - name: SNAPSHOT_SPEC_FILE
+          value: $(params.dataDir)/$(params.snapshotPath)
+        - name: DATA_FILE
+          value: $(params.dataDir)/$(params.dataPath)
+        - name: DATA_KEY
+          value: $(params.data-key)
+        - name: COMPONENT_NAME_PARAM
+          value: $(params.component-name)
+        - name: DESTINATION_IMAGESTREAM_PARAM
+          value: $(params.destination-imagestream)
+        - name: RELEASE_VERSION_PARAM
+          value: $(params.release-version)
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "=== tag-image ==="
+          echo "Running as: $(oc whoami || echo unknown)"
+
+          if [ ! -f "${SNAPSHOT_SPEC_FILE}" ]; then
+            echo "ERROR: snapshot spec file not found at ${SNAPSHOT_SPEC_FILE}"
+            exit 1
+          fi
+
+          # Read tagging config from the merged RPA/ReleasePlan data (collect-data's
+          # data.json) under DATA_KEY, falling back to the pipeline-param value when
+          # a key is absent. Hyphenated keys must be quoted in jq.
+          data_val() {
+            local key="$1"
+            [ -f "${DATA_FILE}" ] || { echo ""; return; }
+            jq -r --arg k "${DATA_KEY}" --arg f "${key}" \
+              '(.[$k][$f]) // empty' "${DATA_FILE}"
+          }
+          COMPONENT_NAME="$(data_val component-name)"
+          COMPONENT_NAME="${COMPONENT_NAME:-${COMPONENT_NAME_PARAM}}"
+          DESTINATION_IMAGESTREAM="$(data_val destination-imagestream)"
+          DESTINATION_IMAGESTREAM="${DESTINATION_IMAGESTREAM:-${DESTINATION_IMAGESTREAM_PARAM}}"
+          RELEASE_VERSION="$(data_val release-version)"
+          RELEASE_VERSION="${RELEASE_VERSION:-${RELEASE_VERSION_PARAM}}"
+
+          echo "Component:    ${COMPONENT_NAME}"
+          echo "Imagestream:  ${DESTINATION_IMAGESTREAM}"
+          echo "Version:      ${RELEASE_VERSION}"
+
+          # Resolve the component's container image by exact name match. An
+          # unmatched component-name is a hard error.
+          IMAGE=$(jq -r --arg n "${COMPONENT_NAME}" \
+            '[.components[] | select(.name == $n)] | .[0].containerImage // empty' "${SNAPSHOT_SPEC_FILE}")
+          if [ -z "${IMAGE}" ]; then
+            echo "ERROR: no component named '${COMPONENT_NAME}' found in the snapshot. Available components:"
+            jq -r '.components[].name' "${SNAPSHOT_SPEC_FILE}" || true
+            exit 1
+          fi
+
+          # Recompute a fresh nightly tag at release time.
+          TIMESTAMP=$(date -u +%Y-%m-%d-%H%M%S)
+          TAG="${RELEASE_VERSION}-0.nightly-${TIMESTAMP}"
+          IMAGE_STREAM_TAG="${DESTINATION_IMAGESTREAM}:${TAG}"
+
+          echo "Source image: ${IMAGE}"
+          echo "Tagging into: ${IMAGE_STREAM_TAG}"
+
+          oc tag --source=docker --loglevel=2 --reference-policy='source' \
+            --import-mode='PreserveOriginal' --reference "${IMAGE}" "${IMAGE_STREAM_TAG}"
+
+          echo "=== tag-image: done ==="
