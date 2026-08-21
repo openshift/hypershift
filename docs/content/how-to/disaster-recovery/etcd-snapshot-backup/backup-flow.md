@@ -149,7 +149,7 @@ When the OADP plugin creates the `HCPEtcdBackup` CR, the HyperShift Operator's e
 
 1. **Feature gate**: Verifies `HCPEtcdBackup` feature gate is enabled. Returns immediately if disabled.
 2. **Terminal state**: If the backup already succeeded, failed, or was rejected, the controller runs cleanup and retention enforcement, then stops.
-3. **Etcd health**: Fetches the etcd `StatefulSet` in the HCP namespace and verifies all replicas are ready. If unhealthy, the backup is rejected with reason `EtcdUnhealthy`.
+3. **Etcd health**: Checks **all** etcd shard StatefulSets in the HCP namespace (default shard + any configured non-EmptyDir shards) and verifies all replicas are ready. If any shard is unhealthy, the backup is rejected with reason `EtcdUnhealthy`.
 4. **Serial execution**: Scans for active backup Jobs targeting the same HCP namespace. If another backup is running, the new one is rejected with reason `BackupRejected`. This check is idempotent: it runs after checking for the current backup's own Job.
 5. **Credentials**: Verifies the credential Secret referenced in the backup spec exists in the HO namespace.
 
@@ -171,8 +171,9 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 | Container | Type | Image | Purpose |
 |-----------|------|-------|---------|
 | `fetch-certs` | Init container | control-plane-operator | Runs `fetch-etcd-certs`: copies etcd TLS certificates from the HCP namespace using the cross-namespace RBAC |
-| `snapshot` | Init container | etcd | Runs `etcdctl snapshot save`: connects to etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
-| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: uploads the snapshot file to S3 or Azure Blob using the mounted credentials. Writes the final snapshot URL to the container's termination message |
+| `snapshot-etcd` | Init container | etcd | Runs `etcdctl snapshot save`: connects to the default etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
+| `snapshot-etcd-<name>` | Init container (per shard) | etcd | When etcd sharding is enabled, one additional init container per PV-backed shard runs `etcdctl snapshot save` against that shard's client endpoint. EmptyDir-backed shards are skipped |
+| `upload` | Main container | control-plane-operator | Runs `etcd-upload --snapshot-dir`: uploads all shard snapshot files to object storage. Writes a JSON array of per-shard URLs to the termination message |
 
 **Job configuration:**
 
@@ -192,7 +193,7 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 
 On subsequent reconcile loops, the controller checks the Job status:
 
-- **Succeeded**: Extracts the snapshot URL from the `upload` container's termination message. Persists it to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
+- **Succeeded**: Extracts the per-shard snapshot URLs from the `upload` container's termination message (JSON array). Populates `HCPEtcdBackup.Status.ShardSnapshots` with all shard entries and sets `Status.SnapshotURL` to the default shard's URL for backward compatibility. Persists the default shard URL to `HostedCluster.Status.LastSuccessfulEtcdBackupURL` using a retry-on-conflict pattern. Marks the `HCPEtcdBackup` as `BackupSucceeded`.
 - **Failed**: Marks the `HCPEtcdBackup` as `BackupFailed`.
 - **Running**: Requeues reconciliation after 10 seconds.
 

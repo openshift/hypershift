@@ -249,6 +249,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.HCPEtcdBackupStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HCPEtcdBackupStorage"):
 		return &hypershiftv1beta1.HCPEtcdBackupStorageApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("HCPEtcdShardSnapshot"):
+		return &hypershiftv1beta1.HCPEtcdShardSnapshotApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedCluster"):
 		return &hypershiftv1beta1.HostedClusterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedClusterSpec"):

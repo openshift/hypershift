@@ -415,3 +415,105 @@ tests:
           azure:
             encryptionKeyURL: "not-a-valid-url"
     expectedStatusError: "encryptionKeyURL must be a valid Azure Key Vault HTTPS URL"
+
+  # --- shardSnapshots validation ---
+  - name: When shardSnapshots has valid entries it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+      status:
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+        snapshotURL: "s3://my-backup-bucket/backups/etcd/snapshot.db"
+        shardSnapshots:
+        - name: etcd
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd.db"
+        - name: etcd-events
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd-events.db"
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+      status:
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+        snapshotURL: "s3://my-backup-bucket/backups/etcd/snapshot.db"
+        shardSnapshots:
+        - name: etcd
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd.db"
+        - name: etcd-events
+          snapshotURL: "s3://my-backup-bucket/backups/etcd/etcd-events.db"
+
+  - name: When shardSnapshots entry has invalid snapshotURL scheme it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: S3
+          s3:
+            bucket: my-backup-bucket
+            region: us-east-1
+            keyPrefix: backups/etcd
+            credentials:
+              name: aws-credentials
+      status:
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+        shardSnapshots:
+        - name: etcd
+          snapshotURL: "http://invalid-scheme/snapshot.db"
+    expectedStatusError: "snapshotURL must be a valid URL with scheme https or s3"

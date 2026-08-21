@@ -389,9 +389,48 @@ spec:
                     - encryptionKeyURL
                     type: object
                 type: object
+              shardSnapshots:
+                description: |-
+                  shardSnapshots contains the snapshot URLs for each etcd shard that was
+                  backed up. When etcd sharding is not enabled, this list contains a single
+                  entry for the default shard. Each entry maps a shard name to its snapshot URL.
+                  MaxItems is 11: 1 default shard + up to 10 named shards.
+                items:
+                  description: HCPEtcdShardSnapshot represents the snapshot URL for
+                    a single etcd shard.
+                  properties:
+                    name:
+                      description: name is the shard name (e.g., "etcd" for the default,
+                        "etcd-events" for a named shard).
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                    snapshotURL:
+                      description: |-
+                        snapshotURL is the URL of the snapshot in cloud storage.
+                        Must be a valid URL with scheme https or s3.
+                      maxLength: 2048
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: snapshotURL must be a valid URL with scheme https
+                          or s3
+                        rule: self.matches('^(https|s3)://.*')
+                  required:
+                  - name
+                  - snapshotURL
+                  type: object
+                maxItems: 11
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               snapshotURL:
                 description: |-
                   snapshotURL is the URL of the completed backup snapshot in cloud storage.
+                  This field contains the default shard's snapshot URL for backward compatibility.
+                  New consumers should prefer shardSnapshots.
                   Must be a valid URL with scheme https or s3.
                 maxLength: 2048
                 minLength: 1

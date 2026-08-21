@@ -2035,9 +2035,6 @@ type ManagedEtcdSpec struct {
 	// shards. Immutable after creation: shards cannot be added, removed,
 	// or reordered.
 	//
-	// WARNING: In the current TechPreview implementation, shard data is NOT
-	// included in HCPEtcdBackup. Resources routed to shards will not be
-	// backed up. This will be addressed before promotion beyond TechPreview.
 	// +optional
 	// +openshift:enable:FeatureGate=EtcdSharding
 	// +listType=map
@@ -2211,6 +2208,9 @@ type EtcdShardResource struct {
 // ManagedEtcdShardSpec defines the configuration for a single etcd shard
 // within a managed etcd deployment.
 // +kubebuilder:validation:XValidation:rule="has(oldSelf.storage) == has(self.storage)",message="storage cannot be added or removed after creation"
+//nolint:gci // CEL single-quoted empty strings ('') are valid; gci incorrectly parses them as import formatting issues
+// +kubebuilder:validation:XValidation:rule="!has(self.restoreSnapshotURL) || self.restoreSnapshotURL == '' || !has(self.storage) || self.storage.type != 'EmptyDir'",message="restoreSnapshotURL is not supported for EmptyDir shards"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.restoreSnapshotURL) || oldSelf.restoreSnapshotURL == '' || (has(self.restoreSnapshotURL) && self.restoreSnapshotURL != '')",message="restoreSnapshotURL cannot be removed once set"
 type ManagedEtcdShardSpec struct {
 	// name is a unique identifier for this shard. It is used to derive
 	// resource names (e.g., StatefulSet "etcd-{name}", Service
@@ -2263,6 +2263,19 @@ type ManagedEtcdShardSpec struct {
 	// isolation settings (nodeSelector, tolerations, topology spread).
 	// +optional
 	Scheduling EtcdShardSchedulingSpec `json:"scheduling,omitzero"`
+
+	// restoreSnapshotURL allows an optional URL to be provided where an etcd
+	// snapshot for this shard can be downloaded. This snapshot will be restored
+	// on initial startup, only when the shard's PV is empty.
+	// Only meaningful for PersistentVolume-backed shards; EmptyDir shards are
+	// ephemeral and restoring into them would be lost on pod restart.
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="restoreSnapshotURL is immutable"
+	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^(https|s3)://.*')",message="restoreSnapshotURL must be a valid URL with scheme https or s3"
+	RestoreSnapshotURL string `json:"restoreSnapshotURL,omitempty"`
 }
 
 // ManagedEtcdShardStorageType defines the type of storage for an etcd shard.

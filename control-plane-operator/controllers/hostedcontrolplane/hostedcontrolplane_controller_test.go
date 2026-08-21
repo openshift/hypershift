@@ -3190,6 +3190,418 @@ func TestReconcileEtcdStatus(t *testing.T) {
 	}
 }
 
+func TestHasRestoreURLs(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "When no managed spec is provided, it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When managed spec has no restore URLs, it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When default shard has restore URL, it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/snapshot.db"},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When named shard has restore URL, it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:               "events",
+									RestoreSnapshotURL: "https://example.com/events.db",
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When named shard has no restore URL, it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name: "events",
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &HostedControlPlaneReconciler{}
+			g.Expect(r.hasRestoreURLs(tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestAggregateEtcdRestoredCondition(t *testing.T) {
+	t.Parallel()
+	const ns = "test-ns"
+
+	// helper to build a ready etcd pod with a completed etcd-init container
+	readyPod := func(name, appLabel string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+				Labels:    map[string]string{"app": appLabel},
+			},
+			Status: corev1.PodStatus{
+				InitContainerStatuses: []corev1.ContainerStatus{
+					{Name: "etcd-init", Ready: true},
+				},
+			},
+		}
+	}
+
+	// helper to build a pod whose etcd-init failed
+	failedPod := func(name, appLabel string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+				Labels:    map[string]string{"app": appLabel},
+			},
+			Status: corev1.PodStatus{
+				InitContainerStatuses: []corev1.ContainerStatus{
+					{
+						Name:  "etcd-init",
+						Ready: false,
+						LastTerminationState: corev1.ContainerState{
+							Terminated: &corev1.ContainerStateTerminated{
+								ExitCode: 1,
+								Reason:   "CurlFailed",
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	testCases := []struct {
+		name            string
+		hcp             *hyperv1.HostedControlPlane
+		objects         []client.Object
+		expectNil       bool
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		{
+			name: "When no managed spec is provided, it should return nil",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{ManagementType: hyperv1.Managed},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When no restore URLs are configured, it should return nil",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{Name: "events"},
+							},
+						},
+					},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When default shard only and all pods restored, it should return True",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/default.db"},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				readyPod("etcd-0", "etcd"),
+			},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name: "When default shard is restored but named shard is not ready, it should return nil",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/default.db"},
+							},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:               "events",
+									RestoreSnapshotURL: "https://example.com/events.db",
+									Replicas:           1,
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				// Default shard is ready
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				readyPod("etcd-0", "etcd"),
+				// Named shard StatefulSet not ready yet (0 replicas ready)
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 0},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When both default and named shard are restored, it should return True",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/default.db"},
+							},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:               "events",
+									RestoreSnapshotURL: "https://example.com/events.db",
+									Replicas:           1,
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				readyPod("etcd-0", "etcd"),
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				readyPod("etcd-events-0", "etcd-events"),
+			},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name: "When named shard failed restore, it should return False with failure reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/default.db"},
+							},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:               "events",
+									RestoreSnapshotURL: "https://example.com/events.db",
+									Replicas:           1,
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				readyPod("etcd-0", "etcd"),
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				failedPod("etcd-events-0", "etcd-events"),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  "CurlFailed",
+			expectedMessage: `shard "etcd-events"`,
+		},
+		{
+			name: "When only named shard has restore URL, it should ignore default shard",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:               "events",
+									RestoreSnapshotURL: "https://example.com/events.db",
+									Replicas:           1,
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				// Default shard exists but has no restore URL — should be ignored
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+				},
+				readyPod("etcd-events-0", "etcd-events"),
+			},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name: "When shard StatefulSet is not found yet, it should return nil",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/default.db"},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				// No StatefulSet created yet
+			},
+			expectNil: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.objects...).
+				Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			cond := r.aggregateEtcdRestoredCondition(t.Context(), tc.hcp)
+			if tc.expectNil {
+				g.Expect(cond).To(BeNil())
+			} else {
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(tc.expectedStatus))
+				g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+				if tc.expectedMessage != "" {
+					g.Expect(cond.Message).To(ContainSubstring(tc.expectedMessage))
+				}
+			}
+		})
+	}
+}
+
 func TestReconcileKASStatus(t *testing.T) {
 	testNamespace := "test-namespace"
 
