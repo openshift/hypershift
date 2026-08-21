@@ -442,6 +442,25 @@ spec:
                           is chosen based on the NodePool release payload image.
                         maxLength: 255
                         type: string
+                      cpuOptions:
+                        description: |-
+                          cpuOptions specifies CPU configuration for EC2 instances.
+                          Supported on C8i, M8i, and R8i instance families.
+                          When omitted, AWS defaults are used (nested virtualization is not enabled).
+                          To revert to default behavior after setting cpuOptions, remove the entire
+                          cpuOptions field rather than clearing individual sub-fields.
+                        minProperties: 1
+                        properties:
+                          nestedVirtualizationPolicy:
+                            description: |-
+                              nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+                              Supported on C8i, M8i, and R8i instance families.
+                              When omitted, nested virtualization is not enabled (AWS default behavior).
+                            enum:
+                            - Enabled
+                            - Disabled
+                            type: string
+                        type: object
                       imageType:
                         description: |-
                           imageType specifies the type of image to use for node instances.
