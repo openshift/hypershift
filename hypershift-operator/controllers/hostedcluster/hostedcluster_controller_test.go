@@ -2537,7 +2537,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "172.16.3.3",
-									Port:    30443,
+									Port:    ptr.To(int32(30443)),
 								},
 							},
 						},
@@ -6074,7 +6074,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    31000,
+									Port:    ptr.To(int32(31000)),
 								},
 							},
 						},
@@ -6093,7 +6093,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    0,
+									Port:    ptr.To(int32(0)),
 								},
 							},
 						},
@@ -6112,7 +6112,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    10000,
+									Port:    ptr.To(int32(10000)),
 								},
 							},
 						},
@@ -6134,7 +6134,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    65000,
+									Port:    ptr.To(int32(65000)),
 								},
 							},
 						},
@@ -6161,7 +6161,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    28000,
+									Port:    ptr.To(int32(28000)),
 								},
 							},
 						},
@@ -6185,7 +6185,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    40000,
+									Port:    ptr.To(int32(40000)),
 								},
 							},
 						},
@@ -6212,7 +6212,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    31000,
+									Port:    ptr.To(int32(31000)),
 								},
 							},
 						},
@@ -6239,7 +6239,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    31000,
+									Port:    ptr.To(int32(31000)),
 								},
 							},
 						},
