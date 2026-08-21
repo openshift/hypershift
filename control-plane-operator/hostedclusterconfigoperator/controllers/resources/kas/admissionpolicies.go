@@ -7,9 +7,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	supportlabels "github.com/openshift/hypershift/support/labels"
 	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -180,7 +180,7 @@ func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client cl
 	mirroredConfigsAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	mirroredConfigsAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(mirroredConfigsResources, mirroredConfigsAPIVersion, mirroredConfigsAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	// we want to block changes only for configmaps with "hypershift.openshift.io/mirrored-config" label
-	mirroredConfigsAdmissionPolicy.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchLabels: map[string]string{nodepool.NTOMirroredConfigLabel: "true"}}
+	mirroredConfigsAdmissionPolicy.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchLabels: map[string]string{supportlabels.NTOMirroredConfigLabel: "true"}}
 	if err := mirroredConfigsAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling mirrored ConfigMaps Validating Admission Policy: %w", err)
 	}
