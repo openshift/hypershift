@@ -13,3 +13,25 @@ tests:
         resourceTags:
           - key: env
             value: prod
+
+  - name: when resourceTag key contains invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: AWSEndpointService
+      spec:
+        networkLoadBalancerName: my-nlb
+        resourceTags:
+          - key: "invalid!key"
+            value: prod
+    expectedError: "key must only contain letters, digits, and the characters _ . : / = + - @"
+
+  - name: when resourceTag value contains invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: AWSEndpointService
+      spec:
+        networkLoadBalancerName: my-nlb
+        resourceTags:
+          - key: env
+            value: "invalid#value"
+    expectedError: "value must only contain letters, digits, and the characters _ . : / = + - @"
