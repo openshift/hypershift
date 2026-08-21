@@ -97,8 +97,10 @@ const (
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
 
+	// Deprecated: use supportlabels.KubeletConfigConfigMapLabel from support/labels.
 	KubeletConfigConfigMapLabel = supportlabels.KubeletConfigConfigMapLabel
-	NTOMirroredConfigLabel      = supportlabels.NTOMirroredConfigLabel
+	// Deprecated: use supportlabels.NTOMirroredConfigLabel from support/labels.
+	NTOMirroredConfigLabel = supportlabels.NTOMirroredConfigLabel
 )
 
 type NodePoolReconciler struct {
