@@ -24,16 +24,16 @@ import (
 // AWSNodePoolPlatformApplyConfiguration represents a declarative configuration of the AWSNodePoolPlatform type for use
 // with apply.
 type AWSNodePoolPlatformApplyConfiguration struct {
-	InstanceType    *string                                     `json:"instanceType,omitempty"`
-	InstanceProfile *string                                     `json:"instanceProfile,omitempty"`
-	Subnet          *AWSResourceReferenceApplyConfiguration     `json:"subnet,omitempty"`
-	AMI             *string                                     `json:"ami,omitempty"`
-	ImageType       *hypershiftv1beta1.ImageType                `json:"imageType,omitempty"`
-	SecurityGroups  []AWSResourceReferenceApplyConfiguration    `json:"securityGroups,omitempty"`
-	RootVolume      *VolumeApplyConfiguration                   `json:"rootVolume,omitempty"`
-	ResourceTags    []AWSNodePoolResourceTagApplyConfiguration  `json:"resourceTags,omitempty"`
-	Placement       *PlacementOptionsApplyConfiguration         `json:"placement,omitempty"`
-	CPUOptions      *CPUOptionsApplyConfiguration               `json:"cpuOptions,omitempty"`
+	InstanceType    *string                                    `json:"instanceType,omitempty"`
+	InstanceProfile *string                                    `json:"instanceProfile,omitempty"`
+	Subnet          *AWSResourceReferenceApplyConfiguration    `json:"subnet,omitempty"`
+	AMI             *string                                    `json:"ami,omitempty"`
+	ImageType       *hypershiftv1beta1.ImageType               `json:"imageType,omitempty"`
+	SecurityGroups  []AWSResourceReferenceApplyConfiguration   `json:"securityGroups,omitempty"`
+	RootVolume      *VolumeApplyConfiguration                  `json:"rootVolume,omitempty"`
+	ResourceTags    []AWSNodePoolResourceTagApplyConfiguration `json:"resourceTags,omitempty"`
+	Placement       *PlacementOptionsApplyConfiguration        `json:"placement,omitempty"`
+	CPUOptions      *CPUOptionsApplyConfiguration              `json:"cpuOptions,omitempty"`
 }
 
 // AWSNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AWSNodePoolPlatform type for use with
