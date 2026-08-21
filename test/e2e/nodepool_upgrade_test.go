@@ -254,7 +254,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		e2eutil.WithTimeout(ru.getNodePoolUpgradeTimeout()),
 	)
 	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
-	e2eutil.EnsureNodesRuntime(t, newNodes)
+	e2eutil.EnsureNodesRuntime(t, newNodes, &nodePool)
 
 	// Validate NodesInfo is populated with the latest version after upgrade.
 	t.Logf("Validating NodesInfo is populated with version %s after upgrade", latestReleaseInfo.Version())
