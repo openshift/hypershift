@@ -106,7 +106,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "When cluster and nodepool share a tag key it should use the cluster value by default",
+			name: "When cluster and nodepool share a tag key, it should use the cluster value by default",
 			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				ResourceTags: []hyperv1.AWSClusterResourceTag{
 					{Key: "cluster-only", Value: "value"},
@@ -128,7 +128,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "When overridePolicy is Allow it should use the nodepool value and when Deny it should use the cluster value",
+			name: "When overridePolicy is Allow, it should use the nodepool value and when Deny it should use the cluster value",
 			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
 				ResourceTags: []hyperv1.AWSClusterResourceTag{
 					{Key: "cluster-only", Value: "value"},
@@ -153,7 +153,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name:          "Cluster default sg is used when none specified",
+			name:          "When no security group is specified, it should use the cluster default sg",
 			clusterStatus: &hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "cluster-default"}}},
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 				AMI: amiName,
@@ -1129,7 +1129,7 @@ func TestSetAWSConditions(t *testing.T) {
 		expectedCondValue corev1.ConditionStatus
 	}{
 		{
-			name: "When Linux nodePool resolves AMI successfully it should set ValidPlatformImage to true",
+			name: "When Linux nodePool resolves AMI successfully, it should set ValidPlatformImage to true",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Arch:     hyperv1.ArchitectureAMD64,
@@ -1347,7 +1347,7 @@ func TestResolveAWSAMI(t *testing.T) {
 			expectError:  true,
 		},
 		{
-			name: "When nodePool has default Linux type it should resolve AMI from stream metadata",
+			name: "When nodePool has default Linux type, it should resolve AMI from stream metadata",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
@@ -2097,7 +2097,7 @@ func TestAWSTagConflicts(t *testing.T) {
 			},
 		},
 		{
-			name: "When tags overlap with different values it should report them as blocked",
+			name: "When tags overlap with different values, it should report them as blocked",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{
 				{Key: "env", Value: "staging"},
 				{Key: "team", Value: "np-team"},
@@ -2109,7 +2109,7 @@ func TestAWSTagConflicts(t *testing.T) {
 			expectedBlocked: []string{"env", "team"},
 		},
 		{
-			name: "When overridePolicy is Allow it should report the conflict as overridden",
+			name: "When overridePolicy is Allow, it should report the conflict as overridden",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{
 				{Key: "env", Value: "staging"},
 			},
@@ -2119,7 +2119,7 @@ func TestAWSTagConflicts(t *testing.T) {
 			expectedOverridden: []string{"env"},
 		},
 		{
-			name: "When overridePolicy is Deny it should report the conflict as blocked",
+			name: "When overridePolicy is Deny, it should report the conflict as blocked",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{
 				{Key: "env", Value: "staging"},
 			},
@@ -2129,7 +2129,7 @@ func TestAWSTagConflicts(t *testing.T) {
 			expectedBlocked: []string{"env"},
 		},
 		{
-			name: "When overridePolicies are mixed it should split conflicts into blocked and overridden",
+			name: "When overridePolicies are mixed, it should split conflicts into blocked and overridden",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{
 				{Key: "env", Value: "staging"},
 				{Key: "team", Value: "np-team"},
@@ -2154,7 +2154,7 @@ func TestAWSTagConflicts(t *testing.T) {
 			},
 		},
 		{
-			name: "When overlapping and non-overlapping tags are mixed it should report overlaps as blocked",
+			name: "When overlapping and non-overlapping tags are mixed, it should report overlaps as blocked",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{
 				{Key: "np-only", Value: "value"},
 				{Key: "shared", Value: "np-value"},
@@ -2215,12 +2215,12 @@ func TestSetAWSResourceTagConflictCondition(t *testing.T) {
 		conditionSet        bool
 	}{
 		{
-			name:           "When AWS platform is nil it should remove the condition",
+			name:           "When AWS platform is nil, it should remove the condition",
 			nilAWSPlatform: true,
 			conditionSet:   false,
 		},
 		{
-			name:                "When there are no conflicts it should set condition to False",
+			name:                "When there are no conflicts, it should set condition to False",
 			nodePoolTags:        []hyperv1.AWSNodePoolResourceTag{{Key: "np-key", Value: "np-value"}},
 			clusterTags:         []hyperv1.AWSClusterResourceTag{{Key: "cluster-key", Value: "cluster-value"}},
 			expectedStatus:      corev1.ConditionFalse,
@@ -2229,7 +2229,7 @@ func TestSetAWSResourceTagConflictCondition(t *testing.T) {
 			conditionSet:        true,
 		},
 		{
-			name:                "When conflicts exist with unset overridePolicy it should set condition to True with conflict message",
+			name:                "When conflicts exist with unset overridePolicy, it should set condition to True with conflict message",
 			nodePoolTags:        []hyperv1.AWSNodePoolResourceTag{{Key: "env", Value: "staging"}},
 			clusterTags:         []hyperv1.AWSClusterResourceTag{{Key: "env", Value: "prod"}},
 			expectedStatus:      corev1.ConditionTrue,
@@ -2238,7 +2238,7 @@ func TestSetAWSResourceTagConflictCondition(t *testing.T) {
 			conditionSet:        true,
 		},
 		{
-			name:         "When all conflicts are allowed it should set condition to False with override message",
+			name:         "When all conflicts are allowed, it should set condition to False with override message",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{{Key: "env", Value: "staging"}},
 			clusterTags: []hyperv1.AWSClusterResourceTag{
 				{Key: "env", Value: "prod", OverridePolicy: hyperv1.AWSResourceTagOverridePolicyAllow},
@@ -2249,7 +2249,7 @@ func TestSetAWSResourceTagConflictCondition(t *testing.T) {
 			conditionSet:        true,
 		},
 		{
-			name:         "When all conflicts are denied it should set condition to True",
+			name:         "When all conflicts are denied, it should set condition to True",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{{Key: "env", Value: "staging"}},
 			clusterTags: []hyperv1.AWSClusterResourceTag{
 				{Key: "env", Value: "prod", OverridePolicy: hyperv1.AWSResourceTagOverridePolicyDeny},
@@ -2260,7 +2260,7 @@ func TestSetAWSResourceTagConflictCondition(t *testing.T) {
 			conditionSet:        true,
 		},
 		{
-			name: "When blocked and overridden conflicts are mixed it should set condition to True with combined message",
+			name: "When blocked and overridden conflicts are mixed, it should set condition to True with combined message",
 			nodePoolTags: []hyperv1.AWSNodePoolResourceTag{
 				{Key: "env", Value: "staging"},
 				{Key: "team", Value: "np-team"},
