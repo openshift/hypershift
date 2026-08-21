@@ -94,7 +94,7 @@ func TestReconcileService(t *testing.T) {
 				Ports: []corev1.ServicePort{
 					{
 						Protocol:   corev1.ProtocolTCP,
-						Port:       1125,
+						Port:       9999,
 						TargetPort: intstr.IntOrString{Type: intstr.String, StrVal: "client"},
 					},
 				},
