@@ -316,7 +316,11 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 		errs = append(errs, fmt.Errorf("actual extended key usages differ from expected: %s", extUsageDiff))
 	}
 
-	ipAddressDiff := cmp.Diff(cert.IPAddresses, cfg.IPAddresses, cmpopts.SortSlices(func(a, b []byte) bool { return bytes.Compare(a, b) == -1 }))
+	ipAddressDiff := cmp.Diff(
+		normalizedIPAddresses(cert.IPAddresses),
+		normalizedIPAddresses(cfg.IPAddresses),
+		cmpopts.SortSlices(func(a, b []byte) bool { return bytes.Compare(a, b) == -1 }),
+	)
 	if ipAddressDiff != "" {
 		errs = append(errs, fmt.Errorf("actual ip addresses differ from expected: %s", ipAddressDiff))
 	}
@@ -340,6 +344,16 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+func normalizedIPAddresses(ips []net.IP) []net.IP {
+	out := make([]net.IP, 0, len(ips))
+	for _, ip := range ips {
+		if ip16 := ip.To16(); ip16 != nil {
+			out = append(out, ip16)
+		}
+	}
+	return out
 }
 
 // ReconcileSignedCert reconciles a certificate secret using the provided config. It will
