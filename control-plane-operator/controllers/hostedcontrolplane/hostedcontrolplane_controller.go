@@ -2562,20 +2562,18 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 			pendingDuration := time.Since(pvc.CreationTimestamp.Time)
 			if pendingDuration > etcdPVCBindingGracePeriod {
 				reason = hyperv1.EtcdPVCPendingReason
+				message = fmt.Sprintf("Etcd PVC %s has been pending for %s (StorageClass %q)",
+					pvc.Name, pendingDuration.Round(time.Minute), storageClassName)
 				if len(eventMessages) > 0 {
-					message = fmt.Sprintf("etcd PVC %s has been pending for %s (StorageClass %q): %s. "+
-						"If the StorageClass requires zone-aware provisioning, ensure management cluster nodes are deployed into availability zones with valid topology labels",
-						pvc.Name, pendingDuration.Round(time.Minute), storageClassName, strings.Join(eventMessages, "; "))
-				} else {
-					message = fmt.Sprintf("etcd PVC %s has been pending for %s (StorageClass %q). "+
-						"If the StorageClass requires zone-aware provisioning, ensure management cluster nodes are deployed into availability zones with valid topology labels",
-						pvc.Name, pendingDuration.Round(time.Minute), storageClassName)
+					message += ": " + strings.Join(eventMessages, "; ")
 				}
+				message += ". If the StorageClass requires zone-aware provisioning, ensure management cluster nodes are deployed into availability zones with valid topology labels"
+				break
 			} else if len(eventMessages) > 0 {
-				message = fmt.Sprintf("Etcd volume claim %s pending (StorageClass %q): %s",
+				message = fmt.Sprintf("Etcd PVC %s pending (StorageClass %q): %s",
 					pvc.Name, storageClassName, strings.Join(eventMessages, "; "))
+				break
 			}
-			break
 		}
 	}
 

@@ -2529,6 +2529,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 		name              string
 		sts               *appsv1.StatefulSet
 		pvcs              []corev1.PersistentVolumeClaim
+		events            []corev1.Event
 		expectedCondition metav1.Condition
 		messageContains   []string
 		expectError       bool
@@ -2685,6 +2686,110 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 			},
 		},
 		{
+			name: "When PVC is pending within grace period with events, it should report waiting for quorum with event details",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "data-etcd-0",
+						Namespace:         testNamespace,
+						Labels:            map[string]string{"app": "etcd"},
+						UID:               "pvc-uid-1",
+						CreationTimestamp: metav1.NewTime(time.Now()),
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("premiumv2-csi"),
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimPending,
+					},
+				},
+			},
+			events: []corev1.Event{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "data-etcd-0.event1",
+						Namespace: testNamespace,
+					},
+					InvolvedObject: corev1.ObjectReference{
+						UID: "pvc-uid-1",
+					},
+					Type:    "Warning",
+					Reason:  "ProvisioningFailed",
+					Message: "failed to provision volume",
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.EtcdWaitingForQuorumReason,
+			},
+			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "failed to provision volume"},
+		},
+		{
+			name: "When PVC is pending past grace period with events, it should report EtcdPVCPending with event details and topology suggestion",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "data-etcd-0",
+						Namespace:         testNamespace,
+						Labels:            map[string]string{"app": "etcd"},
+						UID:               "pvc-uid-2",
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-15 * time.Minute)),
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("premiumv2-csi"),
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimPending,
+					},
+				},
+			},
+			events: []corev1.Event{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "data-etcd-0.event2",
+						Namespace: testNamespace,
+					},
+					InvolvedObject: corev1.ObjectReference{
+						UID: "pvc-uid-2",
+					},
+					Type:    "Warning",
+					Reason:  "ProvisioningFailed",
+					Message: "invalid availability zone",
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.EtcdPVCPendingReason,
+			},
+			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "invalid availability zone", "zone-aware provisioning"},
+		},
+		{
 			name: "When PVC is pending past grace period without events, it should report EtcdPVCPending with StorageClass and topology suggestion",
 			sts: &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2769,6 +2874,10 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 			if len(tc.pvcs) > 0 {
 				pvcList := &corev1.PersistentVolumeClaimList{Items: tc.pvcs}
 				clientBuilder = clientBuilder.WithLists(pvcList)
+			}
+			if len(tc.events) > 0 {
+				eventList := &corev1.EventList{Items: tc.events}
+				clientBuilder = clientBuilder.WithLists(eventList)
 			}
 			fakeClient := clientBuilder.Build()
 
