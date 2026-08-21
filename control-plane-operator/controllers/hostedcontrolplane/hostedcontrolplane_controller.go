@@ -184,6 +184,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage                   string
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
+	KASHealthMetrics                        *kas.KASHealthMetrics
 	SREConfigHash                           string
 	ec2Client                               awsapi.EC2API
 	awsSession                              *aws.Config
@@ -963,9 +964,9 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
+			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort, r.KASHealthMetrics)
 		}
-		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort)
+		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort, r.KASHealthMetrics)
 	case serviceStrategy.Type == hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
@@ -977,7 +978,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			if err != nil {
 				return err
 			}
-			return healthCheckKASEndpoint(ctx, endpoint, port)
+			return healthCheckKASEndpoint(ctx, endpoint, port, r.KASHealthMetrics)
 		}
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
@@ -1013,25 +1014,41 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		} else if LBIngress.IP != "" {
 			ingressPoint = LBIngress.IP
 		}
-		return healthCheckKASEndpoint(ctx, ingressPoint, port)
+		return healthCheckKASEndpoint(ctx, ingressPoint, port, r.KASHealthMetrics)
 	}
 	return nil
 }
 
-func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int) error {
+func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int, metrics *kas.KASHealthMetrics) error {
 	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz?verbose", ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthEndpoint, nil)
 	if err != nil {
 		return err
 	}
+
+	start := time.Now()
 	resp, err := httpClient.Do(req)
+	duration := time.Since(start).Seconds()
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	if metrics != nil {
+		metrics.RequestDuration.Observe(duration)
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+			metrics.Available.Set(1)
+		} else {
+			metrics.Available.Set(0)
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("health check to APIServer endpoint %s failed: %w", ingressPoint, err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		failingChecks := parseFailingHealthChecks(resp.Body)
