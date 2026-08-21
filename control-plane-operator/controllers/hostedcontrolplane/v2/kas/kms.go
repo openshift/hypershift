@@ -150,7 +150,7 @@ func deriveKMSKeys(kmsSpec *hyperv1.KMSSpec, encStatus *hyperv1.SecretEncryption
 			KeyName:      encStatus.ActiveKey.Azure.KeyName,
 			KeyVersion:   encStatus.ActiveKey.Azure.KeyVersion,
 		}
-		targetName, err := kms.AzureKMSProviderName(*targetKey)
+		targetName, err := kms.AzureKMSProviderName(*targetKey, kmsSpec.Azure.KeyVaultType)
 		if err != nil {
 			return keys, err
 		}

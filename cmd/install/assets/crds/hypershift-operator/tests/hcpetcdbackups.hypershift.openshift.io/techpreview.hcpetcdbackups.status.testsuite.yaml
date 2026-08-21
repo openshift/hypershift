@@ -342,6 +342,64 @@ tests:
             encryptionKeyURL: "https://my-vault.vault.azure.net/keys/my-key/abc123"
 
   # --- encryptionMetadata field format validation ---
+  - name: When encryptionMetadata uses a US Government Managed HSM encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+      status:
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+        encryptionMetadata:
+          azure:
+            encryptionKeyURL: "https://my-hsm.managedhsm.usgovcloudapi.net/keys/my-key/abc123"
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+      status:
+        conditions:
+        - type: BackupCompleted
+          status: "True"
+          reason: BackupSucceeded
+          message: Backup completed
+          lastTransitionTime: "2024-01-01T00:00:00Z"
+        encryptionMetadata:
+          azure:
+            encryptionKeyURL: "https://my-hsm.managedhsm.usgovcloudapi.net/keys/my-key/abc123"
+
   - name: When encryptionMetadata aws kmsKeyARN has invalid format it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -414,4 +472,4 @@ tests:
         encryptionMetadata:
           azure:
             encryptionKeyURL: "not-a-valid-url"
-    expectedStatusError: "encryptionKeyURL must be a valid Azure Key Vault HTTPS URL"
+    expectedStatusError: "encryptionKeyURL must be a valid Azure Key Vault or Managed HSM HTTPS URL"
