@@ -2,8 +2,14 @@ package certs_test
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"reflect"
 	"strconv"
@@ -223,6 +229,294 @@ func TestReconcileSignedCertWithCustomCAKeys(t *testing.T) {
 	if diff := cmp.Diff(expectedKeys, actualKeys); diff != "" {
 		t.Errorf("unexpected keys in cert secret: %s", diff)
 
+	}
+}
+
+func TestPemToPrivateKey(t *testing.T) {
+	t.Parallel()
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	ecP256Key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate P-256 key: %v", err)
+	}
+	ecP384Key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate P-384 key: %v", err)
+	}
+
+	rsaPKCS1PEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
+	})
+	ecP256DER, err := x509.MarshalECPrivateKey(ecP256Key)
+	if err != nil {
+		t.Fatalf("failed to marshal P-256 key: %v", err)
+	}
+	ecP256PEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: ecP256DER,
+	})
+	ecP384DER, err := x509.MarshalECPrivateKey(ecP384Key)
+	if err != nil {
+		t.Fatalf("failed to marshal P-384 key: %v", err)
+	}
+	ecP384PEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: ecP384DER,
+	})
+	rsaPKCS8DER, err := x509.MarshalPKCS8PrivateKey(rsaKey)
+	if err != nil {
+		t.Fatalf("failed to marshal RSA PKCS#8 key: %v", err)
+	}
+	rsaPKCS8PEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: rsaPKCS8DER,
+	})
+	ecPKCS8DER, err := x509.MarshalPKCS8PrivateKey(ecP256Key)
+	if err != nil {
+		t.Fatalf("failed to marshal EC PKCS#8 key: %v", err)
+	}
+	ecPKCS8PEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: ecPKCS8DER,
+	})
+
+	ecParamsPreamble := pem.EncodeToMemory(&pem.Block{
+		Type:  "EC PARAMETERS",
+		Bytes: []byte{0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07},
+	})
+	ecWithParamsPEM := append(ecParamsPreamble, ecP256PEM...)
+
+	testCases := []struct {
+		name    string
+		pem     []byte
+		wantErr bool
+	}{
+		{
+			name: "When parsing an RSA PKCS#1 key, it should return a signer",
+			pem:  rsaPKCS1PEM,
+		},
+		{
+			name: "When parsing an ECDSA P-256 SEC 1 key, it should return a signer",
+			pem:  ecP256PEM,
+		},
+		{
+			name: "When parsing an ECDSA P-384 SEC 1 key, it should return a signer",
+			pem:  ecP384PEM,
+		},
+		{
+			name: "When parsing an RSA PKCS#8 key, it should return a signer",
+			pem:  rsaPKCS8PEM,
+		},
+		{
+			name: "When parsing an ECDSA PKCS#8 key, it should return a signer",
+			pem:  ecPKCS8PEM,
+		},
+		{
+			name: "When parsing PEM with EC PARAMETERS preamble, it should return a signer",
+			pem:  ecWithParamsPEM,
+		},
+		{
+			name:    "When parsing invalid PEM, it should return an error",
+			pem:     []byte("not a PEM block"),
+			wantErr: true,
+		},
+		{
+			name: "When parsing a certificate PEM, it should return an error",
+			pem: pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: []byte{0x30},
+			}),
+			wantErr: true,
+		},
+		{
+			name:    "When parsing empty input, it should return an error",
+			pem:     []byte{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			signer, err := certs.PemToPrivateKey(tc.pem)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if signer == nil {
+				t.Fatal("expected non-nil signer")
+			}
+			if signer.Public() == nil {
+				t.Fatal("signer.Public() returned nil")
+			}
+		})
+	}
+}
+
+func TestPemToPrivateKeyRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	rsaPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
+	})
+
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ECDSA key: %v", err)
+	}
+	ecDER, err := x509.MarshalECPrivateKey(ecKey)
+	if err != nil {
+		t.Fatalf("failed to marshal EC key: %v", err)
+	}
+	ecPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: ecDER,
+	})
+
+	testCases := []struct {
+		name        string
+		pem         []byte
+		originalPub interface{}
+	}{
+		{
+			name:        "When round-tripping an RSA key, it should preserve the public key",
+			pem:         rsaPEM,
+			originalPub: &rsaKey.PublicKey,
+		},
+		{
+			name:        "When round-tripping an ECDSA key, it should preserve the public key",
+			pem:         ecPEM,
+			originalPub: &ecKey.PublicKey,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			signer, err := certs.PemToPrivateKey(tc.pem)
+			if err != nil {
+				t.Fatalf("PemToPrivateKey failed: %v", err)
+			}
+
+			originalBytes, err := x509.MarshalPKIXPublicKey(tc.originalPub)
+			if err != nil {
+				t.Fatalf("failed to marshal original public key: %v", err)
+			}
+			parsedBytes, err := x509.MarshalPKIXPublicKey(signer.Public())
+			if err != nil {
+				t.Fatalf("failed to marshal parsed public key: %v", err)
+			}
+			if !bytes.Equal(originalBytes, parsedBytes) {
+				t.Error("parsed key's public key does not match original")
+			}
+		})
+	}
+}
+
+func TestECDSACASignsCertificate(t *testing.T) {
+	t.Parallel()
+
+	ecCAKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ECDSA CA key: %v", err)
+	}
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "ecdsa-ca", OrganizationalUnit: []string{"test"}},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(certs.ValidityOneYear),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caCertDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &ecCAKey.PublicKey, ecCAKey)
+	if err != nil {
+		t.Fatalf("failed to create ECDSA CA cert: %v", err)
+	}
+	caCert, err := x509.ParseCertificate(caCertDER)
+	if err != nil {
+		t.Fatalf("failed to parse ECDSA CA cert: %v", err)
+	}
+
+	leafCfg := &certs.CertCfg{
+		Subject:      pkix.Name{CommonName: "leaf"},
+		KeyUsages:    x509.KeyUsageDigitalSignature,
+		ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		Validity:     certs.ValidityOneDay,
+		DNSNames:     []string{"leaf.example.com"},
+	}
+	leafKey, leafCert, err := certs.GenerateSignedCertificate(ecCAKey, caCert, leafCfg)
+	if err != nil {
+		t.Fatalf("GenerateSignedCertificate with ECDSA CA failed: %v", err)
+	}
+
+	if leafKey == nil || leafCert == nil {
+		t.Fatal("expected non-nil leaf key and cert")
+	}
+
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	if _, err := leafCert.Verify(x509.VerifyOptions{
+		Roots:     roots,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}); err != nil {
+		t.Fatalf("leaf cert does not verify against ECDSA CA: %v", err)
+	}
+}
+
+func TestPublicKeyToPemAcceptsAllKeyTypes(t *testing.T) {
+	t.Parallel()
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ECDSA key: %v", err)
+	}
+
+	testCases := []struct {
+		name string
+		pub  interface{}
+	}{
+		{
+			name: "When encoding an RSA public key, it should produce valid PEM",
+			pub:  &rsaKey.PublicKey,
+		},
+		{
+			name: "When encoding an ECDSA public key, it should produce valid PEM",
+			pub:  &ecKey.PublicKey,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pemBytes, err := certs.PublicKeyToPem(tc.pub)
+			if err != nil {
+				t.Fatalf("PublicKeyToPem failed: %v", err)
+			}
+			block, _ := pem.Decode(pemBytes)
+			if block == nil {
+				t.Fatal("PublicKeyToPem produced invalid PEM")
+			}
+			if block.Type != "PUBLIC KEY" {
+				t.Errorf("expected PEM type 'PUBLIC KEY', got %q", block.Type)
+			}
+		})
 	}
 }
 
