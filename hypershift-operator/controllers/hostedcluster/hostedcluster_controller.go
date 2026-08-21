@@ -150,6 +150,11 @@ const (
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
 	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
+
+	// configSyncedLabel is applied to ConfigMaps and Secrets in the HCP namespace
+	// that were copied by reconcileGlobalConfigSync. It enables cleanup of stale
+	// copies when spec.configuration refs change.
+	configSyncedLabel = "hypershift.openshift.io/config-synced-from"
 )
 
 var (
@@ -2125,60 +2130,123 @@ func (r *HostedClusterReconciler) reconcileUnmanagedEtcdMTLSSync(
 
 // reconcileGlobalConfigSync syncs global configuration configmaps and secrets
 // from the HostedCluster namespace to the control plane namespace.
+// It also cleans up previously-synced resources that are no longer referenced.
 func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
-	if hcluster.Spec.Configuration == nil {
-		return nil
+	var configMapRefNames []string
+	var secretRefNames []string
+
+	if hcluster.Spec.Configuration != nil {
+		configMapRefNames = configrefs.ConfigMapRefs(hcluster.Spec.Configuration)
+		for _, configMapRef := range configMapRefNames {
+			sourceCM := &corev1.ConfigMap{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
+				return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
+			}
+			if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
+				return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+			}
+			destCM := &corev1.ConfigMap{}
+			destCM.Name = sourceCM.Name
+			destCM.Namespace = controlPlaneNamespace
+			if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
+				destCM.Annotations = sourceCM.Annotations
+				destCM.Labels = maps.Clone(sourceCM.Labels)
+				if destCM.Labels == nil {
+					destCM.Labels = map[string]string{}
+				}
+				destCM.Labels[configSyncedLabel] = hcluster.Namespace
+				destCM.Data = sourceCM.Data
+				destCM.BinaryData = sourceCM.BinaryData
+				destCM.Immutable = sourceCM.Immutable
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+			}
+		}
+		secretRefNames = configrefs.SecretRefs(hcluster.Spec.Configuration)
+		for _, secretRef := range secretRefNames {
+			sourceSecret := &corev1.Secret{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
+				return fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
+			}
+			if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
+				return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+			}
+			if err := ensureHostedResourcesAreEmpty(ctx, r.Client, hcluster, sourceSecret); err != nil {
+				return fmt.Errorf("failed to validate referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
+			}
+			destSecret := &corev1.Secret{}
+			destSecret.Name = sourceSecret.Name
+			destSecret.Namespace = controlPlaneNamespace
+			if _, err := createOrUpdate(ctx, r.Client, destSecret, func() error {
+				destSecret.Annotations = sourceSecret.Annotations
+				destSecret.Labels = maps.Clone(sourceSecret.Labels)
+				if destSecret.Labels == nil {
+					destSecret.Labels = map[string]string{}
+				}
+				destSecret.Labels[configSyncedLabel] = hcluster.Namespace
+				destSecret.Data = sourceSecret.Data
+				destSecret.Immutable = sourceSecret.Immutable
+				destSecret.Type = sourceSecret.Type
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
+			}
+		}
 	}
-	configMapRefs := configrefs.ConfigMapRefs(hcluster.Spec.Configuration)
-	for _, configMapRef := range configMapRefs {
-		sourceCM := &corev1.ConfigMap{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
-			return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
-		}
-		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
-			return fmt.Errorf("failed to set referenced resource annotation: %w", err)
-		}
-		destCM := &corev1.ConfigMap{}
-		destCM.Name = sourceCM.Name
-		destCM.Namespace = controlPlaneNamespace
-		if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
-			destCM.Annotations = sourceCM.Annotations
-			destCM.Labels = sourceCM.Labels
-			destCM.Data = sourceCM.Data
-			destCM.BinaryData = sourceCM.BinaryData
-			destCM.Immutable = sourceCM.Immutable
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+
+	if err := r.cleanupStaleSyncedConfigMaps(ctx, controlPlaneNamespace, hcluster.Namespace, configMapRefNames); err != nil {
+		return err
+	}
+	if err := r.cleanupStaleSyncedSecrets(ctx, controlPlaneNamespace, hcluster.Namespace, secretRefNames); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) cleanupStaleSyncedConfigMaps(ctx context.Context, controlPlaneNamespace, sourceNamespace string, currentRefs []string) error {
+	log := ctrl.LoggerFrom(ctx)
+	currentNames := sets.New[string](currentRefs...)
+	var syncedCMs corev1.ConfigMapList
+	if err := r.List(ctx, &syncedCMs,
+		client.InNamespace(controlPlaneNamespace),
+		client.MatchingLabels{configSyncedLabel: sourceNamespace},
+	); err != nil {
+		return fmt.Errorf("failed to list synced configmaps: %w", err)
+	}
+	for i := range syncedCMs.Items {
+		if !currentNames.Has(syncedCMs.Items[i].Name) {
+			log.Info("Deleting stale synced configmap", "name", syncedCMs.Items[i].Name, "namespace", controlPlaneNamespace)
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, &syncedCMs.Items[i]); err != nil {
+				return fmt.Errorf("failed to delete stale synced configmap %s/%s: %w",
+					syncedCMs.Items[i].Namespace, syncedCMs.Items[i].Name, err)
+			}
 		}
 	}
-	secretRefs := configrefs.SecretRefs(hcluster.Spec.Configuration)
-	for _, secretRef := range secretRefs {
-		sourceSecret := &corev1.Secret{}
-		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
-			return fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
-		}
-		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
-			return fmt.Errorf("failed to set referenced resource annotation: %w", err)
-		}
-		if err := ensureHostedResourcesAreEmpty(ctx, r.Client, hcluster, sourceSecret); err != nil {
-			return fmt.Errorf("failed to validate referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
-		}
-		destSecret := &corev1.Secret{}
-		destSecret.Name = sourceSecret.Name
-		destSecret.Namespace = controlPlaneNamespace
-		if _, err := createOrUpdate(ctx, r.Client, destSecret, func() error {
-			destSecret.Annotations = sourceSecret.Annotations
-			destSecret.Labels = sourceSecret.Labels
-			destSecret.Data = sourceSecret.Data
-			destSecret.Immutable = sourceSecret.Immutable
-			destSecret.Type = sourceSecret.Type
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
+	return nil
+}
+
+func (r *HostedClusterReconciler) cleanupStaleSyncedSecrets(ctx context.Context, controlPlaneNamespace, sourceNamespace string, currentRefs []string) error {
+	log := ctrl.LoggerFrom(ctx)
+	currentNames := sets.New[string](currentRefs...)
+	var syncedSecrets corev1.SecretList
+	if err := r.List(ctx, &syncedSecrets,
+		client.InNamespace(controlPlaneNamespace),
+		client.MatchingLabels{configSyncedLabel: sourceNamespace},
+	); err != nil {
+		return fmt.Errorf("failed to list synced secrets: %w", err)
+	}
+	for i := range syncedSecrets.Items {
+		if !currentNames.Has(syncedSecrets.Items[i].Name) {
+			log.Info("Deleting stale synced secret", "name", syncedSecrets.Items[i].Name, "namespace", controlPlaneNamespace)
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, &syncedSecrets.Items[i]); err != nil {
+				return fmt.Errorf("failed to delete stale synced secret %s/%s: %w",
+					syncedSecrets.Items[i].Namespace, syncedSecrets.Items[i].Name, err)
+			}
 		}
 	}
 	return nil
