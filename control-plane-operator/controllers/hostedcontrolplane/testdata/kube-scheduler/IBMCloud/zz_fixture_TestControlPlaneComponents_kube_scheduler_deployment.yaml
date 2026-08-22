@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 141e8559d837b853f1a4203a6b68e1e1d65263612a65fc18cb017a74558f9d88
+    hypershift.openshift.io/desired-state-hash: 09b314e75ab2b141f4c5a9370683f3f7f481e84e3413b379f5680428483497e5
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-scheduler
@@ -182,7 +182,6 @@ spec:
         - --feature-gates=UserNamespacesSupport=false
         - --feature-gates=VSphereConfigurableMaxAllowedBlockVolumesPerNode=false
         - --feature-gates=VSphereHostVMGroupZonal=false
-        - --feature-gates=VSphereMultiDisk=false
         - --feature-gates=VSphereMultiNetworks=false
         - --feature-gates=VolumeAttributesClass=false
         - --feature-gates=VolumeGroupSnapshot=false

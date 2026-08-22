@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 32595d34c01c7ead55cf0b0f4ee589a839e745879763f03eb461d9e140f8e20f
+    hypershift.openshift.io/desired-state-hash: 7119f74171440b114df2f20f1422d4b5db492e02e4878f66a0a225ee88e61ecf
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-controller-manager
@@ -30,7 +30,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: eb66b081
+        component.hypershift.openshift.io/config-hash: c9d8d57f
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: openshift-controller-manager
