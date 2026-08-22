@@ -139,24 +139,37 @@ func validateCertificateAuth(t *testing.T, ctx context.Context, root *rest.Confi
 	t.Log("validating that the client certificate provides the appropriate access")
 	breakGlassTenantClient := clientForCertKey(t, root, crt, key)
 
-	t.Log("issuing SSR to identify the subject we are given using the client certificate")
-	response, err := breakGlassTenantClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-	if err != nil {
-		if apierrors.IsUnauthorized(err) {
-			t.Logf("got an unauthorized error for SSR, debugging certificates")
-			t.Logf("client certificate: %s", string(crt))
-			caBundle, err := mgmtDebugClient.Get(ctx, cpomanifests.TotalClientCABundle("").Name, metav1.GetOptions{})
-			if err != nil {
-				t.Logf("failed to get total client CA bundle: %v", err)
-			}
+	// Poll the SSR until KAS trusts the break-glass signer CA. On NonePlatform
+	// clusters, the test framework skips the full cluster-readiness gate, so KAS
+	// may be serving before the control-plane-pki-operator has reconciled the
+	// break-glass signer CA into the client-ca trust bundle. All errors are
+	// retried: Unauthorized means the CA hasn't been reconciled yet, while
+	// transient connection errors (DNS resolution, connection refused, TLS
+	// handshake) mean the KAS endpoint isn't fully reachable yet. The 5-minute
+	// timeout bounds the total retry window.
+	t.Log("polling SSR to confirm that the client certificate is authorized")
+	var response *authenticationv1.SelfSubjectReview
+	if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		response, err = breakGlassTenantClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+		if err != nil {
+			t.Logf("SSR attempt failed (will retry): %v", err)
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		t.Logf("SSR did not succeed within timeout, debugging certificates")
+		t.Logf("client certificate: %s", string(crt))
+		if caBundle, getErr := mgmtDebugClient.Get(ctx, cpomanifests.TotalClientCABundle("").Name, metav1.GetOptions{}); getErr != nil {
+			t.Logf("failed to get total client CA bundle: %v", getErr)
+		} else {
 			t.Logf("server total certificate trust bundle: %s", string(caBundle.Data[certs.CASignerCertMapKey]))
-			caBundle, err = mgmtDebugClient.Get(ctx, pkimanifests.TotalKASClientCABundle("").Name, metav1.GetOptions{})
-			if err != nil {
-				t.Logf("failed to get KAS total client CA bundle: %v", err)
-			}
+		}
+		if caBundle, getErr := mgmtDebugClient.Get(ctx, pkimanifests.TotalKASClientCABundle("").Name, metav1.GetOptions{}); getErr != nil {
+			t.Logf("failed to get KAS total client CA bundle: %v", getErr)
+		} else {
 			t.Logf("KAS certificate trust bundle: %s", string(caBundle.Data[certs.OCPCASignerCertMapKey]))
 		}
-		t.Fatalf("could not send SSR: %v", err)
+		t.Fatalf("break-glass client certificate not authorized within timeout: %v", err)
 	}
 
 	t.Log("ensuring that the SSR identifies the client certificate as having system:masters power and correct username")
