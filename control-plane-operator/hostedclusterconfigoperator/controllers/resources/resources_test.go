@@ -366,6 +366,102 @@ func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Clien
 	return controllerutil.CreateOrUpdate(ctx, c, obj, f)
 }
 
+func TestReconcileIngressControllerCertSource(t *testing.T) {
+	ctx := t.Context()
+
+	customData := map[string][]byte{
+		corev1.TLSCertKey:       []byte("custom-cert"),
+		corev1.TLSPrivateKeyKey: []byte("custom-key"),
+	}
+	wildcardData := map[string][]byte{
+		corev1.TLSCertKey:       []byte("wildcard-cert"),
+		corev1.TLSPrivateKeyKey: []byte("wildcard-key"),
+	}
+
+	newHCP := func(withCustom bool) *hyperv1.HostedControlPlane {
+		hcp := fakeHCP()
+		hcp.Spec.Platform.Type = hyperv1.NonePlatform
+		hcp.Spec.DNS.BaseDomain = "example.com"
+		if withCustom {
+			hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+				IngressOperator: &hyperv1.IngressOperatorSpec{
+					DefaultCertificate: hyperv1.IngressDefaultCertificateReference{Name: "my-cert"},
+				},
+			}
+		}
+		return hcp
+	}
+
+	wildcardSource := func() *corev1.Secret {
+		s := cpomanifests.IngressCert("bar")
+		s.Type = corev1.SecretTypeTLS
+		s.Data = wildcardData
+		return s
+	}
+	customSource := func() *corev1.Secret {
+		s := cpomanifests.ServiceProviderDefaultIngressServingCert("bar")
+		s.Type = corev1.SecretTypeTLS
+		s.Data = customData
+		return s
+	}
+	existingGuestCert := func() *corev1.Secret {
+		s := manifests.IngressDefaultIngressControllerCert()
+		s.Type = corev1.SecretTypeTLS
+		s.Data = wildcardData
+		return s
+	}
+
+	testCases := []struct {
+		name         string
+		hcp          *hyperv1.HostedControlPlane
+		cpObjects    []client.Object
+		guestObjects []client.Object
+		// expectCert is the tls.crt expected in the guest default-ingress-cert secret.
+		expectCert []byte
+	}{
+		{
+			name:       "When no custom certificate is configured, it should sync the generated wildcard certificate",
+			hcp:        newHCP(false),
+			cpObjects:  []client.Object{wildcardSource()},
+			expectCert: wildcardData[corev1.TLSCertKey],
+		},
+		{
+			name:       "When a custom certificate is configured and synced, it should use the custom certificate",
+			hcp:        newHCP(true),
+			cpObjects:  []client.Object{customSource()},
+			expectCert: customData[corev1.TLSCertKey],
+		},
+		{
+			name:         "When a custom certificate is configured but not yet synced, it should not error and preserve the existing certificate",
+			hcp:          newHCP(true),
+			cpObjects:    []client.Object{},
+			guestObjects: []client.Object{existingGuestCert()},
+			expectCert:   wildcardData[corev1.TLSCertKey],
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.cpObjects, tc.hcp)...).Build()
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.guestObjects...).Build()
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			// A missing custom certificate must not fail reconciliation, so the
+			// HostedCluster does not become degraded.
+			g.Expect(r.reconcileIngressController(ctx, tc.hcp)).To(Succeed())
+
+			guestCert := manifests.IngressDefaultIngressControllerCert()
+			g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(guestCert), guestCert)).To(Succeed())
+			g.Expect(guestCert.Data[corev1.TLSCertKey]).To(Equal(tc.expectCert))
+		})
+	}
+}
+
 func fakeHCP() *hyperv1.HostedControlPlane {
 	hcp := manifests.HostedControlPlane("bar", "foo")
 	hcp.Status.ControlPlaneEndpoint.Host = "server"
