@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"slices"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -26,26 +27,45 @@ var CRDS embed.FS
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
 
-// CAPICRDOverrides configures CAPI CRDs that have both v1beta1 and v1beta2 versions.
-// These CRDs need storage version overrides and conversion webhooks.
-// Key is the CRD name (e.g., "clusters.cluster.x-k8s.io").
-// TODO(bclement): remove StorageVersion override once storage version is v1beta2.
-var CAPICRDOverrides = map[string]struct {
+// CAPICRDOverrideEntry configures a CAPI CRD that has both v1beta1 and v1beta2 versions.
+type CAPICRDOverrideEntry struct {
 	StorageVersion  string
 	NeedsConversion bool
-}{
-	"clusterclasses.cluster.x-k8s.io":                    {StorageVersion: "v1beta1", NeedsConversion: true},
-	"clusters.cluster.x-k8s.io":                          {StorageVersion: "v1beta1", NeedsConversion: true},
-	"machinedeployments.cluster.x-k8s.io":                {StorageVersion: "v1beta1", NeedsConversion: true},
-	"machinedrainrules.cluster.x-k8s.io":                 {StorageVersion: "v1beta1", NeedsConversion: true},
-	"machinehealthchecks.cluster.x-k8s.io":               {StorageVersion: "v1beta1", NeedsConversion: true},
-	"machinepools.cluster.x-k8s.io":                      {StorageVersion: "v1beta1", NeedsConversion: true},
-	"machines.cluster.x-k8s.io":                          {StorageVersion: "v1beta1", NeedsConversion: true},
-	"machinesets.cluster.x-k8s.io":                       {StorageVersion: "v1beta1", NeedsConversion: true},
-	"ipaddressclaims.ipam.cluster.x-k8s.io":              {StorageVersion: "v1beta1", NeedsConversion: true},
-	"ipaddresses.ipam.cluster.x-k8s.io":                  {StorageVersion: "v1beta1", NeedsConversion: true},
-	"clusterresourcesetbindings.addons.cluster.x-k8s.io": {StorageVersion: "v1beta1", NeedsConversion: true},
-	"clusterresourcesets.addons.cluster.x-k8s.io":        {StorageVersion: "v1beta1", NeedsConversion: true},
+}
+
+// capiCRDNames lists all CAPI CRDs that need storage version overrides and conversion webhooks.
+var capiCRDNames = []string{
+	"clusterclasses.cluster.x-k8s.io",
+	"clusters.cluster.x-k8s.io",
+	"machinedeployments.cluster.x-k8s.io",
+	"machinedrainrules.cluster.x-k8s.io",
+	"machinehealthchecks.cluster.x-k8s.io",
+	"machinepools.cluster.x-k8s.io",
+	"machines.cluster.x-k8s.io",
+	"machinesets.cluster.x-k8s.io",
+	"ipaddressclaims.ipam.cluster.x-k8s.io",
+	"ipaddresses.ipam.cluster.x-k8s.io",
+	"clusterresourcesetbindings.addons.cluster.x-k8s.io",
+	"clusterresourcesets.addons.cluster.x-k8s.io",
+}
+
+// CAPICRDNames returns the list of CAPI CRD names that are managed by HyperShift.
+func CAPICRDNames() []string {
+	return slices.Clone(capiCRDNames)
+}
+
+// CAPICRDOverrides returns the override map for CAPI CRDs with the default v1beta1 storage version.
+func CAPICRDOverrides() map[string]CAPICRDOverrideEntry {
+	return CAPICRDOverridesWithStorageVersion("v1beta1")
+}
+
+// CAPICRDOverridesWithStorageVersion returns the override map with the specified storage version.
+func CAPICRDOverridesWithStorageVersion(storageVersion string) map[string]CAPICRDOverrideEntry {
+	overrides := make(map[string]CAPICRDOverrideEntry, len(capiCRDNames))
+	for _, name := range capiCRDNames {
+		overrides[name] = CAPICRDOverrideEntry{StorageVersion: storageVersion, NeedsConversion: true}
+	}
+	return overrides
 }
 
 // capiResources specifies which CRDs should get labeled with capiLabel
@@ -102,8 +122,10 @@ func getContents(fs embed.FS, file string) []byte {
 	return b
 }
 
-// CustomResourceDefinitions returns all existing CRDs as controller-runtime objects
-func CustomResourceDefinitions(include func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool, transform func(*apiextensionsv1.CustomResourceDefinition)) []crclient.Object {
+// CustomResourceDefinitions returns all existing CRDs as controller-runtime objects.
+// capiStorageVersion controls which version is set as storage for CAPI CRDs (e.g., "v1beta1" or "v1beta2").
+func CustomResourceDefinitions(capiStorageVersion string, include func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool, transform func(*apiextensionsv1.CustomResourceDefinition)) []crclient.Object {
+	overrides := CAPICRDOverridesWithStorageVersion(capiStorageVersion)
 	var allCrds []crclient.Object
 	err := fs.WalkDir(CRDS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -112,7 +134,7 @@ func CustomResourceDefinitions(include func(path string, crd *apiextensionsv1.Cu
 		if filepath.Ext(path) != ".yaml" {
 			return nil
 		}
-		crd := getCustomResourceDefinition(CRDS, path)
+		crd := getCustomResourceDefinition(CRDS, path, overrides)
 		if include(path, crd) {
 
 			if transform != nil {
@@ -131,7 +153,7 @@ func CustomResourceDefinitions(include func(path string, crd *apiextensionsv1.Cu
 // getCustomResourceDefinition unmarshals a CRD from file. Note there's a hack
 // here to strip leading YAML document separator which controller-gen creates
 // even though there's only one object in the document.
-func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.CustomResourceDefinition {
+func getCustomResourceDefinition(files embed.FS, file string, overrides map[string]CAPICRDOverrideEntry) *apiextensionsv1.CustomResourceDefinition {
 	b := getContents(files, file)
 	repaired := bytes.Replace(b, []byte("\n---\n"), []byte(""), 1)
 	crd := apiextensionsv1.CustomResourceDefinition{}
@@ -145,8 +167,7 @@ func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.C
 		crd.Labels[capiLabel] = label
 	}
 
-	// Override storage version if specified in CAPICRDOverrides
-	if override, ok := CAPICRDOverrides[crd.Name]; ok && override.StorageVersion != "" {
+	if override, ok := overrides[crd.Name]; ok && override.StorageVersion != "" {
 		for i := range crd.Spec.Versions {
 			crd.Spec.Versions[i].Storage = crd.Spec.Versions[i].Name == override.StorageVersion
 		}
