@@ -298,6 +298,7 @@ const (
 	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
 	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
 	EtcdRecoveryJobFailedReason   = "EtcdRecoveryJobFailed"
+	EtcdPVCPendingReason          = "EtcdPVCPending"
 
 	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
 	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"

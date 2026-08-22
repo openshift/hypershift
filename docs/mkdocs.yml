@@ -191,6 +191,7 @@ nav:
       - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md
+        - how-to/azure/troubleshooting/etcd-pvc-zone-topology.md
     - 'GCP':
       - how-to/gcp/index.md
       - how-to/gcp/create-gcp-hosted-cluster.md
