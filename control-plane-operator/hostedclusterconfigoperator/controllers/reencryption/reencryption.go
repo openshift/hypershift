@@ -14,13 +14,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/secretencryption"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/util"
 
 	"github.com/openshift/library-go/pkg/operator/encryption/controllers/migrators"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,25 +62,33 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, fmt.Errorf("failed to get HCP: %w", err)
 	}
 
-	originalHCP := hcp.DeepCopy()
-	result, err := r.reconcile(ctx, log, hcp)
+	// Snapshot pre-reconcile encryption state for metrics comparison.
+	previousEncryption := *hcp.Status.SecretEncryption.DeepCopy()
+
+	// Reconcile against a copy — PatchStatus below re-fetches hcp from the server,
+	// which would otherwise overwrite the in-memory mutations reconcile() makes.
+	workingCopy := hcp.DeepCopy()
+	result, err := r.reconcile(ctx, log, workingCopy)
 	if err != nil {
 		return result, err
 	}
 
-	if !equality.Semantic.DeepEqual(hcp.Status, originalHCP.Status) {
-		log.Info("Patching HCP status with secret encryption changes")
-		patch := crclient.MergeFrom(originalHCP)
-		if err := r.cpClient.Status().Patch(ctx, hcp, patch); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to patch HCP status: %w", err)
-		}
-		log.Info("Successfully patched HCP status")
-		recordMigrationState(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
-		previousState := encryptionHistoryState(originalHCP.Status.SecretEncryption)
-		currentState := encryptionHistoryState(hcp.Status.SecretEncryption)
-		if currentState == hyperv1.EncryptionMigrationStateCompleted && previousState != currentState {
-			recordMigrationDuration(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
-		}
+	if patchErr := statuspatching.PatchStatus(ctx, r.cpClient, hcp, func() error {
+		hcp.Status.SecretEncryption = workingCopy.Status.SecretEncryption
+		statuspatching.SyncCondition(workingCopy.Status.Conditions, &hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
+		return nil
+	}); patchErr != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to patch HCP status: %w", patchErr)
+	}
+
+	// Always re-emit the current migration state gauge so it survives pod restarts.
+	recordMigrationState(r.hcpNamespace, r.hcpName, workingCopy.Status.SecretEncryption)
+
+	// Record duration only on actual state transitions.
+	previousState := encryptionHistoryState(previousEncryption)
+	currentState := encryptionHistoryState(workingCopy.Status.SecretEncryption)
+	if currentState == hyperv1.EncryptionMigrationStateCompleted && previousState != currentState {
+		recordMigrationDuration(r.hcpNamespace, r.hcpName, workingCopy.Status.SecretEncryption)
 	}
 
 	return result, nil
