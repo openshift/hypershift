@@ -17,6 +17,7 @@ import (
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -35,7 +36,14 @@ const (
 	AdmissionPolicyNameICSP               = "icsp"
 	AdmissionPolicyNameInfra              = "infra"
 	AdmissionPolicyNameNTOMirroredConfigs = "ntomirroredconfigmaps"
+	AdmissionPolicyNameRBAC               = "managed-rbac"
 	cnoSAUser                             = "system:serviceaccount:openshift-network-operator:cluster-network-operator"
+
+	// systemAdminUser is the identity behind the localhost kubeconfig, which the KAS bootstrap
+	// container uses to apply the managed ClusterRoleBindings on every kube-apiserver start.
+	// Note that this is also the identity in the admin kubeconfig published on the HostedCluster,
+	// so whoever holds that kubeconfig is deliberately left able to modify those bindings.
+	systemAdminUser = "system:admin"
 
 	BaseCelExpression = "has(object.spec) && has(oldObject.spec) && object.spec == oldObject.spec"
 )
@@ -74,6 +82,10 @@ func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.H
 
 	if err := reconcileConfigMapsValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Mirrored Configs Validating Admission Policy: %w", err)
+	}
+
+	if err := reconcileRBACValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile RBAC Validating Admission Policy: %w", err)
 	}
 
 	return nil
@@ -184,6 +196,29 @@ func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client cl
 	if err := mirroredConfigsAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling mirrored ConfigMaps Validating Admission Policy: %w", err)
 	}
+	return nil
+}
+
+func reconcileRBACValidatingAdmissionPolicy(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	rbacAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameRBAC}
+	rbacAPIVersion := []string{rbacv1.SchemeGroupVersion.Version}
+	rbacAPIGroup := []string{rbacv1.SchemeGroupVersion.Group}
+	rbacResources := []string{"clusterrolebindings"}
+
+	// Deliberately a local copy rather than the shared HCCOUserValidation: this policy widens the
+	// whitelist and must not leak that into the policies reconciled after it.
+	rbacValidation := HCCOUserValidation
+	rbacValidation.Expression = generateCelExpression(append(userWhiteList, systemAdminUser))
+	rbacAdmissionPolicy.Validations = []k8sadmissionv1.Validation{rbacValidation}
+	rbacAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(rbacResources, rbacAPIVersion, rbacAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
+	rbacAdmissionPolicy.MatchConstraints.ResourceRules[0].ResourceNames = []string{
+		"hcco-cluster-admin",
+		"kas-bootstrap-container-cluster-admin",
+	}
+	if err := rbacAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("error reconciling RBAC Validating Admission Policy: %w", err)
+	}
+
 	return nil
 }
 
