@@ -126,8 +126,11 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("failed to get HostedCluster: %w", err)
 	}
 
-	releaseImage := hcp.Spec.ReleaseImage
-	version := currentClusterVersion(hostedCluster)
+	releaseImage, version, requeue := currentClusterRelease(hostedCluster)
+	if requeue && openshiftEC2NodeClass.Spec.Version == "" {
+		log.Info("No version history available for unpinned NodeClass, requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
 
 	// When the user requests a version for the OpenshiftEC2NodeClass we perform further validation and lookup of the release image.
 	// We only detect skew and if the version is valid in this case, as under normal circumstances we can assume the release image
@@ -342,42 +345,36 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 	}
 }
 
-// currentClusterVersion returns the version of the most recently completed update from the
-// HostedCluster's version history. It searches history entries for the one with state=Completed
-// and the most recent CompletionTime. If no completed entries exist and there is exactly one
-// history entry, it falls back to the desired version. This handles the case where a cluster
-// is still rolling out its initial version.
-func currentClusterVersion(hostedCluster *hyperv1.HostedCluster) string {
+// currentClusterRelease returns the release image and version of the most recently
+// completed update from the HostedCluster's version history, plus a requeue flag.
+// During a control plane upgrade, this returns the last completed version rather than
+// the desired version, preventing premature drift detection and worker node replacement
+// before the control plane is ready.
+//
+// The function relies on the API ordering guarantee: History is ordered newest-first
+// (per the HostedCluster CRD contract), so the first Completed entry is the most recent.
+func currentClusterRelease(hostedCluster *hyperv1.HostedCluster) (string, string, bool) {
 	if hostedCluster.Status.Version == nil {
-		return ""
+		// CPO hasn't populated version status yet. Use spec as best-effort for initial install.
+		return hostedCluster.Spec.Release.Image, "", false
 	}
 
-	var latest *configv1.UpdateHistory
-	for i := range hostedCluster.Status.Version.History {
-		entry := &hostedCluster.Status.Version.History[i]
-		if entry.State != configv1.CompletedUpdate {
-			continue
-		}
-		if latest == nil {
-			latest = entry
-			continue
-		}
-		if entry.CompletionTime != nil && latest.CompletionTime != nil && entry.CompletionTime.After(latest.CompletionTime.Time) {
-			latest = entry
+	// Return the first Completed entry (most recent finished version).
+	for _, entry := range hostedCluster.Status.Version.History {
+		if entry.State == configv1.CompletedUpdate {
+			return entry.Image, entry.Version, false
 		}
 	}
 
-	if latest != nil {
-		return latest.Version
+	// No completed entries: initial install still in progress.
+	// Use the first history entry (the version being installed).
+	if len(hostedCluster.Status.Version.History) > 0 {
+		entry := &hostedCluster.Status.Version.History[0]
+		return entry.Image, entry.Version, false
 	}
 
-	// If there are no completed entries but exactly one history entry exists, the cluster
-	// is likely still rolling out its first version. Fall back to the desired version.
-	if len(hostedCluster.Status.Version.History) == 1 {
-		return hostedCluster.Status.Version.Desired.Version
-	}
-
-	return hostedCluster.Status.Version.Desired.Version
+	// Empty history: signal caller to requeue.
+	return "", "", true
 }
 
 // validateVersion checks whether the requested version is valid for the given HostedCluster.
