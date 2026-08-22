@@ -303,7 +303,16 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 		)
 
 		By("verifying node OS images match the resolved osImageStream")
-		verifyNodeOSMatchesStream(testCtx, defaultNP, expectedStream)
+		// TODO(CNTRLPLANE-3871): Remove Azure skip when openshift/installer#10764 merges.
+		// The OCP 5.0 release payload does not include RHEL-10 Azure Marketplace images
+		// (no-purchase-plan is empty for rhel-10). Nodes boot with RHEL-9 images but
+		// status.osImageStream correctly reports rhel-10. Once the installer PR adds
+		// the aro_5-0 SKUs to the payload, this guard can be removed.
+		if hc.Spec.Platform.Type == hyperv1.AzurePlatform && expectedStream == hyperv1.OSImageStreamRHEL10 {
+			GinkgoWriter.Printf("Skipping default NodePool OS verification on Azure: RHEL-10 marketplace images not yet in release payload (openshift/installer#10764)\n")
+		} else {
+			verifyNodeOSMatchesStream(testCtx, defaultNP, expectedStream)
+		}
 	})
 }
 
@@ -410,7 +419,20 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 
 		By(fmt.Sprintf("verifying the default NodePool (spec.osImageStream=%q, status.osImageStream=%s) runs the expected OS",
 			defaultNP.Spec.OSImageStream.Name, defaultStream))
-		verifyNodeOSMatchesStream(testCtx, defaultNP, defaultStream)
+
+		// TODO(CNTRLPLANE-3871): Remove Azure guard when openshift/installer#10764 merges.
+		// The OCP 5.0 release payload does not include RHEL-10 Azure Marketplace images
+		// (no-purchase-plan is empty for rhel-10). The default NodePool boots with the
+		// CLI-provided RHEL-9 marketplace image, so OS verification would fail with a
+		// version mismatch (nodes=RHCOS 9 vs expected=RHCOS 10). Instead, we create a
+		// dedicated rhel-10 NodePool below with an explicit marketplace image to verify
+		// that RHEL-10 boots correctly on Azure.
+		isAzureRHEL10Gap := hc.Spec.Platform.Type == hyperv1.AzurePlatform && defaultStream == hyperv1.OSImageStreamRHEL10
+		if isAzureRHEL10Gap {
+			GinkgoWriter.Printf("Skipping default NodePool OS verification on Azure: RHEL-10 marketplace images not yet in release payload (openshift/installer#10764)\n")
+		} else {
+			verifyNodeOSMatchesStream(testCtx, defaultNP, defaultStream)
+		}
 
 		var alternateStream string
 		switch defaultStream {
@@ -438,6 +460,35 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 
 		By(fmt.Sprintf("verifying %s NodePool nodes run the correct OS", alternateStream))
 		verifyNodeOSMatchesStream(testCtx, npAlternate, alternateStream)
+
+		// TODO(CNTRLPLANE-3871): Remove this block when openshift/installer#10764 merges.
+		// The release payload will then include RHEL-10 Azure Marketplace images and the
+		// default NodePool will boot with RHEL-10 natively, making this explicit NP unnecessary.
+		if isAzureRHEL10Gap {
+			By("creating a dedicated rhel-10 NodePool with explicit Azure Marketplace image")
+			npRHEL10 := buildTestNodePool(defaultNP, "osstream-rhel10-azure", func(pool *hyperv1.NodePool) {
+				pool.Spec.Replicas = &oneReplica
+				pool.Spec.OSImageStream = hyperv1.OSImageStreamReference{
+					Name: hyperv1.OSImageStreamRHEL10,
+				}
+				pool.Spec.Platform.Azure.Image.Type = hyperv1.AzureMarketplace
+				pool.Spec.Platform.Azure.Image.AzureMarketplace = &hyperv1.AzureMarketplaceImage{
+					Publisher:       "azureopenshift",
+					Offer:           "aro4",
+					SKU:             "aro_5-0_x64_gen2",
+					Version:         "10.2.20260423",
+					ImageGeneration: ptr.To(hyperv1.Gen2),
+				}
+			})
+			Expect(testCtx.MgmtClient.Create(ctx, npRHEL10)).To(Succeed(), "failed to create RHEL-10 NodePool %s", npRHEL10.Name)
+			GinkgoWriter.Printf("Created RHEL-10 NodePool %s with explicit Azure Marketplace image aro_5-0_x64_gen2\n", npRHEL10.Name)
+			DeferCleanup(func() {
+				cleanupNodePool(ctx, testCtx.MgmtClient, npRHEL10)
+			})
+
+			By("verifying rhel-10 NodePool nodes run RHCOS 10 on Azure")
+			verifyNodeOSMatchesStream(testCtx, npRHEL10, hyperv1.OSImageStreamRHEL10)
+		}
 	})
 }
 
