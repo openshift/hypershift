@@ -2534,6 +2534,41 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster Infrastructure with KAS custom kubeconfig")
 			g.Expect(infra.Status.APIServerURL).To(ContainSubstring(hc.Spec.KubeAPIServerDNSName), "Infrastructure APIServerURL does not contains the KubeAPIServerDNSName set in the HostedCluster")
 		})
+		t.Run("EnsureKASReachableViaSVCURL", func(t *testing.T) {
+			g := NewWithT(t)
+			t.Log("Checking KAS is still reachable via the internal SVC URL after custom cert configuration")
+
+			// Fetch the service-network-admin-kubeconfig secret from the HCP namespace.
+			// This kubeconfig uses the internal SVC URL (kube-apiserver:6443) and validates
+			// that the KAS serving cert chain still covers the service name.
+			svcKubeconfig := cpomanifests.KASServiceKubeconfigSecret(hcpNamespace)
+			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svcKubeconfig), svcKubeconfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get service-network-admin-kubeconfig secret from HCP namespace")
+
+			svcKubeconfigData, ok := svcKubeconfig.Data["kubeconfig"]
+			g.Expect(ok).To(BeTrue(), "service-network-admin-kubeconfig secret missing 'kubeconfig' key")
+
+			svcConfig, err := clientcmd.RESTConfigFromKubeConfig(svcKubeconfigData)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to parse service-network-admin-kubeconfig")
+			svcConfig.QPS = -1
+			svcConfig.Burst = -1
+
+			svcKubeClient, err := kubeclient.NewForConfig(svcConfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to create kube client from service-network-admin-kubeconfig")
+
+			// Validate connectivity to KAS via the SVC URL by performing a SelfSubjectReview.
+			// This confirms the KAS serving cert still covers the internal service name even
+			// after the custom DNS name and certificate have been configured.
+			g.Eventually(func() error {
+				_, err := svcKubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				if err != nil {
+					t.Logf("SVC URL connectivity check failed, retrying: %v", err)
+					return err
+				}
+				t.Log("Successfully verified KAS is reachable via SVC URL")
+				return nil
+			}, 5*time.Minute, 10*time.Second).Should(Succeed(), "KAS is not reachable via the internal SVC URL after custom cert configuration")
+		})
 
 		// removing KubeAPIDNSName from HC
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
