@@ -65,6 +65,7 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolNTOPerformanceProfileTest(getTestCtx)
 	NodePoolAutoRepairTest(getTestCtx)
 	NodePoolDiskEncryptionTest(getTestCtx)
+	NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
@@ -1461,13 +1462,6 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 		e2eutil.WithInterval(5*time.Second),
 	)
 }
-
-// TODO(CNTRLPLANE-3871): Add a dedicated osImageStream post-upgrade verification test
-// in nodepool_osimagestream_test.go under the e2e-v2-aws-techpreview-osimagestream job.
-// The verifyOSImageStreamAfterUpgrade function was removed from the upgrade tests because
-// it requires TechPreview on the hosted cluster to work correctly. Once the OSStreams FG
-// is graduated to Default (openshift/api#2950), the verification can be re-integrated
-// into the standard upgrade tests.
 
 // nodePoolUpgradeTimeout returns the appropriate timeout for NodePool upgrades
 // based on the platform type.
