@@ -24,14 +24,15 @@ type GCPResourceLabel struct {
 	// - Contain only lowercase letters, digits, underscores, or hyphens
 	// - End with a lowercase letter or digit (not a hyphen or underscore)
 	// - Be 1-63 characters long
-	// GCP reserves the 'goog' prefix for system labels.
+	// GCP reserves the 'goog' prefix for system labels, with the exception of
+	// 'goog-partner-solution' which Google requires for partner attribution tracking.
 	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="key must start with a lowercase letter, contain only lowercase letters, digits, underscores, or hyphens, and end with a letter or digit"
-	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog')",message="Label keys starting with the reserved 'goog' prefix are not allowed"
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog') || self == 'goog-partner-solution'",message="Label keys starting with the reserved 'goog' prefix are not allowed (exception: 'goog-partner-solution')"
 	Key string `json:"key,omitempty"`
 
 	// value is the value part of the label. A label value can have a maximum of 63 characters.
