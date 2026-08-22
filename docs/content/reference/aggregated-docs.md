@@ -1720,7 +1720,7 @@ graph LR
     NS2 -->|HC controller creates| NS4
 ```
 
-The namespace naming convention is implemented in `hypershift-operator/controllers/manifests/manifests.go`:
+The namespace naming convention is implemented in `support/manifests/manifests.go`:
 ```go
 func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) string {
     return fmt.Sprintf("%s-%s", hostedClusterNamespace, strings.ReplaceAll(hostedClusterName, ".", "-"))
@@ -1728,7 +1728,7 @@ func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName strin
 ```
 
 !!! tip "Explore yourself"
-    Read `hypershift-operator/controllers/manifests/manifests.go` to see all the naming helpers used across the codebase.
+    Read `support/manifests/manifests.go` to see all the naming helpers used across the codebase.
 
 ---
 
@@ -2468,7 +2468,7 @@ graph TD
 | **HostedCluster (HC)** | User-facing CRD declaring the intent to create a cluster. Lives in the user's namespace | `api/hypershift/v1beta1/hostedcluster_types.go` |
 | **HostedControlPlane (HCP)** | Internal CRD created by the HC controller. Lives in the control plane namespace. The CPO reads it to know what to deploy | `api/hypershift/v1beta1/hosted_controlplane.go` |
 | **NodePool (NP)** | User-facing CRD defining a scalable set of worker nodes. References a HostedCluster | `api/hypershift/v1beta1/nodepool_types.go` |
-| **Control Plane Namespace** | Namespace (`{hc-ns}-{hc-name}`) where all control plane components live | `hypershift-operator/controllers/manifests/manifests.go` |
+| **Control Plane Namespace** | Namespace (`{hc-ns}-{hc-name}`) where all control plane components live | `support/manifests/manifests.go` |
 | **HyperShift Operator (HO)** | Main operator managing HostedClusters and NodePools | `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` |
 | **Control Plane Operator (CPO)** | Runs inside each CP namespace and manages all control plane components | `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` |
 | **PKI Operator** | Certificate operator handling rotation and signing | `control-plane-pki-operator/operator.go` |
@@ -3017,7 +3017,7 @@ These are the design rules that should inform **every decision**:
 | `hypershift-operator/controllers/nodepool/conditions.go` | SetStatusCondition helpers | Reference |
 | `hypershift-operator/controllers/nodepool/version.go` | NodesInfo aggregation from CAPI Machines | Reference |
 | `hypershift-operator/controllers/nodepool/scale_from_zero.go` | Scale-from-zero annotation management | Reference |
-| `hypershift-operator/controllers/manifests/manifests.go` | Namespace naming, resource naming helpers | Reference |
+| `support/manifests/manifests.go` | Namespace naming, resource naming helpers | Reference |
 
 ### CPO Controllers
 
