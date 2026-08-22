@@ -17,7 +17,6 @@ limitations under the License.
 package tests
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -117,7 +116,7 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 				"failed to create test secret in hosted cluster")
 
 			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(context.Background(), testSecret); err != nil && !apierrors.IsNotFound(err) {
+				if err := hostedClusterClient.Delete(ctx, testSecret); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
 				}
 			})

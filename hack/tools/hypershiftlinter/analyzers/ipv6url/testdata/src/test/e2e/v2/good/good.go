@@ -42,3 +42,16 @@ func TestErrorfNoHostPort() {
 	err := fmt.Errorf("failed to connect: %s", "timeout")
 	_ = err
 }
+
+// Valid: %s:%s without URL scheme is not host:port (e.g. user:password)
+func TestUserPasswordNotHostPort() {
+	creds := fmt.Sprintf("%s:%s", "admin", "secret")
+	_ = creds
+}
+
+// Valid: %%s is an escaped percent producing literal %s, not a format verb
+func TestEscapedPercentNotHostPort() {
+	port := 8080
+	url := fmt.Sprintf("https://%%s:%d", port)
+	_ = url
+}

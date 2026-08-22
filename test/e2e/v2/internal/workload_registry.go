@@ -16,7 +16,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/podspec"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -519,13 +518,10 @@ func ShouldSkipWorkloadForPlatform(workload WorkloadSpec, hostedCluster *hyperv1
 	return false
 }
 
-// ShouldSkipWorkloadForVersion determines whether the workload should be skipped
-// based on the cluster version exceeding the workload's MaxVersion.
-func ShouldSkipWorkloadForVersion(workload WorkloadSpec) bool {
-	if workload.MaxVersion != nil && e2eutil.IsGreaterThanOrEqualTo(*workload.MaxVersion) {
-		return true
-	}
-	return false
+// ShouldSkipWorkloadForVersion determines whether the workload should be skipped.
+// Returns true if the cluster version is at or above the workload's MaxVersion.
+func ShouldSkipWorkloadForVersion(workload WorkloadSpec, hcVersion semver.Version) bool {
+	return workload.MaxVersion != nil && hcVersion.GE(*workload.MaxVersion)
 }
 
 // validateControlPlaneWorkloadsByType validates control plane workloads of specified types.
@@ -536,11 +532,15 @@ func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []s
 	if err != nil {
 		return fmt.Errorf("failed to get HostedCluster: %w", err)
 	}
+	version, err := testCtx.GetHostedClusterVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get HostedCluster version: %w", err)
+	}
 	for _, workload := range workloads {
 		if ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 			continue
 		}
-		if ShouldSkipWorkloadForVersion(workload) {
+		if ShouldSkipWorkloadForVersion(workload, version) {
 			continue
 		}
 		if !slices.Contains(workloadTypes, workload.Type) {
