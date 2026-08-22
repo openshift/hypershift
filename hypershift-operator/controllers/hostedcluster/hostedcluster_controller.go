@@ -2074,6 +2074,10 @@ func (r *HostedClusterReconciler) reconcileSSHKeySync(
 	controlPlaneNamespace string,
 ) error {
 	if len(hcluster.Spec.SSHKey.Name) == 0 {
+		dest := controlplaneoperator.SSHKey(controlPlaneNamespace)
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
+			return fmt.Errorf("failed to delete unused SSHKey secret: %w", err)
+		}
 		return nil
 	}
 	var src corev1.Secret
@@ -2754,6 +2758,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
+	} else {
+		hcp.Spec.SSHKey = corev1.LocalObjectReference{}
 	}
 	if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 		hcp.Spec.AuditWebhook = hcluster.Spec.AuditWebhook.DeepCopy()

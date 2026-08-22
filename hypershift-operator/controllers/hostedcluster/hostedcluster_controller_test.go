@@ -5739,6 +5739,184 @@ func TestEnsureHostedResourcesAreEmpty(t *testing.T) {
 	}
 }
 
+func TestReconcileSSHKeySync(t *testing.T) {
+	t.Parallel()
+	const (
+		testNamespace         = "test-ns"
+		controlPlaneNamespace = "test-hcp-ns"
+		hostedClusterName     = "test-cluster"
+		sshKeySecretName      = "my-ssh-key"
+		sshPubKeyData         = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB test@test"
+	)
+
+	testCases := []struct {
+		name                   string
+		hostedCluster          *hyperv1.HostedCluster
+		existingObjects        []crclient.Object
+		expectError            bool
+		expectSecretCreated    bool
+		expectSecretDeleted    bool
+		expectedErrorSubstring string
+	}{
+		{
+			name: "When SSHKey is specified, it should sync secret",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					SSHKey: corev1.LocalObjectReference{
+						Name: sshKeySecretName,
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      sshKeySecretName,
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"id_rsa.pub": []byte(sshPubKeyData),
+					},
+				},
+			},
+			expectSecretCreated: true,
+		},
+		{
+			name: "When SSHKey is cleared, it should delete previously synced secret",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					SSHKey: corev1.LocalObjectReference{},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ssh-key",
+						Namespace: controlPlaneNamespace,
+					},
+					Data: map[string][]byte{
+						"id_rsa.pub": []byte(sshPubKeyData),
+					},
+				},
+			},
+			expectSecretDeleted: true,
+		},
+		{
+			name: "When SSHKey is cleared and no synced secret exists, it should succeed",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					SSHKey: corev1.LocalObjectReference{},
+				},
+			},
+			existingObjects:     []crclient.Object{},
+			expectSecretDeleted: true,
+		},
+		{
+			name: "When source secret does not exist, it should return error",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					SSHKey: corev1.LocalObjectReference{
+						Name: sshKeySecretName,
+					},
+				},
+			},
+			existingObjects:        []crclient.Object{},
+			expectError:            true,
+			expectedErrorSubstring: "failed to get hostedcluster SSHKey secret",
+		},
+		{
+			name: "When source secret is missing id_rsa.pub key, it should return error",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					SSHKey: corev1.LocalObjectReference{
+						Name: sshKeySecretName,
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      sshKeySecretName,
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"wrong-key": []byte(sshPubKeyData),
+					},
+				},
+			},
+			expectError:            true,
+			expectedErrorSubstring: "must have a id_rsa.pub key",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			g := NewWithT(t)
+
+			client := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...).
+				Build()
+
+			r := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			createOrUpdate := upsert.New(false).CreateOrUpdate
+
+			err := r.reconcileSSHKeySync(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrorSubstring != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tc.expectSecretCreated {
+				destSecret := &corev1.Secret{}
+				err := client.Get(ctx, crclient.ObjectKey{
+					Name:      "ssh-key",
+					Namespace: controlPlaneNamespace,
+				}, destSecret)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(destSecret.Data).To(HaveKeyWithValue("id_rsa.pub", []byte(sshPubKeyData)))
+			}
+
+			if tc.expectSecretDeleted {
+				destSecret := &corev1.Secret{}
+				err := client.Get(ctx, crclient.ObjectKey{
+					Name:      "ssh-key",
+					Namespace: controlPlaneNamespace,
+				}, destSecret)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}
+
 func TestReconcileAdditionalTrustBundle(t *testing.T) {
 	t.Parallel()
 	const (
