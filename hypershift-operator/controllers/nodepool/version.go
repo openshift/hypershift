@@ -3,6 +3,7 @@ package nodepool
 import (
 	"regexp"
 	"sort"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -20,7 +21,12 @@ type versionKey struct {
 // nodeVersionsFromMachines aggregates version and health information from CAPI Machines.
 // It groups machines by (ocpVersion, kubeletVersion) and counts ready/unready nodes
 // based on the CAPI NodeHealthy condition.
-func (r *NodePoolReconciler) nodeVersionsFromMachines(machines []*capiv1.Machine, nodePool *hyperv1.NodePool) []hyperv1.NodeVersion {
+//
+// currentMSNames identifies the current (latest-revision) MachineSets for Replace-strategy
+// NodePools. When non-nil, Machines belonging to older MachineSets use nodePool.Status.Version
+// instead of the annotation, because CAPI in-place metadata propagation overwrites the
+// annotation on unreplaced Machines with the target version.
+func (r *NodePoolReconciler) nodeVersionsFromMachines(machines []*capiv1.Machine, nodePool *hyperv1.NodePool, currentMSNames map[string]bool) []hyperv1.NodeVersion {
 	type counts struct {
 		ready   int32
 		unready int32
@@ -36,11 +42,19 @@ func (r *NodePoolReconciler) nodeVersionsFromMachines(machines []*capiv1.Machine
 		kubeletVersion := machine.Status.NodeInfo.KubeletVersion
 
 		// Resolve OCP version from Machine annotation.
-		// For replace upgrades, the annotation is propagated via the MachineDeployment template at Machine creation.
 		// For in-place upgrades, the annotation is set by the in-place upgrader (sourced from the token secret)
 		// after each node completes its upgrade.
-		// Fallback to nodePool.Status.Version for machines created before this annotation existed.
+		// For Replace upgrades, the annotation is set via the MachineDeployment template.
+		// However, CAPI in-place metadata propagation overwrites the annotation on ALL Machines
+		// (including unreplaced ones) with the target version. When MachineSet info is available,
+		// override the annotation for Machines in old (non-current) MachineSets.
 		ocpVersion := machine.Annotations[hyperv1.NodePoolReleaseVersionAnnotation]
+		if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace && len(currentMSNames) > 0 {
+			ownerMS := machineOwnerMachineSetName(machine)
+			if ownerMS != "" && !currentMSNames[ownerMS] {
+				ocpVersion = nodePool.Status.Version
+			}
+		}
 		if ocpVersion == "" {
 			ocpVersion = nodePool.Status.Version
 		}
@@ -86,11 +100,60 @@ func (r *NodePoolReconciler) nodeVersionsFromMachines(machines []*capiv1.Machine
 
 // setNodesInfoStatus aggregates node version and health information from CAPI Machines
 // and sets it on nodePool.Status.NodesInfo.
-func (r *NodePoolReconciler) setNodesInfoStatus(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
-	nodeVersions := r.nodeVersionsFromMachines(machines, nodePool)
+// machineSets are used to determine MachineSet generation for Replace-strategy upgrades.
+func (r *NodePoolReconciler) setNodesInfoStatus(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, machineSets []*capiv1.MachineSet) {
+	currentMSNames := currentMachineSetNames(machineSets)
+	nodeVersions := r.nodeVersionsFromMachines(machines, nodePool, currentMSNames)
 	nodePool.Status.NodesInfo = hyperv1.NodePoolNodesInfo{
 		NodeVersions: nodeVersions,
 	}
+}
+
+// currentMachineSetNames returns the names of the MachineSets with the highest
+// CAPI revision annotation. During a Replace rolling update, these are the "new"
+// MachineSets whose Machines are running the target version.
+func currentMachineSetNames(machineSets []*capiv1.MachineSet) map[string]bool {
+	if len(machineSets) == 0 {
+		return nil
+	}
+
+	var maxRevision int64
+	for _, ms := range machineSets {
+		rev, err := strconv.ParseInt(ms.Annotations[capiv1.RevisionAnnotation], 10, 64)
+		if err != nil {
+			continue
+		}
+		if rev > maxRevision {
+			maxRevision = rev
+		}
+	}
+
+	if maxRevision == 0 {
+		return nil
+	}
+
+	names := make(map[string]bool)
+	for _, ms := range machineSets {
+		rev, err := strconv.ParseInt(ms.Annotations[capiv1.RevisionAnnotation], 10, 64)
+		if err != nil {
+			continue
+		}
+		if rev == maxRevision {
+			names[ms.Name] = true
+		}
+	}
+	return names
+}
+
+// machineOwnerMachineSetName returns the name of the MachineSet that owns the given
+// Machine, or empty string if no MachineSet ownerRef is found.
+func machineOwnerMachineSetName(machine *capiv1.Machine) string {
+	for _, ref := range machine.OwnerReferences {
+		if ref.Kind == "MachineSet" {
+			return ref.Name
+		}
+	}
+	return ""
 }
 
 // rhcosOSImageRe matches two RHCOS version formats from NodeInfo.OSImage:

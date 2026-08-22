@@ -294,10 +294,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		log.Error(err, "Failed to get Machines for status aggregation")
 	} else {
+		// List MachineSets to determine MachineSet generation for accurate version
+		// reporting during Replace rolling upgrades. CAPI in-place metadata propagation
+		// overwrites the release-version annotation on unreplaced Machines, so we use
+		// MachineSet revision to identify which Machines are actually running the target version.
+		var machineSets []*capiv1.MachineSet
+		if nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace {
+			machineSets, err = r.getMachineSetsForNodePool(ctx, nodePool)
+			if err != nil {
+				log.Error(err, "Failed to get MachineSets for version reporting, version info may be inaccurate during upgrades")
+			}
+		}
+
 		// Aggregate node version and health information into NodesInfo status.
 		// This is done before the conditions loop so that nodesInfo stays accurate
 		// even when later validations (e.g. release image) short-circuit the reconcile.
-		r.setNodesInfoStatus(nodePool, machines)
+		r.setNodesInfoStatus(nodePool, machines, machineSets)
 
 		// Infer the observed RHEL stream from Machine NodeInfo.OSImage and set
 		// status.osImageStream when a majority of machines report a consistent stream.
