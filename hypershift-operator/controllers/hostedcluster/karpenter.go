@@ -25,6 +25,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/statuspatching"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -48,16 +49,18 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 			return fmt.Errorf("failed to reconcile karpenter component: %w", err)
 		}
 
-		// When Karpenter is disabled, clear stale node-counts from the HCP.
-		// HCP.Status.AutoNode holds NodeCount/NodeClaimCount written by the karpenter-operator
-		// while it was running. Since the karpenter-operator only runs when enabled, it cannot
-		// clear this itself.
-		if cpContext.HCP.Status.AutoNode != (hyperv1.AutoNodeStatus{}) {
-			patch := client.MergeFrom(cpContext.HCP.DeepCopy())
+		// Clear stale node-counts from the HCP. HCP.Status.AutoNode holds NodeCount/NodeClaimCount
+		// written by the karpenter-operator while it was running. Since the karpenter-operator only
+		// runs when enabled, it cannot clear this itself.
+		// No pre-check on cpContext.HCP.Status.AutoNode here: it's a cache read from earlier in the
+		// reconcile loop and can be stale relative to the live object, silently skipping the patch.
+		// PatchStatus re-fetches and no-ops via DeepEqual when there's nothing to clear, so the guard
+		// only adds a staleness risk without saving real work.
+		if err := statuspatching.PatchStatus(cpContext, cpContext.Client, cpContext.HCP, func() error {
 			cpContext.HCP.Status.AutoNode = hyperv1.AutoNodeStatus{}
-			if err := cpContext.Client.Status().Patch(cpContext, cpContext.HCP, patch); err != nil {
-				return fmt.Errorf("failed to clear AutoNode status: %w", err)
-			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to clear AutoNode status: %w", err)
 		}
 		// Also delete the taint ConfigMap — it is only valid while Karpenter is enabled.
 		if _, err := k8sutil.DeleteIfNeeded(cpContext, r.Client, &corev1.ConfigMap{
