@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/monitoring"
+	"github.com/openshift/hypershift/support/manifests"
+	"github.com/openshift/hypershift/support/manifests/monitoring"
 	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"

@@ -13,7 +13,7 @@ import (
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	schedulingv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/manifests"
 	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration/framework"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
