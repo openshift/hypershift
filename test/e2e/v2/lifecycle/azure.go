@@ -132,6 +132,14 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			ExtraArgs: []string{"--oauth-publishing-strategy=LoadBalancer"},
 		},
 		{
+			Variant: "oauth-lb-private",
+			ExtraArgs: []string{
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
+			},
+		},
+		{
 			Variant:      "upgrade",
 			ReleaseImage: n1Image,
 			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
@@ -348,6 +356,12 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				Variant:     "autoscaling",
 				LabelFilter: "nodepool-autoscaling",
 				JUnitFile:   "junit_self_managed_azure_nodepool_autoscaling.xml",
+			},
+			{
+				Name:        "oauth-lb-private",
+				Variant:     "oauth-lb-private",
+				LabelFilter: "self-managed-azure-oauth-lb-private",
+				JUnitFile:   "junit_self_managed_azure_oauth_lb_private.xml",
 			},
 			{
 				Name:        "external-oidc",
