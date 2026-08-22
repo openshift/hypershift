@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
+	supportlabels "github.com/openshift/hypershift/support/labels"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -90,14 +91,16 @@ const (
 	PerformanceProfileConfigMapLabel                     = "hypershift.openshift.io/performanceprofile-config"
 	NodeTuningGeneratedPerformanceProfileStatusLabel     = "hypershift.openshift.io/nto-generated-performance-profile-status"
 	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
-	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
-	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
-	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
+
+	// Deprecated: use supportlabels.KubeletConfigConfigMapLabel from support/labels.
+	KubeletConfigConfigMapLabel = supportlabels.KubeletConfigConfigMapLabel
+	// Deprecated: use supportlabels.NTOMirroredConfigLabel from support/labels.
+	NTOMirroredConfigLabel = supportlabels.NTOMirroredConfigLabel
 )
 
 type NodePoolReconciler struct {
