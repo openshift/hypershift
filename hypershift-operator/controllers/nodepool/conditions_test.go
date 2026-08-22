@@ -735,3 +735,283 @@ func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hos
 	}
 	return machineSet
 }
+
+func TestValidateKubevirtAdditionalNetworkNamespaces(t *testing.T) {
+	tests := []struct {
+		name        string
+		nodePool    *hyperv1.NodePool
+		hc          *hyperv1.HostedCluster
+		expectError bool
+		errContains string
+	}{
+		{
+			name: "When NAD is in HCP namespace, it should pass validation",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "clusters-mycluster/mynad"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When NAD is in default namespace, it should pass validation",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "default/mynad"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When NAD is in HC namespace instead of HCP namespace, it should return namespace mismatch error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "clusters/mynad"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectError: true,
+			errContains: "virt-launcher pods run in namespace",
+		},
+		{
+			name: "When NAD is in external infra namespace, it should pass validation",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "ext-infra/mynad"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "ext-infra",
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When NAD is in HC namespace with external infra configured, it should return namespace mismatch error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "clusters/mynad"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "ext-infra",
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errContains: "virt-launcher pods run in namespace",
+		},
+		{
+			name: "When HC name has dots, it should resolve HCP namespace with hyphens and pass",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "clusters-my-cluster/mynad"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "my.cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When no additional networks are configured, it should pass validation",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When NAD name has no namespace qualifier, it should pass validation",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "mynad-no-namespace"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When multiple NADs with first valid and second in wrong namespace, it should return error for the invalid entry",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "clusters-mycluster/valid-nad"},
+								{Name: "wrong-ns/bad-nad"},
+							},
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "clusters",
+					Name:      "mycluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectError: true,
+			errContains: "wrong-ns/bad-nad",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			r := &NodePoolReconciler{}
+			err := r.validateKubevirtAdditionalNetworkNamespaces(tc.nodePool, tc.hc)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), tc.name)
+				g.Expect(err.Error()).To(ContainSubstring(tc.errContains), tc.name)
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), tc.name)
+			}
+		})
+	}
+}
