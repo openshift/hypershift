@@ -358,6 +358,8 @@ var map_NodeExporterCollectorConfig = map[string]string{
 	"softirqs":              "softirqs configures the softirqs collector, which exposes detailed softirq statistics from /proc/softirqs. softirqs is optional. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default is disabled. Enable when you need visibility into kernel softirq processing across CPUs.",
 	"deviceMapperMultipath": "deviceMapperMultipath configures the dmmultipath collector, which collects statistics about DM-Multipath devices. deviceMapperMultipath is optional. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default is enabled.",
 	"zoneinfo":              "zoneinfo configures the zoneinfo collector, which exposes per-zone memory page counts, watermarks, and protection thresholds from /proc/zoneinfo. zoneinfo is optional. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default is to not collect zoneinfo metrics. Enable when you need visibility into kernel memory zone allocation and pressure.",
+	"nvmExpressSubsystem":   "nvmExpressSubsystem configures the nvmesubsystem collector, which collects statistics about NVM Express (NVMe) subsystem devices. nvmExpressSubsystem is optional. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default is enabled.",
+	"interrupts":            "interrupts configures the interrupts collector, which exposes interrupt counts from /proc/interrupts. interrupts is optional. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default is disabled. The interrupts collector can produce a large number of metrics depending on the hardware and interrupt sources present. When enabled, the collect field with at least one include pattern is required to explicitly select which interrupt lines are collected.",
 }
 
 func (NodeExporterCollectorConfig) SwaggerDoc() map[string]string {
@@ -391,6 +393,25 @@ func (NodeExporterCollectorEthtoolConfig) SwaggerDoc() map[string]string {
 	return map_NodeExporterCollectorEthtoolConfig
 }
 
+var map_NodeExporterCollectorInterruptsCollectConfig = map[string]string{
+	"":        "NodeExporterCollectorInterruptsCollectConfig holds configuration options for the interrupts collector when it is actively collecting metrics. At least one field must be specified.",
+	"include": "include is a list of regular expression patterns that select which interrupt lines to collect. This field is required. Each line in /proc/interrupts is matched against the same string node-exporter uses: the IRQ name, info, and devices fields joined with \";\", for example \"LOC;77;IO-APIC 2-edge ...\". Patterns are combined with OR into a single expression anchored on both ends, so each pattern must match the entire string (use \".*\" where needed). Each entry must be at least 1 character, at most 1024 characters, and only contain printable ASCII characters. Maximum length for this list is 50. Minimum length for this list is 1. Entries in this list must be unique.",
+}
+
+func (NodeExporterCollectorInterruptsCollectConfig) SwaggerDoc() map[string]string {
+	return map_NodeExporterCollectorInterruptsCollectConfig
+}
+
+var map_NodeExporterCollectorInterruptsConfig = map[string]string{
+	"":                 "NodeExporterCollectorInterruptsConfig provides configuration for the interrupts collector of the node-exporter agent. The interrupts collector exposes interrupt counts from /proc/interrupts. It is disabled by default. The interrupts collector can produce a large number of metrics depending on the hardware and interrupt sources present. When enabled, the collect field with at least one include pattern is required to explicitly select which interrupt lines are collected. When collectionPolicy is Collect, the collect field must be set with at least one include pattern. When collectionPolicy is DoNotCollect, the collect field must not be set.",
+	"collectionPolicy": "collectionPolicy declares whether the interrupts collector collects metrics. This field is required. Valid values are \"Collect\" and \"DoNotCollect\". When set to \"Collect\", the interrupts collector is active and the collect field must be set with at least one include pattern to select which interrupt lines are collected. When set to \"DoNotCollect\", the interrupts collector is inactive and the collect field must not be set.",
+	"collect":          "collect contains configuration options that apply only when the interrupts collector is actively collecting metrics (i.e. when collectionPolicy is Collect). collect is required when collectionPolicy is Collect and must contain at least one include pattern to explicitly select which interrupt lines are collected. collect must not be set when collectionPolicy is DoNotCollect. When set, at least one field must be specified within collect.",
+}
+
+func (NodeExporterCollectorInterruptsConfig) SwaggerDoc() map[string]string {
+	return map_NodeExporterCollectorInterruptsConfig
+}
+
 var map_NodeExporterCollectorKSMDConfig = map[string]string{
 	"":                 "NodeExporterCollectorKSMDConfig provides configuration for the ksmd collector of the node-exporter agent. The ksmd collector collects statistics from the kernel same-page merger daemon. It is disabled by default.",
 	"collectionPolicy": "collectionPolicy declares whether the ksmd collector collects metrics. This field is required. Valid values are \"Collect\" and \"DoNotCollect\". When set to \"Collect\", the ksmd collector is active and kernel same-page merger statistics are collected. When set to \"DoNotCollect\", the ksmd collector is inactive.",
@@ -407,6 +428,15 @@ var map_NodeExporterCollectorMountStatsConfig = map[string]string{
 
 func (NodeExporterCollectorMountStatsConfig) SwaggerDoc() map[string]string {
 	return map_NodeExporterCollectorMountStatsConfig
+}
+
+var map_NodeExporterCollectorNVMExpressSubsystemConfig = map[string]string{
+	"":                 "NodeExporterCollectorNVMExpressSubsystemConfig provides configuration for the nvmesubsystem collector of the node-exporter agent. The nvmesubsystem collector collects statistics about NVM Express (NVMe) subsystem devices. It is enabled by default.",
+	"collectionPolicy": "collectionPolicy declares whether the nvmesubsystem collector collects metrics. This field is required. Valid values are \"Collect\" and \"DoNotCollect\". When set to \"Collect\", the nvmesubsystem collector is active and NVMe subsystem statistics are collected. When set to \"DoNotCollect\", the nvmesubsystem collector is inactive and the corresponding metrics become unavailable.",
+}
+
+func (NodeExporterCollectorNVMExpressSubsystemConfig) SwaggerDoc() map[string]string {
+	return map_NodeExporterCollectorNVMExpressSubsystemConfig
 }
 
 var map_NodeExporterCollectorNetClassCollectConfig = map[string]string{
