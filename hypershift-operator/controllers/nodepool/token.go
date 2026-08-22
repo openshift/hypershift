@@ -56,10 +56,10 @@ type Token struct {
 	upsert.CreateOrUpdateProvider
 	cpoCapabilities *CPOCapabilities
 	*ConfigGenerator
-	// TODO(alberto): we don't really support content inplace changes for fields like pull secret and AdditionalTrustBundle.
-	// In fact we only trigger a rollout if the .Name referenced in the field changes.
-	// Consider removing these hash checks and consolidate with the rolloutConfig struct input.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
+	// These content hashes are stored in the token Secret for the ignition-server
+	// token-secret controller. They are separate from the rolloutConfig hash that
+	// drives NodePool rollouts (see ConfigGenerator.Hash / HashWithoutVersion).
+	// NOTE: proxy.trustedCA content is tracked in rolloutConfig but not hashed here yet.
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
 	globalConfigHash          []byte
