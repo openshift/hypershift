@@ -25,9 +25,8 @@ import (
 )
 
 const (
-	routerConfigKey   = "haproxy.cfg"
-	KASSVCLBPort      = 6443
-	ExternalDNSLBPort = 443
+	routerConfigKey = "haproxy.cfg"
+	KASSVCLBPort    = 6443
 )
 
 //go:embed router_config.template

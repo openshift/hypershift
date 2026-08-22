@@ -4,6 +4,16 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
+const ExternalDNSLBPort = 443
+
+func KasRouteHostname(hcp *hyperv1.HostedControlPlane) string {
+	kasPublishStrategy := ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
+	if kasPublishStrategy == nil || kasPublishStrategy.Route == nil {
+		return ""
+	}
+	return kasPublishStrategy.Route.Hostname
+}
+
 func ServicePublishingStrategyByTypeForHCP(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
 	for _, mapping := range hcp.Spec.Services {
 		if mapping.Service == svcType {
