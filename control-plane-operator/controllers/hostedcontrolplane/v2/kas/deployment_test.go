@@ -288,7 +288,8 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			podSpec := &corev1.PodSpec{}
-			applyAWSPodIdentityWebhookContainer(podSpec, tc.hcp)
+			err := applyAWSPodIdentityWebhookContainer(podSpec, tc.hcp)
+			g.Expect(err).ToNot(HaveOccurred())
 			tc.validatePod(g, podSpec)
 		})
 	}
