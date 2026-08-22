@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 519ba2de42af93621ca1c33c8c84f12837e1eb279c87aff235a8c31861093304
+    hypershift.openshift.io/desired-state-hash: 8d9ffe3e76cd82a8b930e37d7b4d7d605a6e62209dae115ebc1bafc2a59c6d7d
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: packageserver
@@ -225,6 +225,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 10
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 10
       volumes:
       - emptyDir: {}
         name: tmpfs

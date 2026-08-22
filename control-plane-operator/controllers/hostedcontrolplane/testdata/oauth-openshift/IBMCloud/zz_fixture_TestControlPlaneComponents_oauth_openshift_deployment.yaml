@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 87a653ee680eb490436f9b222ce933ce355cb4890ac91dcbecb420fa72e1af0c
+    hypershift.openshift.io/desired-state-hash: 0d7734ceb94860de0a00c9f4ce4f93dfa4ba13222e2789f6578efa5bdaf853d8
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: oauth-openshift
@@ -261,6 +261,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 10
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 10
       volumes:
       - configMap:
           defaultMode: 420
