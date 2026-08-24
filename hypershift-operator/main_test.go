@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestSetupHealthChecks(t *testing.T) {
 			g.Expect(mgr.healthChecks).To(HaveKey("healthz"))
 			g.Expect(mgr.readyChecks).To(HaveKey("readyz"))
 
-			request := httptest.NewRequest("GET", "/", nil)
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 			g.Expect(mgr.healthChecks["healthz"](request)).To(Succeed())
 			if tc.expectReadyToError {
 				g.Expect(mgr.readyChecks["readyz"](request)).To(MatchError("webhook server has not been started yet"))
