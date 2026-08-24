@@ -23,6 +23,7 @@ var allowlist = map[string]map[string]bool{
 		"Condition":                    true,
 		"ConditionPredicate":           true,
 		"Conditions":                   true,
+		"WithPredicates":               true,
 		"EventuallyNotFound":           true,
 		"EventuallyObject":             true,
 		"EventuallyObjects":            true,
@@ -51,6 +52,7 @@ var allowlist = map[string]map[string]bool{
 		"WaitForNReadyNodesWithOptions":                   true,
 		"WaitForNodePoolConfigUpdateCompleteWithPlatform": true,
 		"WaitForReadyNodesByNodePool":                     true,
+		"WaitForReadyNodesByLabels":                       true,
 
 		// Cloud provider helpers
 		"GetDefaultSecurityGroup": true,
