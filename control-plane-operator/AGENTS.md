@@ -25,6 +25,41 @@ HCCO is a **separate binary in the same image**, invoked as `control-plane-opera
 
 HCCO controllers are in `hostedclusterconfigoperator/controllers/`. They do **not** use the v2 component framework today — this is a migration opportunity.
 
+## HostedControlPlane Status Patching
+
+CPO, HCCO, and the hypershift-operator (karpenter) all write to the same
+`HostedControlPlane.Status` concurrently. Never patch HCP status with a raw
+`Status().Update()` or an unguarded `client.MergeFrom()` — both can silently
+overwrite a concurrent writer's changes (`Update()` replaces the whole status
+subresource; `MergeFrom()` without an optimistic lock lets a stale
+`resourceVersion` succeed silently instead of conflicting).
+
+Use `support/statuspatching` instead:
+
+- `statuspatching.PatchStatus(ctx, c, obj, mutate)` — general case. Re-fetches
+  the object, applies `mutate`, patches with `MergeFromWithOptimisticLock`, and
+  retries automatically on conflict.
+- `statuspatching.PatchStatusCondition(ctx, c, obj, conditions, condition)` —
+  single-condition updates. Uses `meta.SetStatusCondition`'s own change
+  detection to skip no-ops without a false positive from `LastTransitionTime`.
+
+**The mutate callback must recompute from the object it's given, not replay a
+value captured earlier.** `PatchStatus`/`PatchStatusCondition` re-fetch the
+object before calling `mutate`, so if `mutate` just re-applies a value computed
+before the call, a conflict-retry blindly overwrites whatever concurrent write
+the re-fetch picked up — defeating the point of the optimistic lock. If the
+desired value depends on `Spec` and needs an expensive computation done once
+outside the callback (e.g. an AWS API call), guard against the spec changing
+mid-flight by comparing a captured `Generation` inside the callback instead of
+patching unconditionally. A value is only safe to blindly replay on retry if
+it's derived from a live check with no other writer (e.g. a fresh guest-cluster
+probe done right before patching), not from an earlier `Status` snapshot.
+
+The `hcpstatuspatch` static analyzer (`hack/tools/hypershiftlinter`) flags
+direct `Status().Update()`/unguarded `MergeFrom()` on `HostedControlPlane` —
+see [CNTRLPLANE-3532](https://redhat.atlassian.net/browse/CNTRLPLANE-3532) for
+migration status.
+
 ## Key Directories
 
 | Directory | Purpose |
