@@ -140,6 +140,8 @@ type nodePoolsMetricsCollector struct {
 	clock     clock.Clock
 	mu        sync.Mutex
 
+	cacheReadTimeout time.Duration
+
 	ec2InstanceTypeToVCpusCount map[string]int32
 	// awsInstanceTypeUnknown caches instance types that are not recognized
 	// by the EC2 API, so subsequent calls skip the API
@@ -156,6 +158,7 @@ func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2.Describ
 		Client:                      client,
 		ec2Client:                   ec2Client,
 		clock:                       clock,
+		cacheReadTimeout:            5 * time.Second,
 		ec2InstanceTypeToVCpusCount: make(map[string]int32),
 		awsInstanceTypeUnknown:      sets.New[string](),
 		transitionDurationMetric: prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -335,12 +338,12 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(ctx context.Cont
 func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ctx := context.Background()
 	currentCollectTime := c.clock.Now()
 
-	hclusterPathToData := c.collectHostedClusterData(ctx)
-	machineSetPathToReplicasCount := c.collectMachineSetReplicas(ctx)
-	machineDeploymentPathToReplicasCount := c.collectMachineDeploymentReplicas(ctx)
+	cacheCtx, cancelCacheReads := context.WithTimeout(context.Background(), c.cacheReadTimeout)
+	hclusterPathToData := c.collectHostedClusterData(cacheCtx)
+	machineSetPathToReplicasCount := c.collectMachineSetReplicas(cacheCtx)
+	machineDeploymentPathToReplicasCount := c.collectMachineDeploymentReplicas(cacheCtx)
 
 	platformToNodePoolsCount := make(map[hyperv1.PlatformType]int)
 	for k := range knownPlatforms {
@@ -359,9 +362,10 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	npList := &hyperv1.NodePoolList{}
-	if err := c.List(ctx, npList); err != nil {
+	if err := c.List(cacheCtx, npList); err != nil {
 		ctrllog.Log.Error(err, "failed to list node pools while collecting metrics")
 	}
+	cancelCacheReads()
 
 	for k := range npList.Items {
 		nodePool := &npList.Items[k]
@@ -375,7 +379,7 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		if hcData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]; hcData != nil {
 			hclusterId = hcData.id
 			hcData.nodePoolsCount += 1
-			c.aggregateVCpus(ctx, nodePool, hcData)
+			c.aggregateVCpus(context.Background(), nodePool, hcData)
 		}
 
 		c.observeTransitionDurations(nodePool, currentCollectTime)
