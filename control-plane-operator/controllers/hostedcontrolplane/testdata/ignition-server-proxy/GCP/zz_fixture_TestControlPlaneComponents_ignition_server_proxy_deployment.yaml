@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2e211ba633d56cb7f188e59a7415f63ca841aff1fcd235476c7660a2dda99678
+    hypershift.openshift.io/desired-state-hash: f65dbff5386ac182a0659a0b63f1eeb0c28733e8c6a642e19446c2b3f9dac9b0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server-proxy
@@ -122,6 +122,8 @@ spec:
         - mountPath: /tmp
           name: tmp-dir
       priorityClassName: hypershift-control-plane
+      securityContext:
+        runAsNonRoot: true
       tolerations:
       - effect: NoSchedule
         key: hypershift.openshift.io/control-plane
