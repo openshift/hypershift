@@ -64,6 +64,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -162,6 +163,10 @@ type StartOptions struct {
 	ScaleFromZeroCreds                     string
 	EtcdBackupMaxCount                     int
 	HCPEgressBlockCIDRs                    []string
+	OTELEndpoint                           string
+	OTELSampler                            string
+	OTELSamplerArg                         string
+	OTELCorrelationAttrs                   string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -203,6 +208,10 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
 	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
+	cmd.Flags().StringVar(&opts.OTELEndpoint, "otel-endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "OpenTelemetry collector endpoint (OTLP/gRPC). Empty disables tracing.")
+	cmd.Flags().StringVar(&opts.OTELSampler, "otel-sampler", os.Getenv("OTEL_TRACES_SAMPLER"), "Trace sampler type (default: parentbased_always_on)")
+	cmd.Flags().StringVar(&opts.OTELSamplerArg, "otel-sampler-arg", os.Getenv("OTEL_TRACES_SAMPLER_ARG"), "Trace sampler argument (e.g. ratio 0.0-1.0)")
+	cmd.Flags().StringVar(&opts.OTELCorrelationAttrs, "otel-correlation-attrs", os.Getenv("OTEL_CORRELATION_ATTRS"), "Comma-separated span attribute names for cross-service correlation (e.g. cs.cluster.id). Each key is set to the cluster infraID on reconcile spans. Empty disables correlation.")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -248,6 +257,23 @@ func NewStartCommand() *cobra.Command {
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
+
+	tracingShutdown, err := tracing.InitProvider(ctx, "hypershift-operator", tracing.Config{
+		Endpoint:         opts.OTELEndpoint,
+		Sampler:          opts.OTELSampler,
+		SamplerArg:       opts.OTELSamplerArg,
+		CorrelationAttrs: opts.OTELCorrelationAttrs,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracingShutdown(shutdownCtx); err != nil {
+			log.Error(err, "error shutting down trace provider")
+		}
+	}()
 
 	if err := validateStartOptions(opts, log); err != nil {
 		return err

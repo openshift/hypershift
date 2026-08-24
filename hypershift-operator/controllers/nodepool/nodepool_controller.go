@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -57,6 +58,8 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -194,12 +197,14 @@ func (r *NodePoolReconciler) managedResources() []client.Object {
 	return managedResources
 }
 
-func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+var nodePoolTracer = tracing.Tracer("nodepool")
+
+func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Fetch the nodePool instance
 	nodePool := &hyperv1.NodePool{}
-	err := r.Client.Get(ctx, req.NamespacedName, nodePool)
+	err = r.Client.Get(ctx, req.NamespacedName, nodePool)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("not found", "request", req.String())
@@ -207,6 +212,32 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		log.Error(err, "error getting nodepool")
 		return ctrl.Result{}, err
+	}
+
+	startOpts := []trace.SpanStartOption{
+		trace.WithAttributes(
+			tracing.AttrNodePoolName.String(nodePool.Name),
+			tracing.AttrNodePoolNamespace.String(nodePool.Namespace),
+			tracing.AttrNodePoolClusterName.String(nodePool.Spec.ClusterName),
+		),
+	}
+	if link := tracing.SpanLinkFromAnnotations(nodePool.Annotations); link.SpanContext.IsValid() {
+		startOpts = append(startOpts, trace.WithLinks(link))
+	}
+	ctx, span := nodePoolTracer.Start(ctx, tracing.SpanNodePoolReconcile, startOpts...)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	if nodePool.Spec.Release.Image != "" {
+		span.SetAttributes(tracing.AttrNodePoolReleaseImage.String(nodePool.Spec.Release.Image))
+	}
+	if !nodePool.DeletionTimestamp.IsZero() {
+		span.SetAttributes(tracing.AttrNodePoolDeleting.Bool(true))
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName)
@@ -234,6 +265,10 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	if hcluster.Spec.InfraID != "" {
+		span.SetAttributes(tracing.CorrelationAttrs(hcluster.Spec.InfraID)...)
+	}
+
 	// Ensure the nodePool has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(nodePool, finalizer) {
 		controllerutil.AddFinalizer(nodePool, finalizer)
@@ -248,7 +283,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	result, err := r.reconcile(ctx, hcluster, nodePool)
+	result, err = r.reconcile(ctx, hcluster, nodePool)
 	if err != nil {
 		log.Error(err, "Failed to reconcile NodePool")
 		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
