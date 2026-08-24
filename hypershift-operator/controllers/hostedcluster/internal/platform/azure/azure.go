@@ -372,7 +372,7 @@ const deletionFailedThreshold = 10 * time.Minute
 
 // DeleteOrphanedMachines removes the finalizer from AzureMachines that are stuck in deletion
 // due to credential failures. This is detected by checking each AzureMachine's Status.Conditions
-// for a Ready=False condition with Reason=DeletionFailed. Orphaning the machine allows management
+// for a VMRunning=False condition with Reason=DeletionFailed. Orphaning the machine allows management
 // cluster cleanup to proceed without requiring valid cloud credentials.
 func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	// This orphaning behavior is intended for managed-identity cleanup flow.
@@ -416,12 +416,12 @@ func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hy
 	return utilerrors.NewAggregate(errs)
 }
 
-// hasDeletionFailedCondition returns true if the AzureMachine has a Ready condition with
+// hasDeletionFailedCondition returns true if the AzureMachine has a VMRunning condition with
 // Status=False and Reason=DeletionFailed, indicating the cloud provider could not delete
 // the underlying VM (e.g., due to invalid or expired credentials).
 func hasDeletionFailedCondition(azureMachine *capiazure.AzureMachine) bool {
 	for _, condition := range azureMachine.Status.Conditions {
-		if condition.Type == capiv1.ReadyCondition &&
+		if condition.Type == capiazure.VMRunningCondition &&
 			condition.Status == corev1.ConditionFalse &&
 			condition.Reason == capiazure.DeletionFailedReason {
 			return true
