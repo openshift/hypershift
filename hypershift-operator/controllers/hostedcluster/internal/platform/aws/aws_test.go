@@ -11,6 +11,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -501,18 +502,23 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			}
 
 			if tc.expectFinalizersCleared {
-				var machineList capiaws.AWSMachineList
-				g.Expect(fakeClient.List(t.Context(), &machineList, crclient.InNamespace(namespace))).To(Succeed())
-				for _, m := range machineList.Items {
-					g.Expect(m.Finalizers).To(BeEmpty(), "expected finalizers to be cleared on machine %s", m.Name)
+				for _, machine := range tc.machines {
+					m := &capiaws.AWSMachine{}
+					err := fakeClient.Get(t.Context(), crclient.ObjectKey{Name: machine.Name, Namespace: namespace}, m)
+					if apierrors.IsNotFound(err) {
+						// Object was deleted (expected after finalizers cleared)
+						continue
+					}
+					g.Expect(err).ToNot(HaveOccurred(), "failed to get machine %s", machine.Name)
+					g.Expect(m.Finalizers).To(BeEmpty(), "expected finalizers to be cleared on machine %s", machine.Name)
 				}
 			}
 
 			if !tc.expectFinalizersCleared && len(tc.machines) > 0 {
-				var machineList capiaws.AWSMachineList
-				g.Expect(fakeClient.List(t.Context(), &machineList, crclient.InNamespace(namespace))).To(Succeed())
-				for _, m := range machineList.Items {
-					g.Expect(m.Finalizers).To(ContainElement("test-finalizer"), "expected finalizers to be preserved on machine %s", m.Name)
+				for _, machine := range tc.machines {
+					m := &capiaws.AWSMachine{}
+					g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Name: machine.Name, Namespace: namespace}, m)).To(Succeed(), "failed to get machine %s", machine.Name)
+					g.Expect(m.Finalizers).To(ContainElement("test-finalizer"), "expected finalizers to be preserved on machine %s", machine.Name)
 				}
 			}
 		})
