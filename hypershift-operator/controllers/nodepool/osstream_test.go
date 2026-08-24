@@ -139,7 +139,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 			expectedStream:   "rhel-9",
 		},
 		{
-			name: "When spec is empty and status has rhel-9 on OCP 5.0 upgrade, it should preserve rhel-9",
+			name: "When spec is empty and status has rhel-9 on OCP 5.0 upgrade, it should return version-derived rhel-10",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{},
 				Status: hyperv1.NodePoolStatus{
@@ -150,10 +150,10 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"}},
 			},
 			osStreamsEnabled: true,
-			expectedStream:   "rhel-9",
+			expectedStream:   "rhel-10",
 		},
 		{
-			name: "When spec is empty and FG off and status has rhel-9 on OCP 5.0, it should preserve rhel-9",
+			name: "When spec is empty and FG off and status has rhel-9 on OCP 5.0, it should return rhel-9",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{},
 				Status: hyperv1.NodePoolStatus{
@@ -167,7 +167,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 			expectedStream:   "rhel-9",
 		},
 		{
-			name: "When spec is empty and status has rhel-10 on OCP 5.0, it should preserve rhel-10",
+			name: "When spec is empty and status has rhel-10 on OCP 5.0, it should return version-derived rhel-10",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{},
 				Status: hyperv1.NodePoolStatus{
@@ -213,7 +213,7 @@ func TestGetRHELStreamForBootImage(t *testing.T) {
 			expectedStream:   "rhel-9",
 		},
 		{
-			name: "When spec is empty and status has rhel-9 with runc config, it should preserve rhel-9 without checking runc",
+			name: "When spec is empty and status has rhel-9 with runc config on OCP 5.0, it should return rhel-9 due to runc",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-np",
