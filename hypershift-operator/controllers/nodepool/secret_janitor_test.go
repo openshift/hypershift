@@ -182,7 +182,7 @@ spec:
 		expected *corev1.Secret
 	}{
 		{
-			name: "unrelated secret untouched",
+			name: "When secret is unrelated, it should leave it untouched",
 			input: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "whatever",
@@ -197,7 +197,7 @@ spec:
 			},
 		},
 		{
-			name: "related but not known secret untouched",
+			name: "When secret is related but not known, it should leave it untouched",
 			input: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "related",
@@ -218,7 +218,7 @@ spec:
 			},
 		},
 		{
-			name: "related known secret with correct hash untouched",
+			name: "When secret is related and has correct hash, it should leave it untouched",
 			input: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "token-nodepool-name-64587037",
@@ -239,7 +239,7 @@ spec:
 			},
 		},
 		{
-			name: "related token secret with incorrect hash set for expiry",
+			name: "When token secret has incorrect hash, it should set it for expiry",
 			input: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "token-nodepool-name-jsadfkjh23",
@@ -261,7 +261,7 @@ spec:
 			},
 		},
 		{
-			name: "related ignition user data secret with incorrect hash deleted",
+			name: "When ignition user data secret has incorrect hash, it should delete it",
 			input: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "user-data-nodepool-name-jsadfkjh23",
@@ -484,7 +484,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 		expected             bool
 	}{
 		{
-			name: "when hosted cluster is not aws or kubevirt it should NOT keep old user data",
+			name: "When hosted cluster is not aws or kubevirt, it should NOT keep old user data",
 			hc: &hyperv1.HostedCluster{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -507,7 +507,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			expected:        false,
 		},
 		{
-			name: "when hosted cluster is kubevirt it should keep old user data",
+			name: "When hosted cluster is kubevirt, it should keep old user data",
 			hc: &hyperv1.HostedCluster{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -530,7 +530,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			expected:        true,
 		},
 		{
-			name: "when hosted cluster is less than 4.16 it should keep user data",
+			name: "When hosted cluster is less than 4.16, it should keep user data",
 			hc: &hyperv1.HostedCluster{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
@@ -554,7 +554,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			expected:             true,
 		},
 		{
-			name: "when hosted cluster is equal or greater than 4.16 it should NOT keep user data",
+			name: "When hosted cluster is equal or greater than 4.16, it should NOT keep user data",
 			hc: &hyperv1.HostedCluster{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{

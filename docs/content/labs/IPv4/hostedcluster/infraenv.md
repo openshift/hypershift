@@ -1,3 +1,7 @@
+---
+title: Infra Env
+---
+
 The `InfraEnv` is an Assisted Service object that includes essential details such as the `pullSecretRef` and the `sshAuthorizedKey`. These details are used to create the RHCOS Boot Image customized specifically for the cluster. Below is the structure of this object:
 
 ```yaml

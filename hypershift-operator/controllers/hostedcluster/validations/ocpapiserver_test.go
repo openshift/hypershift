@@ -50,7 +50,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 		ipAddresses       []string
 	}{
 		{
-			name: "custom serving cert, hcp deployed, valid configuration with no conflicts",
+			name: "When custom serving cert is deployed with valid configuration it should not return errors",
 			customCertSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      customServingCertSecretName,
@@ -72,7 +72,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 			expectedErrors: nil,
 		},
 		{
-			name: "custom serving cert, hcp not deployed, valid configuration with no conflicts",
+			name: "When custom serving cert is not deployed with valid configuration it should not return errors",
 			customCertSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      customServingCertSecretName,
@@ -90,7 +90,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 			expectedErrors: nil,
 		},
 		{
-			name:       "invalid certificate format, PKI reconciliation disabled",
+			name:       "When certificate format is invalid and PKI reconciliation is disabled it should not return errors",
 			annotation: hyperv1.DisablePKIReconciliationAnnotation,
 			customCertSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -111,7 +111,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 			expectedErrors: nil,
 		},
 		{
-			name: "invalid certificate format",
+			name: "When certificate format is invalid it should return an error",
 			customCertSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      customServingCertSecretName,
@@ -133,7 +133,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 			},
 		},
 		{
-			name: "missing secret",
+			name: "When referenced secret is missing it should return an error",
 			namedCertificates: []configv1.APIServerNamedServingCert{
 				{
 					Names:              []string{"test.example.com"},
@@ -145,12 +145,12 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 			},
 		},
 		{
-			name:           "no custom serving cert, hcp not deployed, valid configuration with no conflicts",
+			name:           "When no custom serving cert is configured and HCP is not deployed it should not return errors",
 			secrets:        []client.Object{},
 			expectedErrors: nil,
 		},
 		{
-			name: "conflicting SANs with KAS",
+			name: "When custom cert SANs conflict with KAS it should return an error",
 
 			customCertSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -174,7 +174,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid certificate data",
+			name: "When certificate data is invalid it should return an error",
 			customCertSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      customServingCertSecretName,
@@ -288,19 +288,19 @@ func TestAppendEntriesIfNotExists(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "empty slice and entries",
+			name:     "When slice and entries are empty, it should return an empty slice",
 			slice:    []string{},
 			entries:  []string{},
 			expected: []string{},
 		},
 		{
-			name:     "add new entries",
+			name:     "When adding new entries, it should append them to the slice",
 			slice:    []string{"a", "b"},
 			entries:  []string{"c", "d"},
 			expected: []string{"a", "b", "c", "d"},
 		},
 		{
-			name:     "add existing and new entries",
+			name:     "When adding existing and new entries, it should only append new ones",
 			slice:    []string{"a", "b"},
 			entries:  []string{"b", "c"},
 			expected: []string{"a", "b", "c"},
@@ -325,99 +325,99 @@ func TestIsDNSNameMatch(t *testing.T) {
 	}{
 		// Exact matches
 		{
-			name:     "exact match - simple domain",
+			name:     "When DNS name exactly matches a simple domain, it should return true",
 			dnsName:  "example.com",
 			pattern:  "example.com",
 			expected: true,
 		},
 		{
-			name:     "exact match - subdomain",
+			name:     "When DNS name exactly matches a subdomain, it should return true",
 			dnsName:  "sub.example.com",
 			pattern:  "sub.example.com",
 			expected: true,
 		},
 		{
-			name:     "exact match - multiple subdomains",
+			name:     "When DNS name exactly matches multiple subdomains, it should return true",
 			dnsName:  "a.b.c.example.com",
 			pattern:  "a.b.c.example.com",
 			expected: true,
 		},
 		{
-			name:     "no match - different domains",
+			name:     "When DNS names have different domains, it should return false",
 			dnsName:  "example.com",
 			pattern:  "other.com",
 			expected: false,
 		},
 		{
-			name:     "no match - different subdomains",
+			name:     "When DNS names have different subdomains, it should return false",
 			dnsName:  "sub.example.com",
 			pattern:  "other.example.com",
 			expected: false,
 		},
 		// Wildcard matches
 		{
-			name:     "wildcard match - single level",
+			name:     "When wildcard pattern matches a single level subdomain, it should return true",
 			dnsName:  "sub.example.com",
 			pattern:  "*.example.com",
 			expected: true,
 		},
 		{
-			name:     "wildcard match - multiple levels",
+			name:     "When wildcard pattern matches multiple levels, it should return true",
 			dnsName:  "baz.foo.bar.com",
 			pattern:  "*.foo.bar.com",
 			expected: true,
 		},
 		{
-			name:     "wildcard no match - too many levels",
+			name:     "When DNS name has too many levels for wildcard, it should return false",
 			dnsName:  "sub.sub.example.com",
 			pattern:  "*.example.com",
 			expected: false,
 		},
 		{
-			name:     "wildcard no match - too few levels",
+			name:     "When DNS name has too few levels for wildcard, it should return false",
 			dnsName:  "example.com",
 			pattern:  "*.example.com",
 			expected: false,
 		},
 		{
-			name:     "wildcard no match - different domain",
+			name:     "When wildcard pattern has a different domain, it should return false",
 			dnsName:  "sub.example.com",
 			pattern:  "*.other.com",
 			expected: false,
 		},
 		{
-			name:     "wildcard no match - partial domain match",
+			name:     "When wildcard pattern partially matches the domain, it should return false",
 			dnsName:  "sub.example.com",
 			pattern:  "*.example.org",
 			expected: false,
 		},
 		// Edge cases
 		{
-			name:     "wildcard pattern not at start",
+			name:     "When wildcard is not at the start of the pattern, it should return false",
 			dnsName:  "example.com",
 			pattern:  "example.*.com",
 			expected: false,
 		},
 		{
-			name:     "wildcard pattern at end",
+			name:     "When wildcard pattern matches at the TLD level, it should return true",
 			dnsName:  "example.com",
 			pattern:  "*.com",
 			expected: true,
 		},
 		{
-			name:     "empty strings",
+			name:     "When both strings are empty, it should return true",
 			dnsName:  "",
 			pattern:  "",
 			expected: true,
 		},
 		{
-			name:     "empty dnsName",
+			name:     "When DNS name is empty, it should return false",
 			dnsName:  "",
 			pattern:  "*.example.com",
 			expected: false,
 		},
 		{
-			name:     "empty pattern",
+			name:     "When pattern is empty, it should return false",
 			dnsName:  "example.com",
 			pattern:  "",
 			expected: false,
@@ -446,77 +446,77 @@ func TestCheckConflictingSANs(t *testing.T) {
 		expectError   bool
 	}{
 		{
-			name:          "no conflicts",
+			name:          "When entries have no conflicts, it should not return an error",
 			customEntries: []string{"a", "b"},
 			kasSANEntries: []string{"c", "d"},
 			entryType:     "DNS names",
 			expectError:   false,
 		},
 		{
-			name:          "has conflicts",
+			name:          "When entries have conflicts, it should return an error",
 			customEntries: []string{"a", "b"},
 			kasSANEntries: []string{"b", "c"},
 			entryType:     "DNS names",
 			expectError:   true,
 		},
 		{
-			name:          "empty entries",
+			name:          "When entries are empty, it should not return an error",
 			customEntries: []string{},
 			kasSANEntries: []string{},
 			entryType:     "DNS names",
 			expectError:   false,
 		},
 		{
-			name:          "wildcard conflicts - custom entry matches KAS wildcard",
+			name:          "When custom entry matches KAS wildcard, it should return an error",
 			customEntries: []string{"sub.example.com"},
 			kasSANEntries: []string{"*.example.com"},
 			entryType:     "DNS names",
 			expectError:   true,
 		},
 		{
-			name:          "wildcard conflicts - custom wildcard matches KAS entry",
+			name:          "When custom wildcard matches KAS entry, it should return an error",
 			customEntries: []string{"*.example.com"},
 			kasSANEntries: []string{"sub.example.com"},
 			entryType:     "DNS names",
 			expectError:   true,
 		},
 		{
-			name:          "wildcard conflicts - both wildcards with same domain",
+			name:          "When both wildcards have the same domain, it should return an error",
 			customEntries: []string{"*.example.com"},
 			kasSANEntries: []string{"*.example.com"},
 			entryType:     "DNS names",
 			expectError:   true,
 		},
 		{
-			name:          "wildcard conflicts - custom entry matches KAS wildcard with subdomain",
+			name:          "When custom entry matches KAS wildcard with subdomain, it should return an error",
 			customEntries: []string{"baz.foo.bar.com"},
 			kasSANEntries: []string{"*.foo.bar.com"},
 			entryType:     "DNS names",
 			expectError:   true,
 		},
 		{
-			name:          "no wildcard conflicts - custom entry doesn't match KAS wildcard",
+			name:          "When custom entry does not match KAS wildcard, it should not return an error",
 			customEntries: []string{"sub.sub.example.com"},
 			kasSANEntries: []string{"*.example.com"},
 			entryType:     "DNS names",
 			expectError:   false,
 		},
 		{
-			name:          "no wildcard conflicts - different domains",
+			name:          "When wildcard entries have different domains, it should not return an error",
 			customEntries: []string{"sub.example.com"},
 			kasSANEntries: []string{"*.other.com"},
 			entryType:     "DNS names",
 			expectError:   false,
 		},
 		{
-			name:          "no wildcard conflicts - custom wildcard doesn't match KAS entry",
+			name:          "When custom wildcard does not match KAS entry, it should not return an error",
 			customEntries: []string{"*.example.com"},
 			kasSANEntries: []string{"other.com"},
 			entryType:     "DNS names",
 			expectError:   false,
 		},
 		{
-			name:          "mixed conflicts - exact match and wildcard match",
+			name:          "When entries have both exact match and wildcard conflicts, it should return an error",
 			customEntries: []string{"exact.example.com", "sub.example.com"},
 			kasSANEntries: []string{"exact.example.com", "*.example.com"},
 			entryType:     "DNS names",

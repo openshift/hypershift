@@ -217,7 +217,7 @@ func TestValidateEtcdSnapshotFlags(t *testing.T) {
 		errMsg                   string
 	}{
 		{
-			name:                     "When etcd snapshot is disabled it should accept any flags",
+			name:                     "When etcd snapshot is disabled, it should accept any flags",
 			useEtcdSnapshot:          false,
 			snapshotMoveData:         true,
 			defaultVolumesToFsBackup: true,
@@ -225,14 +225,14 @@ func TestValidateEtcdSnapshotFlags(t *testing.T) {
 			expectErr:                false,
 		},
 		{
-			name:             "When etcd snapshot is enabled without explicit conflicting flags it should pass",
+			name:             "When etcd snapshot is enabled without conflicting flags, it should pass",
 			useEtcdSnapshot:  true,
 			snapshotMoveData: true, // default value, but not explicitly changed
 			changedFlags:     map[string]bool{"use-etcd-snapshot": true},
 			expectErr:        false,
 		},
 		{
-			name:             "When etcd snapshot is enabled with explicit snapshot-move-data it should return error",
+			name:             "When etcd snapshot is enabled with snapshot-move-data, it should return error",
 			useEtcdSnapshot:  true,
 			snapshotMoveData: true,
 			changedFlags:     map[string]bool{"use-etcd-snapshot": true, "snapshot-move-data": true},
@@ -240,7 +240,7 @@ func TestValidateEtcdSnapshotFlags(t *testing.T) {
 			errMsg:           "--snapshot-move-data cannot be used with --use-etcd-snapshot",
 		},
 		{
-			name:                     "When etcd snapshot is enabled with explicit default-volumes-to-fs-backup it should return error",
+			name:                     "When etcd snapshot is enabled with default-volumes-to-fs-backup, it should return error",
 			useEtcdSnapshot:          true,
 			defaultVolumesToFsBackup: true,
 			changedFlags:             map[string]bool{"use-etcd-snapshot": true, "default-volumes-to-fs-backup": true},
@@ -248,7 +248,7 @@ func TestValidateEtcdSnapshotFlags(t *testing.T) {
 			errMsg:                   "--default-volumes-to-fs-backup cannot be used with --use-etcd-snapshot",
 		},
 		{
-			name:            "When etcd snapshot is enabled with explicit restore-pvs it should return error",
+			name:            "When etcd snapshot is enabled with restore-pvs, it should return error",
 			useEtcdSnapshot: true,
 			changedFlags:    map[string]bool{"use-etcd-snapshot": true, "restore-pvs": true},
 			expectErr:       true,

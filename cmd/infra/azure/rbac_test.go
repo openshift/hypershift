@@ -121,7 +121,7 @@ func TestAssignRole(t *testing.T) {
 		expectErr    bool
 	}{
 		// --- LIST behaviors ---
-		"When LIST finds matching assignment it should skip creation": {
+		"When LIST finds matching assignment, it should skip creation": {
 			listItems: []*azureauth.RoleAssignment{
 				{
 					Properties: &azureauth.RoleAssignmentProperties{
@@ -135,7 +135,7 @@ func TestAssignRole(t *testing.T) {
 			expectCreate: false,
 			expectDelete: false,
 		},
-		"When LIST returns items with nil properties it should skip them and fall through to GET": {
+		"When LIST returns items with nil properties, it should skip them and fall through to GET": {
 			listItems: []*azureauth.RoleAssignment{
 				{Properties: nil},
 				{Properties: &azureauth.RoleAssignmentProperties{
@@ -148,13 +148,13 @@ func TestAssignRole(t *testing.T) {
 			expectCreate: true,
 			expectDelete: false,
 		},
-		"When LIST page returns error it should return error": {
+		"When LIST page returns error, it should return error": {
 			listErr:   internalServerError(),
 			expectErr: true,
 		},
 
 		// --- GET behaviors ---
-		"When GET finds assignment with matching principal and role it should skip creation": {
+		"When GET finds assignment with matching principal and role, it should skip creation": {
 			getResponse: &azureauth.RoleAssignmentsClientGetResponse{
 				RoleAssignment: azureauth.RoleAssignment{
 					Properties: &azureauth.RoleAssignmentProperties{
@@ -166,7 +166,7 @@ func TestAssignRole(t *testing.T) {
 			expectCreate: false,
 			expectDelete: false,
 		},
-		"When GET finds assignment with different principal it should delete stale and create new": {
+		"When GET finds assignment with different principal, it should delete stale and create new": {
 			getResponse: &azureauth.RoleAssignmentsClientGetResponse{
 				RoleAssignment: azureauth.RoleAssignment{
 					Properties: &azureauth.RoleAssignmentProperties{
@@ -177,7 +177,7 @@ func TestAssignRole(t *testing.T) {
 			expectCreate: true,
 			expectDelete: true,
 		},
-		"When GET finds assignment with nil PrincipalID it should delete stale and create new": {
+		"When GET finds assignment with nil PrincipalID, it should delete stale and create new": {
 			getResponse: &azureauth.RoleAssignmentsClientGetResponse{
 				RoleAssignment: azureauth.RoleAssignment{
 					Properties: &azureauth.RoleAssignmentProperties{
@@ -188,7 +188,7 @@ func TestAssignRole(t *testing.T) {
 			expectCreate: true,
 			expectDelete: true,
 		},
-		"When GET finds assignment with nil Properties it should delete stale and create new": {
+		"When GET finds assignment with nil Properties, it should delete stale and create new": {
 			getResponse: &azureauth.RoleAssignmentsClientGetResponse{
 				RoleAssignment: azureauth.RoleAssignment{
 					Properties: nil,
@@ -197,7 +197,7 @@ func TestAssignRole(t *testing.T) {
 			expectCreate: true,
 			expectDelete: true,
 		},
-		"When GET finds stale assignment but delete fails it should return error": {
+		"When GET finds stale assignment but delete fails, it should return error": {
 			getResponse: &azureauth.RoleAssignmentsClientGetResponse{
 				RoleAssignment: azureauth.RoleAssignment{
 					Properties: &azureauth.RoleAssignmentProperties{
@@ -210,34 +210,34 @@ func TestAssignRole(t *testing.T) {
 			expectCreate: false,
 			expectErr:    true,
 		},
-		"When GET returns 404 it should create new assignment": {
+		"When GET returns 404, it should create new assignment": {
 			getErr:       notFoundError(),
 			expectCreate: true,
 			expectDelete: false,
 		},
-		"When GET returns 403 it should fall through to create": {
+		"When GET returns 403, it should fall through to create": {
 			getErr:       forbiddenError(),
 			expectCreate: true,
 			expectDelete: false,
 		},
-		"When GET returns unexpected API error it should return error": {
+		"When GET returns unexpected API error, it should return error": {
 			getErr:    internalServerError(),
 			expectErr: true,
 		},
-		"When GET returns non-API error it should return error": {
+		"When GET returns non-API error, it should return error": {
 			getErr:    fmt.Errorf("network timeout"),
 			expectErr: true,
 		},
 
 		// --- Create behaviors ---
-		"When create returns 409 conflict it should succeed": {
+		"When create returns 409 conflict, it should succeed": {
 			getErr:       notFoundError(),
 			createErr:    conflictError(),
 			expectCreate: true,
 			expectDelete: false,
 			expectErr:    false,
 		},
-		"When create returns unexpected error it should return error": {
+		"When create returns unexpected error, it should return error": {
 			getErr:       notFoundError(),
 			createErr:    internalServerError(),
 			expectCreate: true,
@@ -357,15 +357,15 @@ func TestDeleteRoleAssignmentByName(t *testing.T) {
 		deleteErr   error
 		expectError bool
 	}{
-		"When assignment exists it should delete successfully": {
+		"When assignment exists, it should delete successfully": {
 			deleteErr:   nil,
 			expectError: false,
 		},
-		"When assignment does not exist it should skip gracefully": {
+		"When assignment does not exist, it should skip gracefully": {
 			deleteErr:   notFoundError(),
 			expectError: false,
 		},
-		"When delete fails with unexpected error it should return error": {
+		"When delete fails with unexpected error, it should return error": {
 			deleteErr:   forbiddenError(),
 			expectError: true,
 		},

@@ -25,32 +25,32 @@ func TestIsRetriableVPCEndpointError(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When error is invalidRouteTableID it should be retriable",
+			name:     "When error is invalidRouteTableID, it should be retriable",
 			err:      &testAPIError{code: invalidRouteTableID},
 			expected: true,
 		},
 		{
-			name:     "When error is RequestLimitExceeded it should be retriable",
+			name:     "When error is RequestLimitExceeded, it should be retriable",
 			err:      &testAPIError{code: "RequestLimitExceeded"},
 			expected: true,
 		},
 		{
-			name:     "When error is Throttling it should be retriable",
+			name:     "When error is Throttling, it should be retriable",
 			err:      &testAPIError{code: "Throttling"},
 			expected: true,
 		},
 		{
-			name:     "When error is EC2ThrottledException it should be retriable",
+			name:     "When error is EC2ThrottledException, it should be retriable",
 			err:      &testAPIError{code: "EC2ThrottledException"},
 			expected: true,
 		},
 		{
-			name:     "When error is a non-retriable API error it should not be retriable",
+			name:     "When error is a non-retriable API error, it should not be retriable",
 			err:      &testAPIError{code: "InvalidParameterValue"},
 			expected: false,
 		},
 		{
-			name:     "When error is not an API error it should not be retriable",
+			name:     "When error is not an API error, it should not be retriable",
 			err:      fmt.Errorf("network timeout"),
 			expected: false,
 		},

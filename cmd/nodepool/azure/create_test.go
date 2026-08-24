@@ -37,7 +37,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 		args []string
 	}{
 		{
-			name: "minimal configuration",
+			name: "When minimal configuration is provided, it should generate correct nodepool",
 			args: []string{
 				"--instance-type=" + testInstanceType,
 				"--nodepool-subnet-id=" + testSubnetID,
@@ -48,7 +48,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 			},
 		},
 		{
-			name: "full configuration with Gen2",
+			name: "When full configuration with Gen2 is provided, it should generate correct nodepool",
 			args: []string{
 				"--instance-type=Standard_D8s_v5",
 				"--nodepool-subnet-id=" + testSubnetID,
@@ -127,37 +127,37 @@ func TestNodePoolPlatformImageGeneration(t *testing.T) {
 		expectedImageGeneration *hyperv1.AzureVMImageGeneration
 	}{
 		{
-			name:                    "Gen1 specified with AMD64",
+			name:                    "When Gen1 is specified with AMD64 it should set Gen1",
 			imageGeneration:         "Gen1",
 			nodePoolArch:            string(hyperv1.ArchitectureAMD64),
 			expectedImageGeneration: ptr.To(hyperv1.Gen1),
 		},
 		{
-			name:                    "Gen2 specified with AMD64",
+			name:                    "When Gen2 is specified with AMD64 it should set Gen2",
 			imageGeneration:         "Gen2",
 			nodePoolArch:            string(hyperv1.ArchitectureAMD64),
 			expectedImageGeneration: ptr.To(hyperv1.Gen2),
 		},
 		{
-			name:                    "Gen1 specified with ARM64",
+			name:                    "When Gen1 is specified with ARM64 it should set Gen1",
 			imageGeneration:         "Gen1",
 			nodePoolArch:            string(hyperv1.ArchitectureARM64),
 			expectedImageGeneration: ptr.To(hyperv1.Gen1),
 		},
 		{
-			name:                    "Gen2 specified with ARM64",
+			name:                    "When Gen2 is specified with ARM64 it should set Gen2",
 			imageGeneration:         "Gen2",
 			nodePoolArch:            string(hyperv1.ArchitectureARM64),
 			expectedImageGeneration: ptr.To(hyperv1.Gen2),
 		},
 		{
-			name:                    "No generation specified with AMD64",
+			name:                    "When no generation is specified with AMD64 it should leave generation nil",
 			imageGeneration:         "",
 			nodePoolArch:            string(hyperv1.ArchitectureAMD64),
 			expectedImageGeneration: nil,
 		},
 		{
-			name:                    "No generation specified with ARM64",
+			name:                    "When no generation is specified with ARM64 it should leave generation nil",
 			imageGeneration:         "",
 			nodePoolArch:            string(hyperv1.ArchitectureARM64),
 			expectedImageGeneration: nil,
@@ -228,46 +228,46 @@ func TestValidateImageGeneration(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name:        "Valid Gen1",
+			name:        "When Gen1 is specified it should pass validation",
 			imageGen:    "Gen1",
 			shouldError: false,
 		},
 		{
-			name:        "Valid Gen2",
+			name:        "When Gen2 is specified it should pass validation",
 			imageGen:    "Gen2",
 			shouldError: false,
 		},
 		{
-			name:        "Empty is valid",
+			name:        "When image generation is empty it should pass validation",
 			imageGen:    "",
 			shouldError: false,
 		},
 		{
-			name:          "Invalid Gen3",
+			name:          "When Gen3 is specified it should fail validation",
 			imageGen:      "Gen3",
 			shouldError:   true,
 			expectedError: "invalid value for --image-generation: Gen3. Supported values: Gen1, Gen2",
 		},
 		{
-			name:          "Invalid lowercase",
+			name:          "When lowercase gen1 is specified it should fail validation",
 			imageGen:      "gen1",
 			shouldError:   true,
 			expectedError: "invalid value for --image-generation: gen1. Supported values: Gen1, Gen2",
 		},
 		{
-			name:          "Invalid upper case",
+			name:          "When upper case GEN1 is specified it should fail validation",
 			imageGen:      "GEN1",
 			shouldError:   true,
 			expectedError: "invalid value for --image-generation: GEN1. Supported values: Gen1, Gen2",
 		},
 		{
-			name:          "Invalid numeric",
+			name:          "When numeric value is specified it should fail validation",
 			imageGen:      "1",
 			shouldError:   true,
 			expectedError: "invalid value for --image-generation: 1. Supported values: Gen1, Gen2",
 		},
 		{
-			name:          "Invalid random string",
+			name:          "When random string is specified it should fail validation",
 			imageGen:      "invalid",
 			shouldError:   true,
 			expectedError: "invalid value for --image-generation: invalid. Supported values: Gen1, Gen2",
@@ -310,14 +310,14 @@ func TestAzureBoundaryConditions(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "valid minimal configuration",
+			name: "When valid minimal configuration is provided it should pass validation",
 			modifyOpts: func(opts *RawAzurePlatformCreateOptions) {
 				// No modifications - should be valid
 			},
 			shouldError: false,
 		},
 		{
-			name: "whitespace only image generation",
+			name: "When whitespace only image generation is provided it should fail validation",
 			modifyOpts: func(opts *RawAzurePlatformCreateOptions) {
 				opts.ImageGeneration = "  "
 			},

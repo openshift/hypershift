@@ -51,18 +51,19 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 	When("hosted cluster is operational", func() {
 		It("should have all expected conditions with correct status", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 			delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
-			if e2eutil.IsLessThan(e2eutil.Version421) {
+			if !tc.VersionAtLeast(e2eutil.Version421) {
 				delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
 			}
-			if e2eutil.IsLessThan(e2eutil.Version422) {
+			if !tc.VersionAtLeast(e2eutil.Version422) {
 				delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 				delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 			}
-			if e2eutil.IsLessThan(e2eutil.Version423) {
+			if !tc.VersionAtLeast(e2eutil.Version423) {
 				delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
 			}
 
@@ -102,11 +103,11 @@ func EnsureFeatureGateStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster version is completed", func() {
 		It("should have feature gate status matching cluster version", func() {
 			tc := getTestCtx()
-			if e2eutil.IsLessThan(e2eutil.Version419) {
-				Skip("Feature gate status test requires version >= 4.19")
-			}
-			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
+			tc.SkipIfVersionBelow(e2eutil.Version419)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			var currentVersion string
 			Eventually(func(g Gomega) {
@@ -137,7 +138,8 @@ func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has a release image", func() {
 		It("should set payload arch status correctly", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
+			hostedCluster, err := getTestCtx().GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
 			Eventually(func(g Gomega) {
@@ -156,12 +158,12 @@ func ValidateConfigurationStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster authentication is configured", func() {
 		It("should propagate configuration status consistently", func() {
 			tc := getTestCtx()
-			hostedCluster := tc.GetHostedCluster()
-			if e2eutil.IsLessThan(e2eutil.Version421) {
-				Skip("Configuration status requires version >= 4.21")
-			}
-			tc.ValidateHostedClusterClient()
-			hcClient := tc.GetHostedClusterClient()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			tc.SkipIfVersionBelow(e2eutil.Version421)
+
+			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
 				var hostedClusterAuth configv1.Authentication
@@ -195,8 +197,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Clust
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterHealthTests(func() *internal.TestContext { return testCtx })

@@ -150,11 +150,11 @@ func TestReconcileUWMConfigContent(t *testing.T) {
 		validateExtra func(*WithT, map[string]interface{})
 	}{
 		{
-			name:          "no existing config",
+			name:          "When there is no existing config it should create telemetry remote write",
 			expectRWCount: 1,
 		},
 		{
-			name: "other keys present should be preserved",
+			name: "When other keys are present it should preserve them",
 			initial: `foo: bar
 goo: baz
 prometheus:
@@ -171,7 +171,7 @@ prometheus:
 			},
 		},
 		{
-			name: "other remote write configs should be preserved",
+			name: "When other remote write configs exist it should preserve them",
 			initial: `prometheus:
   remoteWrite:
   - queueConfig:
@@ -197,7 +197,7 @@ prometheus:
 			},
 		},
 		{
-			name: "existing telemetry config should be updated",
+			name: "When existing telemetry config exists it should be updated",
 			initial: `prometheus:
   remoteWrite:
   - queueConfig:
@@ -369,11 +369,11 @@ func TestReconcile(t *testing.T) {
 		validate func(*WithT, client.Client)
 	}{
 		{
-			name:     "no monitoring namespace",
+			name:     "When there is no monitoring namespace, it should succeed without changes",
 			validate: func(g *WithT, c client.Client) {},
 		},
 		{
-			name:     "monitoring namespace exists",
+			name:     "When monitoring namespace exists, it should create monitoring config",
 			existing: []client.Object{monitoring.MonitoringNamespace()},
 			validate: func(g *WithT, c client.Client) {
 				monitoringConfig := monitoring.MonitoringConfig()
@@ -383,7 +383,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "uwm exists",
+			name: "When UWM namespace exists, it should configure monitoring and remote write",
 			existing: []client.Object{
 				monitoring.MonitoringNamespace(),
 				monitoring.UWMNamespace(),

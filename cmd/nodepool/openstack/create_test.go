@@ -18,14 +18,14 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 		args []string
 	}{
 		{
-			name: "minimal configuration",
+			name: "When minimal configuration is provided, it should generate correct nodepool",
 			args: []string{
 				"--openstack-node-flavor=m1.large",
 				"--openstack-node-image-name=rhcos-openstack",
 			},
 		},
 		{
-			name: "full configuration with availability zone",
+			name: "When full configuration with availability zone is provided, it should generate correct nodepool",
 			args: []string{
 				"--openstack-node-flavor=m1.xlarge",
 				"--openstack-node-image-name=rhcos-openstack-latest",
@@ -94,14 +94,14 @@ func TestRawOpenStackPlatformCreateOptions_Validate(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "should fail if flavor is missing",
+			name: "When flavor is missing, it should fail",
 			input: RawOpenStackPlatformCreateOptions{
 				OpenStackPlatformOptions: &OpenStackPlatformOptions{},
 			},
 			expectedError: "flavor is required",
 		},
 		{
-			name: "should pass when AZ is provided",
+			name: "When AZ is provided, it should pass validation",
 			input: RawOpenStackPlatformCreateOptions{
 				OpenStackPlatformOptions: &OpenStackPlatformOptions{
 					Flavor:         "flavor",

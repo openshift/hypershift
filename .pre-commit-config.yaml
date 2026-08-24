@@ -37,15 +37,15 @@ repos:
         stages: [pre-commit]
       - id: api-lint-fix
         name: Sort API imports
-        description: Runs `make api-lint-fix` to sort imports in the api/ module.
-        entry: make api-lint-fix PULL_BASE_SHA=HEAD
+        description: Runs `make precommit-api-lint-fix` to sort imports in the api/ module.
+        entry: bash -c 'make precommit-api-lint-fix FILES="$*"' --
         language: system
         stages: [pre-commit]
         files: '^api/.*\.go$'
       - id: main-lint-fix
         name: Sort imports
-        description: Runs `make main-lint-fix` to sort imports in the main module.
-        entry: make main-lint-fix PULL_BASE_SHA=HEAD
+        description: Runs `make precommit-main-lint-fix` to sort imports in the main module.
+        entry: bash -c 'make precommit-main-lint-fix FILES="$*"' --
         language: system
         stages: [pre-commit]
         files: '\.go$'

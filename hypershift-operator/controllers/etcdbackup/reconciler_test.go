@@ -1042,7 +1042,7 @@ func TestBuildUploadArgs(t *testing.T) {
 			wantContain: []string{"--azure-encryption-scope", "https://myvault.vault.azure.net/keys/mykey"},
 		},
 		{
-			name: "When storage type is unsupported it should return an error",
+			name: "When storage type is unsupported, it should return an error",
 			backup: &hyperv1.HCPEtcdBackup{
 				Spec: hyperv1.HCPEtcdBackupSpec{
 					Storage: hyperv1.HCPEtcdBackupStorage{StorageType: "UnknownStorage"},

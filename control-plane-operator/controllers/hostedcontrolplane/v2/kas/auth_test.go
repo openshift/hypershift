@@ -137,6 +137,7 @@ func TestGenerateAuthConfig(t *testing.T) {
 							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
+						UserValidationRules:  []UserValidationRule{},
 					},
 				},
 			},

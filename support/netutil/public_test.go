@@ -13,30 +13,30 @@ func TestConnectsThroughInternetToControlplane(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "Not aws always uses internet",
+			name:     "When platform is not AWS, it should use internet",
 			expected: true,
 		},
 		{
-			name: "AWS public uses internet",
+			name: "When AWS endpoint access is public, it should use internet",
 			platform: hyperv1.PlatformSpec{
 				AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
 			},
 			expected: true,
 		},
 		{
-			name: "AWS public/private doesn't use internet",
+			name: "When AWS endpoint access is public and private it should not use internet",
 			platform: hyperv1.PlatformSpec{
 				AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.PublicAndPrivate},
 			},
 		},
 		{
-			name: "AWS private doesn't use internet",
+			name: "When AWS endpoint access is private it should not use internet",
 			platform: hyperv1.PlatformSpec{
 				AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
 			},
 		},
 		{
-			name: "When Azure topology is Public it should use internet",
+			name: "When Azure topology is Public, it should use internet",
 			platform: hyperv1.PlatformSpec{
 				Azure: &hyperv1.AzurePlatformSpec{Topology: hyperv1.AzureTopologyPublic},
 			},
@@ -55,14 +55,14 @@ func TestConnectsThroughInternetToControlplane(t *testing.T) {
 			},
 		},
 		{
-			name: "When Azure topology is empty it should use internet",
+			name: "When Azure topology is empty, it should use internet",
 			platform: hyperv1.PlatformSpec{
 				Azure: &hyperv1.AzurePlatformSpec{},
 			},
 			expected: true,
 		},
 		{
-			name:     "When Azure spec is nil it should use internet",
+			name:     "When Azure spec is nil, it should use internet",
 			expected: true,
 		},
 	}

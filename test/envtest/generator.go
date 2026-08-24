@@ -137,6 +137,7 @@ func loadCRDFromFile(filename string) (*apiextensionsv1.CustomResourceDefinition
 // function as setupCRDs in cmd/install/install.go.
 func allCRDsForFeatureSet(featureSet string) []*apiextensionsv1.CustomResourceDefinition {
 	crdObjects := crdassets.CustomResourceDefinitions(
+		"v1beta2",
 		func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
 			// Exclude non-CRD files (featuregates, test suites).
 			if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {

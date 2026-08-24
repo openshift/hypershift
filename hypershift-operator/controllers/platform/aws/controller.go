@@ -668,7 +668,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 	return nil
 }
 
-func apiTagToEC2Tag(in []hyperv1.AWSResourceTag) []ec2types.Tag {
+func apiTagToEC2Tag(in []hyperv1.AWSEndpointServiceResourceTag) []ec2types.Tag {
 	result := make([]ec2types.Tag, 0, len(in))
 	for _, val := range in {
 		result = append(result, ec2types.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})

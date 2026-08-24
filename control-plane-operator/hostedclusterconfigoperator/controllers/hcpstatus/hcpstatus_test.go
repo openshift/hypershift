@@ -55,7 +55,7 @@ func TestHCPStatusReconciler(t *testing.T) {
 			expectedOAuthName: expectedOAuthConfigMapName,
 		},
 		{
-			name: "When Authentication resource is missing it should return an error",
+			name: "When Authentication resource is missing, it should return an error",
 			hostedClusterObjects: []crclient.Object{
 				&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 			},

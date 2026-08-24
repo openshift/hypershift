@@ -470,52 +470,52 @@ func TestValidateBackupName(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name:        "Valid short name",
+			name:        "When valid short name is provided, it should pass validation",
 			backupName:  "test-backup",
 			expectError: false,
 		},
 		{
-			name:        "Valid name with numbers",
+			name:        "When valid name with numbers is provided, it should pass validation",
 			backupName:  "test-backup-123",
 			expectError: false,
 		},
 		{
-			name:        "Valid 63 character name",
+			name:        "When valid 63 character name is provided, it should pass validation",
 			backupName:  "a1234567890123456789012345678901234567890123456789012345678901b",
 			expectError: false,
 		},
 		{
-			name:        "Name too long (64 characters)",
+			name:        "When name is too long (64 characters), it should return an error",
 			backupName:  "a12345678901234567890123456789012345678901234567890123456789012b",
 			expectError: true,
 			errorMsg:    "too long (64 characters)",
 		},
 		{
-			name:        "Name with uppercase letters",
+			name:        "When name has uppercase letters, it should return an error",
 			backupName:  "Test-backup",
 			expectError: true,
 			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:        "Name starting with hyphen",
+			name:        "When name starts with hyphen, it should return an error",
 			backupName:  "-test-backup",
 			expectError: true,
 			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:        "Name ending with hyphen",
+			name:        "When name ends with hyphen, it should return an error",
 			backupName:  "test-backup-",
 			expectError: true,
 			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:        "Name with invalid characters",
+			name:        "When name has invalid characters, it should return an error",
 			backupName:  "test_backup",
 			expectError: true,
 			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
 		},
 		{
-			name:        "Empty name should be valid (auto-generation)",
+			name:        "When name is empty, it should pass validation (auto-generation)",
 			backupName:  "",
 			expectError: false,
 		},

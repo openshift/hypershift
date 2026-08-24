@@ -61,7 +61,7 @@ func TestNewAzureKMSProvider(t *testing.T) {
 		errContains string
 	}{
 		{
-			name:        "When kmsSpec is nil it should return an error",
+			name:        "When kmsSpec is nil, it should return an error",
 			kmsSpec:     nil,
 			image:       "test-image:latest",
 			opts:        AzureKMSProviderOptions{},
@@ -69,7 +69,7 @@ func TestNewAzureKMSProvider(t *testing.T) {
 			errContains: "azure kms metadata not specified",
 		},
 		{
-			name:    "When self-managed with empty kmsClientID it should return an error",
+			name:    "When self-managed with empty kmsClientID, it should return an error",
 			kmsSpec: validAzureKMSSpec(),
 			image:   "test-image:latest",
 			opts: AzureKMSProviderOptions{
@@ -81,7 +81,7 @@ func TestNewAzureKMSProvider(t *testing.T) {
 			errContains: "kmsClientID and tenantID are required",
 		},
 		{
-			name:    "When self-managed with empty tenantID it should return an error",
+			name:    "When self-managed with empty tenantID, it should return an error",
 			kmsSpec: validAzureKMSSpec(),
 			image:   "test-image:latest",
 			opts: AzureKMSProviderOptions{
@@ -93,7 +93,7 @@ func TestNewAzureKMSProvider(t *testing.T) {
 			errContains: "kmsClientID and tenantID are required",
 		},
 		{
-			name:    "When self-managed with empty tokenMinterImage it should return an error",
+			name:    "When self-managed with empty tokenMinterImage, it should return an error",
 			kmsSpec: validAzureKMSSpec(),
 			image:   "test-image:latest",
 			opts: AzureKMSProviderOptions{
@@ -106,7 +106,7 @@ func TestNewAzureKMSProvider(t *testing.T) {
 			errContains: "tokenMinterImage is required",
 		},
 		{
-			name:    "When managed Azure it should create provider successfully",
+			name:    "When managed Azure, it should create provider successfully",
 			kmsSpec: validAzureKMSSpec(),
 			image:   "test-image:latest",
 			opts: AzureKMSProviderOptions{
@@ -115,7 +115,7 @@ func TestNewAzureKMSProvider(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:    "When self-managed Azure with valid options it should create provider successfully",
+			name:    "When self-managed Azure with valid options, it should create provider successfully",
 			kmsSpec: validAzureKMSSpec(),
 			image:   "test-image:latest",
 			opts: AzureKMSProviderOptions{
@@ -151,7 +151,7 @@ func TestGenerateKMSPodConfig_SelfManaged(t *testing.T) {
 		check func(g Gomega, podConfig *KMSPodConfig)
 	}{
 		{
-			name: "When self-managed it should include token minter container with correct config",
+			name: "When self-managed, it should include token minter container with correct config",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				var tokenMinter *containerInfo
 				for i, c := range podConfig.Containers {
@@ -182,7 +182,7 @@ func TestGenerateKMSPodConfig_SelfManaged(t *testing.T) {
 			},
 		},
 		{
-			name: "When self-managed it should include cloud-token emptyDir volume",
+			name: "When self-managed, it should include cloud-token emptyDir volume",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				found := false
 				for _, v := range podConfig.Volumes {
@@ -196,7 +196,7 @@ func TestGenerateKMSPodConfig_SelfManaged(t *testing.T) {
 			},
 		},
 		{
-			name: "When self-managed it should NOT include secret-store CSI volume",
+			name: "When self-managed, it should NOT include secret-store CSI volume",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				for _, v := range podConfig.Volumes {
 					g.Expect(v.Name).NotTo(Equal(config.ManagedAzureKMSSecretStoreVolumeName),
@@ -205,7 +205,7 @@ func TestGenerateKMSPodConfig_SelfManaged(t *testing.T) {
 			},
 		},
 		{
-			name: "When self-managed the KMS container should mount cloud-token volume",
+			name: "When self-managed, it should mount cloud-token volume in KMS container",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				for _, c := range podConfig.Containers {
 					if c.Name == "azure-kms-provider-active" {
@@ -226,7 +226,7 @@ func TestGenerateKMSPodConfig_SelfManaged(t *testing.T) {
 			},
 		},
 		{
-			name: "When self-managed the KMS container should have workload identity env vars",
+			name: "When self-managed, it should have workload identity env vars in KMS container",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				for _, c := range podConfig.Containers {
 					if c.Name == "azure-kms-provider-active" {
@@ -278,7 +278,7 @@ func TestGenerateKMSPodConfig_Managed(t *testing.T) {
 		check func(g Gomega, podConfig *KMSPodConfig)
 	}{
 		{
-			name: "When managed it should NOT include token minter container",
+			name: "When managed, it should NOT include token minter container",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				for _, c := range podConfig.Containers {
 					g.Expect(c.Name).NotTo(Equal("azure-kms-token-minter"),
@@ -287,7 +287,7 @@ func TestGenerateKMSPodConfig_Managed(t *testing.T) {
 			},
 		},
 		{
-			name: "When managed it should include secret-store CSI volume",
+			name: "When managed, it should include secret-store CSI volume",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				found := false
 				for _, v := range podConfig.Volumes {
@@ -302,7 +302,7 @@ func TestGenerateKMSPodConfig_Managed(t *testing.T) {
 			},
 		},
 		{
-			name: "When managed it should NOT include cloud-token volume",
+			name: "When managed, it should NOT include cloud-token volume",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				for _, v := range podConfig.Volumes {
 					g.Expect(v.Name).NotTo(Equal("azure-kms-cloud-token"),
@@ -311,7 +311,7 @@ func TestGenerateKMSPodConfig_Managed(t *testing.T) {
 			},
 		},
 		{
-			name: "When managed the KMS container should NOT have workload identity env vars",
+			name: "When managed, it should NOT have workload identity env vars in KMS container",
 			check: func(g Gomega, podConfig *KMSPodConfig) {
 				for _, c := range podConfig.Containers {
 					if c.Name == "azure-kms-provider-active" {
@@ -441,39 +441,39 @@ func TestGenerateKMSPodConfig_ActiveContainerArgs(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When active KMS container is created it should pass the key vault name",
+			name:     "When active KMS container is created, it should pass the key vault name",
 			expected: "--keyvault-name=test-vault",
 		},
 		{
-			name:     "When active KMS container is created it should pass the key name",
+			name:     "When active KMS container is created, it should pass the key name",
 			expected: "--key-name=test-key",
 		},
 		{
-			name:     "When active KMS container is created it should pass the key version",
+			name:     "When active KMS container is created, it should pass the key version",
 			expected: "--key-version=1",
 		},
 		{
-			name:     "When active KMS container is created it should listen on the active unix socket",
+			name:     "When active KMS container is created, it should listen on the active unix socket",
 			expected: fmt.Sprintf("--listen-addr=unix:///opt/%s", azureActiveKMSUnixSocketFileName),
 		},
 		{
-			name:     "When active KMS container is created it should use port 8787 for health checks",
+			name:     "When active KMS container is created, it should use port 8787 for health checks",
 			expected: fmt.Sprintf("--healthz-port=%d", azureActiveKMSHealthPort),
 		},
 		{
-			name:     "When active KMS container is created it should expose metrics on port 8095",
+			name:     "When active KMS container is created, it should expose metrics on port 8095",
 			expected: fmt.Sprintf("--metrics-addr=%s", azureActiveKMSMetricsAddr),
 		},
 		{
-			name:     "When active KMS container is created it should set the healthz path",
+			name:     "When active KMS container is created, it should set the healthz path",
 			expected: "--healthz-path=/healthz",
 		},
 		{
-			name:     "When active KMS container is created it should point to the azure.json config file",
+			name:     "When active KMS container is created, it should point to the azure.json config file",
 			expected: "--config-file-path=/etc/kubernetes/azure.json",
 		},
 		{
-			name:     "When active KMS container is created it should enable verbose logging",
+			name:     "When active KMS container is created, it should enable verbose logging",
 			expected: "-v=1",
 		},
 	}
@@ -482,6 +482,98 @@ func TestGenerateKMSPodConfig_ActiveContainerArgs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(active.Args).To(ContainElement(tc.expected))
+		})
+	}
+}
+
+func TestBuildKASContainerAzureKMS(t *testing.T) {
+	tests := []struct {
+		name             string
+		keyVaultType     hyperv1.AzureKMSKeyVaultType
+		expectManagedHSM bool
+	}{
+		{
+			name:             "When keyVaultType is omitted, it should not pass the managed HSM flag",
+			expectManagedHSM: false,
+		},
+		{
+			name:             "When keyVaultType is KeyVault, it should not pass the managed HSM flag",
+			keyVaultType:     hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			expectManagedHSM: false,
+		},
+		{
+			name:             "When keyVaultType is ManagedHSM, it should pass the managed HSM flag",
+			keyVaultType:     hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			expectManagedHSM: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := validAzureKMSSpecWithBackup()
+			spec.KeyVaultType = tt.keyVaultType
+			provider, err := newTestAzureKMSProvider(spec, "test-kms-image:latest", AzureKMSProviderOptions{})
+			g := NewWithT(t)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			podConfig, err := provider.GenerateKMSPodConfig()
+			g.Expect(err).NotTo(HaveOccurred())
+			active := findContainer(podConfig.Containers, "azure-kms-provider-active")
+			g.Expect(active).NotTo(BeNil())
+			backup := findContainer(podConfig.Containers, "azure-kms-provider-backup")
+			g.Expect(backup).NotTo(BeNil())
+			if tt.expectManagedHSM {
+				g.Expect(active.Args).To(ContainElement("--managed-hsm"))
+				g.Expect(backup.Args).To(ContainElement("--managed-hsm"))
+			} else {
+				g.Expect(active.Args).NotTo(ContainElement("--managed-hsm"))
+				g.Expect(backup.Args).NotTo(ContainElement("--managed-hsm"))
+			}
+		})
+	}
+}
+
+func TestAzureKMSProviderName(t *testing.T) {
+	const legacyProviderName = "azure-be23a676"
+	baseKey := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "1"}
+
+	tests := []struct {
+		name         string
+		keyVaultType hyperv1.AzureKMSKeyVaultType
+		expectName   string
+		expectLegacy bool
+	}{
+		{
+			name:         "When keyVaultType is omitted, it should produce the legacy provider name",
+			expectName:   legacyProviderName,
+			expectLegacy: true,
+		},
+		{
+			name:         "When keyVaultType is KeyVault, it should preserve the legacy provider name",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			expectName:   legacyProviderName,
+			expectLegacy: true,
+		},
+		{
+			name:         "When keyVaultType is ManagedHSM, it should produce a different provider name",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			expectLegacy: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			key := baseKey
+
+			name, err := AzureKMSProviderName(key, tt.keyVaultType)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			if tt.expectLegacy {
+				g.Expect(name).To(Equal(tt.expectName))
+			} else {
+				g.Expect(name).NotTo(Equal(legacyProviderName))
+			}
 		})
 	}
 }
@@ -505,23 +597,23 @@ func TestGenerateKMSPodConfig_BackupContainerArgs(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When backup KMS container is created it should pass the backup key vault name",
+			name:     "When backup KMS container is created, it should pass the backup key vault name",
 			expected: "--keyvault-name=test-vault",
 		},
 		{
-			name:     "When backup KMS container is created it should pass the backup key name",
+			name:     "When backup KMS container is created, it should pass the backup key name",
 			expected: "--key-name=backup-key",
 		},
 		{
-			name:     "When backup KMS container is created it should listen on the backup unix socket",
+			name:     "When backup KMS container is created, it should listen on the backup unix socket",
 			expected: fmt.Sprintf("--listen-addr=unix:///opt/%s", azureBackupKMSUnixSocketFileName),
 		},
 		{
-			name:     "When backup KMS container is created it should use port 8788 for health checks",
+			name:     "When backup KMS container is created, it should use port 8788 for health checks",
 			expected: fmt.Sprintf("--healthz-port=%d", azureBackupKMSHealthPort),
 		},
 		{
-			name:     "When backup KMS container is created it should expose metrics on port 8096",
+			name:     "When backup KMS container is created, it should expose metrics on port 8096",
 			expected: fmt.Sprintf("--metrics-addr=%s", azureBackupKMSMetricsAddr),
 		},
 	}
@@ -902,13 +994,13 @@ func TestAdaptAzureSecretProvider(t *testing.T) {
 		errContains string
 	}{
 		{
-			name:        "When managed identity credentials secret name is empty it should return an error",
+			name:        "When managed identity credentials secret name is empty, it should return an error",
 			credSecret:  "",
 			expectError: true,
 			errContains: "managed identity credentials secret name is required",
 		},
 		{
-			name:        "When managed identity credentials secret name is set it should succeed",
+			name:        "When managed identity credentials secret name is set, it should succeed",
 			credSecret:  "kms-identity-creds",
 			expectError: false,
 		},

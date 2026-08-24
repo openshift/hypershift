@@ -65,6 +65,157 @@ tests:
               name: azure-credentials
             encryptionKeyURL: "https://my-vault.vault.azure.net/keys/my-key/abc123"
 
+  - name: When an AzureBlob backup uses a US Government Key Vault encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.usgovcloudapi.net/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a China Key Vault encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.azure.cn/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a German Key Vault encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.microsoftazure.de/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a Bleu Key Vault encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-vault.vault.sovcloud-api.fr/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a Managed HSM encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-hsm.managedhsm.azure.net/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a US Government Managed HSM encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-hsm.managedhsm.usgovcloudapi.net/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a China Managed HSM encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-hsm.managedhsm.azure.cn/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a German Managed HSM encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-hsm.managedhsm.microsoftazure.de/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses a Bleu Managed HSM encryptionKeyURL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-hsm.managedhsm.sovcloud-api.fr/keys/my-key/abc123"
+
+  - name: When an AzureBlob backup uses an unsupported Managed HSM encryptionKeyURL it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HCPEtcdBackup
+      spec:
+        storage:
+          storageType: AzureBlob
+          azureBlob:
+            container: my-backup-container
+            storageAccount: mystorageaccount
+            keyPrefix: backups/etcd
+            credentials:
+              name: azure-credentials
+            encryptionKeyURL: "https://my-hsm.managedhsm.invalid.example/keys/my-key/abc123"
+    expectedError: "encryptionKeyURL must be a valid Azure Key Vault or Managed HSM HTTPS URL"
+
   # --- Storage type union discrimination ---
   - name: When storageType is S3 but azureBlob is provided it should fail
     initial: |
@@ -389,7 +540,7 @@ tests:
             credentials:
               name: azure-credentials
             encryptionKeyURL: "not-a-valid-url"
-    expectedError: "encryptionKeyURL must be a valid Azure Key Vault HTTPS URL"
+    expectedError: "encryptionKeyURL must be a valid Azure Key Vault or Managed HSM HTTPS URL"
 
   # --- SecretReference name validation ---
   - name: When S3 credentials name has invalid characters it should fail

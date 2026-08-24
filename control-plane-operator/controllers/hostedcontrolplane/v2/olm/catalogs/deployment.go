@@ -59,7 +59,6 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 	hcp := cpContext.HCP
 	catalogOverrides := map[string]string{
 		"redhat-operators":    hcp.Annotations[hyperv1.RedHatOperatorsCatalogImageAnnotation],
-		"redhat-marketplace":  hcp.Annotations[hyperv1.RedHatMarketplaceCatalogImageAnnotation],
 		"community-operators": hcp.Annotations[hyperv1.CommunityOperatorsCatalogImageAnnotation],
 		"certified-operators": hcp.Annotations[hyperv1.CertifiedOperatorsCatalogImageAnnotation],
 	}
@@ -124,7 +123,7 @@ func checkCatalogImageOverides(images map[string]string) (bool, error) {
 	if override {
 		for _, image := range images {
 			if image == "" {
-				return false, errors.New("if OLM catalog images are overridden, all the values for the 4 default catalogs should be provided")
+				return false, errors.New("if OLM catalog images are overridden, all the values for the 3 default catalogs should be provided")
 			}
 		}
 	}

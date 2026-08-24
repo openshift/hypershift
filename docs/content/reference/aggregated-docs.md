@@ -154,6 +154,10 @@ The best PRs to use as a template are the simpler single-capability additions li
 
 ## Source: docs/content/contribute/branch-process.md
 
+---
+title: OCP Branching Tasks
+---
+
 ## OCP Branching Tasks for the HyperShift Team
 These are a set of tasks we need to perform on every OCP branching. We need to:
 
@@ -286,10 +290,9 @@ title: Contribute documentation
 
 # Contributing documentation
 
-HyperShift's documentation is based on MkDocs with the
-Material theme and roughly follows the
-Diátaxis Framework for content organization and stylistic
-approach.
+HyperShift's documentation is based on Zensical and
+roughly follows the Diátaxis Framework for content
+organization and stylistic approach.
 
 The documentation site is built and published automatically to https://hypershift.pages.dev/.
 
@@ -299,12 +302,8 @@ All documentation lives in the `docs` directory of the Git repository.
 
 All content should be Markdown files placed in the `docs/content` directory.
 The MkDocs configuration file
-contains all the MkDocs and Material theme configuration, including the navigation
-structure for the site.
-
-The `quay.io/hypershift/mkdocs-material:latest` image (Dockerfile)
-is published to provide an easy and portable way to run `mkdocs` fully configured
-to preview the site equivalent to the published site.
+contains all the Zensical configuration, including the navigation structure for
+the site.
 
 !!! note
 
@@ -335,20 +334,19 @@ To start a live preview of the site which automatically rebuilds and refreshes i
 response to local content and configuration changes, run the following from the
 `docs` directory:
 
-```shell
-make serve-containerized
-```
+=== "Native"
 
-Visit the site at http://0.0.0.0:8000.
+    ```shell
+    uv run --frozen zensical serve
+    ```
 
-!!! note
+=== "Containerized"
 
-    The `serve-containerized` Make target runs the `quay.io/hypershift/mkdocs-material:latest`
-    image with the local container runtime. Running `mkdocs` natively is possible
-    but not supported.
+    ```shell
+    make serve-containerized
+    ```
 
-    If you need more control over the local preview server, consult the Makefile
-    as a guide to constructing your own local server command.
+Visit the site at http://127.0.0.1:8000.
 
 ## Generate the API reference
 
@@ -3650,7 +3648,6 @@ openshift-apiserver-67f9d9c5c7-c9bmv             2/2     Running   0          89
 openshift-controller-manager-5899fc8778-q89xh    1/1     Running   0          2m51s
 openshift-oauth-apiserver-569c78c4d-568v8        1/1     Running   0          2m52s
 packageserver-ddfffb8d7-wlz6l                    2/2     Running   0          2m50s
-redhat-marketplace-catalog-7dd77d896-jtxkd       1/1     Running   0          2m51s
 redhat-operators-catalog-d66b5c965-qwhn7         1/1     Running   0          2m51s
 ~~~
 
@@ -4828,6 +4825,10 @@ This implementation provides a secure, autonomous solution that allows HostedClu
 ---
 
 ## Source: docs/content/how-to/agent/other-sdn-providers.md
+
+---
+title: Other SDN providers
+---
 
 This document explains how to create a HostedCluster that runs an SDN provider different from OVNKubernetes. The document assumes that you already have the required infrastructure in place to create HostedClusters.
 
@@ -9454,6 +9455,10 @@ This implementation provides a secure, autonomous solution that allows HostedClu
 
 ## Source: docs/content/how-to/aws/other-sdn-providers.md
 
+---
+title: Other SDN providers
+---
+
 This document explains how to create a HostedCluster that runs an SDN provider different from OVNKubernetes. The document assumes that you already have the required infrastructure in place to create HostedClusters.
 
 !!! important
@@ -10356,7 +10361,7 @@ spec:
 
 ## Source: docs/content/how-to/azure/backup-and-restore-etcd-snapshot.md
 
-# Etcd Snapshot Backup for Self-Managed Azure
+# Etcd Snapshot Backup and Restore for Self-Managed Azure
 
 !!! warning "Tech Preview"
 
@@ -10620,10 +10625,166 @@ az storage account delete \
     --yes
 ```
 
+## Restoring from an Etcd Snapshot
+
+!!! important
+
+    Only same-management-cluster restore is validated for self-managed Azure. Cross-management-cluster restore is not currently supported due to the lack of end-to-end testing coverage for that scenario.
+
+Restore is driven by OADP. The HyperShift OADP plugin orchestrates the full restore lifecycle:
+
+1. OADP recreates the HostedCluster from the Velero backup
+2. The plugin reads the etcd snapshot URL from the backup annotations and injects it into the restored HostedCluster's `spec.etcd.managed.storage.restoreSnapshotURL` field
+3. When the restored control plane boots, the control-plane-operator detects the URL and injects an `etcd-init` init container into the etcd StatefulSet
+4. The init container downloads the snapshot and restores it using `etcdutl snapshot restore`
+5. Once the restore completes, the `EtcdSnapshotRestored` condition is set on the HostedControlPlane
+
+The `restoreSnapshotURL` field is immutable — once set at HostedCluster creation time, it cannot be changed. The OADP plugin handles SAS token generation and URL injection automatically; no manual intervention is needed.
+
+For the full restore architecture and OADP plugin behavior, see Restore Flow Architecture.
+
+### Prerequisites
+
+- OADP 1.5+ installed with the HyperShift plugin (see OADP Setup below)
+- A completed OADP backup created with `--use-etcd-snapshot` mode
+- The `HCPEtcdBackup` associated with the backup must have `BackupCompleted` condition `True`
+
+### Step 1: Clean Up the Existing HostedCluster
+
+Before restoring, remove the existing HostedCluster resources:
+
+```bash
+# Delete the HostedCluster and NodePools
+kubectl delete hostedcluster my-hosted-cluster -n clusters
+
+# Verify no PVCs remain in the HostedControlPlane namespace
+kubectl get pvc -n clusters-my-hosted-cluster
+```
+
+### Step 2: Restore with the CLI
+
+```bash
+hypershift create oadp-restore \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters \
+    --from-backup <backup-name> \
+    --use-etcd-snapshot
+```
+
+The `--use-etcd-snapshot` flag sets `restorePVs: false` in the Velero Restore CR. The HyperShift OADP plugin reads the snapshot URL from the backup annotations and injects it into the restored HostedCluster's `restoreSnapshotURL` field automatically.
+
+### Step 3: Verify the Restore
+
+Monitor the restore process:
+
+```bash
+# Watch the Velero restore status
+watch "oc get restore -n openshift-adp -o jsonpath='{.items[-1].status}' | jq"
+
+# Watch etcd pods for the init container
+kubectl get pods -n <HCP_NAMESPACE> -l app=etcd -w
+
+# Check the EtcdSnapshotRestored condition on the HostedControlPlane
+kubectl get hostedcontrolplane -n <HCP_NAMESPACE> \
+    -o jsonpath='{.items[0].status.conditions[?(@.type=="EtcdSnapshotRestored")]}' | jq
+
+# Verify the hosted cluster API server becomes available
+kubectl get hostedcluster my-hosted-cluster -n clusters \
+    -o jsonpath='{.status.conditions[?(@.type=="Available")]}'
+```
+
+The restore is complete when:
+
+- The Velero Restore reaches `Completed` phase
+- The `etcd-init` init container exits successfully
+- The `EtcdSnapshotRestored` condition is `True` on the HostedControlPlane
+- The HostedCluster reaches `Available` status
+
+### Restore Troubleshooting
+
+| Symptom | Cause | Resolution |
+|---------|-------|------------|
+| `etcd-init` container shows XML error output | SAS token expired or invalid URL | Delete the HostedCluster and trigger a new OADP restore |
+| `etcd-init` container shows curl 404 | Wrong blob URL | Verify the `snapshotURL` from the HCPEtcdBackup status; ensure the storage account and container still exist |
+| `etcd-init` logs "not empty, not restoring snapshot" | Existing data in etcd PVC | Delete the PVC and let the restore recreate it |
+| Velero restore stuck | OADP plugin error | Check `oc logs -n openshift-adp -l deploy=velero -f` for details |
+
+## OADP Setup
+
+OADP (OpenShift API for Data Protection) with the HyperShift plugin is required for backup and restore operations on self-managed Azure. The `hypershift create oadp-*` CLI commands auto-detect the Azure platform and include the correct CAPI resources (`azureclusters`, `azuremachinetemplates`, `azuremachines`).
+
+### Prerequisites
+
+- OADP 1.5+ installed on the management cluster
+- DataProtectionApplication (DPA) configured with `hypershift` in `defaultPlugins`
+- Azure Blob Storage credentials configured for the BackupStorageLocation
+
+For DPA configuration details, see the Azure DPA tab in the OADP 1.5+ guide.
+
+### Creating a Backup with the CLI
+
+Two backup modes are available:
+
+```bash
+# Volume snapshot mode (default) — backs up etcd PVs via CSI snapshots
+hypershift create oadp-backup \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters
+
+# Etcd snapshot mode (Tech Preview) — uses HCPEtcdBackup CRD instead of PV snapshots
+hypershift create oadp-backup \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters \
+    --use-etcd-snapshot
+```
+
+The `--use-etcd-snapshot` mode creates an `HCPEtcdBackup` CR and excludes PV-related resources from the Velero backup. This mode requires the `HCPEtcdBackup` feature gate and Azure Blob Storage configured as described in the Setup section.
+
+### Scheduling Backups
+
+Set up recurring backups using the OADP Schedule CR:
+
+```bash
+hypershift create oadp-schedule \
+    --hc-name my-hosted-cluster \
+    --hc-namespace clusters \
+    --schedule "0 2 * * *" \
+    --ttl 168h \
+    --use-etcd-snapshot
+```
+
+### Verifying OADP Operations
+
+```bash
+# Watch backup status
+watch "oc get backup -n openshift-adp -o jsonpath='{.items[-1].status}' | jq"
+
+# Watch restore status
+watch "oc get restore -n openshift-adp -o jsonpath='{.items[-1].status}' | jq"
+
+# Follow Velero logs
+oc logs -n openshift-adp -l deploy=velero -f
+```
+
+## Known Limitations
+
+| Limitation | Details |
+|-----------|---------|
+| Same-cluster restore only | Cross-management-cluster restore is not currently supported due to the lack of end-to-end testing coverage for that scenario |
+| OADP required for restore | Restore is driven by OADP; there is no standalone manual restore path for self-managed Azure |
+| `restoreSnapshotURL` is immutable | Set by the OADP plugin at HostedCluster creation time; cannot be changed afterward |
+| No in-place restore | Etcd data cannot be restored onto an existing HostedCluster; OADP recreates it from the backup |
+| Worker node reprovisioning | After restore, Azure worker nodes are reprovisioned; node readoption is not supported |
+| Tech Preview | The `HCPEtcdBackup` feature gate is required; this feature is not for production use |
+| Single snapshot per restore | `restoreSnapshotURL` accepts at most 1 entry |
+
 ## See Also
 
 - Etcd Snapshot Backup Overview - Architecture and backup flow
+- Restore Flow Architecture - Detailed restore sequence and OADP plugin behavior
 - Managed Services Credentials - Credential auto-detection and formats
+- OADP 1.5+ Disaster Recovery - Full OADP DR procedure with Azure DPA configuration
+- Disaster Recovery CLI - CLI reference for `hypershift create oadp-*` commands
 - Self-Managed Azure Overview - Self-managed Azure architecture
 
 
@@ -11074,8 +11235,17 @@ This section walks through how to:
 1. Set up the flags needed when creating the Azure HostedCluster
 1. Verify the etcd encryption is setup and working properly
 
+!!! important "Managed HSM compatibility"
+
+    Azure Managed HSM for KMS encryption requires an OpenShift 4.22 or later HostedCluster release and is supported in Azure Public Cloud, Azure US Government Cloud, Azure China Cloud, Azure German Cloud, and Azure Bleu Cloud.
+    Do not configure Managed HSM on an earlier release because its control plane operator does not configure the Managed HSM endpoint or authentication scope.
+    Downgrading a HostedCluster after enabling Managed HSM is not supported.
+
+    The KMS vault type is immutable. An existing HostedCluster that uses Azure Key Vault cannot migrate to Managed HSM through key rotation; create a new HostedCluster to change between those services.
+    Custom Azure Stack Key Vault endpoints are not supported.
+
 There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of
-steps mentioned above. However, this guide will manually walk through those steps.
+steps mentioned above. For Managed HSM, use `setup_etcd_managed_hsm.sh` instead. This guide will manually walk through the Key Vault setup steps below.
 
 1a) Create a resource group for the key vault that will house the key used for etcd encryption.
 
@@ -13829,6 +13999,169 @@ This section of the HyperShift documentation contains pages related to troublesh
 
 ---
 
+## Source: docs/content/how-to/capi-storage-migration.md
+
+# CAPI CRD Storage Version Migration
+
+## Overview
+
+HyperShift uses Cluster API (CAPI) Custom Resource Definitions (CRDs) to manage hosted cluster infrastructure. These CRDs are transitioning their storage version from `v1beta1` to `v1beta2`. The storage version determines how Kubernetes persists resources in etcd.
+
+Migrating the storage version ensures all existing CAPI resources are re-stored using the new `v1beta2` schema. This is required before the `v1beta1` API version can be removed in a future CAPI release.
+
+The migration happens automatically on `hypershift install` — no special flags are needed. To opt out, use the `--disable-capi-migration` flag.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--disable-capi-migration` | `false` | Disables automatic CAPI CRD storage version migration. When set, CRDs are installed without overriding their storage version and the migrator controller is not started. |
+
+### How it works
+
+By default, `hypershift install`:
+
+1. Applies the CAPI CRDs with `v1beta2` as the storage version.
+2. The HyperShift Operator starts a CRD migrator controller that performs a no-op server-side apply on every existing CAPI custom resource, forcing the API server to re-store each object in `v1beta2`.
+3. Once all resources are re-stored, the migrator updates each CRD's `status.storedVersions` to `["v1beta2"]`, removing `v1beta1`.
+4. The migrator also disables CAPI's built-in migrator in the CAPI manager deployment to avoid conflicts and keep migration control centralised in the hypershift operator.
+
+## Scenarios
+
+### 1. Standard install (migration enabled by default)
+
+On both fresh clusters and existing clusters with `v1beta1` resources, migration happens automatically:
+
+```bash
+hypershift install \
+  [... other flags ...]
+```
+
+On a fresh cluster, the CRDs are created directly with `v1beta2` as the storage version. The migrator controller starts but has no work to do since `storedVersions` is already `["v1beta2"]`.
+
+On an existing cluster, the migrator re-stores all CAPI resources at `v1beta2`.
+
+### 2. Verifying migration completed
+
+Wait for the CRD migrator controller to finish. Check that all CAPI CRDs have `storedVersions: ["v1beta2"]`:
+
+```bash
+for crd in clusters.cluster.x-k8s.io clusterclasses.cluster.x-k8s.io machinedeployments.cluster.x-k8s.io machines.cluster.x-k8s.io machinesets.cluster.x-k8s.io machinepools.cluster.x-k8s.io machinehealthchecks.cluster.x-k8s.io machinedrainrules.cluster.x-k8s.io ipaddressclaims.ipam.cluster.x-k8s.io ipaddresses.ipam.cluster.x-k8s.io clusterresourcesets.addons.cluster.x-k8s.io clusterresourcesetbindings.addons.cluster.x-k8s.io; do
+  echo "$crd: $(kubectl get crd $crd -o jsonpath='{.status.storedVersions}')"
+done
+```
+
+Expected output after migration:
+
+```text
+clusters.cluster.x-k8s.io: ["v1beta2"]
+clusterclasses.cluster.x-k8s.io: ["v1beta2"]
+...
+```
+
+You can also verify the migration annotation is set on each CRD:
+
+```bash
+kubectl get crd clusters.cluster.x-k8s.io -o jsonpath='{.metadata.annotations.crd-migration\.cluster\.x-k8s\.io/observed-generation}'
+```
+
+Finally, the migrator will keep an up to date status at all times on a ConfigMap in the operator namespace. To check the status:
+```bash
+kubectl get cm -n hypershift capi-migration-status -o jsonpath='{.data.status}' | jq .
+```
+
+By running the above command on a completed migration you will get an output such as:
+```json
+{
+  "totalCRDs": 12,
+  "migratedCRDs": 12,
+  "conditions": [
+    {
+      "type": "MigrationComplete",
+      "status": "True",
+      "lastTransitionTime": "2026-07-20T19:05:37Z",
+      "reason": "MigrationComplete",
+      "message": "All 12 CRDs have been migrated"
+    },
+    {
+      "type": "Progressing",
+      "status": "False",
+      "lastTransitionTime": "2026-07-20T19:05:37Z",
+      "reason": "MigrationComplete",
+      "message": "Migration has completed"
+    },
+    {
+      "type": "Degraded",
+      "status": "False",
+      "lastTransitionTime": "2026-07-20T19:05:37Z",
+      "reason": "NoErrors",
+      "message": "No migration errors"
+    }
+  ]
+}
+```
+
+
+### 3. Re-install on an already migrated cluster
+
+If the cluster has already completed migration (`storedVersions: ["v1beta2"]`), running `hypershift install` again is safe. The migrator controller starts but skips all CRDs since their `storedVersions` already equals `["v1beta2"]`.
+
+### 4. Disabling migration
+
+To install without triggering the storage version migration, use the `--disable-capi-migration` flag:
+
+```bash
+hypershift install \
+  --disable-capi-migration \
+  [... other flags ...]
+```
+
+When this flag is set, CRDs are installed without overriding their storage version and the CRD migrator controller is not started. The behavior depends on the cluster state:
+
+- **Existing cluster with `v1beta1` CRDs**: The migrator does not start and CRDs remain untouched at `v1beta1`. Everything stays as-is.
+- **Already-migrated cluster (migrator was running)**: The migrator is not started on the new operator pods, effectively stopping it. CRDs remain at `v1beta2` — no downgrade occurs.
+- **Fresh install (empty cluster)**: CRDs are installed with their default embedded storage version (`v1beta1`). No migration is performed.
+
+## E2E Testing
+
+The `TestCAPIStorageVersionMigration` e2e test validates the full migration flow on a live cluster. It creates a hosted cluster, verifies pre-migration state, reinstalls the HyperShift Operator (which triggers migration by default), waits for migration to complete, and checks cluster health.
+
+### Running the test
+
+Build the e2e binary:
+
+```bash
+make e2e
+```
+
+Run the migration test:
+
+```bash
+./bin/test-e2e \
+  -e2e.platform AWS \
+  -e2e.base-domain $BASE_DOMAIN \
+  -e2e.pull-secret-file $PULL_SECRET \
+  -e2e.aws-credentials-file $AWS_CREDS \
+  -e2e.aws-private-credentials-file $AWS_CREDS \
+  -e2e.external-dns-credentials $AWS_CREDS \
+  -e2e.aws-region $REGION \
+  -e2e.availability-zones "${REGION}a,${REGION}b,${REGION}c" \
+  -e2e.aws-oidc-s3-bucket-name $BUCKET_NAME \
+  -e2e.aws-oidc-s3-credentials $AWS_CREDS \
+  -e2e.hypershift-operator-latest-image $HO_IMAGE \
+  -capi-migration.run-tests \
+  -test.run TestCAPIStorageVersionMigration \
+  -test.timeout 0 \
+  -test.v
+```
+
+The `-e2e.hypershift-operator-latest-image` flag must point to an image that includes the CRD migrator controller code. In CI, this is the image built from the PR branch. For local testing, build and push your own image.
+
+The `-capi-migration.run-tests` flag enables the migration test. Without it, the test is skipped. This allows the test to be run as a separate CI job.
+
+
+---
+
 ## Source: docs/content/how-to/ci/ai-assisted-ci-jobs.md
 
 # AI-Assisted CI Jobs
@@ -14360,7 +14693,7 @@ When a pull request modifies files under `docs/`, GitHub Actions workflows autom
 
 The preview system uses two separate workflows for security, following the reusable workflow pattern described in GitHub Actions Workflows:
 
-1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` for changes under `docs/`. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with MkDocs in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
+1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` for changes under `docs/`. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with Zensical in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
 2. **Docs Deploy** (`.github/workflows/docs-deploy.yaml`) — triggers via `workflow_run` when the Docs Build workflow completes successfully. It downloads the built artifact and deploys to Cloudflare Pages. This workflow has access to the `docs-preview` environment secrets but never executes PR code.
 
 GitHub shows a **View deployment** link in the PR timeline via the `docs-preview` environment.
@@ -14384,8 +14717,7 @@ To preview documentation locally:
 
 ```bash
 cd docs
-pip install -r requirements.txt
-mkdocs serve
+uv run zensical serve
 ```
 
 Then open http://127.0.0.1:8000.
@@ -14449,7 +14781,7 @@ All workflows run on self-hosted ARC runners and target the `main` and `release-
 
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
-| `docs-build.yaml` | `docs-build-reusable.yaml` | Build MkDocs site in strict mode |
+| `docs-build.yaml` | `docs-build-reusable.yaml` | Build Zensical site in strict mode |
 
 !!! info
     The `docs-deploy.yaml` workflow is not a reusable workflow pair — it triggers via `workflow_run` after the Docs Build completes to deploy the preview. See Documentation Preview for details.
@@ -15079,7 +15411,7 @@ These checks only run when relevant files change:
 |------------|-------------|-----------------|
 | **Envtest OCP API Validation** | `api/`, `test/envtest/`, CRD test assets | `FAIL` with the test name — see `test/envtest/README.md` for details |
 | **Envtest Vanilla Kube API Validation** | Same as above | Same as above |
-| **Docs Build** | `docs/**` changes | MkDocs build errors — usually a broken link or YAML syntax error |
+| **Docs Build** | `docs/**` changes | Zensical build errors — usually a broken link or YAML syntax error |
 | **Validate CPO Overrides** | `hypershift-operator/controlplaneoperator-overrides/assets/overrides.yaml` changes | Validation error for the CPO overrides file |
 | **gocacheprog Tests** | `contrib/ci/gocacheprog/**` changes | `FAIL` with the test name |
 
@@ -18466,6 +18798,7 @@ After installation, create a DataProtectionApplication (DPA) object, which defin
 This guide focuses on the following platforms:
 
 - AWS
+- Azure
 - Baremetal
 - Openstack
 - KubeVirt
@@ -18486,6 +18819,26 @@ oc create secret generic cloud-credentials -n openshift-adp --from-file cloud=cr
 !!! note
 
     If using AWS S3, additional AWS resources must be created to enable data backup and restoration. Follow these instructions to set up the necessary configurations.
+
+For Azure Blob Storage, create the credentials in the following format:
+
+```bash
+cat << EOF > ./credentials-azure
+[default]
+AZURE_SUBSCRIPTION_ID=<subscription-id>
+AZURE_TENANT_ID=<tenant-id>
+AZURE_CLIENT_ID=<client-id>
+AZURE_CLIENT_SECRET=<client-secret>
+AZURE_RESOURCE_GROUP=<resource-group>
+AZURE_CLOUD_NAME=AzurePublicCloud
+EOF
+
+oc create secret generic cloud-credentials -n openshift-adp --from-file cloud=credentials-azure
+```
+
+!!! note
+
+    For Azure, additional resources (Storage Account, Blob Container) must be created. Follow the Azure OADP installation guide or the self-managed Azure etcd backup setup for details.
 
 
 ### Sample DPA Configurations
@@ -18629,6 +18982,43 @@ Below are some samples of DPA configurations for the mentioned platforms
           defaultPlugins:
             - openshift
             - aws
+            - csi
+            - hypershift
+          resourceTimeout: 2h
+    ```
+
+=== "**Azure**"
+
+    ```yaml
+    ---
+    apiVersion: oadp.openshift.io/v1alpha1
+    kind: DataProtectionApplication
+    metadata:
+      name: dpa-instance
+      namespace: openshift-adp
+    spec:
+      backupLocations:
+        - name: default
+          velero:
+            provider: azure
+            default: true
+            objectStorage:
+              bucket: <blob_container_name>
+              prefix: hcp
+            config:
+              resourceGroup: <resource_group>
+              storageAccount: <storage_account_name>
+            credential:
+              key: cloud
+              name: cloud-credentials
+      configuration:
+        nodeAgent:
+          enable: true
+          uploaderType: kopia
+        velero:
+          defaultPlugins:
+            - openshift
+            - azure
             - csi
             - hypershift
           resourceTimeout: 2h
@@ -19144,6 +19534,115 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
+=== "**Azure**"
+
+    ### Data Plane workloads backup
+
+    !!! Note
+
+        If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
+
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
+
+    The steps are the following:
+
+    - Deploy the OADP operator from OLM.
+      - Create the DPA (Data Protection Application), with a manifest similar to the one provided earlier. It might be beneficial to adjust the `Prefix` or/and `Bucket` fields to keep the ControlPlane and DataPlane backups separated.
+      - Create the backup manifest. This step varies depending on the complexity of the workloads in the Data Plane. It's essential to thoroughly examine how to back up the PersistentVolumes, the backend used, and ensure compatibility with our storage provisioner.
+
+      We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
+
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+
+    !!! Important
+
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
+
+    Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
+
+
+    ### Control Plane backup
+
+    Now, we will apply the backup manifest. Here is how it looks like:
+
+    ```yaml
+    ---
+    apiVersion: velero.io/v1
+    kind: Backup
+    metadata:
+      name: hc-clusters-hosted-backup
+      namespace: openshift-adp
+      labels:
+        velero.io/storage-location: default
+        spec:
+      hooks: {}
+      includedNamespaces:
+      - clusters
+      - clusters-hosted
+      includedResources:
+      - sa
+      - role
+      - rolebinding
+      - pod
+      - pvc
+      - pv
+      - configmap
+      - priorityclasses
+      - pdb
+      - hostedcluster
+      - nodepool
+      - secrets
+      - services
+      - deployments
+      - statefulsets
+      - hostedcontrolplane
+      - cluster
+      - azureclusters
+      - azuremachinetemplates
+      - azuremachines
+      - machinedeployment
+      - machineset
+      - machine
+      - route
+      - clusterdeployment
+      excludedResources: []
+      storageLocation: default
+      ttl: 2h30m0s
+      snapshotMoveData: true
+      datamover: "velero"
+      defaultVolumesToFsBackup: false
+      snapshotVolumes: true
+    ```
+
+    We will emphasize the most important fields:
+
+    - These two fields enable the CSI VolumeSnapshots to be automatically uploaded to the remote cloud storage.
+
+    ```yaml
+    snapshotMoveData: true
+    datamover: "velero"
+    ```
+
+    - This field selects the namespaces from which objects will be backed up. They should include namespaces from both the HostedCluster (in the example `clusters`) and the HostedControlPlane (in the example `clusters-hosted`).
+
+    ```yaml
+    includedNamespaces:
+    - clusters
+    - clusters-hosted
+    ```
+
+    - The Azure-specific CAPI resources that must be included:
+
+    ```yaml
+    - azureclusters
+    - azuremachinetemplates
+    - azuremachines
+    ```
+
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
+
+    The backup process is considered complete when the `status.phase` is `Completed`.
+
 
 ## Restore
 
@@ -19227,6 +19726,12 @@ The restoration process is considered complete once the `status.phase` is `Compl
 
     - Restoration in a separated Management cluster is not supported by this provider
     - Node readoption is not supported in this provider yet, so the worker nodes will be reprovisioned at restoration time
+
+=== "**Azure**"
+
+    - Restoration on the same management cluster only (cross-cluster restore is not currently supported due to the lack of end-to-end testing coverage for that scenario)
+    - Node readoption is not supported in this provider yet, so the worker nodes will be reprovisioned at restoration time
+    - For etcd snapshot backup and restore details specific to self-managed Azure, see Etcd Snapshot Backup and Restore for Self-Managed Azure
 
 
 ## Schedule
@@ -23074,6 +23579,10 @@ After applying this change, the worker nodes will be able to consume the mirror 
 
 ## Source: docs/content/how-to/disconnected/idms-icsp-for-management-clusters.md
 
+---
+title: IDMS/ICSP Config for Management Cluster
+---
+
 ## Configuring disconnected HostedControlPlanes deployments
 
 !!! Note
@@ -23214,9 +23723,9 @@ This because there is not an easy way to validate them in advance for imagestrea
 In case the OLM catalogs got properly mirrored to an internal registry (using the original name and tag), the guest cluster owner can use the `hypershift.openshift.io/olm-catalogs-is-registry-overrides` annotation on the HostedCluster CR.
 The format is: `"sr1=dr1,sr2=dr2"` having the source registry string as a key and the destination registry string as value.
 OLM catalog image addresses, before being applied to the imagestream, are scanned for the source registry string and if found the string is replaced with the destination registry one.
-The cluster admin will also be able to bypass the whole OLM catalogs imagestream mechanism using 4 annotations (`hypershift.openshift.io/certified-operators-catalog-image`, `hypershift.openshift.io/community-operators-catalog-image`, `hypershift.openshift.io/redhat-marketplace-catalog-image`, `hypershift.openshift.io/redhat-operators-catalog-image`) on the HostedCluster CR to directly specify the address (only by digest) of the 4 images to be used for OLM operator catalogs.
+The cluster admin will also be able to bypass the whole OLM catalogs imagestream mechanism using 3 annotations (`hypershift.openshift.io/certified-operators-catalog-image`, `hypershift.openshift.io/community-operators-catalog-image`, `hypershift.openshift.io/redhat-operators-catalog-image`) on the HostedCluster CR to directly specify the address (only by digest) of the 3 images to be used for OLM operator catalogs.
 In this case the imageStream is not going to be created, and it will be up to the guest cluster owner updating the value of the annotations when the internal mirror will get refreshed to pull in operator updates.
-Please notice that if this override mechanism is required, all the 4 values for the 4 default catalog sources are needed.
+Please notice that if this override mechanism is required, all the 3 values for the 3 default catalog sources are needed.
 
 ## References
 
@@ -27812,7 +28321,6 @@ openshift-apiserver-64b4669d54-ffpw2              2/2     Running    0          
 openshift-controller-manager-7847ddf4fb-x5659     1/1     Running    0               6m38s
 openshift-oauth-apiserver-554c449b8f-lk97w        1/1     Running    0               6m41s
 packageserver-6fd9f8479-pbvzl                     0/2     Init:0/1   0               6m22s
-redhat-marketplace-catalog-8cc88f5cb-hbxv9        1/1     Running    0               6m29s
 redhat-operators-catalog-b749d6945-2bx8k          1/1     Running    0               6m29s
 ~~~
 
@@ -30951,12 +31459,15 @@ The list of components restarted are listed below:
 * openshift-controller-manager
 * openshift-oauth-apiserver
 * packageserver
-* redhat-marketplace-catalog
 * redhat-operators-catalog
 
 ---
 
 ## Source: docs/content/how-to/sdn/other-sdn-providers.md
+
+---
+title: Other SDN providers
+---
 
 This document explains how to create a HostedCluster that runs an SDN provider different from OVNKubernetes. The document assumes that you already have the required infrastructure in place to create HostedClusters.
 
@@ -31760,6 +32271,10 @@ systemctl enable --now dnsmasq-virt
 
 ## Source: docs/content/labs/Dual/hostedcluster/baremetalhost.md
 
+---
+title: Bare Metal Hosts
+---
+
 ## Bare Metal Hosts
 
 A **BareMetalHost** is an openshift-machine-api object that encompasses both physical and logical details, allowing it to be identified by the Metal3 operator. Subsequently, these details are associated with other Assisted Service objects known as Agents. The structure of this object is as follows:
@@ -31893,6 +32408,10 @@ So now, we need to wait until the nodes join the cluster. The Agents will provid
 ---
 
 ## Source: docs/content/labs/Dual/hostedcluster/hostedcluster.md
+
+---
+title: Hosted Cluster Object
+---
 
 In this section, we will focus on all the related objects necessary to achieve a Disconnected Hosted Cluster deployment.
 
@@ -32153,6 +32672,10 @@ After some time, we will have almost all the pieces in place, and the Control Pl
 
 ## Source: docs/content/labs/Dual/hostedcluster/index.md
 
+---
+title: Hosted Cluster Creation
+---
+
 A Hosted Cluster, as mentioned in the documentation here, is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same link.
 
 The Hosted Cluster comprises two main components:
@@ -32165,6 +32688,10 @@ With this foundational understanding, we can commence our Hosted Cluster deploym
 ---
 
 ## Source: docs/content/labs/Dual/hostedcluster/infraenv.md
+
+---
+title: Infra Env
+---
 
 The `InfraEnv` is an Assisted Service object that includes essential details such as the `pullSecretRef` and the `sshAuthorizedKey`. These details are used to create the RHCOS Boot Image customized specifically for the cluster. Below is the structure of this object:
 
@@ -32202,6 +32729,10 @@ clusters-hosted-dual   hosted   2023-09-11T15:14:10Z
 ---
 
 ## Source: docs/content/labs/Dual/hostedcluster/nodepool.md
+
+---
+title: Node Pools
+---
 
 A `NodePool` is a scalable set of worker nodes associated with a HostedCluster. NodePool machine architectures remain consistent within a specific pool and are independent of the underlying machine architecture of the control plane.
 
@@ -32268,6 +32799,10 @@ clusters    hosted-dual   hosted    0                               False       
 ---
 
 ## Source: docs/content/labs/Dual/hostedcluster/worker-nodes.md
+
+---
+title: Worker Nodes
+---
 
 Regarding the worker nodes, if you are working on real bare metal, this step is crucial to ensure that the details set in the `BareMetalHost` are correctly configured. If not, you will need to debug why it's not functioning as expected.
 
@@ -32361,6 +32896,10 @@ This section is primarily focused on Virtual Machines. If you are working with r
 ---
 
 ## Source: docs/content/labs/Dual/hypervisor/network-manager-dispatcher.md
+
+---
+title: Network Manager Dispatcher
+---
 
 This script modifies the system DNS resolver to prioritize pointing to the `dnsmasq` service (configured later). This ensures that virtual machines can resolve the various domains, routes, and registries required for the different steps of the process.
 
@@ -32481,6 +33020,10 @@ For more info about Kcli please visit the official documentation.
 
 ## Source: docs/content/labs/Dual/hypervisor/redfish-for-vms.md
 
+---
+title: BMC Access for Metal3
+---
+
 In a bare metal environment, the preferred approach is to utilize the actual BMC (Baseboard Management Controller) of the nodes used for the management cluster, which can be managed by Metal3 for discovery and provisioning. However, in a virtual environment, this approach is not feasible. As a workaround, we will use `ksushy`, which is an implementation of `sushy-tools`, allowing us to simulate BMCs for the virtual machines.
 
 To configure `ksushy`, execute the following commands:
@@ -32555,6 +33098,10 @@ Please note that this documentation is designed to be followed in a specific seq
 ---
 
 ## Source: docs/content/labs/Dual/mce/agentserviceconfig.md
+
+---
+title: Agent Service Config
+---
 
 The Agent Service Config object is an essential component of the Assisted Service addon included in MCE/ACM, responsible for Baremetal cluster deployment. When the addon is enabled, you must deploy an operand (CRD) named `AgentServiceConfig` to configure it.
 
@@ -32711,6 +33258,10 @@ assisted-service-668b49548-9m7xw                       2/2     Running   5      
 
 ## Source: docs/content/labs/Dual/mce/index.md
 
+---
+title: Multicluster Engine
+---
+
 The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a crucial role in deploying clusters across multiple providers.
 
 ## Credentials and Authorization
@@ -32725,6 +33276,10 @@ Agent Service Config{ .md-button }
 
 ## Source: docs/content/labs/Dual/mce/multicluster-engine.md
 
+---
+title: ACM/MCE Deployment
+---
+
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
 - ACM Deployment
@@ -32738,6 +33293,10 @@ The deployment of each component will depend on your needs, follow the next link
 ---
 
 ## Source: docs/content/labs/Dual/mgmt-cluster/compact-dual.md
+
+---
+title: OpenShift Compact Dual
+---
 
 In this section, we will discuss how to deploy the Openshift management cluster. To do that, we need to have the following files in place:
 
@@ -32847,6 +33406,10 @@ kcli create cluster openshift --pf mgmt-compact-hub-dual.yaml
 
 ## Source: docs/content/labs/Dual/mgmt-cluster/index.md
 
+---
+title: Management Cluster Provisioning
+---
+
 ## Openshift Management Cluster
 
 This section contains the necessary artifacts to set up an Openshift management cluster based on virtual machines using kcli as the primary tool. Another option is to use dev-scripts, which uses a different approach.
@@ -32857,6 +33420,10 @@ Openshift Compact Dual{ .md-button }
 ---
 
 ## Source: docs/content/labs/Dual/mgmt-cluster/network.md
+
+---
+title: Networking
+---
 
 Firstly, we need to ensure that we have the right networks prepared for use in the Hypervisor. These networks will be used to host both the Management and Hosted clusters.
 
@@ -32906,6 +33473,10 @@ type: routed
 
 ## Source: docs/content/labs/Dual/mirror/ICSP-IDMS.md
 
+---
+title: Image Content Policies
+---
+
 Once the mirroring process is complete, you will have two main objects that need to be applied in the Management Cluster:
 
 1. ICSP (Image Content Source Policies) or IDMS (Image Digest Mirror Set).
@@ -32953,6 +33524,10 @@ ICSP and IDMS{ .md-button }
 ---
 
 ## Source: docs/content/labs/Dual/mirror/mirroring.md
+
+---
+title: Mirroring
+---
 
 The mirroring step can take some time to complete, so we recommend starting with this part once the Registry server is up and running.
 
@@ -33132,6 +33707,10 @@ The root folder for the registry is situated at /opt/registry, and it's structur
 
 ## Source: docs/content/labs/Dual/tls-certificates.md
 
+---
+title: TLS Certificates
+---
+
 !!! important
 
     This section is only relevant in disconnected scenarios. If this doesn't apply to your situation, please proceed to the next section.
@@ -33239,6 +33818,10 @@ Data Plane perspective{ .md-button }
 
 ## Source: docs/content/labs/Dual/watching/watching-cp.md
 
+---
+title: Watching the Control Plane
+---
+
 Now it's a matter of waiting for the cluster to finish the deployment, so let's take a look at some useful commands on the Management cluster side:
 
 ```bash
@@ -33263,6 +33846,10 @@ This is how it looks:
 ---
 
 ## Source: docs/content/labs/Dual/watching/watching-dp.md
+
+---
+title: Watching the Data Plane
+---
 
 If you check the Hosted cluster side you can check how the Operators are progressing and what is the status. To do that we will use these commands
 
@@ -33436,6 +34023,10 @@ systemctl enable --now dnsmasq-virt
 
 ## Source: docs/content/labs/IPv4/hostedcluster/baremetalhost.md
 
+---
+title: Bare Metal Hosts
+---
+
 ## Bare Metal Hosts
 
 A **BareMetalHost** is an openshift-machine-api object that encompasses both physical and logical details, allowing it to be identified by the Metal3 operator. Subsequently, these details are associated with other Assisted Service objects known as Agents. The structure of this object is as follows:
@@ -33567,6 +34158,10 @@ So now, we need to wait until the nodes join the cluster. The Agents will provid
 ---
 
 ## Source: docs/content/labs/IPv4/hostedcluster/hostedcluster.md
+
+---
+title: Hosted Cluster Object
+---
 
 In this section, we will focus on all the related objects necessary to achieve a Disconnected Hosted Cluster deployment.
 **Premises**:
@@ -33824,6 +34419,10 @@ After some time, we will have almost all the pieces in place, and the Control Pl
 
 ## Source: docs/content/labs/IPv4/hostedcluster/index.md
 
+---
+title: Hosted Cluster Creation
+---
+
  Hosted Cluster, as mentioned in the documentation here, is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same link.
 
 The Hosted Cluster consists of two main components:
@@ -33836,6 +34435,10 @@ Now, with this foundational understanding, we can proceed with the deployment of
 ---
 
 ## Source: docs/content/labs/IPv4/hostedcluster/infraenv.md
+
+---
+title: Infra Env
+---
 
 The `InfraEnv` is an Assisted Service object that includes essential details such as the `pullSecretRef` and the `sshAuthorizedKey`. These details are used to create the RHCOS Boot Image customized specifically for the cluster. Below is the structure of this object:
 
@@ -33873,6 +34476,10 @@ clusters-hosted-ipv4   hosted   2023-09-11T15:14:10Z
 ---
 
 ## Source: docs/content/labs/IPv4/hostedcluster/nodepool.md
+
+---
+title: Node Pools
+---
 
 A `NodePool` is a scalable set of worker nodes associated with a HostedCluster. NodePool machine architectures remain consistent within a specific pool and are independent of the underlying machine architecture of the control plane.
 
@@ -33939,6 +34546,10 @@ clusters    hosted-ipv4   hosted    0                               False       
 ---
 
 ## Source: docs/content/labs/IPv4/hostedcluster/worker-nodes.md
+
+---
+title: Worker Nodes
+---
 
 Regarding the worker nodes, if you are working on real bare metal, this step is crucial to ensure that the details set in the `BareMetalHost` are correctly configured. If not, you will need to debug why it's not functioning as expected.
 
@@ -34032,6 +34643,10 @@ This section is entirely dedicated to virtual machine environments. If you are w
 ---
 
 ## Source: docs/content/labs/IPv4/hypervisor/network-manager-dispatcher.md
+
+---
+title: Network Manager Dispatcher
+---
 
 This script modifies the system DNS resolver to prioritize pointing to the `dnsmasq` service (configured later). This ensures that virtual machines can resolve the various domains, routes, and registries required for the different steps of the process.
 
@@ -34152,6 +34767,10 @@ For more info about Kcli please visit the official documentation.
 
 ## Source: docs/content/labs/IPv4/hypervisor/redfish-for-vms.md
 
+---
+title: BMC Access for Metal3
+---
+
 In a bare metal environment, the preferred approach is to utilize the actual BMC (Baseboard Management Controller) of the nodes used for the management cluster, which can be managed by Metal3 for discovery and provisioning. However, in a virtual environment, this approach is not feasible. As a workaround, we will use `ksushy`, which is an implementation of `sushy-tools`, allowing us to simulate BMCs for the virtual machines.
 
 To configure `ksushy` we need to execute these commands:
@@ -34224,6 +34843,10 @@ This documentation is structured to be followed in a specific order:
 ---
 
 ## Source: docs/content/labs/IPv4/mce/agentserviceconfig.md
+
+---
+title: Agent Service Config
+---
 
 The Agent Service Config object is an essential component of the Assisted Service addon included in MCE/ACM, responsible for Baremetal cluster deployment. When the addon is enabled, you must deploy an operand (CRD) named `AgentServiceConfig` to configure it.
 
@@ -34380,6 +35003,10 @@ assisted-service-668b49548-9m7xw                       2/2     Running   5      
 
 ## Source: docs/content/labs/IPv4/mce/index.md
 
+---
+title: Multicluster Engine
+---
+
 The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a crucial role in deploying clusters across multiple providers.
 
 ## Credentials and Authorization
@@ -34394,6 +35021,10 @@ Agent Service Config{ .md-button }
 
 ## Source: docs/content/labs/IPv4/mce/multicluster-engine.md
 
+---
+title: ACM/MCE Deployment
+---
+
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
 - ACM Deployment
@@ -34407,6 +35038,10 @@ The deployment of each component will depend on your needs, follow the next link
 ---
 
 ## Source: docs/content/labs/IPv4/mgmt-cluster/compact-ipv4.md
+
+---
+title: OpenShift Compact IPv4
+---
 
 In this section, we will discuss how to deploy the Openshift management cluster. To do that, we need to have the following files in place:
 
@@ -34505,6 +35140,10 @@ kcli create cluster openshift --pf mgmt-compact-hub-ipv4.yaml
 
 ## Source: docs/content/labs/IPv4/mgmt-cluster/index.md
 
+---
+title: Management Cluster Provisioning
+---
+
 ## Openshift Management Cluster
 
 This section contains the necessary artifacts to set up an Openshift management cluster based on virtual machines using kcli as the primary tool. Another option is to use dev-scripts, which uses a different approach.
@@ -34515,6 +35154,10 @@ Openshift Compact Dual{ .md-button }
 ---
 
 ## Source: docs/content/labs/IPv4/mgmt-cluster/network.md
+
+---
+title: Networking
+---
 
 Firstly, we need to ensure that we have the right networks prepared for use in the Hypervisor. These networks will be used to host both the Management and Hosted clusters.
 
@@ -34563,6 +35206,10 @@ type: routed
 
 ## Source: docs/content/labs/IPv4/mirror/ICSP-IDMS.md
 
+---
+title: Image Content Policies
+---
+
 Once the mirroring process is complete, you will have two main objects that need to be applied in the Management Cluster:
 
 1. ICSP (Image Content Source Policies) or IDMS (Image Digest Mirror Set).
@@ -34610,6 +35257,10 @@ ICSP and IDMS{ .md-button }
 ---
 
 ## Source: docs/content/labs/IPv4/mirror/mirroring.md
+
+---
+title: Mirroring
+---
 
 The mirroring step can take some time to complete, so we recommend starting with this part once the Registry server is up and running.
 
@@ -34789,6 +35440,10 @@ The root folder for the registry is situated at /opt/registry, and it's structur
 
 ## Source: docs/content/labs/IPv4/tls-certificates.md
 
+---
+title: TLS Certificates
+---
+
 !!! important
 
     This section is only relevant in disconnected scenarios. If this doesn't apply to your situation, please proceed to the next section.
@@ -34896,6 +35551,10 @@ Data Plane perspective{ .md-button }
 
 ## Source: docs/content/labs/IPv4/watching/watching-cp.md
 
+---
+title: Watching the Control Plane
+---
+
 Now it's a matter of waiting for the cluster to finish the deployment, so let's take a look at some useful commands on the Management cluster side:
 
 ```bash
@@ -34920,6 +35579,10 @@ This is how it looks:
 ---
 
 ## Source: docs/content/labs/IPv4/watching/watching-dp.md
+
+---
+title: Watching the Data Plane
+---
 
 If you check the Hosted cluster side you can check how the Operators are progressing and what is the status. To do that we will use these commands
 
@@ -35086,6 +35749,10 @@ systemctl enable --now dnsmasq-virt
 
 ## Source: docs/content/labs/IPv6/hostedcluster/baremetalhost.md
 
+---
+title: Bare Metal Hosts
+---
+
 ## Bare Metal Hosts
 
 A **BareMetalHost** is an openshift-machine-api object that encompasses both physical and logical details, allowing it to be identified by the Metal3 operator. Subsequently, these details are associated with other Assisted Service objects known as Agents. The structure of this object is as follows:
@@ -35218,6 +35885,10 @@ So now, we need to wait until the nodes join the cluster. The Agents will provid
 ---
 
 ## Source: docs/content/labs/IPv6/hostedcluster/hostedcluster.md
+
+---
+title: Hosted Cluster Object
+---
 
 In this section, we will focus on all the related objects necessary to achieve a Disconnected Hosted Cluster deployment.
 
@@ -35478,6 +36149,10 @@ After some time, we will have almost all the pieces in place, and the Control Pl
 
 ## Source: docs/content/labs/IPv6/hostedcluster/index.md
 
+---
+title: Hosted Cluster Creation
+---
+
  Hosted Cluster, as mentioned in the documentation here, is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same link.
 
 The Hosted Cluster comprises two main components:
@@ -35490,6 +36165,10 @@ With this foundational understanding, we can commence our Hosted Cluster deploym
 ---
 
 ## Source: docs/content/labs/IPv6/hostedcluster/infraenv.md
+
+---
+title: Infra Env
+---
 
 The `InfraEnv` is an Assisted Service object that includes essential details such as the `pullSecretRef` and the `sshAuthorizedKey`. These details are used to create the RHCOS Boot Image customized specifically for the cluster. Below is the structure of this object:
 
@@ -35527,6 +36206,10 @@ clusters-hosted-ipv6   hosted   2023-09-11T15:14:10Z
 ---
 
 ## Source: docs/content/labs/IPv6/hostedcluster/nodepool.md
+
+---
+title: Node Pools
+---
 
 A `NodePool` is a scalable set of worker nodes associated with a HostedCluster. NodePool machine architectures remain consistent within a specific pool and are independent of the underlying machine architecture of the control plane.
 
@@ -35593,6 +36276,10 @@ clusters    hosted-ipv6   hosted    0                               False       
 ---
 
 ## Source: docs/content/labs/IPv6/hostedcluster/worker-nodes.md
+
+---
+title: Worker Nodes
+---
 
 Regarding the worker nodes, if you are working on real bare metal, this step is crucial to ensure that the details set in the `BareMetalHost` are correctly configured. If not, you will need to debug why it's not functioning as expected.
 
@@ -35685,6 +36372,10 @@ This section is primarily focused on Virtual Machines. If you are working with r
 ---
 
 ## Source: docs/content/labs/IPv6/hypervisor/network-manager-dispatcher.md
+
+---
+title: Network Manager Dispatcher
+---
 
 This script modifies the system DNS resolver to prioritize pointing to the `dnsmasq` service (configured later). This ensures that virtual machines can resolve the various domains, routes, and registries required for the different steps of the process.
 
@@ -35805,6 +36496,10 @@ For more info about Kcli please visit the official documentation.
 
 ## Source: docs/content/labs/IPv6/hypervisor/redfish-for-vms.md
 
+---
+title: BMC Access for Metal3
+---
+
 In a bare metal environment, the preferred approach is to utilize the actual BMC (Baseboard Management Controller) of the nodes used for the management cluster, which can be managed by Metal3 for discovery and provisioning. However, in a virtual environment, this approach is not feasible. As a workaround, we will use `ksushy`, which is an implementation of `sushy-tools`, allowing us to simulate BMCs for the virtual machines.
 
 To configure `ksushy` we need to execute these commands:
@@ -35878,6 +36573,10 @@ This documentation is prepared to be followed in a concrete order:
 ---
 
 ## Source: docs/content/labs/IPv6/mce/agentserviceconfig.md
+
+---
+title: Agent Service Config
+---
 
 The Agent Service Config object is an essential component of the Assisted Service addon included in MCE/ACM, responsible for Baremetal cluster deployment. When the addon is enabled, you must deploy an operand (CRD) named `AgentServiceConfig` to configure it.
 
@@ -36034,6 +36733,10 @@ assisted-service-668b49548-9m7xw                       2/2     Running   5      
 
 ## Source: docs/content/labs/IPv6/mce/index.md
 
+---
+title: Multicluster Engine
+---
+
 The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a crucial role in deploying clusters across multiple providers.
 
 ## Credentials and Authorization
@@ -36048,6 +36751,10 @@ Agent Service Config{ .md-button }
 
 ## Source: docs/content/labs/IPv6/mce/multicluster-engine.md
 
+---
+title: ACM/MCE Deployment
+---
+
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
 - ACM Deployment
@@ -36061,6 +36768,10 @@ The deployment of each component will depend on your needs, follow the next link
 ---
 
 ## Source: docs/content/labs/IPv6/mgmt-cluster/compact-ipv6.md
+
+---
+title: OpenShift Compact IPv6
+---
 
 In this section, we will discuss how to deploy the Openshift management cluster. To do that, we need to have the following files in place:
 
@@ -36164,6 +36875,10 @@ kcli create cluster openshift --pf mgmt-compact-hub-ipv6.yaml
 
 ## Source: docs/content/labs/IPv6/mgmt-cluster/index.md
 
+---
+title: Management Cluster Provisioning
+---
+
 ## Openshift Management Cluster
 
 This section contains the necessary artifacts to set up an Openshift management cluster based on virtual machines using kcli as the primary tool. Another option is to use dev-scripts, which uses a different approach.
@@ -36174,6 +36889,10 @@ Openshift Compact Dual{ .md-button }
 ---
 
 ## Source: docs/content/labs/IPv6/mgmt-cluster/network.md
+
+---
+title: Networking
+---
 
 Firstly, we need to ensure that we have the right networks prepared for use in the Hypervisor. These networks will be used to host both the Management and Hosted clusters.
 
@@ -36222,6 +36941,10 @@ type: routed
 
 ## Source: docs/content/labs/IPv6/mirror/ICSP-IDMS.md
 
+---
+title: Image Content Policies
+---
+
 Once the mirroring process is complete, you will have two main objects that need to be applied in the Management Cluster:
 
 1. ICSP (Image Content Source Policies) or IDMS (Image Digest Mirror Set).
@@ -36269,6 +36992,10 @@ ICSP and IDMS{ .md-button }
 ---
 
 ## Source: docs/content/labs/IPv6/mirror/mirroring.md
+
+---
+title: Mirroring
+---
 
 The mirroring step can take some time to complete, so we recommend starting with this part once the Registry server is up and running.
 
@@ -36448,6 +37175,10 @@ The root folder for the registry is situated at /opt/registry, and it's structur
 
 ## Source: docs/content/labs/IPv6/tls-certificates.md
 
+---
+title: TLS Certificates
+---
+
 !!! important
 
     This section is only relevant in disconnected scenarios. If this doesn't apply to your situation, please proceed to the next section.
@@ -36555,6 +37286,10 @@ Data Plane perspective{ .md-button }
 
 ## Source: docs/content/labs/IPv6/watching/watching-cp.md
 
+---
+title: Watching the Control Plane
+---
+
 Now it's a matter of waiting for the cluster to finish the deployment, so let's take a look at some useful commands on the Management cluster side:
 
 ```bash
@@ -36579,6 +37314,10 @@ This is how it looks:
 ---
 
 ## Source: docs/content/labs/IPv6/watching/watching-dp.md
+
+---
+title: Watching the Data Plane
+---
 
 If you check the Hosted cluster side you can check how the Operators are progressing and what is the status. To do that we will use these commands
 
@@ -36661,6 +37400,10 @@ systemctl enable --now libvirtd
 ---
 
 ## Source: docs/content/labs/common/hypervisor/network-manager-dispatcher.md
+
+---
+title: Network Manager Dispatcher
+---
 
 This script modifies the system DNS resolver to prioritize pointing to the `dnsmasq` service (configured later). This ensures that virtual machines can resolve the various domains, routes, and registries required for the different steps of the process.
 
@@ -36807,6 +37550,10 @@ title: Hypervisor Prerequisites
 ---
 
 ## Source: docs/content/labs/common/mce/agentserviceconfig.md
+
+---
+title: Agent Service Config
+---
 
 The Agent Service Config object is an essential component of the Assisted Service addon included in MCE/ACM, responsible for Baremetal cluster deployment. When the addon is enabled, you must deploy an operand (CRD) named `AgentServiceConfig` to configure it.
 
@@ -36963,6 +37710,10 @@ assisted-service-668b49548-9m7xw                       2/2     Running   5      
 
 ## Source: docs/content/labs/common/mce/index.md
 
+---
+title: Multicluster Engine
+---
+
 The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a crucial role in deploying clusters across multiple providers.
 
 ## Credentials and Authorization
@@ -36977,6 +37728,10 @@ Agent Service Config{ .md-button }
 
 ## Source: docs/content/labs/common/mce/multicluster-engine.md
 
+---
+title: ACM/MCE Deployment
+---
+
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
 - ACM Deployment
@@ -36990,6 +37745,10 @@ The deployment of each component will depend on your needs, follow the next link
 ---
 
 ## Source: docs/content/labs/common/mirror/ICSP-IDMS.md
+
+---
+title: Image Content Policies
+---
 
 Once the mirroring process is complete, you will have two main objects that need to be applied in the Management Cluster:
 
@@ -37038,6 +37797,10 @@ ICSP and IDMS{ .md-button }
 ---
 
 ## Source: docs/content/labs/common/mirror/mirroring.md
+
+---
+title: Mirroring
+---
 
 The mirroring step can take some time to complete, so we recommend starting with this part once the Registry server is up and running.
 
@@ -37217,6 +37980,10 @@ The root folder for the registry is situated at /opt/registry, and it's structur
 
 ## Source: docs/content/labs/common/tls-certificates.md
 
+---
+title: TLS Certificates
+---
+
 !!! important
 
     This section is only relevant in disconnected scenarios. If this doesn't apply to your situation, please proceed to the next section.
@@ -37324,6 +38091,10 @@ Data Plane perspective{ .md-button }
 
 ## Source: docs/content/labs/common/watching/watching-cp.md
 
+---
+title: Watching the Control Plane
+---
+
 Now it's a matter of waiting for the cluster to finish the deployment, so let's take a look at some useful commands on the Management cluster side:
 
 ```bash
@@ -37348,6 +38119,10 @@ This is how it looks:
 ---
 
 ## Source: docs/content/labs/common/watching/watching-dp.md
+
+---
+title: Watching the Data Plane
+---
 
 If you check the Hosted cluster side you can check how the Operators are progressing and what is the status. To do that we will use these commands
 
@@ -37566,6 +38341,10 @@ The addon will detect the removal and redeploy the HyperShift Operator with the 
 ---
 
 ## Source: docs/content/recipes/common/control-plane-metrics-forwarding.md
+
+---
+title: Control Plane Metrics Forwarding
+---
 
 ## Enable Control Plane Metrics Forwarding to Hosted Clusters
 
@@ -37888,6 +38667,10 @@ This deletes the `endpoint-resolver` and `metrics-proxy` from the management clu
 ---
 
 ## Source: docs/content/recipes/common/exposing-dataplane-with-metallb.md
+
+---
+title: Expose Data Plane Ingress via MetalLB
+---
 
 ## Configure MetalLB for HostedCluster's Data Plane
 
@@ -39262,7 +40045,8 @@ ServiceAccount tokens generated by the control plane API server via &ndash;servi
 The default value is kubernetes.default.svc, which only works for in-cluster
 validation.
 If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
-The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.</p>
+The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -40092,6 +40876,74 @@ string
 </tr>
 </tbody>
 </table>
+###AWSClusterResourceTag { #hypershift.openshift.io/v1beta1.AWSClusterResourceTag }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSClusterResourceTag is a tag to apply to AWS resources created for a
+HostedCluster. It extends the base tag with an overridePolicy field that
+controls whether NodePool-level tags can override this tag.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>key is the key of the tag.
+Must be between 1 and 128 characters and may only contain letters, digits,
+and the characters _ . : / = + - @</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>value is the value of the tag.
+Must be between 1 and 256 characters and may only contain letters, digits,
+and the characters _ . : / = + - @</p>
+<p>Some AWS service do not support empty values. Since tags are added to
+resources in many services, the length of the tag value must meet the
+requirements of all services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>overridePolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSResourceTagOverridePolicy">
+AWSResourceTagOverridePolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>overridePolicy controls whether a NodePool-level tag with the same key can
+override this HostedCluster-level tag.</p>
+<p>When set to &ldquo;Allow&rdquo;, a NodePool tag with the same key will take precedence
+over this HostedCluster tag. When set to &ldquo;Deny&rdquo; or omitted, the
+HostedCluster value is preserved and the NodePool tag is ignored for that
+key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSEndpointAccessType { #hypershift.openshift.io/v1beta1.AWSEndpointAccessType }
 <p>
 (<em>Appears on:</em>
@@ -40408,18 +41260,26 @@ Volume
 <td>
 <code>resourceTags</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AWSResourceTag">
-[]AWSResourceTag
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolResourceTag">
+[]AWSNodePoolResourceTag
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>resourceTags is an optional list of additional tags to apply to AWS node
-instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
-Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.</p>
-<p>These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
-These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.</p>
+<p>resourceTags is a list of additional tags to apply to AWS resources created
+for the NodePool. Changes to this field will be propagated in-place to AWS
+EC2 instances and their initial EBS volumes. Volumes created by the storage
+operator and attached to instances after they are created do not get these
+tags applied.
+These are merged with HostedCluster-level tags. By default, HostedCluster
+tags take precedence when both specify the same key. To allow a NodePool
+tag to override a specific HostedCluster tag, set overridePolicy to &ldquo;Allow&rdquo;
+on the HostedCluster tag.
+Tags that only exist at the NodePool level (no conflict) are always applied.
+These take precedence over tags defined out of band (i.e., tags added
+manually or by other tools outside of HyperShift) in AWS in case of
+conflicts.</p>
 <p>See <a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for
 information on tagging AWS resources. AWS supports a maximum of 50 tags per
 resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
@@ -40438,6 +41298,57 @@ PlacementOptions
 <td>
 <em>(Optional)</em>
 <p>placement specifies the placement options for the EC2 instances.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSNodePoolResourceTag { #hypershift.openshift.io/v1beta1.AWSNodePoolResourceTag }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>AWSNodePoolResourceTag is a tag to apply to AWS resources created for a
+NodePool. These tags are merged with HostedCluster-level tags. By default,
+HostedCluster tags take precedence when both specify the same key. To allow
+a NodePool tag to override a specific HostedCluster tag, set overridePolicy
+to &ldquo;Allow&rdquo; on the HostedCluster tag.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>key is the key of the tag.
+Must be between 1 and 128 characters and may only contain letters, digits,
+and the characters _ . : / = + - @</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>value is the value of the tag.
+Must be between 1 and 256 characters and may only contain letters, digits,
+and the characters _ . : / = + - @</p>
+<p>Some AWS service do not support empty values. Since tags are added to
+resources in many services, the length of the tag value must meet the
+requirements of all services.</p>
 </td>
 </tr>
 </tbody>
@@ -40523,8 +41434,8 @@ integrations such as OIDC.</p>
 <td>
 <code>resourceTags</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AWSResourceTag">
-[]AWSResourceTag
+<a href="#hypershift.openshift.io/v1beta1.AWSClusterResourceTag">
+[]AWSClusterResourceTag
 </a>
 </em>
 </td>
@@ -40539,6 +41450,10 @@ for the user.
 Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
 These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
 Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to &ldquo;Allow&rdquo; on that tag.
+Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
 These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.</p>
 </td>
 </tr>
@@ -40710,12 +41625,12 @@ They are applied according to the rules defined by the AWS API:
 </table>
 ###AWSResourceTag { #hypershift.openshift.io/v1beta1.AWSResourceTag }
 <p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>,
-<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
-</p>
-<p>
 <p>AWSResourceTag is a tag to apply to AWS resources created for the cluster.</p>
+<p>Deprecated: Use AWSClusterResourceTag, AWSNodePoolResourceTag, or
+AWSEndpointServiceResourceTag instead. AWSClusterResourceTag preserves the
+existing tag precedence (HostedCluster wins by default) and adds an optional
+overridePolicy field. Set overridePolicy to &ldquo;Allow&rdquo; on a HostedCluster tag
+to permit NodePool tags to override it.</p>
 </p>
 <table>
 <thead>
@@ -40733,7 +41648,9 @@ string
 </em>
 </td>
 <td>
-<p>key is the key of the tag.</p>
+<p>key is the key of the tag.
+Must be between 1 and 128 characters and may only contain letters, digits,
+and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -40744,13 +41661,43 @@ string
 </em>
 </td>
 <td>
-<p>value is the value of the tag.</p>
+<p>value is the value of the tag.
+Must be between 1 and 256 characters and may only contain letters, digits,
+and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###AWSResourceTagOverridePolicy { #hypershift.openshift.io/v1beta1.AWSResourceTagOverridePolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSClusterResourceTag">AWSClusterResourceTag</a>)
+</p>
+<p>
+<p>AWSResourceTagOverridePolicy specifies whether a HostedCluster-level AWS resource tag
+can be overridden by a NodePool-level tag with the same key.
+This field is only meaningful on HostedCluster-level tags (AWSClusterResourceTag).</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Allow&#34;</p></td>
+<td><p>AWSResourceTagOverridePolicyAllow permits a NodePool tag to override this
+HostedCluster tag when both share the same key.</p>
+</td>
+</tr><tr><td><p>&#34;Deny&#34;</p></td>
+<td><p>AWSResourceTagOverridePolicyDeny prevents a NodePool tag from overriding
+this HostedCluster tag when both share the same key. The HostedCluster
+value is preserved. This is the default behavior when the field is unset.</p>
+</td>
+</tr></tbody>
 </table>
 ###AWSRoleCredentials { #hypershift.openshift.io/v1beta1.AWSRoleCredentials }
 <p>
@@ -42015,6 +42962,7 @@ applications and dev/test.</p>
 <a href="#hypershift.openshift.io/v1beta1.SecretEncryptionKeyStatus">SecretEncryptionKeyStatus</a>)
 </p>
 <p>
+<p>AzureKMSKey defines an Azure Key Vault or Managed HSM key used for KMS encryption.</p>
 </p>
 <table>
 <thead>
@@ -42032,8 +42980,8 @@ string
 </em>
 </td>
 <td>
-<p>keyVaultName is the name of the keyvault. Must match criteria specified at <a href="https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name">https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name</a>
-Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+<p>keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at <a href="https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name">https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name</a>
+Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
 <code>az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn &lt;YOUR APPLICATION CLIENT ID&gt;</code></p>
 </td>
 </tr>
@@ -42045,7 +42993,7 @@ string
 </em>
 </td>
 <td>
-<p>keyName is the name of the keyvault key used for encrypt/decrypt</p>
+<p>keyName is the name of the key used for encrypt/decrypt.</p>
 </td>
 </tr>
 <tr>
@@ -42061,13 +43009,36 @@ string
 </tr>
 </tbody>
 </table>
+###AzureKMSKeyVaultType { #hypershift.openshift.io/v1beta1.AzureKMSKeyVaultType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
+</p>
+<p>
+<p>AzureKMSKeyVaultType specifies the Azure service that hosts a KMS key.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;KeyVault&#34;</p></td>
+<td><p>AzureKMSKeyVaultTypeKeyVault indicates that the key is hosted by Azure Key Vault.</p>
+</td>
+</tr><tr><td><p>&#34;ManagedHSM&#34;</p></td>
+<td><p>AzureKMSKeyVaultTypeManagedHSM indicates that the key is hosted by Azure Managed HSM.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.KMSSpec">KMSSpec</a>)
 </p>
 <p>
-<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure Key Vault or Managed HSM.</p>
 </p>
 <table>
 <thead>
@@ -42138,6 +43109,25 @@ WorkloadIdentity
 with Azure Key Vault for KMS encryption via a token-minter sidecar.
 This identity must have &ldquo;Key Vault Crypto User&rdquo; role on the Key Vault.
 kms and workloadIdentity are mutually exclusive.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyVaultType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSKeyVaultType">
+AzureKMSKeyVaultType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>keyVaultType specifies whether activeKey and backupKey are hosted by Azure Key Vault or Azure Managed HSM.
+Valid values are &ldquo;KeyVault&rdquo; and &ldquo;ManagedHSM&rdquo;.
+When set to &ldquo;KeyVault&rdquo;, both keys are hosted by Azure Key Vault.
+When set to &ldquo;ManagedHSM&rdquo;, both keys are hosted by Azure Managed HSM.
+The type is immutable; key rotation must remain within the same service.
+When omitted, the keys are treated as Key Vault keys.</p>
 </td>
 </tr>
 <tr>
@@ -42543,7 +43533,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>cloud is the cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
+<p>cloud is the Azure cloud environment identifier.</p>
 </td>
 </tr>
 <tr>
@@ -43977,7 +44967,9 @@ github.com/openshift/api/config/v1.AuthenticationSpec
 <td>
 <em>(Optional)</em>
 <p>authentication specifies cluster-wide settings for authentication (like OAuth and
-webhook token authenticators).</p>
+webhook token authenticators).
+Note: the serviceAccountIssuer field within this configuration is ignored; the
+HostedCluster&rsquo;s spec.issuerURL is always used as the service account issuer instead.</p>
 </td>
 </tr>
 <tr>
@@ -46880,7 +47872,8 @@ For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
 - Contain only lowercase letters, digits, underscores, or hyphens
 - End with a lowercase letter or digit (not a hyphen or underscore)
 - Be 1-63 characters long
-GCP reserves the &lsquo;goog&rsquo; prefix for system labels.
+GCP reserves the &lsquo;goog&rsquo; prefix for system labels, with the exception of
+&lsquo;goog-partner-solution&rsquo; which Google requires for partner attribution tracking.
 See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
 </td>
 </tr>
@@ -47286,9 +48279,10 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption.
-Must be a valid Azure Key Vault key URL in the format
-&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.
+<p>encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key used for encryption.
+Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.
 This field is immutable once set and cannot be removed.</p>
 </td>
 </tr>
@@ -47414,9 +48408,10 @@ string
 </em>
 </td>
 <td>
-<p>encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
-Must be a valid Azure Key Vault key URL in the format
-&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+<p>encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key to use for encrypting etcd backup artifacts.
+Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.</p>
 </td>
 </tr>
 </tbody>
@@ -47550,9 +48545,10 @@ string
 </em>
 </td>
 <td>
-<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption of the backup.
-Must be a valid Azure Key Vault key URL in the format
-&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+<p>encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key used for encryption of the backup.
+Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.</p>
 </td>
 </tr>
 </tbody>
@@ -48161,7 +49157,8 @@ ServiceAccount tokens generated by the control plane API server via &ndash;servi
 The default value is kubernetes.default.svc, which only works for in-cluster
 validation.
 If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
-The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.</p>
+The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -58151,6 +59148,10 @@ Note: the kube-apiserver will no longer be exposed through a dedicated LB servic
 
 ## Source: docs/content/reference/architecture/mce-and-agent.md
 
+---
+title: Multicluster Engine and Agent
+---
+
 **Introduction**
 
 This section elucidates the collaboration between Multicluster Engine and Agent to facilitate in-house deployments. Detailed documentation for each of the network stacks can be found in the *Self-Managed Laboratories* section. If you intend to set up a self-managed environment, please proceed to that section and follow the provided steps.
@@ -60117,6 +61118,10 @@ This section of the HyperShift documentation contains references.
 
 ## Source: docs/content/reference/infrastructure/agent.md
 
+---
+title: Agent
+---
+
 The agent platform does not create any infrastructure but does have two kinds of prerequisites:
 
 1. Agents: An Agent represents a host booted with a discovery image and ready to be provisioned as an OpenShift node. For more information, see here.
@@ -60128,6 +61133,10 @@ You can find more details about the prerequisites in the how-to.
 ---
 
 ## Source: docs/content/reference/infrastructure/aws.md
+
+---
+title: AWS
+---
 
 In this section we want to dissect who creates what and what not. It contains 4 stages:
 
@@ -61875,6 +62884,10 @@ services.
 
 ## Source: docs/content/reference/manifests/ibmcloud/4.10.md
 
+---
+title: "4.10"
+---
+
 **HostedCluster**
 
 ```yaml
@@ -62205,6 +63218,10 @@ spec:
 
 ## Source: docs/content/reference/manifests/ibmcloud/4.11.md
 
+---
+title: "4.11"
+---
+
 **HostedCluster**
 
 ```yaml
@@ -62524,6 +63541,10 @@ spec:
 
 ## Source: docs/content/reference/manifests/ibmcloud/4.12.md
 
+---
+title: "4.12"
+---
+
 **HostedCluster**
 
 ```yaml
@@ -62836,6 +63857,10 @@ spec:
 
 ## Source: docs/content/reference/manifests/ibmcloud/4.13.md
 
+---
+title: "4.13"
+---
+
 **HostedCluster**
 
 ```yaml
@@ -63143,6 +64168,10 @@ spec:
 ---
 
 ## Source: docs/content/reference/manifests/ibmcloud/4.9.md
+
+---
+title: "4.9"
+---
 
 **HostedCluster**
 

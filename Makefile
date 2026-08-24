@@ -100,6 +100,11 @@ KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
 $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
 	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
 
+HYPERSHIFTLINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/hypershiftlinter.so)
+HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 2>/dev/null)
+$(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
+
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
@@ -113,21 +118,37 @@ api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
+.PHONY: precommit-api-lint-fix
+precommit-api-lint-fix: $(GOLANGCI_LINT)
+	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
+
 .PHONY: lint
-lint: generate
+lint: generate $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
 
 .PHONY: main-lint-fix
-main-lint-fix: generate $(GOLANGCI_LINT)
+main-lint-fix: generate $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
 
+.PHONY: precommit-main-lint-fix
+precommit-main-lint-fix: $(GOLANGCI_LINT)
+	$(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(FILES)
+
 .PHONY: lint-fix
-lint-fix: generate
+lint-fix: generate $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint-fix; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+
+.PHONY: hypershift-lint-all
+hypershift-lint-all: $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter --build-tags e2ev2
+
+.PHONY: test-linter
+test-linter:
+	cd $(TOOLS_DIR) && $(GO) test ./hypershiftlinter/analyzers/... -count=1
 
 .PHONY: verify-git-clean
 verify-git-clean:
@@ -392,7 +413,7 @@ test: generate
 test-changed:
 	@CHANGED_DIRS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
-		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -v '^\./api/vendor/' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./api(/|$$)' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
 	if [ -z "$$CHANGED_DIRS" ]; then \
 		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
 	else \
@@ -423,12 +444,12 @@ test-shard: generate
 
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
-# OCP version to Kubernetes version mapping (OCP 4.x -> K8s 1.(x+13))
-# OCP 4.17=1.30, 4.18=1.31, 4.19=1.32, 4.20=1.33, 4.21=1.34, 4.22=1.35
-ENVTEST_OCP_K8S_VERSIONS ?= 1.30.3 1.31.2 1.32.1 1.33.2 1.34.1 1.35.1
+# OCP version to Kubernetes version mapping (OCP 4.x -> K8s 1.(x+13); OCP 5.0 == 4.23)
+# OCP 4.17=1.30, 4.18=1.31, 4.19=1.32, 4.20=1.33, 4.21=1.34, 4.22=1.35, 4.23/5.0=1.36
+ENVTEST_OCP_K8S_VERSIONS ?= 1.30.3 1.31.2 1.32.1 1.33.2 1.34.1 1.35.1 1.36.2
 
 # Vanilla Kubernetes versions for envtest (upstream kubebuilder assets)
-ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0
+ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0 1.36.0
 
 # Parallel envtest execution: 0 = sequential (default), N = N parallel jobs, MAX = all versions in parallel.
 ENVTEST_JOBS ?= 0
@@ -511,7 +532,7 @@ endif
 test-envtest-api-all: test-envtest-ocp test-envtest-kube ## Run all envtest API tests (ENVTEST_JOBS=0|N|MAX)
 
 .PHONY: e2e
-e2e: reqserving-e2e e2ev2 backuprestore-e2e
+e2e: reqserving-e2e e2ev2 e2ev2-create-guests e2ev2-run-tests e2ev2-destroy-guests e2ev2-dump-guests backuprestore-e2e
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum

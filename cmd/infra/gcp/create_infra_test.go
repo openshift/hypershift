@@ -90,7 +90,7 @@ func TestCreateInfraOptionsOutput(t *testing.T) {
 		validateJSON  bool
 	}{
 		{
-			name:       "When output file is specified it should write JSON to file",
+			name:       "When output file is specified, it should write JSON to file",
 			outputFile: "output.json",
 			result: &CreateInfraOutput{
 				Region:          "us-central1",
@@ -107,7 +107,7 @@ func TestCreateInfraOptionsOutput(t *testing.T) {
 			validateJSON: true,
 		},
 		{
-			name:       "When output file is in invalid directory it should return error",
+			name:       "When output file is in invalid directory, it should return error",
 			outputFile: "/nonexistent/directory/output.json",
 			result: &CreateInfraOutput{
 				ProjectID: "test-project",
@@ -115,7 +115,7 @@ func TestCreateInfraOptionsOutput(t *testing.T) {
 			expectedError: "cannot create output file",
 		},
 		{
-			name:       "When output file is empty string it should write to stdout without error",
+			name:       "When output file is empty string, it should write to stdout without error",
 			outputFile: "",
 			result: &CreateInfraOutput{
 				Region:    "us-central1",

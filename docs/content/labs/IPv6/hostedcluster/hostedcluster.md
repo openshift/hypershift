@@ -1,3 +1,7 @@
+---
+title: Hosted Cluster Object
+---
+
 In this section, we will focus on all the related objects necessary to achieve a Disconnected Hosted Cluster deployment.
 
 **Premises**:

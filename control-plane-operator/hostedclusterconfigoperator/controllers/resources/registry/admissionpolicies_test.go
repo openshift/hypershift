@@ -34,7 +34,7 @@ func TestReconcileRegistryConfigManagementStateValidatingAdmissionPolicy(t *test
 		expectedResourceRules   int
 	}{
 		{
-			name: "When cluster is active it should set expression to restrict managementState",
+			name: "When cluster is active, it should set expression to restrict managementState",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -158,7 +158,7 @@ func TestReconcileRegistryConfigValidatingAdmissionPolicies(t *testing.T) {
 		errSubstr      string
 	}{
 		{
-			name: "When reconciliation succeeds it should return no error",
+			name: "When reconciliation succeeds, it should return no error",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -168,7 +168,7 @@ func TestReconcileRegistryConfigValidatingAdmissionPolicies(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When cluster is being deleted it should still succeed",
+			name: "When cluster is being deleted, it should still succeed",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "test-cluster",

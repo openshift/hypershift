@@ -365,9 +365,9 @@ type AzureNodePoolOSDisk struct {
 // +kubebuilder:validation:XValidation:rule="has(self.topology) && (self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private)",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="!has(self.private) || self.private.type != 'PrivateLink' || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
 type AzurePlatformSpec struct {
-	// cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
+	// cloud is the Azure cloud environment identifier.
 	//
-	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud;AzureStackCloud
+	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud;AzureBleuCloud;AzureStackCloud
 	// +kubebuilder:default="AzurePublicCloud"
 	// +optional
 	Cloud string `json:"cloud,omitempty"`
@@ -914,9 +914,10 @@ const (
 	AzureKeyVaultPrivate AzureKeyVaultAccessType = "Private"
 )
 
-// AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
+// AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure Key Vault or Managed HSM.
 //
 // +kubebuilder:validation:XValidation:rule="!has(self.backupKey) || self.backupKey.keyVaultName == self.activeKey.keyVaultName",message="backupKey.keyVaultName must match activeKey.keyVaultName; both keys must reside in the same Key Vault"
+// +kubebuilder:validation:XValidation:rule="(has(self.keyVaultType) ? self.keyVaultType : 'KeyVault') == (has(oldSelf.keyVaultType) ? oldSelf.keyVaultType : 'KeyVault')",message="keyVaultType is immutable"
 // +kubebuilder:validation:XValidation:rule="!(has(self.kms) && has(self.workloadIdentity))",message="kms and workloadIdentity are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="has(self.kms) || has(self.workloadIdentity)",message="one of kms or workloadIdentity must be set"
 // +kubebuilder:validation:XValidation:rule="has(self.kms) == has(oldSelf.kms)",message="the KMS authentication mode is immutable once set"
@@ -948,6 +949,15 @@ type AzureKMSSpec struct {
 	// +optional
 	WorkloadIdentity WorkloadIdentity `json:"workloadIdentity,omitzero"`
 
+	// keyVaultType specifies whether activeKey and backupKey are hosted by Azure Key Vault or Azure Managed HSM.
+	// Valid values are "KeyVault" and "ManagedHSM".
+	// When set to "KeyVault", both keys are hosted by Azure Key Vault.
+	// When set to "ManagedHSM", both keys are hosted by Azure Managed HSM.
+	// The type is immutable; key rotation must remain within the same service.
+	// When omitted, the keys are treated as Key Vault keys.
+	// +optional
+	KeyVaultType AzureKMSKeyVaultType `json:"keyVaultType,omitempty"`
+
 	// keyVaultAccess specifies how the Key Vault should be accessed.
 	// When set to "Private", the control plane routes Key Vault traffic through
 	// the private router to reach the Key Vault's private endpoint in the customer VNet.
@@ -957,16 +967,28 @@ type AzureKMSSpec struct {
 	KeyVaultAccess AzureKeyVaultAccessType `json:"keyVaultAccess,omitempty"`
 }
 
+// AzureKMSKeyVaultType specifies the Azure service that hosts a KMS key.
+// +kubebuilder:validation:Enum=KeyVault;ManagedHSM
+type AzureKMSKeyVaultType string
+
+const (
+	// AzureKMSKeyVaultTypeKeyVault indicates that the key is hosted by Azure Key Vault.
+	AzureKMSKeyVaultTypeKeyVault AzureKMSKeyVaultType = "KeyVault"
+	// AzureKMSKeyVaultTypeManagedHSM indicates that the key is hosted by Azure Managed HSM.
+	AzureKMSKeyVaultTypeManagedHSM AzureKMSKeyVaultType = "ManagedHSM"
+)
+
+// AzureKMSKey defines an Azure Key Vault or Managed HSM key used for KMS encryption.
 type AzureKMSKey struct {
-	// keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+	// keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+	// Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyVaultName string `json:"keyVaultName,omitempty"`
 
-	// keyName is the name of the keyvault key used for encrypt/decrypt
+	// keyName is the name of the key used for encrypt/decrypt.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +required

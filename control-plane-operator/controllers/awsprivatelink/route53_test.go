@@ -98,7 +98,7 @@ func TestFindRecord(t *testing.T) {
 			expectNil: true,
 		},
 		{
-			name: "When API returns an error it should propagate the error",
+			name: "When API returns an error, it should propagate the error",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					nil, errors.New("api error"),
@@ -149,7 +149,7 @@ func TestCreateRecord(t *testing.T) {
 		checkErrorType func(*testing.T, error)
 	}{
 		{
-			name: "When ChangeResourceRecordSets succeeds it should return nil",
+			name: "When ChangeResourceRecordSets succeeds, it should return nil",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&route53.ChangeResourceRecordSetsOutput{}, nil,
@@ -158,7 +158,7 @@ func TestCreateRecord(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When API returns a smithy error it should preserve the original error type",
+			name: "When API returns a smithy error, it should preserve the original error type",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					nil, &testAPIError{code: "NoSuchHostedZone"},
@@ -174,7 +174,7 @@ func TestCreateRecord(t *testing.T) {
 			},
 		},
 		{
-			name: "When API returns a non-smithy error it should propagate the original error",
+			name: "When API returns a non-smithy error, it should propagate the original error",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					nil, errors.New("network error"),
@@ -226,7 +226,7 @@ func TestDeleteRecord(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name: "When ChangeResourceRecordSets succeeds it should return nil",
+			name: "When ChangeResourceRecordSets succeeds, it should return nil",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&route53.ChangeResourceRecordSetsOutput{}, nil,
@@ -235,7 +235,7 @@ func TestDeleteRecord(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When ChangeResourceRecordSets fails it should propagate the error",
+			name: "When ChangeResourceRecordSets fails, it should propagate the error",
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					nil, errors.New("delete failed"),

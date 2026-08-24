@@ -26,7 +26,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 		expectedErr string
 	}{
 		{
-			name:        "NoSizeConfig",
+			name:        "When no size config exists it should return error",
 			hc:          &hyperv1.HostedCluster{},
 			size:        "small",
 			config:      &schedulingv1alpha1.ClusterSizingConfiguration{},
@@ -35,7 +35,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "could not find size configuration for size small",
 		},
 		{
-			name: "ValidSizeConfigWithAnnotations",
+			name: "When valid size config has annotations it should set them on the hosted cluster",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -66,7 +66,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "ValidSizeConfigWithNodesProvidingAnnotations",
+			name: "When valid size config has nodes providing annotations it should use node annotations",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -106,7 +106,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "SizeConfigWithMissingOptionalFields",
+			name: "When size config has missing optional fields it should set only the scheduled annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -133,7 +133,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "SizeConfigWithMachineHealthCheckTimeout",
+			name: "When size config has machine health check timeout it should set the timeout annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -164,7 +164,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "SizeConfigWithMachineHealthCheckTimeoutRemoved",
+			name: "When size config removes machine health check timeout it should remove the timeout annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -199,7 +199,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "SizeConfigWithResourceRequests",
+			name: "When size config has resource requests it should set override annotations",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -237,7 +237,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "SizeConfigWithSubnets",
+			name: "When size config has subnet labels on nodes it should set the subnet annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -275,7 +275,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 		},
 
 		{
-			name: "SizeConfigWithPriorityClasses",
+			name: "When size config has priority classes it should set priority class annotations",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -310,7 +310,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "SizeConfigWithMaximumRequestsInflight",
+			name: "When size config has maximum requests inflight it should set inflight annotations",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -365,12 +365,12 @@ func TestResourceRequestsToOverrideAnnotations(t *testing.T) {
 		expected map[string]string
 	}{
 		{
-			name:     "empty input",
+			name:     "When input is empty, it should return empty map",
 			input:    []schedulingv1alpha1.ResourceRequest{},
 			expected: map[string]string{},
 		},
 		{
-			name: "kube apiserver memory request",
+			name: "When kube apiserver has a memory request, it should set the override annotation",
 			input: []schedulingv1alpha1.ResourceRequest{
 				{
 					DeploymentName: "kube-apiserver",
@@ -383,7 +383,7 @@ func TestResourceRequestsToOverrideAnnotations(t *testing.T) {
 			},
 		},
 		{
-			name: "etcd memory and cpu request",
+			name: "When etcd has memory and cpu requests, it should set both in the override annotation",
 			input: []schedulingv1alpha1.ResourceRequest{
 				{
 					DeploymentName: "etcd",
@@ -397,7 +397,7 @@ func TestResourceRequestsToOverrideAnnotations(t *testing.T) {
 			},
 		},
 		{
-			name: "kube-controller manager cpu request",
+			name: "When kube-controller manager has a cpu request, it should set the override annotation",
 			input: []schedulingv1alpha1.ResourceRequest{
 				{
 					DeploymentName: "kube-controller-manager",
@@ -410,7 +410,7 @@ func TestResourceRequestsToOverrideAnnotations(t *testing.T) {
 			},
 		},
 		{
-			name: "kube-apiserver and etcd memory request",
+			name: "When kube-apiserver and etcd both have memory requests, it should set both override annotations",
 			input: []schedulingv1alpha1.ResourceRequest{
 				{
 					DeploymentName: "kube-apiserver",

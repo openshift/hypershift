@@ -39,18 +39,18 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("KMS Spec Validation", func() {
 		Context("Azure KMS", func() {
 			BeforeEach(func() {
-				testCtx := getTestCtx()
-				hc := testCtx.GetHostedCluster()
-				if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform ||
-					hc.Spec.SecretEncryption == nil || hc.Spec.SecretEncryption.KMS == nil ||
+				getTestCtx().SkipIfNotPlatform(hyperv1.AzurePlatform)
+				hc, err := getTestCtx().GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
+				if hc.Spec.SecretEncryption == nil || hc.Spec.SecretEncryption.KMS == nil ||
 					hc.Spec.SecretEncryption.KMS.Azure == nil {
-					Skip("Azure KMS spec validation requires Azure platform with KMS configured")
+					Skip("Azure KMS spec validation requires KMS configured")
 				}
 			})
 
 			It("should have ActiveKey fields populated", func() {
-				testCtx := getTestCtx()
-				hc := testCtx.GetHostedCluster()
+				hc, err := getTestCtx().GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				azureKMS := hc.Spec.SecretEncryption.KMS.Azure
 
 				Expect(azureKMS.ActiveKey.KeyVaultName).NotTo(BeEmpty(),
@@ -62,8 +62,8 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			It("should have KMS authentication configured", func() {
-				testCtx := getTestCtx()
-				hc := testCtx.GetHostedCluster()
+				hc, err := getTestCtx().GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				azureKMS := hc.Spec.SecretEncryption.KMS.Azure
 
 				hasWorkloadIdentity := azureKMS.WorkloadIdentity.ClientID != ""
@@ -92,13 +92,16 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("KMS Functional Validation", func() {
 		It("should encrypt secrets in etcd using KMSv2", func() {
-			e2eutil.GinkgoAtLeast(e2eutil.Version417)
 			testCtx := getTestCtx()
 			ctx := testCtx.Context
 
-			hostedClusterClient := testCtx.GetHostedClusterClient()
-			Expect(hostedClusterClient).NotTo(BeNil(),
-				"hosted cluster client is required; KubeConfig may not be set")
+			testCtx.SkipIfVersionBelow(e2eutil.Version417)
+
+			hc, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+
+			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 
 			testSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -156,8 +159,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:SecretEncryption] Ho
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 
-		hc := testCtx.GetHostedCluster()
-		if hc == nil || hc.Spec.SecretEncryption == nil || hc.Spec.SecretEncryption.KMS == nil {
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		if hc.Spec.SecretEncryption == nil || hc.Spec.SecretEncryption.KMS == nil {
 			Skip("SecretEncryption with KMS is not configured on this hosted cluster")
 		}
 	})

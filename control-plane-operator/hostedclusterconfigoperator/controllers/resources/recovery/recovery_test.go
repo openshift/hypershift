@@ -38,7 +38,7 @@ func TestRecoverMonitoringStack(t *testing.T) {
 		multipleCalls  bool
 	}{
 		{
-			name: "When monitoring stack is healthy it should return true",
+			name: "When monitoring stack is healthy, it should return true",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -63,14 +63,14 @@ func TestRecoverMonitoringStack(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name:           "When prometheus statefulset is not found it should return error",
+			name:           "When prometheus statefulset is not found, it should return error",
 			setupObjects:   []client.Object{},
 			expectedResult: false,
 			expectError:    true,
 			errorContains:  "prometheus statefulSet is still starting, rescheduling reconciliation",
 		},
 		{
-			name: "When prometheus statefulset is not ready it should delete PVCs and pods and return false",
+			name: "When prometheus statefulset is not ready, it should delete PVCs and pods and return false",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -125,7 +125,7 @@ func TestRecoverMonitoringStack(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name: "When prometheus statefulset is not ready and no pods exist it should delete PVCs and return false",
+			name: "When prometheus statefulset is not ready and no pods exist, it should delete PVCs and return false",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -156,7 +156,7 @@ func TestRecoverMonitoringStack(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name: "When prometheus statefulset is not ready and PVC listing fails it should return error",
+			name: "When prometheus statefulset is not ready and PVC listing fails, it should return error",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -182,7 +182,7 @@ func TestRecoverMonitoringStack(t *testing.T) {
 			errorContains:  "failed to list PVCs",
 		},
 		{
-			name: "When prometheus statefulset is not ready and PVC deletion fails it should return error",
+			name: "When prometheus statefulset is not ready and PVC deletion fails, it should return error",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -214,7 +214,7 @@ func TestRecoverMonitoringStack(t *testing.T) {
 			errorContains:  "failed to delete PVC",
 		},
 		{
-			name: "When prometheus statefulset is not ready and pod listing fails it should return error",
+			name: "When prometheus statefulset is not ready and pod listing fails, it should return error",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -240,7 +240,7 @@ func TestRecoverMonitoringStack(t *testing.T) {
 			errorContains:  "failed to list prometheus pods",
 		},
 		{
-			name: "When prometheus statefulset is not ready and pod deletion fails it should return error",
+			name: "When prometheus statefulset is not ready and pod deletion fails, it should return error",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -275,7 +275,7 @@ func TestRecoverMonitoringStack(t *testing.T) {
 			errorContains:  "failed to delete pod",
 		},
 		{
-			name: "When prometheus statefulset is not ready and called multiple times it should only delete PVCs and pods once",
+			name: "When prometheus statefulset is not ready and called multiple times, it should only delete PVCs and pods once",
 			setupObjects: []client.Object{
 				&appsv1.StatefulSet{
 					ObjectMeta: metav1.ObjectMeta{
@@ -331,22 +331,22 @@ func TestRecoverMonitoringStack(t *testing.T) {
 
 			var fakeClient client.Client
 			switch tt.name {
-			case "When prometheus statefulset is not ready and PVC listing fails it should return error":
+			case "When prometheus statefulset is not ready and PVC listing fails, it should return error":
 				// Create a client that will fail on PVC List operations
 				fakeClient = &failingPVCListClient{
 					Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.setupObjects...).Build(),
 				}
-			case "When prometheus statefulset is not ready and PVC deletion fails it should return error":
+			case "When prometheus statefulset is not ready and PVC deletion fails, it should return error":
 				// Create a client that will fail on PVC Delete operations
 				fakeClient = &failingPVCDeleteClient{
 					Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.setupObjects...).Build(),
 				}
-			case "When prometheus statefulset is not ready and pod listing fails it should return error":
+			case "When prometheus statefulset is not ready and pod listing fails, it should return error":
 				// Create a client that will fail on Pod List operations
 				fakeClient = &failingPodListClient{
 					Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.setupObjects...).Build(),
 				}
-			case "When prometheus statefulset is not ready and pod deletion fails it should return error":
+			case "When prometheus statefulset is not ready and pod deletion fails, it should return error":
 				// Create a client that will fail on Pod Delete operations
 				fakeClient = &failingPodDeleteClient{
 					Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.setupObjects...).Build(),

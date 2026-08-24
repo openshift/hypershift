@@ -445,7 +445,7 @@ func TestLoadManifestTemplated(t *testing.T) {
 		validate      func(g Gomega, obj client.Object, gvk *schema.GroupVersionKind, err error)
 	}{
 		{
-			name:          "When Name=etcd, service.yaml should render to original hardcoded values",
+			name:          "When Name=etcd, it should render service.yaml to original hardcoded values",
 			componentName: "etcd",
 			fileName:      "service.yaml",
 			templateData:  map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client", "DiscoveryServiceName": "etcd-discovery"},
@@ -458,7 +458,7 @@ func TestLoadManifestTemplated(t *testing.T) {
 			},
 		},
 		{
-			name:          "When Name=etcd-events, service.yaml should render shard-specific names",
+			name:          "When Name=etcd-events, it should render service.yaml with shard-specific names",
 			componentName: "etcd",
 			fileName:      "service.yaml",
 			templateData:  map[string]string{"Name": "etcd-events", "ClientServiceName": "etcd-client-events", "DiscoveryServiceName": "etcd-discovery-events"},
@@ -471,7 +471,7 @@ func TestLoadManifestTemplated(t *testing.T) {
 			},
 		},
 		{
-			name:          "When Name=etcd, discovery-service.yaml should render to original values",
+			name:          "When Name=etcd, it should render discovery-service.yaml to original values",
 			componentName: "etcd",
 			fileName:      "discovery-service.yaml",
 			templateData:  map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client", "DiscoveryServiceName": "etcd-discovery"},
@@ -483,7 +483,7 @@ func TestLoadManifestTemplated(t *testing.T) {
 			},
 		},
 		{
-			name:          "When Name=etcd-events, discovery-service.yaml should render shard names",
+			name:          "When Name=etcd-events, it should render discovery-service.yaml with shard names",
 			componentName: "etcd",
 			fileName:      "discovery-service.yaml",
 			templateData:  map[string]string{"Name": "etcd-events", "ClientServiceName": "etcd-client-events", "DiscoveryServiceName": "etcd-discovery-events"},
@@ -495,7 +495,7 @@ func TestLoadManifestTemplated(t *testing.T) {
 			},
 		},
 		{
-			name:          "When Name=etcd, pdb.yaml should render to original values",
+			name:          "When Name=etcd, it should render pdb.yaml to original values",
 			componentName: "etcd",
 			fileName:      "pdb.yaml",
 			templateData:  map[string]string{"Name": "etcd", "ClientServiceName": "etcd-client", "DiscoveryServiceName": "etcd-discovery"},
@@ -505,7 +505,7 @@ func TestLoadManifestTemplated(t *testing.T) {
 			},
 		},
 		{
-			name:          "When Name=etcd-events, pdb.yaml should render shard name",
+			name:          "When Name=etcd-events, it should render pdb.yaml with shard name",
 			componentName: "etcd",
 			fileName:      "pdb.yaml",
 			templateData:  map[string]string{"Name": "etcd-events", "ClientServiceName": "etcd-client-events", "DiscoveryServiceName": "etcd-discovery-events"},

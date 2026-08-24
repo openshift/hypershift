@@ -4,10 +4,9 @@ title: Contribute documentation
 
 # Contributing documentation
 
-HyperShift's documentation is based on [MkDocs](https://www.mkdocs.org) with the
-[Material theme](https://squidfunk.github.io) and roughly follows the
-[Diátaxis Framework](https://diataxis.fr) for content organization and stylistic
-approach.
+HyperShift's documentation is based on [Zensical](https://zensical.org) and
+roughly follows the [Diátaxis Framework](https://diataxis.fr) for content
+organization and stylistic approach.
 
 The documentation site is built and published automatically to [https://hypershift.pages.dev/](https://hypershift.pages.dev/).
 
@@ -17,12 +16,8 @@ All documentation lives in the [`docs` directory](https://github.com/openshift/h
 
 All content should be Markdown files placed in the [`docs/content` directory](https://github.com/openshift/hypershift/tree/main/docs/content).
 The [MkDocs configuration file](https://github.com/openshift/hypershift/blob/main/docs/mkdocs.yml)
-contains all the MkDocs and Material theme configuration, including the navigation
-structure for the site.
-
-The `quay.io/hypershift/mkdocs-material:latest` image ([Dockerfile](https://github.com/openshift/hypershift/blob/main/docs/Dockerfile))
-is published to provide an easy and portable way to run `mkdocs` fully configured
-to preview the site equivalent to the published site.
+contains all the Zensical configuration, including the navigation structure for
+the site.
 
 !!! note
 
@@ -53,20 +48,19 @@ To start a live preview of the site which automatically rebuilds and refreshes i
 response to local content and configuration changes, run the following from the
 `docs` directory:
 
-```shell
-make serve-containerized
-```
+=== "Native"
 
-Visit the site at [http://0.0.0.0:8000](http://0.0.0.0:8000).
+    ```shell
+    uv run --frozen zensical serve
+    ```
 
-!!! note
+=== "Containerized"
 
-    The `serve-containerized` Make target runs the `quay.io/hypershift/mkdocs-material:latest`
-    image with the local container runtime. Running `mkdocs` natively is possible
-    but not supported.
+    ```shell
+    make serve-containerized
+    ```
 
-    If you need more control over the local preview server, consult [the Makefile](https://github.com/openshift/hypershift/blob/main/docs/Makefile)
-    as a guide to constructing your own local server command.
+Visit the site at [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
 ## Generate the API reference
 

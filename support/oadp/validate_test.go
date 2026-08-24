@@ -29,14 +29,14 @@ func TestValidateOADPComponents(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name:        "OADP operator deployment not found",
+			name:        "When OADP operator deployment does not exist, it should return an error",
 			namespace:   "openshift-adp",
 			objects:     []client.Object{},
 			expectError: true,
 			errorMsg:    "OADP operator deployment not found",
 		},
 		{
-			name:      "OADP operator deployment not ready",
+			name:      "When OADP operator deployment is not ready, it should return an error",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				&appsv1.Deployment{
@@ -53,7 +53,7 @@ func TestValidateOADPComponents(t *testing.T) {
 			errorMsg:    "OADP operator deployment is not ready",
 		},
 		{
-			name:      "Velero deployment not found",
+			name:      "When Velero deployment does not exist, it should return an error",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				&appsv1.Deployment{
@@ -70,7 +70,7 @@ func TestValidateOADPComponents(t *testing.T) {
 			errorMsg:    "velero deployment not found",
 		},
 		{
-			name:      "Velero deployment not ready",
+			name:      "When Velero deployment is not ready, it should return an error",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				&appsv1.Deployment{
@@ -96,7 +96,7 @@ func TestValidateOADPComponents(t *testing.T) {
 			errorMsg:    "velero deployment is not ready",
 		},
 		{
-			name:      "All deployments ready",
+			name:      "When all deployments are ready, it should succeed",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				&appsv1.Deployment{
@@ -158,14 +158,14 @@ func TestVerifyDPAStatus(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name:        "No DPA resources found",
+			name:        "When no DPA resources exist, it should return an error",
 			namespace:   "openshift-adp",
 			objects:     []client.Object{},
 			expectError: true,
 			errorMsg:    "no DataProtectionApplication resources found",
 		},
 		{
-			name:      "DPA with Reconciled=True condition",
+			name:      "When DPA has Reconciled=True condition, it should succeed",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithCondition("test-dpa", "openshift-adp", "Reconciled", "True"),
@@ -173,7 +173,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:      "DPA with Reconciled=False condition",
+			name:      "When DPA has Reconciled=False condition, it should return an error",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithCondition("test-dpa", "openshift-adp", "Reconciled", "False"),
@@ -182,7 +182,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 			errorMsg:    "no ready DataProtectionApplication found",
 		},
 		{
-			name:      "DPA with different condition type",
+			name:      "When DPA has a different condition type, it should return an error",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithCondition("test-dpa", "openshift-adp", "Available", "True"),
@@ -191,7 +191,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 			errorMsg:    "no ready DataProtectionApplication found",
 		},
 		{
-			name:      "Multiple DPAs, one ready",
+			name:      "When multiple DPAs exist with one ready, it should succeed",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithCondition("test-dpa-1", "openshift-adp", "Reconciled", "False"),
@@ -200,7 +200,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:      "DPA without status",
+			name:      "When DPA has no status, it should return an error",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithoutStatus("test-dpa", "openshift-adp"),
@@ -246,14 +246,14 @@ func TestCheckDPAHypershiftPlugin(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name:        "No DPA resources found",
+			name:        "When no DPA resources exist, it should return an error",
 			namespace:   "openshift-adp",
 			objects:     []client.Object{},
 			expectError: true,
 			errorMsg:    "no DataProtectionApplication resources found",
 		},
 		{
-			name:      "DPA with hypershift plugin",
+			name:      "When DPA has hypershift plugin, it should succeed",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithPlugins("test-dpa", "openshift-adp", []string{"openshift", "aws", "hypershift"}),
@@ -261,7 +261,7 @@ func TestCheckDPAHypershiftPlugin(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:      "DPA without hypershift plugin",
+			name:      "When DPA does not have hypershift plugin, it should return an error",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithPlugins("test-dpa", "openshift-adp", []string{"openshift", "aws"}),
@@ -270,7 +270,7 @@ func TestCheckDPAHypershiftPlugin(t *testing.T) {
 			errorMsg:    "HyperShift plugin not found",
 		},
 		{
-			name:      "Multiple DPAs, one with hypershift plugin",
+			name:      "When multiple DPAs exist with one having hypershift plugin, it should succeed",
 			namespace: "openshift-adp",
 			objects: []client.Object{
 				createDPAWithPlugins("test-dpa-1", "openshift-adp", []string{"openshift", "aws"}),
@@ -319,7 +319,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name:        "HostedCluster not found",
+			name:        "When HostedCluster does not exist, it should return an error",
 			hcName:      "test-cluster",
 			hcNamespace: "clusters",
 			objects:     []client.Object{},
@@ -327,7 +327,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 			errorMsg:    "not found",
 		},
 		{
-			name:        "AWS platform",
+			name:        "When HostedCluster has AWS platform, it should return AWS",
 			hcName:      "test-cluster",
 			hcNamespace: "clusters",
 			objects: []client.Object{
@@ -337,7 +337,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "Agent platform (lowercase)",
+			name:        "When HostedCluster has Agent platform, it should return AGENT in uppercase",
 			hcName:      "test-cluster",
 			hcNamespace: "clusters",
 			objects: []client.Object{
@@ -347,7 +347,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "KubeVirt platform",
+			name:        "When HostedCluster has KubeVirt platform, it should return KUBEVIRT in uppercase",
 			hcName:      "test-cluster",
 			hcNamespace: "clusters",
 			objects: []client.Object{
@@ -357,7 +357,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "HostedCluster without platform",
+			name:        "When HostedCluster has no platform type, it should return an error",
 			hcName:      "test-cluster",
 			hcNamespace: "clusters",
 			objects: []client.Object{

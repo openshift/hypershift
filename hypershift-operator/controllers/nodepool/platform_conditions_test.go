@@ -39,7 +39,7 @@ func TestSetPlatformConditions(t *testing.T) {
 		expectedCondValue corev1.ConditionStatus
 	}{
 		{
-			name: "When platform is AWS and image discovery fails it should return error",
+			name: "When platform is AWS and image discovery fails, it should return error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSNodePoolPlatform{}},
@@ -59,7 +59,7 @@ func TestSetPlatformConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionFalse,
 		},
 		{
-			name: "When platform is OpenStack and image discovery fails it should return error",
+			name: "When platform is OpenStack and image discovery fails, it should return error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.OpenStackPlatform, OpenStack: &hyperv1.OpenStackNodePoolPlatform{}},
@@ -103,7 +103,7 @@ func TestSetPlatformConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionTrue,
 		},
 		{
-			name: "When platform is OpenStack and architecture is missing it should set ValidPlatformImage to false",
+			name: "When platform is OpenStack and architecture is missing, it should set ValidPlatformImage to false",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.OpenStackPlatform, OpenStack: &hyperv1.OpenStackNodePoolPlatform{}},
@@ -128,7 +128,7 @@ func TestSetPlatformConditions(t *testing.T) {
 			expectError:       true,
 		},
 		{
-			name: "When platform is KubeVirt and image discovery fails it should return error",
+			name: "When platform is KubeVirt and image discovery fails, it should return error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
@@ -155,7 +155,7 @@ func TestSetPlatformConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionFalse,
 		},
 		{
-			name: "When platform is PowerVS and image discovery fails it should return error",
+			name: "When platform is PowerVS and image discovery fails, it should return error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{Type: hyperv1.PowerVSPlatform, PowerVS: &hyperv1.PowerVSNodePoolPlatform{}},
