@@ -37,12 +37,12 @@ func TestSetupHealthChecks(t *testing.T) {
 		expectReadyToError bool
 	}{
 		{
-			name:               "webhook readiness waits for the webhook server",
+			name:               "When webhooks are enabled it should wait for the webhook server",
 			webhookEnabled:     true,
 			expectReadyToError: true,
 		},
 		{
-			name:           "readiness succeeds when webhooks are disabled",
+			name:           "When webhooks are disabled it should report ready",
 			webhookEnabled: false,
 		},
 	} {
