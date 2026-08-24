@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/cluster/core"
+	clusterdump "github.com/openshift/hypershift/cmd/cluster/dump"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
 	"github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/upsert"
@@ -43,11 +43,11 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 			allErrors = append(allErrors, fmt.Errorf("found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename))
 		}
 	}
-	err = core.DumpCluster(ctx, &core.DumpOptions{
+	err = clusterdump.DumpCluster(ctx, &clusterdump.DumpOptions{
 		Namespace:        hc.Namespace,
 		Name:             hc.Name,
 		ArtifactDir:      artifactDir,
-		LogCheckers:      []core.LogChecker{findKubeObjectUpdateLoops},
+		LogCheckers:      []clusterdump.LogChecker{findKubeObjectUpdateLoops},
 		DumpGuestCluster: dumpGuestCluster,
 		Log:              zapr.NewLogger(dumpLogger),
 	})
