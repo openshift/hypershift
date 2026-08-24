@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/contextbackground"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/e2eutilallowlist"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/guestcluster"
+	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/hcpstatuspatch"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/ipv6url"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/sippyannotation"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/testcasename"
@@ -67,6 +68,7 @@ func allAnalyzers() []*analysis.Analyzer {
 		vacuouspass.Analyzer,
 		ipv6url.Analyzer,
 		e2eutilallowlist.Analyzer,
+		hcpstatuspatch.Analyzer,
 	}
 }
 
