@@ -30,7 +30,7 @@ relying on reviewer memory. That matters for several reasons:
 
 ## Analyzers
 
-The plugin ships 7 analyzers, scoped so each rule only fires where it applies.
+The plugin ships 8 analyzers, scoped so each rule only fires where it applies.
 
 ### Unit test conventions (`TESTING.md`, unit tests only)
 
@@ -48,6 +48,12 @@ The plugin ships 7 analyzers, scoped so each rule only fires where it applies.
 | `vacuouspass`       | Flags vacuously-passing tests that iterate a collection without asserting it is non-empty.        |
 | `ipv6url`           | Detects `fmt.Sprintf` URL patterns that break with IPv6; use `net.JoinHostPort` instead.          |
 | `sippyannotation`   | Requires the correct Sippy/Jira `[Feature:X]` annotations on Ginkgo `Describe` blocks.            |
+
+### HostedControlPlane status patching (repo-wide, see [CNTRLPLANE-3532](https://redhat.atlassian.net/browse/CNTRLPLANE-3532))
+
+| Analyzer          | Enforces                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `hcpstatuspatch`  | Bans `Status().Update()` and unguarded `MergeFrom()` status patches on `HostedControlPlane`; use `support/statuspatching` instead. **Not yet enabled in `.golangci.yml`** — see below. |
 
 ## How it's built and run
 
@@ -79,3 +85,9 @@ analyzers' own tests before enforcement is turned on. (A brand-new reusable
 workflow can't get a green pre-merge run on the PR that introduces it, because
 GitHub resolves `uses: ...@main` and the `pull_request` trigger from the base
 branch — so the foundational plumbing has to land on `main` first.)
+
+The same staging applies per-analyzer when a new rule would fail on violations
+still being fixed in other in-flight PRs: `hcpstatuspatch` lands with its own
+tests but is deliberately left out of `linters.settings.custom.hypershiftlinter.settings.analyzers.enable`
+in `.golangci.yml` until the last HostedControlPlane status-patch call sites it
+would flag are migrated to `support/statuspatching` elsewhere.
