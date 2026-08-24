@@ -7891,7 +7891,8 @@ spec:
                                 - Contain only lowercase letters, digits, underscores, or hyphens
                                 - End with a lowercase letter or digit (not a hyphen or underscore)
                                 - Be 1-63 characters long
-                                GCP reserves the 'goog' prefix for system labels.
+                                GCP reserves the 'goog' prefix for system labels, with the exception of
+                                'goog-partner-solution' which Google requires for partner attribution tracking.
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 1
@@ -7901,9 +7902,9 @@ spec:
                                   only lowercase letters, digits, underscores, or
                                   hyphens, and end with a letter or digit
                                 rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
-                              - message: Label keys starting with the reserved 'goog'
-                                  prefix are not allowed
-                                rule: '!self.startsWith(''goog'')'
+                              - message: 'Label keys starting with the reserved ''goog''
+                                  prefix are not allowed (exception: ''goog-partner-solution'')'
+                                rule: '!self.startsWith(''goog'') || self == ''goog-partner-solution'''
                             value:
                               description: |-
                                 value is the value part of the label. A label value can have a maximum of 63 characters.

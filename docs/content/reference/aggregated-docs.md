@@ -47872,7 +47872,8 @@ For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
 - Contain only lowercase letters, digits, underscores, or hyphens
 - End with a lowercase letter or digit (not a hyphen or underscore)
 - Be 1-63 characters long
-GCP reserves the &lsquo;goog&rsquo; prefix for system labels.
+GCP reserves the &lsquo;goog&rsquo; prefix for system labels, with the exception of
+&lsquo;goog-partner-solution&rsquo; which Google requires for partner attribution tracking.
 See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
 </td>
 </tr>
