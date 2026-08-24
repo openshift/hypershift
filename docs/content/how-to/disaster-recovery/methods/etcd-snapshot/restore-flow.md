@@ -10,54 +10,64 @@ title: Restore Flow
 
 This page describes the end-to-end restore process when recovering a Hosted Control Plane from an etcd snapshot backup. The flow involves the OADP HyperShift plugin (URL injection), the Control Plane Operator (etcd restore), and the etcd init container (snapshot download and apply).
 
-## End-to-End Sequence
+## End-to-End Sequence Diagrams
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Velero
-    participant Plugin as OADP Plugin
-    participant BSL as BackupStorageLocation
-    participant HC as HostedCluster
-    participant HCP as HostedControlPlane
-    participant CPO as Control Plane Operator
-    participant etcd as etcd StatefulSet
-    participant S3 as Object Storage
+The restore flow has two phases: Velero restore with URL injection, and etcd snapshot application.
 
-    User->>Velero: Create Restore CR (from backup)
+??? note "Phase 1: Velero Restore and URL Injection"
 
-    Velero->>Plugin: Execute(HostedCluster)
-    Plugin->>Plugin: Read etcd-snapshot-url annotation
-    Plugin->>BSL: Fetch credentials
-    Plugin->>Plugin: presignS3URL() - convert s3:// to HTTPS
-    Plugin->>HC: Inject RestoreSnapshotURL into Spec
-    Plugin->>HC: Add restored-from-backup annotation
+    ```mermaid
+    sequenceDiagram
+        participant User
+        participant Velero
+        participant Plugin as OADP Plugin
+        participant BSL as BackupStorageLocation
+        participant HC as HostedCluster
+        participant HCP as HostedControlPlane
 
-    Velero->>Plugin: Execute(HostedControlPlane)
-    Plugin->>Plugin: Read etcd-snapshot-url annotation
-    Plugin->>Plugin: presignS3URL()
-    Plugin->>HCP: Inject RestoreSnapshotURL into Spec
+        User->>Velero: Create Restore CR (from backup)
 
-    Velero->>Plugin: Execute(Pods)
-    Plugin-->>Velero: Skip all pods
+        Velero->>Plugin: Execute(HostedCluster)
+        Plugin->>Plugin: Read etcd-snapshot-url annotation
+        Plugin->>BSL: Fetch credentials
+        Plugin->>Plugin: presignS3URL() - convert s3:// to HTTPS
+        Plugin->>HC: Inject RestoreSnapshotURL into Spec
+        Plugin->>HC: Add restored-from-backup annotation
 
-    Note over Velero: Restore completes
+        Velero->>Plugin: Execute(HostedControlPlane)
+        Plugin->>Plugin: Read etcd-snapshot-url annotation
+        Plugin->>Plugin: presignS3URL()
+        Plugin->>HCP: Inject RestoreSnapshotURL into Spec
 
-    CPO->>CPO: Detect RestoreSnapshotURL set
-    CPO->>etcd: Inject etcd-init container
+        Velero->>Plugin: Execute(Pods)
+        Plugin-->>Velero: Skip all pods
 
-    Note over etcd: etcd Pod starts with init container
+        Note over Velero: Restore completes
+    ```
 
-    etcd->>S3: Download snapshot from presigned URL
-    etcd->>etcd: Validate (check for XML error response)
-    etcd->>etcd: etcdutl/etcdctl snapshot restore
-    etcd->>etcd: Move restored data to /var/lib/data
+??? note "Phase 2: Etcd Snapshot Application"
 
-    Note over etcd: etcd starts with restored data
+    ```mermaid
+    sequenceDiagram
+        participant CPO as Control Plane Operator
+        participant etcd as etcd StatefulSet
+        participant S3 as Object Storage
 
-    CPO->>CPO: Set EtcdSnapshotRestored = True
-    CPO->>etcd: Remove etcd-init container
-```
+        CPO->>CPO: Detect RestoreSnapshotURL set
+        CPO->>etcd: Inject etcd-init container
+
+        Note over etcd: etcd Pod starts with init container
+
+        etcd->>S3: Download snapshot from presigned URL
+        etcd->>etcd: Validate (check for XML error response)
+        etcd->>etcd: etcdutl/etcdctl snapshot restore
+        etcd->>etcd: Move restored data to /var/lib/data
+
+        Note over etcd: etcd starts with restored data
+
+        CPO->>CPO: Set EtcdSnapshotRestored = True
+        CPO->>etcd: Remove etcd-init container
+    ```
 
 ## Step 1: Restore CR Creation
 
@@ -224,7 +234,7 @@ Before performing a restore, ensure:
 - [ ] OADP components are running and the DPA is reconciled.
 - [ ] For AWS: BSL credentials are valid and have permission to read the snapshot from S3.
 - [ ] For Agent platform: `InfraEnv` objects are preserved (do not delete them).
-- [ ] Review [Disaster Recovery Prerequisites](../prerequisites.md) for service publishing strategy requirements.
+- [ ] Review [Disaster Recovery Prerequisites](../../prerequisites.md) for service publishing strategy requirements.
 
 ## Post-Restore Steps
 
@@ -258,7 +268,7 @@ After the restore completes:
 ## Error Scenarios
 
 | Scenario | Symptom | Recovery |
-|----------|---------|----------|
+| ---------- | --------- | ---------- |
 | Presigned URL expired (>1h) | etcd-init exits with error, logs show XML error response | Create a new restore from the same backup (generates fresh presigned URL) |
 | Snapshot file corrupted | etcdctl snapshot restore fails | The upload uses S3 CRC32 integrity checks at transport level. If corruption still occurs, restore from a different backup |
 | S3 bucket not accessible | curl download fails | Verify BSL credentials and network connectivity |

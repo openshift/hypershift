@@ -15,7 +15,7 @@ The HCPEtcdBackup controller automatically detects the authentication mode from 
 The credential Secret originates in the OADP namespace (typically `openshift-adp`) and is always named `cloud-credentials`. It always uses the `cloud` data key. When the OADP HyperShift plugin triggers an etcd snapshot backup, it copies this Secret to the HyperShift Operator namespace, remapping the key and preserving the original:
 
 | | Namespace | Secret Name | Data Keys |
-|---|-----------|-------------|-----------|
+| --- | ----------- | ------------- | ----------- |
 | **Source** | `<OADP_NAMESPACE/VELERO_NAMESPACE>` | `cloud-credentials` | `cloud` |
 | **Destination** | `hypershift` (HO namespace) | `cloud-credentials` | `credentials` (remapped from `cloud`) + `cloud` (preserved) |
 
@@ -40,7 +40,7 @@ The controller inspects the content of the credential Secret to determine the au
 ### Azure Credential Modes
 
 | Mode | Detection | PodSpec Behavior |
-|------|-----------|------------------|
+| ------ | ----------- | ------------------ |
 | **Workload Identity** | Secret has a `cloud` key containing a non-empty `AZURE_CLIENT_ID=` value | Pod label `azure.workload.identity/use=true`, SA annotated with `azure.workload.identity/client-id`, no credentials file, no `--azure-auth-type` flag |
 | **Client Secret** | `credentials` key contains JSON with a non-empty `clientSecret` field | Mounts credentials file, passes `--credentials-file` and `--azure-auth-type client-secret` |
 | **Managed Identity** | `credentials` key contains JSON without a `clientSecret` field | Mounts credentials file, passes `--credentials-file` and `--azure-auth-type managed-identity` |
@@ -271,7 +271,7 @@ Self-managed Azure uses the same Workload Identity mechanism as ARO HCP. The cre
 - The OIDC issuer URL comes from the management cluster (AKS or OCP), not from an ARO HCP environment
 - The storage account is provisioned independently
 
-For a complete step-by-step guide, see [Etcd Snapshot Backup for Self-Managed Azure](../../azure/backup-and-restore-etcd-snapshot.md).
+For a complete step-by-step guide, see [Azure Platform Guide](../../platform-guides/azure.md).
 
 ## OADP Plugin Integration
 

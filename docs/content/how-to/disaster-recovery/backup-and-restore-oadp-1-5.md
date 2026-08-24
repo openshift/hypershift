@@ -26,6 +26,7 @@ This guide focuses on the following platforms:
 - [KubeVirt](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
 
 ### Creating Cloud Provider Credentials
+
 Begin by creating credentials for your backup storage platform. Specific instructions are available in the official documentation. For AWS S3 and MinIO, the basic steps are:
 
 ```bash
@@ -60,8 +61,7 @@ oc create secret generic cloud-credentials -n openshift-adp --from-file cloud=cr
 
 !!! note
 
-    For Azure, additional resources (Storage Account, Blob Container) must be created. Follow the [Azure OADP installation guide](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-azure.html) or the [self-managed Azure etcd backup setup](../azure/backup-and-restore-etcd-snapshot.md#setup) for details.
-
+    For Azure, additional resources (Storage Account, Blob Container) must be created. Follow the [Azure OADP installation guide](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-azure.html) or the [Azure Platform Guide](platform-guides/azure.md) for details.
 
 ### Sample DPA Configurations
 
@@ -246,15 +246,14 @@ Below are some samples of DPA configurations for the mentioned platforms
           resourceTimeout: 2h
     ```
 
-
 Once you create any of these DPA objects, several pods will be instantiated in the `openshift-adp` namespace. This includes one `node-agent` per node in the Management Cluster and the `velero` deployment.
 
 !!! note
 
     To follow backup and restore procedures, you can monitor the logs in the velero pod.
 
-
 ## Backup and Upload
+
 === "**AWS**"
     ### Data Plane workloads backup
 
@@ -865,7 +864,6 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
-
 ## Restore
 
 For the restoration procedure, ensure that there are no Pods/PVCs running in the HostedControlPlane namespace to facilitate a successful restoration. If restoring the HostedCluster within the same Management cluster, delete the following objects:
@@ -922,7 +920,6 @@ The restoration process is considered complete once the `status.phase` is `Compl
 
     The restore may only be done on the same management cluster where the backup was created. Depending on the HostedCluster provider you are using, there are important topics to have in mind before the restoration.
 
-
 === "**AWS**"
 
     - Node readoption is not supported in this provider yet, so the worker nodes will be reprovisioned at restoration time
@@ -953,14 +950,13 @@ The restoration process is considered complete once the `status.phase` is `Compl
 
     - Restoration on the same management cluster only (cross-cluster restore is not currently supported due to the lack of end-to-end testing coverage for that scenario)
     - Node readoption is not supported in this provider yet, so the worker nodes will be reprovisioned at restoration time
-    - For etcd snapshot backup and restore details specific to self-managed Azure, see [Etcd Snapshot Backup and Restore for Self-Managed Azure](../azure/backup-and-restore-etcd-snapshot.md)
-
+    - For etcd snapshot backup and restore details specific to self-managed Azure, see [Azure Platform Guide](platform-guides/azure.md)
 
 ## Schedule
 
 OADP provides the ability to schedule backups using the Schedule CR. This is fully compatible with the Hosted Control Planes backup procedure; just make sure you are following the official Red Hat documentation.
 
-- https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/backup_and_restore/oadp-application-backup-and-restore#oadp-scheduling-backups-doc
+- <https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/backup_and_restore/oadp-application-backup-and-restore#oadp-scheduling-backups-doc>
 
 ## Watching and Troubleshooting
 
@@ -1041,7 +1037,6 @@ velero delete backup hc-clusters-hosted-backup
 !!! Important
 
     If you modify the folder structure of the remote storage where your backups are hosted, you may encounter issues with `backuprepositories.velero.io`. In such cases, you will need to recreate all the associated objects, including DPAs, backups, restores, etc.
-
 
 ## HostedCluster Configuration Requirements
 
