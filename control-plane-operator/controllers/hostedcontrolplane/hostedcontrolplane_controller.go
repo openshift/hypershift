@@ -88,6 +88,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/validations"
@@ -110,7 +111,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -2320,20 +2320,20 @@ func (r *HostedControlPlaneReconciler) removeHCPIngressFromRoutes(ctx context.Co
 		// when the HCP router admits routes. We filter by this specific name to ensure
 		// we only remove ingress entries from the HCP router, not from other routers
 		// (e.g., the default ingress controller router).
-		originalRoute := route.DeepCopy()
-		filteredIngress := make([]routev1.RouteIngress, 0, len(route.Status.Ingress))
-		for _, ingress := range route.Status.Ingress {
-			if ingress.RouterName != "router" {
-				filteredIngress = append(filteredIngress, ingress)
-			}
-		}
-		if len(filteredIngress) != len(route.Status.Ingress) {
-			route.Status.Ingress = filteredIngress
-			if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {
-				if err := r.Status().Patch(ctx, route, client.MergeFrom(originalRoute)); err != nil {
-					return fmt.Errorf("failed to clear route %s ingress: %w", route.Name, err)
+		// The filtering is recomputed inside the PatchStatus closure against whatever is
+		// freshly fetched on each retry, rather than a value captured beforehand, so a
+		// concurrent ingress write from the actual router controller isn't clobbered.
+		if err := statuspatching.PatchStatus(ctx, r.Client, route, func() error {
+			filteredIngress := make([]routev1.RouteIngress, 0, len(route.Status.Ingress))
+			for _, ingress := range route.Status.Ingress {
+				if ingress.RouterName != "router" {
+					filteredIngress = append(filteredIngress, ingress)
 				}
 			}
+			route.Status.Ingress = filteredIngress
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to clear route %s ingress: %w", route.Name, err)
 		}
 	}
 
