@@ -68,6 +68,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	supportvalidations "github.com/openshift/hypershift/support/validations"
@@ -116,6 +117,8 @@ import (
 	"github.com/google/uuid"
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/ini.v1"
 )
 
@@ -356,6 +359,8 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 	return nil
 }
 
+var hostedClusterTracer = tracing.Tracer("hostedcluster")
+
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -370,6 +375,36 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 
+	startOpts := []trace.SpanStartOption{
+		trace.WithAttributes(
+			tracing.AttrHostedClusterName.String(hcluster.Name),
+			tracing.AttrHostedClusterNamespace.String(hcluster.Namespace),
+			tracing.AttrHostedClusterPlatform.String(string(hcluster.Spec.Platform.Type)),
+		),
+	}
+	if link := tracing.SpanLinkFromAnnotations(hcluster.Annotations); link.SpanContext.IsValid() {
+		startOpts = append(startOpts, trace.WithLinks(link))
+	}
+	ctx, span := hostedClusterTracer.Start(ctx, tracing.SpanHostedClusterReconcile, startOpts...)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	if hcluster.Spec.InfraID != "" {
+		span.SetAttributes(tracing.AttrHostedClusterInfraID.String(hcluster.Spec.InfraID))
+		span.SetAttributes(tracing.CorrelationAttrs(hcluster.Spec.InfraID)...)
+	}
+	if hcluster.Spec.ClusterID != "" {
+		span.SetAttributes(tracing.AttrHostedClusterClusterID.String(hcluster.Spec.ClusterID))
+	}
+	if !hcluster.DeletionTimestamp.IsZero() {
+		span.SetAttributes(tracing.AttrHostedClusterDeleting.Bool(true))
+	}
+
 	var res reconcile.Result
 	if r.overwriteReconcile != nil {
 		res, err = r.overwriteReconcile(ctx, req, log, hcluster)
@@ -378,6 +413,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	} else {
 		res, err = r.reconcile(ctx, req, log, hcluster)
 	}
+
 	condition := metav1.Condition{
 		Type:               string(hyperv1.ReconciliationSucceeded),
 		ObservedGeneration: hcluster.Generation,
@@ -498,6 +534,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if !hcluster.DeletionTimestamp.IsZero() {
+		ctx, deleteSpan := hostedClusterTracer.Start(ctx, tracing.SpanHostedClusterDelete,
+			trace.WithAttributes(
+				tracing.AttrHostedClusterName.String(hcluster.Name),
+				tracing.AttrHostedClusterNamespace.String(hcluster.Namespace),
+			),
+		)
+		defer deleteSpan.End()
+
 		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
 		// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration annotation.
 		// This annotation will create a new condition called HostedClusterDestroyed which in conjunction with CloudResourcesDestroyed
@@ -1373,7 +1417,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	//   - Core HCP chain failure / nil HCP → Phase 8 components blocked.
 	//   - Non-critical sync → never blocked, always runs.
 
-	report := &reconcileReport{}
+	report := &reconcileReport{ctx: ctx}
 
 	// Phase 5: Pull secret, CPO image resolution, and namespace setup.
 	// These are grouped because namespace PSA labels depend on CPO image labels —
