@@ -343,7 +343,7 @@ func WaitForGuestKubeConfig(t testing.TB, ctx context.Context, client crclient.C
 	return data
 }
 
-func WaitForGuestRestConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) *rest.Config {
+func WaitForGuestRestConfig(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) *rest.Config {
 	g := NewWithT(t)
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
@@ -2850,7 +2850,7 @@ func extractDataFromFamilies(metricFamilies map[string]*dto.MetricFamily, metric
 
 // ValidateMetricPresence checks if a metric meets the expected presence criteria
 // Returns true if validation passes, false otherwise
-func ValidateMetricPresence(t *testing.T, mf map[string]*dto.MetricFamily, query, labelKey, labelValue, metricName string, areMetricsExpectedToBePresent bool) bool {
+func ValidateMetricPresence(t testing.TB, mf map[string]*dto.MetricFamily, query, labelKey, labelValue, metricName string, areMetricsExpectedToBePresent bool) bool {
 	labelPairs := extractDataFromFamilies(mf, query, labelKey, labelValue)
 	if areMetricsExpectedToBePresent {
 		if len(labelPairs) < 1 {

@@ -322,7 +322,7 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 						g.Expect(runningPodName).NotTo(BeEmpty(), "a running private-router pod should exist")
 
 						_, err := v2util.RunCommandInPod(tc.Context, clientset, mgmtRestConfig,
-							tc.ControlPlaneNamespace, runningPodName, "private-router",
+							tc.ControlPlaneNamespace, runningPodName, "router",
 							"curl", "--connect-timeout", "2", "-Iks", kasAddress)
 						g.Expect(err).To(HaveOccurred(),
 							"private-router should not be able to reach the management KAS at %s", kasAddress)
