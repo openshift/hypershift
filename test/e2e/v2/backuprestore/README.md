@@ -162,7 +162,7 @@ minio_password="admin123"
 bucket_name="oadp-backup"
 
 mkdir -p /opt/minio/data
-podman network create minio-net
+podman network create minio-net 2>/dev/null || true
 podman run -d --name minio --network minio-net \
   -p 9000:9000 -p 9001:9001 \
   -e MINIO_ROOT_USER=$minio_user \
@@ -177,7 +177,7 @@ podman run --rm --network minio-net --entrypoint=/bin/sh quay.io/minio/mc -c "\
   mc mb myminio/${bucket_name}"
 ```
 
-The MinIO endpoint accessible from the management cluster depends on your environment. In CI, it is `192.168.111.1:9000` (the virthost IP). When running locally, use the host IP reachable from the cluster.
+The MinIO endpoint accessible from the management cluster depends on your environment. In CI, it is `192.168.111.1` (the virthost IP). When running locally, use the host IP reachable from the cluster.
 
 * Secret
 
@@ -239,7 +239,7 @@ EOF
 ```
 
 Note: For OpenShift ADP 1.5+, the customPlugins might be left out. Instead, the hypershift plugin can be listed directly under defaultPlugins as follows:
-```
+```yaml
       defaultPlugins:
         - openshift
         - aws
@@ -304,9 +304,13 @@ EOF
 
 The backup/restore test framework handles these Agent-specific steps automatically:
 
-- **Before backup**: AgentMachine and AgentCluster resources are paused with the `cluster.x-k8s.io/paused` annotation to prevent CAPI reconciliation during the backup.
+- **During backup**: AgentMachine and AgentCluster resources are paused with the `cluster.x-k8s.io/paused` annotation to prevent CAPI reconciliation before the backup and unpaused after backup.
 - **Before breaking the control plane**: Agents are annotated with `agent-install.openshift.io/skip-spoke-cleanup` and ClusterDeployment is set with `preserveOnDelete` to prevent agents from being unbound and hosts from being rebooted.
-- **After restore**: CAPI resources are unpaused so reconciliation resumes.
+- **After restore**: CAPI resources are unpaused because they were backed up while being paused and the restore operation brings them back as paused.
+
+##### KubeVirt Platform Notes
+
+KubeVirt requires no platform-specific pre/post steps beyond the shared OADP setup above.
 
 ## Test Structure
 
