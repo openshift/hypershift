@@ -3316,32 +3316,61 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			},
 		}
 	}
+	testHCP := func(infraID string) *hyperv1.HostedControlPlane {
+		hcp := controlplaneoperator.HostedControlPlane(
+			hcpmanifests.HostedControlPlaneNamespace("fake-namespace", "fake-cluster"),
+			"fake-cluster",
+		)
+		hcp.Spec.InfraID = infraID
+		return hcp
+	}
 	tests := []struct {
-		name string
-		hc   *hyperv1.HostedCluster
+		name           string
+		hc             *hyperv1.HostedCluster
+		hcp            *hyperv1.HostedControlPlane
+		wantInfraID    string
+		expectRestored bool
 	}{
 		{
-			name: "When both IDs are missing it should generate both",
+			name: "When both IDs are missing, it should generate both",
 			hc:   testHC("", ""),
 		},
 		{
-			name: "When cluster ID is missing it should generate cluster ID",
+			name: "When cluster ID is missing, it should generate cluster ID",
 			hc:   testHC("fake-infra", ""),
 		},
 		{
-			name: "When infra ID is missing it should generate infra ID",
+			name: "When infra ID is missing, it should generate infra ID",
 			hc:   testHC("", "fake-uuid"),
 		},
 		{
-			name: "When both IDs are already set it should not generate any",
+			name: "When both IDs are already set, it should not generate any",
 			hc:   testHC("fake-infra", "fake-uuid"),
+		},
+		{
+			name:           "When infraID is cleared and HCP has the original, it should restore infraID",
+			hc:             testHC("", "fake-uuid"),
+			hcp:            testHCP("original-infra"),
+			wantInfraID:    "original-infra",
+			expectRestored: true,
+		},
+		{
+			name:           "When HostedCluster infraID differs from HCP, it should restore infraID from HCP",
+			hc:             testHC("new-infra", "fake-uuid"),
+			hcp:            testHCP("original-infra"),
+			wantInfraID:    "original-infra",
+			expectRestored: true,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			objects := []crclient.Object{test.hc}
+			if test.hcp != nil {
+				objects = append(objects, test.hcp)
+			}
 			r := &HostedClusterReconciler{
 				CertRotationScale: 24 * time.Hour,
-				Client:            fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.hc).Build(),
+				Client:            fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
 			}
 			g := NewGomegaWithT(t)
 			previousInfraID := test.hc.Spec.InfraID
@@ -3353,12 +3382,64 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
+			if test.expectRestored {
+				g.Expect(resultHC.Spec.InfraID).To(Equal(test.wantInfraID))
+				return
+			}
 			if len(previousClusterID) > 0 {
 				g.Expect(resultHC.Spec.ClusterID).To(BeIdenticalTo(previousClusterID))
 			}
 			if len(previousInfraID) > 0 {
 				g.Expect(resultHC.Spec.InfraID).To(BeIdenticalTo(previousInfraID))
 			}
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneIDImmutability(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		hcInfraID      string
+		hcClusterID    string
+		hcpInfraID     string
+		hcpClusterID   string
+		wantHCPInfraID string
+	}{
+		{
+			name:           "When HCP infraID is empty, it should copy infraID from the HostedCluster",
+			hcInfraID:      "hc-infra",
+			hcClusterID:    "hc-cluster",
+			wantHCPInfraID: "hc-infra",
+		},
+		{
+			name:           "When HCP already has infraID, it should not overwrite it with the HostedCluster value",
+			hcInfraID:      "new-infra",
+			hcClusterID:    "new-cluster",
+			hcpInfraID:     "original-infra",
+			hcpClusterID:   "original-cluster",
+			wantHCPInfraID: "original-infra",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID:   test.hcInfraID,
+					ClusterID: test.hcClusterID,
+				},
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:   test.hcpInfraID,
+					ClusterID: test.hcpClusterID,
+				},
+			}
+			err := reconcileHostedControlPlane(hcp, hc, false, false, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(hcp.Spec.InfraID).To(Equal(test.wantHCPInfraID))
+			g.Expect(hcp.Spec.ClusterID).To(Equal(test.hcClusterID))
 		})
 	}
 }

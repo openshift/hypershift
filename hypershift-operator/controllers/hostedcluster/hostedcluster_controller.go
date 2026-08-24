@@ -2772,7 +2772,12 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.Networking = hcluster.Spec.Networking
 
 	hcp.Spec.ClusterID = hcluster.Spec.ClusterID
-	hcp.Spec.InfraID = hcluster.Spec.InfraID
+	// infraID is immutable once set on the HostedControlPlane. Copying a
+	// regenerated HostedCluster value here is what previously caused CAPI to
+	// provision a second cluster identity.
+	if hcp.Spec.InfraID == "" {
+		hcp.Spec.InfraID = hcluster.Spec.InfraID
+	}
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services
 	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
@@ -5240,15 +5245,28 @@ func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (str
 }
 
 func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	// Default the ClusterID if unset
+	log := ctrl.LoggerFrom(ctx)
 	needsUpdate := false
+	// Default the ClusterID if unset
 	if hcluster.Spec.ClusterID == "" {
 		hcluster.Spec.ClusterID = uuid.NewString()
 		needsUpdate = true
 	}
 
-	// Default the infraID if unset
-	if hcluster.Spec.InfraID == "" {
+	// Once a HostedControlPlane exists, its infraID is the source of truth.
+	// Generating a new HostedCluster value after the field was cleared (or
+	// rewritten) is what previously caused CAPI to provision a second identity.
+	existingInfraID, err := r.infraIDFromHostedControlPlane(ctx, hcluster)
+	if err != nil {
+		return err
+	}
+	if existingInfraID != "" {
+		if hcluster.Spec.InfraID != existingInfraID {
+			log.Info("Restoring infraID from HostedControlPlane", "infraID", existingInfraID)
+			hcluster.Spec.InfraID = existingInfraID
+			needsUpdate = true
+		}
+	} else if hcluster.Spec.InfraID == "" {
 		hcluster.Spec.InfraID = infraid.New(hcluster.Name)
 		needsUpdate = true
 	}
@@ -5259,6 +5277,23 @@ func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context,
 		}
 	}
 	return nil
+}
+
+// infraIDFromHostedControlPlane returns the infraID already stored on the
+// HostedControlPlane, if it exists. An empty string is returned when the HCP
+// has not been created yet.
+func (r *HostedClusterReconciler) infraIDFromHostedControlPlane(ctx context.Context, hcluster *hyperv1.HostedCluster) (string, error) {
+	hcp := controlplaneoperator.HostedControlPlane(
+		manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name),
+		hcluster.Name,
+	)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get HostedControlPlane: %w", err)
+	}
+	return hcp.Spec.InfraID, nil
 }
 
 func validateClusterID(hc *hyperv1.HostedCluster) error {
