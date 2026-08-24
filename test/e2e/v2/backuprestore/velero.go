@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -101,6 +103,9 @@ func isPodReady(pod *corev1.Pod) bool {
 // name to reach the Available phase. OADP reconciles the BSL from the DataProtectionApplication
 // asynchronously, so it can still be Unavailable for a short time after Velero itself is running,
 // which would otherwise fail any Backup/Schedule created against it with FailedValidation.
+//
+// It retries NotFound errors through BackupTimeout, returns other lookup or status errors
+// immediately, and wraps timeout errors with a descriptive message.
 func WaitForBackupStorageLocationAvailable(testCtx *internal.TestContext, name string) error {
 	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
 		bsl, err := getVeleroResource(ctx, testCtx.MgmtClient, DefaultOADPNamespace, name, "BackupStorageLocation")
@@ -213,6 +218,9 @@ func getLatestBackupForHostedCluster(ctx context.Context, client crclient.Client
 
 // WaitForScheduleBackupCreated waits until a schedule has created a backup, without waiting
 // for that backup to reach a final state.
+//
+// It propagates schedule lookup errors, including timeout errors wrapped with "failed to find
+// backup for schedule" message after polling for 5 minutes.
 func WaitForScheduleBackupCreated(testCtx *internal.TestContext, scheduleName string) error {
 	if _, err := getLatestBackupForSchedule(testCtx.Context, testCtx.MgmtClient, DefaultOADPNamespace, scheduleName); err != nil {
 		return fmt.Errorf("failed to find backup for schedule %s: %w", scheduleName, err)

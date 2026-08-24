@@ -31,12 +31,14 @@ import (
 	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/backuprestore"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -194,7 +196,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 			}
 
 			By("Waiting for BackupStorageLocation to be Available")
-			err := backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
+			err = backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create schedule first to test parallel execution of backup and schedule and
@@ -402,7 +404,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 	BeforeAll(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil())
-		hostedCluster := testCtx.GetHostedCluster()
+		hostedCluster, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
 
 		cfg, found := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
@@ -413,7 +416,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 
 		By("Checking if HCPEtcdBackup feature gate is enabled")
 		hcpEtcdBackupList := &hyperv1.HCPEtcdBackupList{}
-		err := testCtx.MgmtClient.List(testCtx.Context, hcpEtcdBackupList, crclient.InNamespace(testCtx.ControlPlaneNamespace))
+		err = testCtx.MgmtClient.List(testCtx.Context, hcpEtcdBackupList, crclient.InNamespace(testCtx.ControlPlaneNamespace))
 		if err != nil {
 			if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 				Skip("HCPEtcdBackup feature gate is not enabled (CRD not installed). " +
