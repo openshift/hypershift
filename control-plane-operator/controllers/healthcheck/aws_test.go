@@ -14,10 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"go.uber.org/mock/gomock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"go.uber.org/mock/gomock"
 )
 
 // TestAWSHealthCheckIdentityProviderConditionLogic tests the condition setting logic
