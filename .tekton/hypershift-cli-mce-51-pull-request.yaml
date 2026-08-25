@@ -11,9 +11,11 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && (target_branch == "release-5.1" || target_branch == "main")
-      && (files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib|hack|\\.tekton|\\.github|\\.claude|\\.chai-bot)/|\\.md$|^(?:Dockerfile|Containerfile)\\b|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
-         || "Containerfile.cli".pathChanged()
-         || ".tekton/hypershift-cli-mce-51-pull-request.yaml".pathChanged())
+      && (
+           files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib|hack|\\.tekton|\\.github|\\.claude|\\.chai-bot)/|\\.md$|^(?:Dockerfile|Containerfile)\\b|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
+        || "Containerfile.cli".pathChanged()
+        || ".tekton/hypershift-cli-mce-51-pull-request.yaml".pathChanged()
+      )
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: release-mce-51
