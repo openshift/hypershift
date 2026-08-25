@@ -18,6 +18,7 @@ type AWSPlatformConfig struct {
 	zones          []string
 	additionalTags []string
 	sharedDir      string
+	autonodeOnly   bool
 }
 
 type AWSPlatformOptions struct {
@@ -38,9 +39,10 @@ func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatfor
 		sharedDir:      sharedDir,
 		additionalTags: tags,
 		zones:          zones,
+		autonodeOnly:   os.Getenv("HYPERSHIFT_AUTONODE_ONLY") == "true",
 	}
 
-	log.Printf("AWS platform config: region=%s, zones=%v, additionalTags=%v", cfg.region, cfg.zones, cfg.additionalTags)
+	log.Printf("AWS platform config: region=%s, zones=%v, additionalTags=%v, autonodeOnly=%v", cfg.region, cfg.zones, cfg.additionalTags, cfg.autonodeOnly)
 	return cfg
 }
 
@@ -56,6 +58,19 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
 		extraArgs = strings.Fields(envArgs)
 	}
+
+	karpenterSpec := ClusterSpec{
+		Variant: "karpenter",
+		ExtraArgs: append(extraArgs, []string{
+			"--auto-node",
+			"--endpoint-access=PublicAndPrivate",
+		}...),
+	}
+
+	if a.autonodeOnly {
+		return []ClusterSpec{karpenterSpec}
+	}
+
 	return []ClusterSpec{
 		{
 			Variant: "public",
@@ -73,15 +88,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		// ability to make any such lifecycle assertions. This could mean that either
 		// the assertion itself needs to change to decouple it from lifecycle somehow,
 		// or there's a gap in the v2 framework for this sort of use case...
-		{
-			Variant: "karpenter",
-			ExtraArgs: append(extraArgs, []string{
-				// Enables Karpenter-based node provisioning (AutoNode)
-				"--auto-node",
-				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
-				"--endpoint-access=PublicAndPrivate",
-			}...),
-		},
+		karpenterSpec,
 	}
 }
 
@@ -120,6 +127,19 @@ func (a *AWSPlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.
 }
 
 func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+	karpenterGroup := TestGroup{
+		Name:        "karpenter",
+		Variant:     "karpenter",
+		LabelFilter: "karpenter",
+		JUnitFile:   "junit_karpenter.xml",
+	}
+
+	if a.autonodeOnly {
+		return TestMatrix{
+			Parallel: []TestGroup{karpenterGroup},
+		}
+	}
+
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
@@ -128,12 +148,7 @@ func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				LabelFilter: "!lifecycle || hosted-cluster-aws",
 				JUnitFile:   "junit_public.xml",
 			},
-			{
-				Name:        "karpenter",
-				Variant:     "karpenter",
-				LabelFilter: "karpenter",
-				JUnitFile:   "junit_karpenter.xml",
-			},
+			karpenterGroup,
 		},
 	}
 }
