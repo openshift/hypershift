@@ -2668,7 +2668,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 						Name:              "data-etcd-0",
 						Namespace:         testNamespace,
 						Labels:            map[string]string{"app": "etcd"},
-						CreationTimestamp: metav1.NewTime(time.Now()),
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						StorageClassName: ptr.To("premiumv2-csi"),
@@ -2706,7 +2706,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 						Namespace:         testNamespace,
 						Labels:            map[string]string{"app": "etcd"},
 						UID:               "pvc-uid-1",
-						CreationTimestamp: metav1.NewTime(time.Now()),
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						StorageClassName: ptr.To("premiumv2-csi"),
@@ -2738,7 +2738,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "failed to provision volume"},
 		},
 		{
-			name: "When PVC is pending past grace period with events, it should report EtcdPVCPending with event details and topology suggestion",
+			name: "When PVC is pending past grace period with events, it should report EtcdPVCPending with event details",
 			sts: &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "etcd",
@@ -2758,7 +2758,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 						Namespace:         testNamespace,
 						Labels:            map[string]string{"app": "etcd"},
 						UID:               "pvc-uid-2",
-						CreationTimestamp: metav1.NewTime(time.Now().Add(-15 * time.Minute)),
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						StorageClassName: ptr.To("premiumv2-csi"),
@@ -2787,10 +2787,10 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 				Status: metav1.ConditionFalse,
 				Reason: hyperv1.EtcdPVCPendingReason,
 			},
-			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "invalid availability zone", "zone-aware provisioning"},
+			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "invalid availability zone", "more than 10m0s"},
 		},
 		{
-			name: "When PVC is pending past grace period without events, it should report EtcdPVCPending with StorageClass and topology suggestion",
+			name: "When PVC is pending past grace period without events, it should report EtcdPVCPending with StorageClass",
 			sts: &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "etcd",
@@ -2809,7 +2809,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 						Name:              "data-etcd-0",
 						Namespace:         testNamespace,
 						Labels:            map[string]string{"app": "etcd"},
-						CreationTimestamp: metav1.NewTime(time.Now().Add(-15 * time.Minute)),
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						StorageClassName: ptr.To("premiumv2-csi"),
@@ -2824,7 +2824,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 				Status: metav1.ConditionFalse,
 				Reason: hyperv1.EtcdPVCPendingReason,
 			},
-			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "zone-aware provisioning", "availability zones"},
+			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "more than 10m0s"},
 		},
 		{
 			name: "When PVC is pending past grace period with default StorageClass, it should report EtcdPVCPending with default label",
@@ -2846,7 +2846,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 						Name:              "data-etcd-0",
 						Namespace:         testNamespace,
 						Labels:            map[string]string{"app": "etcd"},
-						CreationTimestamp: metav1.NewTime(time.Now().Add(-15 * time.Minute)),
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
 					},
 					Status: corev1.PersistentVolumeClaimStatus{
 						Phase: corev1.ClaimPending,
@@ -2858,7 +2858,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 				Status: metav1.ConditionFalse,
 				Reason: hyperv1.EtcdPVCPendingReason,
 			},
-			messageContains: []string{"data-etcd-0", `"<default>"`, "zone-aware provisioning"},
+			messageContains: []string{"data-etcd-0", `"<default>"`, "more than 10m0s"},
 		},
 	}
 
