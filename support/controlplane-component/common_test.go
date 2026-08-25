@@ -14,28 +14,39 @@ import (
 )
 
 func TestAdaptPodDisruptionBudget(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name               string
 		availabilityPolicy hyperv1.AvailabilityPolicy
+		wantPredicate      bool
 		wantMinAvailable   *intstr.IntOrString
 		wantMaxUnavailable *intstr.IntOrString
 	}{
 		{
-			name:               "When SingleReplica it should set minAvailable to 1",
+			name:               "When SingleReplica it should disable the PDB",
 			availabilityPolicy: hyperv1.SingleReplica,
-			wantMinAvailable:   ptr.To(intstr.FromInt32(1)),
-			wantMaxUnavailable: nil,
+			wantPredicate:      false,
 		},
 		{
 			name:               "When HighlyAvailable it should set maxUnavailable to 1",
 			availabilityPolicy: hyperv1.HighlyAvailable,
+			wantPredicate:      true,
 			wantMinAvailable:   nil,
 			wantMaxUnavailable: ptr.To(intstr.FromInt32(1)),
+		},
+		{
+			name:               "When availability policy is unset it should keep the PDB without minAvailable or maxUnavailable",
+			availabilityPolicy: "",
+			wantPredicate:      true,
+			wantMinAvailable:   nil,
+			wantMaxUnavailable: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGomegaWithT(t)
 
 			pdb := &policyv1.PodDisruptionBudget{
@@ -55,6 +66,13 @@ func TestAdaptPodDisruptionBudget(t *testing.T) {
 						ControllerAvailabilityPolicy: tt.availabilityPolicy,
 					},
 				},
+			}
+
+			g.Expect(ga.predicate).ToNot(BeNil())
+			g.Expect(ga.predicate(cpContext)).To(Equal(tt.wantPredicate))
+
+			if !tt.wantPredicate {
+				return
 			}
 
 			err := ga.adapt(cpContext, pdb)
