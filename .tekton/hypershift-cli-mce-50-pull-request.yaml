@@ -40,6 +40,9 @@ spec:
     value: .
   - name: build-source-image
     value: "true"
+  - name: build-args
+    value:
+    - COMMIT_HASH={{revision}}
   - name: hermetic
     value: "true"
   pipelineRef:
