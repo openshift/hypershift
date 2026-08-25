@@ -10,66 +10,86 @@ title: Backup Flow
 
 This page describes the end-to-end backup process when using the Etcd Snapshot method. The flow involves three actors: the OADP HyperShift plugin (orchestration), the HyperShift Operator's etcd backup controller (execution), and the backup Job (snapshot + upload).
 
-## End-to-End Sequence
+## End-to-End Sequence Diagrams
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant CLI as HyperShift CLI
-    participant Velero
-    participant Plugin as OADP Plugin
-    participant Orch as Etcd Backup Orchestrator
-    participant HO as HCPEtcdBackup Controller
-    participant Job as Backup Job
-    participant etcd as etcd Pods
-    participant S3 as Object Storage
+The backup flow has three phases: CLI initiation, snapshot execution, and Velero finalization.
 
-    User->>CLI: hypershift create oadp-backup --use-etcd-snapshot
-    CLI->>CLI: Validate HostedCluster, OADP, DPA
-    CLI->>Velero: Create Backup CR
+??? note "Phase 1: CLI Initiation and Plugin Orchestration"
 
-    Note over Velero,Plugin: Velero iterates included resources
+    ```mermaid
+    sequenceDiagram
+        participant User
+        participant CLI as HyperShift CLI
+        participant Velero
+        participant Plugin as OADP Plugin
+        participant Orch as Etcd Backup Orchestrator
+        participant HO as HCPEtcdBackup Controller
 
-    Velero->>Plugin: Execute(HostedControlPlane)
-    Plugin->>Plugin: Validate platform config
-    Plugin->>Orch: CreateEtcdBackup()
-    Orch->>Orch: Fetch BSL, map storage config
-    Orch->>Orch: Copy BSL credentials to HO namespace
-    Orch->>HO: Create HCPEtcdBackup CR
-    Orch->>HO: VerifyInProgress (30s timeout)
+        User->>CLI: hypershift create oadp-backup --use-etcd-snapshot
+        CLI->>CLI: Validate HostedCluster, OADP, DPA
+        CLI->>Velero: Create Backup CR
 
-    HO->>HO: Check etcd health
-    HO->>HO: Ensure no other backup running
-    HO->>HO: Create RBAC + NetworkPolicy in HCP ns
-    HO->>Job: Create backup Job in HO namespace
+        Note over Velero,Plugin: Velero iterates included resources
 
-    Job->>etcd: fetch-certs: copy TLS from HCP ns
-    Job->>etcd: snapshot: etcdctl snapshot save
-    Job->>S3: upload: push snapshot.db
+        Velero->>Plugin: Execute(HostedControlPlane)
+        Plugin->>Plugin: Validate platform config
+        Plugin->>Orch: CreateEtcdBackup()
+        Orch->>Orch: Fetch BSL, map storage config
+        Orch->>Orch: Copy BSL credentials to HO namespace
+        Orch->>HO: Create HCPEtcdBackup CR
+        Orch->>HO: VerifyInProgress (30s timeout)
+    ```
 
-    HO->>HO: Extract URL from pod termination message
-    HO->>HO: Persist URL to HostedCluster status
-    HO->>HO: Cleanup RBAC + NetworkPolicy
+??? note "Phase 2: Snapshot Execution and Upload"
 
-    Orch->>HO: WaitForCompletion (10min timeout)
-    HO-->>Orch: BackupCompleted = Succeeded
-    Orch-->>Plugin: Return snapshot URL
+    ```mermaid
+    sequenceDiagram
+        participant HO as HCPEtcdBackup Controller
+        participant Job as Backup Job
+        participant etcd as etcd Pods
+        participant S3 as Object Storage
+        participant Orch as Etcd Backup Orchestrator
 
-    Plugin->>Plugin: Cache snapshot URL
-    Plugin->>Plugin: Inject URL annotation on HCP
+        HO->>HO: Check etcd health
+        HO->>HO: Ensure no other backup running
+        HO->>HO: Create RBAC + NetworkPolicy in HCP ns
+        HO->>Job: Create backup Job in HO namespace
 
-    Velero->>Plugin: Execute(HostedCluster)
-    Plugin->>Plugin: Add restored-from-backup annotation
-    Plugin->>Plugin: Inject cached snapshot URL annotation
+        Job->>etcd: fetch-certs: copy TLS from HCP ns
+        Job->>etcd: snapshot: etcdctl snapshot save
+        Job->>S3: upload: push snapshot.db
 
-    Velero->>Plugin: Execute(etcd Pod)
-    Plugin-->>Velero: Skip (etcd snapshot mode)
+        HO->>HO: Extract URL from pod termination message
+        HO->>HO: Persist URL to HostedCluster status
+        HO->>HO: Cleanup RBAC + NetworkPolicy
 
-    Velero->>Plugin: Execute(etcd PVC)
-    Plugin-->>Velero: Skip (etcd snapshot mode)
+        Orch->>HO: WaitForCompletion (10min timeout)
+        HO-->>Orch: BackupCompleted = Succeeded
+        Orch-->>Orch: Return snapshot URL
+    ```
 
-    Velero->>Velero: Backup complete
-```
+??? note "Phase 3: Velero Backup Finalization"
+
+    ```mermaid
+    sequenceDiagram
+        participant Velero
+        participant Plugin as OADP Plugin
+
+        Plugin->>Plugin: Cache snapshot URL
+        Plugin->>Plugin: Inject URL annotation on HCP
+
+        Velero->>Plugin: Execute(HostedCluster)
+        Plugin->>Plugin: Add restored-from-backup annotation
+        Plugin->>Plugin: Inject cached snapshot URL annotation
+
+        Velero->>Plugin: Execute(etcd Pod)
+        Plugin-->>Velero: Skip (etcd snapshot mode)
+
+        Velero->>Plugin: Execute(etcd PVC)
+        Plugin-->>Velero: Skip (etcd snapshot mode)
+
+        Velero->>Velero: Backup complete
+    ```
 
 ## Step 1: CLI Validation and Backup Creation
 
@@ -149,7 +169,7 @@ When the OADP plugin creates the `HCPEtcdBackup` CR, the HyperShift Operator's e
 
 1. **Feature gate**: Verifies `HCPEtcdBackup` feature gate is enabled. Returns immediately if disabled.
 2. **Terminal state**: If the backup already succeeded, failed, or was rejected, the controller runs cleanup and retention enforcement, then stops.
-3. **Etcd health**: Fetches the etcd `StatefulSet` in the HCP namespace and verifies all replicas are ready. If unhealthy, the backup is rejected with reason `EtcdUnhealthy`.
+3. **Etcd health**: Fetches the etcd `StatefulSet` in the HCP namespace and verifies all replicas are ready. If unhealthy, the controller sets `BackupCompleted` to `Status=False` with reason `EtcdUnhealthy` and requeues the backup for retry.
 4. **Serial execution**: Scans for active backup Jobs targeting the same HCP namespace. If another backup is running, the new one is rejected with reason `BackupRejected`. This check is idempotent: it runs after checking for the current backup's own Job.
 5. **Credentials**: Verifies the credential Secret referenced in the backup spec exists in the HO namespace.
 
@@ -158,7 +178,7 @@ When the OADP plugin creates the `HCPEtcdBackup` CR, the HyperShift Operator's e
 The controller creates temporary resources required for the backup Job to access etcd across namespaces:
 
 | Resource | Namespace | Purpose |
-|----------|-----------|---------|
+| ---------- | ----------- | --------- |
 | `ServiceAccount` | HO namespace | Identity for the backup Job pods |
 | `Role` | HCP namespace | Grants read access to `etcd-client-tls` Secret and `etcd-ca` ConfigMap |
 | `RoleBinding` | HCP namespace | Binds the HO ServiceAccount to the HCP Role |
@@ -169,7 +189,7 @@ The controller creates temporary resources required for the backup Job to access
 The controller creates a Kubernetes `Job` in the HO namespace with three containers:
 
 | Container | Type | Image | Purpose |
-|-----------|------|-------|---------|
+| ----------- | ------ | ------- | --------- |
 | `fetch-certs` | Init container | control-plane-operator | Runs `fetch-etcd-certs`: copies etcd TLS certificates from the HCP namespace using the cross-namespace RBAC |
 | `snapshot` | Init container | etcd | Runs `etcdctl snapshot save`: connects to etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
 | `upload` | Main container | control-plane-operator | Runs `etcd-upload`: uploads the snapshot file to S3 or Azure Blob using the mounted credentials. Writes the final snapshot URL to the container's termination message |
@@ -177,7 +197,7 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 **Job configuration:**
 
 | Setting | Value | Reason |
-|---------|-------|--------|
+| --------- | ------- | -------- |
 | `backoffLimit` | 0 | No retries on failure |
 | `activeDeadlineSeconds` | 900 (15 min) | Prevents indefinitely running Jobs |
 | `ttlSecondsAfterFinished` | 600 (10 min) | Automatic Job cleanup |
@@ -232,8 +252,8 @@ graph LR
 ## Error Scenarios
 
 | Scenario | Result | Recovery |
-|----------|--------|----------|
-| etcd StatefulSet not fully ready | `BackupCompleted` = `EtcdUnhealthy` | Wait for etcd to recover, create a new backup |
+| ---------- | -------- | ---------- |
+| etcd StatefulSet not fully ready | `BackupCompleted` `Status=False`, reason `EtcdUnhealthy` | Controller requeues automatically; wait for etcd to recover |
 | Another backup already running for this HCP | `BackupCompleted` = `BackupRejected` | Wait for the active backup to complete |
 | Credential Secret not found in HO namespace | Backup fails immediately | Verify the OADP plugin correctly copied the BSL credentials |
 | Backup Job fails (etcdctl error, upload error) | `BackupCompleted` = `BackupFailed` | Check Job pod logs, verify etcd connectivity and storage permissions |

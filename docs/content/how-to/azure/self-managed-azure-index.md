@@ -30,7 +30,7 @@ Unlike managed Azure HyperShift deployments, self-managed Azure:
 Self-managed Azure HyperShift supports two DNS management approaches, and both are documented in the same guides:
 
 | Aspect | With External DNS | Without External DNS |
-|--------|------------------|---------------------|
+| -------- | ------------------ | --------------------- |
 | **Best For** | Production, multi-cluster | Development, testing |
 | **API Server DNS** | Custom (e.g., `api-cluster.example.com`) | Azure LoadBalancer (e.g., `abc123.region.cloudapp.azure.com`) |
 | **Setup Complexity** | Higher (requires DNS zones, service principal) | Lower (minimal configuration) |
@@ -107,23 +107,23 @@ Before beginning the deployment process, ensure you have:
 
 - **Azure Resources**:
 
-    - An existing Azure OpenShift management cluster
-    - Azure subscription with appropriate permissions (Contributor + User Access Administrator)
-    - (Optional) A parent DNS zone in Azure DNS for delegating cluster DNS records (required only if using External DNS)
+  - An existing Azure OpenShift management cluster
+  - Azure subscription with appropriate permissions (Contributor + User Access Administrator)
+  - (Optional) A parent DNS zone in Azure DNS for delegating cluster DNS records (required only if using External DNS)
 
 - **Tools and Access**:
 
-    - Azure CLI (`az`) configured with your subscription
-    - OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`)
-    - HyperShift CLI binary
-    - `jq` command-line JSON processor
-    - Cloud Credential Operator (CCO) tool
-    - Valid OpenShift pull secret
+  - Azure CLI (`az`) configured with your subscription
+  - OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`)
+  - HyperShift CLI binary
+  - `jq` command-line JSON processor
+  - Cloud Credential Operator (CCO) tool
+  - Valid OpenShift pull secret
 
 - **Permissions**:
 
-    - Subscription-level Contributor and User Access Administrator roles
-    - Microsoft Graph API permissions (Application.ReadWrite.OwnedBy) for creating service principals
+  - Subscription-level Contributor and User Access Administrator roles
+  - Microsoft Graph API permissions (Application.ReadWrite.OwnedBy) for creating service principals
 
 ## Resource Group Strategy
 
@@ -131,16 +131,16 @@ Self-managed Azure deployments use multiple resource groups with different lifec
 
 - **Persistent Resource Group** (e.g., `os4-common`): Long-lived resources shared across multiple clusters
 
-    - Workload identities (managed identities)
-    - OIDC issuer storage account
-    - Azure DNS zones (if using External DNS)
-    - External DNS service principal (if using External DNS)
+  - Workload identities (managed identities)
+  - OIDC issuer storage account
+  - Azure DNS zones (if using External DNS)
+  - External DNS service principal (if using External DNS)
 
 - **Cluster-Specific Resource Groups**: Created and destroyed with each hosted cluster
 
-    - Managed resource group for cluster infrastructure
-    - VNet resource group (if using custom networking)
-    - NSG resource group (if using custom networking)
+  - Managed resource group for cluster infrastructure
+  - VNet resource group (if using custom networking)
+  - NSG resource group (if using custom networking)
 
 !!! tip "Resource Reuse"
 
@@ -170,7 +170,7 @@ Begin your self-managed Azure HyperShift deployment by following the guides in o
 3. **[Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)** - Deploy your first hosted cluster
 4. **[Deploy Azure Private Clusters](deploy-azure-private-clusters.md)** (Optional) - Configure private endpoint access with Azure Private Link
 5. **[Autoscaling](autoscaling-self-managed.md)** - Configure node pool and cluster autoscaling
-6. **[Etcd Snapshot Backup](backup-and-restore-etcd-snapshot.md)** (Optional) - Configure etcd backup with Azure Blob Storage
+6. **[Etcd Snapshot Backup](../disaster-recovery/platform-guides/azure.md)** (Optional) - Configure etcd backup with Azure Blob Storage
 
 Each guide includes sections for both DNS approaches - simply follow the sections that match your choice.
 

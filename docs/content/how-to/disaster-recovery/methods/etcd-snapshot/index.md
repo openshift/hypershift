@@ -17,7 +17,7 @@ This approach is driven by the `HCPEtcdBackup` Custom Resource and orchestrated 
 ## Comparison with Volume Snapshot Method
 
 | Aspect | Volume Snapshot (Default) | Etcd Snapshot (Tech Preview) |
-|--------|--------------------------|------------------------------|
+| -------- | -------------------------- | ------------------------------ |
 | **Backup mechanism** | CSI volume snapshots or Kopia filesystem backup of etcd PVCs (one per replica, typically 3) | `etcdutl snapshot save` producing a single snapshot file, uploaded to object storage |
 | **Portability** | Tied to the storage provider and CSI driver | Snapshot is storage-agnostic. Cross-cluster restore supported for AWS, Azure, Agent. Not yet validated for KubeVirt |
 | **Backup size** | Full PVC content (3 PVCs for HighlyAvailable) | Single etcd database snapshot (significantly smaller) |
@@ -30,10 +30,10 @@ This approach is driven by the `HCPEtcdBackup` Custom Resource and orchestrated 
 Before using the Etcd Snapshot Backup method, ensure the following:
 
 1. **Feature gate enabled**: The `HCPEtcdBackup` feature gate must be enabled in the HyperShift Operator.
-2. **OADP 1.6+ installed**: The OADP operator (version 1.6 or later) with the HyperShift plugin must be deployed. See [Backup and Restore with OADP 1.5](../backup-and-restore-oadp-1-5.md) for DPA configuration reference.
+2. **OADP 1.6+ installed**: The OADP operator (version 1.6 or later) with the HyperShift plugin must be deployed. See [Backup and Restore with OADP](../oadp.md) for DPA configuration reference.
 3. **Object storage configured**: A Velero `BackupStorageLocation` pointing to S3 or Azure Blob must be configured.
 4. **Plugin ConfigMap**: The OADP HyperShift plugin must be configured to use the etcd snapshot method via a ConfigMap in the OADP namespace (see [Plugin Configuration](#plugin-configuration) below).
-5. **General DR prerequisites**: Review the [Disaster Recovery Prerequisites](../prerequisites.md) page for service publishing strategy requirements and platform-specific considerations.
+5. **General DR prerequisites**: Review the [Disaster Recovery Prerequisites](../../prerequisites.md) page for service publishing strategy requirements and platform-specific considerations.
 
 ## Plugin Configuration
 
@@ -50,7 +50,7 @@ data:
 ```
 
 | Key | Values | Description |
-|-----|--------|-------------|
+| ----- | -------- | ------------- |
 | `hoNamespace` | namespace name | Namespace where the HyperShift Operator is installed. Defaults to `hypershift`. |
 | `etcdBackupMethod` | `volumeSnapshot` (default), `etcdSnapshot` | Selects the etcd backup method. `etcdSnapshot` enables the Tech Preview flow described in this section. |
 | `migration` | `true`, `false` | Set to `true` when the backup is intended for migration to a different management cluster. |
@@ -142,7 +142,7 @@ During **restore**, no credential copying is needed. The plugin reads the `etcd-
 ### Conditions and Status
 
 | Resource | Condition / Field | Meaning |
-|----------|-------------------|---------|
+| ---------- | ------------------- | --------- |
 | `HCPEtcdBackup` | `BackupCompleted` | Tracks backup lifecycle (InProgress, Succeeded, Failed, Rejected, EtcdUnhealthy) |
 | `HostedControlPlane` | `EtcdSnapshotRestored` | Set to True after etcd is restored from snapshot |
 | `HostedControlPlane` | `EtcdBackupSucceeded` | Bubbled from HCPEtcdBackup, indicates most recent backup result |

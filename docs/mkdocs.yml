@@ -123,15 +123,29 @@ nav:
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
     - 'Prerequisites': how-to/disaster-recovery/prerequisites.md
-    - how-to/disaster-recovery/dr-cli.md
-    - how-to/disaster-recovery/backup-and-restore-oadp.md
-    - how-to/disaster-recovery/backup-and-restore-oadp-1-5.md
-    - how-to/disaster-recovery/etcd-recovery.md
-    - 'Etcd Snapshot Backup (Tech Preview)':
-      - how-to/disaster-recovery/etcd-snapshot-backup/index.md
-      - how-to/disaster-recovery/etcd-snapshot-backup/backup-flow.md
-      - how-to/disaster-recovery/etcd-snapshot-backup/restore-flow.md
-      - how-to/disaster-recovery/etcd-snapshot-backup/managed-services-credentials.md
+    - 'Scenarios':
+      - 'Same-Cluster Restore': how-to/disaster-recovery/scenarios/same-cluster-restore.md
+      - 'Cross-Cluster Migration': how-to/disaster-recovery/scenarios/cross-cluster-migration.md
+    - 'Methods':
+      - 'OADP Backup and Restore': how-to/disaster-recovery/methods/oadp.md
+      - 'DR CLI Commands': how-to/disaster-recovery/dr-cli.md
+      - 'Manual Etcd Backup': how-to/disaster-recovery/methods/manual-etcd-backup.md
+      - 'Etcd Snapshot Backup (Tech Preview)':
+        - how-to/disaster-recovery/methods/etcd-snapshot/index.md
+        - how-to/disaster-recovery/methods/etcd-snapshot/backup-flow.md
+        - how-to/disaster-recovery/methods/etcd-snapshot/restore-flow.md
+        - how-to/disaster-recovery/methods/etcd-snapshot/managed-services-credentials.md
+    - 'Platform Guides':
+      - 'AWS': how-to/disaster-recovery/platform-guides/aws.md
+      - 'Azure': how-to/disaster-recovery/platform-guides/azure.md
+      - 'Agent / Bare Metal': how-to/disaster-recovery/platform-guides/agent.md
+      - 'KubeVirt': how-to/disaster-recovery/platform-guides/kubevirt.md
+      - 'OpenStack': how-to/disaster-recovery/platform-guides/openstack.md
+    - 'Etcd Recovery': how-to/disaster-recovery/etcd-recovery.md
+    - 'Troubleshooting': how-to/disaster-recovery/troubleshooting.md
+    - 'Legacy':
+      - how-to/disaster-recovery/backup-and-restore-oadp.md
+      - how-to/disaster-recovery/backup-and-restore-oadp-1-5.md
   - 'Disconnected':
     - how-to/disconnected/index.md
     - how-to/disconnected/image-content-sources.md
