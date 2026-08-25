@@ -75,7 +75,19 @@ Once you follow the teardown procedure, the migrated HostedCluster will begin to
 
 **Symptoms**: The old HostedCluster cannot be deleted because dependent resources have active finalizers.
 
-**Fix**: Check all objects in the HostedControlPlane namespace and ensure they are being terminated. Using a tool like [ketall](https://github.com/corneliusweig/ketall):
+**Fix**: Check all objects in the HostedControlPlane namespace and identify which ones are stuck terminating:
+
+```bash
+# List all objects in the namespace to find stuck resources
+kubectl get all -n <NAMESPACE>
+
+# Identify objects with active finalizers
+kubectl get all -n <NAMESPACE> -o json | jq -r '.items[] | select(.metadata.finalizers != null) | "\(.kind)/\(.metadata.name): \(.metadata.finalizers)"'
+```
+
+!!! danger "Last Resort Only"
+
+    The following script removes **all** finalizers from every object in the namespace. This bypasses controller cleanup and can orphan cloud resources. Only use this if you do not care about the stability of the source Management cluster (e.g., it is being decommissioned).
 
 ```bash
 #!/bin/bash
@@ -86,6 +98,7 @@ if [[ -z $1 ]]; then
     exit 1
 fi
 
+# Using ketall (https://github.com/corneliusweig/ketall)
 for object in $(ketall -n $NAMESPACE -o name | grep -v packa); do
     oc -n $NAMESPACE patch $object -p '{"metadata":{"finalizers":null}}' --type merge
 done

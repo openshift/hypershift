@@ -304,7 +304,7 @@ See the [Troubleshooting Guide](../troubleshooting.md) for common issues.
 See the [Troubleshooting Guide](../troubleshooting.md) for common cross-cluster migration issues including:
 
 - OVN connectivity issues after migration
-- ETCD recovery getting blocked
+- Etcd recovery getting blocked
 - Nodes unable to join the new cluster
 - Dependent resources blocking teardown
 - Storage ClusterOperator reporting issues

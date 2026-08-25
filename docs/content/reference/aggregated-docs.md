@@ -21023,7 +21023,7 @@ When the OADP plugin creates the `HCPEtcdBackup` CR, the HyperShift Operator's e
 
 1. **Feature gate**: Verifies `HCPEtcdBackup` feature gate is enabled. Returns immediately if disabled.
 2. **Terminal state**: If the backup already succeeded, failed, or was rejected, the controller runs cleanup and retention enforcement, then stops.
-3. **Etcd health**: Fetches the etcd `StatefulSet` in the HCP namespace and verifies all replicas are ready. If unhealthy, the backup is rejected with reason `EtcdUnhealthy`.
+3. **Etcd health**: Fetches the etcd `StatefulSet` in the HCP namespace and verifies all replicas are ready. If unhealthy, the controller sets `BackupCompleted` to `Status=False` with reason `EtcdUnhealthy` and requeues the backup for retry.
 4. **Serial execution**: Scans for active backup Jobs targeting the same HCP namespace. If another backup is running, the new one is rejected with reason `BackupRejected`. This check is idempotent: it runs after checking for the current backup's own Job.
 5. **Credentials**: Verifies the credential Secret referenced in the backup spec exists in the HO namespace.
 
@@ -21107,7 +21107,7 @@ graph LR
 
 | Scenario | Result | Recovery |
 | ---------- | -------- | ---------- |
-| etcd StatefulSet not fully ready | `BackupCompleted` = `EtcdUnhealthy` | Wait for etcd to recover, create a new backup |
+| etcd StatefulSet not fully ready | `BackupCompleted` `Status=False`, reason `EtcdUnhealthy` | Controller requeues automatically; wait for etcd to recover |
 | Another backup already running for this HCP | `BackupCompleted` = `BackupRejected` | Wait for the active backup to complete |
 | Credential Secret not found in HO namespace | Backup fails immediately | Verify the OADP plugin correctly copied the BSL credentials |
 | Backup Job fails (etcdctl error, upload error) | `BackupCompleted` = `BackupFailed` | Check Job pod logs, verify etcd connectivity and storage permissions |
@@ -23685,7 +23685,7 @@ See the Troubleshooting Guide for common issues.
 See the Troubleshooting Guide for common cross-cluster migration issues including:
 
 - OVN connectivity issues after migration
-- ETCD recovery getting blocked
+- Etcd recovery getting blocked
 - Nodes unable to join the new cluster
 - Dependent resources blocking teardown
 - Storage ClusterOperator reporting issues
@@ -23966,7 +23966,19 @@ Once you follow the teardown procedure, the migrated HostedCluster will begin to
 
 **Symptoms**: The old HostedCluster cannot be deleted because dependent resources have active finalizers.
 
-**Fix**: Check all objects in the HostedControlPlane namespace and ensure they are being terminated. Using a tool like ketall:
+**Fix**: Check all objects in the HostedControlPlane namespace and identify which ones are stuck terminating:
+
+```bash
+# List all objects in the namespace to find stuck resources
+kubectl get all -n <NAMESPACE>
+
+# Identify objects with active finalizers
+kubectl get all -n <NAMESPACE> -o json | jq -r '.items[] | select(.metadata.finalizers != null) | "\(.kind)/\(.metadata.name): \(.metadata.finalizers)"'
+```
+
+!!! danger "Last Resort Only"
+
+    The following script removes **all** finalizers from every object in the namespace. This bypasses controller cleanup and can orphan cloud resources. Only use this if you do not care about the stability of the source Management cluster (e.g., it is being decommissioned).
 
 ```bash
 #!/bin/bash
@@ -23977,6 +23989,7 @@ if [[ -z $1 ]]; then
     exit 1
 fi
 
+# Using ketall (https://github.com/corneliusweig/ketall)
 for object in $(ketall -n $NAMESPACE -o name | grep -v packa); do
     oc -n $NAMESPACE patch $object -p '{"metadata":{"finalizers":null}}' --type merge
 done

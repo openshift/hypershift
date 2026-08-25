@@ -116,7 +116,7 @@ Velero reads the backed-up resources from the archive and invokes the plugin's `
 
 1. **Backup lookup**: The plugin retrieves the associated Velero `Backup` object and validates that `IncludedNamespaces` is set.
 2. **Annotation reading**: Reads `hypershift.openshift.io/etcd-snapshot-url` annotation from the backed-up HostedCluster.
-3. **URL conversion**: If the URL uses the `s3://` scheme, converts it to a presigned HTTPS URL (see [URL Presigning](#s3-url-presigning) below).
+3. **URL conversion**: If the URL uses the `s3://` scheme, converts it to a presigned HTTPS URL (see [URL Presigning](#step-3-s3-url-presigning) below).
 4. **Spec injection**: Sets `Spec.Etcd.Managed.Storage.RestoreSnapshotURL` to a single-element array containing the presigned URL.
 5. **Restore annotation**: Adds `hypershift.openshift.io/restored-from-backup` annotation.
 
