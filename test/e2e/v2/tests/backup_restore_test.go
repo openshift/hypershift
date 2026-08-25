@@ -508,6 +508,10 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 
 	Context(ContextBackup, func() {
 		It("should create backup with etcd snapshot method", func() {
+			By("Waiting for BackupStorageLocation to be Available")
+			err := backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("Creating backup with etcd snapshot options")
 			backupName = oadp.GenerateBackupName(
 				testCtx.ClusterName,
@@ -520,7 +524,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 				StorageLocation: testCtx.ClusterName,
 				UseEtcdSnapshot: true,
 			}
-			err := backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
+			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for backup to complete")
