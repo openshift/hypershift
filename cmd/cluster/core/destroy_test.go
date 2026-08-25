@@ -103,6 +103,20 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 				Namespace:  "clusters",
 				Finalizers: []string{"hypershift.openshift.io/finalizer"},
 			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "test-cluster",
+			},
+		}
+
+		unrelatedNodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "other-cluster-np1",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "other-cluster",
+			},
 		}
 
 		hcp := &hyperv1.HostedControlPlane{
@@ -153,7 +167,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
-			WithObjects(hc, nodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, ns).
+			WithObjects(hc, nodePool, unrelatedNodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, ns).
 			Build()
 
 		opts := &DestroyOptions{
@@ -177,6 +191,12 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		err = c.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster-np1"}, updatedNP)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updatedNP.Finalizers).To(BeEmpty())
+
+		// Verify unrelated NodePool finalizers are preserved
+		unrelatedNP := &hyperv1.NodePool{}
+		err = c.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "other-cluster-np1"}, unrelatedNP)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(unrelatedNP.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}))
 
 		// Verify HCP finalizers are gone
 		updatedHCP := &hyperv1.HostedControlPlane{}
@@ -327,6 +347,52 @@ func TestStripFinalizersFromList(t *testing.T) {
 
 		errs := stripFinalizersFromList(ctx, c, &capzv1.AzureMachineList{}, "test-ns", log.Log)
 		g.Expect(errs).To(BeEmpty())
+	})
+}
+
+func TestStripNodePoolFinalizers(t *testing.T) {
+	t.Run("When NodePools belong to different HostedClusters, it should only strip finalizers from matching NodePools", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster-np1",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "test-cluster",
+			},
+		}
+		unrelatedNodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "other-cluster-np1",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "other-cluster",
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(nodePool, unrelatedNodePool).
+			Build()
+
+		errs := stripNodePoolFinalizers(ctx, c, "clusters", "test-cluster", log.Log)
+		g.Expect(errs).To(BeEmpty())
+
+		updatedNodePool := &hyperv1.NodePool{}
+		err := c.Get(ctx, client.ObjectKeyFromObject(nodePool), updatedNodePool)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updatedNodePool.Finalizers).To(BeEmpty())
+
+		updatedUnrelatedNodePool := &hyperv1.NodePool{}
+		err = c.Get(ctx, client.ObjectKeyFromObject(unrelatedNodePool), updatedUnrelatedNodePool)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updatedUnrelatedNodePool.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}))
 	})
 }
 
