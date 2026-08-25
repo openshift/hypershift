@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/pathutil"
 
@@ -17,7 +18,12 @@ var Analyzer = &analysis.Analyzer{
 	Run:  run,
 }
 
-var hostPortPattern = regexp.MustCompile(`%s:%[dvs]`)
+var (
+	// %s:%d and %s:%v are almost always host:port (ports are numeric).
+	hostPortNumeric = regexp.MustCompile(`%s:%[dv]`)
+	// %s:%s is only host:port when there is URL context (scheme prefix).
+	hostPortStringWithScheme = regexp.MustCompile(`://%s:%s`)
+)
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {
@@ -56,7 +62,16 @@ func run(pass *analysis.Pass) (any, error) {
 				return true
 			}
 
-			match := hostPortPattern.FindString(formatStr)
+			// Strip escaped percent signs so %%s:%d (literal %s, not a format verb) is not matched.
+			stripped := strings.ReplaceAll(formatStr, "%%", "")
+
+			match := hostPortNumeric.FindString(stripped)
+			if match == "" {
+				match = hostPortStringWithScheme.FindString(stripped)
+				if match != "" {
+					match = "%s:%s"
+				}
+			}
 			if match != "" {
 				pass.Report(analysis.Diagnostic{
 					Pos:     call.Pos(),

@@ -180,6 +180,18 @@ func (tc *TestContext) SkipIfPlatform(platforms ...hyperv1.PlatformType) {
 	}
 }
 
+// SkipIfWorkloadUnsupportedForVersion skips the test if the workload is incompatible
+// with the hosted cluster according to ShouldSkipWorkloadForVersion. Fails the test
+// if the HostedCluster cannot be fetched.
+func (tc *TestContext) SkipIfWorkloadUnsupportedForVersion(workload WorkloadSpec) {
+	GinkgoHelper()
+	version, err := tc.GetHostedClusterVersion()
+	Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster version for %s/%s", tc.ClusterNamespace, tc.ClusterName)
+	if ShouldSkipWorkloadForVersion(workload, version) {
+		Skip(fmt.Sprintf("workload %s is not expected on this cluster version", workload.Name))
+	}
+}
+
 var testCtx *TestContext
 
 func GetTestContext() *TestContext {

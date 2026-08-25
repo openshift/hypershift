@@ -3,7 +3,6 @@
 package backuprestore
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -535,7 +534,7 @@ func TestRunFixDrOidcIamValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// RunFixDrOidcIam will fail at validation before reaching CLI lookup
-			err := RunFixDrOidcIam(context.Background(), logr.Discard(), "/tmp/artifacts", tt.opts)
+			err := RunFixDrOidcIam(t.Context(), logr.Discard(), "/tmp/artifacts", tt.opts)
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tt.expectedErr)
 			}

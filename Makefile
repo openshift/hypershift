@@ -144,7 +144,7 @@ lint-fix: generate $(HYPERSHIFTLINTER_PLUGIN)
 
 .PHONY: hypershift-lint-all
 hypershift-lint-all: $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
-	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter --build-tags e2ev2
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter --build-tags e2ev2,backuprestore
 
 .PHONY: test-linter
 test-linter:
