@@ -108,7 +108,7 @@ $(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build 
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
-PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main), $(shell git rev-parse main))
+PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main),$(shell git rev-parse main))
 
 .PHONY: api-lint
 api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
