@@ -623,6 +623,44 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			},
 		},
 		{
+			name: "When Kubelet.MaxPods is explicitly set it should not be overridden with the default",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: hyperkarpenterv1.KubeletConfiguration{
+					MaxPods: 110,
+				},
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+				Kubelet: &awskarpenterv1.KubeletConfiguration{
+					MaxPods: ptr.To(int32(110)),
+				},
+			},
+		},
+		{
 			name: "when CapacityReservationSelectorTerms are not set it should not set them on EC2NodeClass",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
@@ -678,6 +716,11 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				{
 					ID: "ami-123",
 				},
+			}
+
+			// MaxPods defaults to 250 unless the OpenshiftEC2NodeClass spec sets it explicitly.
+			if tc.spec.Kubelet.MaxPods == 0 {
+				tc.expectedSpec.Kubelet = &awskarpenterv1.KubeletConfiguration{MaxPods: ptr.To(int32(250))}
 			}
 
 			g.Expect(ec2NodeClass.Spec).To(Equal(tc.expectedSpec))

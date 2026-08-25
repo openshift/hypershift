@@ -14,6 +14,11 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+// openshiftDefaultMaxPods is the kubelet max-pods default for OpenShift nodes.
+// Karpenter's uses a AWS ENI-based formula by default, we need to overwrite this to OpenShift's
+// fixed max-pods count.
+const openshiftDefaultMaxPods = 250
+
 func karpenterBlockDeviceMappingFromNodeClassSpec(spec hyperkarpenterv1.OpenshiftEC2NodeClassSpec) []*awskarpenterv1.BlockDeviceMapping {
 	if spec.BlockDeviceMappings == nil {
 		return nil
@@ -160,13 +165,10 @@ func volumeTypeToKarpenter(vt hyperkarpenterv1.VolumeType) *string {
 }
 
 func karpenterKubeletConfigurationFromNodeClassSpec(spec hyperkarpenterv1.OpenshiftEC2NodeClassSpec) *awskarpenterv1.KubeletConfiguration {
-	if !spec.Kubelet.HasTypedFields() {
-		return nil
-	}
 	return &awskarpenterv1.KubeletConfiguration{
 		ImageGCHighThresholdPercent: spec.Kubelet.ImageGCHighThresholdPercent,
 		ImageGCLowThresholdPercent:  spec.Kubelet.ImageGCLowThresholdPercent,
-		MaxPods:                     ptrIfNonZero(spec.Kubelet.MaxPods),
+		MaxPods:                     maxPodsOrDefault(spec.Kubelet.MaxPods),
 		CPUCFSQuota:                 spec.Kubelet.CPUCFSQuota,
 		EvictionHard:                evictionThresholdMapToStringMap(spec.Kubelet.EvictionHard),
 		EvictionSoft:                evictionThresholdMapToStringMap(spec.Kubelet.EvictionSoft),
@@ -176,6 +178,14 @@ func karpenterKubeletConfigurationFromNodeClassSpec(spec hyperkarpenterv1.Opensh
 		SystemReserved:              spec.Kubelet.SystemReserved,
 		KubeReserved:                spec.Kubelet.KubeReserved,
 	}
+}
+
+// maxPodsOrDefault returns maxPods if explicitly set, or openshiftDefaultMaxPods otherwise.
+func maxPodsOrDefault(maxPods int32) *int32 {
+	if maxPods == 0 {
+		return ptr.To(int32(openshiftDefaultMaxPods))
+	}
+	return ptr.To(maxPods)
 }
 
 // evictionThresholdMapToStringMap converts our EvictionThreshold map to a plain string map.
