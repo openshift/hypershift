@@ -213,8 +213,8 @@ Konflux checks appear as `Red Hat Konflux / <component>-on-pull-request` or `Red
 |---------------|-------------|
 | `hypershift-operator-main-on-pull-request` | Builds the hypershift-operator image via Konflux |
 | `control-plane-operator-main-on-pull-request` | Builds the control-plane-operator image |
-| `hypershift-cli-mce-50-on-pull-request` | Builds the hypershift CLI image |
-| `hypershift-release-mce-50-on-pull-request` | Builds the release image |
+| `hypershift-cli-mce-51-on-pull-request` | Builds the hypershift CLI image |
+| `hypershift-release-mce-51-on-pull-request` | Builds the release image |
 | `enterprise-contract-*` | Validates image provenance and policy compliance |
 
 Common causes:
