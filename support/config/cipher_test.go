@@ -79,6 +79,17 @@ func TestSetMinTLSVersionUsingAPIServer(t *testing.T) {
 			expectError:   false,
 			expectedValue: tls.VersionTLS12,
 		},
+		{
+			name: "When using custom profile with nil Custom field, it should return error",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+					},
+				},
+			},
+			expectError: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -177,6 +188,17 @@ func TestSetCipherSuitesUsingAPIServer(t *testing.T) {
 			apiServer:   &configv1.APIServer{},
 			expectError: false,
 		},
+		{
+			name: "When using custom profile with nil Custom field, it should return error",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+					},
+				},
+			},
+			expectError: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -202,6 +224,158 @@ func TestSetCipherSuitesUsingAPIServer(t *testing.T) {
 			}
 
 			g.Expect(tlsConfig.CipherSuites).ToNot(BeEmpty())
+		})
+	}
+}
+
+func TestMinTLSVersion(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		profile     *configv1.TLSSecurityProfile
+		expectedVer string
+		expectError bool
+	}{
+		{
+			name:        "When profile is nil, it should default to Intermediate",
+			profile:     nil,
+			expectedVer: "VersionTLS12",
+		},
+		{
+			name: "When using Intermediate profile, it should return TLS 1.2",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expectedVer: "VersionTLS12",
+		},
+		{
+			name: "When using Modern profile, it should return TLS 1.3",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedVer: "VersionTLS13",
+		},
+		{
+			name: "When using Custom profile with valid Custom field, it should return custom version",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+					},
+				},
+			},
+			expectedVer: "VersionTLS12",
+		},
+		{
+			name: "When using Custom profile with nil Custom field, it should return error",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			result, err := MinTLSVersion(tc.profile)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("Custom but Custom field is nil"))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tc.expectedVer))
+		})
+	}
+}
+
+func TestCipherSuites(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		profile     *configv1.TLSSecurityProfile
+		expected    []string
+		expectError bool
+	}{
+		{
+			name:    "When profile is nil, it should default to Intermediate ciphers",
+			profile: nil,
+			expected: []string{
+				"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+				"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+				"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+				"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			},
+		},
+		{
+			name: "When using Intermediate profile, it should return intermediate ciphers",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expected: []string{
+				"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+				"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+				"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+				"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+			},
+		},
+		{
+			name: "When using Modern profile, it should return empty ciphers (TLS 1.3 uses non-configurable ciphers)",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expected: []string{},
+		},
+		{
+			name: "When using Custom profile with valid Custom field, it should return custom ciphers",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Ciphers: []string{
+							"ECDHE-RSA-AES128-GCM-SHA256",
+							"ECDHE-RSA-AES256-GCM-SHA384",
+						},
+					},
+				},
+			},
+			expected: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+				"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+			},
+		},
+		{
+			name: "When using Custom profile with nil Custom field, it should return error",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			result, err := CipherSuites(tc.profile)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("Custom but Custom field is nil"))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
 }

@@ -89,6 +89,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	if err != nil {
 		return nil, err
 	}
+
 	config := &kcpv1.KubeAPIServerConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KubeAPIServerConfig",
@@ -143,8 +144,6 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 					NamedCertificates: namedCertificates,
 					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.KASPodPort),
 					BindNetwork:       "tcp4",
-					CipherSuites:      hcpconfig.CipherSuites(p.TLSSecurityProfile),
-					MinTLSVersion:     hcpconfig.MinTLSVersion(p.TLSSecurityProfile),
 				},
 			},
 			CORSAllowedOrigins: corsAllowedOrigins(p.AdditionalCORSAllowedOrigins),
@@ -154,6 +153,10 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
 		ServiceAccountPublicKeyFiles: []string{cpath(serviceAccountKeyVolumeName, pki.ServiceSignerPublicKey)},
 		ServicesSubnet:               strings.Join(p.ServiceNetwork, ","),
+	}
+
+	if err := hcpconfig.ApplyServingInfoFromTLSProfile(&config.ServingInfo.ServingInfo, p.TLSSecurityProfile); err != nil {
+		return nil, err
 	}
 
 	if !slices.Contains(p.FeatureGates, "OpenShiftPodSecurityAdmission=true") {
