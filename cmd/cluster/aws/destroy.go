@@ -57,9 +57,6 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 }
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
-	if o.AWSPlatform.PostDeleteAction != nil {
-		o.AWSPlatform.PostDeleteAction()
-	}
 	infraID := o.InfraID
 	baseDomain := o.AWSPlatform.BaseDomain
 	baseDomainPrefix := o.AWSPlatform.BaseDomainPrefix
@@ -98,6 +95,12 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("failed to destroy infrastructure: %w", err))
+	}
+
+	// Run after DestroyInfra so leak checks observe whether the AWS destroy path
+	// actually removed guest NLBs/ELBs, instead of racing the cloud controller.
+	if o.AWSPlatform.PostDeleteAction != nil {
+		o.AWSPlatform.PostDeleteAction()
 	}
 
 	if !o.AWSPlatform.PreserveIAM {
