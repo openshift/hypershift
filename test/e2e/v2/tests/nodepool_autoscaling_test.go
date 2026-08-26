@@ -41,6 +41,10 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// autoscalingTestLabelKey is the node label key used across autoscaling tests to
+// constrain workload pods to specific NodePool nodes via nodeSelector.
+const autoscalingTestLabelKey = "e2e-autoscaling-test"
+
 // AutoscalingScaleUpDownTest tests autoscaling scale-up and scale-down behavior
 func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 	It("should scale up when workload increases and scale down when workload decreases", func() {
@@ -57,7 +61,7 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 
 		// Create autoscaling NodePool with min=1, max=3 and a unique node label
 		// so the workload targets only this NodePool's nodes.
-		autoscalingLabel := map[string]string{"e2e-autoscaling-test": "scale-up-down"}
+		autoscalingLabel := map[string]string{autoscalingTestLabelKey: "scale-up-down"}
 		autoscalingNP := buildAutoscalingNodePool(defaultNP, 1, 3, autoscalingLabel)
 		err = testCtx.MgmtClient.Create(ctx, autoscalingNP)
 		Expect(err).NotTo(HaveOccurred(), "failed to create autoscaling NodePool")
@@ -174,14 +178,14 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 
 		// Create two autoscaling NodePools with distinct labels for the
 		// balancing-ignored-labels config and a shared label for the workload nodeSelector.
-		sharedLabel := map[string]string{"e2e-autoscaling-test": "balance"}
+		sharedLabel := map[string]string{autoscalingTestLabelKey: "balance"}
 		np1Labels := map[string]string{
-			"e2e-autoscaling-test": "balance",
-			balancingLabel:         "np1",
+			autoscalingTestLabelKey: "balance",
+			balancingLabel:          "np1",
 		}
 		np2Labels := map[string]string{
-			"e2e-autoscaling-test": "balance",
-			balancingLabel:         "np2",
+			autoscalingTestLabelKey: "balance",
+			balancingLabel:          "np2",
 		}
 
 		autoscalingNP1 := buildAutoscalingNodePool(defaultNP, 1, 3, np1Labels)
@@ -287,7 +291,7 @@ func AutoscalingScaleFromZeroTest(getTestCtx internal.TestContextGetter) {
 
 		// Create autoscaling NodePool with min=0, max=2 and a unique node label
 		// so the workload targets only this NodePool's nodes.
-		scaleFromZeroLabel := map[string]string{"e2e-autoscaling-test": "scale-from-zero"}
+		scaleFromZeroLabel := map[string]string{autoscalingTestLabelKey: "scale-from-zero"}
 		scaleFromZeroNP := buildAutoscalingNodePool(defaultNP, 0, 2, scaleFromZeroLabel)
 		err = testCtx.MgmtClient.Create(ctx, scaleFromZeroNP)
 		Expect(err).NotTo(HaveOccurred(), "failed to create scale-from-zero NodePool")
@@ -301,15 +305,23 @@ func AutoscalingScaleFromZeroTest(getTestCtx internal.TestContextGetter) {
 		// The scale-from-zero controller sets platform-agnostic annotations
 		// (vCPU, memoryMb, capacity labels) so the cluster autoscaler can
 		// determine node sizing without running instances.
+		//
+		// NOTE: The v1 test also checks the CAPI 1.11+ native Status.Capacity
+		// path on the provider-specific MachineTemplate (e.g. AWSMachineTemplate).
+		// This v2 test intentionally skips that path to avoid importing CAPI
+		// provider types. Both AWS and Azure currently rely on the annotation
+		// path, so the annotation check provides equivalent coverage.
 		cpNamespace := testCtx.ControlPlaneNamespace
-		md := &capiv1.MachineDeployment{}
+		var md *capiv1.MachineDeployment
 		e2eutil.EventuallyObject(GinkgoTB(), ctx, "MachineDeployment to have capacity information",
 			func(ctx context.Context) (*capiv1.MachineDeployment, error) {
+				obj := &capiv1.MachineDeployment{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{
 					Namespace: cpNamespace,
 					Name:      scaleFromZeroNP.Name,
-				}, md)
-				return md, err
+				}, obj)
+				md = obj // capture last-fetched object for post-assertion logging
+				return obj, err
 			},
 			[]e2eutil.Predicate[*capiv1.MachineDeployment]{
 				func(md *capiv1.MachineDeployment) (done bool, reasons string, err error) {
