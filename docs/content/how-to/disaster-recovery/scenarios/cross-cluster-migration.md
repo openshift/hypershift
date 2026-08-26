@@ -81,7 +81,16 @@ The destination Management cluster must have:
 - A DataProtectionApplication (DPA) configured pointing to the same backup storage location.
 - The HyperShift Operator installed and running.
 
-### 5. ExternalDNS Operator (Public / PublicAndPrivate clusters)
+### 5. Backup Available on Destination Cluster
+
+The backup you intend to restore **must exist** on the destination Management cluster. Since both clusters share the same backup storage location (see prerequisite 3), the backup created on the source cluster will be visible on the destination cluster once the DPA is correctly configured. Verify with:
+
+```bash
+export KUBECONFIG=<DEST_MGMT_KUBECONFIG>
+oc get backup -n openshift-adp
+```
+
+### 6. ExternalDNS Operator (Public / PublicAndPrivate clusters)
 
 If the HostedCluster uses `Public` or `PublicAndPrivate` endpoint access, the destination Management cluster must have the ExternalDNS Operator configured with the same domain.
 
@@ -148,7 +157,29 @@ The count should drop to the baseline (typically 2 SOA/NS records).
 
 ### Phase 2: Restore (on Destination Management Cluster)
 
-#### Step 1: Prepare the Destination Cluster
+#### Step 1: Pause Agent CAPI Resources on the Source Cluster (Agent Only)
+
+!!! note
+
+    This step is **only required for the Agent platform**. Skip it for AWS, Azure, KubeVirt, and OpenStack.
+
+Before restoring on the destination cluster, pause the AgentMachine and AgentCluster resources on the **source** cluster to prevent the Agent CAPI provider from reconciling while both clusters have copies of the same resources. This avoids race conditions and prevents accidental agent unbinding.
+
+```bash
+export KUBECONFIG=<SOURCE_MGMT_KUBECONFIG>
+
+# Pause AgentMachine CRs
+oc annotate agentmachine -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused=true --all
+
+# Pause AgentCluster CRs
+oc annotate agentcluster -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused=true --all
+```
+
+If the source cluster is already unavailable, skip this step.
+
+#### Step 2: Prepare the Destination Cluster
 
 ```bash
 export KUBECONFIG=<DEST_MGMT_KUBECONFIG>
@@ -164,7 +195,7 @@ oc get backup -n openshift-adp
 
     If the backup does not appear, verify that the DPA on the destination cluster points to the same BackupStorageLocation as the source cluster.
 
-#### Step 2: Create the Restore
+#### Step 3: Create the Restore
 
 ```yaml
 apiVersion: velero.io/v1
@@ -188,21 +219,21 @@ spec:
   - backuprepositories.velero.io
 ```
 
-#### Step 3: Monitor the Restore
+#### Step 4: Monitor the Restore
 
 ```bash
 watch "oc get restore -n openshift-adp <HC_NAME>-restore -o jsonpath='{.status}' | jq"
 oc logs -n openshift-adp -ldeploy=velero -f
 ```
 
-#### Step 4: Update DNS Records
+#### Step 5: Update DNS Records
 
 After the restore creates new infrastructure endpoints on the destination cluster, update your DNS records to point the fixed hostnames to the new endpoints:
 
 1. Get the new Load Balancer / Route addresses from the destination cluster.
 2. Update DNS records for each fixed hostname (APIServer, OAuthServer, OIDC, Konnectivity, Ignition).
 
-#### Step 5: Platform-Specific Post-Restore Actions
+#### Step 6: Platform-Specific Post-Restore Actions
 
 | Platform | Action Required |
 | ---------- | ---------------- |
