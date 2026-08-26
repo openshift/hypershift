@@ -20807,7 +20807,7 @@ flowchart TD
 | **Azure** | ✅ Supported | ✅ Tech Preview | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
 | **Agent / Bare Metal** | ✅ Supported | ✅ Tech Preview | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ✅ OCP 4.19+ / MCE 2.9+ |
 | **KubeVirt** | ✅ Supported | ⚠️ Not validated | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
-| **OpenStack** | ✅ Supported | ⚠️ Not validated | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
+| **OpenStack** | ⚠️ Tech Preview | ⚠️ Not validated | ⚠️ Tech Preview | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
 
 !!! warning "Cross-cluster Migration Support Status"
 
@@ -20838,7 +20838,7 @@ Provider-specific configuration, caveats, and examples:
 - **AWS**: OIDC fixup, ExternalDNS cleanup, endpoint access considerations.
 - **Azure**: Workload Identity configuration, Azure Blob Storage setup for etcd snapshots.
 - **Agent / Bare Metal**: InfraEnv lifecycle, Assisted Installer database, node readoption.
-- **KubeVirt**: Same-cluster only, VM recreation, boot image PVC filtering.
+- **KubeVirt**: VM recreation, boot image PVC filtering.
 - **OpenStack**: CSI driver considerations, floating IP pools.
 
 ### Reference
@@ -22711,15 +22711,77 @@ When performing cross-cluster migration for the Agent platform, additional objec
 2. **Assisted Installer PostgreSQL database**: The Assisted Installer database must be backed up and restored on the destination cluster.
 3. **Include in backup manifest**: These resources can be included in the Velero Backup manifest to automate this process.
 
-!!! important
+### Node Migration Strategy
 
-    Cross-cluster migration for the Agent platform is not yet supported (no E2E coverage), but the procedure is documented here for reference.
+If your DR strategy involves migrating nodes from one Management cluster to another, configure the following on your Agent resources at any time — these settings can be applied proactively and do not need to wait until a disaster occurs:
+
+```bash
+# Prevent agents from being removed from the hosted cluster as nodes
+oc annotate agent -n <AGENT_NAMESPACE> \
+  agent.agent-install.openshift.io/skip-spoke-cleanup=true --all
+
+# Prevent agents from being unbound when the ClusterDeployment is deleted
+oc patch clusterdeployment -n <HC_NAMESPACE>-<HC_NAME> <CLUSTERDEPLOYMENT_NAME> \
+  --type=merge -p '{"spec":{"preserveOnDelete":true}}'
+```
+
+!!! important "Removing a NodePool as a legitimate operation"
+
+    If you need to delete a NodePool as a normal day-to-day operation (not DR), you **must** remove these settings from the affected resources first. Otherwise, `preserveOnDelete` will prevent the normal cleanup of agents, and `skip-spoke-cleanup` will leave orphaned node entries in the hosted cluster.
+
+    ```bash
+    # Remove skip-spoke-cleanup from Agent CRs
+    oc annotate agent -n <AGENT_NAMESPACE> \
+      agent.agent-install.openshift.io/skip-spoke-cleanup- --all
+
+    # Disable preserveOnDelete on the ClusterDeployment
+    oc patch clusterdeployment -n <HC_NAMESPACE>-<HC_NAME> <CLUSTERDEPLOYMENT_NAME> \
+      --type=merge -p '{"spec":{"preserveOnDelete":false}}'
+    ```
+
+## Pre-Backup Steps (Agent Only)
+
+Before creating a backup for an Agent HostedCluster, pause the AgentMachine and AgentCluster CAPI resources to prevent the provider from reconciling during the backup:
+
+```bash
+# Pause AgentMachine CRs
+oc annotate agentmachine -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused=true --all
+
+# Pause AgentCluster CRs
+oc annotate agentcluster -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused=true --all
+```
+
+After the backup is complete, **unpause immediately** — do not keep the resources paused longer than necessary:
+
+```bash
+oc annotate agentmachine -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused- --all
+
+oc annotate agentcluster -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused- --all
+```
+
+## Post-Restore Steps (Agent Only)
+
+After restoring, the AgentMachine and AgentCluster CRs will be in a paused state (because the backup captured them while paused). Unpause them to allow the CAPI provider to resume reconciliation:
+
+```bash
+oc annotate agentmachine -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused- --all
+
+oc annotate agentcluster -n <HC_NAMESPACE>-<HC_NAME> \
+  cluster.x-k8s.io/paused- --all
+```
 
 ## Restore Caveats
 
 - **Do not delete** the InfraEnv namespace or its objects during cleanup before restore.
 - **Do not remove** the Assisted Installer PostgreSQL database.
 - If restoring on the same cluster, ensure agents still have network access to the Discovery ISO endpoint.
+
+For supportability details per platform and scenario, see the Supportability Matrix.
 
 
 ---
@@ -23034,9 +23096,9 @@ For detailed setup instructions including Workload Identity federation configura
 
 ## Restore Caveats
 
-- **Same-cluster restore only** is currently tested. Cross-cluster restore for Azure does not have E2E coverage.
-- **Node readoption** is not supported. Worker nodes will be reprovisioned during restore.
 - For etcd snapshot backup and restore specific to self-managed Azure, the controller auto-detects the credential mode from the Secret format — no explicit configuration flag is needed.
+
+For supportability details per platform and scenario, see the Supportability Matrix.
 
 
 ---
@@ -23058,7 +23120,6 @@ For the general backup and restore procedures, see:
 
 ## KubeVirt-Specific Considerations
 
-- **Same-cluster restore only**: Cross-cluster migration is not validated for the KubeVirt platform.
 - **No pause required**: Backup of a KubeVirt HostedCluster can be performed on a running cluster without pausing it.
 - **VMs are recreated**: KubeVirt VMs used as worker nodes are **not** backed up. They are automatically recreated as new VMs after restore.
 - **Boot image PVCs excluded**: The boot images for KubeVirt VMs are stored in large PVCs. These are excluded from the backup to reduce backup time and storage size.
@@ -23143,10 +23204,9 @@ preserveNodePorts: true
 
 ## Restore Caveats
 
-- **Same-cluster only**: Restore must be performed on the same Management cluster where the backup was created.
-- **Node readoption**: Not supported. KubeVirt VMs are automatically recreated as new VMs after restore.
-- **Etcd Snapshot method**: Not validated for the KubeVirt platform.
 - **Data Plane PVCs**: PVCs for hosted cluster workloads (non-boot-image) are included in the backup and will be restored.
+
+For supportability details per platform and scenario, see the Supportability Matrix.
 
 
 ---
@@ -23233,10 +23293,9 @@ See the OADP method reference for the complete backup manifest.
 
 ## Restore Caveats
 
-- **Node readoption**: Not supported. Worker nodes will be reprovisioned during restore.
-- **Etcd Snapshot method**: Not validated for the OpenStack platform.
 - **Floating IP pools**: Floating IP pool resources are backed up and restored. Ensure the floating IP pool configuration on the destination environment matches the source.
-- **Cross-cluster migration**: Not yet supported (no E2E coverage). The procedure is documented for reference.
+
+For supportability details per platform and scenario, see the Supportability Matrix.
 
 
 ---
@@ -23387,7 +23446,7 @@ title: Cross-Cluster Migration
 
 !!! danger "Not Yet Supported"
 
-    This procedure is documented for reference and disaster recovery planning, but it is **not yet officially supported**. No end-to-end test coverage exists for cross-management-cluster migration scenarios. Use at your own risk, preferably in non-production environments or as a last-resort measure.
+    This procedure is documented for reference and disaster recovery planning, but it is **not yet officially supported**. Use at your own risk, preferably in non-production environments or as a last-resort measure. See the Supportability Matrix for per-platform status.
 
 This guide covers migrating a HostedCluster from one Management cluster to another. This is the most complex disaster recovery scenario and has strict prerequisites that **must** be in place before the original cluster fails.
 
@@ -23485,29 +23544,11 @@ Understanding what changes and what is preserved helps set expectations:
 
     If the source Management cluster is **already unavailable**, skip Phase 1 and go directly to Phase 2: Restore. You must have a pre-existing backup available in the shared storage location.
 
-    For disaster preparedness, create periodic backups **before** a failure occurs using `hypershift create oadp-backup --hc-name <HC_NAME> --hc-namespace <HC_NAMESPACE> --name <BACKUP_NAME> --ttl 720h`. The default TTL is 2 hours, which is too short for DR scenarios — set a TTL that covers your disaster recovery window.
+    For disaster preparedness, create periodic backups **before** a failure occurs using `hypershift create oadp-schedule --hc-name <HC_NAME> --hc-namespace <HC_NAMESPACE> --schedule "0 */6 * * *" --ttl 720h`. The default TTL is 2 hours, which is too short for DR scenarios — set a TTL that covers your disaster recovery window.
 
 ### Phase 1: Backup (on Source Management Cluster)
 
-#### Step 1: Pause the HostedCluster
-
-```bash
-export KUBECONFIG=<SOURCE_MGMT_KUBECONFIG>
-
-# Pause the HostedCluster
-oc patch -n <HC_NAMESPACE> hostedclusters/<HC_NAME> \
-  -p '{"spec":{"pausedUntil":"true"}}' --type=merge
-
-# Pause NodePools (if migrating nodes)
-oc patch -n <HC_NAMESPACE> nodepools/<NODEPOOL_NAME> \
-  -p '{"spec":{"pausedUntil":"true"}}' --type=merge
-
-# Scale down API servers to ensure etcd consistency
-oc scale deployment -n <HC_NAMESPACE>-<HC_NAME> --replicas=0 \
-  kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
-```
-
-#### Step 2: Create the Backup
+#### Step 1: Create the Backup
 
 **Using the HyperShift CLI (recommended):**
 
@@ -23519,7 +23560,7 @@ hypershift create oadp-backup \
 
 **Or using a manual Velero Backup manifest** — see the OADP method reference for platform-specific backup manifests.
 
-#### Step 3: Verify Backup Completion
+#### Step 2: Verify Backup Completion
 
 ```bash
 watch "oc get backup -n openshift-adp <BACKUP_NAME> -o jsonpath='{.status.phase}'"
@@ -23527,7 +23568,7 @@ watch "oc get backup -n openshift-adp <BACKUP_NAME> -o jsonpath='{.status.phase}
 
 Wait until the phase is `Completed`.
 
-#### Step 4: Clean Up Routes (Public/PublicAndPrivate only)
+#### Step 3: Clean Up Routes (Public/PublicAndPrivate only)
 
 For clusters with `Public` or `PublicAndPrivate` endpoint access, delete the control plane routes so the ExternalDNS Operator removes the DNS records from the source cluster:
 
@@ -23607,19 +23648,37 @@ After the restore creates new infrastructure endpoints on the destination cluste
 | ---------- | ---------------- |
 | **AWS** | Run `hypershift fix dr-oidc-iam` to fix OIDC Identity Provider. See AWS Platform Guide. |
 | **Azure** | Verify Workload Identity configuration. See Azure Platform Guide. |
-| **Agent / Bare Metal** | Ensure InfraEnv and Assisted Installer DB are backed up and restored. See Agent Platform Guide. |
-| **KubeVirt** | Cross-cluster migration is not validated for KubeVirt. See KubeVirt Platform Guide. |
-| **OpenStack** | No additional steps documented. See OpenStack Platform Guide. |
+| **Agent / Bare Metal** | Ensure InfraEnv and Assisted Installer DB are restored. Configure node migration strategy beforehand. See Agent Platform Guide. |
+| **KubeVirt** | See KubeVirt Platform Guide. |
+| **OpenStack** | See OpenStack Platform Guide. |
 
 ### Phase 3: Teardown (on Source Management Cluster)
 
 !!! important
 
-    Only perform teardown after verifying the HostedCluster is fully operational on the destination cluster.
+    Only perform teardown after verifying the HostedCluster is fully operational on the destination cluster. If the source cluster is already unavailable, skip this phase.
+
+#### Step 1: Pause the HostedCluster on the Source Cluster
+
+Pause the HostedCluster and NodePools to prevent the source and destination control planes from competing for the same resources:
 
 ```bash
 export KUBECONFIG=<SOURCE_MGMT_KUBECONFIG>
 
+# Pause the HostedCluster
+oc patch -n <HC_NAMESPACE> hostedclusters/<HC_NAME> \
+  -p '{"spec":{"pausedUntil":"true"}}' --type=merge
+
+# Pause all NodePools
+for np in $(oc get nodepools -n <HC_NAMESPACE> -o jsonpath='{.items[?(@.spec.clusterName=="<HC_NAME>")].metadata.name}'); do
+    oc patch -n <HC_NAMESPACE> nodepools/${np} \
+      -p '{"spec":{"pausedUntil":"true"}}' --type=merge
+done
+```
+
+#### Step 2: Scale Down and Delete Resources
+
+```bash
 # Scale down everything in the control plane namespace
 oc scale deployment -n <HC_NAMESPACE>-<HC_NAME> --replicas=0 --all
 oc scale statefulset -n <HC_NAMESPACE>-<HC_NAME> --replicas=0 --all

@@ -78,7 +78,6 @@ See the [OADP method reference](../methods/oadp.md) for the complete backup mani
 
 ## Restore Caveats
 
-- **Node readoption**: Not supported. Worker nodes will be reprovisioned during restore.
-- **Etcd Snapshot method**: Not validated for the OpenStack platform.
 - **Floating IP pools**: Floating IP pool resources are backed up and restored. Ensure the floating IP pool configuration on the destination environment matches the source.
-- **Cross-cluster migration**: Not yet supported (no E2E coverage). The procedure is documented for reference.
+
+For supportability details per platform and scenario, see the [Supportability Matrix](../index.md#supportability-matrix).

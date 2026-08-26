@@ -6,7 +6,7 @@ title: Cross-Cluster Migration
 
 !!! danger "Not Yet Supported"
 
-    This procedure is documented for reference and disaster recovery planning, but it is **not yet officially supported**. No end-to-end test coverage exists for cross-management-cluster migration scenarios. Use at your own risk, preferably in non-production environments or as a last-resort measure.
+    This procedure is documented for reference and disaster recovery planning, but it is **not yet officially supported**. Use at your own risk, preferably in non-production environments or as a last-resort measure. See the [Supportability Matrix](../index.md#supportability-matrix) for per-platform status.
 
 This guide covers migrating a HostedCluster from one Management cluster to another. This is the most complex disaster recovery scenario and has strict prerequisites that **must** be in place before the original cluster fails.
 
@@ -104,29 +104,11 @@ Understanding what changes and what is preserved helps set expectations:
 
     If the source Management cluster is **already unavailable**, skip Phase 1 and go directly to [Phase 2: Restore](#phase-2-restore-on-destination-management-cluster). You must have a pre-existing backup available in the shared storage location.
 
-    For disaster preparedness, create periodic backups **before** a failure occurs using `hypershift create oadp-backup --hc-name <HC_NAME> --hc-namespace <HC_NAMESPACE> --name <BACKUP_NAME> --ttl 720h`. The default TTL is 2 hours, which is too short for DR scenarios — set a TTL that covers your disaster recovery window.
+    For disaster preparedness, create periodic backups **before** a failure occurs using `hypershift create oadp-schedule --hc-name <HC_NAME> --hc-namespace <HC_NAMESPACE> --schedule "0 */6 * * *" --ttl 720h`. The default TTL is 2 hours, which is too short for DR scenarios — set a TTL that covers your disaster recovery window.
 
 ### Phase 1: Backup (on Source Management Cluster)
 
-#### Step 1: Pause the HostedCluster
-
-```bash
-export KUBECONFIG=<SOURCE_MGMT_KUBECONFIG>
-
-# Pause the HostedCluster
-oc patch -n <HC_NAMESPACE> hostedclusters/<HC_NAME> \
-  -p '{"spec":{"pausedUntil":"true"}}' --type=merge
-
-# Pause NodePools (if migrating nodes)
-oc patch -n <HC_NAMESPACE> nodepools/<NODEPOOL_NAME> \
-  -p '{"spec":{"pausedUntil":"true"}}' --type=merge
-
-# Scale down API servers to ensure etcd consistency
-oc scale deployment -n <HC_NAMESPACE>-<HC_NAME> --replicas=0 \
-  kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
-```
-
-#### Step 2: Create the Backup
+#### Step 1: Create the Backup
 
 **Using the HyperShift CLI (recommended):**
 
@@ -138,7 +120,7 @@ hypershift create oadp-backup \
 
 **Or using a manual Velero Backup manifest** — see the [OADP method reference](../methods/oadp.md) for platform-specific backup manifests.
 
-#### Step 3: Verify Backup Completion
+#### Step 2: Verify Backup Completion
 
 ```bash
 watch "oc get backup -n openshift-adp <BACKUP_NAME> -o jsonpath='{.status.phase}'"
@@ -146,7 +128,7 @@ watch "oc get backup -n openshift-adp <BACKUP_NAME> -o jsonpath='{.status.phase}
 
 Wait until the phase is `Completed`.
 
-#### Step 4: Clean Up Routes (Public/PublicAndPrivate only)
+#### Step 3: Clean Up Routes (Public/PublicAndPrivate only)
 
 For clusters with `Public` or `PublicAndPrivate` endpoint access, delete the control plane routes so the ExternalDNS Operator removes the DNS records from the source cluster:
 
@@ -226,19 +208,37 @@ After the restore creates new infrastructure endpoints on the destination cluste
 | ---------- | ---------------- |
 | **AWS** | Run `hypershift fix dr-oidc-iam` to fix OIDC Identity Provider. See [AWS Platform Guide](../platform-guides/aws.md#fixing-oidc-after-restore). |
 | **Azure** | Verify Workload Identity configuration. See [Azure Platform Guide](../platform-guides/azure.md). |
-| **Agent / Bare Metal** | Ensure InfraEnv and Assisted Installer DB are backed up and restored. See [Agent Platform Guide](../platform-guides/agent.md#cross-cluster-considerations). |
-| **KubeVirt** | Cross-cluster migration is not validated for KubeVirt. See [KubeVirt Platform Guide](../platform-guides/kubevirt.md). |
-| **OpenStack** | No additional steps documented. See [OpenStack Platform Guide](../platform-guides/openstack.md). |
+| **Agent / Bare Metal** | Ensure InfraEnv and Assisted Installer DB are restored. Configure node migration strategy beforehand. See [Agent Platform Guide](../platform-guides/agent.md#cross-cluster-considerations). |
+| **KubeVirt** | See [KubeVirt Platform Guide](../platform-guides/kubevirt.md). |
+| **OpenStack** | See [OpenStack Platform Guide](../platform-guides/openstack.md). |
 
 ### Phase 3: Teardown (on Source Management Cluster)
 
 !!! important
 
-    Only perform teardown after verifying the HostedCluster is fully operational on the destination cluster.
+    Only perform teardown after verifying the HostedCluster is fully operational on the destination cluster. If the source cluster is already unavailable, skip this phase.
+
+#### Step 1: Pause the HostedCluster on the Source Cluster
+
+Pause the HostedCluster and NodePools to prevent the source and destination control planes from competing for the same resources:
 
 ```bash
 export KUBECONFIG=<SOURCE_MGMT_KUBECONFIG>
 
+# Pause the HostedCluster
+oc patch -n <HC_NAMESPACE> hostedclusters/<HC_NAME> \
+  -p '{"spec":{"pausedUntil":"true"}}' --type=merge
+
+# Pause all NodePools
+for np in $(oc get nodepools -n <HC_NAMESPACE> -o jsonpath='{.items[?(@.spec.clusterName=="<HC_NAME>")].metadata.name}'); do
+    oc patch -n <HC_NAMESPACE> nodepools/${np} \
+      -p '{"spec":{"pausedUntil":"true"}}' --type=merge
+done
+```
+
+#### Step 2: Scale Down and Delete Resources
+
+```bash
 # Scale down everything in the control plane namespace
 oc scale deployment -n <HC_NAMESPACE>-<HC_NAME> --replicas=0 --all
 oc scale statefulset -n <HC_NAMESPACE>-<HC_NAME> --replicas=0 --all

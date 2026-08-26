@@ -45,7 +45,7 @@ flowchart TD
 | **Azure** | ✅ Supported | ✅ Tech Preview | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
 | **Agent / Bare Metal** | ✅ Supported | ✅ Tech Preview | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ✅ OCP 4.19+ / MCE 2.9+ |
 | **KubeVirt** | ✅ Supported | ⚠️ Not validated | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
-| **OpenStack** | ✅ Supported | ⚠️ Not validated | ✅ Supported | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
+| **OpenStack** | ⚠️ Tech Preview | ⚠️ Not validated | ⚠️ Tech Preview | ⚠️ Procedure documented — not yet supported (no E2E) | ❌ Not supported |
 
 !!! warning "Cross-cluster Migration Support Status"
 
@@ -76,7 +76,7 @@ Provider-specific configuration, caveats, and examples:
 - **[AWS](platform-guides/aws.md)**: OIDC fixup, ExternalDNS cleanup, endpoint access considerations.
 - **[Azure](platform-guides/azure.md)**: Workload Identity configuration, Azure Blob Storage setup for etcd snapshots.
 - **[Agent / Bare Metal](platform-guides/agent.md)**: InfraEnv lifecycle, Assisted Installer database, node readoption.
-- **[KubeVirt](platform-guides/kubevirt.md)**: Same-cluster only, VM recreation, boot image PVC filtering.
+- **[KubeVirt](platform-guides/kubevirt.md)**: VM recreation, boot image PVC filtering.
 - **[OpenStack](platform-guides/openstack.md)**: CSI driver considerations, floating IP pools.
 
 ### Reference
