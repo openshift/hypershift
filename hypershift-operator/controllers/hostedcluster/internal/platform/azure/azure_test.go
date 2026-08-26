@@ -16,6 +16,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -562,11 +563,12 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name                      string
-		hostedCluster             *hyperv1.HostedCluster
-		azureMachines             []capiazure.AzureMachine
-		expectedFinalizersRemoved bool
-		expectedError             bool
+		name                          string
+		hostedCluster                 *hyperv1.HostedCluster
+		azureMachines                 []capiazure.AzureMachine
+		capiProviderAvailableReplicas *int32 // nil means the capi-provider deployment does not exist
+		expectedFinalizersRemoved     bool
+		expectedError                 bool
 	}{
 		{
 			name: "When ManagedIdentities is nil it should return early without modifying machines",
@@ -592,15 +594,17 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					},
 				},
 			},
-			expectedFinalizersRemoved: false,
-			expectedError:             false,
+			capiProviderAvailableReplicas: ptr.To(int32(1)),
+			expectedFinalizersRemoved:     false,
+			expectedError:                 false,
 		},
 		{
-			name:                      "When there are no machines it should succeed",
-			hostedCluster:             managedIdentitiesHC,
-			azureMachines:             []capiazure.AzureMachine{},
-			expectedFinalizersRemoved: false,
-			expectedError:             false,
+			name:                          "When there are no machines it should succeed",
+			hostedCluster:                 managedIdentitiesHC,
+			azureMachines:                 []capiazure.AzureMachine{},
+			capiProviderAvailableReplicas: ptr.To(int32(1)),
+			expectedFinalizersRemoved:     false,
+			expectedError:                 false,
 		},
 		{
 			name:          "When a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
@@ -618,8 +622,9 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					},
 				},
 			},
-			expectedFinalizersRemoved: true,
-			expectedError:             false,
+			capiProviderAvailableReplicas: ptr.To(int32(1)),
+			expectedFinalizersRemoved:     true,
+			expectedError:                 false,
 		},
 		{
 			name:          "When a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
@@ -637,11 +642,12 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					},
 				},
 			},
-			expectedFinalizersRemoved: false,
-			expectedError:             false,
+			capiProviderAvailableReplicas: ptr.To(int32(1)),
+			expectedFinalizersRemoved:     false,
+			expectedError:                 false,
 		},
 		{
-			name:          "When a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
+			name:          "When a machine has a stale DeletionTimestamp without DeletionFailed condition and capi-provider is healthy it should not remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -661,8 +667,9 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					},
 				},
 			},
-			expectedFinalizersRemoved: false,
-			expectedError:             false,
+			capiProviderAvailableReplicas: ptr.To(int32(1)),
+			expectedFinalizersRemoved:     false,
+			expectedError:                 false,
 		},
 		{
 			name:          "When a machine is not pending deletion it should not remove finalizers regardless of conditions",
@@ -679,8 +686,84 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					},
 				},
 			},
-			expectedFinalizersRemoved: false,
-			expectedError:             false,
+			capiProviderAvailableReplicas: ptr.To(int32(1)),
+			expectedFinalizersRemoved:     false,
+			expectedError:                 false,
+		},
+		{
+			name:          "When a machine has a stale DeletionTimestamp without DeletionFailed condition and capi-provider has no available replicas it should remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &staleDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: capiv1.Conditions{
+							{
+								Type:   capiv1.ReadyCondition,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			capiProviderAvailableReplicas: ptr.To(int32(0)),
+			expectedFinalizersRemoved:     true,
+			expectedError:                 false,
+		},
+		{
+			name:          "When a machine has a recent DeletionTimestamp and capi-provider has no available replicas it should not remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &recentDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: capiv1.Conditions{
+							{
+								Type:   capiv1.ReadyCondition,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			capiProviderAvailableReplicas: ptr.To(int32(0)),
+			expectedFinalizersRemoved:     false,
+			expectedError:                 false,
+		},
+		{
+			name:          "When the capi-provider deployment does not exist and a machine has a stale DeletionTimestamp it should remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &staleDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: capiv1.Conditions{
+							{
+								Type:   capiv1.ReadyCondition,
+								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			capiProviderAvailableReplicas: nil,
+			expectedFinalizersRemoved:     true,
+			expectedError:                 false,
 		},
 	}
 
@@ -693,6 +776,18 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			objects := make([]client.Object, len(tc.azureMachines))
 			for i := range tc.azureMachines {
 				objects[i] = &tc.azureMachines[i]
+			}
+
+			if tc.capiProviderAvailableReplicas != nil {
+				objects = append(objects, &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "capi-provider",
+						Namespace: controlPlaneNamespace,
+					},
+					Status: appsv1.DeploymentStatus{
+						AvailableReplicas: *tc.capiProviderAvailableReplicas,
+					},
+				})
 			}
 
 			fakeClient := fake.NewClientBuilder().
