@@ -148,41 +148,11 @@ oc patch clusterdeployment -n <HC_NAMESPACE>-<HC_NAME> <CLUSTERDEPLOYMENT_NAME> 
       --type=merge -p '{"spec":{"preserveOnDelete":false}}'
     ```
 
-## Pre-Backup Steps (Agent Only)
+## Cross-Cluster Migration: CAPI Pause
 
-Before creating a backup for an Agent HostedCluster, pause the AgentMachine and AgentCluster CAPI resources to prevent the provider from reconciling during the backup:
+During cross-cluster migration, the AgentMachine and AgentCluster CAPI resources must be paused on the **source** cluster before restoring on the destination cluster. This prevents the Agent CAPI provider from reconciling while both clusters have copies of the same resources, avoiding race conditions and accidental agent unbinding.
 
-```bash
-# Pause AgentMachine CRs
-oc annotate agentmachine -n <HC_NAMESPACE>-<HC_NAME> \
-  cluster.x-k8s.io/paused=true --all
-
-# Pause AgentCluster CRs
-oc annotate agentcluster -n <HC_NAMESPACE>-<HC_NAME> \
-  cluster.x-k8s.io/paused=true --all
-```
-
-After the backup is complete, **unpause immediately** — do not keep the resources paused longer than necessary:
-
-```bash
-oc annotate agentmachine -n <HC_NAMESPACE>-<HC_NAME> \
-  cluster.x-k8s.io/paused- --all
-
-oc annotate agentcluster -n <HC_NAMESPACE>-<HC_NAME> \
-  cluster.x-k8s.io/paused- --all
-```
-
-## Post-Restore Steps (Agent Only)
-
-After restoring, the AgentMachine and AgentCluster CRs will be in a paused state (because the backup captured them while paused). Unpause them to allow the CAPI provider to resume reconciliation:
-
-```bash
-oc annotate agentmachine -n <HC_NAMESPACE>-<HC_NAME> \
-  cluster.x-k8s.io/paused- --all
-
-oc annotate agentcluster -n <HC_NAMESPACE>-<HC_NAME> \
-  cluster.x-k8s.io/paused- --all
-```
+This step is documented in the [Cross-cluster Migration procedure](../scenarios/cross-cluster-migration.md#step-1-pause-agent-capi-resources-on-the-source-cluster-agent-only) as Phase 2, Step 1.
 
 ## Restore Caveats
 
