@@ -6,12 +6,21 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-func TestKasRouteHostname(t *testing.T) {
+func TestKASRouteHostname(t *testing.T) {
 	tests := []struct {
 		name     string
 		hcp      *hyperv1.HostedControlPlane
 		expected string
 	}{
+		{
+			name: "When no APIServer strategy exists, it should return empty string",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{},
+				},
+			},
+			expected: "",
+		},
 		{
 			name: "When APIServer strategy has no route, it should return empty string",
 			hcp: &hyperv1.HostedControlPlane{
@@ -70,7 +79,7 @@ func TestKasRouteHostname(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := KasRouteHostname(tc.hcp)
+			result := KASRouteHostname(tc.hcp)
 			if result != tc.expected {
 				t.Errorf("expected %q, got %q", tc.expected, result)
 			}

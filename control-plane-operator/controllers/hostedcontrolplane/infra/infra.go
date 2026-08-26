@@ -522,7 +522,7 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 	}
 
 	if netutil.UseSharedIngressHCP(hcp) || netutil.UseSwiftNetworkingHCP(hcp) || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
-		return netutil.KasRouteHostname(hcp), netutil.ExternalDNSLBPort, "", nil
+		return netutil.KASRouteHostname(hcp), netutil.ExternalDNSLBPort, "", nil
 	}
 
 	var svc *corev1.Service
