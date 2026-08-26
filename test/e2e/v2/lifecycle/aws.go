@@ -144,7 +144,7 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 			{
 				Name:        "public",
 				Variant:     "public",
-				LabelFilter: "!lifecycle || hosted-cluster-aws",
+				LabelFilter: "!lifecycle || hosted-cluster-aws || nodepool-osimagestream",
 			},
 			{
 				Name:        "karpenter",
