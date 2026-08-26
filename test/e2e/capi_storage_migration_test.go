@@ -23,7 +23,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -225,11 +224,8 @@ func getGaugeValue(mf map[string]*dto.MetricFamily, name string) *float64 {
 }
 
 func checkHOLogsForMigratorErrors(ctx context.Context, t *testing.T, g gomega.Gomega) {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		cfg, err = e2eutil.GetConfig()
-		g.Expect(err).ToNot(gomega.HaveOccurred(), "getting kubeconfig")
-	}
+	cfg, err := e2eutil.GetConfig()
+	g.Expect(err).ToNot(gomega.HaveOccurred(), "getting kubeconfig")
 	kubeClient, err := kubeclient.NewForConfig(cfg)
 	g.Expect(err).ToNot(gomega.HaveOccurred(), "creating kube client")
 
