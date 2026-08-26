@@ -5,33 +5,53 @@ package lifecycle
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ClusterSpec describes a single cluster to create for lifecycle tests.
 type ClusterSpec struct {
-	Variant      string
-	ExtraArgs    []string
-	ReleaseImage string // override (empty = use default)
+	Variant      string   `json:"variant"`
+	ExtraArgs    []string `json:"extraArgs,omitempty"`
+	ReleaseImage string   `json:"releaseImage,omitempty"` // override (empty = use default)
 }
 
 // TestGroup describes one logical group of e2e tests to execute.
 type TestGroup struct {
-	Name        string
-	Variant     string
-	LabelFilter string
-	Skip        string
-	JUnitFile   string
-	ExtraEnv    []string
+	Name        string `json:"name"`
+	Variant     string `json:"variant"`
+	LabelFilter string `json:"labelFilter"`
+	Skip        string `json:"skip,omitempty"`
+}
+
+// JUnitFile returns the deterministic JUnit XML filename for this
+// test group, derived from the group name. It panics if the name
+// contains path separators or traversal sequences; callers must
+// validate the matrix before use.
+func (g TestGroup) JUnitFile() string {
+	if err := validateGroupName(g.Name); err != nil {
+		panic(err.Error())
+	}
+	return fmt.Sprintf("junit_%s.xml", g.Name)
+}
+
+// validateGroupName checks that name is safe for use as a path
+// component in JUnit filenames (no separators or traversal sequences).
+func validateGroupName(name string) error {
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid path component in test group name: %q", name)
+	}
+	return nil
 }
 
 // SequentialGroup runs its Steps one after another within a single
 // goroutine. If any step fails, subsequent steps are skipped.
 type SequentialGroup struct {
-	Name  string
-	Steps []TestGroup
+	Name  string      `json:"name"`
+	Steps []TestGroup `json:"steps"`
 }
 
 // TestMatrix defines the full set of test groups for a platform.
@@ -39,8 +59,52 @@ type SequentialGroup struct {
 // runs concurrently with everything else, but its internal Steps
 // run one after another.
 type TestMatrix struct {
-	Parallel   []TestGroup
-	Sequential []SequentialGroup
+	Parallel   []TestGroup       `json:"parallel,omitempty"`
+	Sequential []SequentialGroup `json:"sequential,omitempty"`
+}
+
+// Validate checks that all group names within the matrix are unique
+// and safe for use as JUnit filename components.
+func (m TestMatrix) Validate() error {
+	seen := make(map[string]bool)
+	var errs []error
+	check := func(name string) {
+		if err := validateGroupName(name); err != nil {
+			errs = append(errs, err)
+		}
+		if seen[name] {
+			errs = append(errs, fmt.Errorf("duplicate test group name: %q", name))
+		}
+		seen[name] = true
+	}
+	for _, g := range m.Parallel {
+		check(g.Name)
+	}
+	for _, sg := range m.Sequential {
+		for _, step := range sg.Steps {
+			check(step.Name)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Variants returns the unique cluster variants referenced by the
+// matrix. No ordering is guaranteed.
+func (m TestMatrix) Variants() []string {
+	seen := make(map[string]bool)
+	for _, g := range m.Parallel {
+		seen[g.Variant] = true
+	}
+	for _, sg := range m.Sequential {
+		for _, step := range sg.Steps {
+			seen[step.Variant] = true
+		}
+	}
+	variants := make([]string, 0, len(seen))
+	for v := range seen {
+		variants = append(variants, v)
+	}
+	return variants
 }
 
 // ResolveVariants validates that every variant referenced by the test
@@ -117,8 +181,13 @@ type PlatformConfig interface {
 	// block the initial version rollout if applied earlier.
 	PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
 
+	// DefaultTestPlan returns the full test plan for this platform,
+	// selecting all variants returned by ClusterSpecs and the complete
+	// test matrix using those variants.
+	DefaultTestPlan() TestPlan
+
 	// TestMatrix returns the test groups for this platform.
-	TestMatrix(releaseImage string) TestMatrix
+	TestMatrix() TestMatrix
 
 	// SetupTestEnv sets platform-specific environment variables
 	// before test execution (e.g., reading subnet IDs from

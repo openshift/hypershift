@@ -119,20 +119,26 @@ func (a *AWSPlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.
 	return nil
 }
 
-func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+func (a *AWSPlatformConfig) DefaultTestPlan() TestPlan {
+	return TestPlan{
+		Name:       "aws-full",
+		Platform:   "aws",
+		TestMatrix: a.TestMatrix(),
+	}
+}
+
+func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
 				Name:        "public",
 				Variant:     "public",
 				LabelFilter: "!lifecycle || hosted-cluster-aws",
-				JUnitFile:   "junit_public.xml",
 			},
 			{
 				Name:        "karpenter",
 				Variant:     "karpenter",
 				LabelFilter: "karpenter",
-				JUnitFile:   "junit_karpenter.xml",
 			},
 		},
 	}
