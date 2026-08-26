@@ -2,10 +2,16 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -16,10 +22,27 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	azureauth "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	"github.com/go-logr/logr"
 )
+
+type httpClientFunc func(*http.Request) (*http.Response, error)
+
+func (f httpClientFunc) Do(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (r *trackingReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
 
 // mockRoleAssignmentClient implements roleAssignmentClient for testing.
 type mockRoleAssignmentClient struct {
@@ -93,6 +116,227 @@ func internalServerError() error {
 		StatusCode: http.StatusInternalServerError,
 		ErrorCode:  "InternalServerError",
 	}
+}
+
+func TestNewRBACManager(t *testing.T) {
+	t.Run("When a manager is created, it should configure the Graph client", func(t *testing.T) {
+		g := NewWithT(t)
+
+		manager := NewRBACManager("test-subscription", nil)
+
+		g.Expect(manager.subscriptionID).To(Equal("test-subscription"))
+		g.Expect(manager.creds).To(BeNil())
+		g.Expect(manager.graphClient).ToNot(BeNil())
+		g.Expect(manager.graphRetryBackoff).To(Equal(graphRequestBackoff))
+	})
+}
+
+func TestGetObjectIDFromClientID(t *testing.T) {
+	const (
+		clientID = "00000000-0000-0000-0000-000000000001"
+		objectID = "11111111-1111-1111-1111-111111111111"
+	)
+	token := azcore.AccessToken{Token: "test-token"}
+	testBackoff := wait.Backoff{Steps: 2, Duration: time.Millisecond}
+
+	t.Run("When the client ID is invalid, it should return an error without sending a request", func(t *testing.T) {
+		g := NewWithT(t)
+		var attempts int
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(*http.Request) (*http.Response, error) {
+				attempts++
+				return nil, nil
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		_, err := manager.getObjectIDFromClientID(t.Context(), "not-a-uuid", token)
+
+		g.Expect(err).To(MatchError("invalid client ID format: must be a UUID"))
+		g.Expect(attempts).To(Equal(0))
+	})
+
+	t.Run("When Graph returns one service principal, it should return the object ID", func(t *testing.T) {
+		g := NewWithT(t)
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(req *http.Request) (*http.Response, error) {
+				g.Expect(req.Method).To(Equal(http.MethodGet))
+				g.Expect(req.URL.String()).To(ContainSubstring("graph.microsoft.com/v1.0/servicePrincipals"))
+				g.Expect(req.URL.Query().Get("$filter")).To(Equal("appId eq '" + clientID + "'"))
+				g.Expect(req.Header.Get("Authorization")).To(Equal("Bearer test-token"))
+				return graphResponse(req, http.StatusOK, `{"value":[{"id":"`+objectID+`"}]}`), nil
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		actualObjectID, err := manager.getObjectIDFromClientID(t.Context(), clientID, token)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(actualObjectID).To(Equal(objectID))
+	})
+
+	t.Run("When the first Graph DNS lookup fails, it should retry and return the object ID", func(t *testing.T) {
+		g := NewWithT(t)
+		attempts := 0
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				if attempts == 1 {
+					return nil, &net.DNSError{
+						Err:  "no such host",
+						Name: "graph.microsoft.com",
+					}
+				}
+				return graphResponse(req, http.StatusOK, `{"value":[{"id":"`+objectID+`"}]}`), nil
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		actualObjectID, err := manager.getObjectIDFromClientID(t.Context(), clientID, token)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(actualObjectID).To(Equal(objectID))
+		g.Expect(attempts).To(Equal(2))
+	})
+
+	t.Run("When Graph returns a retryable HTTP status, it should retry and return the object ID", func(t *testing.T) {
+		for _, statusCode := range []int{
+			http.StatusRequestTimeout,
+			http.StatusTooManyRequests,
+			http.StatusInternalServerError,
+			http.StatusBadGateway,
+			http.StatusServiceUnavailable,
+			http.StatusGatewayTimeout,
+		} {
+			t.Run(fmt.Sprintf("When Graph returns HTTP %d, it should retry", statusCode), func(t *testing.T) {
+				g := NewWithT(t)
+				attempts := 0
+				manager := &RBACManager{
+					graphClient: httpClientFunc(func(req *http.Request) (*http.Response, error) {
+						attempts++
+						if attempts == 1 {
+							return graphResponse(req, statusCode, "transient error"), nil
+						}
+						return graphResponse(req, http.StatusOK, `{"value":[{"id":"`+objectID+`"}]}`), nil
+					}),
+					graphRetryBackoff: testBackoff,
+				}
+
+				actualObjectID, err := manager.getObjectIDFromClientID(t.Context(), clientID, token)
+
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(actualObjectID).To(Equal(objectID))
+				g.Expect(attempts).To(Equal(2))
+			})
+		}
+	})
+
+	t.Run("When Graph returns a non-retryable HTTP status, it should return the error without retrying", func(t *testing.T) {
+		g := NewWithT(t)
+		attempts := 0
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				return graphResponse(req, http.StatusBadRequest, "invalid request"), nil
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		_, err := manager.getObjectIDFromClientID(t.Context(), clientID, token)
+
+		g.Expect(err).To(MatchError("graph API request failed with status 400: invalid request"))
+		g.Expect(attempts).To(Equal(1))
+	})
+
+	t.Run("When Graph returns Retry-After, it should wait before retrying", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+		defer cancel()
+		attempts := 0
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				return &http.Response{
+					StatusCode: http.StatusTooManyRequests,
+					Header: http.Header{
+						"Retry-After": {"1"},
+					},
+					Body:    io.NopCloser(strings.NewReader("rate limited")),
+					Request: req,
+				}, nil
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		_, err := manager.getObjectIDFromClientID(ctx, clientID, token)
+
+		g.Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
+		g.Expect(attempts).To(Equal(1))
+	})
+
+	t.Run("When Graph transport retries are exhausted, it should return the network error", func(t *testing.T) {
+		g := NewWithT(t)
+		attempts := 0
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(*http.Request) (*http.Response, error) {
+				attempts++
+				return nil, &net.OpError{
+					Op:   "dial",
+					Net:  "tcp",
+					Addr: &net.TCPAddr{IP: net.ParseIP("2603:1036:3000:10::80"), Port: 443},
+					Err:  syscall.ENETUNREACH,
+				}
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		_, err := manager.getObjectIDFromClientID(t.Context(), clientID, token)
+
+		g.Expect(err).To(MatchError(ContainSubstring("failed to send Microsoft Graph request after retries")))
+		g.Expect(errors.Is(err, syscall.ENETUNREACH)).To(BeTrue())
+		g.Expect(attempts).To(Equal(2))
+	})
+
+	t.Run("When the context is canceled, it should return the context error without sending a request", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		attempts := 0
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(*http.Request) (*http.Response, error) {
+				attempts++
+				return nil, nil
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		_, err := manager.getObjectIDFromClientID(ctx, clientID, token)
+
+		g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+		g.Expect(attempts).To(Equal(0))
+	})
+
+	t.Run("When the context is canceled after a Graph response, it should close the response body", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		responseBody := &trackingReadCloser{Reader: strings.NewReader(`{"value":[]}`)}
+		manager := &RBACManager{
+			graphClient: httpClientFunc(func(req *http.Request) (*http.Response, error) {
+				cancel()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       responseBody,
+					Request:    req,
+				}, nil
+			}),
+			graphRetryBackoff: testBackoff,
+		}
+
+		_, err := manager.getObjectIDFromClientID(ctx, clientID, token)
+
+		g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+		g.Expect(responseBody.closed).To(BeTrue())
+	})
 }
 
 func TestAssignRole(t *testing.T) {
@@ -507,4 +751,13 @@ func TestCleanupRoleAssignments(t *testing.T) {
 
 func discardLogger() logr.Logger {
 	return logr.Discard()
+}
+
+func graphResponse(req *http.Request, statusCode int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}
 }
