@@ -813,7 +813,10 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			}
 
 			if tc.capiProviderDeployment != nil {
-				objects = append(objects, tc.capiProviderDeployment)
+				// Deep-copy: several subtests share the same *Deployment value and run in
+				// parallel, but fake.ClientBuilder.Build() mutates the objects it's given
+				// (e.g. ResourceVersion), so sharing the pointer would race.
+				objects = append(objects, tc.capiProviderDeployment.DeepCopy())
 			}
 
 			fakeClient := fake.NewClientBuilder().
