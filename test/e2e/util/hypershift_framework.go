@@ -230,8 +230,19 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 
 // runs after each test.
 func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hyperv1.PlatformType) {
+	// Run the CloudTrail permission check regardless of test outcome —
+	// permission denied events are most useful when tests fail.
+	if platform == hyperv1.AWSPlatform && h.opts != nil && h.opts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
+		NoticeCloudTrailPermissionDenied(h.T, h.ctx,
+			h.client,
+			h.opts.AWSPlatform.Credentials.AWSCredentialsFile,
+			h.opts.AWSPlatform.Region,
+			h.startTime,
+			hostedCluster)
+	}
+
 	if h.Failed() {
-		// skip if Main failed
+		// skip remaining assertions if Main failed
 		return
 	}
 	h.Run("EnsureHostedCluster", func(t *testing.T) {
@@ -254,14 +265,6 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
-			if h.opts != nil && h.opts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
-				NoticeCloudTrailPermissionDenied(t, context.Background(),
-					h.client,
-					h.opts.AWSPlatform.Credentials.AWSCredentialsFile,
-					h.opts.AWSPlatform.Region,
-					h.startTime,
-					hostedCluster)
-			}
 		}
 		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
 		// HCCO installs the admission policies, however, NonePlatform clusters can be ready before
