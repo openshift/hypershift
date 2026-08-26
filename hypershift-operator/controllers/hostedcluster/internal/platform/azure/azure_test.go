@@ -25,6 +25,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
@@ -822,6 +823,58 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeleteOrphanedMachines_CapiProviderLookupError(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	controlPlaneNamespace := "test-cp-namespace"
+
+	hc := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Azure: &hyperv1.AzurePlatformSpec{
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{},
+					},
+				},
+			},
+		},
+	}
+
+	staleDeletionTimestamp := metav1.NewTime(time.Now().Add(-(deletionFailedThreshold + time.Minute)))
+	azureMachine := &capiazure.AzureMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "machine-1",
+			Namespace:         controlPlaneNamespace,
+			Finalizers:        []string{capiazure.MachineFinalizer},
+			DeletionTimestamp: &staleDeletionTimestamp,
+		},
+	}
+
+	getErr := fmt.Errorf("injected get failure")
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(azureMachine).
+		WithStatusSubresource(azureMachine).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*appsv1.Deployment); ok {
+					return getErr
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}).
+		Build()
+
+	azure := Azure{}
+	err := azure.DeleteOrphanedMachines(ctx, fakeClient, hc, controlPlaneNamespace)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to determine capi-provider availability"))
+
+	gotMachine := &capiazure.AzureMachine{}
+	g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(azureMachine), gotMachine)).To(Succeed())
+	g.Expect(gotMachine.Finalizers).To(Equal(azureMachine.Finalizers), "finalizers should not be modified when the capi-provider lookup fails")
 }
 
 func buildAzureHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
