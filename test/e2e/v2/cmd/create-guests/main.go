@@ -66,6 +66,7 @@ const defaultNamespace = "clusters"
 
 // envConfig captures the common environment configuration.
 type envConfig struct {
+	testPlanPath string
 	prowJobID    string
 	sharedDir    string
 	artifactDir  string
@@ -104,6 +105,7 @@ func loadEnvConfig() envConfig {
 	}
 
 	cfg := envConfig{
+		testPlanPath: os.Getenv("TEST_PLAN"),
 		prowJobID:    mustGetenv("PROW_JOB_ID"),
 		sharedDir:    sharedDir,
 		artifactDir:  mustGetenv("ARTIFACT_DIR"),
@@ -130,7 +132,17 @@ func loadEnvConfig() envConfig {
 }
 
 func run(ctx context.Context, cfg envConfig) error {
-	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	plan, err := lifecycle.ResolveTestPlan(cfg.testPlanPath, cfg.platform)
+	if err != nil {
+		return fmt.Errorf("resolving test plan: %w", err)
+	}
+	log.Printf("Using test plan %q", plan.Name)
+
+	allSpecs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	if err := plan.Validate(allSpecs); err != nil {
+		return err
+	}
+	specs := plan.FilterClusterSpecs(allSpecs)
 
 	// Phase 0: The manifest must exist before any infra is provisioned so
 	// destroy-guests can always clean up, even if create-guests fails
