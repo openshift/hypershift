@@ -11,12 +11,13 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "main"
-      && !".tekton/***".pathChanged()
       && (files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib|hack|\\.tekton|\\.github|\\.claude|\\.chai-bot)/|\\.md$|^(?:Dockerfile|Containerfile)\\b|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
          || "Containerfile.operator".pathChanged()
          || ".tekton/pipelines/common-operator-build.yaml".pathChanged()
          || ".tekton/hypershift-operator-main-pull-request.yaml".pathChanged()
          || ".tekton/hypershift-operator-main-pull-request-from-main.yaml".pathChanged())
+      && !".tekton/pipelines/common-operator-build.yaml".pathChanged()
+      && !".tekton/hypershift-operator-main-pull-request.yaml".pathChanged()
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: hypershift-operator

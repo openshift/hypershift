@@ -9,7 +9,7 @@ The two files in each pair MUST be identical except for the expected
 differences:
   1. metadata.name  (different suffix)
   2. The pipelinesascode.tekton.dev/pipeline annotation (present vs absent)
-  3. The CEL filter's .tekton guard  (".tekton/***".pathChanged() vs negated)
+  3. The CEL filter's pipeline-file guards (specific pathChanged() vs negated)
   4. spec.pipelineRef  (name-based vs git resolver)
 
 This script exits 0 if all pairs are consistent, 1 otherwise.
@@ -67,6 +67,23 @@ def find_orphaned_from_main():
     return orphans
 
 
+def find_orphaned_pull_requests():
+    """Return list of -pull-request.yaml filenames that have a local pipeline
+    annotation but no matching -from-main.yaml counterpart."""
+    orphans = []
+    for name in sorted(os.listdir(TEKTON_DIR)):
+        if name.endswith("-pull-request.yaml"):
+            from_main = name.replace("-pull-request.yaml",
+                                     "-pull-request-from-main.yaml")
+            if not os.path.exists(os.path.join(TEKTON_DIR, from_main)):
+                # Only flag as orphan if the file uses a local pipeline annotation.
+                doc = load(os.path.join(TEKTON_DIR, name))
+                annot = doc.get("metadata", {}).get("annotations", {})
+                if ANN_PIPELINE in annot:
+                    orphans.append(name)
+    return orphans
+
+
 def load(path):
     try:
         with open(path) as f:
@@ -77,15 +94,33 @@ def load(path):
 
 
 def normalise_cel(cel_text):
-    """Strip the .tekton/*** guard clause from a CEL expression to get the
-    'base' filter that should be identical between the two files."""
+    """Strip .tekton pipeline-file guard clauses from a CEL expression.
+
+    Handles three guard forms:
+      1. Legacy wildcard:  && ".tekton/***".pathChanged()  (positive or negated)
+      2. Specific negated: && !".tekton/<file>.yaml".pathChanged()
+      3. PR-branch block:  && (".tekton/<a>".pathChanged() || ".tekton/<b>".pathChanged())
+    """
     if cel_text is None:
         return ""
-    # Remove the guard lines (handles both && ".tekton/***".pathChanged()
-    # and && !".tekton/***".pathChanged())
+    # 1. Remove legacy '.tekton/***' guard (positive or negated).
     normalized = re.sub(
         r'\s*&&\s*!?"\s*\.tekton/\*\*\*\s*"\.pathChanged\(\)\s*', ' ',
         cel_text,
+    )
+    # 2. Remove PR-branch guard block:
+    #    && ("<common>".pathChanged() || "<self>".pathChanged())
+    normalized = re.sub(
+        r'\s*&&\s*\(\s*"\.tekton/[^"]+\.yaml"\.pathChanged\(\)\s*'
+        r'\|\|\s*"\.tekton/[^"]+\.yaml"\.pathChanged\(\)\s*\)',
+        ' ',
+        normalized,
+    )
+    # 3. Remove specific negated guards: && !"<file>".pathChanged()
+    normalized = re.sub(
+        r'\s*&&\s*!"\.tekton/[^"]+\.yaml"\.pathChanged\(\)',
+        ' ',
+        normalized,
     )
     # Collapse whitespace for comparison.
     return " ".join(normalized.split())
@@ -120,26 +155,36 @@ def check_pair(orig_path, from_main_path):
     if ANN_PIPELINE in fm_annot:
         errors.append(f"{fm_name}: must NOT have {ANN_PIPELINE} annotation")
 
-    # ---- 2.  CEL expression base must match ----
+    # ---- 2.  CEL pipeline-file guards ----
     orig_cel = orig_annot.get(ANN_CEL_EXPRESSION, "")
     fm_cel = fm_annot.get(ANN_CEL_EXPRESSION, "")
 
-    # Original must contain the positive guard.
-    if '".tekton/***".pathChanged()' not in orig_cel:
-        errors.append(f"{orig_name}: CEL missing '.tekton/***'.pathChanged() guard")
+    common_pipeline = ".tekton/pipelines/common-operator-build.yaml"
+    orig_pipeline_file = f".tekton/{orig_name}"
 
-    # From-main must contain the negated guard.
-    if '!".tekton/***".pathChanged()' not in fm_cel:
-        errors.append(f"{fm_name}: CEL missing negated '.tekton/***'.pathChanged() guard")
-
-    # After stripping the guard, the base expression must be identical.
-    orig_base = normalise_cel(orig_cel)
-    fm_base = normalise_cel(fm_cel)
-    if orig_base != fm_base:
+    # PR-branch must trigger on common pipeline or self-file changes.
+    if f'"{common_pipeline}".pathChanged()' not in orig_cel:
         errors.append(
-            f"CEL base mismatch between {orig_name} and {fm_name}:\n"
-            f"  original: {orig_base}\n"
-            f"  from-main: {fm_base}"
+            f"{orig_name}: CEL missing common pipeline guard "
+            f"(\"{common_pipeline}\".pathChanged())"
+        )
+    if f'"{orig_pipeline_file}".pathChanged()' not in orig_cel:
+        errors.append(
+            f"{orig_name}: CEL missing self-file guard "
+            f"(\"{orig_pipeline_file}\".pathChanged())"
+        )
+
+    # From-main must contain negated guards for both the common pipeline
+    # and the corresponding PR-branch pipeline file.
+    if f'!"{common_pipeline}".pathChanged()' not in fm_cel:
+        errors.append(
+            f"{fm_name}: CEL missing negated common pipeline guard "
+            f"(!\"{common_pipeline}\".pathChanged())"
+        )
+    if f'!"{orig_pipeline_file}".pathChanged()' not in fm_cel:
+        errors.append(
+            f"{fm_name}: CEL missing negated PR-branch pipeline guard "
+            f"(!\"{orig_pipeline_file}\".pathChanged())"
         )
 
     # ---- 3.  Compare everything else (minus expected diffs) ----
@@ -207,6 +252,14 @@ def main():
         all_errors.append(
             f"{orphan}: orphaned -from-main file with no matching "
             f"-pull-request.yaml"
+        )
+
+    # Detect pull-request files (with local pipeline annotation) that are
+    # missing a matching -from-main counterpart.
+    for orphan in find_orphaned_pull_requests():
+        all_errors.append(
+            f"{orphan}: pull-request file with local pipeline annotation "
+            f"has no matching -from-main.yaml counterpart"
         )
 
     for orig, fm in pairs:

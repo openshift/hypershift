@@ -58,3 +58,39 @@ class TestNormaliseCel:
         # No leading/trailing whitespace or double spaces.
         assert result == result.strip()
         assert "  " not in result
+
+    def test_strips_specific_negated_guard(self):
+        cel = (
+            'event == "pull_request" && target_branch == "main"'
+            ' && !".tekton/pipelines/common-operator-build.yaml".pathChanged()'
+            ' && !".tekton/foo-pull-request.yaml".pathChanged()'
+        )
+        result = normalise_cel(cel)
+        assert '".tekton/pipelines/common-operator-build.yaml"' not in result
+        assert '".tekton/foo-pull-request.yaml"' not in result
+        assert 'event == "pull_request"' in result
+
+    def test_strips_pr_branch_guard_block(self):
+        cel = (
+            'event == "pull_request"\n'
+            '&& target_branch == "main"\n'
+            '&& (".tekton/pipelines/common-operator-build.yaml".pathChanged()\n'
+            '   || ".tekton/foo-pull-request.yaml".pathChanged())'
+        )
+        result = normalise_cel(cel)
+        assert '".tekton/pipelines/common-operator-build.yaml"' not in result
+        assert '".tekton/foo-pull-request.yaml"' not in result
+        assert 'event == "pull_request"' in result
+
+    def test_specific_guards_both_directions_same_base(self):
+        pr_branch = (
+            'event == "pull_request" && target_branch == "main"'
+            ' && (".tekton/pipelines/common-operator-build.yaml".pathChanged()'
+            ' || ".tekton/foo-pull-request.yaml".pathChanged())'
+        )
+        from_main = (
+            'event == "pull_request" && target_branch == "main"'
+            ' && !".tekton/pipelines/common-operator-build.yaml".pathChanged()'
+            ' && !".tekton/foo-pull-request.yaml".pathChanged()'
+        )
+        assert normalise_cel(pr_branch) == normalise_cel(from_main)

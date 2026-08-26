@@ -8,11 +8,15 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "true"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
-      == "main" && !".tekton/***".pathChanged() && ("Dockerfile.github-actions-runner".pathChanged()
-      || "contrib/ci/gocacheprog".pathChanged()
-      || ".tekton/hypershift-gh-actions-runner-pull-request.yaml".pathChanged()
-      || ".tekton/hypershift-gh-actions-runner-pull-request-from-main.yaml".pathChanged())
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "pull_request"
+      && target_branch == "main"
+      && ("Dockerfile.github-actions-runner".pathChanged()
+         || "contrib/ci/gocacheprog".pathChanged()
+         || ".tekton/hypershift-gh-actions-runner-pull-request.yaml".pathChanged()
+         || ".tekton/hypershift-gh-actions-runner-pull-request-from-main.yaml".pathChanged())
+      && !".tekton/pipelines/common-operator-build.yaml".pathChanged()
+      && !".tekton/hypershift-gh-actions-runner-pull-request.yaml".pathChanged()
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: hypershift-actions

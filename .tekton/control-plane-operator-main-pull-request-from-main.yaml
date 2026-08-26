@@ -11,11 +11,12 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "main"
-      && !".tekton/***".pathChanged()
       && ( "control-plane-operator/***".pathChanged() ||
            "support/***".pathChanged() ||
            ".tekton/control-plane-operator*".pathChanged() ||
-           "/Containerfile.control-plane-operator".pathChanged() )
+           "/Containerfile.control-plane".pathChanged() )
+      && !".tekton/pipelines/common-operator-build.yaml".pathChanged()
+      && !".tekton/control-plane-operator-main-pull-request.yaml".pathChanged()
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: control-plane-operator

@@ -11,11 +11,8 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "main"
-      && ".tekton/***".pathChanged()
-      && ( "control-plane-operator/***".pathChanged() ||
-           "support/***".pathChanged() ||
-           ".tekton/control-plane-operator*".pathChanged() ||
-           "/Containerfile.control-plane-operator".pathChanged() )
+      && (".tekton/pipelines/common-operator-build.yaml".pathChanged()
+         || ".tekton/control-plane-operator-main-pull-request.yaml".pathChanged())
     pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:

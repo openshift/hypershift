@@ -178,7 +178,7 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
@@ -670,7 +670,7 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 	fi
 
 .PHONY: verify-tekton-pipeline-pairs
-verify-tekton-pipeline-pairs: ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
+verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
 	@python3 hack/verify-tekton-pipeline-pairs.py
 
 .PHONY: verify-codespell
