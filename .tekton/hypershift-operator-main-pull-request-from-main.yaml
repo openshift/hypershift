@@ -11,19 +11,18 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "main"
-      && ".tekton/***".pathChanged()
+      && !".tekton/***".pathChanged()
       && (files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib|hack|\\.tekton|\\.github|\\.claude|\\.chai-bot)/|\\.md$|^(?:Dockerfile|Containerfile)\\b|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
          || "Containerfile.operator".pathChanged()
          || ".tekton/pipelines/common-operator-build.yaml".pathChanged()
          || ".tekton/hypershift-operator-main-pull-request.yaml".pathChanged()
          || ".tekton/hypershift-operator-main-pull-request-from-main.yaml".pathChanged())
-    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: hypershift-operator
     appstudio.openshift.io/component: hypershift-operator-main
     pipelines.appstudio.openshift.io/type: build
-  name: hypershift-operator-main-on-pull-request
+  name: hypershift-operator-main-on-pr-from-main
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -43,7 +42,14 @@ spec:
   - name: path-context
     value: .
   pipelineRef:
-    name: hypershift-common-operator-build
+    resolver: git
+    params:
+      - name: url
+        value: "https://github.com/openshift/hypershift.git"
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: .tekton/pipelines/common-operator-build.yaml
   taskRunTemplate:
     serviceAccountName: build-pipeline-hypershift-operator-main
   workspaces:

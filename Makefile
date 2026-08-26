@@ -175,7 +175,7 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
 .PHONY: verify-ci
 verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav ## Run the same checks as the GHA verify workflow.
@@ -668,6 +668,10 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 	else \
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-docs-nav-order.py; \
 	fi
+
+.PHONY: verify-tekton-pipeline-pairs
+verify-tekton-pipeline-pairs: ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
+	@python3 hack/verify-tekton-pipeline-pairs.py
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.

@@ -11,18 +11,17 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "main"
-      && ".tekton/***".pathChanged()
+      && !".tekton/***".pathChanged()
       && ( "control-plane-operator/***".pathChanged() ||
            "support/***".pathChanged() ||
            ".tekton/control-plane-operator*".pathChanged() ||
            "/Containerfile.control-plane-operator".pathChanged() )
-    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: control-plane-operator
     appstudio.openshift.io/component: control-plane-operator-main
     pipelines.appstudio.openshift.io/type: build
-  name: control-plane-operator-main-on-pull-request
+  name: control-plane-operator-main-on-pr-from-main
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -42,7 +41,14 @@ spec:
   - name: path-context
     value: .
   pipelineRef:
-    name: hypershift-common-operator-build
+    resolver: git
+    params:
+      - name: url
+        value: "https://github.com/openshift/hypershift.git"
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: .tekton/pipelines/common-operator-build.yaml
   taskRunTemplate:
     serviceAccountName: build-pipeline-control-plane-operator-main
   workspaces:
