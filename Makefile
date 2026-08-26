@@ -144,7 +144,7 @@ lint-fix: generate $(HYPERSHIFTLINTER_PLUGIN)
 
 .PHONY: hypershift-lint-all
 hypershift-lint-all: $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
-	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter --build-tags e2ev2,backuprestore
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter
 
 .PHONY: test-linter
 test-linter:
@@ -586,7 +586,7 @@ fmt:
 # Run go vet against code
 .PHONY: vet
 vet:
-	$(GO) vet -tags integration,e2e,reqserving,e2ev2,backuprestore ./...
+	$(GO) vet -tags integration,e2e,reqserving,e2ev2,backuprestore,envtest ./...
 
 # jparrill: The RHTAP tool is breaking the RHTAP builds from Feb 27th, so we're stop using it for now
 # more info here https://redhat-internal.slack.com/archives/C031USXS2FJ/p1710177462151639
