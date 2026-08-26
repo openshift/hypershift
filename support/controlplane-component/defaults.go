@@ -2,9 +2,12 @@ package controlplanecomponent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
+	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -43,6 +46,23 @@ const (
 	// podSafeToEvictLocalVolumesAnnotation is an annotation denoting the local volumes of a pod that can be safely evicted.
 	// This is needed for the CA operator to make sure it can properly drain the nodes with those volumes.
 	podSafeToEvictLocalVolumesAnnotation = "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
+
+	// limitsRemovedAnnotation tracks containers whose resource limits have been
+	// automatically removed because the manifest no longer specifies them.
+	// The value is a comma-separated list of container names. When a user manually
+	// re-adds limits to a container that is already listed here, the operator
+	// detects this and preserves the user's limits on subsequent reconciliations.
+	limitsRemovedAnnotation = "component.hypershift.openshift.io/limits-removed"
+
+	// containerResourcesHashAnnotation records a hash of the final container resource
+	// requirements after all modifications. This ensures DeepDerivative detects
+	// resource changes (e.g. limit removal) even when the new value is a subset
+	// of the old value.
+	containerResourcesHashAnnotation = "component.hypershift.openshift.io/container-resources-hash"
+
+	// capiProviderComponentName is the component name for the CAPI provider deployment.
+	// Limit removal logic is scoped to this component only.
+	capiProviderComponentName = "capi-provider"
 )
 
 var (
@@ -60,7 +80,7 @@ var (
 	}
 )
 
-func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContext, workloadObj T, existingResources map[string]corev1.ResourceRequirements) error {
+func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContext, workloadObj T, existingResources map[string]corev1.ResourceRequirements, oldWorkloadAnnotations map[string]string) error {
 	hcp := cpContext.HCP
 
 	labels := workloadObj.GetLabels()
@@ -156,12 +176,54 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 		}
 	}
 
-	// preserve existing resource requirements.
+	// Reconcile container resource requirements.
+	// The default contract preserves existing resources so that user overrides
+	// (e.g. via kubectl edit) are not reverted.
+	//
+	// For the capi-provider component only, when the manifest intentionally
+	// removes limits (no limits in manifest but limits exist on the live
+	// object), the operator removes them automatically and records the
+	// container in the limitsRemovedAnnotation. If the user later re-adds
+	// limits to a container already listed in that annotation, the operator
+	// detects this as a deliberate user override and preserves the user's
+	// resources from that point on.
 	for idx, container := range podTemplateSpec.Spec.Containers {
-		if res, exist := existingResources[container.Name]; exist {
-			podTemplateSpec.Spec.Containers[idx].Resources = res
+		existing, hasExisting := existingResources[container.Name]
+		if !hasExisting {
+			// No existing deployment or container is new — use manifest resources.
+			continue
 		}
+
+		if c.Name() == capiProviderComponentName {
+			manifestHasLimits := len(container.Resources.Limits) > 0
+			existingHasLimits := len(existing.Limits) > 0
+
+			if !manifestHasLimits && existingHasLimits {
+				// Manifest says no limits but the live object has them.
+				if limitsAlreadyRemoved(oldWorkloadAnnotations, container.Name) {
+					// We already removed limits before, but the user re-added them.
+					// Respect the user's override — preserve existing resources.
+					podTemplateSpec.Spec.Containers[idx].Resources = existing
+				} else {
+					// First time: manifest wants no limits. Use manifest resources
+					// (which have no limits) and record that we removed them.
+					markLimitsRemoved(workloadObj, container.Name)
+				}
+				continue
+			}
+		}
+
+		// Default: preserve existing resources.
+		podTemplateSpec.Spec.Containers[idx].Resources = existing
 	}
+
+	// Record a hash of the final container resources on the pod template so
+	// that DeepDerivative detects changes even when the new value is a subset
+	// of the old (e.g. limits removed).
+	if podTemplateSpec.Annotations == nil {
+		podTemplateSpec.Annotations = map[string]string{}
+	}
+	podTemplateSpec.Annotations[containerResourcesHashAnnotation] = computeContainerResourcesHash(podTemplateSpec.Spec.Containers)
 
 	// set PriorityClassName
 	podTemplateSpec.Spec.PriorityClassName = priorityClass(c.Name(), hcp)
@@ -702,4 +764,60 @@ func debugComponentsSet(hcp *hyperv1.HostedControlPlane) sets.Set[string] {
 
 func clusterKey(hcp *hyperv1.HostedControlPlane) string {
 	return hcp.Namespace
+}
+
+// limitsAlreadyRemoved returns true if the given container name is listed in the
+// limitsRemovedAnnotation on the workload. This indicates the operator previously
+// removed limits for this container, so if limits are now present, a user must
+// have re-added them.
+func limitsAlreadyRemoved(annotations map[string]string, containerName string) bool {
+	val, ok := annotations[limitsRemovedAnnotation]
+	if !ok || val == "" {
+		return false
+	}
+	return slices.Contains(strings.Split(val, ","), containerName)
+}
+
+// markLimitsRemoved adds a container name to the limitsRemovedAnnotation on the
+// workload object. The annotation value is a comma-separated list of container names.
+func markLimitsRemoved(obj client.Object, containerName string) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	existing := annotations[limitsRemovedAnnotation]
+	if existing == "" {
+		annotations[limitsRemovedAnnotation] = containerName
+	} else {
+		// Avoid duplicates.
+		if slices.Contains(strings.Split(existing, ","), containerName) {
+			return
+		}
+		annotations[limitsRemovedAnnotation] = existing + "," + containerName
+	}
+	obj.SetAnnotations(annotations)
+}
+
+// computeContainerResourcesHash computes a stable hash of container resource
+// requirements. This hash is stored as a pod template annotation so that
+// DeepDerivative detects resource changes even when the new value is a subset
+// of the old (e.g. limits removed).
+func computeContainerResourcesHash(containers []corev1.Container) string {
+	type containerResources struct {
+		Name      string                      `json:"name"`
+		Resources corev1.ResourceRequirements `json:"resources"`
+	}
+	resources := make([]containerResources, 0, len(containers))
+	for _, c := range containers {
+		resources = append(resources, containerResources{
+			Name:      c.Name,
+			Resources: c.Resources,
+		})
+	}
+	sort.Slice(resources, func(i, j int) bool {
+		return resources[i].Name < resources[j].Name
+	})
+	data, _ := json.Marshal(resources)
+	hash := sha256.Sum256(data)
+	return fmt.Sprintf("%x", hash[:8])
 }
