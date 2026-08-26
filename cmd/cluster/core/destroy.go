@@ -299,12 +299,16 @@ func stripFinalizersFromList(ctx context.Context, c client.Client, list client.O
 // forceRemoveAllFinalizers strips finalizers from all child resources in the
 // control plane namespace and NodePools in the HC namespace, then from the
 // HostedCluster itself (preserving the destroy finalizer for the normal
-// removal path). Resources are processed bottom-up so that Kubernetes garbage
-// collection can proceed as each layer is unblocked.
+// removal path). After finalizers are stripped, all remaining content in the
+// control plane namespace is explicitly deleted before the namespace itself is
+// removed. This prevents orphaned objects that would be permanently
+// undeletable if the namespace were removed while they still existed.
 func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
 	cpNamespace := manifests.HostedControlPlaneNamespace(o.Namespace, o.Name)
 	var errs []error
 
+	// Phase 1: Strip finalizers from all known resource types.
+	//
 	// Bottom-up: infra machines → CAPI machines → clusters → HCP → deployments.
 	// All provider-specific types are listed; stripFinalizersFromList silently
 	// skips CRDs that are not installed on the current cluster.
@@ -325,6 +329,26 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 		&appsv1.DeploymentList{},
 	}
 	for _, list := range cpResources {
+		errs = append(errs, stripFinalizersFromList(ctx, c, list, cpNamespace, o.Log)...)
+	}
+
+	// Strip finalizers from core Kubernetes types that commonly carry
+	// finalizers in a control plane namespace (e.g. Services with
+	// service.kubernetes.io/load-balancer-cleanup, PVCs with
+	// kubernetes.io/pvc-protection). Without this, these objects are
+	// orphaned when the namespace is force-removed.
+	coreResources := []client.ObjectList{
+		&v1.ServiceList{},
+		&v1.PersistentVolumeClaimList{},
+		&v1.PodList{},
+		&v1.ConfigMapList{},
+		&v1.SecretList{},
+		&v1.EndpointsList{},
+		&v1.ServiceAccountList{},
+		&appsv1.StatefulSetList{},
+		&appsv1.ReplicaSetList{},
+	}
+	for _, list := range coreResources {
 		errs = append(errs, stripFinalizersFromList(ctx, c, list, cpNamespace, o.Log)...)
 	}
 
@@ -355,6 +379,13 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 		}
 	}
 
+	// Phase 2: Explicitly delete all remaining content from the control plane
+	// namespace. This must happen before clearing the namespace's
+	// spec.finalizers, because clearing spec.finalizers allows the namespace
+	// to be garbage collected immediately, orphaning any objects still inside.
+	errs = append(errs, deleteNamespacedContent(ctx, c, cpNamespace, o.Log)...)
+
+	// Phase 3: Clean up the control plane namespace.
 	// Strip both metadata.finalizers and spec.finalizers from the control
 	// plane namespace, then delete it. spec.finalizers require the finalize
 	// subresource; a Terminating namespace stays stuck until both are empty.
@@ -391,6 +422,35 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 	}
 	o.Log.Info("Force removal of all finalizers complete", "namespace", o.Namespace, "name", o.Name)
 	return nil
+}
+
+// deleteNamespacedContent explicitly deletes all common namespaced resource
+// types from a namespace. This is called after stripping finalizers and before
+// clearing the namespace's spec.finalizers, to ensure no objects remain when
+// the namespace is garbage collected.
+func deleteNamespacedContent(ctx context.Context, c client.Client, namespace string, log logr.Logger) []error {
+	var errs []error
+	contentTypes := []client.Object{
+		&appsv1.Deployment{},
+		&appsv1.StatefulSet{},
+		&appsv1.ReplicaSet{},
+		&v1.Service{},
+		&v1.Pod{},
+		&v1.PersistentVolumeClaim{},
+		&v1.ConfigMap{},
+		&v1.Secret{},
+		&v1.Endpoints{},
+		&v1.ServiceAccount{},
+	}
+	for _, obj := range contentTypes {
+		if err := c.DeleteAllOf(ctx, obj, client.InNamespace(namespace)); err != nil {
+			if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %T in namespace %s: %w", obj, namespace, err))
+			}
+		}
+	}
+	log.Info("Deleted remaining content from control plane namespace", "namespace", namespace)
+	return errs
 }
 
 // waitForRestOfFinalizers waits for the hosted cluster to have only the CLI's finalizer remaining,

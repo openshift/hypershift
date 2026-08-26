@@ -14,6 +14,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -145,6 +146,25 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			},
 		}
 
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "kube-apiserver",
+				Namespace:  cpNamespace,
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+			},
+		}
+
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "data-etcd-0",
+				Namespace:  cpNamespace,
+				Finalizers: []string{"kubernetes.io/pvc-protection"},
+			},
+		}
+
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: cpNamespace,
@@ -153,7 +173,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
-			WithObjects(hc, nodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, ns).
+			WithObjects(hc, nodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, svc, pvc, ns).
 			Build()
 
 		opts := &DestroyOptions{
@@ -202,11 +222,20 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updatedMachine.Finalizers).To(BeEmpty())
 
-		// Verify Deployment finalizers are gone
+		// Verify Deployment was deleted during content cleanup
 		updatedDeploy := &appsv1.Deployment{}
 		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "capi-provider"}, updatedDeploy)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updatedDeploy.Finalizers).To(BeEmpty())
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Deployment should be deleted from namespace")
+
+		// Verify Service with load-balancer-cleanup finalizer was stripped and deleted
+		updatedSvc := &corev1.Service{}
+		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "kube-apiserver"}, updatedSvc)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Service should be deleted from namespace")
+
+		// Verify PVC with pvc-protection finalizer was stripped and deleted
+		updatedPVC := &corev1.PersistentVolumeClaim{}
+		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "data-etcd-0"}, updatedPVC)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "PVC should be deleted from namespace")
 	})
 
 	t.Run("When the control plane namespace is empty, it should succeed without errors", func(t *testing.T) {
@@ -363,6 +392,71 @@ func TestForceRemoveAllFinalizersErrors(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("force removal encountered"))
 		g.Expect(err.Error()).To(ContainSubstring("API server unavailable"))
+	})
+}
+
+func TestDeleteNamespacedContent(t *testing.T) {
+	t.Run("When namespace contains core resources, it should delete them all", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+		namespace := "clusters-test-cluster"
+
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver",
+				Namespace: namespace,
+			},
+			Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+			},
+		}
+
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "data-etcd-0",
+				Namespace: namespace,
+			},
+		}
+
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-config",
+				Namespace: namespace,
+			},
+		}
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-secret",
+				Namespace: namespace,
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(svc, pvc, configMap, secret).
+			Build()
+
+		errs := deleteNamespacedContent(ctx, c, namespace, log.Log)
+		g.Expect(errs).To(BeEmpty())
+
+		// Verify all content is deleted
+		g.Expect(apierrors.IsNotFound(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "kube-apiserver"}, &corev1.Service{}))).To(BeTrue())
+		g.Expect(apierrors.IsNotFound(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "data-etcd-0"}, &corev1.PersistentVolumeClaim{}))).To(BeTrue())
+		g.Expect(apierrors.IsNotFound(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "test-config"}, &corev1.ConfigMap{}))).To(BeTrue())
+		g.Expect(apierrors.IsNotFound(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: "test-secret"}, &corev1.Secret{}))).To(BeTrue())
+	})
+
+	t.Run("When namespace is empty, it should succeed without errors", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			Build()
+
+		errs := deleteNamespacedContent(ctx, c, "nonexistent-ns", log.Log)
+		g.Expect(errs).To(BeEmpty())
 	})
 }
 
