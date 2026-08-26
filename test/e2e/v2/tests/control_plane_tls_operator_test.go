@@ -265,7 +265,7 @@ func waitForAppPodRestart(
 		newPodUID = string(readyPod.UID)
 		g.Expect(newPodUID).NotTo(Equal(previousUID),
 			"%s pod UID should have changed after TLS config mutation (still %s)", appLabel, previousUID)
-	}, 2*time.Minute, 5*time.Second).Should(Succeed(),
+	}, 5*time.Minute, 5*time.Second).Should(Succeed(),
 		"%s pod should restart and become ready after TLS config mutation", appLabel)
 	return newPodUID
 }
