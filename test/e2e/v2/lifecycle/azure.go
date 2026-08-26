@@ -10,12 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -122,34 +125,43 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 	}
 	publicExtraArgs = append(publicExtraArgs, extraArgs...)
 
+	oneInitialReplica := 1
+	twoInitialReplicas := 2
+
 	return []ClusterSpec{
 		{
-			Variant:   "public",
-			ExtraArgs: publicExtraArgs,
+			Variant:                 "public",
+			ExtraArgs:               publicExtraArgs,
+			InitialNodePoolReplicas: &twoInitialReplicas,
 		},
 		{
-			Variant: "private",
+			Variant:                 "private",
+			InitialNodePoolReplicas: &oneInitialReplica,
 			ExtraArgs: append([]string{
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
 			}, extraArgs...),
 		},
 		{
-			Variant:   "oauth-lb",
-			ExtraArgs: append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
+			Variant:                 "oauth-lb",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
 		},
 		{
-			Variant:      "upgrade",
-			ReleaseImage: n1Image,
-			ExtraArgs:    append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
+			Variant:                 "upgrade",
+			ReleaseImage:            n1Image,
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			ExtraArgs:               append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
 		},
 		{
-			Variant:   "autoscaling",
-			ExtraArgs: extraArgs,
+			Variant:                 "autoscaling",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               extraArgs,
 		},
 		{
-			Variant:   "external-oidc",
-			ExtraArgs: extraArgs,
+			Variant:                 "external-oidc",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               extraArgs,
 		},
 	}
 }
