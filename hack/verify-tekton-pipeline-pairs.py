@@ -30,6 +30,10 @@ except ImportError:
 TEKTON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                           ".tekton")
 
+# Annotation key constants to reduce typo risk.
+ANN_PIPELINE = "pipelinesascode.tekton.dev/pipeline"
+ANN_CEL_EXPRESSION = "pipelinesascode.tekton.dev/on-cel-expression"
+
 # Expected pipeline source for the git-resolver variant.
 EXPECTED_GIT_RESOLVER = {
     "url": "https://github.com/openshift/hypershift.git",
@@ -51,9 +55,25 @@ def find_pairs():
     return pairs
 
 
+def find_orphaned_from_main():
+    """Return list of -from-main filenames without a matching -pull-request.yaml."""
+    orphans = []
+    for name in sorted(os.listdir(TEKTON_DIR)):
+        if name.endswith("-pull-request-from-main.yaml"):
+            original = name.replace("-pull-request-from-main.yaml",
+                                    "-pull-request.yaml")
+            if not os.path.exists(os.path.join(TEKTON_DIR, original)):
+                orphans.append(name)
+    return orphans
+
+
 def load(path):
-    with open(path) as f:
-        return yaml.safe_load(f)
+    try:
+        with open(path) as f:
+            return yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"ERROR: failed to load {path}: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def normalise_cel(cel_text):
@@ -93,16 +113,16 @@ def check_pair(orig_path, from_main_path):
     fm_annot = dict(fm.get("metadata", {}).get("annotations", {}))
 
     # Original MUST have the pipeline annotation.
-    if "pipelinesascode.tekton.dev/pipeline" not in orig_annot:
-        errors.append(f"{orig_name}: missing pipelinesascode.tekton.dev/pipeline annotation")
+    if ANN_PIPELINE not in orig_annot:
+        errors.append(f"{orig_name}: missing {ANN_PIPELINE} annotation")
 
     # From-main MUST NOT have the pipeline annotation.
-    if "pipelinesascode.tekton.dev/pipeline" in fm_annot:
-        errors.append(f"{fm_name}: must NOT have pipelinesascode.tekton.dev/pipeline annotation")
+    if ANN_PIPELINE in fm_annot:
+        errors.append(f"{fm_name}: must NOT have {ANN_PIPELINE} annotation")
 
     # ---- 2.  CEL expression base must match ----
-    orig_cel = orig_annot.get("pipelinesascode.tekton.dev/on-cel-expression", "")
-    fm_cel = fm_annot.get("pipelinesascode.tekton.dev/on-cel-expression", "")
+    orig_cel = orig_annot.get(ANN_CEL_EXPRESSION, "")
+    fm_cel = fm_annot.get(ANN_CEL_EXPRESSION, "")
 
     # Original must contain the positive guard.
     if '".tekton/***".pathChanged()' not in orig_cel:
@@ -124,8 +144,7 @@ def check_pair(orig_path, from_main_path):
 
     # ---- 3.  Compare everything else (minus expected diffs) ----
     # Strip annotations we already checked.
-    for key in ("pipelinesascode.tekton.dev/on-cel-expression",
-                "pipelinesascode.tekton.dev/pipeline"):
+    for key in (ANN_CEL_EXPRESSION, ANN_PIPELINE):
         orig_annot.pop(key, None)
         fm_annot.pop(key, None)
 
@@ -146,12 +165,16 @@ def check_pair(orig_path, from_main_path):
         errors.append(f"Namespace mismatch between {orig_name} and {fm_name}")
 
     # ---- 4.  spec (minus pipelineRef) must match ----
-    orig_spec = normalise_pipelineref(orig)
-    fm_spec = normalise_pipelineref(fm)
-    if orig_spec.get("spec") != fm_spec.get("spec"):
+    orig_spec_data = normalise_pipelineref(orig).get("spec", {})
+    fm_spec_data = normalise_pipelineref(fm).get("spec", {})
+    if orig_spec_data != fm_spec_data:
+        differing = sorted(
+            k for k in set(orig_spec_data) | set(fm_spec_data)
+            if orig_spec_data.get(k) != fm_spec_data.get(k)
+        )
         errors.append(
             f"spec mismatch (excluding pipelineRef) between "
-            f"{orig_name} and {fm_name}"
+            f"{orig_name} and {fm_name}: differing fields: {', '.join(differing)}"
         )
 
     # ---- 5.  Validate from-main pipelineRef uses git resolver ----
@@ -178,6 +201,14 @@ def main():
         sys.exit(1)
 
     all_errors = []
+
+    # Detect orphaned -from-main files without a matching pull-request file.
+    for orphan in find_orphaned_from_main():
+        all_errors.append(
+            f"{orphan}: orphaned -from-main file with no matching "
+            f"-pull-request.yaml"
+        )
+
     for orig, fm in pairs:
         print(f"Checking pair: {os.path.basename(orig)} <-> {os.path.basename(fm)}")
         errs = check_pair(orig, fm)
