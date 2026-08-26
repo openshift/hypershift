@@ -10,7 +10,7 @@ import (
 type Provider interface {
 	// GetInstanceTypeInfo returns the specifications for a given instance type.
 	// The instanceType parameter is the cloud provider specific instance type name
-	// (e.g., "m5.large" for AWS, "Standard_D4s_v3" for Azure).
+	// (e.g., "m5.large" for AWS, "Standard_D4s_v5" for Azure).
 	GetInstanceTypeInfo(ctx context.Context, instanceType string) (*InstanceTypeInfo, error)
 }
 
