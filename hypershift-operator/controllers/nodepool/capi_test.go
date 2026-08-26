@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -2942,7 +2943,10 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 		{
 			name: "When MachineDeployment is complete, it should update nodePool version and annotations",
 			machineDeployment: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  1,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "1"},
+				},
 				Spec: capiv1.MachineDeploymentSpec{
 					Replicas: ptr.To[int32](3),
 				},
@@ -3029,9 +3033,29 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 				},
 			}
 
+			// Create a single MachineSet at the current revision for the MachineDeployment.
+			// This ensures MachineDeploymentComplete's MachineSet check passes when counters are valid.
+			ms := &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ms",
+					Namespace: "cp-ns",
+					Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: tc.machineDeployment.Name},
+					Annotations: map[string]string{
+						capiv1.RevisionAnnotation: fmt.Sprintf("%d", tc.machineDeployment.Generation),
+					},
+				},
+				Status: capiv1.MachineSetStatus{
+					Replicas: tc.machineDeployment.Status.Replicas,
+				},
+			}
+
+			tc.machineDeployment.Namespace = "cp-ns"
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(ms).Build()
+
 			capi := &CAPI{
 				Token: &Token{
 					ConfigGenerator: &ConfigGenerator{
+						Client:                fakeClient,
 						nodePool:              nodePool,
 						controlplaneNamespace: "cp-ns",
 						rolloutConfig: &rolloutConfig{
@@ -3053,7 +3077,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 				},
 			}
 
-			capi.reconcileMachineDeploymentStatus(logr.Discard(), tc.machineDeployment, templateCR)
+			capi.reconcileMachineDeploymentStatus(context.Background(), logr.Discard(), tc.machineDeployment, templateCR)
 
 			g.Expect(nodePool.Status.Replicas).To(Equal(tc.expectedReplicas))
 			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion))
@@ -3581,16 +3605,31 @@ func TestMachineDeploymentComplete(t *testing.T) {
 	two := int32(2)
 	three := int32(3)
 
+	// A single MachineSet at the current revision with matching replicas.
+	// Used for test cases where the MachineSet state should not block completion.
+	singleCurrentMS := []capiv1.MachineSet{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+			},
+			Status: capiv1.MachineSetStatus{Replicas: ptr.To(int32(2))},
+		},
+	}
+
 	testCases := []struct {
-		name     string
-		md       *capiv1.MachineDeployment
-		expected bool
+		name        string
+		md          *capiv1.MachineDeployment
+		machineSets []capiv1.MachineSet
+		expected    bool
 	}{
 		{
 			name: "When all v1beta1 and v1beta2 fields agree, it should return true",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status: capiv1.MachineDeploymentStatus{
 					Replicas:           ptr.To(int32(2)),
 					UpToDateReplicas:   ptr.To(int32(2)),
@@ -3598,7 +3637,39 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObservedGeneration: 2,
 				},
 			},
-			expected: true,
+			machineSets: singleCurrentMS,
+			expected:    true,
+		},
+		{
+			name: "When counters look complete but old MachineSet still has replicas, it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To(int32(2)),
+					UpToDateReplicas:   ptr.To(int32(2)),
+					AvailableReplicas:  ptr.To(int32(2)),
+					ObservedGeneration: 2,
+				},
+			},
+			machineSets: []capiv1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{capiv1.RevisionAnnotation: "1"},
+					},
+					Status: capiv1.MachineSetStatus{Replicas: ptr.To(int32(2))},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+					},
+					Status: capiv1.MachineSetStatus{Replicas: ptr.To(int32(0))},
+				},
+			},
+			expected: false,
 		},
 		{
 			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees, it should return false",
@@ -3612,7 +3683,8 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObservedGeneration: 2,
 				},
 			},
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 		{
 			name: "When v1beta1 looks complete but v1beta2 availableReplicas disagrees, it should return false",
@@ -3626,7 +3698,8 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObservedGeneration: 2,
 				},
 			},
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 		{
 			name: "When v1beta1 is not complete, it should return false without checking v1beta2",
@@ -3635,7 +3708,8 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status:     capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(3)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 2},
 			},
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 		{
 			name: "When v1beta2 status is nil, it should return false",
@@ -3644,7 +3718,8 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status:     capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(2)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 1},
 			},
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 		{
 			name: "When v1beta1 replicas does not match spec, it should return false",
@@ -3658,7 +3733,8 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObservedGeneration: 2,
 				},
 			},
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 		{
 			name: "When v1beta2 upToDateReplicas is nil, it should return false",
@@ -3671,7 +3747,8 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObservedGeneration: 2,
 				},
 			},
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 		{
 			name: "When v1beta2 availableReplicas is nil, it should return false",
@@ -3685,7 +3762,8 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObservedGeneration: 2,
 				},
 			},
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 		{
 			name: "When desired replicas is zero and v1beta2 fields are nil, it should return false",
@@ -3699,14 +3777,15 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					},
 				}
 			}(),
-			expected: false,
+			machineSets: singleCurrentMS,
+			expected:    false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(MachineDeploymentComplete(tc.md)).To(Equal(tc.expected))
+			g.Expect(MachineDeploymentComplete(tc.md, tc.machineSets)).To(Equal(tc.expected))
 		})
 	}
 }
