@@ -378,14 +378,14 @@ func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster 
 const deletionFailedThreshold = 10 * time.Minute
 
 // DeleteOrphanedMachines removes the finalizer from AzureMachines that are stuck in deletion
-// either due to credential failures or because the capi-provider (CAPZ) deployment is unable
-// to run at all (e.g. its availability-prober init container is blocked on an unreachable
-// guest API and can never start the manager). The credential-failure case is detected by
-// checking each AzureMachine's Status.Conditions for a Ready=False condition with
-// Reason=DeletionFailed. The CAPZ-unavailable case is detected by checking whether the
-// capi-provider deployment has any available replicas. Orphaning the machine allows
-// management cluster cleanup to proceed without requiring valid cloud credentials or a
-// healthy guest API.
+// either due to credential failures or because the capi-provider (CAPZ) deployment has been
+// unable to run for at least deletionFailedThreshold (e.g. its availability-prober init
+// container is blocked on an unreachable guest API and can never start the manager). The
+// credential-failure case is detected by checking each AzureMachine's Status.Conditions for a
+// Ready=False condition with Reason=DeletionFailed. The CAPZ-unavailable case is detected by
+// checking whether the capi-provider deployment's Available condition has been reporting False
+// for that long. Orphaning the machine allows management cluster cleanup to proceed without
+// requiring valid cloud credentials or a healthy guest API.
 func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	// This orphaning behavior is intended for managed-identity cleanup flow.
 	if hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities == nil {
@@ -439,10 +439,12 @@ func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hy
 	return utilerrors.NewAggregate(errs)
 }
 
-// capiProviderUnavailable reports whether the capi-provider (CAPZ) deployment is unable to
-// process AzureMachine finalizers — either it does not exist or it has no available replicas.
-// This happens when its availability-prober init container is permanently blocked on an
-// unreachable guest API, so the CAPZ manager container never starts.
+// capiProviderUnavailable reports whether the capi-provider (CAPZ) deployment has been unable
+// to process AzureMachine finalizers for at least deletionFailedThreshold. A missing deployment
+// is treated as immediately unavailable. Otherwise this requires the deployment's Available
+// condition to have been reporting False for at least that long, rather than a point-in-time
+// replica count, so a brief CAPZ restart (e.g. an OOM kill or rolling update) that could still
+// finish real Azure cleanup does not cause a machine to be orphaned prematurely.
 func capiProviderUnavailable(ctx context.Context, c client.Client, controlPlaneNamespace string) (bool, error) {
 	dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "capi-provider", Namespace: controlPlaneNamespace}}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(dep), dep); err != nil {
@@ -451,7 +453,12 @@ func capiProviderUnavailable(ctx context.Context, c client.Client, controlPlaneN
 		}
 		return false, err
 	}
-	return dep.Status.AvailableReplicas == 0, nil
+	for _, cond := range dep.Status.Conditions {
+		if cond.Type == appsv1.DeploymentAvailable {
+			return cond.Status == corev1.ConditionFalse && time.Since(cond.LastTransitionTime.Time) >= deletionFailedThreshold, nil
+		}
+	}
+	return false, nil
 }
 
 // hasDeletionFailedCondition returns true if the AzureMachine has a Ready condition with
