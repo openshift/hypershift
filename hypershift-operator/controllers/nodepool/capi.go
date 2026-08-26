@@ -680,9 +680,11 @@ func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Lo
 		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 			log.Info("Config update complete",
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
-			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+			writeConfigHashAnnotations(nodePool, targetConfigHash, targetConfigVersionHash)
+		} else {
+			nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+			nodePool.Annotations[nodePoolAnnotationConfigHashVersion] = CurrentConfigHashVersion
 		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 
 		if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
 			log.Info("Rolling upgrade complete",
@@ -1108,10 +1110,11 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 			log.Info("Config upgrade complete",
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
-
-			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+			writeConfigHashAnnotations(nodePool, targetConfigHash, targetConfigVersionHash)
+		} else {
+			nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+			nodePool.Annotations[nodePoolAnnotationConfigHashVersion] = CurrentConfigHashVersion
 		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 
 		if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
 			log.Info("Rolling upgrade complete",

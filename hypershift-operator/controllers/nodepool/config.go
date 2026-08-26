@@ -168,7 +168,7 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.globalConfig + cg.rhelStream)
+	return cg.hashAtVersion(CurrentConfigHashVersion)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -176,7 +176,38 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.rhelStream)
+	return cg.hashWithoutVersionAtVersion(CurrentConfigHashVersion)
+}
+
+func (cg *ConfigGenerator) hashAtVersion(version string) string {
+	switch version {
+	case ConfigHashVersionV1:
+		atbName := additionalTrustBundleName(cg.hostedCluster)
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + atbName + cg.globalConfig + cg.rhelStream)
+	case ConfigHashVersionV2:
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.globalConfig + cg.rhelStream)
+	default:
+		return cg.hashAtVersion(CurrentConfigHashVersion)
+	}
+}
+
+func (cg *ConfigGenerator) hashWithoutVersionAtVersion(version string) string {
+	switch version {
+	case ConfigHashVersionV1:
+		atbName := additionalTrustBundleName(cg.hostedCluster)
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + atbName + cg.rhelStream)
+	case ConfigHashVersionV2:
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.rhelStream)
+	default:
+		return cg.hashWithoutVersionAtVersion(CurrentConfigHashVersion)
+	}
+}
+
+func additionalTrustBundleName(hc *hyperv1.HostedCluster) string {
+	if hc != nil && hc.Spec.AdditionalTrustBundle != nil {
+		return hc.Spec.AdditionalTrustBundle.Name
+	}
+	return ""
 }
 
 // TrustBundleConfigError indicates a HostedCluster-referenced trust-bundle ConfigMap

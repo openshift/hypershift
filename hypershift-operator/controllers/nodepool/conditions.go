@@ -477,13 +477,21 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
 
-	// One-time migration: when annotations still encode the legacy name-based trust-bundle
-	// hash, seed the content-based hash as the current baseline so HO upgrade does not
-	// set UpdatingConfig / roll Nodes. Real ca-bundle.crt changes still roll afterward.
-	if maybeSeedTrustBundleContentHashBaseline(nodePool, token.ConfigGenerator) {
-		log.Info("Seeded NodePool config hash baseline for trust-bundle content hashing migration",
-			"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
-			"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
+	// Versioned config hash migration: when annotations still encode a prior hash formula,
+	// rewrite them at the current version so HO upgrade does not set UpdatingConfig / roll Nodes.
+	// Real ca-bundle.crt changes still roll afterward.
+	if outcome := reconcileConfigHashAnnotations(nodePool, token.ConfigGenerator); outcome.AnnotationsUpdated {
+		if outcome.VersionMigrated {
+			log.Info("Migrated NodePool config hash version",
+				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
+				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
+		} else if outcome.ConfigActuallyChanged {
+			log.Info("Updated NodePool config hash annotations",
+				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
+				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
+		}
 	}
 
 	targetConfigHash := token.HashWithoutVersion()
