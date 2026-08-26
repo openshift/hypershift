@@ -145,6 +145,45 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 			},
 		},
 		{
+			name: "When Replace Machine has a spec version and a stale annotation, it should use the spec version",
+			machines: []*v1beta1.Machine{
+				machineWithSpecVersionAndHealth("m1", "4.19.1", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace}},
+				Status: hyperv1.NodePoolStatus{Version: "4.18.12"},
+			},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.19.1", KubeletVersion: "v1.32.1", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When Replace Machine has no spec version and a stale annotation, it should fall back to nodePool.Status.Version",
+			machines: []*v1beta1.Machine{
+				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace}},
+				Status: hyperv1.NodePoolStatus{Version: "4.18.12"},
+			},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.18.12", KubeletVersion: "v1.31.4", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
+			name: "When InPlace Machine has a spec version and an upgrader annotation, it should use the annotation",
+			machines: []*v1beta1.Machine{
+				machineWithSpecVersionAndHealth("m1", "4.18.12", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
+			},
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeInPlace}},
+				Status: hyperv1.NodePoolStatus{Version: "4.18.12"},
+			},
+			expected: []hyperv1.NodeVersion{
+				{OCPVersion: "4.19.1", KubeletVersion: "v1.32.1", ReadyNodeCount: ptr.To[int32](1), UnreadyNodeCount: ptr.To[int32](0)},
+			},
+		},
+		{
 			name: "When there are multiple versions, it should sort by ocpVersion then kubeletVersion",
 			machines: []*v1beta1.Machine{
 				machineWithVersionAndHealth("m1", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
@@ -616,6 +655,12 @@ func machineWithOSImage(name, osImage string) *v1beta1.Machine {
 			},
 		},
 	}
+}
+
+func machineWithSpecVersionAndHealth(name, specVersion, kubeletVersion string, healthy bool, annotations map[string]string) *v1beta1.Machine {
+	machine := machineWithVersionAndHealth(name, kubeletVersion, healthy, annotations)
+	machine.Spec.Version = ptr.To(specVersion)
+	return machine
 }
 
 func machineWithVersionAndHealth(name, kubeletVersion string, healthy bool, annotations map[string]string) *v1beta1.Machine {
