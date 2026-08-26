@@ -296,6 +296,31 @@ func stripFinalizersFromList(ctx context.Context, c client.Client, list client.O
 	return errs
 }
 
+func stripNodePoolFinalizers(ctx context.Context, c client.Client, namespace, clusterName string, log logr.Logger) []error {
+	nodePools := &hyperv1.NodePoolList{}
+	if err := c.List(ctx, nodePools, client.InNamespace(namespace)); err != nil {
+		if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+			return []error{fmt.Errorf("failed to list %T: %w", nodePools, err)}
+		}
+		return nil
+	}
+
+	var errs []error
+	var count int
+	for i := range nodePools.Items {
+		nodePool := &nodePools.Items[i]
+		if nodePool.Spec.ClusterName != clusterName {
+			continue
+		}
+		count++
+		if err := stripFinalizers(ctx, c, nodePool, log); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	log.Info("Processed resources", "type", fmt.Sprintf("%T", nodePools), "namespace", namespace, "count", count)
+	return errs
+}
+
 // forceRemoveAllFinalizers strips finalizers from all child resources in the
 // control plane namespace and NodePools in the HC namespace, then from the
 // HostedCluster itself (preserving the destroy finalizer for the normal
@@ -329,7 +354,7 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 	}
 
 	// NodePools live in the HC namespace, not the CP namespace
-	errs = append(errs, stripFinalizersFromList(ctx, c, &hyperv1.NodePoolList{}, o.Namespace, o.Log)...)
+	errs = append(errs, stripNodePoolFinalizers(ctx, c, o.Namespace, o.Name, o.Log)...)
 
 	// Strip all HostedCluster finalizers except the destroy finalizer, which
 	// is removed by the normal removeFinalizer path after platform cleanup.
