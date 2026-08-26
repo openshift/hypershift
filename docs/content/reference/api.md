@@ -1628,7 +1628,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -1641,7 +1641,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -2056,7 +2056,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -2069,7 +2069,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -2374,7 +2374,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -2387,7 +2387,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>

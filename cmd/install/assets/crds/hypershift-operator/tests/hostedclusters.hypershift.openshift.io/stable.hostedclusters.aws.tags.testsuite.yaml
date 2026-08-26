@@ -1,0 +1,154 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster AWS tag validation"
+crdName: hostedclusters.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  - name: when AWS tag key and value contain spaces it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              ingressARN: arn:aws:iam::role
+              imageRegistryARN: arn:aws:iam::role
+              storageARN: arn:aws:iam::role
+              networkARN: arn:aws:iam::role
+              kubeCloudControllerARN: arn:aws:iam::role
+              nodePoolManagementARN: arn:aws:iam::role
+              controlPlaneOperatorARN: arn:aws:iam::role
+            resourceTags:
+              - key: "my tag key"
+                value: "my tag value"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: when AWS tag key contains invalid character it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              ingressARN: arn:aws:iam::role
+              imageRegistryARN: arn:aws:iam::role
+              storageARN: arn:aws:iam::role
+              networkARN: arn:aws:iam::role
+              kubeCloudControllerARN: arn:aws:iam::role
+              nodePoolManagementARN: arn:aws:iam::role
+              controlPlaneOperatorARN: arn:aws:iam::role
+            resourceTags:
+              - key: "env#1"
+                value: "prod"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "key must only contain letters, digits, spaces, and the characters _ . : / = + - @"
+
+  - name: when AWS tag value contains invalid character it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              ingressARN: arn:aws:iam::role
+              imageRegistryARN: arn:aws:iam::role
+              storageARN: arn:aws:iam::role
+              networkARN: arn:aws:iam::role
+              kubeCloudControllerARN: arn:aws:iam::role
+              nodePoolManagementARN: arn:aws:iam::role
+              controlPlaneOperatorARN: arn:aws:iam::role
+            resourceTags:
+              - key: "env"
+                value: "prod!1"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "value must only contain letters, digits, spaces, and the characters _ . : / = + - @"
