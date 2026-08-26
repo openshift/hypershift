@@ -47,7 +47,7 @@ const (
 	DiskEncryptionSetIDDescription = "Full resource ID of an Azure Disk Encryption Set used to encrypt NodePool OS disks with customer-managed keys."
 
 	// VM configuration
-	InstanceTypeDescription = "Azure VM size for NodePool instances (e.g. Standard_D4s_v4, Standard_D8s_v5)."
+	InstanceTypeDescription = "Azure VM size for NodePool instances (e.g. Standard_D4s_v5, Standard_D8s_v5)."
 	RootDiskSizeDescription = "Size of the OS disk in GB for each NodePool VM. Minimum: 16 GB."
 
 	// Disk configuration

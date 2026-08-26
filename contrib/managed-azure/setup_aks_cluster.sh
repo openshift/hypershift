@@ -31,7 +31,7 @@ az aks create \
 --generate-ssh-keys \
 --load-balancer-sku standard \
 --os-sku AzureLinux \
---node-vm-size Standard_D4s_v4 \
+--node-vm-size Standard_D4s_v5 \
 --enable-fips-image \
 --enable-addons azure-keyvault-secrets-provider \
 --enable-secret-rotation \
