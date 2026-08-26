@@ -514,7 +514,7 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		return nil
 	}
 
-	c.reconcileMachineDeploymentStatus(log, machineDeployment, machineTemplateCR)
+	c.reconcileMachineDeploymentStatus(ctx, log, machineDeployment, machineTemplateCR)
 
 	return nil
 }
@@ -636,15 +636,29 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	return isUpdating
 }
 
-func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
+func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
 	nodePool := c.nodePool
 	targetVersion := c.Version()
 	targetConfigHash := c.HashWithoutVersion()
 	targetConfigVersionHash := c.Hash()
 
+	// List MachineSets owned by this MachineDeployment to verify rollout completion.
+	// MachineDeployment status counters can be stale after a template change because
+	// ObservedGeneration is set before downstream controllers (Machine, MachineSet)
+	// propagate the UpToDate conditions. Checking MachineSets directly guards against this.
+	// See https://github.com/kubernetes-sigs/cluster-api/issues/13738.
+	machineSets := &capiv1.MachineSetList{}
+	if err := c.List(ctx, machineSets,
+		client.InNamespace(machineDeployment.Namespace),
+		client.MatchingLabels{capiv1.MachineDeploymentNameLabel: machineDeployment.Name},
+	); err != nil {
+		log.Error(err, "failed to list MachineSets for MachineDeployment completion check")
+		return
+	}
+
 	// If the MachineDeployment is now processing we know
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
-	if MachineDeploymentComplete(machineDeployment) {
+	if MachineDeploymentComplete(machineDeployment, machineSets.Items) {
 		if nodePool.Status.Version != targetVersion {
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)

@@ -831,7 +831,12 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
-func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
+// It requires the list of MachineSets owned by the MachineDeployment to verify that only a single
+// active MachineSet remains. This guards against a race in CAPI where ObservedGeneration and status
+// counters (UpToDateReplicas, AvailableReplicas) are set before downstream controllers (Machine,
+// MachineSet) have reconciled the template change, causing the counters to be stale.
+// See https://github.com/kubernetes-sigs/cluster-api/issues/13738.
+func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets []capiv1.MachineSet) bool {
 	desired := ptr.Deref(deployment.Spec.Replicas, 0)
 	newStatus := &deployment.Status
 
@@ -840,10 +845,24 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
 		return false
 	}
 
-	return *newStatus.AvailableReplicas == desired &&
-		*newStatus.Replicas == desired &&
-		*newStatus.UpToDateReplicas == desired &&
-		newStatus.ObservedGeneration >= deployment.Generation
+	if *newStatus.AvailableReplicas != desired ||
+		*newStatus.Replicas != desired ||
+		*newStatus.UpToDateReplicas != desired ||
+		newStatus.ObservedGeneration < deployment.Generation {
+		return false
+	}
+
+	// Guard against stale counters: verify that no old MachineSet still has replicas.
+	// If old MachineSets still have replicas, the rollout is not complete regardless
+	// of what the MachineDeployment counters report.
+	currentRevision := deployment.Annotations[capiv1.RevisionAnnotation]
+	for i := range machineSets {
+		if machineSets[i].Annotations[capiv1.RevisionAnnotation] != currentRevision && ptr.Deref(machineSets[i].Status.Replicas, 0) > 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
