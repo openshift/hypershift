@@ -228,6 +228,26 @@ func runOpenSSLClient(
 			net.JoinHostPort(connectHost, port), tlsFlag))
 }
 
+func findReadyReplacementPod(pods []corev1.Pod, previousUID string) *corev1.Pod {
+	for i := range pods {
+		pod := &pods[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		if !isPodReady(pod) {
+			continue
+		}
+		if string(pod.UID) == previousUID {
+			continue
+		}
+		return pod
+	}
+	return nil
+}
+
 // waitForAppPodRestart waits until a ready pod with app=<appLabel> exists whose UID
 // differs from previousUID. This avoids TLS probes against a stale pod that has not
 // yet rolled with the updated TLS configuration.
@@ -245,26 +265,11 @@ func waitForAppPodRestart(
 		)).To(Succeed(), "failed to list %s pods", appLabel)
 		g.Expect(podList.Items).NotTo(BeEmpty(), "expected at least one %s pod", appLabel)
 
-		var readyPod *corev1.Pod
-		for i := range podList.Items {
-			pod := &podList.Items[i]
-			if pod.DeletionTimestamp != nil {
-				continue
-			}
-			if pod.Status.Phase != corev1.PodRunning {
-				continue
-			}
-			if !isPodReady(pod) {
-				continue
-			}
-			readyPod = pod
-			break
-		}
-		g.Expect(readyPod).NotTo(BeNil(), "expected a ready running %s pod", appLabel)
+		readyPod := findReadyReplacementPod(podList.Items, previousUID)
+		g.Expect(readyPod).NotTo(BeNil(),
+			"expected a ready running %s pod with a UID different from %s", appLabel, previousUID)
 
 		newPodUID = string(readyPod.UID)
-		g.Expect(newPodUID).NotTo(Equal(previousUID),
-			"%s pod UID should have changed after TLS config mutation (still %s)", appLabel, previousUID)
 	}, 2*time.Minute, 5*time.Second).Should(Succeed(),
 		"%s pod should restart and become ready after TLS config mutation", appLabel)
 	return newPodUID
