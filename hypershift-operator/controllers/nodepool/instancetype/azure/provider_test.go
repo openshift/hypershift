@@ -61,14 +61,14 @@ func TestTransformSKU_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 		expected *instancetype.InstanceTypeInfo
 	}{
 		{
-			name: "When Standard_D4s_v3 with x64 arch, it should transform correctly",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			name: "When Standard_D4s_v5 with x64 arch, it should transform correctly",
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":               "4",
 				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
 			}),
 			expected: &instancetype.InstanceTypeInfo{
-				InstanceType:    "Standard_D4s_v3",
+				InstanceType:    "Standard_D4s_v5",
 				VCPU:            4,
 				MemoryMb:        16384,
 				GPU:             0,
@@ -182,7 +182,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When vCPUs capability is missing, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
 			}),
@@ -190,7 +190,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When MemoryGB capability is missing, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":               "4",
 				"CpuArchitectureType": "x64",
 			}),
@@ -198,7 +198,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When CpuArchitectureType capability is missing, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":    "4",
 				"MemoryGB": "16",
 			}),
@@ -206,7 +206,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When vCPUs value is not a valid integer, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":               "abc",
 				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
@@ -215,7 +215,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When MemoryGB value is not a valid float, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":               "4",
 				"MemoryGB":            "xyz",
 				"CpuArchitectureType": "x64",
@@ -224,7 +224,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When vCPUs value is zero, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":               "0",
 				"MemoryGB":            "16",
 				"CpuArchitectureType": "x64",
@@ -233,7 +233,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When MemoryGB value is zero, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":               "4",
 				"MemoryGB":            "0",
 				"CpuArchitectureType": "x64",
@@ -242,7 +242,7 @@ func TestTransformSKU_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T
 		},
 		{
 			name: "When CpuArchitectureType is unsupported, it should return error",
-			input: makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			input: makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs":               "4",
 				"MemoryGB":            "16",
 				"CpuArchitectureType": "i386",
@@ -293,13 +293,13 @@ func TestGetInstanceTypeInfo(t *testing.T) {
 		{
 			name: "When VM size exists, it should return info",
 			skus: []*armcompute.ResourceSKU{
-				makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+				makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 					"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
 				}),
 			},
-			instanceType: "Standard_D4s_v3",
+			instanceType: "Standard_D4s_v5",
 			expected: &instancetype.InstanceTypeInfo{
-				InstanceType:    "Standard_D4s_v3",
+				InstanceType:    "Standard_D4s_v5",
 				VCPU:            4,
 				MemoryMb:        16384,
 				GPU:             0,
@@ -309,7 +309,7 @@ func TestGetInstanceTypeInfo(t *testing.T) {
 		{
 			name: "When VM size not found it should return error",
 			skus: []*armcompute.ResourceSKU{
-				makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+				makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 					"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
 				}),
 			},
@@ -319,32 +319,32 @@ func TestGetInstanceTypeInfo(t *testing.T) {
 		{
 			name:          "When API returns error it should propagate error",
 			apiErr:        fmt.Errorf("API error: throttling"),
-			instanceType:  "Standard_D4s_v3",
+			instanceType:  "Standard_D4s_v5",
 			expectedError: "failed to load Azure Resource SKUs",
 		},
 		{
 			name: "When SKU has matching name but wrong ResourceType it should return not found",
 			skus: []*armcompute.ResourceSKU{
-				makeSKU("Standard_D4s_v3", "disks", map[string]string{
+				makeSKU("Standard_D4s_v5", "disks", map[string]string{
 					"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
 				}),
 			},
-			instanceType:  "Standard_D4s_v3",
+			instanceType:  "Standard_D4s_v5",
 			expectedError: "not found",
 		},
 		{
 			name: "When multiple SKUs returned, it should match only virtualMachines type",
 			skus: []*armcompute.ResourceSKU{
-				makeSKU("Standard_D4s_v3", "disks", map[string]string{
+				makeSKU("Standard_D4s_v5", "disks", map[string]string{
 					"vCPUs": "99", "MemoryGB": "99", "CpuArchitectureType": "x64",
 				}),
-				makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+				makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 					"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
 				}),
 			},
-			instanceType: "Standard_D4s_v3",
+			instanceType: "Standard_D4s_v5",
 			expected: &instancetype.InstanceTypeInfo{
-				InstanceType:    "Standard_D4s_v3",
+				InstanceType:    "Standard_D4s_v5",
 				VCPU:            4,
 				MemoryMb:        16384,
 				GPU:             0,
@@ -375,7 +375,7 @@ func TestVMSizeNotFoundError(t *testing.T) {
 	g := NewGomegaWithT(t)
 	mock := &mockResourceSKUsAPI{
 		skus: []*armcompute.ResourceSKU{
-			makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
 			}),
 		},
@@ -396,7 +396,7 @@ func TestCacheTTLRefresh(t *testing.T) {
 	// Start with one SKU
 	mock := &mockResourceSKUsAPI{
 		skus: []*armcompute.ResourceSKU{
-			makeSKU("Standard_D4s_v3", "virtualMachines", map[string]string{
+			makeSKU("Standard_D4s_v5", "virtualMachines", map[string]string{
 				"vCPUs": "4", "MemoryGB": "16", "CpuArchitectureType": "x64",
 			}),
 		},
@@ -406,7 +406,7 @@ func TestCacheTTLRefresh(t *testing.T) {
 	provider.cacheTTL = 1 * time.Millisecond
 
 	// First call loads the cache
-	result, err := provider.GetInstanceTypeInfo(context.Background(), "Standard_D4s_v3")
+	result, err := provider.GetInstanceTypeInfo(context.Background(), "Standard_D4s_v5")
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result.VCPU).To(Equal(int32(4)))
 
