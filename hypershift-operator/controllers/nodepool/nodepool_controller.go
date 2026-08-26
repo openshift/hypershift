@@ -66,6 +66,7 @@ const (
 	nodePoolAnnotation                       = "hypershift.openshift.io/nodePool"
 	nodePoolAnnotationCurrentConfig          = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	nodePoolAnnotationConfigHashVersion      = "hypershift.openshift.io/nodePoolConfigHashVersion"
 	nodePoolAnnotationTargetConfigVersion    = "hypershift.openshift.io/nodePoolTargetConfigVersion"
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
@@ -432,12 +433,20 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
-	// Ensure trust-bundle content-hash baseline is seeded before CAPI decides whether to
-	// rewrite MachineDeployment/MachineSet user-data Secret names.
-	if maybeSeedTrustBundleContentHashBaseline(nodePool, configGenerator) {
-		log.Info("Seeded NodePool config hash baseline for trust-bundle content hashing migration",
-			"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
-			"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
+	// Ensure config hash version migration runs before CAPI decides whether to rewrite
+	// MachineDeployment/MachineSet user-data Secret names.
+	if outcome := reconcileConfigHashAnnotations(nodePool, configGenerator); outcome.AnnotationsUpdated {
+		if outcome.VersionMigrated {
+			log.Info("Migrated NodePool config hash version",
+				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
+				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
+		} else if outcome.ConfigActuallyChanged {
+			log.Info("Updated NodePool config hash annotations",
+				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
+				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
+		}
 	}
 
 	// non automated infrastructure should not have any machine level cluster-api components
@@ -451,9 +460,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 			log.Info("Config update complete",
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
-			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+			writeConfigHashAnnotations(nodePool, targetConfigHash, targetPayloadConfigHash)
+		} else {
+			nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
+			nodePool.Annotations[nodePoolAnnotationConfigHashVersion] = CurrentConfigHashVersion
 		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
 		return ctrl.Result{}, nil
 	}
 

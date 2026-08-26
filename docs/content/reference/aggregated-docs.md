@@ -65193,8 +65193,9 @@ Changes to the following fields alter the configuration hash that the controller
     When upgrading to a HyperShift Operator that hashes trust-bundle ConfigMap **content**
     (instead of only the ConfigMap name), NodePools that already reference a trust bundle do
     **not** roll solely because of that formula change. On the first reconcile after upgrade,
-    the controller seeds the content-based hash into the NodePool current-config annotations as
-    the new baseline. A rollout occurs only when `ca-bundle.crt` (or the referenced ConfigMap
+    the controller migrates the NodePool config hash to the current formula version
+    (`nodePoolConfigHashVersion`) and rewrites the current-config annotations as the new
+    baseline. A rollout occurs only when `ca-bundle.crt` (or the referenced ConfigMap
     name) changes afterward.
 
 - **`HostedCluster.spec.imageContentSources`** — changes to image content source policies managed at the HostedCluster level produce an additional core ignition config that alters the configuration hash.

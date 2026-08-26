@@ -86,9 +86,8 @@ func TestLiveComputeLegacyHash(t *testing.T) {
 	cg, err := NewConfigGenerator(ctx, c, hc, np, releaseImage, haproxyRawConfig, manifests.HostedControlPlaneNamespace(ns, hcName), resolvedRHELStream)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	atbName := additionalTrustBundleName(hc)
-	legacyHWV := legacyHashWithoutVersion(cg.mcoRawConfig, cg.pullSecretName, atbName, cg.rhelStream)
-	legacyH := legacyHash(cg.mcoRawConfig, cg.releaseImage.Version(), cg.pullSecretName, atbName, cg.globalConfig, cg.rhelStream)
+	legacyHWV := cg.hashWithoutVersionAtVersion(ConfigHashVersionV1)
+	legacyH := cg.hashAtVersion(ConfigHashVersionV1)
 	newHWV := cg.HashWithoutVersion()
 	newH := cg.Hash()
 
@@ -98,6 +97,7 @@ func TestLiveComputeLegacyHash(t *testing.T) {
 	fmt.Printf("LIVE_NEW_H=%s\n", newH)
 	fmt.Printf("LIVE_CURRENT=%s\n", np.Annotations[nodePoolAnnotationCurrentConfig])
 	fmt.Printf("LIVE_CURRENT_VERSION=%s\n", np.Annotations[nodePoolAnnotationCurrentConfigVersion])
+	fmt.Printf("LIVE_CONFIG_HASH_VERSION=%s\n", np.Annotations[nodePoolAnnotationConfigHashVersion])
 }
 
 func envOr(key, def string) string {
