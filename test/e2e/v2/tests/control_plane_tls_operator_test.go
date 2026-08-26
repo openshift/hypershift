@@ -46,7 +46,7 @@ type controlPlaneTLSComponent struct {
 	podAppLabel         string // target pod (TLS listener)
 	execPodAppLabel     string // pod to exec into; defaults to podAppLabel
 	execContainerNames  []string
-	connectViaPodIP     bool // when true, probe targetPod.Status.PodIP instead of localhost
+	connectViaPodIP     bool   // when true, probe targetPod.Status.PodIP instead of localhost
 	configMapName       string // PKI operator stores TLS settings in a ConfigMap
 	deploymentName      string // aws-pod-identity-webhook stores TLS settings in deployment command flags
 	deploymentContainer string
@@ -55,11 +55,11 @@ type controlPlaneTLSComponent struct {
 
 var (
 	pkiOperatorTLSComponent = controlPlaneTLSComponent{
-		name:              "control-plane-pki-operator",
-		port:              "8443",
-		podAppLabel:       "control-plane-pki-operator",
+		name:               "control-plane-pki-operator",
+		port:               "8443",
+		podAppLabel:        "control-plane-pki-operator",
 		execContainerNames: []string{"control-plane-pki-operator"},
-		configMapName:     "control-plane-pki-operator-config",
+		configMapName:      "control-plane-pki-operator-config",
 	}
 
 	awsPodIdentityWebhookTLSComponent = controlPlaneTLSComponent{
@@ -72,6 +72,18 @@ var (
 		deploymentName:      "kube-apiserver",
 		deploymentContainer: "aws-pod-identity-webhook",
 		awsOnly:             true,
+	}
+
+	// konnectivity-server runs as a sidecar in the kube-apiserver pod, stores its
+	// minimum TLS version in the container's --tls-min-version flag, and listens on
+	// port 8090. The TLS probe execs into that same container and dials localhost.
+	konnectivityServerTLSComponent = controlPlaneTLSComponent{
+		name:                "konnectivity-server",
+		port:                "8090",
+		podAppLabel:         "kube-apiserver",
+		execContainerNames:  []string{"konnectivity-server"},
+		deploymentName:      "kube-apiserver",
+		deploymentContainer: "konnectivity-server",
 	}
 )
 
@@ -117,6 +129,35 @@ func containerHasTLSMinVersionFlag(container corev1.Container, minTLSVersion str
 	return false
 }
 
+// isPodReady returns true only if the pod has the PodReady condition set to True
+// and every container reports Ready. A pod with no container statuses is treated as
+// not ready to avoid a vacuous pass.
+func isPodReady(pod *corev1.Pod) bool {
+	ready := false
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+			ready = true
+			break
+		}
+	}
+	if !ready {
+		return false
+	}
+	if len(pod.Status.ContainerStatuses) == 0 {
+		return false
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if !cs.Ready {
+			return false
+		}
+	}
+	return true
+}
+
+// getFirstRunningPod returns the first running, ready, non-terminating pod with the
+// given app label. Terminating and not-yet-ready pods are skipped: during a rollout
+// (e.g. a TLS profile change) an old pod can still report Running while its containers
+// are being torn down, which makes exec fail with `container not found`.
 func getFirstRunningPod(ctx context.Context, mgmtClient crclient.Client, namespace, appLabel string) (*corev1.Pod, error) {
 	podList := &corev1.PodList{}
 	if err := mgmtClient.List(ctx, podList,
@@ -130,11 +171,19 @@ func getFirstRunningPod(ctx context.Context, mgmtClient crclient.Client, namespa
 	}
 
 	for i := range podList.Items {
-		if podList.Items[i].Status.Phase == corev1.PodRunning {
-			return &podList.Items[i], nil
+		pod := &podList.Items[i]
+		if pod.DeletionTimestamp != nil {
+			continue
 		}
+		if pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		if !isPodReady(pod) {
+			continue
+		}
+		return pod, nil
 	}
-	return nil, fmt.Errorf("no running pod found with app=%s in namespace %s", appLabel, namespace)
+	return nil, fmt.Errorf("no running, ready pod found with app=%s in namespace %s", appLabel, namespace)
 }
 
 func resolveTLSProbeContainers(pod *corev1.Pod, candidates []string) []string {
@@ -145,7 +194,10 @@ func resolveTLSProbeContainers(pod *corev1.Pod, candidates []string) []string {
 
 	running := make(map[string]struct{}, len(pod.Status.ContainerStatuses))
 	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.State.Running != nil {
+		// Require Ready, not just Running: a container mid-startup (or being torn
+		// down during a rollout) reports Running before it can serve, and exec into
+		// it races the container lifecycle ("container not found").
+		if cs.State.Running != nil && cs.Ready {
 			running[cs.Name] = struct{}{}
 		}
 	}
@@ -196,27 +248,13 @@ func waitForAppPodRestart(
 		var readyPod *corev1.Pod
 		for i := range podList.Items {
 			pod := &podList.Items[i]
+			if pod.DeletionTimestamp != nil {
+				continue
+			}
 			if pod.Status.Phase != corev1.PodRunning {
 				continue
 			}
-			ready := false
-			for _, cond := range pod.Status.Conditions {
-				if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
-					ready = true
-					break
-				}
-			}
-			if !ready {
-				continue
-			}
-			allContainersReady := true
-			for _, cs := range pod.Status.ContainerStatuses {
-				if !cs.Ready {
-					allContainersReady = false
-					break
-				}
-			}
-			if !allContainersReady {
+			if !isPodReady(pod) {
 				continue
 			}
 			readyPod = pod
@@ -289,6 +327,26 @@ func expectComponentMinTLSVersion(
 	}
 }
 
+// waitForDeploymentRolloutComplete waits until the named deployment has fully rolled
+// out — the latest generation is observed and all replicas are updated, present (no
+// surge/terminating pods left), and available. TLS probes exec into a component's pod,
+// so probing mid-rollout can hit an old pod whose containers are being torn down
+// ("container not found") or a new pod not yet serving the updated config.
+func waitForDeploymentRolloutComplete(ctx context.Context, mgmtClient crclient.Client, namespace, name string) {
+	Eventually(func(g Gomega) {
+		deployment := &appsv1.Deployment{}
+		g.Expect(mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, deployment)).
+			To(Succeed(), "failed to get %s deployment", name)
+		g.Expect(deployment.Spec.Replicas).NotTo(BeNil(), "%s deployment should have spec.replicas set", name)
+		desired := *deployment.Spec.Replicas
+		g.Expect(deployment.Status.ObservedGeneration).To(BeNumerically(">=", deployment.Generation),
+			"%s deployment status should observe the latest generation", name)
+		g.Expect(deployment.Status.UpdatedReplicas).To(Equal(desired), "%s should have all replicas updated", name)
+		g.Expect(deployment.Status.Replicas).To(Equal(desired), "%s should have no surge/terminating replicas remaining", name)
+		g.Expect(deployment.Status.AvailableReplicas).To(Equal(desired), "%s should have all replicas available", name)
+	}, 10*time.Minute, 10*time.Second).Should(Succeed(), "%s deployment should complete rollout", name)
+}
+
 func verifyComponentTLSConnectivity(
 	ctx context.Context,
 	tc *internal.TestContext,
@@ -298,6 +356,13 @@ func verifyComponentTLSConnectivity(
 	component controlPlaneTLSComponent,
 	expectations []tlsVersionExpectation,
 ) {
+	// For deployment-backed components, wait for the rollout to fully settle before
+	// probing so the exec targets a pod running the current TLS config rather than a
+	// terminating old pod. Already-settled deployments return immediately.
+	if component.deploymentName != "" {
+		waitForDeploymentRolloutComplete(ctx, mgmtClient, tc.ControlPlaneNamespace, component.deploymentName)
+	}
+
 	for _, expectation := range expectations {
 		expectation := expectation
 		Eventually(func(g Gomega) {
@@ -363,6 +428,40 @@ func hostedClusterHasTLSProfileType(hc *hyperv1.HostedCluster, profileType confi
 		hc.Spec.Configuration.APIServer.TLSSecurityProfile.Type == profileType
 }
 
+// requireModernProfileSet fetches the HostedCluster fresh from the management cluster
+// and calls Fail if it does not currently have the Modern TLS profile. Ordered
+// post-mutation tests use this to assert the precondition established by the earlier
+// "update to Modern" test, and it returns the fetched HostedCluster for callers that
+// need it. It reads fresh (not a cached copy) so it observes the latest profile.
+func requireModernProfileSet(tc *internal.TestContext) *hyperv1.HostedCluster {
+	hostedCluster := &hyperv1.HostedCluster{}
+	Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+		Namespace: tc.ClusterNamespace,
+		Name:      tc.ClusterName,
+	}, hostedCluster)).To(Succeed(), "failed to get HostedCluster")
+	if !hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
+		Fail("HostedCluster does not have Modern TLS profile - previous ordered test should have set it")
+	}
+	return hostedCluster
+}
+
+// requireModernProfileCleared fetches the HostedCluster fresh from the management
+// cluster and calls Fail if it still has the Modern TLS profile. Ordered
+// post-downgrade tests use this to assert the precondition established by the earlier
+// "downgrade" test, and it returns the fetched HostedCluster for callers that need it.
+// It reads fresh (not a cached copy) so it observes the latest profile.
+func requireModernProfileCleared(tc *internal.TestContext) *hyperv1.HostedCluster {
+	hostedCluster := &hyperv1.HostedCluster{}
+	Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+		Namespace: tc.ClusterNamespace,
+		Name:      tc.ClusterName,
+	}, hostedCluster)).To(Succeed(), "failed to get HostedCluster")
+	if hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
+		Fail("HostedCluster still has Modern TLS profile - previous ordered test should have downgraded it")
+	}
+	return hostedCluster
+}
+
 func RegisterControlPlanePKIOperatorTests(getTestCtx internal.TestContextGetter) {
 	VerifyPKIOperatorTLSConfigTest(getTestCtx)
 }
@@ -378,6 +477,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		var mgmtKubeClient *kubernetes.Clientset
 		var pkiPodUIDBeforeMutation string
 		var kasPodUIDBeforeMutation string
+		var konnectivityPodUIDBeforeMutation string
 
 		BeforeAll(func() {
 			tc = getTestCtx()
@@ -446,6 +546,17 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 1*time.Minute, 5*time.Second).Should(Succeed())
 		})
 
+		It("konnectivity-server should have --tls-min-version set to VersionTLS12 with default/intermediate profile", func() {
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			requireDefaultOrIntermediateTLSProfile(hostedCluster)
+
+			Eventually(func(g Gomega) {
+				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+					konnectivityServerTLSComponent, "VersionTLS12")
+			}, 1*time.Minute, 5*time.Second).Should(Succeed())
+		})
+
 		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -471,6 +582,18 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
+		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			requireDefaultOrIntermediateTLSProfile(hostedCluster)
+
+			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
+				konnectivityServerTLSComponent, []tlsVersionExpectation{
+					{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
+					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
+				})
+		})
+
 		It("should update HostedCluster TLS profile to Modern", func() {
 			// Get the HostedCluster from management cluster and update its TLS profile
 			mgmtClient := tc.MgmtClient
@@ -485,6 +608,11 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "failed to get kube-apiserver pod before mutation")
 			kasPodUIDBeforeMutation = string(kasPod.UID)
 			GinkgoWriter.Printf("Captured kube-apiserver pod UID before mutation: %s\n", kasPodUIDBeforeMutation)
+
+			// konnectivity-server is a sidecar in the kube-apiserver pod; track its UID
+			// independently so its connectivity tests wait for the shared pod's restart.
+			konnectivityPodUIDBeforeMutation = string(kasPod.UID)
+			GinkgoWriter.Printf("Captured konnectivity-server (kube-apiserver) pod UID before mutation: %s\n", konnectivityPodUIDBeforeMutation)
 
 			// Update to Modern TLS profile; Eventually retries on conflict after re-get.
 			Eventually(func(g Gomega) {
@@ -516,62 +644,42 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS13 with Modern profile", func() {
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			Expect(mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)).To(Succeed(), "failed to get HostedCluster")
-
-			if !hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster does not have Modern TLS profile - previous ordered test should have set it")
-			}
+			requireModernProfileSet(tc)
 
 			Eventually(func(g Gomega) {
-				expectComponentMinTLSVersion(g, tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 					pkiOperatorTLSComponent, "VersionTLS13")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
 		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS13 with Modern profile", func() {
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			Expect(mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)).To(Succeed(), "failed to get HostedCluster")
+			hostedCluster := requireModernProfileSet(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
-			if !hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster does not have Modern TLS profile - previous ordered test should have set it")
-			}
-
 			Eventually(func(g Gomega) {
-				expectComponentMinTLSVersion(g, tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 					awsPodIdentityWebhookTLSComponent, "VersionTLS13")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("control-plane-pki-operator should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
-			// Verify HostedCluster has Modern profile (fetch fresh, not cached)
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)
-			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+		It("konnectivity-server should propagate --tls-min-version VersionTLS13 with Modern profile", func() {
+			requireModernProfileSet(tc)
 
-			if !hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster does not have Modern TLS profile - previous ordered test should have set it")
-			}
+			Eventually(func(g Gomega) {
+				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+					konnectivityServerTLSComponent, "VersionTLS13")
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+
+		It("control-plane-pki-operator should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
+			requireModernProfileSet(tc)
 
 			// Wait for PKI operator pod to restart and pick up the new TLS config
-			pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+			pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 				pkiOperatorTLSComponent.podAppLabel, pkiPodUIDBeforeMutation)
 			GinkgoWriter.Printf("New PKI operator pod UID after mutation to Modern profile: %s\n", pkiPodUIDBeforeMutation)
 
-			verifyComponentTLSConnectivity(tc.Context, tc, mgmtClient, mgmtKubeClient, mgmtRestConfig,
+			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
 				pkiOperatorTLSComponent, []tlsVersionExpectation{
 					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
 					{opensslFlag: "tls1_2", rejectConnection: true},
@@ -579,52 +687,47 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("aws-pod-identity-webhook should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)
-			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+			hostedCluster := requireModernProfileSet(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
-
-			if !hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster does not have Modern TLS profile - previous ordered test should have set it")
-			}
 
 			// Wait for kube-apiserver (webhook sidecar) to restart with the new TLS config.
 			// Both Intermediate and Modern accept TLS 1.3, so probing a stale pod can pass vacuously.
-			kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+			kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 				awsPodIdentityWebhookTLSComponent.podAppLabel, kasPodUIDBeforeMutation)
 			GinkgoWriter.Printf("New kube-apiserver pod UID after mutation to Modern profile: %s\n", kasPodUIDBeforeMutation)
 
-			verifyComponentTLSConnectivity(tc.Context, tc, mgmtClient, mgmtKubeClient, mgmtRestConfig,
+			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
 				awsPodIdentityWebhookTLSComponent, []tlsVersionExpectation{
 					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
 					{opensslFlag: "tls1_2", rejectConnection: true},
 				})
 		})
 
+		It("konnectivity-server should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
+			requireModernProfileSet(tc)
+
+			// Wait for the kube-apiserver pod (which hosts konnectivity-server) to restart
+			// with the new TLS config. Both Intermediate and Modern accept TLS 1.3, so
+			// probing a stale pod can pass vacuously.
+			konnectivityPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+				konnectivityServerTLSComponent.podAppLabel, konnectivityPodUIDBeforeMutation)
+			GinkgoWriter.Printf("New konnectivity-server (kube-apiserver) pod UID after mutation to Modern profile: %s\n", konnectivityPodUIDBeforeMutation)
+
+			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
+				konnectivityServerTLSComponent, []tlsVersionExpectation{
+					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
+					{opensslFlag: "tls1_2", rejectConnection: true},
+				})
+		})
+
 		It("should downgrade HostedCluster TLS profile to default/intermediate", func() {
-			// Get the HostedCluster from management cluster and update its TLS profile
-			mgmtClient := tc.MgmtClient
-
 			// First verify it currently has Modern profile (fetch fresh, not cached)
-			hostedCluster := &hyperv1.HostedCluster{}
-			err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)
-			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
-
-			if !hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster does not have Modern TLS profile - previous ordered tests should have set it")
-			}
+			requireModernProfileSet(tc)
 
 			// Remove Modern TLS profile (downgrade to default/Intermediate); Eventually retries on conflict.
 			Eventually(func(g Gomega) {
 				hostedCluster := &hyperv1.HostedCluster{}
-				err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
+				err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 					Namespace: tc.ClusterNamespace,
 					Name:      tc.ClusterName,
 				}, hostedCluster)
@@ -633,7 +736,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				// Remove TLS profile to downgrade to default (Intermediate)
 				hostedCluster.Spec.Configuration.APIServer.TLSSecurityProfile = nil
 
-				err = mgmtClient.Update(tc.Context, hostedCluster)
+				err = tc.MgmtClient.Update(tc.Context, hostedCluster)
 				g.Expect(err).NotTo(HaveOccurred(), "failed to remove TLS profile to downgrade to Intermediate")
 			}, 1*time.Minute, 5*time.Second).Should(Succeed(), "failed to downgrade HostedCluster to Intermediate profile")
 
@@ -641,63 +744,42 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS12 after downgrade", func() {
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			Expect(mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)).To(Succeed(), "failed to get HostedCluster")
-
-			if hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster still has Modern TLS profile - previous ordered test should have downgraded it")
-			}
+			requireModernProfileCleared(tc)
 
 			Eventually(func(g Gomega) {
-				expectComponentMinTLSVersion(g, tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 					pkiOperatorTLSComponent, "VersionTLS12")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
 		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS12 after downgrade", func() {
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			Expect(mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)).To(Succeed(), "failed to get HostedCluster")
+			hostedCluster := requireModernProfileCleared(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
-			if hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster still has Modern TLS profile - previous ordered test should have downgraded it")
-			}
-
 			Eventually(func(g Gomega) {
-				expectComponentMinTLSVersion(g, tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 					awsPodIdentityWebhookTLSComponent, "VersionTLS12")
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
-			// Verify HostedCluster does not have Modern profile (fetch fresh, not cached)
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)
-			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+		It("konnectivity-server should propagate --tls-min-version VersionTLS12 after downgrade", func() {
+			requireModernProfileCleared(tc)
 
-			// Check that TLS profile is nil (default/Intermediate) or explicitly not Modern
-			if hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster still has Modern TLS profile - previous ordered test should have downgraded it")
-			}
+			Eventually(func(g Gomega) {
+				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+					konnectivityServerTLSComponent, "VersionTLS12")
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+
+		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
+			requireModernProfileCleared(tc)
 
 			// Wait for PKI operator pod to restart and pick up the downgraded TLS config
-			pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+			pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 				pkiOperatorTLSComponent.podAppLabel, pkiPodUIDBeforeMutation)
 			GinkgoWriter.Printf("New PKI operator pod UID after downgrade to Intermediate profile: %s\n", pkiPodUIDBeforeMutation)
 
-			verifyComponentTLSConnectivity(tc.Context, tc, mgmtClient, mgmtKubeClient, mgmtRestConfig,
+			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
 				pkiOperatorTLSComponent, []tlsVersionExpectation{
 					{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
 					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
@@ -705,26 +787,32 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("aws-pod-identity-webhook should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
-			mgmtClient := tc.MgmtClient
-			hostedCluster := &hyperv1.HostedCluster{}
-			err := mgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ClusterNamespace,
-				Name:      tc.ClusterName,
-			}, hostedCluster)
-			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+			hostedCluster := requireModernProfileCleared(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
-			if hostedClusterHasTLSProfileType(hostedCluster, configv1.TLSProfileModernType) {
-				Fail("HostedCluster still has Modern TLS profile - previous ordered test should have downgraded it")
-			}
-
 			// Wait for kube-apiserver (webhook sidecar) to restart with the downgraded TLS config.
-			kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, mgmtClient, tc.ControlPlaneNamespace,
+			kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 				awsPodIdentityWebhookTLSComponent.podAppLabel, kasPodUIDBeforeMutation)
 			GinkgoWriter.Printf("New kube-apiserver pod UID after downgrade to Intermediate profile: %s\n", kasPodUIDBeforeMutation)
 
-			verifyComponentTLSConnectivity(tc.Context, tc, mgmtClient, mgmtKubeClient, mgmtRestConfig,
+			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
 				awsPodIdentityWebhookTLSComponent, []tlsVersionExpectation{
+					{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
+					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
+				})
+		})
+
+		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
+			requireModernProfileCleared(tc)
+
+			// Wait for the kube-apiserver pod (which hosts konnectivity-server) to restart
+			// with the downgraded TLS config.
+			konnectivityPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+				konnectivityServerTLSComponent.podAppLabel, konnectivityPodUIDBeforeMutation)
+			GinkgoWriter.Printf("New konnectivity-server (kube-apiserver) pod UID after downgrade to Intermediate profile: %s\n", konnectivityPodUIDBeforeMutation)
+
+			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
+				konnectivityServerTLSComponent, []tlsVersionExpectation{
 					{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
 					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
 				})
@@ -760,7 +848,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneTLS] Control Plane TLS Operator", Label("control-plane-pki-operator", "aws-pod-identity-webhook"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneTLS] Control Plane TLS Operator", Label("control-plane-pki-operator", "aws-pod-identity-webhook", "konnectivity-server"), func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
