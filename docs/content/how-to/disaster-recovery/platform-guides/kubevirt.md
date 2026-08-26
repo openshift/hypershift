@@ -13,7 +13,6 @@ For the general backup and restore procedures, see:
 
 ## KubeVirt-Specific Considerations
 
-- **Same-cluster restore only**: Cross-cluster migration is not validated for the KubeVirt platform.
 - **No pause required**: Backup of a KubeVirt HostedCluster can be performed on a running cluster without pausing it.
 - **VMs are recreated**: KubeVirt VMs used as worker nodes are **not** backed up. They are automatically recreated as new VMs after restore.
 - **Boot image PVCs excluded**: The boot images for KubeVirt VMs are stored in large PVCs. These are excluded from the backup to reduce backup time and storage size.
@@ -98,7 +97,6 @@ preserveNodePorts: true
 
 ## Restore Caveats
 
-- **Same-cluster only**: Restore must be performed on the same Management cluster where the backup was created.
-- **Node readoption**: Not supported. KubeVirt VMs are automatically recreated as new VMs after restore.
-- **Etcd Snapshot method**: Not validated for the KubeVirt platform.
 - **Data Plane PVCs**: PVCs for hosted cluster workloads (non-boot-image) are included in the backup and will be restored.
+
+For supportability details per platform and scenario, see the [Supportability Matrix](../index.md#supportability-matrix).

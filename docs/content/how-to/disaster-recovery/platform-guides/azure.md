@@ -98,6 +98,6 @@ For detailed setup instructions including Workload Identity federation configura
 
 ## Restore Caveats
 
-- **Same-cluster restore only** is currently tested. Cross-cluster restore for Azure does not have E2E coverage.
-- **Node readoption** is not supported. Worker nodes will be reprovisioned during restore.
 - For etcd snapshot backup and restore specific to self-managed Azure, the controller auto-detects the credential mode from the Secret format — no explicit configuration flag is needed.
+
+For supportability details per platform and scenario, see the [Supportability Matrix](../index.md#supportability-matrix).
