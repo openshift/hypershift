@@ -255,7 +255,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
 			if h.opts != nil && h.opts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
-				NoticeCloudTrailPermissionDenied(t, context.Background(),
+				NoticeCloudTrailPermissionDenied(t, h.ctx,
 					h.client,
 					h.opts.AWSPlatform.Credentials.AWSCredentialsFile,
 					h.opts.AWSPlatform.Region,

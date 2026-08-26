@@ -53,8 +53,9 @@ var allowlist = map[string]map[string]bool{
 		"WaitForReadyNodesByNodePool":                     true,
 
 		// Cloud provider helpers
-		"GetDefaultSecurityGroup": true,
-		"PutRolePolicy":           true,
+		"GetDefaultSecurityGroup":       true,
+		"PutRolePolicy":                 true,
+		"RunCloudTrailPermissionCheck":  true,
 
 		// Utility helpers
 		"ExtractVersionFromReleaseImage": true,

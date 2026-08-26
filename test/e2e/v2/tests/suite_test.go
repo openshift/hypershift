@@ -23,10 +23,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	ctrl "sigs.k8s.io/controller-runtime"
 	zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -82,7 +85,10 @@ var _ = ReportAfterSuite("Write lifecycle-aware JUnit", func(report Report) {
 	}
 })
 
+var suiteStartTime time.Time
+
 var _ = BeforeSuite(func() {
+	suiteStartTime = time.Now()
 	ctx := context.Background()
 
 	ctrl.SetLogger(zap.New())
@@ -96,3 +102,35 @@ var _ = BeforeSuite(func() {
 	// Set the global test context
 	internal.SetTestContext(testCtx)
 })
+
+// SynchronizedAfterSuite ensures the CloudTrail check runs exactly once (in
+// process 1) even when the suite executes with --procs > 1. This avoids
+// redundant CloudTrail API calls and concurrent artifact-file writes.
+var _ = SynchronizedAfterSuite(
+	func() {}, // runs in all processes — nothing to do
+	func() { // runs in process 1 only
+		tc := internal.GetTestContext()
+		if tc == nil {
+			Skip("CloudTrail check skipped: no test context available")
+		}
+
+		hc, err := tc.GetHostedCluster()
+		if err != nil {
+			Skip(fmt.Sprintf("CloudTrail check skipped: failed to get HostedCluster: %v", err))
+		}
+		if hc == nil || hc.Spec.Platform.Type != hyperv1.AWSPlatform || hc.Spec.Platform.AWS == nil {
+			Skip("CloudTrail check skipped: not an AWS platform cluster")
+		}
+
+		awsCreds := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+		if awsCreds == "" {
+			Skip("CloudTrail check skipped: AWS_GUEST_INFRA_CREDENTIALS_FILE not set")
+		}
+
+		checkCtx, cancel := context.WithTimeout(tc.Context, 5*time.Minute)
+		defer cancel()
+
+		e2eutil.RunCloudTrailPermissionCheck(checkCtx, tc.MgmtClient, awsCreds, hc.Spec.Platform.AWS.Region,
+			suiteStartTime, hc, tc.ArtifactDir, GinkgoWriter.Printf)
+	},
+)

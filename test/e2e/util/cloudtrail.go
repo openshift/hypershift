@@ -25,8 +25,9 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// cloudTrailOnce ensures the CloudTrail permission denied check runs only once per process.
-var cloudTrailOnce sync.Once
+// cloudTrailChecked tracks which HostedClusters have already been checked,
+// keyed by namespace/name, to avoid redundant CloudTrail API calls.
+var cloudTrailChecked sync.Map
 
 // PermissionDeniedEvent represents a single permission denied event from CloudTrail.
 type PermissionDeniedEvent struct {
@@ -71,26 +72,30 @@ var permissionDeniedErrorCodes = map[string]bool{
 
 // matchesRole checks if a CloudTrail event was made by one of the target roles.
 // It checks the sessionIssuer ARN (IAM role ARN) directly, and also extracts
-// the role name from the userIdentity ARN (arn:aws:sts::ACCOUNT:assumed-role/ROLE/SESSION)
-// to handle cases where the session name is a numeric ID or UUID.
-func matchesRole(payload cloudTrailEventPayload, roleARNSet map[string]bool, roleNameSet map[string]bool) (string, bool) {
+// the role name and account from the userIdentity ARN
+// (arn:aws:sts::ACCOUNT:assumed-role/ROLE/SESSION) to handle cases where the
+// session name is a numeric ID or UUID. The account is verified to prevent
+// false matches against same-named roles in different AWS accounts.
+func matchesRole(payload cloudTrailEventPayload, roleARNSet map[string]bool, roleAccountNameSet map[string]bool) (string, bool) {
 	issuerARN := payload.UserIdentity.SessionContext.SessionIssuer.ARN
 	if roleARNSet[issuerARN] {
 		return issuerARN, true
 	}
 
-	// Extract role name from arn:aws:sts::ACCOUNT:assumed-role/ROLE_NAME/SESSION
+	// Extract account and role name from arn:aws:sts::ACCOUNT:assumed-role/ROLE_NAME/SESSION
 	identityARN := payload.UserIdentity.ARN
 	if strings.Contains(identityARN, ":assumed-role/") {
+		account := extractAccountFromARN(identityARN)
 		parts := strings.SplitN(identityARN, ":assumed-role/", 2)
-		if len(parts) == 2 {
+		if len(parts) == 2 && account != "" {
 			if slashIdx := strings.Index(parts[1], "/"); slashIdx > 0 {
 				roleName := parts[1][:slashIdx]
-				if roleNameSet[roleName] {
+				key := account + "/" + roleName
+				if roleAccountNameSet[key] {
 					if issuerARN != "" {
 						return issuerARN, true
 					}
-					return identityARN, true
+					return fmt.Sprintf("arn:aws:iam::%s:role/%s", account, roleName), true
 				}
 			}
 		}
@@ -99,16 +104,31 @@ func matchesRole(payload cloudTrailEventPayload, roleARNSet map[string]bool, rol
 	return "", false
 }
 
-// buildRoleNameSet extracts role names from IAM role ARNs.
-// arn:aws:iam::ACCOUNT:role/ROLE_NAME -> ROLE_NAME
-func buildRoleNameSet(roleARNs []string) map[string]bool {
+// extractAccountFromARN extracts the AWS account ID from an ARN.
+// arn:aws:sts::123456789012:assumed-role/... -> 123456789012
+func extractAccountFromARN(arn string) string {
+	parts := strings.Split(arn, ":")
+	if len(parts) >= 5 {
+		return parts[4]
+	}
+	return ""
+}
+
+// buildRoleAccountNameSet extracts account/role-name pairs from IAM role ARNs.
+// arn:aws:iam::123456789012:role/ROLE_NAME -> "123456789012/ROLE_NAME"
+func buildRoleAccountNameSet(roleARNs []string) map[string]bool {
 	names := make(map[string]bool, len(roleARNs))
 	for _, arn := range roleARNs {
-		if idx := strings.LastIndex(arn, "/"); idx >= 0 {
-			names[arn[idx+1:]] = true
+		account := extractAccountFromARN(arn)
+		if idx := strings.LastIndex(arn, "/"); idx >= 0 && account != "" {
+			names[account+"/"+arn[idx+1:]] = true
 		}
 	}
 	return names
+}
+
+type cloudTrailLookupAPI interface {
+	LookupEvents(ctx context.Context, input *cloudtrail.LookupEventsInput, optFns ...func(*cloudtrail.Options)) (*cloudtrail.LookupEventsOutput, error)
 }
 
 // lookupCloudTrailPermissionDenied queries CloudTrail for permission denied events
@@ -121,11 +141,15 @@ func lookupCloudTrailPermissionDenied(ctx context.Context, awsCreds, awsRegion s
 		o.Retryer = awsConfig()
 	})
 
+	return filterCloudTrailEvents(ctx, ctClient, startTime, endTime, roleARNs)
+}
+
+func filterCloudTrailEvents(ctx context.Context, ctClient cloudTrailLookupAPI, startTime, endTime time.Time, roleARNs []string) (*CloudTrailPermissionReport, error) {
 	roleARNSet := make(map[string]bool, len(roleARNs))
 	for _, arn := range roleARNs {
 		roleARNSet[arn] = true
 	}
-	roleNameSet := buildRoleNameSet(roleARNs)
+	roleNameSet := buildRoleAccountNameSet(roleARNs)
 
 	report := &CloudTrailPermissionReport{
 		StartTime: startTime,
@@ -142,7 +166,6 @@ func lookupCloudTrailPermissionDenied(ctx context.Context, awsCreds, awsRegion s
 	for {
 		output, err := ctClient.LookupEvents(ctx, input)
 		if err != nil {
-			// On throttling, return what we have so far rather than failing
 			var apiErr smithy.APIError
 			if errors.As(err, &apiErr) && apiErr.ErrorCode() == "ThrottlingException" {
 				return report, nil
@@ -225,8 +248,10 @@ func extractRoleARNs(hostedCluster *hyperv1.HostedCluster) []string {
 // management cluster role ARNs (injected by EKS Pod Identity or IRSA) that wouldn't
 // appear in the HostedCluster's RolesRef. This catches roles for CPO, cloud-controller-manager,
 // ingress operator, CSI drivers, and other control plane components.
-func discoverHCPRoleARNs(ctx context.Context, client crclient.Client, hcpNamespace string) []string {
+// Returns discovered role ARNs and any warnings from failed list operations.
+func discoverHCPRoleARNs(ctx context.Context, client crclient.Client, hcpNamespace string) ([]string, []string) {
 	var roleARNs []string
+	var warnings []string
 	seen := make(map[string]bool)
 
 	addRole := func(arn string) {
@@ -236,17 +261,19 @@ func discoverHCPRoleARNs(ctx context.Context, client crclient.Client, hcpNamespa
 		}
 	}
 
-	// Check all ServiceAccounts in the HCP namespace for IRSA annotations
 	saList := &corev1.ServiceAccountList{}
-	if err := client.List(ctx, saList, crclient.InNamespace(hcpNamespace)); err == nil {
+	if err := client.List(ctx, saList, crclient.InNamespace(hcpNamespace)); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to list ServiceAccounts in %s: %v", hcpNamespace, err))
+	} else {
 		for _, sa := range saList.Items {
 			addRole(sa.Annotations["eks.amazonaws.com/role-arn"])
 		}
 	}
 
-	// Check all running Pods for AWS_ROLE_ARN env var (injected by EKS Pod Identity webhook at admission)
 	podList := &corev1.PodList{}
-	if err := client.List(ctx, podList, crclient.InNamespace(hcpNamespace)); err == nil {
+	if err := client.List(ctx, podList, crclient.InNamespace(hcpNamespace)); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to list Pods in %s: %v", hcpNamespace, err))
+	} else {
 		for _, pod := range podList.Items {
 			for _, c := range pod.Spec.Containers {
 				for _, env := range c.Env {
@@ -265,79 +292,99 @@ func discoverHCPRoleARNs(ctx context.Context, client crclient.Client, hcpNamespa
 		}
 	}
 
-	return roleARNs
+	return roleARNs, warnings
+}
+
+// RunCloudTrailPermissionCheck is a self-contained CloudTrail permission denied
+// check that queries, logs results via logf, and writes a JSON artifact. It is
+// safe to call from both v1 (t.Logf) and v2 (GinkgoWriter.Printf) frameworks.
+func RunCloudTrailPermissionCheck(ctx context.Context, client crclient.Client, awsCreds, awsRegion string, startTime time.Time, hostedCluster *hyperv1.HostedCluster, artifactDir string, logf func(format string, args ...any)) {
+	report, warnings, err := CheckCloudTrailPermissionDenied(ctx, client, awsCreds, awsRegion, startTime, hostedCluster)
+	for _, w := range warnings {
+		logf("warning: %s", w)
+	}
+	if err != nil {
+		logf("warning: failed to query CloudTrail for permission denied events: %v", err)
+		return
+	}
+
+	clusterKey := hostedCluster.Namespace + "/" + hostedCluster.Name
+	logf("CloudTrail Permission Denied Report for HostedCluster %s", clusterKey)
+	logf("  Time window: %s to %s", report.StartTime.Format(time.RFC3339), report.EndTime.Format(time.RFC3339))
+	logf("  Roles checked: %s", strings.Join(report.RoleARNs, ", "))
+
+	if len(report.Events) == 0 {
+		logf("  No permission denied events found")
+	} else {
+		logf("error: non-fatal, found %d CloudTrail permission denied event(s) for HostedCluster %s",
+			len(report.Events), clusterKey)
+		for i, event := range report.Events {
+			logf("error: non-fatal, [%d] %s on %s (%s) by role %s",
+				i+1, event.ErrorCode, event.EventName, event.EventSource, event.RoleARN)
+			if event.ErrorMessage != "" {
+				logf("       Message: %s", event.ErrorMessage)
+			}
+		}
+	}
+
+	if artifactDir != "" {
+		reportJSON, err := json.MarshalIndent(report, "", "  ")
+		if err == nil {
+			reportPath := filepath.Join(artifactDir, fmt.Sprintf("cloudtrail-permission-denied-%s.json", hostedCluster.Name))
+			if err := os.WriteFile(reportPath, reportJSON, 0644); err != nil {
+				logf("warning: failed to write CloudTrail report to %s: %v", reportPath, err)
+			} else {
+				logf("CloudTrail permission denied report written to %s", reportPath)
+			}
+		}
+	}
+}
+
+// CheckCloudTrailPermissionDenied queries CloudTrail for permission denied events
+// associated with the HostedCluster's IAM roles within the given time window.
+// Returns the report, any discovery warnings, and any error. Callers handle
+// logging and artifact writing.
+func CheckCloudTrailPermissionDenied(ctx context.Context, client crclient.Client, awsCreds, awsRegion string, startTime time.Time, hostedCluster *hyperv1.HostedCluster) (*CloudTrailPermissionReport, []string, error) {
+	roleARNs := extractRoleARNs(hostedCluster)
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	hcpRoleARNs, warnings := discoverHCPRoleARNs(ctx, client, hcpNamespace)
+	seen := make(map[string]bool, len(roleARNs))
+	for _, arn := range roleARNs {
+		seen[arn] = true
+	}
+	for _, arn := range hcpRoleARNs {
+		if !seen[arn] {
+			roleARNs = append(roleARNs, arn)
+		}
+	}
+
+	if len(roleARNs) == 0 {
+		return &CloudTrailPermissionReport{StartTime: startTime, EndTime: time.Now()}, warnings, nil
+	}
+
+	endTime := time.Now()
+	report, err := lookupCloudTrailPermissionDenied(ctx, awsCreds, awsRegion, startTime, endTime, roleARNs)
+	return report, warnings, err
 }
 
 // NoticeCloudTrailPermissionDenied queries CloudTrail for permission denied events
 // associated with the HostedCluster's IAM roles and logs any findings.
 // This is a non-failing check (uses t.Logf) for informational purposes.
-// Only runs once per process (via sync.Once) to avoid CloudTrail API rate limits
-// when multiple tests share the same roles in a CI job.
+// Runs at most once per HostedCluster (by namespace/name) to avoid redundant
+// CloudTrail API calls when multiple tests share the same cluster.
 func NoticeCloudTrailPermissionDenied(t *testing.T, ctx context.Context, client crclient.Client, awsCreds, awsRegion string, startTime time.Time, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("NoticeCloudTrailPermissionDenied", func(t *testing.T) {
-		cloudTrailOnce.Do(func() {
-			roleARNs := extractRoleARNs(hostedCluster)
+		clusterKey := hostedCluster.Namespace + "/" + hostedCluster.Name
+		if _, alreadyRan := cloudTrailChecked.LoadOrStore(clusterKey, true); alreadyRan {
+			t.Logf("CloudTrail check already ran for %s, skipping", clusterKey)
+			return
+		}
 
-			// Discover management cluster role ARNs from HCP namespace pods/SAs (Pod Identity, IRSA)
-			hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-			hcpRoleARNs := discoverHCPRoleARNs(ctx, client, hcpNamespace)
-			if len(hcpRoleARNs) > 0 {
-				t.Logf("Discovered HCP pod role ARNs: %s", strings.Join(hcpRoleARNs, ", "))
-				seen := make(map[string]bool, len(roleARNs))
-				for _, arn := range roleARNs {
-					seen[arn] = true
-				}
-				for _, arn := range hcpRoleARNs {
-					if !seen[arn] {
-						roleARNs = append(roleARNs, arn)
-					}
-				}
-			}
+		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
 
-			if len(roleARNs) == 0 {
-				t.Logf("No AWS role ARNs found on HostedCluster, skipping CloudTrail check")
-				return
-			}
-
-			endTime := time.Now()
-			report, err := lookupCloudTrailPermissionDenied(ctx, awsCreds, awsRegion, startTime, endTime, roleARNs)
-			if err != nil {
-				t.Logf("warning: failed to query CloudTrail for permission denied events: %v", err)
-				return
-			}
-
-			t.Logf("CloudTrail Permission Denied Report for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
-			t.Logf("  Time window: %s to %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
-			t.Logf("  Roles checked: %s", strings.Join(roleARNs, ", "))
-
-			if len(report.Events) == 0 {
-				t.Logf("  No permission denied events found")
-			} else {
-				// "error: " prefix triggers Prow syntax highlighting
-				t.Logf("error: non-fatal, found %d CloudTrail permission denied event(s) for HostedCluster %s/%s",
-					len(report.Events), hostedCluster.Namespace, hostedCluster.Name)
-				for i, event := range report.Events {
-					t.Logf("error: non-fatal, [%d] %s on %s (%s) by role %s",
-						i+1, event.ErrorCode, event.EventName, event.EventSource, event.RoleARN)
-					if event.ErrorMessage != "" {
-						t.Logf("       Message: %s", event.ErrorMessage)
-					}
-				}
-			}
-
-			// Always write JSON report to artifact dir so the check is visible in CI
-			artifactDir := os.Getenv("ARTIFACT_DIR")
-			if artifactDir != "" {
-				reportJSON, err := json.MarshalIndent(report, "", "  ")
-				if err == nil {
-					reportPath := filepath.Join(artifactDir, fmt.Sprintf("cloudtrail-permission-denied-%s.json", hostedCluster.Name))
-					if err := os.WriteFile(reportPath, reportJSON, 0644); err != nil {
-						t.Logf("warning: failed to write CloudTrail report to %s: %v", reportPath, err)
-					} else {
-						t.Logf("CloudTrail permission denied report written to %s", reportPath)
-					}
-				}
-			}
-		})
+		RunCloudTrailPermissionCheck(checkCtx, client, awsCreds, awsRegion, startTime,
+			hostedCluster, os.Getenv("ARTIFACT_DIR"), t.Logf)
 	})
 }
