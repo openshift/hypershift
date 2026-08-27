@@ -58,3 +58,16 @@ func PatchStatusCondition(ctx context.Context, c client.Client, obj client.Objec
 		return c.Status().Patch(ctx, obj, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
 	})
 }
+
+// SyncCondition copies a single condition by type from src to dst: if present in
+// src it's set on dst, if absent it's removed from dst. Useful when a caller
+// computes status on a working copy (to avoid PatchStatus's re-fetch clobbering
+// in-memory mutations) and needs to carry a specific condition back into the
+// live object's mutate callback.
+func SyncCondition(src []metav1.Condition, dst *[]metav1.Condition, conditionType string) {
+	if c := meta.FindStatusCondition(src, conditionType); c != nil {
+		meta.SetStatusCondition(dst, *c)
+	} else {
+		meta.RemoveStatusCondition(dst, conditionType)
+	}
+}
