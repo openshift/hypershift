@@ -755,30 +755,28 @@ func isTransientIAMError(err error) bool {
 
 // isTransientNetworkError checks if the error is a transient network-level error
 // such as connection reset, connection refused, or network unreachable.
-// These occur in CI environments due to transient infrastructure issues.
+// Permanent network errors (e.g., DNS not found, invalid address) return false.
 func isTransientNetworkError(err error) bool {
 	if err == nil {
 		return false
 	}
 
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.IsTimeout || dnsErr.IsTemporary
+	}
+
 	var netErr *net.OpError
 	if errors.As(err, &netErr) {
-		return true
+		if netErr.Timeout() {
+			return true
+		}
+		return isTransientNetworkError(netErr.Err)
 	}
 
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
-		if urlErr.Temporary() {
-			return true
-		}
-		if urlErr.Err != nil {
-			return isTransientNetworkError(urlErr.Err)
-		}
-	}
-
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return true
+		return isTransientNetworkError(urlErr.Err)
 	}
 
 	if errors.Is(err, syscall.ECONNRESET) ||

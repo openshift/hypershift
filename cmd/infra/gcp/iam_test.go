@@ -474,7 +474,7 @@ func TestIsTransientNetworkError(t *testing.T) {
 			err: &net.OpError{
 				Op:  "read",
 				Net: "tcp",
-				Err: fmt.Errorf("read: connection reset by peer"),
+				Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
 			},
 			expected: true,
 		},
@@ -488,9 +488,29 @@ func TestIsTransientNetworkError(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "When error wraps a net.OpError, it should return true",
-			err:      fmt.Errorf("failed to get IAM policy: %w", &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")}),
+			name:     "When error wraps a transient net.OpError, it should return true",
+			err:      fmt.Errorf("failed to get IAM policy: %w", &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}}),
 			expected: true,
+		},
+		{
+			name:     "When error is a DNS not found, it should return false",
+			err:      &net.DNSError{Err: "no such host", Name: "example.com", IsNotFound: true},
+			expected: false,
+		},
+		{
+			name:     "When error is a temporary DNS error, it should return true",
+			err:      &net.DNSError{Err: "temporary failure", Name: "example.com", IsTemporary: true},
+			expected: true,
+		},
+		{
+			name:     "When error is a DNS timeout, it should return true",
+			err:      &net.DNSError{Err: "timeout", Name: "example.com", IsTimeout: true},
+			expected: true,
+		},
+		{
+			name:     "When error is an address error, it should return false",
+			err:      &net.AddrError{Err: "invalid address", Addr: "not-a-host"},
+			expected: false,
 		},
 		{
 			name:     "When error is a non-network error, it should return false",
@@ -530,7 +550,7 @@ func TestIsRetryableError(t *testing.T) {
 		},
 		{
 			name:     "When error is a transient network error, it should return true",
-			err:      &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")},
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}},
 			expected: true,
 		},
 		{
