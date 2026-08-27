@@ -24,8 +24,8 @@ func TestAnalyzer(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			analysistest.Run(t, testdata, Analyzer, tt.pattern)
+		t.Run(tt.name, func(subtest *testing.T) {
+			analysistest.Run(subtest, testdata, Analyzer, tt.pattern)
 		})
 	}
 }

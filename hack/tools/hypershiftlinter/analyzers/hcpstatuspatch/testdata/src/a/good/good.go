@@ -70,3 +70,41 @@ func MergeFrom(obj any) client.Patch { return nil }
 func localMergeFromOnHCPStatus(c client.Client, hcp *hyperv1.HostedControlPlane) error {
 	return c.Status().Patch(nil, hcp, MergeFrom(hcp))
 }
+
+func reassignedToOptimisticLock(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	patch := client.MergeFrom(hcp)
+	patch = client.MergeFromWithOptions(hcp, client.MergeFromWithOptimisticLock{})
+	return c.Status().Patch(nil, hcp, patch)
+}
+
+func nestedShadowDoesNotAffectOuter(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	patch := client.MergeFromWithOptions(hcp, client.MergeFromWithOptimisticLock{})
+	_ = func() client.Patch {
+		patch := client.MergeFrom(hcp)
+		return patch
+	}
+	return c.Status().Patch(nil, hcp, patch)
+}
+
+func nestedBlockReassignment(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	patch := client.MergeFrom(hcp)
+	{
+		patch = client.MergeFromWithOptions(hcp, client.MergeFromWithOptimisticLock{})
+	}
+	return c.Status().Patch(nil, hcp, patch)
+}
+
+func nestedBlockThenReassignment(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	patch := client.MergeFromWithOptions(hcp, client.MergeFromWithOptimisticLock{})
+	{
+		patch = client.MergeFrom(hcp)
+	}
+	patch = client.MergeFromWithOptions(hcp, client.MergeFromWithOptimisticLock{})
+	return c.Status().Patch(nil, hcp, patch)
+}
+
+func multiValueAssignmentGuarded(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	unguarded, patch := client.MergeFrom(hcp), client.MergeFromWithOptions(hcp, client.MergeFromWithOptimisticLock{})
+	_ = unguarded
+	return c.Status().Patch(nil, hcp, patch)
+}
