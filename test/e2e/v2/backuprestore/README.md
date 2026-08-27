@@ -74,7 +74,7 @@ spec:
     velero:
       customPlugins:
         - name: hypershift-oadp-plugin
-          image: quay.io/redhat-user-workloads/ocp-art-tenant/oadp-hypershift-oadp-plugin-main:main
+          image: quay.io/konveyor/hypershift-oadp-plugin:latest
       defaultPlugins:
         - openshift
         - aws
@@ -204,7 +204,7 @@ spec:
     velero:
       customPlugins:
         - name: hypershift-oadp-plugin
-          image: quay.io/redhat-user-workloads/ocp-art-tenant/oadp-hypershift-oadp-plugin-main:main
+          image: quay.io/konveyor/hypershift-oadp-plugin:latest
       defaultPlugins:
         - openshift
         - aws
@@ -232,7 +232,6 @@ Key differences from AWS: `s3ForcePathStyle` is required for MinIO, and `s3Url` 
 ```bash
 minio_endpoint="<minio_host_ip>"
 cluster_name="<cluster_name>"
-bucket_name="oadp-backup"
 
 cat <<EOF | oc apply -f -
 apiVersion: velero.io/v1
