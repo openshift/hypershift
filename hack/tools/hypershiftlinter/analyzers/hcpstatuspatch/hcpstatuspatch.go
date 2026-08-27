@@ -16,7 +16,12 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-const controllerRuntimeClientPkg = "sigs.k8s.io/controller-runtime/pkg/client"
+const (
+	controllerRuntimeClientPkg = "sigs.k8s.io/controller-runtime/pkg/client"
+	hostedControlPlanePkg      = "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hostedControlPlaneType     = "HostedControlPlane"
+	optimisticLockType         = "MergeFromWithOptimisticLock"
+)
 
 var Analyzer = &analysis.Analyzer{
 	Name: "hcpstatuspatch",
@@ -55,8 +60,8 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// isHCPStatusUpdate matches `<expr>.Status().Update(ctx, obj, ...)` where obj's
-// type is named HostedControlPlane.
+// isHCPStatusUpdate matches `<expr>.Status().Update(ctx, obj, ...)` where obj is
+// a HyperShift HostedControlPlane.
 func isHCPStatusUpdate(pass *analysis.Pass, call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Update" {
@@ -76,8 +81,8 @@ func isHCPStatusUpdate(pass *analysis.Pass, call *ast.CallExpr) bool {
 	return isHostedControlPlane(pass.TypesInfo.TypeOf(call.Args[1]))
 }
 
-// isHCPStatusPatch matches `<expr>.Status().Patch(ctx, obj, patch)` where obj's
-// type is named HostedControlPlane.
+// isHCPStatusPatch matches `<expr>.Status().Patch(ctx, obj, patch)` where obj is
+// a HyperShift HostedControlPlane.
 func isHCPStatusPatch(pass *analysis.Pass, call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Patch" {
@@ -109,8 +114,8 @@ func reportUnguardedPatchConstructors(pass *analysis.Pass, statusPatch *ast.Call
 		}
 	}
 	for _, call := range mergeCallsForPatchExpr(pass, statusPatch.Args[2], enclosingFn) {
-		name, _ := mergePatchConstructorName(pass, call)
-		if name == "" {
+		name, isControllerRuntime := mergePatchConstructorName(pass, call)
+		if !isControllerRuntime {
 			continue
 		}
 		if len(call.Args) < 1 || !isHostedControlPlane(pass.TypesInfo.TypeOf(call.Args[0])) {
@@ -207,26 +212,38 @@ func assignDefinesIdent(stmt *ast.AssignStmt, ident string) bool {
 }
 
 func mergePatchConstructorName(pass *analysis.Pass, call *ast.CallExpr) (name string, isControllerRuntime bool) {
-	switch fn := call.Fun.(type) {
-	case *ast.SelectorExpr:
-		name = fn.Sel.Name
-		if sel, ok := pass.TypesInfo.Selections[fn]; ok {
-			if obj, ok := sel.Obj().(*types.Func); ok && obj.Pkg() != nil && obj.Pkg().Path() == controllerRuntimeClientPkg {
-				isControllerRuntime = name == "MergeFrom" || name == "MergeFromWithOptions"
-			}
-		}
-	case *ast.Ident:
-		name = fn.Name
-		if obj, ok := pass.TypesInfo.Uses[fn].(*types.Func); ok && obj.Pkg() != nil && obj.Pkg().Path() == controllerRuntimeClientPkg {
-			isControllerRuntime = name == "MergeFrom" || name == "MergeFromWithOptions"
-		}
-	default:
+	obj := funcObject(pass, call.Fun)
+	if obj == nil {
 		return "", false
 	}
+	name = obj.Name()
 	if name != "MergeFrom" && name != "MergeFromWithOptions" {
 		return "", false
 	}
-	return name, isControllerRuntime
+	if isFromPackage(obj, controllerRuntimeClientPkg) {
+		return name, true
+	}
+	return name, false
+}
+
+// funcObject resolves a call's function. Package-level functions such as
+// client.MergeFrom are recorded in TypesInfo.Uses on the selector Ident, not in
+// TypesInfo.Selections (which only records method selections on values).
+func funcObject(pass *analysis.Pass, fun ast.Expr) *types.Func {
+	switch fn := fun.(type) {
+	case *ast.Ident:
+		obj, _ := pass.TypesInfo.Uses[fn].(*types.Func)
+		return obj
+	case *ast.SelectorExpr:
+		if sel, ok := pass.TypesInfo.Selections[fn]; ok {
+			obj, _ := sel.Obj().(*types.Func)
+			return obj
+		}
+		obj, _ := pass.TypesInfo.Uses[fn.Sel].(*types.Func)
+		return obj
+	default:
+		return nil
+	}
 }
 
 func hasOptimisticLockOption(pass *analysis.Pass, call *ast.CallExpr) bool {
@@ -239,55 +256,39 @@ func hasOptimisticLockOption(pass *analysis.Pass, call *ast.CallExpr) bool {
 }
 
 func isOptimisticLockOption(pass *analysis.Pass, expr ast.Expr) bool {
-	switch e := expr.(type) {
-	case *ast.CompositeLit:
-		return isOptimisticLockType(pass, e.Type)
-	case *ast.CallExpr:
-		return callName(e) == "MergeFromWithOptimisticLock"
-	default:
+	named := namedType(pass.TypesInfo.TypeOf(expr))
+	if named == nil {
 		return false
 	}
+	obj := named.Obj()
+	return obj.Name() == optimisticLockType && isFromPackage(obj, controllerRuntimeClientPkg)
 }
 
-func isOptimisticLockType(pass *analysis.Pass, typ ast.Expr) bool {
-	if typ == nil {
-		return false
-	}
-	switch t := typ.(type) {
-	case *ast.Ident:
-		return t.Name == "MergeFromWithOptimisticLock"
-	case *ast.SelectorExpr:
-		return t.Sel.Name == "MergeFromWithOptimisticLock"
-	default:
-		return false
-	}
-}
-
-func callName(call *ast.CallExpr) string {
-	switch fn := call.Fun.(type) {
-	case *ast.Ident:
-		return fn.Name
-	case *ast.SelectorExpr:
-		return fn.Sel.Name
-	default:
-		return ""
-	}
-}
-
-// isHostedControlPlane reports whether t is (a pointer to) a named type called
-// HostedControlPlane. Matching on name only, not full package path, since it's
-// specific enough in practice and keeps the analyzer testable against local
-// fixture types instead of requiring the real hypershift API module.
-func isHostedControlPlane(t types.Type) bool {
+func namedType(t types.Type) *types.Named {
 	if t == nil {
-		return false
+		return nil
 	}
+	t = types.Unalias(t)
 	if ptr, ok := t.(*types.Pointer); ok {
-		t = ptr.Elem()
+		t = types.Unalias(ptr.Elem())
 	}
-	named, ok := t.(*types.Named)
-	if !ok {
+	named, _ := t.(*types.Named)
+	return named
+}
+
+func isFromPackage(obj types.Object, path string) bool {
+	return obj != nil && obj.Pkg() != nil && obj.Pkg().Path() == path
+}
+
+// isHostedControlPlane reports whether t is (a pointer to) HyperShift's
+// HostedControlPlane type. Matching requires both the type name and the
+// hypershift/v1beta1 package path so a local or third-party type of the same
+// name does not trigger the rule.
+func isHostedControlPlane(t types.Type) bool {
+	named := namedType(t)
+	if named == nil {
 		return false
 	}
-	return named.Obj().Name() == "HostedControlPlane"
+	obj := named.Obj()
+	return obj.Name() == hostedControlPlaneType && isFromPackage(obj, hostedControlPlanePkg)
 }

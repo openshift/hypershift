@@ -1,69 +1,72 @@
 package good
 
-type HostedControlPlane struct {
-	Status Status
-}
-
-type Status struct {
-	Ready bool
-}
+import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
 
 type OtherObject struct {
-	Status Status
+	Status struct{ Ready bool }
 }
 
-type StatusWriter interface {
-	Update(ctx any, obj *HostedControlPlane) error
-	Patch(ctx any, obj *HostedControlPlane, patch Patch) error
+type otherStatusWriter interface {
+	Update(ctx any, obj *OtherObject, opts ...any) error
 }
 
-type OtherStatusWriter interface {
-	Update(ctx any, obj *OtherObject) error
+type otherClient interface {
+	Status() otherStatusWriter
 }
-
-type Client interface {
-	Status() StatusWriter
-	Patch(ctx any, obj *HostedControlPlane, patch Patch) error
-}
-
-type OtherClient interface {
-	Status() OtherStatusWriter
-}
-
-type Patch struct{}
-
-func MergeFrom(obj *HostedControlPlane) Patch { return Patch{} }
-
-func MergeFromWithOptions(obj *HostedControlPlane, opts ...any) Patch { return Patch{} }
-
-func MergeFromWithOptimisticLock() any { return nil }
 
 // PatchStatus stands in for statuspatching.PatchStatus.
-func PatchStatus(c Client, hcp *HostedControlPlane, mutate func() error) error {
+func PatchStatus(c client.Client, hcp *hyperv1.HostedControlPlane, mutate func() error) error {
 	if err := mutate(); err != nil {
 		return err
 	}
-	return c.Patch(nil, hcp, Patch{})
+	return c.Patch(nil, hcp, nil)
 }
 
-func viaHelper(c Client, hcp *HostedControlPlane) error {
+func viaHelper(c client.Client, hcp *hyperv1.HostedControlPlane) error {
 	return PatchStatus(c, hcp, func() error {
 		hcp.Status.Ready = true
 		return nil
 	})
 }
 
-func guardedMergeFrom(c Client, hcp *HostedControlPlane) error {
-	patch := MergeFromWithOptions(hcp, MergeFromWithOptimisticLock())
+func guardedMergeFrom(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	patch := client.MergeFromWithOptions(hcp, client.MergeFromWithOptimisticLock{})
 	return c.Status().Patch(nil, hcp, patch)
 }
 
 // Local MergeFrom used for a non-status object patch is unaffected.
-func localMergeFromForObjectPatch(c Client, hcp *HostedControlPlane) error {
-	return c.Patch(nil, hcp, MergeFrom(hcp))
+func objectPatchMergeFrom(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	return c.Patch(nil, hcp, client.MergeFrom(hcp))
 }
 
 // Status().Update() on a non-HostedControlPlane object is unaffected.
-func updateOtherObject(c OtherClient, obj *OtherObject) error {
+func updateOtherObject(c otherClient, obj *OtherObject) error {
 	return c.Status().Update(nil, obj)
+}
+
+// A local type named HostedControlPlane is not the HyperShift API type.
+type HostedControlPlane struct{}
+
+type localStatusWriter interface {
+	Update(ctx any, obj *HostedControlPlane, opts ...any) error
+	Patch(ctx any, obj *HostedControlPlane, patch any, opts ...any) error
+}
+
+type localClient interface {
+	Status() localStatusWriter
+}
+
+func updateLocalSameNameType(c localClient, hcp *HostedControlPlane) error {
+	return c.Status().Update(nil, hcp)
+}
+
+func MergeFrom(obj any) client.Patch { return nil }
+
+// A same-name local MergeFrom on a HyperShift HCP status patch is not the
+// controller-runtime constructor, so it must not fire.
+func localMergeFromOnHCPStatus(c client.Client, hcp *hyperv1.HostedControlPlane) error {
+	return c.Status().Patch(nil, hcp, MergeFrom(hcp))
 }
