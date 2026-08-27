@@ -787,12 +787,12 @@ func isTransientNetworkError(err error) bool {
 		return true
 	}
 
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "connection reset by peer") ||
-		strings.Contains(errMsg, "connection refused") ||
-		strings.Contains(errMsg, "network is unreachable") ||
-		strings.Contains(errMsg, "i/o timeout") ||
-		strings.Contains(errMsg, "TLS handshake timeout")
+	var ne net.Error
+	if errors.As(err, &ne) {
+		return ne.Timeout()
+	}
+
+	return false
 }
 
 // retryWithExponentialBackoff retries an operation with exponential backoff.
