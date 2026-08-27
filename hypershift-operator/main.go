@@ -19,10 +19,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/install/assets"
@@ -61,8 +61,6 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
@@ -86,6 +84,7 @@ import (
 	"k8s.io/utils/set"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -94,9 +93,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/yaml"
 
-	"path/filepath"
-
-	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
