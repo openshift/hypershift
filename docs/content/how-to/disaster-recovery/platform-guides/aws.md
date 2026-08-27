@@ -100,15 +100,6 @@ spec:
         credential:
           key: cloud
           name: cloud-credentials
-  snapshotLocations:
-    - velero:
-        provider: aws
-        config:
-          region: us-east-1
-          profile: "volumeSnapshot"
-        credential:
-          key: cloud
-          name: cloud-credentials
   configuration:
     nodeAgent:
       enable: true
