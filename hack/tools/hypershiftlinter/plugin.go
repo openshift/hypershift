@@ -68,6 +68,7 @@ func allAnalyzers() []*analysis.Analyzer {
 		vacuouspass.Analyzer,
 		ipv6url.Analyzer,
 		e2eutilallowlist.Analyzer,
+		// TODO(CNTRLPLANE-3532): add the reflect.DeepEqual rule.
 		// CNTRLPLANE-3532 also asks to warn on reflect.DeepEqual for Kubernetes
 		// API objects (use equality.Semantic.DeepEqual). That is a separate
 		// analyzer from hcpstatuspatch and is a follow-up; see README.

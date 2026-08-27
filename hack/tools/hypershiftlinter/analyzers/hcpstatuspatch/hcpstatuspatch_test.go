@@ -7,6 +7,8 @@ import (
 )
 
 func TestAnalyzer(t *testing.T) {
+	t.Parallel()
+
 	testdata := analysistest.TestData()
 
 	tests := []struct {
@@ -21,11 +23,16 @@ func TestAnalyzer(t *testing.T) {
 			name:    "When HostedControlPlane status is updated or patched without an optimistic lock, it should produce diagnostics",
 			pattern: "a/bad",
 		},
+		{
+			name:    "When a patch is passed as a function parameter, it should produce no diagnostics",
+			pattern: "a/interprocedural",
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			analysistest.Run(t, testdata, Analyzer, tt.pattern)
+		t.Run(tt.name, func(subtest *testing.T) {
+			subtest.Parallel()
+			analysistest.Run(subtest, testdata, Analyzer, tt.pattern)
 		})
 	}
 }

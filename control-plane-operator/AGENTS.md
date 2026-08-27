@@ -52,8 +52,9 @@ desired value depends on `Spec` and needs an expensive computation done once
 outside the callback (e.g. an AWS API call), guard against the spec changing
 mid-flight by comparing a captured `Generation` inside the callback instead of
 patching unconditionally. A value is only safe to blindly replay on retry if
-it's derived from a live check with no other writer (e.g. a fresh guest-cluster
-probe done right before patching), not from an earlier `Status` snapshot.
+it's derived from a fresh external probe performed immediately before the patch
+call, where no concurrent writer can invalidate the value between the probe and
+the patch, not from an earlier `Status` snapshot.
 
 The `hcpstatuspatch` static analyzer (`hack/tools/hypershiftlinter`) flags
 direct `Status().Update()`/unguarded `MergeFrom()` on `HostedControlPlane` —
