@@ -125,29 +125,6 @@ spec:
 EOF
 ```
 
-* VolumeSnapshotLocation
-
-```bash
-cluster_name="<your_cluster_name>"
-region="<aws_region>"
-
-cat <<EOF | oc apply -f -
-apiVersion: velero.io/v1
-kind: VolumeSnapshotLocation
-metadata:
-  name: $cluster_name
-  namespace: openshift-adp
-spec:
-  provider: aws
-  credential:
-    name: $cluster_name
-    key: credentials
-  config:
-    region:  $region
-    profile: "default"
-EOF
-```
-
 ##### Agent and KubeVirt
 
 Agent and KubeVirt platforms might use MinIO as an S3-compatible object store instead of AWS S3. Both platforms use the same OADP setup. In CI, MinIO runs on the virthost at `192.168.111.1:9000`.
@@ -276,27 +253,6 @@ spec:
     s3ForcePathStyle: "true"
     s3Url: http://${minio_endpoint}:9000
     insecureSkipTLSVerify: "true"
-EOF
-```
-
-* VolumeSnapshotLocation
-
-```bash
-cluster_name="<cluster_name>"
-
-cat <<EOF | oc apply -f -
-apiVersion: velero.io/v1
-kind: VolumeSnapshotLocation
-metadata:
-  name: $cluster_name
-  namespace: openshift-adp
-spec:
-  provider: aws
-  credential:
-    name: cloud-credentials
-    key: credentials
-  config:
-    region: minio
 EOF
 ```
 
