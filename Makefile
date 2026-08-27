@@ -671,7 +671,11 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 
 .PHONY: verify-tekton-pipeline-pairs
 verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
-	@python3 hack/verify-tekton-pipeline-pairs.py
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 hack/verify-tekton-pipeline-pairs.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
+	fi
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
