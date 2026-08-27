@@ -213,7 +213,7 @@ func TestOauthServiceReconcile(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			err := ReconcileService(&tc.svc_in, config.OwnerRef{}, &tc.strategy, tc.platform, tc.isPrivate)
+			err := ReconcileService(&tc.svc_in, config.OwnerRef{}, &tc.strategy, tc.platform, tc.isPrivate, false)
 
 			if tc.err == nil {
 				g.Expect(err).ToNot(HaveOccurred())
@@ -347,6 +347,62 @@ func TestReconcileServiceStatus(t *testing.T) {
 				g.Expect(message).To(ContainSubstring(tc.expectedMessage))
 			} else {
 				g.Expect(message).To(BeEmpty())
+			}
+		})
+	}
+}
+
+func TestOauthServiceDisableExternalDNS(t *testing.T) {
+	hostname := "oauth.example.com"
+
+	testCases := []struct {
+		name                string
+		disableExtDNS       bool
+		existingAnnotations map[string]string
+		expectAnnotation    bool
+	}{
+		{
+			name:             "When disable flag is false, it should set ExternalDNS annotation",
+			disableExtDNS:    false,
+			expectAnnotation: true,
+		},
+		{
+			name:             "When disable flag is true, it should not set ExternalDNS annotation",
+			disableExtDNS:    true,
+			expectAnnotation: false,
+		},
+		{
+			name:          "When disable flag is true on day-2, it should delete existing ExternalDNS annotation",
+			disableExtDNS: true,
+			existingAnnotations: map[string]string{
+				v1beta1.ExternalDNSHostnameAnnotation: hostname,
+			},
+			expectAnnotation: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			svc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: tc.existingAnnotations,
+				},
+			}
+			strategy := &v1beta1.ServicePublishingStrategy{
+				Type: v1beta1.LoadBalancer,
+				LoadBalancer: &v1beta1.LoadBalancerPublishingStrategy{
+					Hostname: hostname,
+				},
+			}
+
+			err := ReconcileService(svc, config.OwnerRef{}, strategy, v1beta1.AzurePlatform, false, tc.disableExtDNS)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectAnnotation {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(v1beta1.ExternalDNSHostnameAnnotation, hostname))
+			} else {
+				g.Expect(svc.Annotations).ToNot(HaveKey(v1beta1.ExternalDNSHostnameAnnotation))
 			}
 		})
 	}

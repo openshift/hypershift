@@ -2655,6 +2655,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		"hypershift.openshift.io/aws-termination-handler-queue-url",
 		hyperv1.SwiftPodNetworkInstanceAnnotation,
 		hyperv1.EnableMetricsForwarding,
+		hyperv1.DisableExternalDNSManagementAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
