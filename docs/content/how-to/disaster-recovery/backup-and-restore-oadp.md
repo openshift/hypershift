@@ -91,7 +91,7 @@ Below are some samples of DPA configurations for the mentioned platforms
             - csi
           customPlugins:
             - name: hypershift-oadp-plugin
-              image: quay.io/redhat-user-workloads/ocp-art-tenant/oadp-hypershift-oadp-plugin-main:main
+              image: quay.io/konveyor/hypershift-oadp-plugin:latest
           resourceTimeout: 2h
     ```
 
@@ -140,7 +140,7 @@ Below are some samples of DPA configurations for the mentioned platforms
             - csi
           customPlugins:
             - name: hypershift-oadp-plugin
-              image: quay.io/redhat-user-workloads/ocp-art-tenant/oadp-hypershift-oadp-plugin-main:main
+              image: quay.io/konveyor/hypershift-oadp-plugin:latest
           resourceTimeout: 2h
     ```
 
@@ -190,7 +190,7 @@ Below are some samples of DPA configurations for the mentioned platforms
             - csi
           customPlugins:
             - name: hypershift-oadp-plugin
-              image: quay.io/redhat-user-workloads/ocp-art-tenant/oadp-hypershift-oadp-plugin-main:main
+              image: quay.io/konveyor/hypershift-oadp-plugin:latest
           resourceTimeout: 2h
     ```
 
@@ -242,7 +242,7 @@ Below are some samples of DPA configurations for the mentioned platforms
             - csi
           customPlugins:
             - name: hypershift-oadp-plugin
-              image: quay.io/redhat-user-workloads/ocp-art-tenant/oadp-hypershift-oadp-plugin-main:main
+              image: quay.io/konveyor/hypershift-oadp-plugin:latest
           resourceTimeout: 2h
     ```
 
