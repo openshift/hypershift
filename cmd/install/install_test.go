@@ -674,47 +674,47 @@ func TestSetupCRDs(t *testing.T) {
 				PlatformsToInstall: []string{"aws"},
 			},
 		},
-	{
-		name: "When PlatformOptions is set to AWS,Azure, it should include only AWS When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs it should be present Azure CAPI CRDs",
-		inputOptions: Options{
-			PlatformsToInstall: []string{"aws", "azure"},
+		{
+			name: "When PlatformOptions is set to AWS,Azure, it should include only AWS When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs it should be present Azure CAPI CRDs",
+			inputOptions: Options{
+				PlatformsToInstall: []string{"aws", "azure"},
+			},
 		},
-	},
-	{
-		name: "When ExternalDNSProvider is set, it should include DNSEndpoint CRD",
-		inputOptions: Options{
-			ExternalDNSProvider: "google",
+		{
+			name: "When ExternalDNSProvider is set, it should include DNSEndpoint CRD",
+			inputOptions: Options{
+				ExternalDNSProvider: "google",
+			},
 		},
-	},
-	{
-		name:         "When ExternalDNSProvider is empty, it should exclude DNSEndpoint CRD",
-		inputOptions: Options{},
-	},
-}
+		{
+			name:         "When ExternalDNSProvider is empty, it should exclude DNSEndpoint CRD",
+			inputOptions: Options{},
+		},
+	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, &corev1.Service{})
-		g.Expect(err).ToNot(HaveOccurred())
-		nodePoolCRDS := make([]crclient.Object, 0)
-		var machineDeploymentCRD crclient.Object
-		var awsEndpointServicesCRD crclient.Object
-		var dnsEndpointCRD crclient.Object
-		for _, crd := range crds {
-			if crd.GetName() == "nodepools.hypershift.openshift.io" {
-				nodePoolCRDS = append(nodePoolCRDS, crd)
+			g := NewGomegaWithT(t)
+			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, &corev1.Service{})
+			g.Expect(err).ToNot(HaveOccurred())
+			nodePoolCRDS := make([]crclient.Object, 0)
+			var machineDeploymentCRD crclient.Object
+			var awsEndpointServicesCRD crclient.Object
+			var dnsEndpointCRD crclient.Object
+			for _, crd := range crds {
+				if crd.GetName() == "nodepools.hypershift.openshift.io" {
+					nodePoolCRDS = append(nodePoolCRDS, crd)
+				}
+				if crd.GetName() == "machinedeployments.cluster.x-k8s.io" {
+					machineDeploymentCRD = crd
+				}
+				if crd.GetName() == "awsendpointservices.hypershift.openshift.io" {
+					awsEndpointServicesCRD = crd
+				}
+				if crd.GetName() == "dnsendpoints.externaldns.k8s.io" {
+					dnsEndpointCRD = crd
+				}
 			}
-			if crd.GetName() == "machinedeployments.cluster.x-k8s.io" {
-				machineDeploymentCRD = crd
-			}
-			if crd.GetName() == "awsendpointservices.hypershift.openshift.io" {
-				awsEndpointServicesCRD = crd
-			}
-			if crd.GetName() == "dnsendpoints.externaldns.k8s.io" {
-				dnsEndpointCRD = crd
-			}
-		}
 
 			// Smoke test to ensure that CRDs that should apply for any feature gate are present.
 			g.Expect(machineDeploymentCRD).ToNot(BeNil())
@@ -774,18 +774,18 @@ func TestSetupCRDs(t *testing.T) {
 				g.Expect(len(wantedCAPICRDsPerPlatform)).To(BeNumerically("<=", len(gotCRDsPerPlatform)), "Missing CRDs for platform %s", platform)
 			}
 
-		if wantedPlatforms.Has("AWS") {
-			g.Expect(awsEndpointServicesCRD).ToNot(BeNil())
-		}
+			if wantedPlatforms.Has("AWS") {
+				g.Expect(awsEndpointServicesCRD).ToNot(BeNil())
+			}
 
-		// Validate external-dns CRD presence based on ExternalDNSProvider.
-		if tc.inputOptions.ExternalDNSProvider != "" {
-			g.Expect(dnsEndpointCRD).ToNot(BeNil(), "DNSEndpoint CRD should be present when ExternalDNSProvider is set")
-		} else {
-			g.Expect(dnsEndpointCRD).To(BeNil(), "DNSEndpoint CRD should be absent when ExternalDNSProvider is empty")
-		}
+			// Validate external-dns CRD presence based on ExternalDNSProvider.
+			if tc.inputOptions.ExternalDNSProvider != "" {
+				g.Expect(dnsEndpointCRD).ToNot(BeNil(), "DNSEndpoint CRD should be present when ExternalDNSProvider is set")
+			} else {
+				g.Expect(dnsEndpointCRD).To(BeNil(), "DNSEndpoint CRD should be absent when ExternalDNSProvider is empty")
+			}
 
-		g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))
+			g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))
 		})
 	}
 }
