@@ -216,6 +216,55 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
+const (
+	servingCertPollInterval = time.Second
+	servingCertWaitTimeout  = 30 * time.Second
+)
+
+// waitAndConfigureServingCert waits until tls.crt and tls.key exist in certDir
+// and can be loaded, starts a cert watcher, and appends a TLS option that
+// supplies the loaded certificate.
+//
+// During rolling upgrades the new pod can start before the kubelet finishes
+// mounting the secret volume, causing certwatcher.New() to fail immediately.
+// Exponential restart backoff (0→10→20→40 s) then exhausts the 307-second
+// upgrade timeout before the pod ever becomes Ready.
+//
+// A non-nil GetCertificate causes webhook.DefaultServer.Start() to skip its
+// own certwatcher.New() call (see controller-runtime/pkg/webhook/server.go:201).
+func waitAndConfigureServingCert(ctx context.Context, certDir string, tlsOpts []func(*tls.Config), interval, timeout time.Duration, log logr.Logger) ([]func(*tls.Config), error) {
+	if certDir == "" {
+		return tlsOpts, nil
+	}
+
+	certPath := filepath.Join(certDir, "tls.crt")
+	keyPath := filepath.Join(certDir, "tls.key")
+	log.Info("Waiting for serving certificate", "path", certPath)
+	var cw *certwatcher.CertWatcher
+	if err := wait.PollUntilContextTimeout(ctx, interval, timeout, true,
+		func(_ context.Context) (bool, error) {
+			var watchErr error
+			cw, watchErr = certwatcher.New(certPath, keyPath)
+			if watchErr != nil {
+				log.Info("Serving cert not yet available, retrying", "error", watchErr)
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
+		return nil, fmt.Errorf("serving cert never became available at %s: %w", certPath, err)
+	}
+	go func() {
+		if err := cw.Start(ctx); err != nil {
+			log.Error(err, "cert watcher exited")
+		}
+	}()
+	tlsOpts = append(tlsOpts, func(c *tls.Config) {
+		c.GetCertificate = cw.GetCertificate
+	})
+	log.Info("Serving certificate loaded, cert watcher started")
+	return tlsOpts, nil
+}
+
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
 
@@ -280,39 +329,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		webhookOptions.TLSOpts = []func(*tls.Config){minTLSVersionSetter, cipherSuitesSetter}
 	}
 
-	// Wait for the serving cert before starting the webhook server.
-	// During rolling upgrades the new pod can start before the kubelet finishes
-	// mounting the secret volume, causing certwatcher.New() to fail immediately.
-	// Exponential restart backoff (0→10→20→40 s) then exhausts the 307-second
-	// upgrade timeout before the pod ever becomes Ready.
-	if opts.CertDir != "" {
-		certPath := filepath.Join(opts.CertDir, "tls.crt")
-		keyPath := filepath.Join(opts.CertDir, "tls.key")
-		log.Info("Waiting for serving certificate", "path", certPath)
-		var cw *certwatcher.CertWatcher
-		if err := wait.PollUntilContextTimeout(ctx, time.Second, 30*time.Second, true,
-			func(_ context.Context) (bool, error) {
-				var watchErr error
-				cw, watchErr = certwatcher.New(certPath, keyPath)
-				if watchErr != nil {
-					log.Info("Serving cert not yet available, retrying", "error", watchErr)
-					return false, nil
-				}
-				return true, nil
-			}); err != nil {
-			return fmt.Errorf("serving cert never became available at %s: %w", certPath, err)
-		}
-		go func() {
-			if err := cw.Start(ctx); err != nil {
-				log.Error(err, "cert watcher exited")
-			}
-		}()
-		// Non-nil GetCertificate causes webhook.DefaultServer.Start() to skip
-		// its own certwatcher.New() call (see controller-runtime/pkg/webhook/server.go:201).
-		webhookOptions.TLSOpts = append(webhookOptions.TLSOpts, func(c *tls.Config) {
-			c.GetCertificate = cw.GetCertificate
-		})
-		log.Info("Serving certificate loaded, cert watcher started")
+	webhookOptions.TLSOpts, err = waitAndConfigureServingCert(ctx, opts.CertDir, webhookOptions.TLSOpts, servingCertPollInterval, servingCertWaitTimeout, log)
+	if err != nil {
+		return err
 	}
 
 	leaseDuration := time.Second * 60
