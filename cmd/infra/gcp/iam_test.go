@@ -1,8 +1,10 @@
 package gcp
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -15,6 +17,13 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iam/v1"
 )
+
+// timeoutError simulates net/http's unexported tlsHandshakeTimeoutError.
+type timeoutError string
+
+func (e timeoutError) Error() string   { return string(e) }
+func (e timeoutError) Timeout() bool   { return true }
+func (e timeoutError) Temporary() bool { return true }
 
 func TestIAMManagerFormatServiceAccountMethods(t *testing.T) {
 	manager := &IAMManager{
@@ -508,6 +517,31 @@ func TestIsTransientNetworkError(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "When error is connection refused, it should return true",
+			err:      &net.OpError{Op: "dial", Net: "tcp", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}},
+			expected: true,
+		},
+		{
+			name:     "When error is host unreachable, it should return true",
+			err:      &net.OpError{Op: "dial", Net: "tcp", Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH}},
+			expected: true,
+		},
+		{
+			name:     "When error is a syscall timeout, it should return true",
+			err:      &net.OpError{Op: "dial", Net: "tcp", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ETIMEDOUT}},
+			expected: true,
+		},
+		{
+			name:     "When error is a url.Error wrapping a transient error, it should return true",
+			err:      &url.Error{Op: "Post", URL: "https://iam.googleapis.com", Err: &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}}},
+			expected: true,
+		},
+		{
+			name:     "When error is a net.Error with Timeout, it should return true",
+			err:      timeoutError("net/http: TLS handshake timeout"),
+			expected: true,
+		},
+		{
 			name:     "When error is an address error, it should return false",
 			err:      &net.AddrError{Err: "invalid address", Addr: "not-a-host"},
 			expected: false,
@@ -566,6 +600,62 @@ func TestIsRetryableError(t *testing.T) {
 			g.Expect(isRetryableError(tt.err)).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestRetryWithExponentialBackoff(t *testing.T) {
+	manager := &IAMManager{logger: logr.Discard()}
+
+	t.Run("When operation returns a non-retryable error, it should run once and propagate the error", func(t *testing.T) {
+		g := NewWithT(t)
+		calls := 0
+		permanentErr := fmt.Errorf("permanent failure")
+
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", func() error {
+			calls++
+			return permanentErr
+		})
+
+		g.Expect(err).To(MatchError(permanentErr))
+		g.Expect(calls).To(Equal(1))
+	})
+
+	t.Run("When operation returns a transient error then succeeds, it should retry and return nil", func(t *testing.T) {
+		g := NewWithT(t)
+		calls := 0
+		transientErr := &net.OpError{
+			Op:  "read",
+			Net: "tcp",
+			Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
+		}
+
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", func() error {
+			calls++
+			if calls == 1 {
+				return transientErr
+			}
+			return nil
+		})
+
+		g.Expect(err).To(BeNil())
+		g.Expect(calls).To(Equal(2))
+	})
+
+	t.Run("When context is canceled, it should stop retrying", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		transientErr := &googleapi.Error{Code: 429, Message: "Rate limited"}
+
+		cancel()
+
+		err := manager.retryWithExponentialBackoff(ctx, "test-op", func() error {
+			calls++
+			return transientErr
+		})
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(calls).To(Equal(1))
+	})
 }
 
 func TestIsAlreadyExistsError(t *testing.T) {
