@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/install/assets"
@@ -60,6 +61,8 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
@@ -91,9 +94,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/yaml"
 
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+	"path/filepath"
+
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 )
 
 func main() {
@@ -276,6 +279,41 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 
 		webhookOptions.TLSOpts = []func(*tls.Config){minTLSVersionSetter, cipherSuitesSetter}
+	}
+
+	// Wait for the serving cert before starting the webhook server.
+	// During rolling upgrades the new pod can start before the kubelet finishes
+	// mounting the secret volume, causing certwatcher.New() to fail immediately.
+	// Exponential restart backoff (0→10→20→40 s) then exhausts the 307-second
+	// upgrade timeout before the pod ever becomes Ready.
+	if opts.CertDir != "" {
+		certPath := filepath.Join(opts.CertDir, "tls.crt")
+		keyPath := filepath.Join(opts.CertDir, "tls.key")
+		log.Info("Waiting for serving certificate", "path", certPath)
+		var cw *certwatcher.CertWatcher
+		if err := wait.PollUntilContextTimeout(ctx, time.Second, 30*time.Second, true,
+			func(_ context.Context) (bool, error) {
+				var watchErr error
+				cw, watchErr = certwatcher.New(certPath, keyPath)
+				if watchErr != nil {
+					log.Info("Serving cert not yet available, retrying", "error", watchErr)
+					return false, nil
+				}
+				return true, nil
+			}); err != nil {
+			return fmt.Errorf("serving cert never became available at %s: %w", certPath, err)
+		}
+		go func() {
+			if err := cw.Start(ctx); err != nil {
+				log.Error(err, "cert watcher exited")
+			}
+		}()
+		// Non-nil GetCertificate causes webhook.DefaultServer.Start() to skip
+		// its own certwatcher.New() call (see controller-runtime/pkg/webhook/server.go:201).
+		webhookOptions.TLSOpts = append(webhookOptions.TLSOpts, func(c *tls.Config) {
+			c.GetCertificate = cw.GetCertificate
+		})
+		log.Info("Serving certificate loaded, cert watcher started")
 	}
 
 	leaseDuration := time.Second * 60
