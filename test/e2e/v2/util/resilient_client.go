@@ -17,16 +17,24 @@ limitations under the License.
 package util
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"log"
-	"math"
+	"mime"
+	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/types"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 )
 
 const (
-	defaultBaseDelay   = 1 * time.Second
-	defaultMaxDelay    = 30 * time.Second
-	defaultRetryFactor = 2.0
+	defaultBaseDelay = 1 * time.Second
+	defaultMaxDelay  = 30 * time.Second
 )
 
 // ResilientTransportOption configures a ResilientTransport.
@@ -46,19 +54,35 @@ func WithMaxDelay(d time.Duration) ResilientTransportOption {
 	}
 }
 
-// ResilientTransport wraps an http.RoundTripper and retries any transport
-// error with exponential backoff until the request context is canceled.
+// WithAuthRefreshOnRetry clears the Authorization header before each retry so
+// an authentication wrapper around the resilient transport can refresh its
+// credentials.
+func WithAuthRefreshOnRetry() ResilientTransportOption {
+	return func(rt *ResilientTransport) {
+		rt.refreshAuthOnRetry = true
+	}
+}
+
+// ResilientTransport wraps an http.RoundTripper and retries transport errors
+// for requests that are safe to replay until the request context is canceled.
 // HTTP responses, including 4xx/5xx status codes, are returned immediately.
 // This is intended for management cluster API clients in CI, where an
 // external job timeout is the stop condition.
+//
+// GET, HEAD, OPTIONS, and TRACE are safe to replay by definition. The
+// management client also uses fixed-value JSON merge PATCHes; those are
+// replayed only when they do not include metadata.resourceVersion. POST, PUT,
+// DELETE, JSON Patch, and optimistic-lock PATCH requests are sent once and
+// must handle an ambiguous transport error at the operation level.
 //
 // The request body must be nil or implement GetBody for retries to work;
 // otherwise the first retry that needs to re-read the body will fail.
 // Kubernetes client-go sets GetBody on all requests.
 type ResilientTransport struct {
-	delegate  http.RoundTripper
-	baseDelay time.Duration
-	maxDelay  time.Duration
+	delegate           http.RoundTripper
+	baseDelay          time.Duration
+	maxDelay           time.Duration
+	refreshAuthOnRetry bool
 }
 
 // NewResilientTransport wraps delegate with retry-until-canceled logic.
@@ -78,11 +102,15 @@ func NewResilientTransport(delegate http.RoundTripper, opts ...ResilientTranspor
 	return rt
 }
 
-// RoundTrip implements http.RoundTripper. It retries the request on any
-// delegate error using exponential backoff until the request context is
-// done. Successful responses (including HTTP error status codes) are
-// returned immediately.
+// RoundTrip implements http.RoundTripper. It retries replayable requests on
+// delegate errors using exponential backoff until the request context is
+// done. Non-replayable requests are sent once. Successful responses (including
+// HTTP error status codes) are returned immediately.
 func (rt *ResilientTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if !isReplayableRequest(req) {
+		return rt.delegate.RoundTrip(req)
+	}
+
 	var lastErr error
 	for attempt := 0; ; attempt++ {
 		attemptReq := req
@@ -106,6 +134,9 @@ func (rt *ResilientTransport) RoundTrip(req *http.Request) (*http.Response, erro
 			// Clone the request so the caller's original is never mutated,
 			// then reset the clone's body for retry.
 			attemptReq = req.Clone(req.Context())
+			if rt.refreshAuthOnRetry {
+				attemptReq.Header.Del("Authorization")
+			}
 			if req.Body != nil {
 				body, err := req.GetBody()
 				if err != nil {
@@ -125,9 +156,91 @@ func (rt *ResilientTransport) RoundTrip(req *http.Request) (*http.Response, erro
 
 // backoffDelay calculates exponential backoff with a cap.
 func (rt *ResilientTransport) backoffDelay(attempt int) time.Duration {
-	delay := time.Duration(float64(rt.baseDelay) * math.Pow(defaultRetryFactor, float64(attempt-1)))
-	if delay > rt.maxDelay {
-		delay = rt.maxDelay
+	if attempt <= 0 || rt.baseDelay <= 0 || rt.maxDelay <= 0 {
+		return 0
 	}
+
+	delay := rt.baseDelay
+	if delay >= rt.maxDelay {
+		return rt.maxDelay
+	}
+
+	for i := 1; i < attempt; i++ {
+		// Cap before multiplying so a long-lived retry loop cannot overflow
+		// time.Duration and turn into a negative or zero delay.
+		if delay > rt.maxDelay-delay {
+			return rt.maxDelay
+		}
+		delay += delay
+	}
+
 	return delay
+}
+
+func isReplayableRequest(req *http.Request) bool {
+	switch req.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	case http.MethodPatch:
+		return isReplayableMergePatch(req)
+	default:
+		return false
+	}
+}
+
+func isReplayableMergePatch(req *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if err != nil || mediaType != string(types.MergePatchType) {
+		return false
+	}
+	if req.Body == nil {
+		return true
+	}
+	if req.GetBody == nil {
+		return false
+	}
+
+	body, err := req.GetBody()
+	if err != nil {
+		return false
+	}
+	defer body.Close()
+
+	patch := map[string]json.RawMessage{}
+	data, err := io.ReadAll(body)
+	if err != nil || json.Unmarshal(data, &patch) != nil {
+		return false
+	}
+	metadata, ok := patch["metadata"]
+	if !ok {
+		return true
+	}
+	metadataPatch := map[string]json.RawMessage{}
+	if json.Unmarshal(metadata, &metadataPatch) != nil {
+		return false
+	}
+	_, hasResourceVersion := metadataPatch["resourceVersion"]
+	return !hasResourceVersion
+}
+
+// isTransportError reports whether an error came from the HTTP transport
+// rather than from an HTTP response. It is used by operation-level write
+// recovery, where repeating a fixed-name create or re-reading before an
+// update is safe.
+func isTransportError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	if utilnet.IsProbableEOF(err) || utilnet.IsTimeout(err) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "http2: client connection lost") {
+		return true
+	}
+
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }

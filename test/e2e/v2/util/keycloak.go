@@ -31,6 +31,7 @@ import (
 	"time"
 
 	routev1 "github.com/openshift/api/route/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,6 +42,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -676,20 +678,92 @@ func execInKeycloakPod(ctx context.Context, restConfig *rest.Config, script stri
 
 // CreateOrUpdate creates a resource or updates it if it already exists.
 func CreateOrUpdate(ctx context.Context, client crclient.Client, obj crclient.Object) error {
-	if err := client.Create(ctx, obj); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
+	for {
+		err := client.Create(ctx, obj)
+		if err == nil {
+			return nil
+		}
+		if apierrors.IsAlreadyExists(err) {
+			return updateExisting(ctx, client, obj, nil)
+		}
+		if !isTransportError(err) {
 			return err
 		}
+
+		// A transport error leaves the result of Create ambiguous. A GET is
+		// safe to retry and tells us whether the API server committed the
+		// object before the connection failed.
 		existing := obj.DeepCopyObject().(crclient.Object)
-		if err := client.Get(ctx, crclient.ObjectKeyFromObject(obj), existing); err != nil {
-			return fmt.Errorf("failed to get existing resource for update: %w", err)
-		}
-		obj.SetResourceVersion(existing.GetResourceVersion())
-		if err := client.Update(ctx, obj); err != nil {
-			return fmt.Errorf("failed to update existing resource: %w", err)
+		err = client.Get(ctx, crclient.ObjectKeyFromObject(obj), existing)
+		switch {
+		case err == nil:
+			return updateExisting(ctx, client, obj, existing)
+		case apierrors.IsNotFound(err):
+			if err := waitForCreateRetry(ctx); err != nil {
+				return err
+			}
+			// The create did not commit; retrying a fixed-name create cannot
+			// create a duplicate. If the previous request did commit, the
+			// next Create returns AlreadyExists and follows the update path.
+		default:
+			return fmt.Errorf("failed to determine whether resource was created: %w", err)
 		}
 	}
+}
+
+func updateExisting(ctx context.Context, client crclient.Client, obj, current crclient.Object) error {
+	if current == nil {
+		current = obj.DeepCopyObject().(crclient.Object)
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(obj), current); err != nil {
+			return fmt.Errorf("failed to get existing resource for update: %w", err)
+		}
+	}
+
+	if err := patchExisting(ctx, client, obj, current); err != nil {
+		return fmt.Errorf("failed to update existing resource: %w", err)
+	}
 	return nil
+}
+
+func patchExisting(ctx context.Context, client crclient.Client, obj, current crclient.Object) error {
+	for {
+		// MergeFrom does not include resourceVersion when the desired object
+		// has the same version as its base. The resulting fixed-value patch can
+		// be replayed safely if the response is lost.
+		obj.SetResourceVersion(current.GetResourceVersion())
+		err := client.Patch(ctx, obj, crclient.MergeFrom(current))
+		if err == nil {
+			return nil
+		}
+		if !isTransportError(err) {
+			return err
+		}
+
+		// A transport error can happen after the patch is committed. Refresh
+		// the base object and recompute the patch instead of replaying a stale
+		// full-object update or optimistic resource version. Keep doing this
+		// until the context expires so a second lost response is recoverable.
+		latest := obj.DeepCopyObject().(crclient.Object)
+		if getErr := client.Get(ctx, crclient.ObjectKeyFromObject(obj), latest); getErr != nil {
+			return fmt.Errorf("failed to verify existing resource after patch transport error: %w", getErr)
+		}
+		current = latest
+		if err := waitForCreateRetry(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+func waitForCreateRetry(ctx context.Context) error {
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // generateRandomString returns a random alphanumeric string of length n using crypto/rand.

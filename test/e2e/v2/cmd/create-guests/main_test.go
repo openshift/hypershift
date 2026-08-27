@@ -17,56 +17,38 @@ limitations under the License.
 package main
 
 import (
-	"net/http"
-	"net/url"
+	"context"
+	"net"
 	"testing"
+	"time"
 
-	"k8s.io/client-go/transport"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/rest"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestResolveProxyFunc_ExplicitProxyPreserved(t *testing.T) {
-	explicitURL := &url.URL{Scheme: "http", Host: "explicit-proxy.example.com:8080"}
-	explicitProxy := func(*http.Request) (*url.URL, error) {
-		return explicitURL, nil
-	}
+func TestNewMgmtClient(t *testing.T) {
+	t.Run("When discovery cannot connect, it should stop after the discovery timeout", func(t *testing.T) {
+		client, err := newMgmtClientForConfigWithDiscoveryTimeout(&rest.Config{
+			Host: "https://api.example.com",
+			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+		}, 20*time.Millisecond)
+		if err != nil {
+			t.Fatalf("failed to create management client: %v", err)
+		}
 
-	proxyFunc := resolveProxyFunc(&transport.Config{Proxy: explicitProxy})
-
-	req, err := http.NewRequest(http.MethodGet, "https://api.example.com", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
-	got, err := proxyFunc(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != explicitURL {
-		t.Fatalf("expected explicit proxy to be preserved, got %v", got)
-	}
-}
-
-func redactedURL(u *url.URL) string {
-	if u == nil {
-		return "<nil>"
-	}
-	return u.Redacted()
-}
-
-func TestResolveProxyFunc_FallsBackToEnvironment(t *testing.T) {
-	proxyFunc := resolveProxyFunc(&transport.Config{})
-
-	req, err := http.NewRequest(http.MethodGet, "https://api.example.com", nil)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
-	wantURL, wantErr := http.ProxyFromEnvironment(req)
-	gotURL, gotErr := proxyFunc(req)
-	if gotErr != wantErr {
-		t.Fatalf("expected error %v, got %v", wantErr, gotErr)
-	}
-	if (gotURL == nil) != (wantURL == nil) || (gotURL != nil && gotURL.String() != wantURL.String()) {
-		// Redacted() masks userinfo; http.ProxyFromEnvironment can return a
-		// credentialed URL sourced from HTTPS_PROXY/HTTP_PROXY.
-		t.Fatalf("expected http.ProxyFromEnvironment fallback (%s), got %s", redactedURL(wantURL), redactedURL(gotURL))
-	}
+		start := time.Now()
+		err = client.Get(t.Context(), crclient.ObjectKey{Name: "test"}, &corev1.Namespace{})
+		elapsed := time.Since(start)
+		if err == nil {
+			t.Fatal("expected discovery to fail")
+		}
+		if elapsed > time.Second {
+			t.Fatalf("expected discovery to stop within 1s, took %v: %v", elapsed, err)
+		}
+	})
 }
