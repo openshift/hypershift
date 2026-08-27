@@ -17385,15 +17385,6 @@ Below are some samples of DPA configurations for the mentioned platforms
             credential:
               key: cloud
               name: cloud-credentials
-      snapshotLocations:
-        - velero:
-            provider: aws
-            config:
-              region: us-east-1
-              profile: "volumeSnapshot"
-            credential:
-              key: cloud
-              name: cloud-credentials
       configuration:
         nodeAgent:
           enable: true
@@ -17435,15 +17426,6 @@ Below are some samples of DPA configurations for the mentioned platforms
               key: cloud
               name: cloud-credentials
               default: true
-      snapshotLocations:
-        - velero:
-            provider: aws
-            config:
-              region: minio
-              profile: "default"
-            credential:
-              key: cloud
-              name: cloud-credentials
       configuration:
         nodeAgent:
           enable: true
@@ -17477,15 +17459,6 @@ Below are some samples of DPA configurations for the mentioned platforms
               prefix: backup-objects
             config:
               region: region-one
-              profile: "default"
-            credential:
-              key: cloud
-              name: cloud-credentials
-      snapshotLocations:
-        - velero:
-            provider: aws
-            config:
-              region: minio
               profile: "default"
             credential:
               key: cloud
@@ -18414,15 +18387,6 @@ Below are some samples of DPA configurations for the mentioned platforms
               key: cloud
               name: cloud-credentials
               default: true
-      snapshotLocations:
-        - velero:
-            provider: aws
-            config:
-              region: minio
-              profile: "default"
-            credential:
-              key: cloud
-              name: cloud-credentials
       configuration:
         nodeAgent:
           enable: true
@@ -18460,15 +18424,6 @@ Below are some samples of DPA configurations for the mentioned platforms
             config:
               region: us-east-1
               profile: "backupStorage"
-            credential:
-              key: cloud
-              name: cloud-credentials
-      snapshotLocations:
-        - velero:
-            provider: aws
-            config:
-              region: us-east-1
-              profile: "volumeSnapshot"
             credential:
               key: cloud
               name: cloud-credentials
@@ -18512,15 +18467,6 @@ Below are some samples of DPA configurations for the mentioned platforms
               bucket: example-oadp
               prefix: backup-objects
             provider: aws
-      snapshotLocations:
-        - velero:
-            provider: aws
-            config:
-              region: region-one
-              profile: "default"
-            credential:
-              key: cloud
-              name: cloud-credentials
       configuration:
         nodeAgent:
           enable: true
@@ -18564,15 +18510,6 @@ Below are some samples of DPA configurations for the mentioned platforms
               bucket: example-oadp
               prefix: backup-objects
             provider: aws
-      snapshotLocations:
-        - velero:
-            provider: aws
-            config:
-              region: region-one
-              profile: "default"
-            credential:
-              key: cloud
-              name: cloud-credentials
       configuration:
         nodeAgent:
           enable: true
@@ -22646,15 +22583,6 @@ spec:
           key: cloud
           name: cloud-credentials
           default: true
-  snapshotLocations:
-    - velero:
-        provider: aws
-        config:
-          region: minio
-          profile: "default"
-        credential:
-          key: cloud
-          name: cloud-credentials
   configuration:
     nodeAgent:
       enable: true
@@ -22887,15 +22815,6 @@ spec:
         config:
           region: us-east-1
           profile: "backupStorage"
-        credential:
-          key: cloud
-          name: cloud-credentials
-  snapshotLocations:
-    - velero:
-        provider: aws
-        config:
-          region: us-east-1
-          profile: "volumeSnapshot"
         credential:
           key: cloud
           name: cloud-credentials
@@ -23151,15 +23070,6 @@ spec:
           bucket: example-oadp
           prefix: backup-objects
         provider: aws
-  snapshotLocations:
-    - velero:
-        provider: aws
-        config:
-          region: region-one
-          profile: "default"
-        credential:
-          key: cloud
-          name: cloud-credentials
   configuration:
     nodeAgent:
       enable: true
@@ -23252,15 +23162,6 @@ spec:
           prefix: backup-objects
         config:
           region: region-one
-          profile: "default"
-        credential:
-          key: cloud
-          name: cloud-credentials
-  snapshotLocations:
-    - velero:
-        provider: aws
-        config:
-          region: minio
           profile: "default"
         credential:
           key: cloud
