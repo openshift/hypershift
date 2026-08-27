@@ -618,6 +618,19 @@ func TestCRDIncludeFilter(t *testing.T) {
 			crd:    defaultCRD(),
 			expect: false,
 		},
+		{
+			name:   "When path contains external-dns and ExternalDNSProvider is set, it should be included",
+			opts:   Options{ExternalDNSProvider: "google"},
+			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains external-dns and ExternalDNSProvider is empty, it should be excluded",
+			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
 	}
 
 	for _, tc := range tests {

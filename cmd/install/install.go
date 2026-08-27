@@ -65,9 +65,10 @@ import (
 )
 
 const (
-	// ExternalDNSImage - This is specifically tag 1.2.1 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel8/61d4c35023156829b87a434a
+	// ExternalDNSImage - external-dns-rhel9 1.3.5 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel9
+	// Contains NS record trailing dot fix for Google Cloud DNS (upstream PR#4847, openshift/external-dns PR#125)
 	// TODO this needs to be updated to a multi-arch image including Arm - https://issues.redhat.com/browse/NE-1298
-	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel8@sha256:9f60c682b44497d9736a04991c0d2b3485d477f6c89a87c4a44a211a3d1f3cd4"
+	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel9@sha256:134ae69e965306387d59dcae2619f0955697b8a9c0c39e26764017fee7080767"
 )
 
 var HyperShiftImage = fmt.Sprintf("%s:%s", config.HypershiftImageBase, config.HypershiftImageTag)
@@ -1000,6 +1001,10 @@ func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(strin
 		}
 		if strings.Contains(path, "auditlogpersistence") {
 			return opts.EnableAuditLogPersistence
+		}
+		// Include external-dns CRDs only when external-dns provider is configured
+		if strings.Contains(path, "external-dns") {
+			return len(opts.ExternalDNSProvider) > 0
 		}
 		if len(opts.PlatformsToInstall) > 0 {
 			for _, platform := range opts.PlatformsToInstall {
