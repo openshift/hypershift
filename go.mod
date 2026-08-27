@@ -306,3 +306,5 @@ replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-
 
 // Use Kubernetes v1.32.3's version of k8s.io/utils for compatibility
 replace k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+
+replace golang.org/x/crypto => github.com/openshift-sustaining/crypto v0.33.0-sec.3
