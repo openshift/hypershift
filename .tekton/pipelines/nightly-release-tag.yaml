@@ -1,0 +1,351 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hypershift-nightly-release-tag
+spec:
+  description: |
+    Konflux managed release pipeline. Triggered by a ReleasePlan/Release: reads
+    the released Snapshot (via the release-service-catalog collect-data task),
+    applies the ReleasePlanAdmission spec.data.mapping onto the snapshot (via
+    apply-mapping), then for each mapped component extracts the operator image
+    (repository@digest), recomputes a fresh nightly tag, and tags the image into
+    an OpenShift imagestream on the CI cluster. The release controller then
+    mirrors it to the production repository if it passes verification.
+
+    Tagging config is carried per-component in the RPA spec.data.mapping:
+      spec.data.mapping.components[]:
+        - name: <snapshot component name>
+          destination-imagestream: <namespace>/<imagestream>
+          release-version: <version prefix>
+    apply-mapping deep-merges those keys into the matching snapshot components,
+    so tag-image reads containerImage + destination-imagestream + release-version
+    directly off each component. Components present in the snapshot but not the
+    mapping (and vice-versa) are dropped by apply-mapping.
+
+    NOTE: this pipeline lives in the openshift/hypershift repo but references
+    tasks/stepactions from the release-service-catalog. Those refs use the
+    dedicated catalogGitUrl/catalogGitRevision params (NOT taskGitUrl) so that
+    release-service's automatic taskGitUrl injection - which points at the repo
+    this pipeline was resolved from - does not redirect catalog task resolution
+    to the hypershift repo. Pin catalogGitRevision to a known-good commit.
+  params:
+  # --- Konflux managed-release contract (injected by release-service) ---
+  - name: release
+    type: string
+  - name: releasePlan
+    type: string
+  - name: releasePlanAdmission
+    type: string
+  - name: releaseServiceConfig
+    type: string
+  - name: snapshot
+    type: string
+  # --- release-service-catalog coordinates (task/stepaction resolution) ---
+  - name: catalogGitUrl
+    type: string
+    default: https://github.com/konflux-ci/release-service-catalog.git
+  - name: catalogGitRevision
+    type: string
+    description: Revision of the release-service-catalog to resolve tasks from. Pin to a commit for reproducibility.
+    default: production
+  # --- trusted-artifacts plumbing (consumed by collect-data, apply-mapping and the restore step) ---
+  - name: ociStorage
+    type: string
+    default: quay.io/konflux-ci/release-service-trusted-artifacts
+  - name: dataDir
+    type: string
+    default: /var/workdir/release
+  - name: orasOptions
+    type: string
+    default: ""
+  - name: trustedArtifactsDebug
+    type: string
+    default: ""
+  - name: caTrustConfigMapName
+    type: string
+    default: trusted-ca
+  - name: caTrustConfigMapKey
+    type: string
+    default: ca-bundle.crt
+  - name: caCertPath
+    type: string
+    default: /mnt/trusted-ca/ca-bundle.crt
+  # --- tagging inputs ---
+  # Per-component tagging config (destination-imagestream, release-version) comes
+  # from the ReleasePlanAdmission spec.data.mapping.components[] entries, which
+  # apply-mapping merges into the matching snapshot components. tag-image reads
+  # those merged values off each component, a component missing
+  # containerImage/destination-imagestream/release-version is a hard error.
+  - name: ci-cluster-credentials-secret
+    type: string
+    description: Name of the Secret in the pipeline namespace holding the CI cluster kubeconfig under key 'kubeconfig'.
+    default: hypershift-ci-cluster-credentials
+  tasks:
+  - name: verify-access-to-resources
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: $(params.catalogGitUrl)
+      - name: revision
+        value: $(params.catalogGitRevision)
+      - name: pathInRepo
+        value: tasks/managed/verify-access-to-resources/verify-access-to-resources.yaml
+    params:
+    - name: release
+      value: $(params.release)
+    - name: releasePlan
+      value: $(params.releasePlan)
+    - name: releasePlanAdmission
+      value: $(params.releasePlanAdmission)
+    - name: releaseServiceConfig
+      value: $(params.releaseServiceConfig)
+    - name: snapshot
+      value: $(params.snapshot)
+    - name: requireInternalServices
+      value: "false"
+    - name: caTrustConfigMapName
+      value: $(params.caTrustConfigMapName)
+    - name: caTrustConfigMapKey
+      value: $(params.caTrustConfigMapKey)
+  - name: collect-data
+    runAfter:
+    - verify-access-to-resources
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: $(params.catalogGitUrl)
+      - name: revision
+        value: $(params.catalogGitRevision)
+      - name: pathInRepo
+        value: tasks/managed/collect-data/collect-data.yaml
+    params:
+    - name: release
+      value: $(params.release)
+    - name: releasePlan
+      value: $(params.releasePlan)
+    - name: releasePlanAdmission
+      value: $(params.releasePlanAdmission)
+    - name: releaseServiceConfig
+      value: $(params.releaseServiceConfig)
+    - name: snapshot
+      value: $(params.snapshot)
+    - name: subdirectory
+      value: $(context.pipelineRun.uid)
+    - name: ociStorage
+      value: $(params.ociStorage)
+    - name: dataDir
+      value: $(params.dataDir)
+    - name: trustedArtifactsDebug
+      value: $(params.trustedArtifactsDebug)
+    - name: taskGitUrl
+      value: $(params.catalogGitUrl)
+    - name: taskGitRevision
+      value: $(params.catalogGitRevision)
+  - name: apply-mapping
+    runAfter:
+    - collect-data
+    taskRef:
+      resolver: git
+      params:
+      - name: url
+        value: $(params.catalogGitUrl)
+      - name: revision
+        value: $(params.catalogGitRevision)
+      - name: pathInRepo
+        value: tasks/managed/apply-mapping/apply-mapping.yaml
+    params:
+    # apply-mapping reads .mapping from data.json and deep-merges mapping.components[]
+    # into the snapshot components by name, writing the result back to snapshotPath.
+    - name: snapshotPath
+      value: $(tasks.collect-data.results.snapshotSpec)
+    - name: dataPath
+      value: $(tasks.collect-data.results.data)
+    - name: failOnEmptyResult
+      value: "true"
+    - name: sourceDataArtifact
+      value: $(tasks.collect-data.results.sourceDataArtifact)
+    - name: ociStorage
+      value: $(params.ociStorage)
+    - name: dataDir
+      value: $(params.dataDir)
+    - name: orasOptions
+      value: $(params.orasOptions)
+    - name: trustedArtifactsDebug
+      value: $(params.trustedArtifactsDebug)
+    - name: caCertPath
+      value: $(params.caCertPath)
+    - name: caTrustConfigMapName
+      value: $(params.caTrustConfigMapName)
+    - name: caTrustConfigMapKey
+      value: $(params.caTrustConfigMapKey)
+    - name: taskGitUrl
+      value: $(params.catalogGitUrl)
+    - name: taskGitRevision
+      value: $(params.catalogGitRevision)
+  - name: tag-image
+    runAfter:
+    - apply-mapping
+    params:
+    - name: snapshotPath
+      value: $(tasks.collect-data.results.snapshotSpec)
+    - name: sourceDataArtifact
+      value: $(tasks.apply-mapping.results.sourceDataArtifact)
+    - name: ociStorage
+      value: $(params.ociStorage)
+    - name: dataDir
+      value: $(params.dataDir)
+    - name: orasOptions
+      value: $(params.orasOptions)
+    - name: trustedArtifactsDebug
+      value: $(params.trustedArtifactsDebug)
+    - name: caCertPath
+      value: $(params.caCertPath)
+    - name: catalogGitUrl
+      value: $(params.catalogGitUrl)
+    - name: catalogGitRevision
+      value: $(params.catalogGitRevision)
+    - name: ci-cluster-credentials-secret
+      value: $(params.ci-cluster-credentials-secret)
+    taskSpec:
+      params:
+      - name: snapshotPath
+        type: string
+      - name: sourceDataArtifact
+        type: string
+      - name: ociStorage
+        type: string
+      - name: dataDir
+        type: string
+      - name: orasOptions
+        type: string
+      - name: trustedArtifactsDebug
+        type: string
+      - name: caCertPath
+        type: string
+      - name: catalogGitUrl
+        type: string
+      - name: catalogGitRevision
+        type: string
+      - name: ci-cluster-credentials-secret
+        type: string
+      volumes:
+      - name: workdir
+        emptyDir: {}
+      - name: trusted-ca
+        configMap:
+          name: $(params.caTrustConfigMapName)
+          items:
+          - key: $(params.caTrustConfigMapKey)
+            path: ca-bundle.crt
+          optional: true
+      - name: cluster-credentials
+        secret:
+          secretName: $(params.ci-cluster-credentials-secret)
+      stepTemplate:
+        volumeMounts:
+        - name: workdir
+          mountPath: /var/workdir
+        - name: trusted-ca
+          mountPath: /mnt/trusted-ca
+          readOnly: true
+        env:
+        - name: ORAS_OPTIONS
+          value: $(params.orasOptions)
+        - name: DEBUG
+          value: $(params.trustedArtifactsDebug)
+        securityContext:
+          runAsUser: 1001
+      steps:
+      # Restore the apply-mapping trusted artifact into dataDir so the mapped
+      # snapshot_spec.json is readable.
+      - name: use-trusted-artifact
+        computeResources:
+          limits:
+            memory: 64Mi
+          requests:
+            memory: 64Mi
+            cpu: 30m
+        ref:
+          resolver: git
+          params:
+          - name: url
+            value: $(params.catalogGitUrl)
+          - name: revision
+            value: $(params.catalogGitRevision)
+          - name: pathInRepo
+            value: stepactions/use-trusted-artifact/use-trusted-artifact.yaml
+        params:
+        - name: workDir
+          value: $(params.dataDir)
+        - name: sourceDataArtifact
+          value: $(params.sourceDataArtifact)
+        - name: caCertPath
+          value: $(params.caCertPath)
+      - name: tag
+        image: quay.io/konflux-ci/appstudio-utils:latest@sha256:32cda04122ee0a5d5b4307e121d192d1265c3bff727c9d894f36b6772da53d8c
+        volumeMounts:
+        - name: cluster-credentials
+          mountPath: /credentials
+          readOnly: true
+        env:
+        - name: HOME
+          value: /tekton/home
+        - name: KUBECONFIG
+          value: /credentials/kubeconfig
+        - name: SNAPSHOT_SPEC_FILE
+          value: $(params.dataDir)/$(params.snapshotPath)
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "=== tag-image ==="
+          echo "Running as: $(oc whoami || echo unknown)"
+
+          if [ ! -f "${SNAPSHOT_SPEC_FILE}" ]; then
+            echo "ERROR: mapped snapshot spec file not found at ${SNAPSHOT_SPEC_FILE}"
+            exit 1
+          fi
+
+          # apply-mapping has already merged the RPA spec.data.mapping.components[]
+          # entries into the snapshot components and filtered to the intersection.
+          # Tag every component in the mapped snapshot, reading its per-component
+          # destination-imagestream and release-version. A component missing any
+          # required field is a hard error.
+          NUM=$(jq '.components | length' "${SNAPSHOT_SPEC_FILE}")
+          if [ "${NUM}" -eq 0 ]; then
+            echo "ERROR: mapped snapshot contains 0 components"
+            exit 1
+          fi
+          echo "Mapped components: ${NUM}"
+
+          # One timestamp for the whole run so all components share a nightly tag.
+          TIMESTAMP=$(date -u +%Y-%m-%d-%H%M%S)
+
+          for i in $(seq 0 $((NUM - 1))); do
+            component=$(jq -c --argjson i "$i" '.components[$i]' "${SNAPSHOT_SPEC_FILE}")
+            NAME=$(jq -r '.name // empty' <<< "${component}")
+            IMAGE=$(jq -r '.containerImage // empty' <<< "${component}")
+            DESTINATION_IMAGESTREAM=$(jq -r '."destination-imagestream" // empty' <<< "${component}")
+            RELEASE_VERSION=$(jq -r '."release-version" // empty' <<< "${component}")
+
+            if [ -z "${IMAGE}" ] || [ -z "${DESTINATION_IMAGESTREAM}" ] || [ -z "${RELEASE_VERSION}" ]; then
+              echo "ERROR: component '${NAME:-<unnamed>}' is missing containerImage, destination-imagestream or release-version after mapping."
+              echo "  Ensure the RPA spec.data.mapping.components[] entry for '${NAME}' sets destination-imagestream and release-version."
+              echo "  component: ${component}"
+              exit 1
+            fi
+
+            TAG="${RELEASE_VERSION}-0.nightly-${TIMESTAMP}"
+            IMAGE_STREAM_TAG="${DESTINATION_IMAGESTREAM}:${TAG}"
+
+            echo "--- ${NAME} ---"
+            echo "Source image: ${IMAGE}"
+            echo "Tagging into: ${IMAGE_STREAM_TAG}"
+
+            oc tag --source=docker --loglevel=2 --reference-policy='source' \
+              --import-mode='PreserveOriginal' --reference "${IMAGE}" "${IMAGE_STREAM_TAG}"
+          done
+
+          echo "=== tag-image: done ==="
