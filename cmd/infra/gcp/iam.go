@@ -823,7 +823,7 @@ func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationN
 		// Check if we've exceeded the deadline
 		if time.Now().After(deadline) {
 			c.logger.Info("Operation timed out after retries", "operation", operationName, "attempts", attempt, "lastError", err)
-			return fmt.Errorf("operation timed out after %d attempts due to IAM propagation delays: %w", attempt, err)
+			return fmt.Errorf("operation timed out after %d attempts: %w", attempt, err)
 		}
 
 		// Check context cancellation
@@ -834,7 +834,7 @@ func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationN
 		// Add jitter to backoff to avoid thundering herd (±25% randomization)
 		jitter := time.Duration(float64(backoff) * (0.75 + rand.Float64()*0.5))
 
-		c.logger.Info("Retrying operation due to IAM propagation delay",
+		c.logger.Info("Retrying operation due to transient error",
 			"operation", operationName,
 			"attempt", attempt,
 			"backoff", jitter,
