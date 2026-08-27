@@ -486,6 +486,98 @@ func TestGenerateKMSPodConfig_ActiveContainerArgs(t *testing.T) {
 	}
 }
 
+func TestBuildKASContainerAzureKMS(t *testing.T) {
+	tests := []struct {
+		name             string
+		keyVaultType     hyperv1.AzureKMSKeyVaultType
+		expectManagedHSM bool
+	}{
+		{
+			name:             "When keyVaultType is omitted, it should not pass the managed HSM flag",
+			expectManagedHSM: false,
+		},
+		{
+			name:             "When keyVaultType is KeyVault, it should not pass the managed HSM flag",
+			keyVaultType:     hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			expectManagedHSM: false,
+		},
+		{
+			name:             "When keyVaultType is ManagedHSM, it should pass the managed HSM flag",
+			keyVaultType:     hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			expectManagedHSM: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := validAzureKMSSpecWithBackup()
+			spec.KeyVaultType = tt.keyVaultType
+			provider, err := newTestAzureKMSProvider(spec, "test-kms-image:latest", AzureKMSProviderOptions{})
+			g := NewWithT(t)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			podConfig, err := provider.GenerateKMSPodConfig()
+			g.Expect(err).NotTo(HaveOccurred())
+			active := findContainer(podConfig.Containers, "azure-kms-provider-active")
+			g.Expect(active).NotTo(BeNil())
+			backup := findContainer(podConfig.Containers, "azure-kms-provider-backup")
+			g.Expect(backup).NotTo(BeNil())
+			if tt.expectManagedHSM {
+				g.Expect(active.Args).To(ContainElement("--managed-hsm"))
+				g.Expect(backup.Args).To(ContainElement("--managed-hsm"))
+			} else {
+				g.Expect(active.Args).NotTo(ContainElement("--managed-hsm"))
+				g.Expect(backup.Args).NotTo(ContainElement("--managed-hsm"))
+			}
+		})
+	}
+}
+
+func TestAzureKMSProviderName(t *testing.T) {
+	const legacyProviderName = "azure-be23a676"
+	baseKey := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "1"}
+
+	tests := []struct {
+		name         string
+		keyVaultType hyperv1.AzureKMSKeyVaultType
+		expectName   string
+		expectLegacy bool
+	}{
+		{
+			name:         "When keyVaultType is omitted, it should produce the legacy provider name",
+			expectName:   legacyProviderName,
+			expectLegacy: true,
+		},
+		{
+			name:         "When keyVaultType is KeyVault, it should preserve the legacy provider name",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeKeyVault,
+			expectName:   legacyProviderName,
+			expectLegacy: true,
+		},
+		{
+			name:         "When keyVaultType is ManagedHSM, it should produce a different provider name",
+			keyVaultType: hyperv1.AzureKMSKeyVaultTypeManagedHSM,
+			expectLegacy: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			key := baseKey
+
+			name, err := AzureKMSProviderName(key, tt.keyVaultType)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			if tt.expectLegacy {
+				g.Expect(name).To(Equal(tt.expectName))
+			} else {
+				g.Expect(name).NotTo(Equal(legacyProviderName))
+			}
+		})
+	}
+}
+
 func TestGenerateKMSPodConfig_BackupContainerArgs(t *testing.T) {
 	g := NewWithT(t)
 
