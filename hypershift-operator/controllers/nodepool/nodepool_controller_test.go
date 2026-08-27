@@ -284,6 +284,30 @@ func TestValidateManagement(t *testing.T) {
 			},
 			error: false,
 		},
+		{
+			name: "When InPlace upgrade type is set, it should pass",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+					},
+				},
+			},
+			error: false,
+		},
+		{
+			name: "When empty upgrade type is set, it should fail",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: "",
+					},
+				},
+			},
+			error: true,
+		},
 	}
 
 	for _, tc := range testCases {
