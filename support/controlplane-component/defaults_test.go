@@ -287,6 +287,166 @@ func generateResources() (map[string]*corev1.Secret, map[string]*corev1.ConfigMa
 	return secrets, configMaps
 }
 
+func TestSetControlPlaneIsolationNodeFailureTolerations(t *testing.T) {
+	// expectNotReady and expectUnreachable capture the presence of the short default
+	// NoExecute toleration per taint key. They are separate because a user override for
+	// one key suppresses only that key's default, leaving the other key's default intact.
+	tests := []struct {
+		name              string
+		componentName     string
+		hcpTolerations    []corev1.Toleration
+		expectNotReady    bool
+		expectUnreachable bool
+		// expectSeconds is the TolerationSeconds the default(s) should carry when present.
+		expectSeconds int64
+	}{
+		{
+			name:              "When component is API-critical, it should get default short NoExecute tolerations",
+			componentName:     "kube-apiserver",
+			expectNotReady:    true,
+			expectUnreachable: true,
+			expectSeconds:     defaultNodeFailureTolerationSeconds,
+		},
+		{
+			name:              "When component is etcd, it should get longer NoExecute tolerations",
+			componentName:     "etcd",
+			expectNotReady:    true,
+			expectUnreachable: true,
+			expectSeconds:     etcdNodeFailureTolerationSeconds,
+		},
+		{
+			name:              "When component is neither API-critical nor etcd, it should not get short NoExecute tolerations",
+			componentName:     "kube-controller-manager",
+			expectNotReady:    false,
+			expectUnreachable: false,
+		},
+		{
+			name:          "When a user sets a not-ready NoExecute toleration, it should suppress only the not-ready default",
+			componentName: "kube-apiserver",
+			hcpTolerations: []corev1.Toleration{
+				{
+					Key:               corev1.TaintNodeNotReady,
+					Operator:          corev1.TolerationOpExists,
+					Effect:            corev1.TaintEffectNoExecute,
+					TolerationSeconds: ptr.To[int64](120),
+				},
+			},
+			expectNotReady:    false,
+			expectUnreachable: true,
+			expectSeconds:     defaultNodeFailureTolerationSeconds,
+		},
+		{
+			name:          "When a user sets an unreachable NoExecute toleration, it should suppress only the unreachable default",
+			componentName: "kube-apiserver",
+			hcpTolerations: []corev1.Toleration{
+				{
+					Key:               corev1.TaintNodeUnreachable,
+					Operator:          corev1.TolerationOpExists,
+					Effect:            corev1.TaintEffectNoExecute,
+					TolerationSeconds: ptr.To[int64](60),
+				},
+			},
+			expectNotReady:    true,
+			expectUnreachable: false,
+			expectSeconds:     defaultNodeFailureTolerationSeconds,
+		},
+		{
+			name:          "When a user sets a NoSchedule toleration on the same key, it should not suppress the NoExecute default",
+			componentName: "kube-apiserver",
+			hcpTolerations: []corev1.Toleration{
+				{
+					Key:      corev1.TaintNodeNotReady,
+					Operator: corev1.TolerationOpExists,
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+			},
+			expectNotReady:    true,
+			expectUnreachable: true,
+			expectSeconds:     defaultNodeFailureTolerationSeconds,
+		},
+		{
+			// An Operator=Equal toleration with a non-empty value does NOT tolerate the
+			// empty-valued node-failure taint, so it must not suppress our default.
+			name:          "When a user sets an Equal NoExecute toleration with a non-empty value, it should not suppress the default",
+			componentName: "kube-apiserver",
+			hcpTolerations: []corev1.Toleration{
+				{
+					Key:               corev1.TaintNodeNotReady,
+					Operator:          corev1.TolerationOpEqual,
+					Value:             "true",
+					Effect:            corev1.TaintEffectNoExecute,
+					TolerationSeconds: ptr.To[int64](120),
+				},
+			},
+			expectNotReady:    true,
+			expectUnreachable: true,
+			expectSeconds:     defaultNodeFailureTolerationSeconds,
+		},
+		{
+			// An empty Effect matches all effects (including NoExecute), so an Exists
+			// toleration for the key tolerates the taint and suppresses that key's default.
+			name:          "When a user sets an empty-effect Exists toleration for not-ready, it should suppress only the not-ready default",
+			componentName: "kube-apiserver",
+			hcpTolerations: []corev1.Toleration{
+				{
+					Key:      corev1.TaintNodeNotReady,
+					Operator: corev1.TolerationOpExists,
+				},
+			},
+			expectNotReady:    false,
+			expectUnreachable: true,
+			expectSeconds:     defaultNodeFailureTolerationSeconds,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			workload := &controlPlaneWorkload[*appsv1.Deployment]{
+				name:             test.componentName,
+				workloadProvider: &deploymentProvider{},
+				ComponentOptions: &testComponent{},
+			}
+
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Spec.Tolerations = test.hcpTolerations
+
+			podTemplate := &corev1.PodTemplateSpec{}
+			workload.setControlPlaneIsolation(podTemplate, hcp)
+
+			hasNotReady := false
+			hasUnreachable := false
+			for _, tol := range podTemplate.Spec.Tolerations {
+				if tol.Effect != corev1.TaintEffectNoExecute {
+					continue
+				}
+				if tol.TolerationSeconds == nil || *tol.TolerationSeconds != test.expectSeconds {
+					continue
+				}
+				switch tol.Key {
+				case corev1.TaintNodeNotReady:
+					hasNotReady = true
+				case corev1.TaintNodeUnreachable:
+					hasUnreachable = true
+				}
+			}
+
+			g.Expect(hasNotReady).To(Equal(test.expectNotReady),
+				"unexpected presence of default not-ready NoExecute toleration")
+			g.Expect(hasUnreachable).To(Equal(test.expectUnreachable),
+				"unexpected presence of default unreachable NoExecute toleration")
+
+			// User tolerations are always passed through unfiltered.
+			for _, expected := range test.hcpTolerations {
+				g.Expect(podTemplate.Spec.Tolerations).To(ContainElement(expected),
+					"user toleration should be passed through unfiltered")
+			}
+		})
+	}
+}
+
 func TestApplyRequestsOverrides(t *testing.T) {
 	tests := []struct {
 		name                   string

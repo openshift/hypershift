@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: f8a281d73df6f9dc538f5021e708302e0b5ceff3d7a77011511e61172afcf358
+    hypershift.openshift.io/desired-state-hash: 08dd594f94c6bc2b581c4ba553f1a435b60c0cdb8c373c84c7827bb4a8446fd4
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -405,6 +405,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 60
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 60
       volumes:
       - name: peer-tls
         secret:
