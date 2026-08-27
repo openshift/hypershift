@@ -2,8 +2,10 @@ package gcp
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -422,14 +424,47 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "When error is a 500 server error, it should return false",
+			name:     "When error is a 500 server error, it should return true",
 			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 502 bad gateway error, it should return true",
+			err:      &googleapi.Error{Code: 502, Message: "Bad gateway"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 503 service unavailable error, it should return true",
+			err:      &googleapi.Error{Code: 503, Message: "Service unavailable"},
+			expected: true,
+		},
+		{
+			name:     "When error is a non-googleapi non-network error, it should return false",
+			err:      fmt.Errorf("some other error"),
 			expected: false,
 		},
 		{
-			name:     "When error is a non-googleapi error, it should return false",
-			err:      fmt.Errorf("some other error"),
-			expected: false,
+			name: "When error is a connection reset by peer, it should return true",
+			err: &net.OpError{
+				Op:  "read",
+				Net: "tcp",
+				Err: fmt.Errorf("read: connection reset by peer"),
+			},
+			expected: true,
+		},
+		{
+			name: "When error is network unreachable, it should return true",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: &os.SyscallError{Syscall: "connect", Err: syscall.ENETUNREACH},
+			},
+			expected: true,
+		},
+		{
+			name:     "When error wraps a connection reset syscall error, it should return true",
+			err:      fmt.Errorf("failed to get IAM policy: %w", &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")}),
+			expected: true,
 		},
 	}
 

@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net"
+	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -130,7 +133,12 @@ func (c *IAMManager) GetProjectNumber(ctx context.Context) (string, error) {
 	}
 	c.logger.Info("Retrieving project number", "projectID", c.projectID)
 
-	projectNumber, err := c.getProjectNumberFromID(ctx)
+	var projectNumber int64
+	err := c.retryWithExponentialBackoff(ctx, "getProjectNumber", func() error {
+		var getErr error
+		projectNumber, getErr = c.getProjectNumberFromID(ctx)
+		return getErr
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve project number for %s: %w", c.projectID, err)
 	}
@@ -152,10 +160,11 @@ func (c *IAMManager) CreateWorkloadIdentityPool(ctx context.Context) (string, er
 		Disabled:    false,
 	}
 	parent := fmt.Sprintf("projects/%s/locations/global", c.projectID)
-	err := c.createWorkloadIdentityPool(ctx, parent, poolID, pool)
+	err := c.retryWithExponentialBackoff(ctx, "createWorkloadIdentityPool", func() error {
+		return c.createWorkloadIdentityPool(ctx, parent, poolID, pool)
+	})
 	if err != nil {
 		if isAlreadyExistsError(err) {
-			// Pool exists, check and fix its state if needed
 			c.logger.Info("Workload Identity Pool already exists, checking state", "poolID", poolID)
 			return c.ensurePoolUsable(ctx, parent, poolID)
 		}
@@ -253,7 +262,10 @@ func (c *IAMManager) CreateOIDCProvider(ctx context.Context) (string, string, er
 		},
 	}
 	parent := c.formatPoolParent()
-	if err := c.createWorkloadIdentityProvider(ctx, parent, providerID, provider); err != nil {
+	err = c.retryWithExponentialBackoff(ctx, "createOIDCProvider", func() error {
+		return c.createWorkloadIdentityProvider(ctx, parent, providerID, provider)
+	})
+	if err != nil {
 		if isAlreadyExistsError(err) {
 			c.logger.Info("OIDC Provider already exists, checking state and configuration", "providerID", providerID)
 			return c.ensureProviderUsable(ctx, providerID, provider, providerAudience)
@@ -701,11 +713,15 @@ func (c *IAMManager) compareJWKS(jwks1, jwks2 string) bool {
 	return string(canonical1) == string(canonical2)
 }
 
-// isTransientIAMError checks if the error is likely due to IAM eventual consistency.
-// These errors should be retried as they typically resolve once IAM changes propagate.
+// isTransientIAMError checks if the error is likely due to IAM eventual consistency
+// or transient network issues. These errors should be retried.
 func isTransientIAMError(err error) bool {
 	if err == nil {
 		return false
+	}
+
+	if isTransientNetworkError(err) {
+		return true
 	}
 
 	var apiErr *googleapi.Error
@@ -729,10 +745,56 @@ func isTransientIAMError(err error) bool {
 			// Permission denied - might be temporary during propagation
 			return strings.Contains(apiErr.Message, "Permission") ||
 				strings.Contains(apiErr.Message, "policy")
+		case 500, 502, 503:
+			return true
 		}
 	}
 
 	return false
+}
+
+// isTransientNetworkError checks if the error is a transient network-level error
+// such as connection reset, connection refused, or network unreachable.
+// These occur in CI environments due to transient infrastructure issues.
+func isTransientNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		if urlErr.Temporary() {
+			return true
+		}
+		if urlErr.Err != nil {
+			return isTransientNetworkError(urlErr.Err)
+		}
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+
+	if errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ENETUNREACH) ||
+		errors.Is(err, syscall.EHOSTUNREACH) ||
+		errors.Is(err, syscall.ETIMEDOUT) {
+		return true
+	}
+
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "connection reset by peer") ||
+		strings.Contains(errMsg, "connection refused") ||
+		strings.Contains(errMsg, "network is unreachable") ||
+		strings.Contains(errMsg, "i/o timeout") ||
+		strings.Contains(errMsg, "TLS handshake timeout")
 }
 
 // retryWithExponentialBackoff retries an operation with exponential backoff.
