@@ -713,36 +713,36 @@ func (c *IAMManager) compareJWKS(jwks1, jwks2 string) bool {
 	return string(canonical1) == string(canonical2)
 }
 
-// isTransientIAMError checks if the error is likely due to IAM eventual consistency
-// or transient network issues. These errors should be retried.
-func isTransientIAMError(err error) bool {
+// isRetryableError returns true if the error is transient and the operation should be retried.
+// It checks for both network-level errors and IAM-specific transient conditions.
+func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
+	return isTransientNetworkError(err) || isTransientIAMError(err)
+}
 
-	if isTransientNetworkError(err) {
-		return true
+// isTransientIAMError checks if the error is likely due to IAM eventual consistency.
+// These errors typically resolve once IAM changes propagate.
+func isTransientIAMError(err error) bool {
+	if err == nil {
+		return false
 	}
 
 	var apiErr *googleapi.Error
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case 404:
-			// Not found - resource may not have propagated yet
 			return true
 		case 429:
-			// Rate limited - retry after backoff
 			return true
 		case 400:
-			// Bad request - sometimes occurs during IAM propagation
-			// Check if it's related to IAM/permissions or resource propagation
 			return strings.Contains(apiErr.Message, "IAM") ||
 				strings.Contains(apiErr.Message, "permission") ||
 				strings.Contains(apiErr.Message, "policy") ||
 				strings.Contains(apiErr.Message, "does not exist") ||
 				strings.Contains(apiErr.Message, "Service account")
 		case 403:
-			// Permission denied - might be temporary during propagation
 			return strings.Contains(apiErr.Message, "Permission") ||
 				strings.Contains(apiErr.Message, "policy")
 		case 500, 502, 503:
@@ -798,7 +798,7 @@ func isTransientNetworkError(err error) bool {
 }
 
 // retryWithExponentialBackoff retries an operation with exponential backoff.
-// It only retries on transient IAM errors and respects the context deadline.
+// It retries on transient network and IAM errors, and respects the context deadline.
 func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationName string, operation func() error) error {
 	deadline := time.Now().Add(iamPropagationTimeout)
 	backoff := iamPropagationInitialBackoff
@@ -815,9 +815,8 @@ func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationN
 			return nil
 		}
 
-		// Check if error is transient
-		if !isTransientIAMError(err) {
-			c.logger.Info("Operation failed with non-transient error", "operation", operationName, "error", err)
+		if !isRetryableError(err) {
+			c.logger.Info("Operation failed with non-retryable error", "operation", operationName, "error", err)
 			return err
 		}
 

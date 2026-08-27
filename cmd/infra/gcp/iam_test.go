@@ -439,8 +439,34 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "When error is a non-googleapi non-network error, it should return false",
+			name:     "When error is a non-googleapi error, it should return false",
 			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+		{
+			name:     "When error is a network error, it should return false",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isTransientIAMError(tt.err)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestIsTransientNetworkError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil, it should return false",
+			err:      nil,
 			expected: false,
 		},
 		{
@@ -462,16 +488,62 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "When error wraps a connection reset syscall error, it should return true",
+			name:     "When error wraps a net.OpError, it should return true",
 			err:      fmt.Errorf("failed to get IAM policy: %w", &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")}),
 			expected: true,
+		},
+		{
+			name:     "When error is a non-network error, it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+		{
+			name:     "When error is an IAM API error, it should return false",
+			err:      &googleapi.Error{Code: 400, Message: "Service account does not exist"},
+			expected: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(isTransientIAMError(tt.err)).To(Equal(tt.expected))
+			g.Expect(isTransientNetworkError(tt.err)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestIsRetryableError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil, it should return false",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "When error is a transient IAM error, it should return true",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited"},
+			expected: true,
+		},
+		{
+			name:     "When error is a transient network error, it should return true",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")},
+			expected: true,
+		},
+		{
+			name:     "When error is neither IAM nor network, it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isRetryableError(tt.err)).To(Equal(tt.expected))
 		})
 	}
 }
