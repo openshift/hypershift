@@ -15,13 +15,16 @@ causing build breakage. However, these problems are generally
 trivial to fix. We regard any modernizer whose fix changes program
 behavior to have a serious bug and will endeavor to fix it.
 
-To apply all modernization fixes en masse, you can use the
+Since Go 1.26, the 'go fix' command has included the modernize suite,
+so to apply all modernization fixes en masse, you can use the
 following command:
 
-	$ go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
+	$ go fix ./...
 
-(Do not use "go get -tool" to add gopls as a dependency of your
-module; gopls commands must be built from their release branch.)
+If you need to run a modernizer added or modified since the Go
+release, you can use this standalone command:
+
+	$ go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
 
 If the tool warns of conflicting fixes, you may need to run it more
 than once until it has applied all fixes cleanly. This command is
@@ -111,6 +114,31 @@ The any analyzer suggests replacing uses of the empty interface type,
 `interface{}`, with the `any` alias, which was introduced in Go 1.18.
 This is a purely stylistic change that makes code more readable.
 
+# Analyzer embedlit
+
+embedlit: simplify references to embedded fields in composite literals
+
+The embedlit analyzer suggests removing redundant embedded field type specifiers
+from composite literals. Go1.27 introduced the ability to directly initialize
+fields promoted from embedded struct types without a nested literal. For
+example, given the following structs:
+
+	type T struct {
+		U
+	}
+
+	type U struct {
+		x int
+	}
+
+A composite literal such as
+
+	t := T{U: U{x: 1}}
+
+would become
+
+	t := T{x: 1}
+
 # Analyzer errorsastype
 
 errorsastype: replace errors.As with errors.AsType[T]
@@ -142,6 +170,9 @@ The fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with
 by Sprintf, making the code more efficient. The suggestion also applies to
 fmt.Sprint and fmt.Sprintln.
 
+Since its fix is not a Pareto improvement, fmtappendf is disabled by default in
+the `go fix` analyzer suite; see golang/go#77581.
+
 # Analyzer forvar
 
 forvar: remove redundant re-declaration of loop variables
@@ -153,6 +184,19 @@ of `for` loops, making this pattern redundant. This analyzer removes the
 unnecessary `x := x` statement.
 
 This fix only applies to `range` loops.
+
+# Analyzer importcomment
+
+importcomment: remove obsolete comments specifying canonical import path
+
+The importcomment analyzer removes comments specifying the canonical
+import path, such as
+
+	package foo // import "example.com/foo"
+
+The go command enforced these comments in GOPATH mode via "go get", but
+ignores them in module mode, so they are obsolete once the package
+belongs to a module. The fix removes the comment.
 
 # Analyzer mapsloop
 
@@ -303,6 +347,21 @@ No fix is offered in cases when the runtime type is dynamic, such as:
 
 or when the operand has potential side effects.
 
+# Analyzer reflecttypeassert
+
+reflecttypeassert: replace v.Interface().(T) with reflect.TypeAssert[T](v)
+
+This analyzer suggests fixes to replace two-valued type assertions on
+the result of (reflect.Value).Interface with reflect.TypeAssert,
+introduced in go1.25, which avoids the intermediate allocation of an
+interface value, for example:
+
+	x, ok := v.Interface().(string)  ->  x, ok := reflect.TypeAssert[string](v)
+
+No fix is offered for single-valued assertions, since they panic when
+the assertion fails whereas reflect.TypeAssert does not. Nor is a fix
+offered for a type switch.
+
 # Analyzer slicesbackward
 
 slicesbackward: replace backward loops over slices with slices.Backward
@@ -324,6 +383,22 @@ If the loop index is needed beyond just indexing into the slice, both
 the index and value variables are kept:
 
 	for i, v := range slices.Backward(s) { ... }
+
+# Analyzer slicesclip
+
+slicesclip: replace three-index slice expressions with slices.Clip
+
+The slicesclip analyzer suggests replacing a full slice expression of
+the form
+
+	x[:len(x):len(x)]
+
+which clips the capacity of a slice to its length, with the simpler
+and more readable
+
+	slices.Clip(x)
+
+added in Go 1.21.
 
 # Analyzer slicescontains
 
@@ -381,7 +456,7 @@ or its "for elem := range x.Len()" equivalent by a range loop over an
 iterator offered by the same data type:
 
 	for elem := range x.All() {
-		use(x.At(i)
+		use(elem)
 	}
 
 where x is one of various well-known types in the standard library.
@@ -423,6 +498,16 @@ is replaced by:
 It also handles variants using [strings.IndexByte] instead of Index, or the bytes package instead of strings.
 
 Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.
+
+It also replaces [strings.SplitN](s, sep, 2)[0] and [strings.Split](s, sep)[0] with the "before" result of strings.Cut, when sep is a non-empty string constant:
+
+	x := strings.SplitN(s, sep, 2)[0]
+
+is replaced by:
+
+	x, _, _ := strings.Cut(s, sep)
+
+The fix is only offered when sep is a non-empty string literal. When sep is a variable or the empty string, the semantics differ (strings.Split(s, "")[0] returns the first character of s, but strings.Cut(s, "").before is ""), so no fix is suggested.
 
 # Analyzer stringscutprefix
 
@@ -505,6 +590,9 @@ is replaced by:
 	use(s.String())
 
 This avoids quadratic memory allocation and improves performance.
+
+No diagnostics are issued in tests, where data sizes are often
+small and asymptotic performance is not a security concern.
 
 The analyzer requires that all references to s before the final uses
 are += operations. To avoid warning about trivial cases, at least one
