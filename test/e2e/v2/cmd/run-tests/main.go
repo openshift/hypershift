@@ -42,13 +42,16 @@ func main() {
 
 	sharedDir := requireEnv("SHARED_DIR")
 	artifactDir := requireEnv("ARTIFACT_DIR")
-	releaseImage := os.Getenv("RELEASE_IMAGE_LATEST")
 
 	eventuallyVerbose := os.Getenv("EVENTUALLY_VERBOSE")
 	if eventuallyVerbose == "" {
 		eventuallyVerbose = defaultVerbose
 	}
 	os.Setenv("EVENTUALLY_VERBOSE", eventuallyVerbose)
+
+	if v := os.Getenv("RELEASE_IMAGE_LATEST"); v != "" {
+		os.Setenv("E2E_LATEST_RELEASE_IMAGE", v)
+	}
 
 	manifest, err := lifecycle.ReadManifest(sharedDir)
 	if err != nil {
@@ -63,9 +66,18 @@ func main() {
 	// Let the platform set up any env vars it needs for tests.
 	platform.SetupTestEnv(sharedDir)
 
-	matrix := platform.TestMatrix(releaseImage)
+	testPlanPath := os.Getenv("TEST_PLAN")
+	plan, err := lifecycle.ResolveTestPlan(testPlanPath, platform)
+	if err != nil {
+		log.Fatalf("Failed to resolve test plan: %v", err)
+	}
+	log.Printf("Using test plan %q", plan.Name)
 
-	clustersByVariant, err := matrix.ResolveVariants(manifest)
+	if err := plan.TestMatrix.Validate(); err != nil {
+		log.Fatalf("Invalid test plan: %v", err)
+	}
+
+	clustersByVariant, err := plan.TestMatrix.ResolveVariants(manifest)
 	if err != nil {
 		log.Fatalf("Manifest/test matrix mismatch: %v", err)
 	}
@@ -77,7 +89,7 @@ func main() {
 	)
 
 	// Launch parallel test groups.
-	for _, g := range matrix.Parallel {
+	for _, g := range plan.TestMatrix.Parallel {
 		g := g
 		entry := clustersByVariant[g.Variant]
 		wg.Add(1)
@@ -85,7 +97,7 @@ func main() {
 			defer wg.Done()
 			log.Printf("Running %s tests against %s...", g.Name, entry.Name)
 			err := runTestBinary(testBinary, entry.Name, entry.Namespace, g.LabelFilter, g.Skip,
-				filepath.Join(artifactDir, g.JUnitFile), g.ExtraEnv)
+				filepath.Join(artifactDir, g.JUnitFile()))
 			mu.Lock()
 			results = append(results, testResult{name: g.Name, err: err})
 			mu.Unlock()
@@ -99,7 +111,7 @@ func main() {
 
 	// Launch sequential groups (each group runs in its own goroutine,
 	// but steps within a group run one after another).
-	for _, sg := range matrix.Sequential {
+	for _, sg := range plan.TestMatrix.Sequential {
 		sg := sg
 		wg.Add(1)
 		go func() {
@@ -108,7 +120,7 @@ func main() {
 				entry := clustersByVariant[step.Variant]
 				log.Printf("Running %s tests against %s...", step.Name, entry.Name)
 				err := runTestBinary(testBinary, entry.Name, entry.Namespace, step.LabelFilter, step.Skip,
-					filepath.Join(artifactDir, step.JUnitFile), step.ExtraEnv)
+					filepath.Join(artifactDir, step.JUnitFile()))
 				mu.Lock()
 				results = append(results, testResult{name: step.Name, err: err})
 				mu.Unlock()
@@ -143,7 +155,7 @@ func main() {
 	log.Println("All test groups passed")
 }
 
-func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitPath string, extraEnv []string) error {
+func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitPath string) error {
 	ginkgoTimeout := os.Getenv("GINKGO_TIMEOUT")
 	if ginkgoTimeout == "" {
 		ginkgoTimeout = defaultGinkgoTimeout
@@ -167,7 +179,6 @@ func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitP
 		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAME=%s", clusterName),
 		fmt.Sprintf("E2E_HOSTED_CLUSTER_NAMESPACE=%s", namespace),
 	)
-	cmd.Env = append(cmd.Env, extraEnv...)
 
 	return cmd.Run()
 }

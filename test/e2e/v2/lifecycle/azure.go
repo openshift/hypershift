@@ -330,7 +330,15 @@ func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crc
 	return nil
 }
 
-func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+func (a *AzurePlatformConfig) DefaultTestPlan() TestPlan {
+	return TestPlan{
+		Name:       "azure-full",
+		Platform:   "azure",
+		TestMatrix: a.TestMatrix(),
+	}
+}
+
+func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
@@ -338,31 +346,26 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				Variant:     "public",
 				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
 				Skip:        "KAS allowed CIDRs",
-				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
 				Name:        "private",
 				Variant:     "private",
 				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
-				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{
 				Name:        "oauth-lb",
 				Variant:     "oauth-lb",
 				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
-				JUnitFile:   "junit_self_managed_azure_oauth_lb.xml",
 			},
 			{
 				Name:        "autoscaling",
 				Variant:     "autoscaling",
 				LabelFilter: "nodepool-autoscaling",
-				JUnitFile:   "junit_self_managed_azure_nodepool_autoscaling.xml",
 			},
 			{
 				Name:        "external-oidc",
 				Variant:     "external-oidc",
 				LabelFilter: "external-oidc || global-pull-secret",
-				JUnitFile:   "junit_self_managed_azure_external_oidc.xml",
 			},
 		},
 		Sequential: []SequentialGroup{
@@ -373,20 +376,16 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 						Name:        "upgrade",
 						Variant:     "upgrade",
 						LabelFilter: "control-plane-upgrade",
-						JUnitFile:   "junit_lifecycle_upgrade.xml",
-						ExtraEnv:    []string{fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE=%s", releaseImage)},
 					},
 					{
 						Name:        "control-plane-tls",
 						Variant:     "upgrade",
 						LabelFilter: "control-plane-pki-operator",
-						JUnitFile:   "junit_control_plane_tls.xml",
 					},
 					{
 						Name:        "etcd-chaos",
 						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
-						JUnitFile:   "junit_lifecycle_etcd_chaos.xml",
 					},
 				},
 			},
