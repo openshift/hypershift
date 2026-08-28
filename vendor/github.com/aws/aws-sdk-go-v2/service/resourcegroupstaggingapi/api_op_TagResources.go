@@ -4,9 +4,10 @@ package resourcegroupstaggingapi
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Applies one or more tags to the specified resources. Note the following:
@@ -96,6 +97,17 @@ type TagResourcesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *TagResourcesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.TagResourcesInput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *TagResourcesInput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeResourceARNListForTagUntag(s, schemas.TagResourcesInput_ResourceARNList, v.ResourceARNList)
+	serializeTagMap(s, schemas.TagResourcesInput_Tags, v.Tags)
+}
+
 type TagResourcesOutput struct {
 
 	// A map containing a key-value pair for each failed item that couldn't be tagged.
@@ -110,19 +122,32 @@ type TagResourcesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *TagResourcesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.TagResourcesOutput)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *TagResourcesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeFailedResourcesMap(s, schemas.TagResourcesOutput_FailedResourcesMap, v.FailedResourcesMap)
+}
+func (v *TagResourcesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.TagResourcesOutput, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.TagResourcesOutput_FailedResourcesMap:
+			return deserializeFailedResourcesMap(d, schemas.TagResourcesOutput_FailedResourcesMap, &v.FailedResourcesMap)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationTagResourcesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpTagResources{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.TagResources, schemas.TagResourcesInput, schemas.TagResourcesOutput)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpTagResources{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.TagResources, schemas.TagResourcesInput, schemas.TagResourcesOutput), output: &TagResourcesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
 	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
@@ -135,19 +160,10 @@ func (c *Client) addOperationTagResourcesMiddlewares(stack *middleware.Stack, op
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpTagResourcesValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "TagResources"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
