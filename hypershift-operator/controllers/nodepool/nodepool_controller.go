@@ -435,19 +435,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Ensure config hash version migration runs before CAPI decides whether to rewrite
 	// MachineDeployment/MachineSet user-data Secret names.
-	if outcome := reconcileConfigHashAnnotations(nodePool, configGenerator); outcome.AnnotationsUpdated {
-		if outcome.VersionMigrated {
-			log.Info("Migrated NodePool config hash version",
-				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
-				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
-				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
-		} else if outcome.ConfigActuallyChanged {
-			log.Info("Updated NodePool config hash annotations",
-				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
-				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
-				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
-		}
+	configHashOutcome := reconcileConfigHashAnnotations(nodePool, configGenerator)
+	if configHashOutcome.AnnotationsUpdated && configHashOutcome.VersionMigrated {
+		log.Info("Migrated NodePool config hash version",
+			"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+			"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
+			"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
 	}
+	capi.SetConfigHashReconcileOutcome(configHashOutcome)
 
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
@@ -1013,7 +1008,13 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 		if !ok {
 			hc = &hyperv1.HostedCluster{}
 			if err := r.Get(ctx, client.ObjectKey{Namespace: np.Namespace, Name: np.Spec.ClusterName}, hc); err != nil {
-				continue
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				ctrl.LoggerFrom(ctx).Error(err, "Failed to get HostedCluster",
+					"hostedCluster", np.Spec.ClusterName,
+					"nodePool", client.ObjectKeyFromObject(np))
+				return result
 			}
 			hcCache[np.Spec.ClusterName] = hc
 		}

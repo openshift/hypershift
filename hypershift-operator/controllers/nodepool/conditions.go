@@ -480,18 +480,11 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 	// Versioned config hash migration: when annotations still encode a prior hash formula,
 	// rewrite them at the current version so HO upgrade does not set UpdatingConfig / roll Nodes.
 	// Real ca-bundle.crt changes still roll afterward.
-	if outcome := reconcileConfigHashAnnotations(nodePool, token.ConfigGenerator); outcome.AnnotationsUpdated {
-		if outcome.VersionMigrated {
-			log.Info("Migrated NodePool config hash version",
-				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
-				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
-				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
-		} else if outcome.ConfigActuallyChanged {
-			log.Info("Updated NodePool config hash annotations",
-				"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
-				"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
-				"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
-		}
+	if outcome := reconcileConfigHashAnnotations(nodePool, token.ConfigGenerator); outcome.AnnotationsUpdated && outcome.VersionMigrated {
+		log.Info("Migrated NodePool config hash version",
+			"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+			"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
+			"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
 	}
 
 	targetConfigHash := token.HashWithoutVersion()

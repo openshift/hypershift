@@ -55,7 +55,22 @@ type CAPI struct {
 	*Token
 	capiClusterName       string
 	scaleFromZeroPlatform hyperv1.PlatformType
+	configHashOutcome     configHashReconcileOutcome
 	upsert.ApplyProvider
+}
+
+// SetConfigHashReconcileOutcome records the outcome of reconcileConfigHashAnnotations for this
+// reconcile pass. CAPI consults it when deciding whether to propagate a new user-data Secret
+// name to MachineDeployment/MachineSet templates.
+func (c *CAPI) SetConfigHashReconcileOutcome(outcome configHashReconcileOutcome) {
+	if c == nil {
+		return
+	}
+	c.configHashOutcome = outcome
+}
+
+func (c *CAPI) skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion string) bool {
+	return shouldSkipUserDataSecretPropagation(c.nodePool, c.configHashOutcome, targetConfigHash, targetVersion, currentTemplateVersion)
 }
 
 // hasStatusCapacity checks if a machine template has Status.Capacity populated
@@ -602,9 +617,9 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 
 	if userDataSecret.Name != ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		currentTemplateVersion := ptr.Deref(machineDeployment.Spec.Template.Spec.Version, "")
-		if shouldSkipUserDataSecretPropagation(nodePool, targetConfigHash, targetVersion, currentTemplateVersion) {
-			// Config/version targets already match the NodePool baseline (e.g. after seeding
-			// content-based trust-bundle hashes). Keep Machines on the existing user-data Secret.
+		if c.skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion) {
+			// Config/version targets already match the NodePool baseline (e.g. after a hash-formula
+			// version migration). Keep Machines on the existing user-data Secret.
 			log.Info("Skipping user-data Secret propagation; config and version unchanged",
 				"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
 				"target", userDataSecret.Name)
@@ -1011,7 +1026,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	// Propagate version and userData Secret to the MachineSet.
 	if userDataSecret.Name != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		currentTemplateVersion := ptr.Deref(machineSet.Spec.Template.Spec.Version, "")
-		if shouldSkipUserDataSecretPropagation(nodePool, targetConfigHash, targetVersion, currentTemplateVersion) {
+		if c.skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion) {
 			log.Info("Skipping user-data Secret propagation; config and version unchanged",
 				"current", machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
 				"target", userDataSecret.Name)

@@ -2814,6 +2814,7 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 		currentInfraRefName     string
 		useDifferentUserData    bool
 		skipUserDataPropagation bool
+		configHashOutcome       configHashReconcileOutcome
 		expectedUpdating        bool
 		expectedInfraRefName    string
 	}{
@@ -2825,6 +2826,17 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 			currentInfraRefName:  "template-1",
 			useDifferentUserData: true,
 			expectedUpdating:     true,
+			expectedInfraRefName: "template-1",
+		},
+		{
+			name:                 "When user data secret name differs but config hash version migrated this reconcile, it should skip propagation",
+			currentBootstrapName: "user-data-test-np-legacyhash",
+			currentVersion:       "4.16.0",
+			templateName:         "template-1",
+			currentInfraRefName:  "template-1",
+			useDifferentUserData: true,
+			configHashOutcome:    configHashReconcileOutcome{VersionMigrated: true},
+			expectedUpdating:     false,
 			expectedInfraRefName: "template-1",
 		},
 		{
@@ -2906,6 +2918,8 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 				}
 			}
 
+			capi.SetConfigHashReconcileOutcome(tc.configHashOutcome)
+
 			// If the test wants the current bootstrap to match, use the computed name.
 			bootstrapName := tc.currentBootstrapName
 			if !tc.useDifferentUserData && bootstrapName == "" {
@@ -2981,6 +2995,7 @@ func TestPropagateMachineSetSkipsUserDataSecretPropagation(t *testing.T) {
 			},
 		},
 	}
+	capi.SetConfigHashReconcileOutcome(configHashReconcileOutcome{})
 
 	targetConfigHash := capi.HashWithoutVersion()
 	targetVersion := capi.Version()
@@ -3008,7 +3023,7 @@ func TestPropagateMachineSetSkipsUserDataSecretPropagation(t *testing.T) {
 	isUpdating := false
 	currentTemplateVersion := ptr.Deref(machineSet.Spec.Template.Spec.Version, "")
 	if userDataSecret.Name != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
-		if shouldSkipUserDataSecretPropagation(nodePool, targetConfigHash, targetVersion, currentTemplateVersion) {
+		if capi.skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion) {
 			// Mirrors reconcileMachineSet skip branch.
 		} else {
 			machineSet.Spec.Template.Spec.Version = &targetVersion
