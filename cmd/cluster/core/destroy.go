@@ -116,12 +116,17 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 }
 
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
-	hostedClusterExists := hostedCluster != nil
-	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
 	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
 	if err != nil {
 		return err
 	}
+	return destroyCluster(ctx, c, hostedCluster, o, destroyPlatformSpecifics)
+}
+
+func destroyCluster(ctx context.Context, c client.Client, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
+	var err error
+	hostedClusterExists := hostedCluster != nil
+	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
 
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
@@ -182,9 +187,12 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		return err
 	}
 
-	// clean up CLI generated secrets
+	// Non-fatal: CLI-created secrets are labeled with DeleteWithClusterLabelName: "true"
+	// and AutoInfraLabelName. The operator's reconcileCLISecrets sets the HostedCluster
+	// as their ownerRef, ensuring they are garbage-collected when the HC is deleted.
 	if err = deleteCLISecrets(ctx, o, c); err != nil {
-		return err
+		o.Log.Info("Failed to delete CLI generated secrets, skipping",
+			"error", err.Error(), "namespace", o.Namespace)
 	}
 
 	if shouldDestroyPlatformSpecifics && hostedClusterExists {
