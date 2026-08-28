@@ -958,12 +958,15 @@ var ipamCRDNames = set.New(
 	"ipaddresses.ipam.cluster.x-k8s.io",
 )
 
-// setupCRDs returns the CRDs from all the manifests under the assets directory as list of CustomResourceDefinition objects
+// crdIncludeFilter returns a predicate that determines which CRDs to install based on Options.
 //
-// The CRDs are filtered based on the options provided. If the option ExcludeEtcdManifests is set to true, the CRDs
-// related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
-// to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
-// If a client is provided, IPAM CRDs that already exist in the cluster are skipped to avoid conflicts.
+// Filters CRDs by:
+//   - ExcludeEtcdManifests: exclude etcd CRDs
+//   - TechPreviewNoUpgrade: include only CRDs with matching feature-set annotation
+//   - PlatformsToInstall: include only platform-specific CRDs (awsendpointservices, azureprivatelinkservices, CAPI provider CRDs)
+//   - EnableAuditLogPersistence: include auditlogpersistence CRDs
+//   - ExternalDNSProvider: include external-dns CRDs only when provider uses --source=crd (currently google only)
+//   - existingIPAMCRDs: skip IPAM CRDs already present in the cluster to avoid conflicts
 func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(string, *apiextensionsv1.CustomResourceDefinition) bool {
 	return func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
 		if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {
@@ -1002,9 +1005,9 @@ func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(strin
 		if strings.Contains(path, "auditlogpersistence") {
 			return opts.EnableAuditLogPersistence
 		}
-		// Include external-dns CRDs only when external-dns provider is configured
+		// Include external-dns CRDs only when external-dns runs with --source=crd
 		if strings.Contains(path, "external-dns") {
-			return len(opts.ExternalDNSProvider) > 0
+			return assets.ExternalDNSProvider(opts.ExternalDNSProvider).UsesCRDSource()
 		}
 		if len(opts.PlatformsToInstall) > 0 {
 			for _, platform := range opts.PlatformsToInstall {

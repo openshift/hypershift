@@ -249,6 +249,14 @@ const (
 	GCPExternalDNSProvider   ExternalDNSProvider = "google"
 )
 
+// UsesCRDSource reports whether external-dns for this provider runs with
+// --source=crd (reading DNSEndpoint CRs) and therefore needs the DNSEndpoint
+// CRD installed. Today only google delegates NS records via DNSEndpoint;
+// add providers here as they adopt --source=crd.
+func (p ExternalDNSProvider) UsesCRDSource() bool {
+	return p == GCPExternalDNSProvider
+}
+
 type ExternalDNSDeployment struct {
 	Namespace             *corev1.Namespace
 	Image                 string
@@ -449,9 +457,19 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--azure-config-file=/etc/provider/credentials",
 		)
 	case GCPExternalDNSProvider:
-		// GCP-386: Add DNSEndpoint CRD source for ingress zone delegation
+		if len(o.GoogleProject) > 0 {
+			deployment.Spec.Template.Spec.Containers[0].Args = append(
+				deployment.Spec.Template.Spec.Containers[0].Args,
+				fmt.Sprintf("--google-project=%s", o.GoogleProject),
+			)
+		}
+	}
+
+	// Add CRD source for providers that need DNSEndpoint CR support
+	if o.Provider.UsesCRDSource() {
+		// Add DNSEndpoint CRD source for ingress zone delegation.
 		// This allows external-dns to process DNSEndpoint resources created by
-		// the control-plane-operator for NS record delegation to hosted clusters
+		// the control-plane-operator for NS record delegation to hosted clusters.
 		deployment.Spec.Template.Spec.Containers[0].Args = append(
 			deployment.Spec.Template.Spec.Containers[0].Args,
 			"--source=crd",
@@ -462,12 +480,6 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--managed-record-types=CNAME",
 			"--managed-record-types=NS",
 		)
-		if len(o.GoogleProject) > 0 {
-			deployment.Spec.Template.Spec.Containers[0].Args = append(
-				deployment.Spec.Template.Spec.Containers[0].Args,
-				fmt.Sprintf("--google-project=%s", o.GoogleProject),
-			)
-		}
 	}
 
 	// Add proxy settings if cluster has a proxy

@@ -619,11 +619,18 @@ func TestCRDIncludeFilter(t *testing.T) {
 			expect: false,
 		},
 		{
-			name:   "When path contains external-dns and ExternalDNSProvider is set, it should be included",
+			name:   "When path contains external-dns and ExternalDNSProvider is google (uses CRD source), it should be included",
 			opts:   Options{ExternalDNSProvider: "google"},
 			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
 			crd:    defaultCRD(),
 			expect: true,
+		},
+		{
+			name:   "When path contains external-dns and ExternalDNSProvider is aws (doesn't use CRD source), it should be excluded",
+			opts:   Options{ExternalDNSProvider: "aws"},
+			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
+			crd:    defaultCRD(),
+			expect: false,
 		},
 		{
 			name:   "When path contains external-dns and ExternalDNSProvider is empty, it should be excluded",
@@ -675,15 +682,21 @@ func TestSetupCRDs(t *testing.T) {
 			},
 		},
 		{
-			name: "When PlatformOptions is set to AWS,Azure, it should include only AWS When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs it should be present Azure CAPI CRDs",
+			name: "When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs should be present",
 			inputOptions: Options{
 				PlatformsToInstall: []string{"aws", "azure"},
 			},
 		},
 		{
-			name: "When ExternalDNSProvider is set, it should include DNSEndpoint CRD",
+			name: "When ExternalDNSProvider is google (uses CRD source), it should include DNSEndpoint CRD",
 			inputOptions: Options{
 				ExternalDNSProvider: "google",
+			},
+		},
+		{
+			name: "When ExternalDNSProvider is aws (doesn't use CRD source), it should exclude DNSEndpoint CRD",
+			inputOptions: Options{
+				ExternalDNSProvider: "aws",
 			},
 		},
 		{
@@ -778,11 +791,11 @@ func TestSetupCRDs(t *testing.T) {
 				g.Expect(awsEndpointServicesCRD).ToNot(BeNil())
 			}
 
-			// Validate external-dns CRD presence based on ExternalDNSProvider.
-			if tc.inputOptions.ExternalDNSProvider != "" {
-				g.Expect(dnsEndpointCRD).ToNot(BeNil(), "DNSEndpoint CRD should be present when ExternalDNSProvider is set")
+			// Validate external-dns CRD presence based on CRD source usage.
+			if assets.ExternalDNSProvider(tc.inputOptions.ExternalDNSProvider).UsesCRDSource() {
+				g.Expect(dnsEndpointCRD).ToNot(BeNil(), "DNSEndpoint CRD should be present when provider uses CRD source")
 			} else {
-				g.Expect(dnsEndpointCRD).To(BeNil(), "DNSEndpoint CRD should be absent when ExternalDNSProvider is empty")
+				g.Expect(dnsEndpointCRD).To(BeNil(), "DNSEndpoint CRD should be absent when provider doesn't use CRD source")
 			}
 
 			g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))
