@@ -225,6 +225,12 @@ func TestEnqueueNodePoolsForHostedClusterReferencedConfig(t *testing.T) {
 			configMapName: "unrelated-ca",
 			expectEnqueue: false,
 		},
+		{
+			name:          "When HostedCluster is not found, it should not enqueue the NodePool",
+			hostedCluster: nil,
+			configMapName: "user-ca",
+			expectEnqueue: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -236,8 +242,12 @@ func TestEnqueueNodePoolsForHostedClusterReferencedConfig(t *testing.T) {
 				Data:       map[string]string{certs.UserCABundleMapKey: "updated-bundle"},
 			}
 
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool)
+			if tc.hostedCluster != nil {
+				builder = builder.WithObjects(tc.hostedCluster)
+			}
 			reconciler := &NodePoolReconciler{
-				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedCluster, nodePool).Build(),
+				Client: builder.Build(),
 			}
 
 			requests := reconciler.enqueueNodePoolsForConfig(t.Context(), configMap)

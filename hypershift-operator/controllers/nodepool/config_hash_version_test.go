@@ -130,17 +130,18 @@ func TestReconcileConfigHashAnnotations(t *testing.T) {
 			expectUpdated: false,
 		},
 		{
-			name: "When annotations reflect a different config change in progress, it should treat it as a real config change",
+			name: "When annotations reflect a different config change in progress, it should signal a real config change without rewriting annotations",
 			annotations: map[string]string{
 				nodePoolAnnotationCurrentConfig:        "other-config-hash",
 				nodePoolAnnotationCurrentConfigVersion: "other-version-hash",
 			},
 			cg:                  newCG(atbContentHash, ""),
-			expectUpdated:       true,
+			expectUpdated:       false,
 			expectConfigChanged: true,
-			expectedCurrent:     supportutil.HashSimple(mcoRawConfig + pullSecretName + atbContentHash + "" + rhelStream),
-			expectedVersion:     supportutil.HashSimple(mcoRawConfig + version + pullSecretName + atbContentHash + "" + globalConfig + rhelStream),
-			expectedHashVersion: CurrentConfigHashVersion,
+			expectAnnotationsUnchanged: map[string]string{
+				nodePoolAnnotationCurrentConfig:        "other-config-hash",
+				nodePoolAnnotationCurrentConfigVersion: "other-version-hash",
+			},
 		},
 		{
 			name: "When no trust bundles are configured and hashes match across versions, it should only bump the hash version",
@@ -383,12 +384,22 @@ func TestReconcileConfigHashAnnotations(t *testing.T) {
 func TestShouldSkipUserDataSecretPropagation(t *testing.T) {
 	testCases := []struct {
 		name                   string
+		outcome                configHashReconcileOutcome
 		currentConfig          string
 		targetConfigHash       string
 		targetVersion          string
 		currentTemplateVersion string
 		expectSkip             bool
 	}{
+		{
+			name:                   "When config hash version migrated this reconcile, it should skip user-data propagation",
+			outcome:                configHashReconcileOutcome{VersionMigrated: true},
+			currentConfig:          "cfg-old",
+			targetConfigHash:       "cfg-new",
+			targetVersion:          "4.18.0",
+			currentTemplateVersion: "4.17.0",
+			expectSkip:             true,
+		},
 		{
 			name:                   "When config and version already match the baseline, it should skip user-data propagation",
 			currentConfig:          "cfg-a",
@@ -425,7 +436,7 @@ func TestShouldSkipUserDataSecretPropagation(t *testing.T) {
 					},
 				},
 			}
-			g.Expect(shouldSkipUserDataSecretPropagation(nodePool, tc.targetConfigHash, tc.targetVersion, tc.currentTemplateVersion)).
+			g.Expect(shouldSkipUserDataSecretPropagation(nodePool, tc.outcome, tc.targetConfigHash, tc.targetVersion, tc.currentTemplateVersion)).
 				To(Equal(tc.expectSkip))
 		})
 	}
