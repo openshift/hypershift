@@ -65,10 +65,10 @@ import (
 )
 
 const (
-	// ExternalDNSImage - external-dns-rhel9 1.3.5 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel9
+	// ExternalDNSImage - external-dns-rhel9 1.3.9 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel9
 	// Contains NS record trailing dot fix for Google Cloud DNS (upstream PR#4847, openshift/external-dns PR#125)
-	// TODO this needs to be updated to a multi-arch image including Arm - https://issues.redhat.com/browse/NE-1298
-	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel9@sha256:134ae69e965306387d59dcae2619f0955697b8a9c0c39e26764017fee7080767"
+	// Multi-arch manifest list (amd64 + arm64/v8).
+	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel9@sha256:4450e6eac021e7f88f756f62e1043d6f8d6baddf99080ec4ad367c68ef5191f5"
 )
 
 var HyperShiftImage = fmt.Sprintf("%s:%s", config.HypershiftImageBase, config.HypershiftImageTag)
