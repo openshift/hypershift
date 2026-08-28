@@ -686,6 +686,16 @@ func TestExternalDNSDeployment_Build(t *testing.T) {
 				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=30m"))
 			},
 		},
+		"When AWS provider is used it should not include CRD source": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Provider = AWSExternalDNSProvider
+			},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				for _, arg := range args {
+					g.Expect(arg).NotTo(Equal("--source=crd"), "AWS provider should not include --source=crd")
+				}
+			},
+		},
 		"When Azure provider is used it should not include AWS zones cache duration arg": {
 			modify: func(d *ExternalDNSDeployment) {
 				d.Provider = AzureExternalDNSProvider
@@ -700,12 +710,14 @@ func TestExternalDNSDeployment_Build(t *testing.T) {
 				g.Expect(envVars).To(ContainElement(corev1.EnvVar{Name: "AZURE_SDK_MAX_RETRIES", Value: "5"}))
 			},
 		},
-		"When GCP provider is used it should not include AWS zones cache duration arg": {
+		"When GCP provider is used it should include CRD source and not include AWS zones cache duration arg": {
 			modify: func(d *ExternalDNSDeployment) {
 				d.Provider = GCPExternalDNSProvider
 			},
 			assertArgs: func(g *GomegaWithT, args []string) {
 				g.Expect(args).To(ContainElement("--interval=" + DefaultExternalDNSInterval))
+				g.Expect(args).To(ContainElement("--source=crd"), "GCP provider should include --source=crd")
+				g.Expect(args).To(ContainElement("--managed-record-types=NS"), "GCP provider should manage NS records for zone delegation")
 				for _, arg := range args {
 					g.Expect(arg).NotTo(HavePrefix("--aws-zones-cache-duration"))
 				}
