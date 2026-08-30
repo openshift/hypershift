@@ -555,7 +555,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 
 	deletionFailedConditions := capiv1.Conditions{
 		{
-			Type:   capiv1.ReadyCondition,
+			Type:   capiazure.VMRunningCondition,
 			Status: corev1.ConditionFalse,
 			Reason: capiazure.DeletionFailedReason,
 		},
@@ -654,7 +654,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					Status: capiazure.AzureMachineStatus{
 						Conditions: capiv1.Conditions{
 							{
-								Type:   capiv1.ReadyCondition,
+								Type:   capiazure.VMRunningCondition,
 								Status: corev1.ConditionTrue,
 							},
 						},
