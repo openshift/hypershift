@@ -44,6 +44,10 @@ DEFAULT_NUM_VERSIONS = 4
 
 PlatformRule = tuple[str, str, Callable[[str], bool]]
 
+FRAMEWORK_V1 = "v1"
+FRAMEWORK_V2 = "v2"
+FRAMEWORK_SORT_ORDER = {FRAMEWORK_V1: 0, FRAMEWORK_V2: 1}
+
 # Each entry: (platform_key, display_name, matcher)
 # matcher receives the job suffix after "release-{VERSION}-periodics-".
 PLATFORM_RULES: list[PlatformRule] = [
@@ -79,6 +83,9 @@ DESCRIPTIONS: dict[str, str] = {
 class Category(TypedDict):
     name: str
     description: str
+    platform: str
+    ocp_versions: list[str]
+    test_framework: str
     jobs: list[str]
 
 
@@ -135,8 +142,8 @@ def extract_job_names(filepath: str) -> list[str]:
     ]
 
 
-def categorize_job(job_name: str) -> tuple[str, str] | None:
-    """Return (platform_key, version) for a job name, or None if uncategorized."""
+def categorize_job(job_name: str) -> tuple[str, str, str] | None:
+    """Return (platform_key, OCP version, test framework) for a job name."""
     m = re.match(
         r"periodic-ci-openshift-hypershift-release-([\d.]+)-periodics-(.*)",
         job_name,
@@ -144,25 +151,32 @@ def categorize_job(job_name: str) -> tuple[str, str] | None:
     if not m:
         return None
     version, suffix = m.group(1), m.group(2)
+    framework = (
+        FRAMEWORK_V2
+        if re.search(r"(?:^|-)e2e-v2(?:-|$)", suffix)
+        else FRAMEWORK_V1
+    )
     for key, _display, matcher in PLATFORM_RULES:
         if matcher(suffix):
-            return key, version
+            return key, version, framework
     return None
 
 
 def build_categories(all_jobs: list[str], selected_versions: set[str]) -> list[Category]:
     """Group jobs into categories, returning ordered list of category dicts."""
-    grouped: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    grouped: dict[str, dict[str, dict[str, list[str]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
 
     for job in sorted(all_jobs):
         result = categorize_job(job)
         if result is None:
             print(f"::error::Uncategorized job: {job}")
             continue
-        key, version = result
+        key, version, framework = result
         if version not in selected_versions:
             continue
-        grouped[key][version].append(job)
+        grouped[key][version][framework].append(job)
 
     categories: list[Category] = []
 
@@ -172,34 +186,57 @@ def build_categories(all_jobs: list[str], selected_versions: set[str]) -> list[C
         versions = sorted(grouped[key].keys(), key=version_sort_key, reverse=True)
         desc_template = DESCRIPTIONS.get(key, "")
 
-        if key in VERSION_SPLIT_PLATFORMS and len(versions) > 1:
+        if key in VERSION_SPLIT_PLATFORMS:
             for v in versions:
-                jobs = grouped[key][v]
-                if not jobs:
-                    continue
-                categories.append(Category(
-                    name=f"{display_name} ({v})",
-                    description=desc_template.format(version=v),
-                    jobs=sorted(jobs),
-                ))
+                for framework in (FRAMEWORK_V1, FRAMEWORK_V2):
+                    jobs = grouped[key][v].get(framework, [])
+                    if not jobs:
+                        continue
+                    categories.append(Category(
+                        name=f"{display_name} ({v}) ({framework})",
+                        description=f"{desc_template.format(version=v)} — {framework}",
+                        platform=display_name,
+                        ocp_versions=[v],
+                        test_framework=framework,
+                        jobs=sorted(jobs),
+                    ))
         else:
-            all_platform_jobs: list[str] = []
-            version_strs: list[str] = []
-            for v in versions:
-                all_platform_jobs.extend(grouped[key][v])
-                version_strs.append(v)
-            if not all_platform_jobs:
-                continue
-            desc = desc_template
-            if "{version}" in desc:
-                desc = desc.format(version=" + ".join(version_strs))
-            elif version_strs:
-                desc += f" — OCP {' + '.join(version_strs)}"
-            categories.append(Category(
-                name=display_name,
-                description=desc,
-                jobs=sorted(all_platform_jobs),
-            ))
+            for framework in (FRAMEWORK_V1, FRAMEWORK_V2):
+                all_platform_jobs: list[str] = []
+                version_strs: list[str] = []
+                for v in versions:
+                    jobs = grouped[key][v].get(framework, [])
+                    if not jobs:
+                        continue
+                    all_platform_jobs.extend(jobs)
+                    version_strs.append(v)
+                if not all_platform_jobs:
+                    continue
+                desc = desc_template
+                if "{version}" in desc:
+                    desc = desc.format(version=" + ".join(version_strs))
+                elif version_strs:
+                    desc += f" — OCP {' + '.join(version_strs)}"
+                desc += f" — {framework}"
+                categories.append(Category(
+                    name=f"{display_name} ({framework})",
+                    description=desc,
+                    platform=display_name,
+                    ocp_versions=version_strs,
+                    test_framework=framework,
+                    jobs=sorted(all_platform_jobs),
+                ))
+
+    # Keep the generated registry in the same order the report uses.
+    categories.sort(key=lambda c: (
+        c["platform"].casefold(),
+        FRAMEWORK_SORT_ORDER[c["test_framework"]],
+        c["name"],
+    ))
+    categories.sort(
+        key=lambda c: max(version_sort_key(v) for v in c["ocp_versions"]),
+        reverse=True,
+    )
 
     return categories
 
@@ -224,6 +261,11 @@ def render_yaml(categories: list[Category]) -> str:
             lines.append("")
         lines.append(f'  - name: "{cat["name"]}"')
         lines.append(f'    description: "{cat["description"]}"')
+        lines.append(f'    platform: "{cat["platform"]}"')
+        lines.append("    ocp_versions:")
+        for version in cat["ocp_versions"]:
+            lines.append(f'      - "{version}"')
+        lines.append(f'    test_framework: "{cat["test_framework"]}"')
         lines.append("    jobs:")
         for job in cat["jobs"]:
             lines.append(f"      - {job}")
