@@ -696,6 +696,13 @@ func setupNodePoolController(ctx context.Context, mgr ctrl.Manager, opts *StartO
 		}
 	}
 
+	// GCP uses Workload Identity and doesn't require credentials file for scale-from-zero.
+	// Enable scale-from-zero for GCP when it's the private platform.
+	if opts.PrivatePlatform == string(hyperv1.GCPPlatform) {
+		scaleFromZeroPlatform = hyperv1.GCPPlatform
+		log.Info("Scale-from-zero enabled for GCP platform (using Workload Identity)")
+	}
+
 	if err := (&nodepool.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
 		ReleaseProvider:         registryProvider.ReleaseProvider,
