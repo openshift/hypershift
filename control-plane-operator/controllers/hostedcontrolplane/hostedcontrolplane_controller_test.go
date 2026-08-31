@@ -2397,6 +2397,59 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 			expectedMessage:     "connection refused",
 		},
 		{
+			name: "When health check fails and components are not available, it should include both in message",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable:       true,
+			healthCheckErr:            fmt.Errorf("APIServer external route not admitted"),
+			componentsNotAvailableMsg: "Waiting for components to be available: router, ingress-operator",
+			expectedReady:             false,
+			expectedReason:            hyperv1.KASLoadBalancerNotReachableReason,
+			expectedMessage:           "APIServer external route not admitted; Waiting for components to be available: router, ingress-operator",
+		},
+		{
+			name: "When health check fails with components error and unavailable message, health check error takes precedence",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable:       true,
+			healthCheckErr:            fmt.Errorf("connection timeout"),
+			componentsErr:             fmt.Errorf("failed to list components"),
+			componentsNotAvailableMsg: "Waiting for components to be available: router",
+			expectedReady:             false,
+			expectedReason:            hyperv1.KASLoadBalancerNotReachableReason,
+			expectedMessage:           "connection timeout; Waiting for components to be available: router",
+		},
+		{
 			name: "When components check returns error, it should report components not available with error",
 			conditions: []metav1.Condition{
 				{
@@ -3909,12 +3962,13 @@ func TestReconcileAvailabilityAndReadyStatus(t *testing.T) {
 	testNamespace := "test-namespace"
 
 	testCases := []struct {
-		name               string
-		hcp                *hyperv1.HostedControlPlane
-		existingObjects    []client.Object
-		expectedReady      bool
-		expectedCondStatus metav1.ConditionStatus
-		expectedCondReason string
+		name                        string
+		hcp                         *hyperv1.HostedControlPlane
+		existingObjects             []client.Object
+		expectedReady               bool
+		expectedCondStatus          metav1.ConditionStatus
+		expectedCondReason          string
+		expectedCondMessageContains string
 	}{
 		{
 			name: "When no status conditions exist and no kubeconfig, it should set not ready with Unknown reason",
@@ -4005,6 +4059,75 @@ func TestReconcileAvailabilityAndReadyStatus(t *testing.T) {
 			expectedCondStatus: metav1.ConditionFalse,
 			expectedCondReason: hyperv1.KASLoadBalancerNotReachableReason,
 		},
+		{
+			name: "When previously available and health check fails with unavailable component, message should include component name",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  testNamespace,
+					Generation: 4,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					KubeConfig: &hyperv1.KubeconfigSecretRef{
+						Name: "admin-kubeconfig",
+						Key:  "kubeconfig",
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.HostedControlPlaneAvailable),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+						{
+							Type:   string(hyperv1.InfrastructureReady),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+						{
+							Type:   string(hyperv1.EtcdAvailable),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.EtcdQuorumAvailableReason,
+						},
+						{
+							Type:   string(hyperv1.KubeAPIServerAvailable),
+							Status: metav1.ConditionTrue,
+							Reason: hyperv1.AsExpectedReason,
+						},
+					},
+				},
+			},
+			existingObjects: []client.Object{
+				&hyperv1.ControlPlaneComponent{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "router",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionFalse,
+								Reason: "NotReady",
+							},
+						},
+					},
+				},
+			},
+			expectedReady:               false,
+			expectedCondStatus:          metav1.ConditionFalse,
+			expectedCondReason:          hyperv1.KASLoadBalancerNotReachableReason,
+			expectedCondMessageContains: "router",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -4033,6 +4156,9 @@ func TestReconcileAvailabilityAndReadyStatus(t *testing.T) {
 			g.Expect(cond.Status).To(Equal(tc.expectedCondStatus))
 			g.Expect(cond.Reason).To(Equal(tc.expectedCondReason))
 			g.Expect(cond.ObservedGeneration).To(Equal(tc.hcp.Generation))
+			if tc.expectedCondMessageContains != "" {
+				g.Expect(cond.Message).To(ContainSubstring(tc.expectedCondMessageContains))
+			}
 		})
 	}
 }
