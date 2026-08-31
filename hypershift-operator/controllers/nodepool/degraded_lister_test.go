@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-	toolscache "k8s.io/client-go/tools/cache"
 )
 
 // mockListerWatcher implements cache.ListerWatcher for testing
@@ -65,10 +64,10 @@ func TestNewDegradedModeInformerFactory(t *testing.T) {
 				t.Fatalf("factory returned nil informer")
 			}
 
-			// Check if it's wrapped by testing the type
-			_, isWrapped := informer.GetStore().(toolscache.Store)
-			if tt.want && !isWrapped {
-				t.Error("expected wrapped ListerWatcher, got standard informer")
+			// Verify the informer has a store
+			store := informer.GetStore()
+			if store == nil && tt.want {
+				t.Error("expected wrapped ListerWatcher with store, got nil")
 			}
 		})
 	}

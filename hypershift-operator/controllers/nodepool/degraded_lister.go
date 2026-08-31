@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,6 +50,7 @@ type degradedNodePoolListerWatcher struct {
 // List calls the delegate LIST and filters out bad NodePools.
 // It also revalidates items: if a previously-bad NodePool is now valid, removes it from badKeys.
 func (d *degradedNodePoolListerWatcher) List(opts metav1.ListOptions) (runtime.Object, error) {
+	//nolint:staticcheck // SA1019: using deprecated interface to match cache.ListerWatcher contract
 	list, err := d.delegate.List(opts)
 	if err != nil {
 		return list, err
@@ -88,6 +89,7 @@ func (d *degradedNodePoolListerWatcher) List(opts metav1.ListOptions) (runtime.O
 
 // Watch delegates to the wrapped ListerWatcher.
 func (d *degradedNodePoolListerWatcher) Watch(opts metav1.ListOptions) (watch.Interface, error) {
+	//nolint:staticcheck // SA1019: using deprecated interface to match cache.ListerWatcher contract
 	return d.delegate.Watch(opts)
 }
 
