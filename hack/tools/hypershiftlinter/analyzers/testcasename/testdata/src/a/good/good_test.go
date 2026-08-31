@@ -103,6 +103,17 @@ func TestPlainLookupMap(t *testing.T) {
 	_ = fixtures
 }
 
+func TestAnonymousFixtureStruct(t *testing.T) {
+	fixture := struct {
+		name string
+		host string
+	}{
+		name: "ipv4-only",
+		host: "localhost",
+	}
+	_ = fixture
+}
+
 func TestNameFromVariable(t *testing.T) {
 	testName := "some dynamic name"
 	tests := []struct {
