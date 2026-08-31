@@ -8,7 +8,6 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -16,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 	toolscache "k8s.io/client-go/tools/cache"
+
+	"github.com/go-logr/logr"
 )
 
 // NewDegradedModeInformerFactory creates a custom informer factory that skips bad NodePools at startup.
