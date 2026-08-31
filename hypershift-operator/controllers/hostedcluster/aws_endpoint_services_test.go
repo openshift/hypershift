@@ -78,6 +78,22 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 			expectPending:          true,
 			expectFinalizerRemoved: true,
 		},
+		{
+			name: "When endpoint is deleting with valid creds within grace period, it should keep CPO finalizer",
+			hc:   hostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
+			endpoints: []hyperv1.AWSEndpointService{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "ep-1",
+						Namespace:         namespace,
+						DeletionTimestamp: &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+						Finalizers:        []string{cpoFinalizer},
+					},
+				},
+			},
+			expectPending:          true,
+			expectFinalizerRemoved: false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -116,6 +132,16 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 					}
 					g.Expect(err).ToNot(HaveOccurred())
 					g.Expect(updatedEP.Finalizers).ToNot(ContainElement(cpoFinalizer))
+				}
+			} else {
+				for _, ep := range tc.endpoints {
+					updatedEP := &hyperv1.AWSEndpointService{}
+					err := fakeClient.Get(t.Context(), crclient.ObjectKey{
+						Namespace: ep.Namespace,
+						Name:      ep.Name,
+					}, updatedEP)
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(updatedEP.Finalizers).To(ContainElement(cpoFinalizer), "expected finalizer to be retained")
 				}
 			}
 		})
