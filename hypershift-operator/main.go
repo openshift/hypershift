@@ -86,6 +86,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
@@ -425,10 +426,28 @@ func configureWebhookOptions(ctx context.Context, restConfig *rest.Config, mgmtC
 }
 
 func createManager(restConfig *rest.Config, webhookOptions webhook.Options, opts *StartOptions) (ctrl.Manager, error) {
+	log := ctrl.Log.WithName("setup")
+	ctx := context.Background()
+
+	// Scan for and identify bad NodePools at startup (OCPBUGS-94252 defense-in-depth)
+	var badNodePools map[string]struct{}
+	dynClient, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		log.Error(err, "Failed to create dynamic client for NodePool scan; proceeding without degraded mode")
+	} else {
+		badNodePools, err = nodepool.ScanAndIdentifyBadNodePools(ctx, dynClient, log)
+		if err != nil {
+			log.Error(err, "Failed to scan NodePools at startup; proceeding without degraded mode")
+		} else if len(badNodePools) > 0 {
+			log.Info("Found bad NodePools; operator will run in degraded mode", "count", len(badNodePools))
+		}
+	}
+
 	leaseDuration := time.Second * 60
 	renewDeadline := time.Second * 40
 	retryPeriod := time.Second * 15
-	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
+
+	managerOptions := ctrl.Options{
 		Scheme: hyperapi.Scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: opts.MetricsAddr,
@@ -447,7 +466,14 @@ func createManager(restConfig *rest.Config, webhookOptions webhook.Options, opts
 		LeaseDuration:                 &leaseDuration,
 		RenewDeadline:                 &renewDeadline,
 		RetryPeriod:                   &retryPeriod,
-	})
+	}
+
+	// Add degraded-mode informer factory if bad NodePools were found
+	if len(badNodePools) > 0 {
+		managerOptions.Cache.NewInformer = nodepool.NewDegradedModeInformerFactory(ctx, badNodePools, log)
+	}
+
+	mgr, err := ctrl.NewManager(restConfig, managerOptions)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start manager: %w", err)
 	}
