@@ -3,6 +3,7 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -413,11 +414,6 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "When error is a 429 rate limit error, it should return true",
-			err:      &googleapi.Error{Code: 429, Message: "A quota has been reached"},
-			expected: true,
-		},
-		{
 			name:     "When error is a 404 not found error, it should return true",
 			err:      &googleapi.Error{Code: 404, Message: "Not found"},
 			expected: true,
@@ -433,19 +429,24 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "When error is a 500 server error, it should return true",
+			name:     "When error is a 400 IAM error, it should return true",
+			err:      &googleapi.Error{Code: 400, Message: "Service account does not exist"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 400 non-IAM error, it should return false",
+			err:      &googleapi.Error{Code: 400, Message: "Invalid argument"},
+			expected: false,
+		},
+		{
+			name:     "When error is a 429 rate limit error, it should return false",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited"},
+			expected: false,
+		},
+		{
+			name:     "When error is a 500 server error, it should return false",
 			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
-			expected: true,
-		},
-		{
-			name:     "When error is a 502 bad gateway error, it should return true",
-			err:      &googleapi.Error{Code: 502, Message: "Bad gateway"},
-			expected: true,
-		},
-		{
-			name:     "When error is a 503 service unavailable error, it should return true",
-			err:      &googleapi.Error{Code: 503, Message: "Service unavailable"},
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "When error is a non-googleapi error, it should return false",
@@ -463,6 +464,67 @@ func TestIsTransientIAMError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(isTransientIAMError(tt.err)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestIsTransientError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil, it should return false",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "When error is a 429 rate limit error, it should return true",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 500 server error, it should return true",
+			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 502 bad gateway error, it should return true",
+			err:      &googleapi.Error{Code: 502, Message: "Bad gateway"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 503 service unavailable error, it should return true",
+			err:      &googleapi.Error{Code: 503, Message: "Service unavailable"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 504 gateway timeout error, it should return true",
+			err:      &googleapi.Error{Code: 504, Message: "Gateway timeout"},
+			expected: true,
+		},
+		{
+			name:     "When error is a transient network error, it should return true",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}},
+			expected: true,
+		},
+		{
+			name:     "When error is a 404 not found error, it should return false",
+			err:      &googleapi.Error{Code: 404, Message: "Not found"},
+			expected: false,
+		},
+		{
+			name:     "When error is a non-retryable error, it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isTransientError(tt.err)).To(Equal(tt.expected))
 		})
 	}
 }
@@ -532,6 +594,26 @@ func TestIsTransientNetworkError(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "When error is connection aborted, it should return true",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNABORTED}},
+			expected: true,
+		},
+		{
+			name:     "When error is a broken pipe, it should return true",
+			err:      &net.OpError{Op: "write", Net: "tcp", Err: &os.SyscallError{Syscall: "write", Err: syscall.EPIPE}},
+			expected: true,
+		},
+		{
+			name:     "When error is io.ErrUnexpectedEOF, it should return true",
+			err:      io.ErrUnexpectedEOF,
+			expected: true,
+		},
+		{
+			name:     "When error is io.EOF, it should return true",
+			err:      io.EOF,
+			expected: true,
+		},
+		{
 			name:     "When error is a url.Error wrapping a transient error, it should return true",
 			err:      &url.Error{Op: "Post", URL: "https://iam.googleapis.com", Err: &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}}},
 			expected: true,
@@ -566,7 +648,7 @@ func TestIsTransientNetworkError(t *testing.T) {
 	}
 }
 
-func TestIsRetryableError(t *testing.T) {
+func TestIsRetryableIAMError(t *testing.T) {
 	tests := []struct {
 		name     string
 		err      error
@@ -578,8 +660,18 @@ func TestIsRetryableError(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "When error is a transient IAM error, it should return true",
+			name:     "When error is a transient IAM error (404), it should return true",
+			err:      &googleapi.Error{Code: 404, Message: "Not found"},
+			expected: true,
+		},
+		{
+			name:     "When error is a transient server error (429), it should return true",
 			err:      &googleapi.Error{Code: 429, Message: "Rate limited"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 504 gateway timeout, it should return true",
+			err:      &googleapi.Error{Code: 504, Message: "Gateway timeout"},
 			expected: true,
 		},
 		{
@@ -597,7 +689,7 @@ func TestIsRetryableError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(isRetryableError(tt.err)).To(Equal(tt.expected))
+			g.Expect(isRetryableIAMError(tt.err)).To(Equal(tt.expected))
 		})
 	}
 }
@@ -610,7 +702,7 @@ func TestRetryWithExponentialBackoff(t *testing.T) {
 		calls := 0
 		permanentErr := fmt.Errorf("permanent failure")
 
-		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", func() error {
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", isTransientError, func() error {
 			calls++
 			return permanentErr
 		})
@@ -628,7 +720,7 @@ func TestRetryWithExponentialBackoff(t *testing.T) {
 			Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
 		}
 
-		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", func() error {
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", isTransientError, func() error {
 			calls++
 			if calls == 1 {
 				return transientErr
@@ -648,12 +740,26 @@ func TestRetryWithExponentialBackoff(t *testing.T) {
 
 		cancel()
 
-		err := manager.retryWithExponentialBackoff(ctx, "test-op", func() error {
+		err := manager.retryWithExponentialBackoff(ctx, "test-op", isRetryableIAMError, func() error {
 			calls++
 			return transientErr
 		})
 
 		g.Expect(err).To(HaveOccurred())
+		g.Expect(calls).To(Equal(1))
+	})
+
+	t.Run("When using isTransientError, a 404 should not be retried", func(t *testing.T) {
+		g := NewWithT(t)
+		calls := 0
+		notFoundErr := &googleapi.Error{Code: 404, Message: "Project not found"}
+
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", isTransientError, func() error {
+			calls++
+			return notFoundErr
+		})
+
+		g.Expect(err).To(MatchError(notFoundErr))
 		g.Expect(calls).To(Equal(1))
 	})
 }
