@@ -566,6 +566,31 @@ tests:
         nodeDrainTimeout: "abc"
     expectedError: "nodeDrainTimeout must be a valid duration string with a unit suffix"
 
+  - name: when nodeDrainTimeout is 0s it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeDrainTimeout: "0s"
+
   - name: when nodeDrainTimeout is a valid simple duration it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -668,6 +693,31 @@ tests:
           type: AWS
         nodeVolumeDetachTimeout: "abc"
     expectedError: "nodeVolumeDetachTimeout must be a valid duration string with a unit suffix"
+
+  - name: when nodeVolumeDetachTimeout is 0s it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+        nodeVolumeDetachTimeout: "0s"
 
   - name: when nodeVolumeDetachTimeout is a valid simple duration it should pass
     initial: |
