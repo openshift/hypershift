@@ -25,6 +25,10 @@ jobs:
           username: ${{ secrets.REGISTRY_CI_USERNAME }}
           password: ${{ secrets.REGISTRY_CI_PASSWORD }}
 
+      - name: Generate immutable image tag
+        id: image-tag
+        run: echo "tag=v$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+
       - name: Build and push azure-cli-base image
         uses: docker/build-push-action@v5
         with:
@@ -32,7 +36,12 @@ jobs:
           file: ./Dockerfile.azure-cli-base
           push: true
           tags: |
-            registry.ci.openshift.org/openshift/hypershift/azure-cli-base:latest
+            registry.ci.openshift.org/openshift/hypershift/azure-cli-base:${{ steps.image-tag.outputs.tag }}
             registry.ci.openshift.org/openshift/hypershift/azure-cli-base:${{ github.run_number }}
-          cache-from: type=registry,ref=registry.ci.openshift.org/openshift/hypershift/azure-cli-base:latest
+          cache-from: type=registry,ref=registry.ci.openshift.org/openshift/hypershift/azure-cli-base:${{ steps.image-tag.outputs.tag }}
           cache-to: type=inline
+
+      - name: Verify image and azure-cli installation
+        run: |
+          docker run --rm registry.ci.openshift.org/openshift/hypershift/azure-cli-base:${{ steps.image-tag.outputs.tag }} \
+            bash -c 'azure --version && echo "✓ Azure CLI verification passed"'

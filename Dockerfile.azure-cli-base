@@ -7,4 +7,14 @@ RUN dnf install -y python3 && \
     dnf install -y azure-cli && \
     dnf clean all
 
+# Note: repo_gpgcheck=0 disables GPG verification for Microsoft repo metadata.
+# This matches the existing behavior in Dockerfile.e2e and is required for CI
+# compatibility with the OpenShift release image environment.
+
+RUN useradd -m -u 1001 -s /sbin/nologin hypershift && \
+    mkdir -p /hypershift && \
+    chown -R 1001:1001 /hypershift
+
 RUN azure --version
+
+USER 1001
