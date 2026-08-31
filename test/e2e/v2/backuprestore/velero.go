@@ -47,6 +47,10 @@ const (
 	RestorePhaseCompleted                                 = "Completed"
 	RestorePhaseFailed                                    = "Failed"
 	RestorePhasePartiallyFailed                           = "PartiallyFailed"
+
+	BSLPhaseAvailable = "Available"
+
+	ScheduleBackupCreationTimeout = 5 * time.Minute
 )
 
 // EnsureVeleroPodRunning checks if at least one Velero pod is running and ready in the specified namespace.
@@ -119,7 +123,7 @@ func WaitForBackupStorageLocationAvailable(testCtx *internal.TestContext, name s
 		if err != nil {
 			return false, fmt.Errorf("failed to get BackupStorageLocation phase: %w", err)
 		}
-		return phase == "Available", nil
+		return phase == BSLPhaseAvailable, nil
 	})
 	if err != nil {
 		return fmt.Errorf("BackupStorageLocation %s did not become Available: %w", name, err)
@@ -220,7 +224,7 @@ func getLatestBackupForHostedCluster(ctx context.Context, client crclient.Client
 // for that backup to reach a final state.
 func WaitForScheduleBackupCreated(testCtx *internal.TestContext, scheduleName string) error {
 	// Wait for a backup to be created by the schedule
-	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, ScheduleBackupCreationTimeout, true, func(ctx context.Context) (bool, error) {
 		backupList := &unstructured.UnstructuredList{}
 		backupList.SetGroupVersionKind(schema.GroupVersionKind{
 			Group:   "velero.io",
@@ -238,10 +242,13 @@ func WaitForScheduleBackupCreated(testCtx *internal.TestContext, scheduleName st
 		if len(backupList.Items) == 0 {
 			return false, nil
 		}
-		if failed, err := isBackupInFailedState(testCtx.MgmtClient, DefaultOADPNamespace, backupList.Items[0].GetName())(ctx); err != nil {
+		backupName := backupList.Items[0].GetName()
+		failed, err := isBackupInFailedState(testCtx.MgmtClient, DefaultOADPNamespace, backupName)(ctx)
+		if err != nil {
 			return false, err
-		} else if failed {
-			return false, fmt.Errorf("backup %s is in a failing state", backupList.Items[0].GetName())
+		}
+		if failed {
+			return false, fmt.Errorf("backup %s is in a failing state", backupName)
 		}
 		return true, nil
 	})
