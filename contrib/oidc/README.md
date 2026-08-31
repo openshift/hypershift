@@ -54,8 +54,7 @@ sequenceDiagram
 ## Prerequisites
 
 1. AWS CLI configured with appropriate credentials
-2. Ansible installed on your local machine
-3. Required Python packages and Ansible collections:
+2. Required Python packages and Ansible collections:
    ```bash
    uv sync
    ansible-galaxy install -r requirements.yml
