@@ -1,4 +1,5 @@
 # General
+
 This directory contains several developer-focused scripts and instructions related to setting up an AKS management cluster and create a HostedCluster replicating what we do in ARO environments.
 
 If you do have issues with these scripts or need further help. Please reach out to #project-hypershift on Red Hat Slack.
@@ -6,6 +7,21 @@ If you do have issues with these scripts or need further help. Please reach out 
 Steps:
 
 Create a ServicePrincipal to let hypershift cli create the HostedCluster infra for you.
+
+## Automated (Recommended)
+
+If you already have a service principal, you can use the helper script to generate the credentials file:
+
+```bash
+export AZURE_SP_NAME="your-sp-name"
+../contrib/managed-azure/setup_azure_creds.sh
+```
+
+This will look up the SP, reset its credentials, and write `azure-creds.json`. If the SP doesn't exist or `AZURE_SP_NAME` is not set, the script prints instructions to create one.
+
+> **Note**: The script resets the SP credentials, which **invalidates any previous client secret**. It will prompt for confirmation before proceeding. If multiple SPs match the given name, the script will error and ask you to resolve the ambiguity.
+
+## Manual
 
 ```
 SP_DETAILS=$(az ad sp create-for-rbac --name "${PREFIX}-sp" --role Contributor --scopes "/subscriptions/$SUBSCRIPTION_ID" -o json)
@@ -64,11 +80,12 @@ Run it
 
 When setting up your first cluster, use the `--first-time` flag to create the one-time setup resources that should be reused across multiple clusters to avoid Azure quota issues:
 
-```
+```bash
 ../contrib/managed-azure/setup_all.sh --first-time
 ```
 
 The `--first-time` flag automatically handles the creation of:
+
 - Service principals and Key Vault ([setup_MIv3_kv.sh](./setup_MIv3_kv.sh))
 - OIDC issuer ([setup_oidc_provider.sh](./setup_oidc_provider.sh))
 - Data plane identities ([setup_dataplane_identities.sh](./setup_dataplane_identities.sh))
@@ -105,6 +122,7 @@ To delete both the hosted cluster and AKS management cluster along with all asso
 ```
 
 This script will:
+
 1. Delete the hosted cluster and its managed resources
 2. Delete the AKS management cluster and resource group
 3. Clean up customer VNET and NSG resource groups
@@ -122,6 +140,7 @@ If you need more granular control, you can run the individual deletion scripts:
 ```
 
 This deletes:
+
 - The hosted cluster itself
 - Managed resource group (contains cluster resources)
 - Customer VNET resource group
@@ -134,6 +153,7 @@ This deletes:
 ```
 
 This deletes:
+
 - The AKS management cluster
 - AKS resource group
 - AKS-specific Key Vault role assignments
