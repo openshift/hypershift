@@ -1113,6 +1113,7 @@ func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crcl
 
 func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureCAPIFinalizers", func(t *testing.T) {
+		AtLeast(t, Version422)
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		for _, name := range hcc.CAPIComponents {

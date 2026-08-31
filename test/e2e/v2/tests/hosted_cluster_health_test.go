@@ -84,6 +84,7 @@ func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 	When("CAPI components are deployed", func() {
 		It("should have component finalizers on all CAPI deployments", func() {
 			tc := getTestCtx()
+			tc.SkipIfVersionBelow(e2eutil.Version422)
 			Expect(hcc.CAPIComponents).NotTo(BeEmpty(),
 				"expected CAPI components to be defined in HostedControlPlaneConfiguration")
 			for _, name := range hcc.CAPIComponents {
