@@ -75,10 +75,10 @@ func TestNewDegradedModeInformerFactory(t *testing.T) {
 
 func TestResilientNodePoolListerWatcher_List(t *testing.T) {
 	tests := []struct {
-		name     string
-		badKeys  map[string]struct{}
-		nodePool *hyperv1.NodePool
-		wantIn   bool // true if should be in filtered result
+		name            string
+		badKeys         map[string]struct{}
+		nodePool        *hyperv1.NodePool
+		shouldInclude   bool // true if should be in filtered result
 	}{
 		{
 			name:    "When NodePool is valid, it should include it in filtered result",
@@ -89,7 +89,7 @@ func TestResilientNodePoolListerWatcher_List(t *testing.T) {
 					NodeDrainTimeout: &metav1.Duration{Duration: 0},
 				},
 			},
-			wantIn: true,
+			shouldInclude: true,
 		},
 		{
 			name: "When NodePool is in badKeys, it should exclude it from filtered result",
@@ -102,7 +102,7 @@ func TestResilientNodePoolListerWatcher_List(t *testing.T) {
 					NodeDrainTimeout: &metav1.Duration{Duration: 0},
 				},
 			},
-			wantIn: false,
+			shouldInclude: false,
 		},
 		{
 			name: "When NodePool was bad but is now recovered, it should include it and remove from badKeys",
@@ -115,7 +115,7 @@ func TestResilientNodePoolListerWatcher_List(t *testing.T) {
 					NodeDrainTimeout: &metav1.Duration{Duration: 0},
 				},
 			},
-			wantIn: true,
+			shouldInclude: true,
 		},
 	}
 
@@ -158,10 +158,10 @@ func TestResilientNodePoolListerWatcher_List(t *testing.T) {
 				}
 			}
 
-			if tt.wantIn && !found {
+			if tt.shouldInclude && !found {
 				t.Errorf("expected NodePool in result, but not found")
 			}
-			if !tt.wantIn && found {
+			if !tt.shouldInclude && found {
 				t.Errorf("expected NodePool not in result, but found")
 			}
 
