@@ -350,14 +350,6 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			},
 		},
 		{
-			Type:       "Deployment",
-			Name:       "redhat-marketplace-catalog",
-			MaxVersion: &semver.Version{Major: 4, Minor: 22, Patch: 0},
-			PodSelector: map[string]string{
-				"olm.catalogSource": "redhat-marketplace",
-			},
-		},
-		{
 			Type: "Deployment",
 			Name: "redhat-operators-catalog",
 			PodSelector: map[string]string{

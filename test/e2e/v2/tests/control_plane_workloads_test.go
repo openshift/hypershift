@@ -898,7 +898,6 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 			"certified-operators-catalog":           20,
 			"community-operators-catalog":           20,
 			"redhat-operators-catalog":              20,
-			"redhat-marketplace-catalog":            20,
 			"openstack-manila-csi-controllerplugin": 20,
 			"kubevirt-csi":                          20,
 			"aws-ebs-csi-driver-controller":         1,

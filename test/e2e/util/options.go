@@ -616,7 +616,6 @@ func e2eDefaultAnnotations() []string {
 			fmt.Sprintf("%s/packageserver.packageserver=cpu=50m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
 			fmt.Sprintf("%s/certified-operators-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
 			fmt.Sprintf("%s/community-operators-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
-			fmt.Sprintf("%s/redhat-marketplace-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
 			fmt.Sprintf("%s/redhat-operators-catalog.registry=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
 			fmt.Sprintf("%s/hosted-cluster-config-operator.hosted-cluster-config-operator=cpu=100m", hyperv1.ResourceRequestOverrideAnnotationPrefix),
 			fmt.Sprintf("%s/control-plane-pki-operator.control-plane-pki-operator=cpu=30m", hyperv1.ResourceRequestOverrideAnnotationPrefix),

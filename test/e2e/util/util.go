@@ -128,7 +128,6 @@ var (
 		"certified-operators-catalog": 20,
 		"community-operators-catalog": 20,
 		"redhat-operators-catalog":    20,
-		"redhat-marketplace-catalog":  20,
 		// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
 		"openstack-manila-csi-controllerplugin": 20,
 		// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
@@ -1689,7 +1688,6 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"certified-operators-catalog":            "app",
 			"community-operators-catalog":            "app",
 			"redhat-operators-catalog":               "app",
-			"redhat-marketplace-catalog":             "app",
 			"openstack-cinder-csi-driver-controller": "app",
 			"openstack-manila-csi":                   "app",
 			"karpenter":                              "app",
