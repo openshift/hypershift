@@ -103,26 +103,11 @@ func ScanAndIdentifyBadNodePools(ctx context.Context, dynClient dynamic.Interfac
 		key := fmt.Sprintf("%s/%s", item.GetNamespace(), item.GetName())
 		badKeys[key] = struct{}{}
 
-		// Log ERROR loudly with fix instructions
-		var fixCmd strings.Builder
-		fixCmd.WriteString(fmt.Sprintf("kubectl patch nodepool %s -n %s -p '", item.GetName(), item.GetNamespace()))
-		fixCmd.WriteString("{\"spec\":{")
-		fieldNames := sortedKeys(badFields)
-		for i, fieldName := range fieldNames {
-			if i > 0 {
-				fixCmd.WriteString(",")
-			}
-			fixCmd.WriteString(fmt.Sprintf("\"%s\":\"<valid-duration>\"", fieldName))
-		}
-		fixCmd.WriteString("}}'")
-
+		// Log ERROR loudly (without customer data)
 		log.Error(
 			fmt.Errorf("invalid duration field(s)"),
-			"NodePool has invalid duration field(s) and will not be reconciled",
-			"namespace", item.GetNamespace(),
-			"name", item.GetName(),
-			"badFields", formatBadFields(badFields),
-			"fixCommand", fixCmd.String(),
+			"NodePool has invalid duration field(s) and will not be reconciled; see logs for details",
+			"fields", strings.Join(sortedKeys(badFields), ","),
 		)
 	}
 
