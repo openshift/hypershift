@@ -93,6 +93,7 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&globalOpts.HOInstallationOptions.EnableCIDebugOutput, "e2e.ho-enable-ci-debug-output", false, "Install the HyperShift Operator with extra CI debug output enabled. This is a HyperShift Operator installation option")
 	flag.StringVar(&globalOpts.HOInstallationOptions.PlatformMonitoring, "e2e.platform-monitoring", "All", "The option for enabling platform cluster monitoring when installing the HyperShift Operator. Valid values are: None, OperatorOnly, All. This is a HyperShift Operator installation option")
 	flag.BoolVar(&globalOpts.RunUpgradeTest, "upgrade.run-tests", false, "Run HyperShift Operator upgrade test")
+	flag.BoolVar(&globalOpts.RunCAPIMigrationTest, "capi-migration.run-tests", false, "Run CAPI storage version migration test")
 	flag.StringVar(&globalOpts.ExternalCNIProvider, "e2e.external-cni-provider", "", fmt.Sprintf("The option supports the following CNI providers: %s", e2eutil.CiliumCNIProvider))
 	flag.StringVar(&globalOpts.AdditionalPullSecretFile, "e2e.additional-pull-secret-file", "", "path to a pull secret file for the EnsureGlobalPullSecret test")
 

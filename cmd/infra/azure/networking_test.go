@@ -176,50 +176,50 @@ func TestIsAzureConflictError(t *testing.T) {
 		err      error
 		expected bool
 	}{
-		"When the error is a 409 ConflictingConcurrentWriteNotAllowed it should be retryable": {
+		"When the error is a 409 ConflictingConcurrentWriteNotAllowed, it should be retryable": {
 			err: &azcore.ResponseError{
 				StatusCode: http.StatusConflict,
 				ErrorCode:  "ConflictingConcurrentWriteNotAllowed",
 			},
 			expected: true,
 		},
-		"When the error is a 409 with different error code it should be retryable": {
+		"When the error is a 409 with different error code, it should be retryable": {
 			err: &azcore.ResponseError{
 				StatusCode: http.StatusConflict,
 				ErrorCode:  "AnotherConflict",
 			},
 			expected: true,
 		},
-		"When the error is a 429 too many requests it should not be retryable": {
+		"When the error is a 429 too many requests, it should not be retryable": {
 			err: &azcore.ResponseError{
 				StatusCode: http.StatusTooManyRequests,
 			},
 			expected: false,
 		},
-		"When the error is a 500 internal server error it should not be retryable": {
+		"When the error is a 500 internal server error, it should not be retryable": {
 			err: &azcore.ResponseError{
 				StatusCode: http.StatusInternalServerError,
 			},
 			expected: false,
 		},
-		"When the error is a 400 bad request it should not be retryable": {
+		"When the error is a 400 bad request, it should not be retryable": {
 			err: &azcore.ResponseError{
 				StatusCode: http.StatusBadRequest,
 			},
 			expected: false,
 		},
-		"When the error is not an Azure ResponseError it should not be retryable": {
+		"When the error is not an Azure ResponseError, it should not be retryable": {
 			err:      fmt.Errorf("some random error"),
 			expected: false,
 		},
-		"When the error wraps a 409 Azure ResponseError it should be retryable": {
+		"When the error wraps a 409 Azure ResponseError, it should be retryable": {
 			err: fmt.Errorf("wrapped: %w", &azcore.ResponseError{
 				StatusCode: http.StatusConflict,
 				ErrorCode:  "ConflictingConcurrentWriteNotAllowed",
 			}),
 			expected: true,
 		},
-		"When the error is nil it should not be retryable": {
+		"When the error is nil, it should not be retryable": {
 			err:      nil,
 			expected: false,
 		},

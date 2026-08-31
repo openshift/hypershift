@@ -19,7 +19,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Control plane components (CPOv2)** | [support/controlplane-component/AGENTS.md](support/controlplane-component/AGENTS.md) and [support/controlplane-component/README.md](support/controlplane-component/README.md) |
 | **Control plane operator** | [control-plane-operator/AGENTS.md](control-plane-operator/AGENTS.md) |
 | **E2E v2 test framework** | [test/e2e/v2/AGENTS.md](test/e2e/v2/AGENTS.md) |
-| **Envtest (CEL validation tests)** | [test/envtest/README.md](test/envtest/README.md) — YAML-driven, runs across k8s 1.30–1.35, supports feature gate filtering |
+| **Envtest (CEL validation tests)** | [test/envtest/README.md](test/envtest/README.md) — YAML-driven, runs across k8s 1.30–1.36, supports feature gate filtering |
 | **CEL over webhooks** | [.claude/rules/webhook-validation.md](.claude/rules/webhook-validation.md) |
 | **Code formatting** | [DEVELOPMENT.md](DEVELOPMENT.md) — code quality commands and conventions |
 | **Unit test conventions** | [TESTING.md](TESTING.md) — naming, placement, and creation requirements |
@@ -28,6 +28,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |
 | **Contributing and PR workflow** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Agentic SDLC framework** | [docs/content/how-to/agentic-sdlc.md](docs/content/how-to/agentic-sdlc.md) |
+| **Feature gates** | [docs/content/how-to/feature-gates.md](docs/content/how-to/feature-gates.md) — two separate systems: management cluster gates vs hosted cluster gates |
 | **Pre-commit hooks** | [docs/content/contribute/precommit-hook-help.md](docs/content/contribute/precommit-hook-help.md) |
 
 ## Pull Secret Cycling
@@ -39,3 +40,5 @@ See [docs/content/how-to/common/global-pull-secret.md](docs/content/how-to/commo
 ## Fleet-Wide Rollout Impact
 
 Changes to config data, secrets, or any value that feeds into a NodePool config hash will trigger a rollout across **all** HostedClusters. Before adding new data to ignition configs, MachineConfigs, or any resource reconciled into the data plane, check whether the change affects the NodePool config hash (search for `hashStruct` / `configHash`). If it does, the PR **must** pass `e2e-aws-upgrade-hypershift-operator` to prove the rollout is safe.
+
+Additionally, consider the **deployment-time migration impact** on existing NodePools: if the hash was previously computed with different inputs (e.g., an image resolved from a different source), deploying the change will cause a one-time hash change and rollout across all affected NodePools — even when HC and NodePool are at the same version. Reviewers must ask: "what happens to clusters that already exist when this operator version is deployed?"

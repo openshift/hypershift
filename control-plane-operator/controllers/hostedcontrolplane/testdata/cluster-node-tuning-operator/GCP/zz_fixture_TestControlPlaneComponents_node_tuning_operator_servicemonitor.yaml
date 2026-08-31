@@ -2,6 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   annotations:
+    hypershift.openshift.io/desired-state-hash: 87e7c994d32f038787bcb8e1a9fe7bfb8f7b3cf4cc11d38920ff3e5ecc7800b8
     hypershift.openshift.io/metrics-endpoint: "60000"
     hypershift.openshift.io/metrics-job: node-tuning-operator
     hypershift.openshift.io/metrics-namespace: openshift-cluster-node-tuning-operator

@@ -100,3 +100,24 @@ updates:
     labels:
       - "area/ci-tooling"
       - "ok-to-test"
+  # GitHub Actions runner container image (Dockerfile.github-actions-runner).
+  # The docker ecosystem scans every Dockerfile/Containerfile in this directory,
+  # so `allow` restricts updates to the runner image only. All sibling images
+  # (ubi9, go-toolset, openshift/release, etc.) are product/CI images managed
+  # via the OpenShift release process and must not be bumped here.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "01:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "ci(deps)"
+    labels:
+      - "area/ci-tooling"
+      - "ok-to-test"
+    # Wildcard matches regardless of whether Dependabot includes the registry
+    # host (ghcr.io/) in the internal dependency name.
+    allow:
+      - dependency-name: "*actions-runner*"

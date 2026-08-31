@@ -8,7 +8,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/globalconfig"
 
-	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -107,25 +106,7 @@ func (o *CreateOptions) GenerateNodePools(defaultNodePool core.DefaultNodePoolCo
 }
 
 func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
-	return []crclient.Object{
-		&rbacv1.Role{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "Role",
-				APIVersion: rbacv1.SchemeGroupVersion.String(),
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: o.AgentNamespace,
-				Name:      "capi-provider-role",
-			},
-			Rules: []rbacv1.PolicyRule{
-				{
-					APIGroups: []string{"agent-install.openshift.io"},
-					Resources: []string{"agents"},
-					Verbs:     []string{"*"},
-				},
-			},
-		},
-	}, nil
+	return nil, nil
 }
 
 var _ core.Platform = (*CreateOptions)(nil)

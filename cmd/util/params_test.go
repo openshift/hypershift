@@ -21,17 +21,17 @@ func TestSupported(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "Valid struct with all supported types",
+			name:     "When struct has all supported types, it should return correct format",
 			input:    TestStruct{},
 			expected: "param1:string,param2:uint,param3:resource.Quantity,param4:[]string,param5:bool",
 		},
 		{
-			name:     "Empty struct",
+			name:     "When struct is empty, it should return empty string",
 			input:    struct{}{},
 			expected: "",
 		},
 		{
-			name: "Struct with unsupported type",
+			name: "When struct has unsupported type, it should panic",
 			input: struct {
 				Param1 int `param:"param1"`
 			}{},
@@ -73,7 +73,7 @@ func TestMap(t *testing.T) {
 		err       bool
 	}{
 		{
-			name:      "Valid parameters",
+			name:      "When parameters are valid, it should map correctly",
 			flagName:  "test-flag",
 			paramsStr: "param1:value1,param2:42,param3:100Mi,param4:true",
 			input:     &TestStruct{},
@@ -86,7 +86,7 @@ func TestMap(t *testing.T) {
 			err: false,
 		},
 		{
-			name:      "Unknown parameter",
+			name:      "When parameter is unknown, it should return an error",
 			flagName:  "test-flag",
 			paramsStr: "param1:value1,param6:value6",
 			input:     &TestStruct{},
@@ -94,7 +94,7 @@ func TestMap(t *testing.T) {
 			err:       true,
 		},
 		{
-			name:      "Invalid uint parameter",
+			name:      "When uint parameter is invalid, it should return an error",
 			flagName:  "test-flag",
 			paramsStr: "param2:invalid",
 			input:     &TestStruct{},
@@ -102,7 +102,7 @@ func TestMap(t *testing.T) {
 			err:       true,
 		},
 		{
-			name:      "Invalid bool parameter",
+			name:      "When bool parameter is invalid, it should return an error",
 			flagName:  "test-flag",
 			paramsStr: "param5:invalid",
 			input:     &TestStruct{},
@@ -110,7 +110,7 @@ func TestMap(t *testing.T) {
 			err:       true,
 		},
 		{
-			name:      "Empty parameters",
+			name:      "When parameters are empty, it should return an error",
 			flagName:  "test-flag",
 			paramsStr: "",
 			input:     &TestStruct{},

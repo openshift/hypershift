@@ -9,6 +9,8 @@ aliases:
     - enxebre
     - csrwng
     - sjenning
+  e2e-approvers:
+    - ironcladlou
   core-approvers:
     - enxebre
     - csrwng
@@ -18,6 +20,7 @@ aliases:
     - cblecker
     - jparrill
     - devguyio
+    - clebs
   core-reviewers:
     - enxebre
     - csrwng
@@ -30,6 +33,13 @@ aliases:
     - clebs
     - Nirshal
     - ironcladlou
+    - georgelipceanu
+    - MehaBhalodiya
+    - dhgautam99
+    - vsolanki12
+    - PoornimaSingour
+    - vismishr
+    - rutvik23
   karpenter-approvers:
     - elmiko
     - enxebre
@@ -66,11 +76,13 @@ aliases:
     - ryan-cradick
     - twodcube
   gcp-reviewers:
+    - acwalczyk
     - apahim
     - cblecker
     - ckandag
     - cristianoveiga
     - floresroger
+    - gbarabasz
     - jimdaga
     - patjlm
   powervs-reviewers:

@@ -5,6 +5,54 @@ featureGates:
   - HCPEtcdBackup
 version: v1beta1
 tests:
+  onCreate:
+  - name: When Azure backup encryption uses a US Government Managed HSM URL, it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+            backup:
+              platform: Azure
+              azure:
+                encryptionKeyURL: "https://my-hsm.managedhsm.usgovcloudapi.net/keys/my-key/abc123"
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
   onUpdate:
   - name: When lastSuccessfulEtcdBackupURL has invalid scheme it should fail
     initial: |

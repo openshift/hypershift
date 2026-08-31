@@ -3,6 +3,9 @@ package kas
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
@@ -39,7 +42,11 @@ func adaptOauthMetadata(cpContext component.WorkloadContext, cfg *corev1.ConfigM
 		return fmt.Errorf("failed to unmarshal oauth metadata: %w", err)
 	}
 
-	oauthURL := fmt.Sprintf("https://%s:%d", cpContext.InfraStatus.OAuthHost, cpContext.InfraStatus.OAuthPort)
+	// Use net.JoinHostPort so IPv6 NodePort addresses are bracketed (RFC 3986).
+	oauthURL := (&url.URL{
+		Scheme: "https",
+		Host:   net.JoinHostPort(cpContext.InfraStatus.OAuthHost, strconv.Itoa(int(cpContext.InfraStatus.OAuthPort))),
+	}).String()
 	oauthMetadata["issuer"] = oauthURL
 	oauthMetadata["authorization_endpoint"] = fmt.Sprintf("%s/oauth/authorize", oauthURL)
 	oauthMetadata["token_endpoint"] = fmt.Sprintf("%s/oauth/token", oauthURL)

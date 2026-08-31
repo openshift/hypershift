@@ -82,7 +82,7 @@ The `pre` steps run before tests (setup), `test` steps run the actual tests, and
 
 ## The Four CI Binaries
 
-All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and shipped in the `hypershift-tests` image at `/hypershift/bin/`.
+All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and shipped in the `hypershift-tests` image at `/hypershift/bin/`. For how these binaries fit into the overall CI sequence — process boundaries, parallelism, and inter-process communication — see [Test Flow](test-flow.md).
 
 ### `create-guests`
 

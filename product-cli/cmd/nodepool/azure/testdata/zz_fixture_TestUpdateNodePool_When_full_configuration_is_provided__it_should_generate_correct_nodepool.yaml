@@ -1,0 +1,21 @@
+availabilityZone: "1"
+diagnostics:
+  storageAccountType: UserManaged
+  userManaged:
+    storageAccountURI: https://testdiag.blob.core.windows.net
+encryptionAtHost: Enabled
+image:
+  azureMarketplace:
+    imageGeneration: Gen2
+    offer: aro4
+    publisher: redhat
+    sku: aro_414
+    version: 414.1.20240101
+  type: AzureMarketplace
+osDisk:
+  diskStorageAccountType: StandardSSD_LRS
+  encryptionSetID: /subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/diskEncryptionSets/test-des
+  persistence: Ephemeral
+  sizeGiB: 256
+subnetID: /subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/my-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/my-subnet
+vmSize: Standard_D8s_v5

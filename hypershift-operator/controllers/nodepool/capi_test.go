@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/go-logr/logr"
 )
@@ -103,8 +104,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 		expectAutoscalerAnnotations map[string]string
 	}{
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineSet has nil replicas",
+			name: "When autoscaling is enabled and the MachineSet has nil replicas, it should set current replicas to 1 and set annotations",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -129,8 +129,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it does not set current replicas but set annotations when autoscaling is enabled" +
-				" and the MachineSet has nil replicas",
+			name: "When autoscaling is enabled and the MachineSet has nil replicas with min=2, it should set replicas to min and set annotations",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -155,8 +154,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.min and set annotations when autoscaling is enabled" +
-				" and the MachineSet has replicas < autoScaling.min",
+			name: "When autoscaling is enabled and the MachineSet has replicas below min, it should set replicas to autoScaling.min",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -181,8 +179,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.max and set annotations when autoscaling is enabled" +
-				" and the MachineSet has replicas > autoScaling.max",
+			name: "When autoscaling is enabled and the MachineSet has replicas above max, it should set replicas to autoScaling.max",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -258,7 +255,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for KubeVirt platform even when NodePool specifies min=0",
+			name: "When KubeVirt platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -286,7 +283,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for Agent platform even when NodePool specifies min=0",
+			name: "When Agent platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -336,7 +333,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 		expectAutoscalerAnnotations map[string]string
 	}{
 		{
-			name: "it sets replicas when autoscaling is disabled",
+			name: "When autoscaling is disabled, it should set replicas directly",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -355,7 +352,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it keeps current replicas and set annotations when autoscaling is enabled",
+			name: "When autoscaling is enabled and replicas are within range, it should keep current replicas and set annotations",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -380,8 +377,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has not been created yet",
+			name: "When autoscaling is enabled and the MachineDeployment has not been created yet, it should set replicas to 1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -399,8 +395,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has 0 replicas",
+			name: "When autoscaling is enabled and the MachineDeployment has 0 replicas, it should set replicas to 1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -425,8 +420,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to 1 and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has nil replicas",
+			name: "When autoscaling is enabled and the MachineDeployment has nil replicas, it should set replicas to 1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -451,8 +445,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it does not set current replicas but set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has nil replicas",
+			name: "When autoscaling is enabled and the MachineDeployment has nil replicas with min=2, it should set replicas to min",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -477,8 +470,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.min and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has replicas < autoScaling.min",
+			name: "When autoscaling is enabled and the MachineDeployment has replicas below min, it should set replicas to autoScaling.min",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -503,8 +495,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it sets current replicas to autoScaling.max and set annotations when autoscaling is enabled" +
-				" and the MachineDeployment has replicas > autoScaling.max",
+			name: "When autoscaling is enabled and the MachineDeployment has replicas above max, it should set replicas to autoScaling.max",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -580,7 +571,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for KubeVirt platform even when NodePool specifies min=0",
+			name: "When KubeVirt platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -608,7 +599,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for Agent platform even when NodePool specifies min=0",
+			name: "When Agent platform specifies min=0, it should enforce min=1",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -804,6 +795,10 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
 	g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(template), gotMachineTemplate)).To(Succeed())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
+	// ApplyManifest adds a desired-state-hash annotation; copy it so the assertion compares the rest of the annotations.
+	if hash, ok := gotMachineTemplate.Annotations[upsert.DesiredStateHashAnnotation]; ok {
+		expectedMachineTemplate.Annotations[upsert.DesiredStateHashAnnotation] = hash
+	}
 	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
 }
 
@@ -996,7 +991,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 		expect   int
 	}{
 		{
-			name: "defaults to 1 when no maxUnavailable specified",
+			name: "When no maxUnavailable is specified, it should default to 1",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1008,7 +1003,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 1,
 		},
 		{
-			name: "can handle default value of 1",
+			name: "When maxUnavailable is set to 1, it should return 1",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1022,7 +1017,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 1,
 		},
 		{
-			name: "can handle other values",
+			name: "When maxUnavailable is set to 2, it should return 2",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1036,7 +1031,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 2,
 		},
 		{
-			name: "can handle percent values",
+			name: "When maxUnavailable is set to 75 percent, it should return 3",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1050,7 +1045,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			expect: 3,
 		},
 		{
-			name: "can handle roundable values",
+			name: "When maxUnavailable is set to 10 percent, it should return 1",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Management: hyperv1.NodePoolManagement{
@@ -1084,12 +1079,12 @@ func TestTaintsToJSON(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "",
+			name:     "When taints are empty, it should return an empty JSON array",
 			taints:   []hyperv1.Taint{},
 			expected: "[]",
 		},
 		{
-			name: "",
+			name: "When multiple taints are provided, it should return valid JSON with all taints",
 			taints: []hyperv1.Taint{
 				{
 					Key:    "foo",
@@ -1233,61 +1228,61 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 		expected *capiv1.MachineHealthCheck
 	}{
 		{
-			name:     "defaults",
+			name:     "When defaults are used, it should create MHC with default values",
 			hc:       hostedcluster(),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
 		{
-			name:     "timeout override in hc",
+			name:     "When timeout override is set in HostedCluster, it should use override value",
 			hc:       hostedcluster(withTimeoutOverride("10m")),
 			np:       nodepool(),
 			expected: healthcheck(withTimeout(10 * time.Minute)),
 		},
 		{
-			name:     "timeout override in np",
+			name:     "When timeout override is set in NodePool, it should use override value",
 			hc:       hostedcluster(),
 			np:       nodepool(withTimeoutOverride("40m")),
 			expected: healthcheck(withTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "timeout override in both, np takes precedence",
+			name:     "When timeout override is set in both, it should use NodePool value",
 			hc:       hostedcluster(withTimeoutOverride("10m")),
 			np:       nodepool(withTimeoutOverride("40m")),
 			expected: healthcheck(withTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "invalid timeout override, retains default",
+			name:     "When timeout override is invalid, it should retain default",
 			hc:       hostedcluster(withTimeoutOverride("foo")),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
 		{
-			name:     "node startup timeout override in hc",
+			name:     "When node startup timeout override is set in HostedCluster, it should use override value",
 			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
 			np:       nodepool(),
 			expected: healthcheck(withNodeStartupTimeout(10 * time.Minute)),
 		},
 		{
-			name:     "node startup timeout override in np",
+			name:     "When node startup timeout override is set in NodePool, it should use override value",
 			hc:       hostedcluster(),
 			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
 			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "node startup timeout override in both, np takes precedence",
+			name:     "When node startup timeout override is set in both, it should use NodePool value",
 			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
 			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
 			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
 		},
 		{
-			name:     "node startup invalid timeout override, retains default",
+			name:     "When node startup timeout override is invalid, it should retain default",
 			hc:       hostedcluster(withNodeStartupTimeoutOverride("foo")),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
 		{
-			name:     "invalid maxunhealthy override value, default is preserved",
+			name:     "When maxunhealthy override value is invalid, it should preserve default",
 			hc:       hostedcluster(),
 			np:       nodepool(withMaxUnhealthyOverride("foo")),
 			expected: healthcheck(),
@@ -1374,7 +1369,7 @@ func TestCAPIReconcile(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -1470,7 +1465,7 @@ func TestCAPIReconcile(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -1577,7 +1572,7 @@ func TestCAPIReconcile(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -1691,7 +1686,7 @@ func TestCAPIReconcile(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -1745,7 +1740,7 @@ func TestCAPIReconcile(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineDeployment",
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, it should propagate them to MachineDeployment",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-nodepool",
@@ -1785,7 +1780,7 @@ func TestCAPIReconcile(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -2027,7 +2022,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 		nodePool *hyperv1.NodePool
 	}{
 		{
-			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, they should propagate to MachineSet",
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are set, it should propagate them to MachineSet",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-nodepool",
@@ -2052,7 +2047,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 			},
 		},
 		{
-			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are nil, they should propagate as nil to MachineSet",
+			name: "When NodeDrainTimeout and NodeVolumeDetachTimeout are nil, it should propagate them as nil to MachineSet",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-nodepool",
@@ -2091,7 +2086,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -2231,7 +2226,7 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -2379,7 +2374,7 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
 							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
 							RolesRef:                    hyperv1.AWSRolesRef{},
-							ResourceTags:                []hyperv1.AWSResourceTag{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
 							EndpointAccess:              "",
 							AdditionalAllowedPrincipals: []string{},
 							MultiArch:                   false,
@@ -3542,13 +3537,13 @@ func TestNewCAPI(t *testing.T) {
 		expectedErrorMsg string
 	}{
 		{
-			name:             "when token is nil it should fail",
+			name:             "When token is nil, it should fail",
 			token:            nil,
 			capiClusterName:  "test-cluster",
 			expectedErrorMsg: "token can not be nil",
 		},
 		{
-			name: "when capiClusterName is empty it should fail",
+			name: "When capiClusterName is empty, it should fail",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{},
 			},
@@ -3556,7 +3551,7 @@ func TestNewCAPI(t *testing.T) {
 			expectedErrorMsg: "capiClusterName can not be empty",
 		},
 		{
-			name: "succeeds with valid parameters",
+			name: "When valid parameters are provided, it should succeed",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{},
 			},
@@ -3595,7 +3590,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When all v1beta1 and v1beta2 fields agree it should return true",
+			name: "When all v1beta1 and v1beta2 fields agree, it should return true",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3610,7 +3605,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees it should return false",
+			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3625,7 +3620,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 availableReplicas disagrees it should return false",
+			name: "When v1beta1 looks complete but v1beta2 availableReplicas disagrees, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3640,7 +3635,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta1 is not complete it should return false without checking v1beta2",
+			name: "When v1beta1 is not complete, it should return false without checking v1beta2",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3649,7 +3644,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta2 status is nil it should fall back to v1beta1 only",
+			name: "When v1beta2 status is nil, it should fall back to v1beta1 only",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 1},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3658,7 +3653,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When v1beta1 replicas does not match spec it should return false",
+			name: "When v1beta1 replicas does not match spec, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &three},
@@ -3673,7 +3668,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta2 upToDateReplicas is nil it should return false",
+			name: "When v1beta2 upToDateReplicas is nil, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3687,7 +3682,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When v1beta2 availableReplicas is nil it should return false",
+			name: "When v1beta2 availableReplicas is nil, it should return false",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
@@ -3701,7 +3696,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When desired replicas is zero and v1beta2 fields are nil it should return false",
+			name: "When desired replicas is zero and v1beta2 fields are nil, it should return false",
 			md: func() *capiv1.MachineDeployment {
 				zero := int32(0)
 				return &capiv1.MachineDeployment{
@@ -3721,6 +3716,377 @@ func TestMachineDeploymentComplete(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(MachineDeploymentComplete(tc.md)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestReconcileMachineHealthCheckAnnotation(t *testing.T) {
+	t.Parallel()
+	t.Run("When reconcileMachineHealthCheck is called, it should set the nodePoolAnnotation on the MHC", func(t *testing.T) {
+		g := NewWithT(t)
+		np := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nodepool"},
+			Spec:       hyperv1.NodePoolSpec{ClusterName: "cluster"},
+		}
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cluster"}}
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: hc,
+					nodePool:      np,
+				},
+			},
+			capiClusterName: "cluster",
+		}
+		mhc := &capiv1.MachineHealthCheck{}
+		err := capi.reconcileMachineHealthCheck(t.Context(), mhc)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(mhc.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "ns/nodepool"))
+	})
+	t.Run("When reconcileSpotMachineHealthCheck is called, it should set the nodePoolAnnotation on the spot MHC", func(t *testing.T) {
+		g := NewWithT(t)
+		np := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "nodepool"},
+			Spec:       hyperv1.NodePoolSpec{ClusterName: "cluster"},
+		}
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "cluster"}}
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: hc,
+					nodePool:      np,
+				},
+			},
+			capiClusterName: "cluster",
+		}
+		mhc := &capiv1.MachineHealthCheck{}
+		err := capi.reconcileSpotMachineHealthCheck(t.Context(), mhc)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(mhc.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "ns/nodepool"))
+	})
+}
+
+func TestMHCRemediationAllowedBubbledUpToReady(t *testing.T) {
+	t.Parallel()
+
+	mhcMessage := "Remediation is not allowed, the number of not started or unhealthy machines exceeds maxUnhealthy (total: 5, unhealthy: 3, maxUnhealthy: 2)"
+	maxUnavailable := intstr.FromInt(0)
+	maxSurge := intstr.FromInt(1)
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
+	capiClusterName := "infra-id"
+
+	tests := []struct {
+		name                string
+		mhcConditions       capiv1.Conditions
+		expectedReadyStatus corev1.ConditionStatus
+		expectedReadyReason string
+		expectedMessage     string
+	}{
+		{
+			name: "When MHC RemediationAllowed is False, it should set Ready to False with TooManyUnhealthy reason",
+			mhcConditions: capiv1.Conditions{
+				{
+					Type:    capiv1.RemediationAllowedCondition,
+					Status:  corev1.ConditionFalse,
+					Reason:  capiv1.TooManyUnhealthyReason,
+					Message: mhcMessage,
+				},
+			},
+			expectedReadyStatus: corev1.ConditionFalse,
+			expectedReadyReason: capiv1.TooManyUnhealthyReason,
+			expectedMessage:     mhcMessage,
+		},
+		{
+			name: "When MHC RemediationAllowed is True, it should not override Ready",
+			mhcConditions: capiv1.Conditions{
+				{
+					Type:   capiv1.RemediationAllowedCondition,
+					Status: corev1.ConditionTrue,
+				},
+			},
+			expectedReadyStatus: corev1.ConditionTrue,
+			expectedReadyReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:                "When MHC has no RemediationAllowed condition, it should not override Ready",
+			mhcConditions:       capiv1.Conditions{},
+			expectedReadyStatus: corev1.ConditionTrue,
+			expectedReadyReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name: "When MHC RemediationAllowed is Unknown, it should not override Ready",
+			mhcConditions: capiv1.Conditions{
+				{
+					Type:   capiv1.RemediationAllowedCondition,
+					Status: corev1.ConditionUnknown,
+				},
+			},
+			expectedReadyStatus: corev1.ConditionTrue,
+			expectedReadyReason: hyperv1.AsExpectedReason,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+						AutoRepair: true,
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Conditions: []hyperv1.NodePoolCondition{
+						{
+							Type:   hyperv1.NodePoolReachedIgnitionEndpoint,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
+							AdditionalAllowedPrincipals: []string{},
+						},
+					},
+				},
+			}
+
+			controlplaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+			// Build the CAPI struct first (without a client) so we can compute the
+			// UserDataSecret name and pre-populate the MachineDeployment with matching
+			// values. This prevents propagateVersionAndTemplate from returning early
+			// and skipping reconcileMachineDeploymentStatus.
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						hostedCluster:         hostedCluster,
+						nodePool:              nodePool,
+						controlplaneNamespace: controlplaneNamespace,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "target-version",
+									},
+								},
+							},
+						},
+					},
+					cpoCapabilities:        &CPOCapabilities{},
+					CreateOrUpdateProvider: upsert.New(false),
+				},
+				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
+			}
+
+			// Pre-create the MHC with the desired RemediationAllowed status condition.
+			// CreateOrUpdate in Reconcile() will Get this object (loading the status),
+			// then Update spec/annotations while preserving the status.
+			existingMHC := &capiv1.MachineHealthCheck{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nodePool.GetName(),
+					Namespace: controlplaneNamespace,
+				},
+				Status: capiv1.MachineHealthCheckStatus{
+					Conditions: tt.mhcConditions,
+				},
+			}
+
+			// Pre-create a MachineDeployment with Ready=True in status and matching
+			// DataSecretName/InfrastructureRef so that reconcileMachineDeploymentStatus
+			// runs (propagateVersionAndTemplate returns false) and sets Ready=True on
+			// the NodePool. This lets us verify that the RemediationAllowed check
+			// either overrides Ready or leaves it intact.
+			existingMD := &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nodePool.GetName(),
+					Namespace: controlplaneNamespace,
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							Bootstrap: capiv1.Bootstrap{
+								DataSecretName: ptr.To(capi.UserDataSecret().Name),
+							},
+							InfrastructureRef: corev1.ObjectReference{
+								Name: awsMachineTemplateName,
+							},
+						},
+					},
+				},
+				Status: capiv1.MachineDeploymentStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiv1.ReadyCondition,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(nodePool, existingMHC, existingMD).
+				WithObjects(
+					&capiv1.MachineSet{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-machineset",
+							Namespace: controlplaneNamespace,
+							Annotations: map[string]string{
+								nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+							},
+						},
+						Spec: capiv1.MachineSetSpec{
+							Template: capiv1.MachineTemplateSpec{
+								Spec: capiv1.MachineSpec{
+									InfrastructureRef: corev1.ObjectReference{
+										Kind:       "AWSMachineTemplate",
+										APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+										Namespace:  controlplaneNamespace,
+										Name:       awsMachineTemplateName,
+									},
+								},
+							},
+						},
+					},
+					&capiaws.AWSMachineTemplate{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      awsMachineTemplateName,
+							Namespace: controlplaneNamespace,
+							Annotations: map[string]string{
+								nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+							},
+						},
+					},
+				).
+				Build()
+
+			// Now set the client on the CAPI struct.
+			capi.Client = c
+
+			ctx := ctrl.LoggerInto(t.Context(), logr.Discard())
+			err := capi.Reconcile(ctx)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			readyCond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReadyConditionType)
+			g.Expect(readyCond).NotTo(BeNil())
+			g.Expect(readyCond.Status).To(Equal(tt.expectedReadyStatus))
+			g.Expect(readyCond.Reason).To(Equal(tt.expectedReadyReason))
+			if tt.expectedMessage != "" {
+				g.Expect(readyCond.Message).To(Equal(tt.expectedMessage))
+			}
+		})
+	}
+}
+
+func TestMHCRemediationAllowedChangedPredicate(t *testing.T) {
+	t.Parallel()
+
+	pred := mhcRemediationAllowedChangedPredicate()
+
+	tests := []struct {
+		name     string
+		oldConds capiv1.Conditions
+		newConds capiv1.Conditions
+		expected bool
+	}{
+		{
+			name:     "When RemediationAllowed changes from True to False, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed changes from False to True, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed appears for the first time, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed is removed, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			newConds: capiv1.Conditions{},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed status is unchanged but Reason changes, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "ReasonA"}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "ReasonB"}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed status is unchanged but Message changes, it should trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "TooManyUnhealthy", Message: "unhealthy: 3, maxUnhealthy: 2"}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionFalse, Reason: "TooManyUnhealthy", Message: "unhealthy: 4, maxUnhealthy: 2"}},
+			expected: true,
+		},
+		{
+			name:     "When RemediationAllowed status and Reason and Message are all unchanged, it should not trigger reconciliation",
+			oldConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			newConds: capiv1.Conditions{{Type: capiv1.RemediationAllowedCondition, Status: corev1.ConditionTrue}},
+			expected: false,
+		},
+		{
+			name:     "When neither old nor new has RemediationAllowed, it should not trigger reconciliation",
+			oldConds: capiv1.Conditions{},
+			newConds: capiv1.Conditions{},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			e := event.UpdateEvent{
+				ObjectOld: &capiv1.MachineHealthCheck{
+					Status: capiv1.MachineHealthCheckStatus{Conditions: tt.oldConds},
+				},
+				ObjectNew: &capiv1.MachineHealthCheck{
+					Status: capiv1.MachineHealthCheckStatus{Conditions: tt.newConds},
+				},
+			}
+			g.Expect(pred.Update(e)).To(Equal(tt.expected))
 		})
 	}
 }

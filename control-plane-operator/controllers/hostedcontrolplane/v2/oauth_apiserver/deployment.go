@@ -41,21 +41,26 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		config.AuditWebhookService,
 	}
 
+	configuration := cpContext.HCP.Spec.Configuration
+
+	tlsArgs, err := config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		etcdURL := config.DefaultEtcdURL
 		if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 			etcdURL = cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint
 		}
 
-		configuration := cpContext.HCP.Spec.Configuration
 		c.Args = append(c.Args,
 			fmt.Sprintf("--api-audiences=%s", cpContext.HCP.Spec.IssuerURL),
 			fmt.Sprintf("--etcd-servers=%s", etcdURL),
-			fmt.Sprintf("--tls-min-version=%s", config.MinTLSVersion(configuration.GetTLSSecurityProfile())),
 		)
 
-		if cipherSuites := config.CipherSuites(configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
 		}
 
 		if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {

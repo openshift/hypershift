@@ -5,6 +5,8 @@ data:
     = \n"
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: f01c54a68f92d444473aec463759e4fd509723ff23af11644d316789c3d11219
   name: openstack-cloud-config
   namespace: hcp-namespace
   ownerReferences:

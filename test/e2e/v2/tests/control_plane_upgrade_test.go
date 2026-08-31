@@ -17,12 +17,17 @@ limitations under the License.
 package tests
 
 import (
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -31,20 +36,23 @@ import (
 func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade the control plane from N-1 to latest", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedCluster()
 		ctx := testCtx.Context
-		hc := testCtx.GetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
 		Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
+
+		testCtx.SkipIfVersionBelow(e2eutil.Version422)
 
 		var startingVersion string
 		if hc.Status.Version != nil && len(hc.Status.Version.History) > 0 {
 			startingVersion = hc.Status.Version.History[0].Version
 		}
+
 		GinkgoWriter.Printf("Starting upgrade from version %s to image %s\n", startingVersion, latestImage)
 
-		err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+		err = e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Release.Image = latestImage
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)
@@ -53,16 +61,33 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 		})
 		Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster release image")
 
-		By("Waiting for control plane components to complete rollout")
-		e2eutil.GinkgoAtLeast(e2eutil.Version420)
-		e2eutil.WaitForControlPlaneComponentRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc, startingVersion)
+		By(fmt.Sprintf("Waiting for the control plane and data plane to reach image %s", latestImage))
+		Eventually(func(g Gomega) {
+			currentHC := &hyperv1.HostedCluster{}
+			hcErr := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC)
+			if hcErr != nil {
+				g.Expect(hcErr).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
+				return
+			}
 
-		By("Waiting for control plane version to complete rollout")
-		e2eutil.GinkgoAtLeast(e2eutil.Version422)
-		e2eutil.WaitForControlPlaneRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
+			g.Expect(currentHC.Status.ControlPlaneVersion.Desired.Image).To(Equal(latestImage))
+			if len(currentHC.Status.ControlPlaneVersion.History) == 0 {
+				g.Expect(currentHC.Status.ControlPlaneVersion.History).NotTo(BeEmpty())
+				return
+			}
+			g.Expect(currentHC.Status.ControlPlaneVersion.History[0].State).To(Equal(configv1.CompletedUpdate))
 
-		By("Waiting for data plane rollout to complete")
-		e2eutil.WaitForDataPlaneRollout(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
+			if currentHC.Status.Version == nil {
+				g.Expect(currentHC.Status.Version).NotTo(BeNil())
+				return
+			}
+			g.Expect(currentHC.Status.Version.Desired.Image).To(Equal(latestImage))
+			if len(currentHC.Status.Version.History) == 0 {
+				g.Expect(currentHC.Status.Version.History).NotTo(BeEmpty())
+				return
+			}
+			g.Expect(currentHC.Status.Version.History[0].State).To(Equal(configv1.CompletedUpdate))
+		}).WithContext(ctx).WithTimeout(30 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
 		// Re-fetch HC after upgrade
 		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())

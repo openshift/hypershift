@@ -22,12 +22,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
@@ -37,6 +34,8 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -45,9 +44,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/yaml"
+
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/google/go-cmp/cmp"
 )
 
 // RegisterNodePoolLifecycleTests registers all NodePool lifecycle test cases.
@@ -65,6 +68,7 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolNTOPerformanceProfileTest(getTestCtx)
 	NodePoolAutoRepairTest(getTestCtx)
 	NodePoolDiskEncryptionTest(getTestCtx)
+	NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
@@ -85,14 +89,12 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] N
 func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out a MachineConfig change via Replace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/CNV-38196
+		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -111,7 +113,7 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
 		DeferCleanup(func() {
@@ -187,17 +189,13 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out an NTO Tuned config change via Replace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
-		}
-		if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
+		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -216,7 +214,7 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
 		DeferCleanup(func() {
@@ -261,17 +259,13 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 	It("should roll out an NTO Tuned config change via InPlace upgrade strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			Skip("test is skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
-		}
-		if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
+		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -284,7 +278,7 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 			pool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
 		DeferCleanup(func() {
@@ -330,10 +324,11 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade a NodePool from previous to latest release via Replace strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -359,7 +354,7 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at previous release %s\n", np.Name, previousImage)
 		DeferCleanup(func() {
@@ -408,9 +403,6 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
-		// Verify osImageStream status after upgrade, if the OSStreams feature gate is enabled.
-		verifyOSImageStreamAfterUpgrade(ctx, testCtx, np)
-
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
 }
@@ -420,10 +412,11 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade a NodePool from previous to latest release via InPlace strategy", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
@@ -443,7 +436,7 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 			pool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at previous release %s\n", np.Name, previousImage)
 		DeferCleanup(func() {
@@ -491,9 +484,6 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
-		// Verify osImageStream status after upgrade, if the OSStreams feature gate is enabled.
-		verifyOSImageStreamAfterUpgrade(ctx, testCtx, np)
-
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
 }
@@ -504,15 +494,13 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should perform a rolling upgrade when instance type or VM size changes", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
+		testCtx.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 		platform := hc.Spec.Platform.Type
-		if platform != hyperv1.AWSPlatform && platform != hyperv1.AzurePlatform {
-			Skip("rolling upgrade test only supported on AWS and Azure platforms")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -527,11 +515,11 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 			case hyperv1.AWSPlatform:
 				pool.Spec.Platform.AWS.InstanceType = "m5.large"
 			case hyperv1.AzurePlatform:
-				pool.Spec.Platform.Azure.VMSize = "Standard_D2s_v3"
+				pool.Spec.Platform.Azure.VMSize = "Standard_D2s_v5"
 			}
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s with 2 replicas\n", np.Name)
 		DeferCleanup(func() {
@@ -602,16 +590,16 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool at N-1 release and have ready nodes", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
 
 		n1Image := internal.GetEnvVarValue("E2E_N1_RELEASE_IMAGE")
 		if n1Image == "" {
 			Skip("E2E_N1_RELEASE_IMAGE not set, skipping N-1 release test")
 		}
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -624,7 +612,7 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 			pool.Spec.Release.Image = n1Image
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at N-1 release %s\n", np.Name, n1Image)
 		DeferCleanup(func() {
@@ -641,16 +629,16 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool at N-2 release and have ready nodes", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
 
 		n2Image := internal.GetEnvVarValue("E2E_N2_RELEASE_IMAGE")
 		if n2Image == "" {
 			Skip("E2E_N2_RELEASE_IMAGE not set, skipping N-2 release test")
 		}
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -663,7 +651,7 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 			pool.Spec.Release.Image = n2Image
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at N-2 release %s\n", np.Name, n2Image)
 		DeferCleanup(func() {
@@ -682,14 +670,13 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 	It("should mirror KubeletConfig to the hosted cluster and clean up on removal", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if e2eutil.IsLessThan(e2eutil.Version418) {
-			Skip("mirror configs test only applicable for 4.18+")
-		}
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		testCtx.SkipIfVersionBelow(e2eutil.Version418)
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -701,7 +688,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			pool.Spec.Replicas = &oneReplica
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
 		DeferCleanup(func() {
@@ -773,6 +760,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 					return true, "labels are correct", nil
 				},
 			},
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 
 		// Remove KubeletConfig from NodePool and verify cleanup
@@ -802,6 +791,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 					return want == got, fmt.Sprintf("expected %d KubeletConfig ConfigMaps, got %d", want, got), nil
 				},
 			}, nil,
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 	})
 }
@@ -813,18 +804,19 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 	It("should propagate and remove additional trust bundle to/from the hosted cluster", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		e2eutil.GinkgoAtLeast(e2eutil.Version418)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		version := testCtx.SkipIfVersionBelow(e2eutil.Version418)
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
 		const (
 			defaultPollInterval                 = 15 * time.Second
-			nodePoolConfigUpdateStartTimeout    = 5 * time.Minute
+			nodePoolConfigUpdateStartTimeout    = 10 * time.Minute
 			nodePoolConfigUpdateFinishTimeout   = 20 * time.Minute
 			cpoDeploymentUpdateTimeout          = 10 * time.Minute
 			guestUserCABundlePropagationTimeout = 5 * time.Minute
@@ -868,7 +860,14 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		// Defer cleanup: remove trust bundle reference from HostedCluster
 		DeferCleanup(func() {
-			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, testCtx.GetHostedCluster(), func(obj *hyperv1.HostedCluster) {
+			currentHC := &hyperv1.HostedCluster{}
+			if err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {
+				if !apierrors.IsNotFound(err) {
+					GinkgoWriter.Printf("Warning: cleanup: failed to get HostedCluster: %v\n", err)
+				}
+				return
+			}
+			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, currentHC, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.AdditionalTrustBundle = nil
 			})
 			if err != nil && !apierrors.IsNotFound(err) {
@@ -1001,7 +1000,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		)
 
 		// Verify user-ca-bundle is deleted from the hosted cluster (4.22+)
-		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version422) {
+		if version.GE(e2eutil.Version422) {
 			e2eutil.EventuallyNotFound(GinkgoTB(), ctx, hcClient, userCAConfigMap,
 				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 			)
@@ -1015,14 +1014,13 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 	It("should create and manage NTO PerformanceProfile via NodePool TuningConfig", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
-			Skip("test is skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
-		}
-
-		hcClient := testCtx.GetHostedClusterClient()
+		// https://issues.redhat.com/browse/OSASINFRA-3566
+		testCtx.SkipIfPlatform(hyperv1.OpenStackPlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -1034,7 +1032,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 			pool.Spec.Replicas = &oneReplica
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s\n", np.Name)
 		DeferCleanup(func() {
@@ -1105,10 +1103,12 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					return true, "labels are correct", nil
 				},
 			},
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 
 		// Verify status ConfigMap (4.17+)
-		if !e2eutil.IsLessThan(e2eutil.Version417) {
+		if testCtx.VersionAtLeast(e2eutil.Version417) {
 			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "PerformanceProfile status ConfigMap to exist",
 				func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 					list := &corev1.ConfigMapList{}
@@ -1137,6 +1137,8 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 						return true, "status ConfigMap name is as expected", nil
 					},
 				},
+				e2eutil.WithTimeout(20*time.Minute),
+				e2eutil.WithInterval(5*time.Second),
 			)
 		}
 
@@ -1166,6 +1168,8 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					return want == got, fmt.Sprintf("expected %d PerformanceProfile ConfigMaps, got %d", want, got), nil
 				},
 			}, nil,
+			e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(5*time.Second),
 		)
 	})
 }
@@ -1177,15 +1181,15 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 		Skip("auto-repair instance termination not yet implemented for v2 framework")
 
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 		platform := hc.Spec.Platform.Type
 		if platform != hyperv1.AWSPlatform && platform != hyperv1.AzurePlatform {
 			Skip("auto-repair test only supported on AWS and Azure platforms")
 		}
-
-		hcClient := testCtx.GetHostedClusterClient()
 
 		ctx := testCtx.Context
 
@@ -1198,7 +1202,7 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 			pool.Spec.Management.AutoRepair = true
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created auto-repair NodePool %s\n", np.Name)
 		DeferCleanup(func() {
@@ -1220,19 +1224,18 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 	It("should create a NodePool with Azure DiskEncryptionSet and verify it is applied", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		hc := testCtx.GetHostedCluster()
-		if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
-			Skip("disk encryption test only supported on Azure platform")
-		}
+		testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
 
 		diskEncryptionSetID := internal.GetEnvVarValue("E2E_AZURE_DISK_ENCRYPTION_SET_ID")
 		if diskEncryptionSetID == "" {
 			Skip("E2E_AZURE_DISK_ENCRYPTION_SET_ID not set, skipping disk encryption test")
 		}
 
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 
 		ctx := testCtx.Context
 
@@ -1247,7 +1250,7 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		err := testCtx.MgmtClient.Create(ctx, np)
+		err = testCtx.MgmtClient.Create(ctx, np)
 		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created disk encryption NodePool %s\n", np.Name)
 		DeferCleanup(func() {
@@ -1460,50 +1463,6 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 		}, nil,
 		e2eutil.WithTimeout(timeout),
 		e2eutil.WithInterval(5*time.Second),
-	)
-}
-
-// verifyOSImageStreamAfterUpgrade checks that status.osImageStream is set correctly
-// on the NodePool after an upgrade completes. If the OSStreams feature gate is not
-// enabled, the assertion is skipped (the upgrade test itself still passes).
-//
-// TODO(CNTRLPLANE-3032): The default OS stream is currently hardcoded to rhel-9 for all
-// OCP versions. When the hardcoding is removed and OCP >= 5.0 defaults to rhel-10,
-// update expectedStream to use rhel-10 on >= 5.0.
-func verifyOSImageStreamAfterUpgrade(ctx context.Context, testCtx *internal.TestContext, np *hyperv1.NodePool) {
-	GinkgoHelper()
-
-	hasSpecField, err := e2eutil.HasFieldInCRDSchema(ctx, testCtx.MgmtClient,
-		"nodepools.hypershift.openshift.io", "spec.osImageStream")
-	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for spec.osImageStream")
-	if !hasSpecField {
-		GinkgoWriter.Println("OSStreams feature gate is not enabled; skipping osImageStream assertion")
-		return
-	}
-
-	hasStatusField, err := e2eutil.HasFieldInCRDSchema(ctx, testCtx.MgmtClient,
-		"nodepools.hypershift.openshift.io", "status.osImageStream")
-	Expect(err).NotTo(HaveOccurred(), "failed to check CRD schema for status.osImageStream")
-	if !hasStatusField {
-		GinkgoWriter.Println("OSStreams feature gate is not enabled for status; skipping osImageStream assertion")
-		return
-	}
-
-	expectedStream := hyperv1.OSImageStreamRHEL9
-
-	e2eutil.EventuallyObject[*hyperv1.NodePool](
-		GinkgoTB(), ctx,
-		fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s after upgrade", np.Namespace, np.Name, expectedStream),
-		func(pollCtx context.Context) (*hyperv1.NodePool, error) {
-			pool := &hyperv1.NodePool{}
-			err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
-			return pool, err
-		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{
-			e2eutil.OSImageStreamPredicate(expectedStream),
-		},
-		e2eutil.WithTimeout(10*time.Minute),
-		e2eutil.WithInterval(15*time.Second),
 	)
 }
 

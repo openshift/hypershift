@@ -182,7 +182,7 @@ func (n *NetworkManager) CreatePrivateDNSZone(ctx context.Context, resourceGroup
 	privateZoneParams := armprivatedns.PrivateZone{
 		Location: ptr.To("global"),
 	}
-	privateDNSZonePromise, err := privateZoneClient.BeginCreateOrUpdate(ctx, resourceGroupName, name+"-azurecluster."+baseDomain, privateZoneParams, nil)
+	privateDNSZonePromise, err := privateZoneClient.BeginCreateOrUpdate(ctx, resourceGroupName, name+"."+baseDomain, privateZoneParams, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create private DNS zone: %w", err)
 	}

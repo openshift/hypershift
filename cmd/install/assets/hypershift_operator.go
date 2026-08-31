@@ -15,8 +15,10 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -119,6 +121,7 @@ const (
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
 	HypershiftOperatorName                = "operator"
+	HypershiftOperatorHealthProbePort     = 8081
 	ExternalDNSDeploymentName             = "external-dns"
 	HyperShiftInstallCLIVersionAnnotation = "hypershift.openshift.io/install-cli-version"
 )
@@ -396,7 +399,8 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 				Value: "us-east-1",
 			})
 		if o.UseWebIdentity {
-			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			deployment.Spec.Template.Spec.Containers[0].Env = append(
+				deployment.Spec.Template.Spec.Containers[0].Env,
 				corev1.EnvVar{Name: "AWS_SDK_LOAD_CONFIG", Value: "1"},
 			)
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
@@ -425,7 +429,8 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 				},
 			)
 		}
-		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
+		deployment.Spec.Template.Spec.Containers[0].Args = append(
+			deployment.Spec.Template.Spec.Containers[0].Args,
 			"--aws-zone-type=public",
 			"--aws-batch-change-interval=10s",
 			fmt.Sprintf("--aws-zones-cache-duration=%s", awsZonesCacheDuration),
@@ -439,7 +444,8 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 				Name:  "AZURE_SDK_MAX_RETRIES",
 				Value: "5",
 			})
-		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
+		deployment.Spec.Template.Spec.Containers[0].Args = append(
+			deployment.Spec.Template.Spec.Containers[0].Args,
 			"--azure-config-file=/etc/provider/credentials",
 		)
 	case GCPExternalDNSProvider:
@@ -548,6 +554,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
 	EnableCPOOverrides                      bool
+	EnableKarpenterOperator                 bool
 	AdditionalOperatorEnvVars               map[string]string
 	AROHCPKeyVaultUsersClientID             string
 	TechPreviewNoUpgrade                    bool
@@ -558,6 +565,7 @@ type HyperShiftOperatorDeployment struct {
 	ScaleFromZeroSecret                     *corev1.Secret
 	ScaleFromZeroSecretKey                  string
 	ScaleFromZeroProvider                   string
+	CAPIStorageVersion                      string
 	HCPEgressBlockCIDRs                     []string
 }
 
@@ -670,8 +678,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/metrics",
-										Port:   intstr.FromInt(9000),
+										Path:   "/healthz",
+										Port:   intstr.FromInt(HypershiftOperatorHealthProbePort),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
@@ -684,8 +692,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/metrics",
-										Port:   intstr.FromInt(9000),
+										Path:   "/readyz",
+										Port:   intstr.FromInt(HypershiftOperatorHealthProbePort),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
@@ -704,6 +712,11 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								{
 									Name:          "manager",
 									ContainerPort: 9443,
+									Protocol:      corev1.ProtocolTCP,
+								},
+								{
+									Name:          "health",
+									ContainerPort: HypershiftOperatorHealthProbePort,
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
@@ -865,6 +878,12 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	if o.EnableCPOOverrides {
 		envVars = append(envVars, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"})
 	}
+	if o.EnableKarpenterOperator {
+		envVars = append(envVars, corev1.EnvVar{Name: karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, Value: "1"})
+	}
+	if len(o.CAPIStorageVersion) > 0 {
+		envVars = append(envVars, corev1.EnvVar{Name: capicrdmigrator.CAPIStorageVersionEnvVar, Value: o.CAPIStorageVersion})
+	}
 	if len(o.PlatformsInstalled) > 0 {
 		envVars = append(envVars, corev1.EnvVar{Name: "PLATFORMS_INSTALLED", Value: o.PlatformsInstalled})
 	}
@@ -908,7 +927,8 @@ func (o HyperShiftOperatorDeployment) addOIDCResources(args *[]string, volumeMou
 		o.OIDCStorageProviderS3Secret == nil || len(o.OIDCStorageProviderS3Secret.Name) == 0 {
 		return
 	}
-	*args = append(*args,
+	*args = append(
+		*args,
 		"--oidc-storage-provider-s3-bucket-name="+o.OIDCBucketName,
 		"--oidc-storage-provider-s3-region="+o.OIDCBucketRegion,
 		"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/"+o.OIDCStorageProviderS3SecretKey,
@@ -931,7 +951,8 @@ func (o HyperShiftOperatorDeployment) addScaleFromZeroResources(args *[]string, 
 	if o.ScaleFromZeroSecret == nil || len(o.ScaleFromZeroSecret.Name) == 0 || len(o.ScaleFromZeroSecretKey) == 0 || len(o.ScaleFromZeroProvider) == 0 {
 		return
 	}
-	*args = append(*args,
+	*args = append(
+		*args,
 		"--scale-from-zero-provider="+o.ScaleFromZeroProvider,
 		"--scale-from-zero-creds=/etc/scale-from-zero-creds/"+o.ScaleFromZeroSecretKey,
 	)
@@ -989,7 +1010,8 @@ func (o HyperShiftOperatorDeployment) addPrivatePlatformResources(envVars *[]cor
 			Name:      "credentials",
 			MountPath: "/etc/provider",
 		})
-		*envVars = append(*envVars,
+		*envVars = append(
+			*envVars,
 			corev1.EnvVar{Name: "AWS_SHARED_CREDENTIALS_FILE", Value: "/etc/provider/" + o.AWSPrivateSecretKey},
 			corev1.EnvVar{Name: "AWS_REGION", Value: o.AWSPrivateRegion},
 			corev1.EnvVar{Name: "AWS_SDK_LOAD_CONFIG", Value: "1"},
@@ -1271,7 +1293,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"apiextensions.k8s.io"},
-				Resources: []string{"customresourcedefinitions"},
+				Resources: []string{"customresourcedefinitions", "customresourcedefinitions/status"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
@@ -1555,7 +1577,8 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 
 	// Add audit log persistence RBAC if enabled
 	if o.EnableAuditLogPersistence {
-		role.Rules = append(role.Rules,
+		role.Rules = append(
+			role.Rules,
 			rbacv1.PolicyRule{
 				APIGroups: []string{""},
 				Resources: []string{"persistentvolumeclaims"},
@@ -2177,7 +2200,8 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 			},
 		}
 
-		mutatingWebhookConfiguration.Webhooks = append(mutatingWebhookConfiguration.Webhooks,
+		mutatingWebhookConfiguration.Webhooks = append(
+			mutatingWebhookConfiguration.Webhooks,
 			admissionregistrationv1.MutatingWebhook{
 				Name: "pods.auditlogpersistence.hypershift.openshift.io",
 				Rules: []admissionregistrationv1.RuleWithOperations{

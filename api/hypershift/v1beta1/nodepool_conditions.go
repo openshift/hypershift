@@ -49,6 +49,9 @@ const (
 	NodePoolUpdatingPlatformMachineTemplateConditionType = "UpdatingPlatformMachineTemplate"
 	// NodePoolReadyConditionType bubbles up CAPI MachineDeployment/MachineSet Ready condition.
 	// This is true when all replicas are ready Nodes.
+	// This may also be set to false when the MachineHealthCheck RemediationAllowed
+	// condition is false (reason TooManyUnhealthy), indicating that auto-repair is
+	// blocked because too many machines are unhealthy.
 	// When this is false for too long, NodePoolAllMachinesReadyConditionType and NodePoolAllNodesHealthyConditionType might provide more context.
 	NodePoolReadyConditionType = "Ready"
 	// NodePoolAllMachinesReadyConditionType bubbles up and aggregates CAPI Machine Ready condition.
@@ -84,6 +87,12 @@ const (
 	// KubeVirtNodesLiveMigratable indicates if all (VirtualMachines) nodes of the kubevirt
 	// hosted cluster can be live migrated without experiencing a node restart
 	NodePoolKubeVirtLiveMigratableType = "KubeVirtNodesLiveMigratable"
+
+	// NodePoolAWSResourceTagConflictConditionType signals when a NodePool defines AWS resource
+	// tags that conflict with HostedCluster tags. True when blocked conflicts exist (HostedCluster
+	// values preserved because override is not allowed). False when no conflicts exist or all
+	// conflicts are explicitly allowed via overridePolicy.
+	NodePoolAWSResourceTagConflictConditionType = "AWSResourceTagConflict"
 )
 
 // PerformanceProfile Conditions
@@ -129,4 +138,6 @@ const (
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
 	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
+	AWSResourceTagConflictDetectedReason  = "TagConflictDetected"
+	AWSResourceTagNoConflictReason        = "NoTagConflict"
 )

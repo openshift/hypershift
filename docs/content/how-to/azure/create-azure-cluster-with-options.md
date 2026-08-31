@@ -81,7 +81,7 @@ spec:
     azure:
       diskEncryptionSetID: <disk_encryption_set_id>
       diskSizeGB: 120
-      vmsize: Standard_D4s_v4
+      vmsize: Standard_D4s_v5
     type: Azure
   release:
     image: <release_image>
@@ -152,16 +152,25 @@ This section walks through how to:
 1. Set up a new resource group, key vault, and key for etcd encryption using KMSv2
 1. Set up the role assignment between the KMS managed identity (MI) and the key vault
 1. Set up the flags needed when creating the Azure HostedCluster
-1. Verify the etcd encryption is setup and working properly 
+1. Verify the etcd encryption is setup and working properly
 
-There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of 
-steps mentioned above. However, this guide will manually walk through those steps.
+!!! important "Managed HSM compatibility"
 
-1a) Create a resource group for the key vault that will house the key used for etcd encryption. 
+    Azure Managed HSM for KMS encryption requires an OpenShift 4.22 or later HostedCluster release and is supported in Azure Public Cloud, Azure US Government Cloud, Azure China Cloud, Azure German Cloud, and Azure Bleu Cloud.
+    Do not configure Managed HSM on an earlier release because its control plane operator does not configure the Managed HSM endpoint or authentication scope.
+    Downgrading a HostedCluster after enabling Managed HSM is not supported.
+
+    The KMS vault type is immutable. An existing HostedCluster that uses Azure Key Vault cannot migrate to Managed HSM through key rotation; create a new HostedCluster to change between those services.
+    Custom Azure Stack Key Vault endpoints are not supported.
+
+There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of
+steps mentioned above. For Managed HSM, use `setup_etcd_managed_hsm.sh` instead. This guide will manually walk through the Key Vault setup steps below.
+
+1a) Create a resource group for the key vault that will house the key used for etcd encryption.
 
 !!! note
 
-    It is assumed this key vault is a different key vault, let's call it MI KV, than the one containing all of the 
+    It is assumed this key vault is a different key vault, let's call it MI KV, than the one containing all of the
     managed identities for the control plane. However, the managed identity for KMS is assumed to be in the MI KV.
 
 ```bash
@@ -173,7 +182,7 @@ az group create --name example-kms --location eastus
 az keyvault create --name example-kms --resource-group example-kms --location eastus --enable-rbac-authorization
 ```
 
-1c) Create a key in the etcd encryption key vault and capture the ID in a variable, KEY_ID. This will be passed when 
+1c) Create a key in the etcd encryption key vault and capture the ID in a variable, KEY_ID. This will be passed when
 creating the Azure HostedCluster in a later step below.
 ```bash
 KEY_ID=$(az keyvault key create \
@@ -185,7 +194,7 @@ KEY_ID=$(az keyvault key create \
   -o tsv)
 ```
 
-2) Create a role assignment between the KMS MI and the resource group where the etcd encryption key vault is located so 
+2) Create a role assignment between the KMS MI and the resource group where the etcd encryption key vault is located so
 that it can encrypt & decrypt objects.
 
 ```bash
@@ -201,12 +210,12 @@ az role assignment create --assignee $OBJECT_ID --role "Key Vault Crypto User" \
 `--kms-credentials-secret-name <your KMS credentials secret name>`
 ```
 
-4) Here are some different things you can do to confirm etcd encryption using KMSv2 is set up properly on the 
+4) Here are some different things you can do to confirm etcd encryption using KMSv2 is set up properly on the
 HCP/HostedCluster:
 
 First, confirm the kube-apiserver pod is using the `encryption-provider-config` flag such as:
 ```
---encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml 
+--encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml
 ```
 
 If you look at this data, it should contain something like this:
@@ -229,16 +238,16 @@ resources:
   - oauthauthorizetokens.oauth.openshift.io
 ```
 
-Next, confirm the ` azure-kms-provider-active` container in the kube-apiserver pod is running properly, there are no 
-errors in the log, and the config file is using the KMS MI. The config file path can be found in the flag on the 
+Next, confirm the ` azure-kms-provider-active` container in the kube-apiserver pod is running properly, there are no
+errors in the log, and the config file is using the KMS MI. The config file path can be found in the flag on the
 container spec:
 ```
---config-file-path=/etc/kubernetes/azure.json 
+--config-file-path=/etc/kubernetes/azure.json
 ```
 
 If you review this data, you should see the KMS MI credentials secret used within it.
 
-Finally, you can create a secret on the HostedCluster and then check the secret on etcd in the etcd pod on the HCP 
+Finally, you can create a secret on the HostedCluster and then check the secret on etcd in the etcd pod on the HCP
 directly:
 
 1) Create a secret on the HostedCluster. Example `kubectl create secret generic kms-test --from-literal=foo=bar`.
@@ -255,7 +264,7 @@ export ETCDCTL_CERT=/etc/etcd/tls/client/etcd-client.crt
 export ETCDCTL_KEY=/etc/etcd/tls/client/etcd-client.key
 export ETCDCTL_ENDPOINTS=https://etcd-client:2379
 ```
-5) Get the secret created on the HostedCluster `etcdctl get /kubernetes.io/secrets/default/kms-test`. You should see it 
+5) Get the secret created on the HostedCluster `etcdctl get /kubernetes.io/secrets/default/kms-test`. You should see it
 is encrypted with KMSv2 by the azure provider:
 ```
 k8s:enc:kms:v2:azure-8298bce7:

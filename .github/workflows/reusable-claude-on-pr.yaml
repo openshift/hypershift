@@ -23,6 +23,12 @@ on:
         description: Space-separated list of allowed Claude tools
         type: string
         default: "Bash Read Write Edit Grep Glob WebFetch"
+      trusted-commands:
+        description: >-
+          Space-separated list of .claude/ files to load from the trusted main branch
+          (e.g. "commands/restructure-commits.md skills/git-commit-format/SKILL.md")
+        type: string
+        default: ""
 
 jobs:
   run:
@@ -72,12 +78,12 @@ jobs:
           owner: hypershift-community
           repositories: hypershift
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.pr.outputs.branch }}
           repository: ${{ steps.pr.outputs.repo }}
           token: ${{ steps.app-token.outputs.token || github.token }}
-          persist-credentials: true
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Add upstream remote
@@ -89,6 +95,18 @@ jobs:
             git fetch upstream main
             git update-ref refs/heads/main refs/remotes/upstream/main
           fi
+
+      - name: Load trusted commands from main
+        if: inputs.trusted-commands != ''
+        env:
+          TRUSTED_COMMANDS: ${{ inputs.trusted-commands }}
+        run: |
+          git rev-parse --verify refs/heads/main >/dev/null 2>&1 || git update-ref refs/heads/main refs/remotes/origin/main
+          for file in $TRUSTED_COMMANDS; do
+            echo "--- Loading .claude/$file from main ---"
+            git show "main:.claude/$file" >> /tmp/trusted-system-prompt.md
+            printf '\n---\n' >> /tmp/trusted-system-prompt.md
+          done
 
       - name: Authenticate to GCP via WIF
         id: gcp-auth
@@ -122,7 +140,6 @@ jobs:
           CLAUDE_CODE_USE_VERTEX: "1"
           CLOUD_ML_REGION: global
           ANTHROPIC_VERTEX_PROJECT_ID: hosted-control-planes
-          GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number }}
           CLAUDE_PROMPT: ${{ inputs.claude-prompt }}
@@ -135,4 +152,48 @@ jobs:
           claude plugin marketplace add openshift-eng/ai-helpers
           claude plugin install openshift-developer@ai-helpers
           claude --version
-          claude -p "$CLAUDE_PROMPT" --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
+          TRUSTED_PROMPT_ARGS=""
+          if [[ -f /tmp/trusted-system-prompt.md ]]; then
+            TRUSTED_PROMPT_ARGS="--append-system-prompt-file /tmp/trusted-system-prompt.md"
+          fi
+          claude -p "$CLAUDE_PROMPT" --bare $TRUSTED_PROMPT_ARGS --model claude-opus-4-6 --max-turns "$MAX_TURNS" --allowedTools "$ALLOWED_TOOLS" --verbose --output-format stream-json
+
+      - name: Push changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token || secrets.REBASE_PUSH_TOKEN || github.token }}
+          PR_REPO: ${{ steps.pr.outputs.repo }}
+          PR_BRANCH: ${{ steps.pr.outputs.branch }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${PR_REPO}.git"
+          if git -c core.hooksPath=/dev/null push --force-with-lease origin "HEAD:${PR_BRANCH}" >/tmp/push.log 2>&1; then
+            cat /tmp/push.log
+            exit 0
+          fi
+          cat /tmp/push.log
+
+          # Neither GITHUB_TOKEN nor a token lacking workflow scope may push commits touching
+          # .github/workflows/, even when those commits come from upstream main rather than the
+          # PR itself. Syncing the fork's default branch makes them already-present, so the next
+          # push carries only PR commits. GitHub words this rejection differently per credential
+          # type ("workflows permission" for app tokens, "workflow scope" for PATs).
+          if grep -qiE 'refusing to allow .* to create or update workflow' /tmp/push.log; then
+            cat >/tmp/push-comment.md <<'EOF'
+          ⚠️ The operation succeeded locally, but the push was rejected by GitHub.
+
+          Your fork is missing workflow files that were added to `main`. Rebasing pulls those
+          commits into your branch, and the bot's token is not permitted to push files under
+          `.github/workflows/` into your fork.
+
+          **To unblock:** open your fork, switch to the `main` branch, click **Sync fork**,
+          then comment `/rebase` again.
+          EOF
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/push-comment.md
+            exit 1
+          fi
+
+          gh pr comment "$PR_NUMBER" --repo "$REPO" \
+            --body "⚠️ The operation succeeded locally but the push failed. If this is a fork PR, please enable **Allow edits from maintainers** and retry."
+          exit 1

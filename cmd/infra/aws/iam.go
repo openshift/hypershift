@@ -115,7 +115,13 @@ var (
 				"ec2:DescribeVolumes",
 				"ec2:DescribeVolumesModifications",
 				"ec2:DetachVolume",
-				"ec2:ModifyVolume"
+				"ec2:ModifyVolume",
+				"ec2:DescribeAvailabilityZones",
+				"ec2:EnableFastSnapshotRestores",
+				"ec2:DescribeInstanceTypes",
+      			"ec2:DescribeVolumeStatus",
+      			"ec2:CopyVolumes",
+      			"ec2:LockSnapshot"
 			],
 			"Resource": "*"
 		},
@@ -250,7 +256,8 @@ var (
 					"arn:*:ec2:*::image/*",
 					"arn:*:ec2:*::snapshot/*",
 					"arn:*:ec2:*:*:security-group/*",
-					"arn:*:ec2:*:*:subnet/*"
+					"arn:*:ec2:*:*:subnet/*",
+					"arn:*:ec2:*:*:capacity-reservation/*"
 				],
 				"Action": [
 					"ec2:RunInstances",

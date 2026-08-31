@@ -32,7 +32,7 @@ func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kube
 	}
 }
 
-func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
 	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
 	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
 	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
@@ -65,9 +65,7 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 
 		nodePool.Status.Platform.KubeVirt.Credentials = hcluster.Spec.Platform.Kubevirt.Credentials.DeepCopy()
 	}
-	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
-	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
-	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS, StreamRHEL9)
+	kubevirtBootImage, err := kubevirt.GetImage(nodePool, releaseImage, infraNS, resolvedRHELStream)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,

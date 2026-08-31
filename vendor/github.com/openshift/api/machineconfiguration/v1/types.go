@@ -113,6 +113,19 @@ type ControllerConfigSpec struct {
 	// +required
 	Images map[string]string `json:"images"`
 
+	// bgpVIPPeersJSON carries the BGP VIP peer configuration (the config.json
+	// payload of the bgp-vip-config ConfigMap) for rendering the frr-k8s
+	// static pod peer file on control plane nodes. Only set when BGP-based
+	// VIP management is enabled.
+	// When omitted, BGP-based VIP management is not configured and no
+	// frr-k8s peer file is rendered.
+	// When set, the value must be between 1 and 65536 characters long.
+	// +openshift:enable:FeatureGate=BGPBasedVIPManagement
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=65536
+	// +optional
+	BGPVIPPeersJSON string `json:"bgpVIPPeersJSON,omitempty"`
+
 	// baseOSContainerImage is the new-format container image for operating system updates.
 	// +required
 	BaseOSContainerImage string `json:"baseOSContainerImage"`
@@ -768,6 +781,21 @@ type KubeletConfigSpec struct {
 	// When specified, the type field can be set to either "Old", "Intermediate", "Modern", "Custom" or omitted for backward compatibility.
 	// +optional
 	TLSSecurityProfile *configv1.TLSSecurityProfile `json:"tlsSecurityProfile,omitempty"`
+
+	// systemGomaxprocsBehavior controls whether the kubelet-auto-node-size service automatically configures
+	// GOMAXPROCS for kubelet and CRI-O system services based on the system reserved CPU allocation.
+	// Valid values are "Autosize" and "Disabled".
+	// When set to "Autosize", the GOMAXPROCS environment variable for kubelet and CRI-O is set to
+	// max(ceil(system_reserved_cpu), 1). This optimizes the runtime parallelism of these Go-based system
+	// services based on their CPU allocation rather than total node capacity.
+	// When set to "Disabled", automatic GOMAXPROCS configuration is disabled and the system services
+	// use Go's default GOMAXPROCS behavior.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default is "Disabled".
+	//
+	// +openshift:enable:FeatureGate=GomaxprocsInjection
+	// +optional
+	SystemGomaxprocsBehavior GomaxprocsBehaviorType `json:"systemGomaxprocsBehavior,omitempty"`
 }
 
 // KubeletConfigStatus defines the observed state of a KubeletConfig
@@ -811,10 +839,17 @@ type KubeletConfigCondition struct {
 type KubeletConfigStatusConditionType string
 
 const (
+	// KubeletConfigAccepted designates whether a KubeletConfig CR has been accepted.
+	// When the condition status is True, the KubeletConfig has been accepted successfully.
+	// When the condition status is False, the KubeletConfig has not been accepted.
+	KubeletConfigAccepted KubeletConfigStatusConditionType = "Accepted"
+
 	// KubeletConfigSuccess designates a successful application of a KubeletConfig CR.
+	// Deprecated: Use KubeletConfigAccepted instead. KubeletConfigSuccess will be removed in a future release.
 	KubeletConfigSuccess KubeletConfigStatusConditionType = "Success"
 
 	// KubeletConfigFailure designates a failure applying a KubeletConfig CR.
+	// Deprecated: Use KubeletConfigAccepted with status False instead. KubeletConfigFailure will be removed in a future release.
 	KubeletConfigFailure KubeletConfigStatusConditionType = "Failure"
 )
 
@@ -955,6 +990,26 @@ type ContainerRuntimeConfiguration struct {
 	// +kubebuilder:validation:MaxItems=10
 	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, x.path == y.path))",message="additionalArtifactStores must not contain duplicate paths"
 	AdditionalArtifactStores []AdditionalArtifactStore `json:"additionalArtifactStores,omitempty"`
+
+	// containerGomaxprocsBehavior controls whether CRI-O automatically injects the GOMAXPROCS environment variable into containers
+	// based on their CPU resource requests.
+	// Valid values are "Autosize" and "Disabled".
+	// When set to "Autosize", CRI-O will automatically set GOMAXPROCS proportional to the container's CPU request,
+	// calculated as max(ceil(cpu_request_in_cores * 2), 1). This helps Go applications optimize their runtime parallelism
+	// based on the allocated CPU resources rather than the total node capacity.
+	// When set to "Disabled", GOMAXPROCS injection is disabled and containers will use Go's default GOMAXPROCS behavior.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default is "Disabled".
+	//
+	// Containers can override the injected GOMAXPROCS value by:
+	// - Setting GOMAXPROCS in the container image Dockerfile (ENV GOMAXPROCS=...)
+	// - Setting GOMAXPROCS in the pod spec (env or envFrom)
+	// - Calling runtime.GOMAXPROCS() programmatically in Go code
+	// - Adding the skip-gomaxprocs.crio.io annotation to the pod
+	//
+	// +openshift:enable:FeatureGate=GomaxprocsInjection
+	// +optional
+	ContainerGomaxprocsBehavior GomaxprocsBehaviorType `json:"containerGomaxprocsBehavior,omitempty"`
 }
 
 type ContainerRuntimeDefaultRuntime string
@@ -965,6 +1020,17 @@ const (
 	ContainerRuntimeDefaultRuntimeRunc    = "runc"
 	ContainerRuntimeDefaultRuntimeCrun    = "crun"
 	ContainerRuntimeDefaultRuntimeDefault = ContainerRuntimeDefaultRuntimeCrun
+)
+
+// GomaxprocsBehaviorType specifies the GOMAXPROCS auto-sizing behavior
+// +kubebuilder:validation:Enum=Autosize;Disabled
+type GomaxprocsBehaviorType string
+
+const (
+	// GomaxprocsBehaviorAutosize enables automatic GOMAXPROCS configuration
+	GomaxprocsBehaviorAutosize GomaxprocsBehaviorType = "Autosize"
+	// GomaxprocsBehaviorDisabled disables automatic GOMAXPROCS configuration
+	GomaxprocsBehaviorDisabled GomaxprocsBehaviorType = "Disabled"
 )
 
 // StorePath is an absolute filesystem path used by additional container storage configurations.

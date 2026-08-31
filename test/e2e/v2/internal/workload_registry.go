@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/blang/semver"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -24,6 +25,7 @@ type WorkloadSpec struct {
 	Type        string
 	Name        string
 	Platform    *hyperv1.PlatformType
+	MaxVersion  *semver.Version // if set, workload is only expected on clusters < this version
 	PodSelector map[string]string
 }
 
@@ -348,8 +350,9 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			},
 		},
 		{
-			Type: "Deployment",
-			Name: "redhat-marketplace-catalog",
+			Type:       "Deployment",
+			Name:       "redhat-marketplace-catalog",
+			MaxVersion: &semver.Version{Major: 4, Minor: 22, Patch: 0},
 			PodSelector: map[string]string{
 				"olm.catalogSource": "redhat-marketplace",
 			},
@@ -515,12 +518,29 @@ func ShouldSkipWorkloadForPlatform(workload WorkloadSpec, hostedCluster *hyperv1
 	return false
 }
 
+// ShouldSkipWorkloadForVersion determines whether the workload should be skipped.
+// Returns true if the cluster version is at or above the workload's MaxVersion.
+func ShouldSkipWorkloadForVersion(workload WorkloadSpec, hcVersion semver.Version) bool {
+	return workload.MaxVersion != nil && hcVersion.GE(*workload.MaxVersion)
+}
+
 // validateControlPlaneWorkloadsByType validates control plane workloads of specified types.
 // This is a generic function that handles both Deployments and StatefulSets.
 func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []string, excludeWorkloads []string) error {
 	workloads := GetControlPlaneWorkloads()
+	hostedCluster, err := testCtx.GetHostedCluster()
+	if err != nil {
+		return fmt.Errorf("failed to get HostedCluster: %w", err)
+	}
+	version, err := testCtx.GetHostedClusterVersion()
+	if err != nil {
+		return fmt.Errorf("failed to get HostedCluster version: %w", err)
+	}
 	for _, workload := range workloads {
-		if ShouldSkipWorkloadForPlatform(workload, testCtx.GetHostedCluster()) {
+		if ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+			continue
+		}
+		if ShouldSkipWorkloadForVersion(workload, version) {
 			continue
 		}
 		if !slices.Contains(workloadTypes, workload.Type) {

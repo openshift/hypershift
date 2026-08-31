@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -55,7 +56,14 @@ func createTestUserWithGroup(ctx context.Context, kc *e2eutil.KeycloakAdminClien
 		},
 	}
 
-	_, err := kc.CreateGroup(ctx, groupName)
+	// Before attempting to create anything, ensure we have a fresh token for
+	// interacting with the Keycloak admin REST API.
+	err := kc.GetAdminToken(ctx)
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("getting admin token: %w", err)
+	}
+
+	_, err = kc.CreateGroup(ctx, groupName)
 	if err != nil {
 		return "", "", "", "", err
 	}
@@ -330,6 +338,7 @@ func TestExternalOIDC(t *testing.T) {
 			t.Run("[OCPFeatureGate:ExternalOIDCWithUpstreamParity] Token is valid, user not authn'd, claim validations not passed", func(t *testing.T) {
 				g := NewWithT(t)
 				username, _, password, _, err := createTestUserWithGroup(ctx, kc, "", false)
+				g.Expect(err).NotTo(HaveOccurred())
 
 				testAuthConfig := *upstreamParityOpts.ExtOIDCConfig
 				testAuthConfig.TestUsers = username + ":" + password

@@ -37,6 +37,7 @@ jobs:
       - name: Deploy to Cloudflare Pages
         env:
           npm_config_cache: ${{ runner.temp }}/.npm
+          HOME: ${{ runner.temp }}
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

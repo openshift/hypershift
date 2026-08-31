@@ -188,7 +188,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 		expectedErr           bool
 	}{
 		{
-			description: "csr missing",
+			description: "When CSR is missing, it should return no error",
 			name:        "test-csr",
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				return nil, apierrors.NewNotFound(certificatesv1.SchemeGroupVersion.WithResource("certificatesigningrequests").GroupResource(), name)
@@ -196,7 +196,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 			expectedErr: false, // nothing to do, no need to error & requeue
 		},
 		{
-			description: "csr not approved",
+			description: "When CSR is not approved, it should take no action",
 			name:        "test-csr",
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				if name != "test-csr" {
@@ -210,7 +210,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 			},
 		},
 		{
-			description: "csr failed",
+			description: "When CSR has failed, it should take no action",
 			name:        "test-csr",
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				if name != "test-csr" {
@@ -230,7 +230,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 			},
 		},
 		{
-			description: "csr fulfilled",
+			description: "When CSR is already fulfilled, it should take no action",
 			name:        "test-csr",
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				if name != "test-csr" {
@@ -251,7 +251,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 			},
 		},
 		{
-			description: "invalid request encoding",
+			description: "When request encoding is invalid, it should return error",
 			name:        "test-csr",
 			signerName:  certificates.SignerNameForHCP(hcp, certificates.CustomerBreakGlassSigner),
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
@@ -277,7 +277,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 			expectedErr: true,
 		},
 		{
-			description: "invalid csr",
+			description: "When CSR is invalid, it should fail validation",
 			name:        "test-csr",
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				if name != "test-csr" {
@@ -320,7 +320,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 			expectedValidationErr: true,
 		},
 		{
-			description: "valid csr",
+			description: "When CSR is valid, it should sign the certificate",
 			name:        "test-csr",
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				if name != "test-csr" {
@@ -353,7 +353,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 			},
 		},
 		{
-			description: "valid sre csr",
+			description: "When SRE CSR is valid, it should sign the certificate",
 			name:        "test-csr",
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				if name != "test-csr" {
@@ -569,43 +569,43 @@ func TestDuration(t *testing.T) {
 		want              time.Duration
 	}{
 		{
-			name:              "can request shorter duration than TTL",
+			name:              "When requesting shorter duration than TTL, it should use requested duration",
 			certTTL:           time.Hour,
 			expirationSeconds: csr.DurationToExpirationSeconds(30 * time.Minute),
 			want:              30 * time.Minute,
 		},
 		{
-			name:              "cannot request longer duration than TTL",
+			name:              "When requesting longer duration than TTL, it should use TTL",
 			certTTL:           time.Hour,
 			expirationSeconds: csr.DurationToExpirationSeconds(3 * time.Hour),
 			want:              time.Hour,
 		},
 		{
-			name:              "cannot request negative duration",
+			name:              "When requesting negative duration, it should use minimum duration",
 			certTTL:           time.Hour,
 			expirationSeconds: csr.DurationToExpirationSeconds(-time.Minute),
 			want:              10 * time.Minute,
 		},
 		{
-			name:              "cannot request duration less than 10 mins",
+			name:              "When requesting duration less than 10 mins, it should use minimum duration",
 			certTTL:           time.Hour,
 			expirationSeconds: csr.DurationToExpirationSeconds(10*time.Minute - time.Second),
 			want:              10 * time.Minute,
 		},
 		{
-			name:              "can request duration of exactly 10 mins",
+			name:              "When requesting exactly 10 mins, it should use requested duration",
 			certTTL:           time.Hour,
 			expirationSeconds: csr.DurationToExpirationSeconds(10 * time.Minute),
 			want:              10 * time.Minute,
 		},
 		{
-			name:              "can request duration equal to the default",
+			name:              "When requesting duration equal to TTL, it should use TTL",
 			certTTL:           time.Hour,
 			expirationSeconds: csr.DurationToExpirationSeconds(time.Hour),
 			want:              time.Hour,
 		},
 		{
-			name:              "can choose not to request a duration to get the default",
+			name:              "When no duration is requested, it should use TTL as default",
 			certTTL:           time.Hour,
 			expirationSeconds: nil,
 			want:              time.Hour,

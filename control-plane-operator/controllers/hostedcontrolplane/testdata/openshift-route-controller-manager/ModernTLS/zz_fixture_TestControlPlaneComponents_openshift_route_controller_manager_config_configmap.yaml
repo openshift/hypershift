@@ -58,6 +58,8 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: b070f17213a2a5ae08906685f3e1985c034fe9f05c30c531baa69b52c9e33984
   name: openshift-route-controller-manager-config
   namespace: hcp-namespace
   ownerReferences:

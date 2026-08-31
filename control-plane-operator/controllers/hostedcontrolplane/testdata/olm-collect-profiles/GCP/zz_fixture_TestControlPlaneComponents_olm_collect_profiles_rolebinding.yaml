@@ -1,6 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 10944b535815a6b89306f1c7fbd0363d766aca1f6931b2f9342ef5038f413f4a
   name: olm-collect-profiles
   namespace: hcp-namespace
   ownerReferences:

@@ -17,12 +17,12 @@ func TestEffectiveShards(t *testing.T) {
 		wantShardNames []string
 	}{
 		{
-			name:    "nil managed returns nil",
+			name:    "When managed etcd is nil, it should return nil",
 			managed: nil,
 			wantLen: 0,
 		},
 		{
-			name: "no shards returns only default",
+			name: "When no shards are configured, it should return only default",
 			managed: &hyperv1.ManagedEtcdSpec{
 				Storage: hyperv1.ManagedEtcdStorageSpec{
 					Type: hyperv1.PersistentVolumeEtcdStorage,
@@ -33,7 +33,7 @@ func TestEffectiveShards(t *testing.T) {
 			wantShardNames: []string{"etcd"},
 		},
 		{
-			name: "with shards returns default plus shards",
+			name: "When shards are configured, it should return default plus shards",
 			managed: &hyperv1.ManagedEtcdSpec{
 				Storage: hyperv1.ManagedEtcdStorageSpec{
 					Type: hyperv1.PersistentVolumeEtcdStorage,
@@ -89,12 +89,12 @@ func TestUnmanagedEffectiveShards(t *testing.T) {
 		wantLen   int
 	}{
 		{
-			name:      "nil returns nil",
+			name:      "When unmanaged etcd is nil, it should return nil",
 			unmanaged: nil,
 			wantLen:   0,
 		},
 		{
-			name: "no shards returns only default",
+			name: "When no shards are configured, it should return only default",
 			unmanaged: &hyperv1.UnmanagedEtcdSpec{
 				Endpoint: "https://etcd:2379",
 				TLS:      hyperv1.EtcdTLSConfig{},
@@ -102,7 +102,7 @@ func TestUnmanagedEffectiveShards(t *testing.T) {
 			wantLen: 1,
 		},
 		{
-			name: "with shards",
+			name: "When shards are configured, it should return default plus shards",
 			unmanaged: &hyperv1.UnmanagedEtcdSpec{
 				Endpoint: "https://etcd:2379",
 				TLS:      hyperv1.EtcdTLSConfig{},
@@ -137,17 +137,17 @@ func TestResourcePrefix(t *testing.T) {
 		want     string
 	}{
 		{
-			name:     "core group",
+			name:     "When resource is in core group, it should use slash prefix",
 			resource: hyperv1.EtcdShardResource{Resource: "events"},
 			want:     "/events",
 		},
 		{
-			name:     "empty string apiGroup",
+			name:     "When apiGroup is empty string, it should use slash prefix",
 			resource: hyperv1.EtcdShardResource{APIGroup: ptr.To(""), Resource: "events"},
 			want:     "/events",
 		},
 		{
-			name:     "non-core group",
+			name:     "When resource is in non-core group, it should include group prefix",
 			resource: hyperv1.EtcdShardResource{APIGroup: ptr.To("coordination.k8s.io"), Resource: "leases"},
 			want:     "coordination.k8s.io/leases",
 		},

@@ -98,3 +98,49 @@ func TestAdaptPodDisruptionBudget(t *testing.T) {
 		g.Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
 	})
 }
+
+func TestIsStorageAndCSIManaged(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		platform hyperv1.PlatformType
+		expected bool
+	}{
+		{
+			name:     "When platform is IBMCloud, it should return false",
+			platform: hyperv1.IBMCloudPlatform,
+			expected: false,
+		},
+		{
+			name:     "When platform is PowerVS, it should return false",
+			platform: hyperv1.PowerVSPlatform,
+			expected: false,
+		},
+		{
+			name:     "When platform is AWS, it should return true",
+			platform: hyperv1.AWSPlatform,
+			expected: true,
+		},
+		{
+			name:     "When platform is Azure, it should return true",
+			platform: hyperv1.AzurePlatform,
+			expected: true,
+		},
+		{
+			name:     "When platform is KubeVirt, it should return true",
+			platform: hyperv1.KubevirtPlatform,
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			result := IsStorageAndCSIManaged(tc.platform)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}

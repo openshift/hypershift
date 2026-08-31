@@ -21,12 +21,12 @@ func TestKarpenterKubeletConfigurationFromNodeClassSpec(t *testing.T) {
 		expected *awskarpenterv1.KubeletConfiguration
 	}{
 		{
-			name:     "When Kubelet is nil it should return nil",
+			name:     "When Kubelet is nil, it should return nil",
 			spec:     hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
 			expected: nil,
 		},
 		{
-			name: "When all karpenter-mapped fields are set it should map them",
+			name: "When all karpenter-mapped fields are set, it should map them",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				Kubelet: hyperkarpenterv1.KubeletConfiguration{
 					MaxPods:     110,
@@ -81,7 +81,7 @@ func TestKarpenterKubeletConfigurationFromNodeClassSpec(t *testing.T) {
 			},
 		},
 		{
-			name: "When only some fields are set it should map only those",
+			name: "When only some fields are set, it should map only those",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				Kubelet: hyperkarpenterv1.KubeletConfiguration{
 					MaxPods: 50,
@@ -92,7 +92,7 @@ func TestKarpenterKubeletConfigurationFromNodeClassSpec(t *testing.T) {
 			},
 		},
 		{
-			name: "When only overflow fields are set it should return nil",
+			name: "When only overflow fields are set, it should return nil",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				Kubelet: hyperkarpenterv1.KubeletConfiguration{
 					Overflow: runtime.RawExtension{Raw: []byte(`{"podPidsLimit":4096}`)},

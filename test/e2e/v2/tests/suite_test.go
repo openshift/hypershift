@@ -18,6 +18,10 @@ package tests
 
 import (
 	"context"
+	"encoding/xml"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -48,6 +52,35 @@ func TestE2EV2(t *testing.T) {
 	// Run the ginkgo test suite
 	RunSpecs(t, "hypershift-e2e")
 }
+
+// ReportAfterSuite writes a supplemental JUnit file containing only informing
+// tests with lifecycle="informing" on each <testcase>. This is picked up by
+// ci-to-bigquery and loaded into the ci_analysis_us.junit BigQuery table,
+// making informing test failures visible to Component Readiness.
+//
+// TODO(CNTRLPLANE-3863): Replace this with OTE's built-in lifecycle JUnit
+// emission once the test framework is ported to OTE.
+var _ = ReportAfterSuite("Write lifecycle-aware JUnit", func(report Report) {
+	artifactDir := internal.GetEnvVarValue("ARTIFACT_DIR")
+	suites := internal.BuildInformingTestsLifecycleReport(report.SuiteDescription, report.SpecReports)
+	if len(suites.Suites) == 0 || len(suites.Suites[0].TestCases) == 0 {
+		return
+	}
+
+	// The filename here is arbitrary; the CI system ingests all JUnit files written
+	// to the artifact location, so the only constraint to satisfy is that this name
+	// shouldn't conflict with the reports the main Ginkgo report writer produces.
+	const junitFilename = "junit_lifecycle_informing.xml"
+
+	data, err := xml.MarshalIndent(suites, "", "    ")
+	if err != nil {
+		Fail(fmt.Sprintf("failed to marshal lifecycle JUnit: %v", err))
+	}
+	path := filepath.Join(artifactDir, junitFilename)
+	if err := os.WriteFile(path, append([]byte(xml.Header), data...), 0644); err != nil {
+		Fail(fmt.Sprintf("failed to write lifecycle JUnit to %s: %v", path, err))
+	}
+})
 
 var _ = BeforeSuite(func() {
 	ctx := context.Background()

@@ -1,0 +1,37 @@
+name: Docs Publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs-publish.yaml'
+      - '.github/workflows/docs-build-reusable.yaml'
+      - '.github/workflows/docs-deploy-reusable.yaml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: docs-production
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Docs
+    permissions:
+      contents: read
+    uses: openshift/hypershift/.github/workflows/docs-build-reusable.yaml@main
+
+  deploy:
+    name: Deploy Production
+    needs: build
+    permissions:
+      deployments: write
+    uses: openshift/hypershift/.github/workflows/docs-deploy-reusable.yaml@main
+    with:
+      production: true
+    secrets: inherit

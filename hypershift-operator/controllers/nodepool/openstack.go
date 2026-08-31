@@ -49,12 +49,9 @@ func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (st
 
 	return template, nil
 }
-func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage) error {
-	// TODO(CNTRLPLANE-3553): hardcode to rhel-9 until the MCO can install
-	// rhel-10 OS images. Use getRHELStreamForBootImage once MCO support lands.
-	rhelStream := StreamRHEL9
+func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
 	if nodePool.Spec.Platform.OpenStack.ImageName == "" {
-		_, err := openstack.OpenStackReleaseImage(releaseImage, rhelStream)
+		_, err := openstack.OpenStackReleaseImage(releaseImage, resolvedRHELStream)
 		if err != nil {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -65,7 +62,7 @@ func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePoo
 			})
 			return fmt.Errorf("couldn't discover an OpenStack Image for release image: %w", err)
 		}
-		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, releaseImage, nodePool, rhelStream)
+		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, releaseImage, nodePool, resolvedRHELStream)
 		if err != nil {
 			return err
 		}

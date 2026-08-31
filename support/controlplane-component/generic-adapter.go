@@ -4,6 +4,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/k8sutil"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 
@@ -108,4 +109,19 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 	}
 
 	return nil
+}
+
+// NewGenericControllerConfigAdapter returns an adapter function that configures
+// a GenericControllerConfig ConfigMap with the given bind address and network.
+// The adapter function reads the TLS security profile from the HostedControlPlane
+// and generates the appropriate config.yaml data.
+func NewGenericControllerConfigAdapter(bindAddress, bindNetwork string) func(WorkloadContext, *corev1.ConfigMap) error {
+	return func(cpContext WorkloadContext, cm *corev1.ConfigMap) error {
+		return config.SetGenericControllerConfig(
+			bindAddress,
+			bindNetwork,
+			cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile(),
+			cm,
+		)
+	}
 }

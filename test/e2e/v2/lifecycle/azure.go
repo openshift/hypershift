@@ -110,43 +110,46 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+	// Parse EXTRA_ARGS from environment if provided
+	var extraArgs []string
+	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
+		extraArgs = strings.Fields(envArgs)
+	}
+
 	var publicExtraArgs []string
 	if a.encryptionKeyID != "" {
 		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
 	}
+	publicExtraArgs = append(publicExtraArgs, extraArgs...)
 
 	return []ClusterSpec{
 		{
-			Variant:    "public",
-			OutputFile: "cluster-name-public",
-			ExtraArgs:  publicExtraArgs,
+			Variant:   "public",
+			ExtraArgs: publicExtraArgs,
 		},
 		{
-			Variant:    "private",
-			OutputFile: "cluster-name-private",
-			ExtraArgs: []string{
+			Variant: "private",
+			ExtraArgs: append([]string{
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-			},
+			}, extraArgs...),
 		},
 		{
-			Variant:    "oauth-lb",
-			OutputFile: "cluster-name-oauth-lb",
-			ExtraArgs:  []string{"--oauth-publishing-strategy=LoadBalancer"},
+			Variant:   "oauth-lb",
+			ExtraArgs: append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
 		},
 		{
 			Variant:      "upgrade",
-			OutputFile:   "cluster-name-upgrade",
 			ReleaseImage: n1Image,
-			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
+			ExtraArgs:    append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
 		},
 		{
-			Variant:    "autoscaling",
-			OutputFile: "cluster-name-autoscaling",
+			Variant:   "autoscaling",
+			ExtraArgs: extraArgs,
 		},
 		{
-			Variant:    "external-oidc",
-			OutputFile: "cluster-name-external-oidc",
+			Variant:   "external-oidc",
+			ExtraArgs: extraArgs,
 		},
 	}
 }
@@ -191,7 +194,7 @@ func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWat
 // PostCreate runs variant-specific post-creation hooks for each cluster
 // that was created by the lifecycle orchestrator.
 func (a *AzurePlatformConfig) PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
-	if publicName, ok := clusterNames["cluster-name-public"]; ok {
+	if publicName, ok := clusterNames["public"]; ok {
 		if err := a.postCreatePublic(ctx, cl, namespace, publicName); err != nil {
 			return err
 		}
@@ -211,7 +214,7 @@ func (a *AzurePlatformConfig) PostAvailable(ctx context.Context, cl crclient.Wit
 }
 
 func (a *AzurePlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
-	if oidcName, ok := clusterNames["cluster-name-external-oidc"]; ok {
+	if oidcName, ok := clusterNames["external-oidc"]; ok {
 		if err := a.postCreateExternalOIDC(ctx, cl, namespace, oidcName); err != nil {
 			return err
 		}
@@ -327,39 +330,42 @@ func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crc
 	return nil
 }
 
-func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+func (a *AzurePlatformConfig) DefaultTestPlan() TestPlan {
+	return TestPlan{
+		Name:       "azure-full",
+		Platform:   "azure",
+		TestMatrix: a.TestMatrix(),
+	}
+}
+
+func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
 				Name:        "public",
-				ClusterFile: "cluster-name-public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security",
+				Variant:     "public",
+				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
 				Skip:        "KAS allowed CIDRs",
-				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
 				Name:        "private",
-				ClusterFile: "cluster-name-private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || nodepool-osimagestream",
-				JUnitFile:   "junit_self_managed_azure_private.xml",
+				Variant:     "private",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
 			},
 			{
 				Name:        "oauth-lb",
-				ClusterFile: "cluster-name-oauth-lb",
+				Variant:     "oauth-lb",
 				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
-				JUnitFile:   "junit_self_managed_azure_oauth_lb.xml",
 			},
 			{
 				Name:        "autoscaling",
-				ClusterFile: "cluster-name-autoscaling",
+				Variant:     "autoscaling",
 				LabelFilter: "nodepool-autoscaling",
-				JUnitFile:   "junit_nodepool_autoscaling.xml",
 			},
 			{
 				Name:        "external-oidc",
-				ClusterFile: "cluster-name-external-oidc",
-				LabelFilter: "external-oidc",
-				JUnitFile:   "junit_self_managed_azure_external_oidc.xml",
+				Variant:     "external-oidc",
+				LabelFilter: "external-oidc || global-pull-secret",
 			},
 		},
 		Sequential: []SequentialGroup{
@@ -368,16 +374,18 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 				Steps: []TestGroup{
 					{
 						Name:        "upgrade",
-						ClusterFile: "cluster-name-upgrade",
+						Variant:     "upgrade",
 						LabelFilter: "control-plane-upgrade",
-						JUnitFile:   "junit_lifecycle_upgrade.xml",
-						ExtraEnv:    []string{fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE=%s", releaseImage)},
+					},
+					{
+						Name:        "control-plane-tls",
+						Variant:     "upgrade",
+						LabelFilter: "control-plane-pki-operator",
 					},
 					{
 						Name:        "etcd-chaos",
-						ClusterFile: "cluster-name-upgrade",
+						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
-						JUnitFile:   "junit_lifecycle_etcd_chaos.xml",
 					},
 				},
 			},

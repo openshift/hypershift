@@ -12,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -23,35 +25,53 @@ func TestAdaptDeployment(t *testing.T) {
 		imageOverride    string
 		version          string
 		hcpAnnotations   map[string]string
+		tlsProfile       *configv1.TLSSecurityProfile
 		expectedArgs     []string
 		unexpectedArgs   []string
 		expectedImage    string
 		expectedAnnotKey string
 	}{
 		{
-			name:          "When version is 4.19.0, it should add MachineSetPreflightChecks feature gate",
-			version:       "4.19.0",
-			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			name:    "When version is 4.18.0, it should not add feature gate or skip CRD migration flags",
+			version: "4.18.0",
+			unexpectedArgs: []string{
+				"--feature-gates=MachineSetPreflightChecks=false",
+				"--skip-crd-migration-phases=StorageVersionMigration",
+				"--skip-crd-migration-phases=CleanupManagedFields",
+			},
 			expectedImage: "cluster-capi-controllers",
 		},
 		{
-			name:          "When version is 4.20.0, it should add MachineSetPreflightChecks feature gate",
-			version:       "4.20.0",
-			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			name:    "When version is 4.19.0, it should add feature gate but not skip CRD migration phases",
+			version: "4.19.0",
+			expectedArgs: []string{
+				"--feature-gates=MachineSetPreflightChecks=false",
+			},
+			unexpectedArgs: []string{
+				"--skip-crd-migration-phases=StorageVersionMigration",
+				"--skip-crd-migration-phases=CleanupManagedFields",
+			},
 			expectedImage: "cluster-capi-controllers",
 		},
 		{
-			name:           "When version is 4.18.0, it should not add MachineSetPreflightChecks feature gate",
-			version:        "4.18.0",
-			expectedArgs:   []string{},
-			unexpectedArgs: []string{"--feature-gates=MachineSetPreflightChecks=false"},
-			expectedImage:  "cluster-capi-controllers",
+			name:    "When version is 4.20.0, it should add feature gate and skip CRD migration flags",
+			version: "4.20.0",
+			expectedArgs: []string{
+				"--feature-gates=MachineSetPreflightChecks=false",
+				"--skip-crd-migration-phases=StorageVersionMigration",
+				"--skip-crd-migration-phases=CleanupManagedFields",
+			},
+			expectedImage: "cluster-capi-controllers",
 		},
 		{
 			name:          "When imageOverride is set, it should use the override image",
-			version:       "4.19.0",
+			version:       "4.20.0",
 			imageOverride: "quay.io/custom/capi:v1.0.0",
-			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			expectedArgs: []string{
+				"--feature-gates=MachineSetPreflightChecks=false",
+				"--skip-crd-migration-phases=StorageVersionMigration",
+				"--skip-crd-migration-phases=CleanupManagedFields",
+			},
 			expectedImage: "quay.io/custom/capi:v1.0.0",
 		},
 		{
@@ -60,9 +80,33 @@ func TestAdaptDeployment(t *testing.T) {
 			hcpAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation: "test-namespace/test-cluster",
 			},
-			expectedArgs:     []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			expectedArgs: []string{
+				"--feature-gates=MachineSetPreflightChecks=false",
+			},
 			expectedImage:    "cluster-capi-controllers",
 			expectedAnnotKey: k8sutil.HostedClusterAnnotation,
+		},
+		{
+			name:           "When version is 4.22.0, it should not add TLS args",
+			version:        "4.22.0",
+			tlsProfile:     &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expectedArgs:   []string{"--feature-gates=MachineSetPreflightChecks=false"},
+			unexpectedArgs: []string{"--tls-min-version=VersionTLS12"},
+			expectedImage:  "cluster-capi-controllers",
+		},
+		{
+			name:          "When version is 4.23.0, it should add TLS args",
+			version:       "4.23.0",
+			tlsProfile:    &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false", "--tls-min-version=VersionTLS12"},
+			expectedImage: "cluster-capi-controllers",
+		},
+		{
+			name:          "When version is 5.0.0, it should add TLS args",
+			version:       "5.0.0",
+			tlsProfile:    &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+			expectedArgs:  []string{"--feature-gates=MachineSetPreflightChecks=false", "--tls-min-version=VersionTLS12"},
+			expectedImage: "cluster-capi-controllers",
 		},
 	}
 
@@ -76,6 +120,13 @@ func TestAdaptDeployment(t *testing.T) {
 					Name:        "test-hcp",
 					Namespace:   "test-namespace",
 					Annotations: tc.hcpAnnotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: tc.tlsProfile,
+						},
+					},
 				},
 			}
 

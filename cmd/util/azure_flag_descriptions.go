@@ -42,12 +42,12 @@ const (
 
 	// Encryption
 	EnableKMSDescription           = "Create a KMS workload identity for Azure Key Vault KMS encryption. Use this when the cluster will be configured with --encryption-key-id."
-	EncryptionKeyIDDescription     = "Azure Key Vault key identifier used to encrypt etcd data via KMSv2 (format: https://<vault>.vault.azure.net/keys/<key>/<version>)."
+	EncryptionKeyIDDescription     = "Azure Key Vault or Managed HSM key identifier used to encrypt etcd data via KMSv2 (formats: https://<vault>.vault.azure.net/keys/<key>/<version> or https://<hsm>.managedhsm.azure.net/keys/<key>/<version>)."
 	EncryptionAtHostDescription    = "Enable host-based encryption for VM disks and temp disks. Valid values: Enabled, Disabled."
 	DiskEncryptionSetIDDescription = "Full resource ID of an Azure Disk Encryption Set used to encrypt NodePool OS disks with customer-managed keys."
 
 	// VM configuration
-	InstanceTypeDescription = "Azure VM size for NodePool instances (e.g. Standard_D4s_v4, Standard_D8s_v5)."
+	InstanceTypeDescription = "Azure VM size for NodePool instances (e.g. Standard_D4s_v5, Standard_D8s_v5)."
 	RootDiskSizeDescription = "Size of the OS disk in GB for each NodePool VM. Minimum: 16 GB."
 
 	// Disk configuration
@@ -84,5 +84,5 @@ const (
 
 	// Common flags
 	NameDescription  = "A name for the HostedCluster. This name is used to identify resources and must be unique within the namespace."
-	CloudDescription = "Azure cloud environment. Valid values: AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud."
+	CloudDescription = "Azure cloud environment. Valid values: AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud, AzureGermanCloud, AzureBleuCloud."
 )

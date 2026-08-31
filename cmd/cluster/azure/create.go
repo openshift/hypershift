@@ -448,6 +448,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 				KeyName:      o.encryptionKey.KeyName,
 				KeyVersion:   o.encryptionKey.KeyVersion,
 			},
+			KeyVaultType: o.encryptionKey.KeyVaultType,
 		}
 
 		if o.infra.WorkloadIdentities != nil {
@@ -474,7 +475,8 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		}
 	}
 
-	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
+	isPrivateOnly := o.EndpointAccess == string(hyperv1.AzureTopologyPrivate)
+	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "", isPrivateOnly)
 
 	for i, svc := range cluster.Spec.Services {
 		if svc.Service == hyperv1.OAuthServer && o.OAuthPublishingStrategy == "LoadBalancer" {

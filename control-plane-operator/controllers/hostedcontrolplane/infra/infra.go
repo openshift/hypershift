@@ -247,49 +247,35 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 	if serviceStrategy.Type == hyperv1.Route {
 		externalPublicRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
 		externalPrivateRoute := manifests.KubeAPIServerExternalPrivateRoute(hcp.Namespace)
+		hostname := ""
+		if serviceStrategy.Route != nil {
+			hostname = serviceStrategy.Route.Hostname
+		}
 		if netutil.IsPublicHCP(hcp) {
-			// Remove the external private route if it exists
-			err := r.Client.Get(ctx, client.ObjectKeyFromObject(externalPrivateRoute), externalPrivateRoute)
-			if err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to check whether apiserver external private route exists: %w", err)
-				}
-			} else {
-				if err := r.Client.Delete(ctx, externalPrivateRoute); err != nil {
-					return fmt.Errorf("failed to delete apiserver external private route: %w", err)
-				}
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, externalPrivateRoute); err != nil {
+				return err
 			}
-			// Reconcile the external public route
 			if _, err := createOrUpdate(ctx, r.Client, externalPublicRoute, func() error {
-				hostname := ""
-				if serviceStrategy.Route != nil {
-					hostname = serviceStrategy.Route.Hostname
-				}
 				return kas.ReconcileExternalPublicRoute(externalPublicRoute, p.OwnerReference, hostname)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile apiserver external public route %s: %w", externalPublicRoute.Name, err)
 			}
 		} else {
-			// Remove the external public route if it exists
-			err := r.Client.Get(ctx, client.ObjectKeyFromObject(externalPublicRoute), externalPublicRoute)
-			if err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to check whether apiserver external public route exists: %w", err)
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, externalPublicRoute); err != nil {
+				return err
+			}
+			// Reconcile the external private route only when a hostname is configured.
+			// Private clusters without external DNS (no hostname) use only the internal route.
+			if hostname != "" {
+				if _, err := createOrUpdate(ctx, r.Client, externalPrivateRoute, func() error {
+					return kas.ReconcileExternalPrivateRoute(externalPrivateRoute, p.OwnerReference, hostname)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile apiserver external private route %s: %w", externalPrivateRoute.Name, err)
 				}
 			} else {
-				if err := r.Client.Delete(ctx, externalPublicRoute); err != nil {
-					return fmt.Errorf("failed to delete apiserver external public route: %w", err)
+				if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, externalPrivateRoute); err != nil {
+					return err
 				}
-			}
-			// Reconcile the external private route
-			if _, err := createOrUpdate(ctx, r.Client, externalPrivateRoute, func() error {
-				hostname := ""
-				if serviceStrategy.Route != nil {
-					hostname = serviceStrategy.Route.Hostname
-				}
-				return kas.ReconcileExternalPrivateRoute(externalPrivateRoute, p.OwnerReference, hostname)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile apiserver external private route %s: %w", externalPrivateRoute.Name, err)
 			}
 		}
 		// The private KAS route is always present as it is the default

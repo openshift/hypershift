@@ -492,7 +492,6 @@ func (r *reconciler) reconcileStorageAndMisc(ctx context.Context, log logr.Logge
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
-	errs = append(errs, r.ensureGuestAdmissionWebhooksAreValid(ctx))
 	return errs
 }
 
@@ -1644,9 +1643,11 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
+		desiredCaps := capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities)
+		desiredCaps = capabilities.FilterByKnownCapabilities(desiredCaps, clusterVersion.Status.Capabilities.KnownCapabilities)
 		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
+			AdditionalEnabledCapabilities: desiredCaps,
 		}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel
@@ -1793,20 +1794,41 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{
 			"app": manifests.KASConnectionCheckerName,
 		}
-		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
-			"openshift.io/required-scc": "restricted-v2",
-		}
+		// No openshift.io/required-scc annotation: kube-system is exempt from SCC
+		// admission, so the annotation would be inert. Worse, if that exemption ever
+		// changed, restricted-v2 (MustRunAsRange) would reject the explicit UID below
+		// because it falls outside the namespace uid-range, breaking the checker.
+		// Set to nil so the annotation is also cleared from pre-existing deployments.
+		deployment.Spec.Template.ObjectMeta.Annotations = nil
 
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.KASConnectionCheckerName
 		deployment.Spec.Template.Spec.PriorityClassName = "system-node-critical"
 		automount := true
 		deployment.Spec.Template.Spec.AutomountServiceAccountToken = &automount
 
+		// kube-system is exempt from both SCC and Pod Security admission, so nothing
+		// assigns a UID for us and the cli image would otherwise run as root. The UID
+		// must be numeric: RunAsNonRoot alone would fail admission at the kubelet
+		// because the image declares no user. Same approach as konnectivity-agent,
+		// which also runs in kube-system.
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: ptr.To[int64](1000),
+		}
+
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
 			{
 				Name:    "connection-checker",
 				Image:   cliImage,
 				Command: []string{"/bin/sh", "-c", checkScript},
+				SecurityContext: &corev1.SecurityContext{
+					AllowPrivilegeEscalation: ptr.To(false),
+					ReadOnlyRootFilesystem:   ptr.To(true),
+					RunAsNonRoot:             ptr.To(true),
+					Capabilities: &corev1.Capabilities{
+						Drop: []corev1.Capability{"ALL"},
+					},
+				},
+				TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("5m"),
@@ -2399,7 +2421,6 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	}{
 		{manifest: manifests.CertifiedOperatorsCatalogSource, reconcile: olm.ReconcileCertifiedOperatorsCatalogSource},
 		{manifest: manifests.CommunityOperatorsCatalogSource, reconcile: olm.ReconcileCommunityOperatorsCatalogSource},
-		{manifest: manifests.RedHatMarketplaceCatalogSource, reconcile: olm.ReconcileRedHatMarketplaceCatalogSource},
 		{manifest: manifests.RedHatOperatorsCatalogSource, reconcile: olm.ReconcileRedHatOperatorsCatalogSource},
 	}
 
@@ -2423,6 +2444,17 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 				errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
 			}
 		}
+	}
+
+	// Cleanup: delete the deprecated redhat-marketplace CatalogSource if it still exists from a previous version.
+	deprecatedMarketplaceCatalog := &operatorsv1alpha1.CatalogSource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "redhat-marketplace",
+			Namespace: "openshift-marketplace",
+		},
+	}
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, deprecatedMarketplaceCatalog); err != nil {
+		errs = append(errs, fmt.Errorf("failed to delete deprecated redhat-marketplace CatalogSource: %w", err))
 	}
 
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
@@ -2933,61 +2965,6 @@ func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.
 	return false, nil
 }
 
-func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {
-	log := ctrl.LoggerFrom(ctx)
-
-	cpServices := &corev1.ServiceList{}
-	if err := r.cpClient.List(ctx, cpServices, client.InNamespace(r.hcpNamespace)); err != nil {
-		return fmt.Errorf("failed to list control plane services: %w", err)
-	}
-
-	// disallow all urls targeting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
-	disallowedUrls := make([]string, 0)
-	for _, svc := range cpServices.Items {
-		if _, exist := svc.Labels[hyperv1.AllowGuestWebhooksServiceLabel]; exist {
-			continue
-		}
-
-		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s", svc.Name))
-		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc", svc.Name, svc.Namespace))
-		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc.cluster.local", svc.Name, svc.Namespace))
-	}
-
-	validatingWebhookConfigurations := &admissionregistrationv1.ValidatingWebhookConfigurationList{}
-	if err := r.client.List(ctx, validatingWebhookConfigurations); err != nil {
-		return fmt.Errorf("failed to list validatingWebhookConfigurations: %w", err)
-	}
-
-	errs := make([]error, 0)
-	for _, configuration := range validatingWebhookConfigurations.Items {
-		for _, webhook := range configuration.Webhooks {
-			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
-				log.Info("deleting validating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
-				errs = append(errs, r.client.Delete(ctx, &configuration))
-				break
-			}
-		}
-	}
-
-	mutatingWebhookConfigurations := &admissionregistrationv1.MutatingWebhookConfigurationList{}
-	if err := r.client.List(ctx, mutatingWebhookConfigurations); err != nil {
-		errs = append(errs, fmt.Errorf("failed to list mutatingWebhookConfigurations: %w", err))
-		return utilerrors.NewAggregate(errs)
-	}
-
-	for _, configuration := range mutatingWebhookConfigurations.Items {
-		for _, webhook := range configuration.Webhooks {
-			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
-				log.Info("deleting mutating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
-				errs = append(errs, r.client.Delete(ctx, &configuration))
-				break
-			}
-		}
-	}
-
-	return utilerrors.NewAggregate(errs)
-}
-
 // reconcileKubeletConfig Lists the KubeletConfig ConfigMaps from the controlPlane cluster
 // and copies them to the hosted cluster.
 // In addition, it deletes KubeletConfig ConfigMaps from the hosted cluster which are no longer relevant.
@@ -3114,16 +3091,6 @@ func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.C
 	})
 	hostedClusterConfigMap.Data = controlPlaneConfigMap.Data
 	return nil
-}
-
-func isAllowedWebhookUrl(disallowedUrls []string, url string) bool {
-	for i := range disallowedUrls {
-		if strings.Contains(url, disallowedUrls[i]) {
-			return false
-		}
-	}
-
-	return true
 }
 
 func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

@@ -75,62 +75,62 @@ func TestGetAPIVersionForResourceType(t *testing.T) {
 		expected     string
 	}{
 		{
-			name:         "When resource type is public IP addresses it should return correct API version",
+			name:         "When resource type is public IP addresses, it should return correct API version",
 			resourceType: "Microsoft.Network/publicIPAddresses",
 			expected:     "2023-11-01",
 		},
 		{
-			name:         "When resource type is load balancers it should return correct API version",
+			name:         "When resource type is load balancers, it should return correct API version",
 			resourceType: "Microsoft.Network/loadBalancers",
 			expected:     "2023-11-01",
 		},
 		{
-			name:         "When resource type is network interfaces it should return correct API version",
+			name:         "When resource type is network interfaces, it should return correct API version",
 			resourceType: "Microsoft.Network/networkInterfaces",
 			expected:     "2023-11-01",
 		},
 		{
-			name:         "When resource type is network security groups it should return correct API version",
+			name:         "When resource type is network security groups, it should return correct API version",
 			resourceType: "Microsoft.Network/networkSecurityGroups",
 			expected:     "2023-11-01",
 		},
 		{
-			name:         "When resource type is virtual networks it should return correct API version",
+			name:         "When resource type is virtual networks, it should return correct API version",
 			resourceType: "Microsoft.Network/virtualNetworks",
 			expected:     "2023-11-01",
 		},
 		{
-			name:         "When resource type is private DNS zones it should return correct API version",
+			name:         "When resource type is private DNS zones, it should return correct API version",
 			resourceType: "Microsoft.Network/privateDnsZones",
 			expected:     "2020-06-01",
 		},
 		{
-			name:         "When resource type is private DNS zone virtual network links it should return correct API version",
+			name:         "When resource type is private DNS zone virtual network links, it should return correct API version",
 			resourceType: "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
 			expected:     "2020-06-01",
 		},
 		{
-			name:         "When resource type is virtual machines it should return correct API version",
+			name:         "When resource type is virtual machines, it should return correct API version",
 			resourceType: "Microsoft.Compute/virtualMachines",
 			expected:     "2024-03-01",
 		},
 		{
-			name:         "When resource type is disks it should return correct API version",
+			name:         "When resource type is disks, it should return correct API version",
 			resourceType: "Microsoft.Compute/disks",
 			expected:     "2023-10-02",
 		},
 		{
-			name:         "When resource type is storage accounts it should return correct API version",
+			name:         "When resource type is storage accounts, it should return correct API version",
 			resourceType: "Microsoft.Storage/storageAccounts",
 			expected:     "2023-01-01",
 		},
 		{
-			name:         "When resource type is user assigned identities it should return correct API version",
+			name:         "When resource type is user assigned identities, it should return correct API version",
 			resourceType: "Microsoft.ManagedIdentity/userAssignedIdentities",
 			expected:     "2023-01-31",
 		},
 		{
-			name:         "When resource type is unknown it should return default API version",
+			name:         "When resource type is unknown, it should return default API version",
 			resourceType: "Microsoft.Unknown/someResource",
 			expected:     "2021-04-01",
 		},
@@ -153,7 +153,7 @@ func TestGetResourceGroupName(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "When custom resource group name is provided it should use that name",
+			name: "When custom resource group name is provided, it should use that name",
 			opts: DestroyInfraOptions{
 				Name:              "test-cluster",
 				InfraID:           "abc123",
@@ -162,7 +162,7 @@ func TestGetResourceGroupName(t *testing.T) {
 			expected: "custom-rg-name",
 		},
 		{
-			name: "When no resource group name is provided it should use default format",
+			name: "When no resource group name is provided, it should use default format",
 			opts: DestroyInfraOptions{
 				Name:              "test-cluster",
 				InfraID:           "abc123",
@@ -171,7 +171,7 @@ func TestGetResourceGroupName(t *testing.T) {
 			expected: "test-cluster-abc123",
 		},
 		{
-			name: "When empty resource group name is provided it should use default format",
+			name: "When empty resource group name is provided, it should use default format",
 			opts: DestroyInfraOptions{
 				Name:              "my-cluster",
 				InfraID:           "xyz789",

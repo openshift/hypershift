@@ -2,10 +2,7 @@ package util
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/gob"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -30,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -285,65 +280,9 @@ func ChangeUserForKeycloakExtOIDC(t testing.TB, ctx context.Context, clientCfg *
 	g.Expect(err).NotTo(HaveOccurred())
 	idToken, ok := respMap["id_token"].(string)
 	g.Expect(ok).To(BeTrue(), "id_token not found or not a string")
-	refreshToken, ok := respMap["refresh_token"].(string)
-	g.Expect(ok).To(BeTrue(), "refresh_token not found or not a string")
 
-	tokenCache := fmt.Sprintf(`{"id_token":"%s","refresh_token":"%s"}`, idToken, refreshToken)
-	// The CI job that uses Keycloak external OIDC already sets Keycloak token lifetime proper to run case.
-	// "type Key" is copied from https://github.com/openshift/oc/blob/master/pkg/cli/gettoken/tokencache/tokencache.go
-	// We must keep the def of "type Key" as exactly same as original oc repo so that EncodeToString generates correct output
-	type Key struct {
-		IssuerURL string
-		ClientID  string
-	}
+	userCfg := rest.AnonymousClientConfig(rest.CopyConfig(clientCfg))
+	userCfg.BearerToken = idToken
 
-	key := Key{IssuerURL: authConfig.IssuerURL, ClientID: oidcClientID}
-	s := sha256.New()
-	e := gob.NewEncoder(s)
-	err = e.Encode(&key)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	tokenCacheFile := hex.EncodeToString(s.Sum(nil))
-	rootDir := os.Getenv("SHARED_DIR")
-	tokenCacheDir, err := os.MkdirTemp(rootDir, username)
-	t.Cleanup(func() {
-		_ = os.RemoveAll(tokenCacheDir)
-	})
-	g.Expect(err).NotTo(HaveOccurred())
-	err = os.Mkdir(tokenCacheDir+"/oc", 0700)
-	g.Expect(err).NotTo(HaveOccurred())
-	err = os.WriteFile(filepath.Join(tokenCacheDir, "oc", tokenCacheFile), []byte(tokenCache), 0600)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	return GetClientConfigForKeycloakOIDCUser(clientCfg, authConfig, tokenCacheDir)
-}
-
-// GetClientConfigForKeycloakOIDCUser gets a client config for an external OIDC cluster
-func GetClientConfigForKeycloakOIDCUser(clientCfg *rest.Config, authConfig *ExtOIDCConfig, tokenCacheDir string) *rest.Config {
-	userClientConfig := rest.AnonymousClientConfig(rest.CopyConfig(clientCfg))
-	args := []string{
-		"get-token",
-		"--issuer-url=" + authConfig.IssuerURL,
-		"--client-id=" + authConfig.CliClientID,
-		"--extra-scopes=email,profile",
-		"--callback-address=127.0.0.1:8080",
-		"--certificate-authority=" + authConfig.IssuerCABundleFile,
-	}
-
-	userClientConfig.ExecProvider = &clientcmdapi.ExecConfig{
-		APIVersion: "client.authentication.k8s.io/v1",
-		Command:    "oc",
-		Args:       args,
-		// We can't use os.Setenv("KUBECACHEDIR", tokenCacheDir), so we use "ExecEnvVar" that ensures each
-		// single user has unique cache path to avoid the parallel running users mess up the same cache path,
-		// because the cache file name is decided by the issuer URL & client ID provided in CLI
-		Env: []clientcmdapi.ExecEnvVar{
-			{Name: "KUBECACHEDIR", Value: tokenCacheDir},
-		},
-		InstallHint:        "Please be sure that oc is defined in $PATH to be executed as credentials exec plugin",
-		InteractiveMode:    clientcmdapi.IfAvailableExecInteractiveMode,
-		ProvideClusterInfo: false,
-	}
-
-	return userClientConfig
+	return userCfg
 }

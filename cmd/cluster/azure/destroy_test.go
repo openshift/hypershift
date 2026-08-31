@@ -19,7 +19,7 @@ func TestDestroyClusterSetsCloudFromHostedCluster(t *testing.T) {
 		expectedCloud string
 		expectError   bool
 	}{
-		"When HostedCluster has a custom cloud it should set Cloud to that value": {
+		"When HostedCluster has a custom cloud, it should set Cloud to that value": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "test-infra",
@@ -33,7 +33,7 @@ func TestDestroyClusterSetsCloudFromHostedCluster(t *testing.T) {
 			},
 			expectedCloud: "AzureUSGovernmentCloud",
 		},
-		"When HostedCluster has empty cloud it should default to DefaultAzureCloud": {
+		"When HostedCluster has empty cloud, it should default to DefaultAzureCloud": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "test-infra",
@@ -47,16 +47,16 @@ func TestDestroyClusterSetsCloudFromHostedCluster(t *testing.T) {
 			},
 			expectedCloud: config.DefaultAzureCloud,
 		},
-		"When HostedCluster is nil and no cloud is set it should default to DefaultAzureCloud": {
+		"When HostedCluster is nil and no cloud is set, it should default to DefaultAzureCloud": {
 			hostedCluster: nil,
 			expectedCloud: config.DefaultAzureCloud,
 		},
-		"When HostedCluster is nil and caller provided a cloud it should preserve the caller value": {
+		"When HostedCluster is nil and caller provided a cloud, it should preserve the caller value": {
 			hostedCluster: nil,
 			initialCloud:  "AzureUSGovernmentCloud",
 			expectedCloud: "AzureUSGovernmentCloud",
 		},
-		"When HostedCluster has nil Azure platform it should return an error": {
+		"When HostedCluster has nil Azure platform, it should return an error": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{},

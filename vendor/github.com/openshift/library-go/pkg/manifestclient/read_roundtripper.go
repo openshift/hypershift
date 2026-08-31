@@ -91,6 +91,13 @@ func (mrt *manifestRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 			}
 			timeoutDuration = time.Duration(currSeconds) * time.Second
 		}
+
+		// WatchList is unnecessary for the manifest client since we read from disk and performance isn't a concern.
+		// Returning an error forces the client to fall back to the standard List.
+		if req.URL.Query().Get("sendInitialEvents") == "true" {
+			return nil, fmt.Errorf("manifest client does not support WatchList feature")
+		}
+
 		resp := &http.Response{}
 		resp.StatusCode = http.StatusOK
 		resp.Status = http.StatusText(resp.StatusCode)

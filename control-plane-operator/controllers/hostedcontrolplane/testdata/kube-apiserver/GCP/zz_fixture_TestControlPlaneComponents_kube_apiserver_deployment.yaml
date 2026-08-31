@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 61f47c215f0276b07bde516c88099af27c900fea0a33c734b5b1e5a05d2f715b
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -94,22 +96,21 @@ spec:
         image: hyperkube
         imagePullPolicy: IfNotPresent
         livenessProbe:
-          failureThreshold: 6
+          failureThreshold: 3
           httpGet:
             path: livez?exclude=etcd
             port: client
             scheme: HTTPS
-          initialDelaySeconds: 300
-          periodSeconds: 180
+          periodSeconds: 60
           successThreshold: 1
-          timeoutSeconds: 160
+          timeoutSeconds: 30
         name: kube-apiserver
         ports:
         - containerPort: 6443
           name: client
           protocol: TCP
         readinessProbe:
-          failureThreshold: 18
+          failureThreshold: 6
           httpGet:
             path: readyz
             port: client
@@ -128,6 +129,14 @@ spec:
             - ALL
           readOnlyRootFilesystem: true
           runAsNonRoot: true
+        startupProbe:
+          failureThreshold: 36
+          httpGet:
+            path: readyz
+            port: client
+            scheme: HTTPS
+          periodSeconds: 10
+          timeoutSeconds: 10
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-ca
@@ -508,6 +517,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 10
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 10
       volumes:
       - emptyDir: {}
         name: bootstrap-manifests

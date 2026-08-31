@@ -45,7 +45,9 @@ func TestNewSession(t *testing.T) {
 			region:       "us-west-2",
 			expectNonNil: true,
 			setupFunc: func(t *testing.T) string {
-				// Create a temporary credentials file
+				for _, env := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE"} {
+					t.Setenv(env, "")
+				}
 				tmpDir := t.TempDir()
 				credsFile := filepath.Join(tmpDir, "credentials")
 				content := `[default]
@@ -74,7 +76,7 @@ aws_secret_access_key = test-secret-key
 			expectNonNil: true,
 			setupFunc: func(t *testing.T) string {
 				// Ensure AWS env vars don't shadow the file credentials.
-				for _, env := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE"} {
+				for _, env := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE"} {
 					t.Setenv(env, "")
 				}
 				tmpDir := t.TempDir()
@@ -204,6 +206,9 @@ func TestGetSession(t *testing.T) {
 			agent:  "test-agent",
 			region: "us-east-1",
 			setupFunc: func(t *testing.T) string {
+				for _, env := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE"} {
+					t.Setenv(env, "")
+				}
 				tmpDir := t.TempDir()
 				credsFile := filepath.Join(tmpDir, "credentials")
 				content := `[default]

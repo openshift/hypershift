@@ -169,7 +169,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 		complete      bool
 	}{
 		{
-			name:          "freshly installed nodepool",
+			name:          "When nodepool is freshly installed, it should report complete",
 			currentConfig: currentConfigHash,
 			desiredConfig: currentConfigHash,
 			nodes: []*corev1.Node{
@@ -183,7 +183,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			complete: true,
 		},
 		{
-			name:          "update starting",
+			name:          "When update is starting, it should report not complete",
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
@@ -197,7 +197,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			complete: false,
 		},
 		{
-			name:          "update in progress",
+			name:          "When update is in progress, it should report not complete",
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
@@ -219,7 +219,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			complete: false,
 		},
 		{
-			name:          "update completed but uncordon not yet finished",
+			name:          "When update is completed but uncordon is pending, it should report not complete",
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
@@ -247,7 +247,7 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 			complete: false,
 		},
 		{
-			name:          "fully completed update",
+			name:          "When update is fully completed, it should report complete",
 			currentConfig: currentConfigHash,
 			desiredConfig: desiredConfigHash,
 			nodes: []*corev1.Node{
@@ -337,7 +337,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 		selectedNodes  []*corev1.Node
 	}{
 		{
-			name: "pick first node to upgrade",
+			name: "When multiple nodes await upgrade, it should pick first node",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				awaitingNode2,
@@ -349,7 +349,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			},
 		},
 		{
-			name: "select multiple nodes to upgrade",
+			name: "When maxUnavailable allows two, it should select multiple nodes",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				awaitingNode2,
@@ -362,7 +362,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			},
 		},
 		{
-			name: "maxUnavailable reached",
+			name: "When maxUnavailable is reached, it should select no nodes",
 			inputNodes: []*corev1.Node{
 				inProgressNode,
 			},
@@ -371,7 +371,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			selectedNodes:  nil,
 		},
 		{
-			name: "all nodes comeplete",
+			name: "When all nodes are complete, it should select no nodes",
 			inputNodes: []*corev1.Node{
 				completedNode,
 			},
@@ -380,7 +380,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			selectedNodes:  nil,
 		},
 		{
-			name: "pick 1 ready node if possible",
+			name: "When one ready node exists with in-progress node, it should pick the ready node",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				inProgressNode,
@@ -393,7 +393,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			},
 		},
 		{
-			name: "pick correct nodes to upgrade",
+			name: "When nodes are in mixed states, it should pick correct awaiting nodes",
 			inputNodes: []*corev1.Node{
 				inProgressNode,
 				completedNode,
@@ -409,7 +409,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 		},
 		// This test case covers a scenario where a new update comes in while an update is in progress
 		{
-			name: "points in progress nodes to latest version",
+			name: "When new update arrives during upgrade, it should redirect in-progress nodes",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				completedNode,
@@ -422,7 +422,7 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			},
 		},
 		{
-			name: "points in progress nodes to latest version, while also picking based on maxUnavailable",
+			name: "When new update arrives with capacity, it should redirect in-progress and pick awaiting nodes",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				completedNode,
@@ -483,7 +483,7 @@ func TestGetAvailableCandidates(t *testing.T) {
 		selectedNodes []*corev1.Node
 	}{
 		{
-			name: "pick first node to upgrade",
+			name: "When multiple candidates exist, it should pick first node",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				awaitingNode2,
@@ -495,7 +495,7 @@ func TestGetAvailableCandidates(t *testing.T) {
 			},
 		},
 		{
-			name: "select non-completed node",
+			name: "When completed and awaiting nodes exist, it should select non-completed node",
 			inputNodes: []*corev1.Node{
 				completedNode,
 				awaitingNode1,
@@ -507,7 +507,7 @@ func TestGetAvailableCandidates(t *testing.T) {
 			},
 		},
 		{
-			name: "pick more nodes up to capacity",
+			name: "When capacity allows multiple, it should pick available nodes up to capacity",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				awaitingNode2,
@@ -522,7 +522,7 @@ func TestGetAvailableCandidates(t *testing.T) {
 			},
 		},
 		{
-			name: "do nothing while no additional capacity",
+			name: "When capacity is zero, it should select no nodes",
 			inputNodes: []*corev1.Node{
 				awaitingNode1,
 				awaitingNode2,
@@ -549,7 +549,7 @@ func TestCreateUpgradePod(t *testing.T) {
 		expectedEnvs []corev1.EnvVar
 	}{
 		{
-			name: "when proxy is configured, it should create a pod with proxy environment variables",
+			name: "When proxy is configured, it should create a pod with proxy environment variables",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
@@ -569,7 +569,7 @@ func TestCreateUpgradePod(t *testing.T) {
 			},
 		},
 		{
-			name: "when no proxy is configured it should create a pod without proxy environment variables",
+			name: "When no proxy is configured, it should create a pod without proxy environment variables",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
@@ -989,14 +989,14 @@ func TestReconcileInPlaceUpgradeDegradedNodeErrorMessage(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "when a node is degraded it should include the node name in the error message",
+			name:        "When a node is degraded, it should include the node name in the error message",
 			nodeName:    "degraded-node-xyz",
 			mcdState:    MachineConfigDaemonStateDegraded,
 			mcdMessage:  degradedReason,
 			expectError: true,
 		},
 		{
-			name:        "when a node is not degraded it should not return a degraded error",
+			name:        "When a node is not degraded, it should not return a degraded error",
 			nodeName:    "healthy-node",
 			mcdState:    MachineConfigDaemonStateDone,
 			mcdMessage:  "",

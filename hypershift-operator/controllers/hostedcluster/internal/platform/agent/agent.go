@@ -6,7 +6,9 @@ import (
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
@@ -23,15 +25,29 @@ import (
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
 	// TODO Pin to specific release
 	imageCAPAgent         = "quay.io/edge-infrastructure/cluster-api-provider-agent:latest"
 	CredentialsRBACPrefix = "cluster-api-agent"
+	CAPIProviderRoleName  = "capi-provider-role"
+	// capiProviderAgentRBACLabel marks Role/RoleBinding reconciled for the agent CAPI provider.
+	capiProviderAgentRBACLabelKey   = "hypershift.openshift.io/capi-provider-agent-rbac"
+	capiProviderAgentRBACLabelValue = "true"
 )
 
-type Agent struct{}
+type Agent struct {
+	payloadVersion *semver.Version
+}
+
+func New(payloadVersion *semver.Version) *Agent {
+	return &Agent{
+		payloadVersion: payloadVersion,
+	}
+}
 
 func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
@@ -63,7 +79,7 @@ func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, create
 	return agentCluster, nil
 }
 
-func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := imageCAPAgent
 	if envImage := os.Getenv(images.AgentCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
@@ -71,6 +87,24 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAgentProviderImage]; ok {
 		providerImage = override
 	}
+
+	args := []string{
+		"--namespace", "$(MY_NAMESPACE)",
+		"--health-probe-bind-address=:8081",
+		"--metrics-bind-address=127.0.0.1:8080",
+		"--leader-elect",
+		"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
+	}
+	if hcp != nil && p.payloadVersion != nil && (p.payloadVersion.Major >= 5 || (p.payloadVersion.Major == 4 && p.payloadVersion.Minor >= 23)) {
+		tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if err != nil {
+			return nil, err
+		}
+		if len(tlsArgs) > 0 {
+			args = append(args, tlsArgs...)
+		}
+	}
+
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
@@ -91,13 +125,7 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							},
 						},
 						Command: []string{"/manager"},
-						Args: []string{
-							"--namespace", "$(MY_NAMESPACE)",
-							"--health-probe-bind-address=:8081",
-							"--metrics-bind-address=127.0.0.1:8080",
-							"--leader-elect",
-							"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
-						},
+						Args:    args,
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
@@ -132,10 +160,53 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	return deploymentSpec, nil
 }
 
-// TODO add a new method to Platform interface?
 func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
+	return ReconcileCAPIProviderRole(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace)
+}
+
+// setHypershiftMetadata ensures the object has HyperShift label and annotation set.
+func setHypershiftMetadata(obj client.Object, hcluster *hyperv1.HostedCluster) {
+	if obj.GetLabels() == nil {
+		obj.SetLabels(map[string]string{})
+	}
+	obj.GetLabels()[capiProviderAgentRBACLabelKey] = capiProviderAgentRBACLabelValue
+	if obj.GetAnnotations() == nil {
+		obj.SetAnnotations(map[string]string{})
+	}
+	obj.GetAnnotations()[k8sutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+}
+
+// ReconcileCAPIProviderRole creates the RBAC Role and RoleBinding in the agent
+// namespace so the CAPI provider can manage Agent resources. Each HostedCluster
+// creates its own Role (named per control plane namespace) to enable proper
+// lifecycle management and watch-based reconciliation.
+func ReconcileCAPIProviderRole(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
+	hcluster *hyperv1.HostedCluster,
+	controlPlaneNamespace string) error {
+
+	roleName := fmt.Sprintf("%s-%s", CAPIProviderRoleName, controlPlaneNamespace)
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcluster.Spec.Platform.Agent.AgentNamespace,
+			Name:      roleName,
+		},
+	}
+	_, err := createOrUpdate(ctx, c, role, func() error {
+		setHypershiftMetadata(role, hcluster)
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"agent-install.openshift.io"},
+				Resources: []string{"agents"},
+				Verbs:     []string{"get", "list", "watch", "update", "patch"},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile Agent Role: %w", err)
+	}
 
 	roleBinding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -143,18 +214,19 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 			Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
 		},
 	}
-	_, err := createOrUpdate(ctx, c, roleBinding, func() error {
+	_, err = createOrUpdate(ctx, c, roleBinding, func() error {
+		setHypershiftMetadata(roleBinding, hcluster)
 		roleBinding.Subjects = []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      "capi-provider",
+				Name:      clusterapi.CAPIProviderServiceAccount(controlPlaneNamespace).Name,
 				Namespace: controlPlaneNamespace,
 			},
 		}
 		roleBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
+			APIGroup: rbacv1.GroupName,
 			Kind:     "Role",
-			Name:     "capi-provider-role",
+			Name:     roleName,
 		}
 		return nil
 	})
@@ -204,11 +276,35 @@ func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, ignEndpoint, cont
 	return nil
 }
 
+// DeleteCredentials removes this HostedCluster's CAPI provider Role and RoleBinding.
+// Each cluster has its own Role, so both can be safely deleted without affecting other clusters.
+// Also cleans up legacy shared Role (without -<cpNamespace> suffix) if it exists.
 func (Agent) DeleteCredentials(ctx context.Context, c client.Client,
 	hc *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace), Namespace: hc.Spec.Platform.Agent.AgentNamespace}}); err != nil {
-		return fmt.Errorf("failed to clean up CAPI provider rolebinding: %w", err)
+	agentNS := hc.Spec.Platform.Agent.AgentNamespace
+	roleName := fmt.Sprintf("%s-%s", CAPIProviderRoleName, controlPlaneNamespace)
+	bindingName := fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace)
+
+	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: bindingName, Namespace: agentNS},
+	}); err != nil {
+		return fmt.Errorf("failed to clean up CAPI provider RoleBinding: %w", err)
 	}
+
+	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: agentNS},
+	}); err != nil {
+		return fmt.Errorf("failed to clean up CAPI provider Role: %w", err)
+	}
+
+	// Clean up legacy shared Role (created before per-cluster Roles were introduced)
+	legacyRoleName := CAPIProviderRoleName
+	if _, err := k8sutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Name: legacyRoleName, Namespace: agentNS},
+	}); err != nil {
+		return fmt.Errorf("failed to clean up legacy CAPI provider Role: %w", err)
+	}
+
 	return nil
 }

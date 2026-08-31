@@ -10,11 +10,14 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -76,7 +79,7 @@ func (k *RollingUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodeP
 	case hyperv1.AWSPlatform:
 		nodePool.Spec.Platform.AWS.InstanceType = "m5.large"
 	case hyperv1.AzurePlatform:
-		nodePool.Spec.Platform.Azure.VMSize = "Standard_D2s_v3"
+		nodePool.Spec.Platform.Azure.VMSize = "Standard_D2s_v5"
 	}
 	nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 

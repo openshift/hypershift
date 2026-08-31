@@ -14,8 +14,11 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -24,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReconcileAzureClusterIdentity(t *testing.T) {
@@ -44,7 +48,7 @@ func TestReconcileAzureClusterIdentity(t *testing.T) {
 		expectedAzureClusterIdentity *capiazure.AzureClusterIdentity
 	}{
 		{
-			name:             "when MANAGED_SERVICE is set to AROHCP, it should reconcile AzureClusterIdentity as UserAssignedIdentityCredential",
+			name:             "When MANAGED_SERVICE is set to AROHCP it should reconcile AzureClusterIdentity as UserAssignedIdentityCredential",
 			isManagedService: true,
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -84,7 +88,7 @@ func TestReconcileAzureClusterIdentity(t *testing.T) {
 			},
 		},
 		{
-			name:             "when MANAGED_SERVICE is not set, it should reconcile AzureClusterIdentity as WorkloadIdentity",
+			name:             "When MANAGED_SERVICE is not set it should reconcile AzureClusterIdentity as WorkloadIdentity",
 			isManagedService: false,
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -156,25 +160,25 @@ func TestParseCloudType(t *testing.T) {
 		expectedError  bool
 	}{
 		{
-			name:           "when input is AzurePublicCloud, expected output is public",
+			name:           "When input is AzurePublicCloud, it should return public",
 			input:          "AzurePublicCloud",
 			expectedOutput: "public",
 			expectedError:  false,
 		},
 		{
-			name:           "when input is AzureUSGovernmentCloud, expected output is usgovernment",
+			name:           "When input is AzureUSGovernmentCloud, it should return usgovernment",
 			input:          "AzureUSGovernmentCloud",
 			expectedOutput: "usgovernment",
 			expectedError:  false,
 		},
 		{
-			name:           "when input is AzureChinaCloud, expected output is china",
+			name:           "When input is AzureChinaCloud, it should return china",
 			input:          "AzureChinaCloud",
 			expectedOutput: "china",
 			expectedError:  false,
 		},
 		{
-			name:           "when input is an invalid cloud type, expect error",
+			name:           "When input is an invalid cloud type, it should return an error",
 			input:          "AzureGermanCloud",
 			expectedOutput: "",
 			expectedError:  true,
@@ -259,7 +263,7 @@ func TestReconcileCredentials(t *testing.T) {
 		validateSecrets      func(secrets []*corev1.Secret)
 	}{
 		{
-			name:           "self-managed Azure with workload identities creates all credential secrets",
+			name:           "When self-managed Azure has workload identities it should create all credential secrets",
 			managedService: "",
 			hcluster: createTestHostedCluster(true, &hyperv1.AzureWorkloadIdentities{
 				Ingress: hyperv1.WorkloadIdentity{
@@ -313,7 +317,7 @@ func TestReconcileCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:           "self-managed Azure with disabled capabilities skips appropriate secrets",
+			name:           "When self-managed Azure has disabled capabilities it should skip appropriate secrets",
 			managedService: "",
 			hcluster: func() *hyperv1.HostedCluster {
 				hc := createTestHostedCluster(true, &hyperv1.AzureWorkloadIdentities{
@@ -357,7 +361,7 @@ func TestReconcileCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:                 "managed Azure (ARO-HCP) does not create workload identity secrets",
+			name:                 "When managed Azure ARO-HCP is used it should not create workload identity secrets",
 			managedService:       hyperv1.AroHCP,
 			hcluster:             createTestHostedCluster(false, nil),
 			expectedSecretsCount: 1, // Only CNCC secret should be created
@@ -457,7 +461,7 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 		validate       func(g Gomega, cfg azurecloud.AzureConfig)
 	}{
 		{
-			name:           "When ARO HCP it should set AADMSIDataPlaneIdentityPath",
+			name:           "When ARO HCP, it should set AADMSIDataPlaneIdentityPath",
 			managedService: hyperv1.AroHCP,
 			hc: func() *hyperv1.HostedCluster {
 				hc := baseHC()
@@ -473,7 +477,7 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 			},
 		},
 		{
-			name: "When self-managed Azure with workload identities it should set federated identity fields",
+			name: "When self-managed Azure with workload identities, it should set federated identity fields",
 			hc: func() *hyperv1.HostedCluster {
 				hc := baseHC()
 				hc.Spec.SecretEncryption.KMS.Azure.WorkloadIdentity = hyperv1.WorkloadIdentity{
@@ -488,7 +492,7 @@ func TestReconcileKMSConfigSecret(t *testing.T) {
 			},
 		},
 		{
-			name:      "When Azure KMS without any credentials it should return an error",
+			name:      "When Azure KMS without any credentials, it should return an error",
 			hc:        baseHC(),
 			expectErr: true,
 		},
@@ -565,7 +569,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		expectedError             bool
 	}{
 		{
-			name: "when ManagedIdentities is nil it should return early without modifying machines",
+			name: "When ManagedIdentities is nil it should return early without modifying machines",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -592,14 +596,14 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:                      "when there are no machines it should succeed",
+			name:                      "When there are no machines it should succeed",
 			hostedCluster:             managedIdentitiesHC,
 			azureMachines:             []capiazure.AzureMachine{},
 			expectedFinalizersRemoved: false,
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
+			name:          "When a machine has a stale DeletionTimestamp with DeletionFailed condition it should remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -618,7 +622,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
+			name:          "When a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -637,7 +641,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
+			name:          "When a machine has a stale DeletionTimestamp without DeletionFailed condition it should not remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -661,7 +665,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
-			name:          "when a machine is not pending deletion it should not remove finalizers regardless of conditions",
+			name:          "When a machine is not pending deletion it should not remove finalizers regardless of conditions",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
 				{
@@ -720,6 +724,136 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 				for _, machine := range azureMachineList.Items {
 					g.Expect(machine.Finalizers).To(Equal(tc.azureMachines[0].Finalizers), "finalizers should not be modified")
 				}
+			}
+		})
+	}
+}
+
+func buildAzureHostedControlPlane(tlsProfile *configv1.TLSSecurityProfile) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: tlsProfile,
+				},
+			},
+		},
+	}
+}
+
+func TestCAPIProviderDeploymentSpec(t *testing.T) {
+	defaultArgs := []string{
+		"--namespace=$(MY_NAMESPACE)",
+		"--leader-elect=true",
+		"--feature-gates=MachinePool=false,ASOAPI=false",
+		"--disable-controllers-or-webhooks=DisableASOSecretController",
+	}
+
+	defaultImage := "test-capi-image"
+
+	customTLSProfile := &configv1.TLSSecurityProfile{
+		Type: configv1.TLSProfileCustomType,
+		Custom: &configv1.CustomTLSProfile{
+			TLSProfileSpec: configv1.TLSProfileSpec{
+				MinTLSVersion: configv1.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-ECDSA-AES128-GCM-SHA256",
+					"ECDHE-RSA-AES128-GCM-SHA256",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		payloadVersion *semver.Version
+		expectedImage  string
+		expectedArgs   []string
+	}{
+		{
+			name:           "When HostedControlPlane is nil it should not append TLS args",
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedImage:  defaultImage,
+			expectedArgs:   defaultArgs,
+		},
+		{
+			name: "When version is 4.22 and HCP has TLS profile it should not append TLS args",
+			hcp: buildAzureHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			payloadVersion: ptr.To(semver.MustParse("4.22.0")),
+			expectedImage:  defaultImage,
+			expectedArgs:   defaultArgs,
+		},
+		{
+			name: "When version is 4.23 and HCP has Modern TLS profile it should append min-version only",
+			hcp: buildAzureHostedControlPlane(&configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			}),
+			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
+			expectedImage:  defaultImage,
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS13",
+			),
+		},
+		{
+			name:           "When version is 5.0 and HCP has custom TLS profile it should append custom TLS args",
+			hcp:            buildAzureHostedControlPlane(customTLSProfile),
+			payloadVersion: ptr.To(semver.MustParse("5.0.0")),
+			expectedImage:  defaultImage,
+			expectedArgs: append(defaultArgs,
+				"--tls-min-version=VersionTLS12",
+				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			platform := Azure{
+				capiProviderImage: tc.expectedImage,
+				payloadVersion:    tc.payloadVersion,
+			}
+			spec, err := platform.CAPIProviderDeploymentSpec(&hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			}, tc.hcp)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if spec == nil {
+				t.Fatal("expected deployment spec, got nil")
+			}
+			if len(spec.Template.Spec.Containers) == 0 {
+				t.Fatal("expected at least 1 container, got 0")
+			}
+
+			var managerContainer *corev1.Container
+			for i := range spec.Template.Spec.Containers {
+				if spec.Template.Spec.Containers[i].Name == "manager" {
+					managerContainer = &spec.Template.Spec.Containers[i]
+					break
+				}
+			}
+			if managerContainer == nil {
+				t.Fatal("manager container not found")
+			}
+
+			if managerContainer.Image != tc.expectedImage {
+				t.Errorf("expected image %s, got %s", tc.expectedImage, managerContainer.Image)
+			}
+
+			if diff := cmp.Diff(managerContainer.Args, tc.expectedArgs); diff != "" {
+				t.Errorf("args differ (-got +want):\n%s", diff)
 			}
 		})
 	}

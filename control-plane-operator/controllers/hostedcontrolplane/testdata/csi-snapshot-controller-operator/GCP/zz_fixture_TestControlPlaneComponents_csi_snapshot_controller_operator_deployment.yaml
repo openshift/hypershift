@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 3c61977b1dadacd6e013c49080f04e123ba0a33c712159b0079d20cbe5c8b1a9
   labels:
     app: csi-snapshot-controller-operator
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -25,7 +27,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: ""
+        component.hypershift.openshift.io/config-hash: a0010a21
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       labels:
@@ -64,6 +66,10 @@ spec:
       - args:
         - start
         - -v=2
+        - --config=/var/run/configmaps/config/config.yaml
+        - --terminate-on-files=/var/run/configmaps/config/config.yaml
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.crt
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.key
         - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
         env:
         - name: OPERAND_IMAGE
@@ -94,6 +100,11 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
+        - mountPath: /var/run/secrets/serving-cert
+          name: csi-snapshot-controller-operator-serving-cert
+        - mountPath: /var/run/configmaps/config
+          name: config
+          readOnly: true
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
@@ -138,6 +149,14 @@ spec:
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
+      - name: csi-snapshot-controller-operator-serving-cert
+        secret:
+          defaultMode: 416
+          secretName: csi-snapshot-controller-operator-serving-cert
+      - configMap:
+          defaultMode: 420
+          name: csi-snapshot-controller-operator-config
+        name: config
       - emptyDir: {}
         name: tmp-dir
 status: {}

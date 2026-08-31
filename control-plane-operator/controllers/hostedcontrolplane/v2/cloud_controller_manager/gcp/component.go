@@ -2,7 +2,12 @@ package gcp
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -35,6 +40,7 @@ func NewComponent() component.ControlPlaneComponent {
 	// The deployment.yaml mounts that pre-created secret.
 	return component.NewDeploymentComponent(ComponentName, &gcpOptions{}).
 		WithPredicate(predicate).
+		WithAdaptFunction(adaptDeployment).
 		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfig),
@@ -49,4 +55,20 @@ func NewComponent() component.ControlPlaneComponent {
 
 func predicate(cpContext component.WorkloadContext) (bool, error) {
 	return cpContext.HCP.Spec.Platform.Type == hyperv1.GCPPlatform, nil
+}
+
+func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	hcp := cpContext.HCP
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
+	podspec.UpdateContainer("cloud-controller-manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
+		}
+	})
+
+	return nil
 }

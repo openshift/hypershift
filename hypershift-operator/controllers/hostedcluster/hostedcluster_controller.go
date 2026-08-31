@@ -752,14 +752,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// So consumers e.g. UI can categorize as good (True) / bad (False).
 			if conditionType == hyperv1.ClusterVersionSucceeding {
 				hcCVOCondition.Type = string(hyperv1.ClusterVersionSucceeding)
-				var status metav1.ConditionStatus
-				switch hcpCVOConditions[conditionType].Status {
-				case metav1.ConditionTrue:
-					status = metav1.ConditionFalse
-				case metav1.ConditionFalse:
-					status = metav1.ConditionTrue
-				}
-				hcCVOCondition.Status = status
+				hcCVOCondition.Status = invertConditionStatus(hcpCVOConditions[conditionType].Status)
 			}
 		}
 
@@ -1115,7 +1108,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 			}
 			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
-				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
+				hcluster.Status.IgnitionEndpoint = net.JoinHostPort(serviceStrategy.NodePort.Address, strconv.Itoa(int(ignitionService.Spec.Ports[0].NodePort)))
 			}
 		default:
 			// We don't return the error here as reconciling won't solve the input problem.
@@ -1538,6 +1531,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		releaseImageVersion, err = semver.Parse(releaseImage.Version())
 		if err != nil {
 			return fmt.Errorf("failed to parse release image version: %w", err)
+		}
+		return nil
+	})
+
+	// Block reconciliation when Managed HSM is configured on a release that
+	// does not support it (< 4.22). Sets ValidHostedClusterConfiguration=False.
+	report.execute("ManagedHSMVersionCheck", critical, func() error {
+		if report.shouldBlock() {
+			return nil
+		}
+		if err := validateManagedHSMVersion(hcluster, releaseImageVersion); err != nil {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidHostedClusterConfiguration),
+				ObservedGeneration: hcluster.Generation,
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.InvalidConfigurationReason,
+				Message:            err.Error(),
+			})
+			return err
 		}
 		return nil
 	})
@@ -2062,6 +2074,10 @@ func (r *HostedClusterReconciler) reconcileSSHKeySync(
 	controlPlaneNamespace string,
 ) error {
 	if len(hcluster.Spec.SSHKey.Name) == 0 {
+		dest := controlplaneoperator.SSHKey(controlPlaneNamespace)
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
+			return fmt.Errorf("failed to delete unused SSHKey secret: %w", err)
+		}
 		return nil
 	}
 	var src corev1.Secret
@@ -2631,6 +2647,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.AWSMachinePublicIPs,
 		hyperv1.AWSKarpenterDefaultInstanceProfile,
 		hyperkarpenterv1.KarpenterProviderAWSImage,
+		hyperkarpenterv1.KarpenterOperatorImage,
 		hyperv1.KubeAPIServerGoAwayChance,
 		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
@@ -2741,6 +2758,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
+	} else {
+		hcp.Spec.SSHKey = corev1.LocalObjectReference{}
 	}
 	if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 		hcp.Spec.AuditWebhook = hcluster.Spec.AuditWebhook.DeepCopy()
@@ -2895,10 +2914,8 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		},
 	}
 	err = cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiProviderDeployment), capiProviderDeployment)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
-		}
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
 	}
 	if err == nil {
 		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels[hyperv1.ControlPlaneComponentLabel] != "capi-provider" {
@@ -3318,6 +3335,17 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 		},
 	}
 	return nil
+}
+
+func invertConditionStatus(s metav1.ConditionStatus) metav1.ConditionStatus {
+	switch s {
+	case metav1.ConditionTrue:
+		return metav1.ConditionFalse
+	case metav1.ConditionFalse:
+		return metav1.ConditionTrue
+	default:
+		return metav1.ConditionUnknown
+	}
 }
 
 // computeClusterVersionStatus determines the ClusterVersionStatus of the
@@ -4405,6 +4433,27 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 	return nil
 }
 
+var minManagedHSMVersion = semver.MustParse("4.22.0")
+
+func validateManagedHSMVersion(hc *hyperv1.HostedCluster, releaseVersion semver.Version) error {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+	if hc.Spec.SecretEncryption == nil ||
+		hc.Spec.SecretEncryption.KMS == nil ||
+		hc.Spec.SecretEncryption.KMS.Azure == nil {
+		return nil
+	}
+	if hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		return nil
+	}
+	releaseVersion.Pre = nil
+	if releaseVersion.LT(minManagedHSMVersion) {
+		return fmt.Errorf("release image version %s does not support Azure Managed HSM, which requires version %s or newer", releaseVersion, minManagedHSMVersion)
+	}
+	return nil
+}
+
 func (r *HostedClusterReconciler) validateAgentConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	if hc.Spec.Platform.Type != hyperv1.AgentPlatform {
 		return nil
@@ -5006,7 +5055,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 		return nil
 	}
 
-	var existing *hyperv1.AWSResourceTag
+	var existing *hyperv1.AWSClusterResourceTag
 	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
 		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
 			existing = &hcluster.Spec.Platform.AWS.ResourceTags[idx]
@@ -5020,7 +5069,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	if existing != nil {
 		existing.Value = "owned"
 	} else {
-		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 			Key:   "kubernetes.io/cluster/" + hcluster.Spec.InfraID,
 			Value: "owned",
 		})

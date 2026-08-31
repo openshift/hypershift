@@ -46,7 +46,7 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID(required)")
 	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to a credentials file (required)")
 	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, "Location where cluster infra should be created")
-	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
+	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud, AzureGermanCloud, AzureBleuCloud)")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
 	cmd.Flags().BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, "When true, the managed/main resource group will not be deleted during cluster destroy. Only cluster-specific resources within the resource group will be cleaned up.")
@@ -87,7 +87,7 @@ func BindDestroyProductFlags(opts *DestroyInfraOptions, flags *pflag.FlagSet) {
 
 	// Location and cloud
 	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
-	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
+	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud, AzureGermanCloud, AzureBleuCloud)")
 
 	// Resource group
 	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
@@ -202,7 +202,7 @@ type resourceToDelete struct {
 // deleteClusterResourcesInGroup deletes cluster-specific resources within a resource group
 // while preserving the resource group itself and any non-cluster resources.
 // Resources are identified as cluster-specific if they contain the infraID in their name OR
-// if they match the cluster naming pattern (e.g., {name}-azurecluster.{baseDomain} for DNS zones).
+// if they match the cluster naming pattern (e.g., {name}.{baseDomain} for DNS zones).
 // Resources are deleted in dependency order to avoid conflicts.
 func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context, logger logr.Logger, resourcesClient *armresources.Client, resourceGroupName string) error {
 	// List all resources in the resource group
@@ -222,8 +222,10 @@ func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context,
 
 			// Only delete resources that are cluster-specific
 			// Resources are identified as cluster-specific if they contain the InfraID OR
-			// if they match the cluster naming pattern (e.g., {name}-azurecluster.{baseDomain} for DNS zones)
+			// if they match the cluster naming pattern for DNS zones (both current {name}.{baseDomain}
+			// and legacy {name}-azurecluster.{baseDomain} formats)
 			isClusterResource := strings.Contains(*resource.Name, o.InfraID) ||
+				strings.HasPrefix(*resource.Name, o.Name+".") ||
 				strings.HasPrefix(*resource.Name, o.Name+"-azurecluster.")
 
 			if isClusterResource {

@@ -30,6 +30,10 @@ See [Concepts and Personas](docs/content/reference/concepts-and-personas.md) for
 
 See [Goals and Design Invariants](docs/content/reference/goals-and-design-invariants.md) for the full set including control plane and data plane ingress separation.
 
+## Data-Plane Components in the CPO Binary
+
+The `control-plane-operator` binary contains subcommands that run on **worker nodes** as static pods, not on the management cluster. The `kubernetes-default-proxy` (HTTP CONNECT proxy for KAS traffic when `spec.configuration.proxy` is set) is the primary example. Despite sharing the CPO container image, these are data-plane components. The CPO image for the `kubernetes-default-proxy` static pod is resolved from the **HC** release image, which means CP-only upgrades cause a config hash change and node rollout for clusters using the proxy path.
+
 ## Platform Support
 
 - AWS — self-managed and managed (ROSA HCP)

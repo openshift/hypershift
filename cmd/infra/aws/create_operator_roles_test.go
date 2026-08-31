@@ -27,20 +27,20 @@ func TestCreateOperatorRolesValidate(t *testing.T) {
 		opts        CreateOperatorRolesOptions
 		expectError bool
 	}{
-		"When both oidc-issuer-url and instance-role-arn are provided it should error": {
+		"When both oidc-issuer-url and instance-role-arn are provided, it should error": {
 			opts: CreateOperatorRolesOptions{
 				OIDCIssuerURL:   "https://oidc.example.com",
 				InstanceRoleARN: "arn:aws:iam::123456789012:role/instance-role",
 			},
 			expectError: true,
 		},
-		"When oidc-issuer-url is provided it should succeed": {
+		"When oidc-issuer-url is provided, it should succeed": {
 			opts: CreateOperatorRolesOptions{
 				OIDCIssuerURL: "https://oidc.example.com",
 			},
 			expectError: false,
 		},
-		"When instance-role-arn is provided it should succeed": {
+		"When instance-role-arn is provided, it should succeed": {
 			opts: CreateOperatorRolesOptions{
 				InstanceRoleARN: "arn:aws:iam::123456789012:role/instance-role",
 			},
@@ -71,7 +71,7 @@ func TestResolveOIDCProvider(t *testing.T) {
 		expectError   bool
 		errorContains string
 	}{
-		"When matching provider exists it should return its ARN": {
+		"When matching provider exists, it should return its ARN": {
 			issuerURL: "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE123",
 			providers: []iamtypes.OpenIDConnectProviderListEntry{
 				{Arn: aws.String("arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE123")},
@@ -79,7 +79,7 @@ func TestResolveOIDCProvider(t *testing.T) {
 			expectARN:  "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE123",
 			expectName: "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE123",
 		},
-		"When no matching provider exists it should error": {
+		"When no matching provider exists, it should error": {
 			issuerURL: "https://oidc.example.com",
 			providers: []iamtypes.OpenIDConnectProviderListEntry{
 				{Arn: aws.String("arn:aws:iam::123456789012:oidc-provider/other.example.com")},
@@ -87,19 +87,19 @@ func TestResolveOIDCProvider(t *testing.T) {
 			expectError:   true,
 			errorContains: "no OIDC provider found",
 		},
-		"When listing providers fails it should error": {
+		"When listing providers fails, it should error": {
 			issuerURL:     "https://oidc.example.com",
 			listErr:       fmt.Errorf("access denied"),
 			expectError:   true,
 			errorContains: "failed to list OIDC providers",
 		},
-		"When provider list is empty it should error": {
+		"When provider list is empty, it should error": {
 			issuerURL:     "https://oidc.example.com",
 			providers:     []iamtypes.OpenIDConnectProviderListEntry{},
 			expectError:   true,
 			errorContains: "no OIDC provider found",
 		},
-		"When issuer URL has https prefix it should strip it for matching": {
+		"When issuer URL has https prefix, it should strip it for matching": {
 			issuerURL: "https://s3.us-east-1.amazonaws.com/mybucket",
 			providers: []iamtypes.OpenIDConnectProviderListEntry{
 				{Arn: aws.String("arn:aws:iam::123456789012:oidc-provider/s3.us-east-1.amazonaws.com/mybucket")},
@@ -107,7 +107,7 @@ func TestResolveOIDCProvider(t *testing.T) {
 			expectARN:  "arn:aws:iam::123456789012:oidc-provider/s3.us-east-1.amazonaws.com/mybucket",
 			expectName: "s3.us-east-1.amazonaws.com/mybucket",
 		},
-		"When substring match exists but not suffix match it should not match": {
+		"When substring match exists but not suffix match, it should not match": {
 			issuerURL: "https://example.com",
 			providers: []iamtypes.OpenIDConnectProviderListEntry{
 				{Arn: aws.String("arn:aws:iam::123456789012:oidc-provider/my-example.com")},
@@ -153,7 +153,7 @@ func TestBuildTrustPolicies(t *testing.T) {
 		errorContains string
 		validate      func(*GomegaWithT, *operatorTrustPolicies)
 	}{
-		"When instance role ARN is provided it should use instance role trust policy": {
+		"When instance role ARN is provided, it should use instance role trust policy": {
 			opts: CreateOperatorRolesOptions{
 				InstanceRoleARN:   "arn:aws:iam::123456789012:role/instance-role",
 				OperatorNamespace: "hypershift",
@@ -165,7 +165,7 @@ func TestBuildTrustPolicies(t *testing.T) {
 				g.Expect(tp.operatorTrust).To(Equal(tp.externalDNSTrust))
 			},
 		},
-		"When OIDC issuer URL is provided it should resolve provider and build trust policies": {
+		"When OIDC issuer URL is provided, it should resolve provider and build trust policies": {
 			opts: CreateOperatorRolesOptions{
 				OIDCIssuerURL:     "https://oidc.example.com",
 				OperatorNamespace: "hypershift",
@@ -184,7 +184,7 @@ func TestBuildTrustPolicies(t *testing.T) {
 				g.Expect(tp.operatorTrust).ToNot(Equal(tp.externalDNSTrust))
 			},
 		},
-		"When OIDC provider resolution fails it should return error": {
+		"When OIDC provider resolution fails, it should return error": {
 			opts: CreateOperatorRolesOptions{
 				OIDCIssuerURL:     "https://unknown.example.com",
 				OperatorNamespace: "hypershift",
@@ -233,7 +233,7 @@ func TestCreateOrUpdateRole(t *testing.T) {
 		expectError   bool
 		errorContains string
 	}{
-		"When role creation and trust update succeed it should return the ARN": {
+		"When role creation and trust update succeed, it should return the ARN": {
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&iam.GetRoleOutput{Role: &iamtypes.Role{
@@ -247,7 +247,7 @@ func TestCreateOrUpdateRole(t *testing.T) {
 			},
 			expectARN: roleARN,
 		},
-		"When trust policy update fails it should return error": {
+		"When trust policy update fails, it should return error": {
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&iam.GetRoleOutput{Role: &iamtypes.Role{
@@ -333,7 +333,7 @@ func TestCreateOperatorRoles(t *testing.T) {
 		errorContains string
 		validate      func(*GomegaWithT, *CreateOperatorRolesOutput)
 	}{
-		"When all roles are created successfully with OIDC it should return all ARNs": {
+		"When all roles are created successfully with OIDC, it should return all ARNs": {
 			opts: CreateOperatorRolesOptions{
 				OIDCIssuerURL:                   "https://oidc.example.com",
 				NamePrefix:                      "hypershift",
@@ -347,7 +347,7 @@ func TestCreateOperatorRoles(t *testing.T) {
 				g.Expect(output.ExternalDNSRoleARN).To(Equal(dnsRoleARN))
 			},
 		},
-		"When Route53 hosted zone ID is specified it should scope the policy": {
+		"When Route53 hosted zone ID is specified, it should scope the policy": {
 			opts: CreateOperatorRolesOptions{
 				InstanceRoleARN:                 "arn:aws:iam::123456789012:role/instance-role",
 				NamePrefix:                      "hypershift",
@@ -419,11 +419,11 @@ func TestParseAdditionalTags(t *testing.T) {
 		expectError bool
 		expectCount int
 	}{
-		"When no tags provided it should succeed with empty list": {
+		"When no tags provided, it should succeed with empty list": {
 			tags:        nil,
 			expectCount: 0,
 		},
-		"When valid tags provided it should parse them": {
+		"When valid tags provided, it should parse them": {
 			tags:        []string{"env=prod", "team=platform"},
 			expectCount: 2,
 		},

@@ -12,17 +12,14 @@ jobs:
     runs-on: arc-runner-set
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6.1.0
         with:
-          python-version: '3.x'
-          pip-install: '-r docs/requirements.txt'
-        env:
-          PIP_CACHE_DIR: ${{ runner.temp }}/.pip-cache
+          cache-local-path: ${{ runner.temp }}/.uv-cache
       - name: Build documentation
-        run: mkdocs build --strict
+        run: uv run --frozen zensical build --strict
         working-directory: docs
       - name: Save PR metadata
         run: echo "${{ github.event.pull_request.number }}" > docs/site/pr-number.txt

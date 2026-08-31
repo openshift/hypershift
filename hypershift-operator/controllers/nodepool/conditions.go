@@ -10,7 +10,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
@@ -159,16 +161,16 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 
 // setPlatformConditions is a hook for platforms to implement custom logic/conditions freely
 // TODO: refactor signature to be inline with the rest of condition setters, and move common conditions like NodePoolValidPlatformImageType to a separate function.
-func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string) error {
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
-		return r.setKubevirtConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setKubevirtConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, resolvedRHELStream)
 	case hyperv1.AWSPlatform:
-		return r.setAWSConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setAWSConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, resolvedRHELStream)
 	case hyperv1.PowerVSPlatform:
-		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, resolvedRHELStream)
 	case hyperv1.OpenStackPlatform:
-		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, resolvedRHELStream)
 	default:
 		return nil
 	}
@@ -283,6 +285,31 @@ func (r *NodePoolReconciler) ignitionEndpointAvailableCondition(ctx context.Cont
 		log.Info("Ignition endpoint not available, waiting")
 		return &ctrl.Result{}, nil
 	}
+	// Gate on AzurePlatform (not just ARO HCP) because Azure DNS API throttling
+	// (429s) can delay any Azure DNS zone, not only ARO-managed ones.
+	// ServiceExternalDNSHostnameByHC already narrows this to public clusters with
+	// an explicit external DNS hostname, so self-managed Azure without external
+	// DNS is unaffected.
+	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+		ignitionHostname := netutil.ServiceExternalDNSHostnameByHC(hcluster, hyperv1.Ignition)
+		if ignitionHostname != "" {
+			resolveDNSHostname := r.resolveDNSHostname
+			if resolveDNSHostname == nil {
+				resolveDNSHostname = netutil.ResolveDNSHostname
+			}
+			if err := resolveDNSHostname(ctx, ignitionHostname); err != nil {
+				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               string(hyperv1.IgnitionEndpointAvailable),
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.ExternalDNSHostNotReachableReason,
+					Message:            fmt.Sprintf("Ignition endpoint DNS hostname %q is not resolvable: %v", ignitionHostname, err),
+					ObservedGeneration: nodePool.Generation,
+				})
+				log.Info("Ignition endpoint DNS hostname is not resolvable, waiting")
+				return &ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			}
+		}
+	}
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
@@ -367,7 +394,8 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	// Validate osImageStream before expensive config generation to fail fast.
-	if err := validateOSImageStream(ctx, r.Client, nodePool, releaseImage); err != nil {
+	osStreamsEnabled := featuregate.Gate().Enabled(featuregate.OSStreams)
+	if err := validateOSImageStream(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled); err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
@@ -384,7 +412,18 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
+	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return &ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
+	}
+	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,

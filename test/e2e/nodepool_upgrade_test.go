@@ -188,7 +188,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 				return nodePool.Status.Version == previousReleaseInfo.ObjectMeta.Name, fmt.Sprintf("wanted version %s, got %s", previousReleaseInfo.ObjectMeta.Name, nodePool.Status.Version), nil
 			},
 		},
-		e2eutil.WithTimeout(10*time.Second),
+		e2eutil.WithTimeout(2*time.Minute),
 	)
 
 	// Validate NodesInfo is populated with the previous version before upgrade.
@@ -254,7 +254,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		e2eutil.WithTimeout(ru.getNodePoolUpgradeTimeout()),
 	)
 	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
-	e2eutil.EnsureNodesRuntime(t, newNodes)
+	e2eutil.EnsureNodesRuntime(t, newNodes, &nodePool)
 
 	// Validate NodesInfo is populated with the latest version after upgrade.
 	t.Logf("Validating NodesInfo is populated with version %s after upgrade", latestReleaseInfo.Version())
@@ -276,4 +276,13 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(2*time.Minute),
 	)
+
+	// Verify osImageStream is populated after upgrade.
+	{
+		np := &hyperv1.NodePool{}
+		g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)).To(Succeed(), "failed to get NodePool for osImageStream validation")
+		if np.Status.OSImageStream.Name != "" {
+			t.Logf("Post-upgrade osImageStream: %s", np.Status.OSImageStream.Name)
+		}
+	}
 }

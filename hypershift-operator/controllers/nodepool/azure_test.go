@@ -746,7 +746,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 								},
 							},
 							SubnetID: "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Network/virtualNetworks/vnet-test/subnets/subnet-worker",
-							VMSize:   "Standard_D2s_v3",
+							VMSize:   "Standard_D2s_v5",
 							OSDisk: hyperv1.AzureNodePoolOSDisk{
 								SizeGiB:                64,
 								DiskStorageAccountType: "StandardSSD_LRS",
@@ -761,7 +761,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 			expectedTemplateName: "azure-marketplace-template",
 			expectedErr:          false,
 			validateTemplateSpec: true,
-			expectedVMSize:       "Standard_D2s_v3",
+			expectedVMSize:       "Standard_D2s_v5",
 			expectedSubnetName:   "subnet-worker",
 			expectedMarketplace: &capiazure.AzureMarketplaceImage{
 				ImagePlan: capiazure.ImagePlan{
@@ -787,7 +787,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 								ImageID: ptr.To("test-image"),
 							},
 							SubnetID: "invalid-subnet-id",
-							VMSize:   "Standard_D2s_v3",
+							VMSize:   "Standard_D2s_v5",
 							OSDisk: hyperv1.AzureNodePoolOSDisk{
 								SizeGiB:                30,
 								DiskStorageAccountType: "Standard_LRS",
@@ -814,7 +814,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 								ImageID: ptr.To("test-image"),
 							},
 							SubnetID: "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Network/virtualNetworks/vnet-test/subnets/subnet-worker",
-							VMSize:   "Standard_D2s_v3",
+							VMSize:   "Standard_D2s_v5",
 							OSDisk: hyperv1.AzureNodePoolOSDisk{
 								SizeGiB:                30,
 								DiskStorageAccountType: "Standard_LRS",
@@ -841,7 +841,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 								// ImageID intentionally nil
 							},
 							SubnetID: "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Network/virtualNetworks/vnet-test/subnets/subnet-worker",
-							VMSize:   "Standard_D2s_v3",
+							VMSize:   "Standard_D2s_v5",
 							OSDisk: hyperv1.AzureNodePoolOSDisk{
 								SizeGiB:                30,
 								DiskStorageAccountType: "Standard_LRS",
@@ -869,7 +869,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 								ImageID: ptr.To("test-image"),
 							},
 							SubnetID:         "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Network/virtualNetworks/vnet-test/subnets/subnet-worker",
-							VMSize:           "Standard_D2s_v3",
+							VMSize:           "Standard_D2s_v5",
 							EncryptionAtHost: "Enabled",
 							OSDisk: hyperv1.AzureNodePoolOSDisk{
 								SizeGiB:                30,
@@ -887,7 +887,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 			expectedTemplateName: "azure-secure-template",
 			expectedErr:          false,
 			validateTemplateSpec: true,
-			expectedVMSize:       "Standard_D2s_v3",
+			expectedVMSize:       "Standard_D2s_v5",
 			expectedSubnetName:   "subnet-worker",
 			expectedImageID:      ptr.To("test-image"),
 		},

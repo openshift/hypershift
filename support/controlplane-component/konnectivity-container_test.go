@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -171,4 +172,110 @@ func TestBuildContainerDualMode(t *testing.T) {
 		"Socks5 container should not have HTTP_PROXY because ConnectDirectlyToCloudAPIs is not set on Socks5Options")
 	g.Expect(findEnvVar(socks5Container.Env, "HTTPS_PROXY")).To(BeNil(),
 		"Socks5 container should not have HTTPS_PROXY")
+}
+
+func TestBuildContainerPreferIPv4(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{}
+
+	tests := []struct {
+		name      string
+		opts      KonnectivityContainerOptions
+		expectArg bool
+	}{
+		{
+			name: "When PreferIPv4 is true for HTTPS mode, it should include --prefer-ipv4=true arg",
+			opts: KonnectivityContainerOptions{
+				Mode: HTTPS,
+				HTTPSOptions: HTTPSOptions{
+					PreferIPv4: ptr.To(true),
+				},
+			},
+			expectArg: true,
+		},
+		{
+			name: "When PreferIPv4 is true for Socks5 mode, it should include --prefer-ipv4=true arg",
+			opts: KonnectivityContainerOptions{
+				Mode: Socks5,
+				Socks5Options: Socks5Options{
+					PreferIPv4: ptr.To(true),
+				},
+			},
+			expectArg: true,
+		},
+		{
+			name: "When PreferIPv4 is not set for HTTPS mode, it should not include --prefer-ipv4 arg",
+			opts: KonnectivityContainerOptions{
+				Mode: HTTPS,
+			},
+			expectArg: false,
+		},
+		{
+			name: "When PreferIPv4 is not set for Socks5 mode, it should not include --prefer-ipv4 arg",
+			opts: KonnectivityContainerOptions{
+				Mode: Socks5,
+			},
+			expectArg: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			container := tt.opts.buildContainer(hcp, "test-image:latest", nil)
+
+			if tt.expectArg {
+				g.Expect(container.Args).To(ContainElement("--prefer-ipv4=true"))
+			} else {
+				for _, arg := range container.Args {
+					g.Expect(arg).NotTo(HavePrefix("--prefer-ipv4"), "should not include --prefer-ipv4 arg")
+				}
+			}
+		})
+	}
+}
+
+func TestIsSingleStackIPv4(t *testing.T) {
+	tests := []struct {
+		name     string
+		networks []string
+		expected bool
+	}{
+		{
+			name:     "When ServiceNetwork has a single IPv4 CIDR, it should return true",
+			networks: []string{"172.31.0.0/16"},
+			expected: true,
+		},
+		{
+			name:     "When ServiceNetwork has a single IPv6 CIDR, it should return false",
+			networks: []string{"fd02::/112"},
+			expected: false,
+		},
+		{
+			name:     "When ServiceNetwork is dual-stack, it should return false",
+			networks: []string{"172.31.0.0/16", "fd02::/112"},
+			expected: false,
+		},
+		{
+			name:     "When ServiceNetwork is empty, it should return false",
+			networks: []string{},
+			expected: false,
+		},
+		{
+			name:     "When ServiceNetwork has multiple IPv4 CIDRs, it should return true",
+			networks: []string{"172.31.0.0/16", "10.96.0.0/16"},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := &hyperv1.HostedControlPlane{}
+			for _, cidr := range tt.networks {
+				hcp.Spec.Networking.ServiceNetwork = append(hcp.Spec.Networking.ServiceNetwork,
+					hyperv1.ServiceNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
+			}
+			g.Expect(isSingleStackIPv4(hcp)).To(Equal(tt.expected))
+		})
+	}
 }

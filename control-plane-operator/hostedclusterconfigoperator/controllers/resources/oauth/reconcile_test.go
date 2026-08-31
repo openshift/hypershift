@@ -7,6 +7,8 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 
+	oauthv1 "github.com/openshift/api/oauth/v1"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
@@ -74,6 +76,68 @@ func TestReconcileOauthServingCertRoleBinding(t *testing.T) {
 			err := ReconcileOauthServingCertRoleBinding(tc.inputRoleBinding)
 			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(tc.inputRoleBinding).To(BeEquivalentTo(tc.expectedRoleBinding))
+		})
+	}
+}
+
+func TestReconcileBrowserClient(t *testing.T) {
+	testsCases := []struct {
+		name         string
+		externalHost string
+		externalPort int32
+		wantURIs     []string
+	}{
+		{
+			name:         "When OAuth host is IPv4, it should leave the redirect URI unbracketed",
+			externalHost: "192.0.2.10",
+			externalPort: 32047,
+			wantURIs:     []string{"https://192.0.2.10:32047/oauth/token/display"},
+		},
+		{
+			name:         "When OAuth host is IPv6, it should bracket the address in the redirect URI",
+			externalHost: "fd2e:6f44:5dd8:c956::14",
+			externalPort: 32047,
+			wantURIs:     []string{"https://[fd2e:6f44:5dd8:c956::14]:32047/oauth/token/display"},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			client := &oauthv1.OAuthClient{}
+			err := ReconcileBrowserClient(client, tc.externalHost, tc.externalPort)
+			g.Expect(err).To(Not(HaveOccurred()))
+			g.Expect(client.RedirectURIs).To(Equal(tc.wantURIs))
+		})
+	}
+}
+
+func TestReconcileChallengingClient(t *testing.T) {
+	testsCases := []struct {
+		name         string
+		externalHost string
+		externalPort int32
+		wantURIs     []string
+	}{
+		{
+			name:         "When OAuth host is IPv4, it should leave the redirect URI unbracketed",
+			externalHost: "192.0.2.10",
+			externalPort: 32047,
+			wantURIs:     []string{"https://192.0.2.10:32047/oauth/token/implicit"},
+		},
+		{
+			name:         "When OAuth host is IPv6, it should bracket the address in the redirect URI",
+			externalHost: "fd2e:6f44:5dd8:c956::14",
+			externalPort: 32047,
+			wantURIs:     []string{"https://[fd2e:6f44:5dd8:c956::14]:32047/oauth/token/implicit"},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			client := &oauthv1.OAuthClient{}
+			err := ReconcileChallengingClient(client, tc.externalHost, tc.externalPort)
+			g.Expect(err).To(Not(HaveOccurred()))
+			g.Expect(client.RedirectURIs).To(Equal(tc.wantURIs))
 		})
 	}
 }

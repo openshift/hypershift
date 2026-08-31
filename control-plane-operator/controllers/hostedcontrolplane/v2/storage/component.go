@@ -64,6 +64,10 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptAzureCSIFileSecretProvider),
 			component.WithPredicate(isAroHCP),
 		).
+		WithManifestAdapter(
+			"controller-config.yaml",
+			component.WithAdaptFunction(component.NewGenericControllerConfigAdapter("0.0.0.0:8443", "")),
+		).
 		WithDependencies(oapiv2.ComponentName).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "guest-kubeconfig",
@@ -76,10 +80,7 @@ func NewComponent() component.ControlPlaneComponent {
 }
 
 func isStorageAndCSIManaged(cpContext component.WorkloadContext) (bool, error) {
-	if cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform || cpContext.HCP.Spec.Platform.Type == hyperv1.PowerVSPlatform {
-		return false, nil
-	}
-	return true, nil
+	return component.IsStorageAndCSIManaged(cpContext.HCP.Spec.Platform.Type), nil
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {

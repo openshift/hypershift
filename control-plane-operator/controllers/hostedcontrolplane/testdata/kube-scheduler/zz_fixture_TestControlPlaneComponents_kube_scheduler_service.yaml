@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: c0aa8d94b7d45d0c5a7059fc484fc091301fb6208fa587c8ad066977daac3c7b
   labels:
     app: kube-scheduler
   name: kube-scheduler

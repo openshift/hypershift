@@ -177,7 +177,14 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		if message, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
-		host = strategy.Route.Hostname
+		switch {
+		case strategy.Route != nil && strategy.Route.Hostname != "":
+			host = strategy.Route.Hostname
+		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
+			host = svc.Status.LoadBalancer.Ingress[0].Hostname
+		case svc.Status.LoadBalancer.Ingress[0].IP != "":
+			host = svc.Status.LoadBalancer.Ingress[0].IP
+		}
 		port = 443
 	}
 	return

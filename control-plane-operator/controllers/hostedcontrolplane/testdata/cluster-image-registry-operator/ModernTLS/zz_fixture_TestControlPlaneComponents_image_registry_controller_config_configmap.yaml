@@ -19,6 +19,8 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: f9fada75e1f508ce98a880724dd978f528ec4be1762b5c9b37562dddeabb92c8
   name: image-registry-controller-config
   namespace: hcp-namespace
   ownerReferences:

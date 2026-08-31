@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -87,6 +88,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/validations"
@@ -381,28 +383,28 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 	return handlers
 }
 
-func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, originalHostedControlPlane *hyperv1.HostedControlPlane) (ctrl.Result, error) {
-	condition := &metav1.Condition{
+func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	condition := metav1.Condition{
 		Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 	}
 	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
 		if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
 			condition.Message = "failed to delete AWS default security group"
-			if code == "DependencyViolation" {
+			if code == supportawsutil.DependencyViolation {
 				condition.Message = destroyErr.Error()
 			}
 			condition.Reason = hyperv1.AWSErrorReason
 			condition.Status = metav1.ConditionFalse
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
-
-			if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+			if err := statuspatching.PatchStatusCondition(ctx, r.Client, hostedControlPlane, &hostedControlPlane.Status.Conditions, condition); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
 			}
 
 			switch code {
-			case "UnauthorizedOperation":
+			case supportawsutil.UnauthorizedOperation:
 				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
-			case "DependencyViolation":
+			case supportawsutil.InvalidIdentityToken:
+				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of invalid identity token (OIDC provider may be missing).")
+			case supportawsutil.DependencyViolation:
 				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
 			default:
 				return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
@@ -411,9 +413,7 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 			condition.Message = hyperv1.AllIsWellMessage
 			condition.Reason = hyperv1.AsExpectedReason
 			condition.Status = metav1.ConditionTrue
-			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
-
-			if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+			if err := statuspatching.PatchStatusCondition(ctx, r.Client, hostedControlPlane, &hostedControlPlane.Status.Conditions, condition); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition message: %v", err, condition.Message)
 			}
 		}
@@ -598,7 +598,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		return r.reconcileDeletion(ctx, hostedControlPlane, originalHostedControlPlane)
+		return r.reconcileDeletion(ctx, hostedControlPlane)
 	}
 
 	if !controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
@@ -761,7 +761,9 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Reason:  hyperv1.AsExpectedReason,
 		}
 		if util.HCPOAuthEnabled(hostedControlPlane) {
-			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauth2callback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
+			// JoinHostPort brackets IPv6 literals so url.Parse accepts the callback template.
+			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s/oauth2callback/[identity-provider-name]",
+				net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
 		}
 	} else {
 		message := "Cluster infrastructure is still provisioning"
@@ -1163,32 +1165,27 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		errs = append(errs, err)
 	}
 
-	// Get the latest HCP in memory before we patch the status
-	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(hostedControlPlane), hostedControlPlane); err != nil {
-		return reconcile.Result{}, err
-	}
-
-	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	missingImages := sets.New(releaseImageProvider.GetMissingImages()...).Insert(userReleaseImageProvider.GetMissingImages()...)
-	if missingImages.Len() == 0 {
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.ValidReleaseInfo),
-			Status:             metav1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            hyperv1.AllIsWellMessage,
-			ObservedGeneration: hostedControlPlane.Generation,
-		})
-	} else {
-		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.ValidReleaseInfo),
-			Status:             metav1.ConditionFalse,
-			Reason:             hyperv1.MissingReleaseImagesReason,
-			Message:            strings.Join(missingImages.UnsortedList(), ", "),
-			ObservedGeneration: hostedControlPlane.Generation,
-		})
-	}
-
-	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+	if err := statuspatching.PatchStatus(ctx, r.Client, hostedControlPlane, func() error {
+		if missingImages.Len() == 0 {
+			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidReleaseInfo),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            hyperv1.AllIsWellMessage,
+				ObservedGeneration: hostedControlPlane.Generation,
+			})
+		} else {
+			meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidReleaseInfo),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.MissingReleaseImagesReason,
+				Message:            strings.Join(sets.List(missingImages), ", "),
+				ObservedGeneration: hostedControlPlane.Generation,
+			})
+		}
+		return nil
+	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to update status: %w", err))
 	}
 
@@ -1201,6 +1198,10 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	}
 
 	if err := r.cleanupOldPKIOperatorDeployment(ctx, hcp); err != nil {
+		return err
+	}
+
+	if err := r.cleanupOldRedHatMarketplaceCatalogResources(ctx, hcp); err != nil {
 		return err
 	}
 
@@ -1656,6 +1657,22 @@ func (r *HostedControlPlaneReconciler) reconcileOLMAndMiscCerts(ctx context.Cont
 		}
 	}
 
+	if component.IsStorageAndCSIManaged(hcp.Spec.Platform.Type) {
+		clusterStorageOperatorServingCert := manifests.ClusterStorageOperatorServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, clusterStorageOperatorServingCert, func() error {
+			return pki.ReconcileClusterStorageOperatorServingCert(clusterStorageOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cluster storage operator serving cert: %w", err)
+		}
+
+		csiSnapshotControllerOperatorServingCert := manifests.CSISnapshotControllerOperatorServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, csiSnapshotControllerOperatorServingCert, func() error {
+			return pki.ReconcileCSISnapshotControllerOperatorServingCert(csiSnapshotControllerOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile CSI snapshot controller operator serving cert: %w", err)
+		}
+	}
+
 	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kcmServerSecret, func() error {
 		return pki.ReconcileKCMServerSecret(kcmServerSecret, rootCASecret, p.OwnerRef)
@@ -2061,8 +2078,28 @@ func (r *HostedControlPlaneReconciler) cleanupOldPKIOperatorDeployment(ctx conte
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) cleanupOldRedHatMarketplaceCatalogResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	oldResources := []client.Object{
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "redhat-marketplace-catalog"}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "redhat-marketplace-catalog"}},
+		&hyperv1.ControlPlaneComponent{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "redhat-marketplace-catalog"}},
+	}
+	for _, resource := range oldResources {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
+			return fmt.Errorf("failed to delete %T %s: %w", resource, resource.GetName(), err)
+		}
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, oauthHost string, oauthPort int32) error {
 	p := oauth.NewOAuthServerParams(hcp, releaseImageProvider, oauthHost, oauthPort, r.SetDefaultSecurityContext)
+
+	// The condition below is evaluated from the spec at this generation. If the spec
+	// changes before we patch, the evaluation is stale and must not be applied blindly.
+	// Note: p.OauthConfigOverrides is derived from IDP-override annotations, which don't
+	// bump Generation — an annotation-only change in this window isn't caught by this guard.
+	evaluatedGeneration := hcp.Generation
 
 	// Report any IDP configuration errors as a condition on the HCP
 	new := metav1.Condition{
@@ -2081,12 +2118,14 @@ func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(c
 			Message: fmt.Sprintf("failed to initialize identity providers: %v", err),
 		}
 	}
-	// Patch the condition on the HCP if it has changed
-	originalHCP := hcp.DeepCopy()
-	if meta.SetStatusCondition(&hcp.Status.Conditions, new) {
-		if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-			return fmt.Errorf("failed to patch valid IDP configuration condition: %w", err)
+	if err := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+		if hcp.Generation != evaluatedGeneration {
+			return fmt.Errorf("hcp generation changed from %d to %d while evaluating IDP configuration, requeueing to re-evaluate", evaluatedGeneration, hcp.Generation)
 		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, new)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to patch valid IDP configuration condition: %w", err)
 	}
 	return nil
 }
@@ -2574,18 +2613,25 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 
 		if timeElapsed > resourceDeletionTimeout {
 			log.Info("Giving up on resource deletion after timeout", "timeElapsed", duration.ShortHumanDuration(timeElapsed))
-			message := fmt.Sprintf("Giving up on cloud resource deletion after %s", duration.ShortHumanDuration(timeElapsed))
-			if resourcesDestroyedCond != nil && resourcesDestroyedCond.Message != "" {
-				message = fmt.Sprintf("%s (last status: %s)", message, resourcesDestroyedCond.Message)
-			}
-			originalHCP := hcp.DeepCopy()
-			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
-				Type:    string(hyperv1.CloudResourcesDestroyed),
-				Status:  metav1.ConditionFalse,
-				Reason:  string(hyperv1.CloudResourcesDeletionTimedOutReason),
-				Message: message,
-			})
-			if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			if err := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+				// HCCO writes this same condition concurrently when it actually finishes
+				// destroying resources. Re-check the freshly fetched object so we don't
+				// clobber a concurrent True with a stale timeout.
+				if fresh := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed)); fresh != nil && fresh.Status == metav1.ConditionTrue {
+					return nil
+				}
+				message := fmt.Sprintf("Giving up on cloud resource deletion after %s", duration.ShortHumanDuration(timeElapsed))
+				if resourcesDestroyedCond != nil && resourcesDestroyedCond.Message != "" {
+					message = fmt.Sprintf("%s (last status: %s)", message, resourcesDestroyedCond.Message)
+				}
+				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+					Type:    string(hyperv1.CloudResourcesDestroyed),
+					Status:  metav1.ConditionFalse,
+					Reason:  string(hyperv1.CloudResourcesDeletionTimedOutReason),
+					Message: message,
+				})
+				return nil
+			}); err != nil {
 				return false, fmt.Errorf("failed to patch cloud resources destroyed condition: %w", err)
 			}
 			return true, nil
@@ -2611,15 +2657,11 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		return false, nil
 	}
 	if cvoScaledDownCond == nil || cvoScaledDownCond.Status != metav1.ConditionTrue {
-		originalHCP := hcp.DeepCopy()
-		cvoScaledDownCond = &metav1.Condition{
-			Type:               string(hyperv1.CVOScaledDown),
-			Status:             metav1.ConditionTrue,
-			Reason:             "CVOScaledDown",
-			LastTransitionTime: metav1.Now(),
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, *cvoScaledDownCond)
-		if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		if err := statuspatching.PatchStatusCondition(ctx, r.Client, hcp, &hcp.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.CVOScaledDown),
+			Status: metav1.ConditionTrue,
+			Reason: "CVOScaledDown",
+		}); err != nil {
 			return false, fmt.Errorf("failed to patch CVO scaled down condition: %w", err)
 		}
 	}
@@ -2687,11 +2729,14 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		return nil
 	}
 
-	originalHCP := hcp.DeepCopy()
-	var condition *metav1.Condition
+	// The security group result below is derived from the spec at this generation
+	// (VPC, machine CIDR). If the spec changes before we patch, that result is stale.
+	evaluatedGeneration := hcp.Generation
+
+	var condition metav1.Condition
 	sgID, appliedTags, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp)
 	if creationErr != nil {
-		condition = &metav1.Condition{
+		condition = metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
 			Status:  metav1.ConditionFalse,
 			Message: creationErr.Error(),
@@ -2708,23 +2753,31 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		}); err != nil {
 			return fmt.Errorf("failed to update HostedControlPlane object: %w", err)
 		}
-		originalHCP = hcp.DeepCopy()
 
-		condition = &metav1.Condition{
+		condition = metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
 			Status:  metav1.ConditionTrue,
 			Message: hyperv1.AllIsWellMessage,
 			Reason:  hyperv1.AsExpectedReason,
 		}
-		hcp.Status.Platform = &hyperv1.PlatformStatus{
-			AWS: &hyperv1.AWSPlatformStatus{
-				DefaultWorkerSecurityGroupID: sgID,
-			},
-		}
 	}
-	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
 
-	if err := r.Client.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+	if err := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+		if hcp.Generation != evaluatedGeneration {
+			return fmt.Errorf("hcp generation changed from %d to %d while creating default security group, requeueing to re-evaluate", evaluatedGeneration, hcp.Generation)
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		if creationErr == nil {
+			if hcp.Status.Platform == nil {
+				hcp.Status.Platform = &hyperv1.PlatformStatus{}
+			}
+			if hcp.Status.Platform.AWS == nil {
+				hcp.Status.Platform.AWS = &hyperv1.AWSPlatformStatus{}
+			}
+			hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID = sgID
+		}
+		return nil
+	}); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
@@ -2911,7 +2964,8 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	// Get the security group to delete. If it no longer exists, then there's nothing to do
 	sg, err := supportawsutil.GetSecurityGroup(ctx, r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
 	if err != nil {
-		return "", err
+		code := supportawsutil.AWSErrorCode(err)
+		return code, err
 	}
 	if sg == nil {
 		return "", nil
@@ -2955,7 +3009,8 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	// the delete until it's no longer there.
 	sg, err = supportawsutil.GetSecurityGroup(ctx, r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
 	if err != nil {
-		return "", err
+		code := supportawsutil.AWSErrorCode(err)
+		return code, err
 	}
 	if sg != nil {
 		return "", fmt.Errorf("security group still exists, waiting on deletion")
@@ -3084,6 +3139,21 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	if hyperazureutil.IsAroHCPByHCP(hcp) {
+		// CPO cannot reach private Key Vault endpoints; KAS pods access them
+		// through the private router (HAProxy TCP passthrough via hostAlias).
+		// Actual Key Vault access is not verified here, so the condition is
+		// Unknown rather than True until it is validated at runtime.
+		if hyperazureutil.IsPrivateKeyVault(hcp) {
+			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidAzureKMSConfig),
+				ObservedGeneration: hcp.Generation,
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				Message:            "Private Key Vault endpoint is not reachable from the management cluster",
+			})
+			return
+		}
+
 		key := hcp.Namespace + kmsAzureCredentials
 
 		// We need to only store the Azure credentials once and reuse them after that.
@@ -3130,7 +3200,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		return
 	}
 
-	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
+	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffix(hcp.Spec.Platform.Azure.Cloud, azureKmsSpec.KeyVaultType)
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 			fmt.Sprintf("vault dns suffix not available for cloud: %s", hcp.Spec.Platform.Azure.Cloud))

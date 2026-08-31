@@ -1,0 +1,70 @@
+name: E2E Compile (Reusable)
+
+on:
+  workflow_call:
+  push:
+    branches:
+      - main
+      - release-4.22
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect Changes
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+    outputs:
+      run_e2e: ${{ steps.changes.outputs.run_e2e }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check for non-contrib changes
+        id: changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          else
+            if [ "$EVENT_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            FILES=$(git diff --name-only "$EVENT_BEFORE..$EVENT_SHA")
+          fi
+          if echo "$FILES" | grep -qvE '^(contrib|\.github|docs)/'; then
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_e2e=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e-compile:
+    name: E2E Compile
+    needs: changes
+    if: needs.changes.outputs.run_e2e == 'true'
+    runs-on: arc-runner-set
+    timeout-minutes: 30
+    env:
+      GOMODCACHE: /tmp/go-mod-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        env:
+          HOME: /tmp
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compile E2E tests
+        run: make e2e

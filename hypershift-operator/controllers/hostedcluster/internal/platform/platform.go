@@ -117,9 +117,21 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 	case hyperv1.NonePlatform:
 		platform = &none.None{}
 	case hyperv1.AgentPlatform:
-		platform = &agent.Agent{}
+		if pullSecretBytes != nil {
+			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
+		}
+		platform = agent.New(payloadVersion)
 	case hyperv1.KubevirtPlatform:
-		platform = &kubevirt.Kubevirt{}
+		if pullSecretBytes != nil {
+			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
+		}
+		platform = kubevirt.New(payloadVersion)
 	case hyperv1.AzurePlatform:
 		if pullSecretBytes != nil {
 			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, AzureCAPIProvider, pullSecretBytes)
@@ -139,8 +151,12 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
+			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
 		}
-		platform = powervs.New(capiImageProvider)
+		platform = powervs.New(capiImageProvider, payloadVersion)
 	case hyperv1.OpenStackPlatform:
 		if pullSecretBytes != nil {
 			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackCAPIProvider, pullSecretBytes)

@@ -31,7 +31,7 @@ const (
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
 var (
-	LatestSupportedVersion      = semver.MustParse("5.0.0")
+	LatestSupportedVersion      = semver.MustParse("5.1.0")
 	MinSupportedVersion         = semver.MustParse("4.14.0")
 	IBMCloudMinSupportedVersion = semver.MustParse("4.14.0")
 	// prevLatestSupportedMajor holds the value of the latest version before we updated to a new major.
@@ -53,14 +53,18 @@ var ocpVersionToKubeVersion = map[string]semver.Version{
 	"4.21.0": semver.MustParse("1.34.0"),
 	"4.22.0": semver.MustParse("1.35.0"),
 	"4.23.0": semver.MustParse("1.36.0"),
+	"5.0.0":  semver.MustParse("1.36.0"),
+	"5.1.0":  semver.MustParse("1.37.0"),
 }
 
 func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver.Version, error) {
-	normalized, err := normalizeToV4(supportedVersion)
-	if err != nil {
-		return nil, err
-	}
-	lookupKey := semver.Version{Major: normalized.Major, Minor: normalized.Minor}
+	// Unlike other version-aware functions in this package, we do NOT normalize
+	// to 4.x here. normalizeToV4 is used elsewhere for arithmetic and comparison
+	// (e.g. skew validation, release validation) where mapping 5.x to 4.(23+x)
+	// preserves ordering. Here we need a direct lookup: 5.0 and 4.23 are the
+	// same OCP release (dual versioning), but 5.1+ are distinct versions with
+	// no 4.x equivalent, so the map uses real version keys for both series.
+	lookupKey := semver.Version{Major: supportedVersion.Major, Minor: supportedVersion.Minor}
 	kubeVersion, ok := ocpVersionToKubeVersion[lookupKey.String()]
 	if !ok {
 		return nil, fmt.Errorf("unknown supported version %q", supportedVersion.String())

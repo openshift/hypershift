@@ -300,12 +300,11 @@ spec:
                                   description: |-
                                     IPv6CidrBlock is the IPv6 CIDR block to be used when the provider creates a managed VPC.
                                     A subnet can have an IPv4 and an IPv6 address.
-                                    IPv6 is only supported in managed clusters, this field cannot be set on AWSCluster object.
                                   type: string
                                 isIpv6:
-                                  description: |-
-                                    IsIPv6 defines the subnet as an IPv6 subnet. A subnet is IPv6 when it is associated with a VPC that has IPv6 enabled.
-                                    IPv6 is only supported in managed clusters, this field cannot be set on AWSCluster object.
+                                  description: IsIPv6 defines the subnet as an IPv6
+                                    subnet. A subnet is IPv6 when it is associated
+                                    with an IPv6 CIDR.
                                   type: boolean
                                 isPublic:
                                   description: IsPublic defines the subnet as a public
@@ -368,9 +367,8 @@ spec:
                                   gateway associated with the VPC.
                                 type: string
                               ipv6:
-                                description: |-
-                                  IPv6 contains ipv6 specific settings for the network. Supported only in managed clusters.
-                                  This field cannot be set on AWSCluster object.
+                                description: IPv6 contains ipv6 specific settings
+                                  for the network.
                                 properties:
                                   cidrBlock:
                                     description: CidrBlock is the CIDR block provided
@@ -522,6 +520,7 @@ spec:
                             description: |-
                               AllowedCIDRBlocks is a list of CIDR blocks allowed to access the bastion host.
                               They are set as ingress rules for the Bastion host's Security Group (defaults to 0.0.0.0/0).
+                              If the cluster has IPv6 enabled, defaults to ::/0 and 0.0.0.0/0.
                             items:
                               type: string
                             type: array
@@ -646,6 +645,16 @@ spec:
                                   enum:
                                   - TCP
                                   type: string
+                                targetGroupIPType:
+                                  description: |-
+                                    TargetGroupIPType sets the IP address type for the target group.
+                                    Valid values are ipv4 and ipv6. If not specified, defaults to ipv4 unless
+                                    the VPC has IPv6 enabled, in which case it defaults to ipv6.
+                                    This field cannot be set if LoadBalancerType is classic or disabled.
+                                  enum:
+                                  - ipv4
+                                  - ipv6
+                                  type: string
                               required:
                               - port
                               type: object
@@ -676,6 +685,15 @@ spec:
                               DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                               file of each instance. This is by default, false.
                             type: boolean
+                          dnsResolutionCheck:
+                            description: |-
+                              DNSResolutionCheck configures the behavior for checking the load balancer DNS resolution.
+                              Set to "None" to disable the check.
+                              If omitted, the DNS resolution check is enabled.
+                            enum:
+                            - None
+                            - Enabled
+                            type: string
                           healthCheck:
                             description: HealthCheck sets custom health check configuration
                               to the API target group.
@@ -844,6 +862,17 @@ spec:
                             items:
                               type: string
                             type: array
+                          targetGroupIPType:
+                            description: |-
+                              TargetGroupIPType sets the IP address type for the target group.
+                              Valid values are ipv4 and ipv6. If not specified, defaults to ipv4 unless
+                              the VPC has IPv6 enabled, in which case it defaults to ipv6.
+                              This applies to the API server target group.
+                              This field cannot be set if LoadBalancerType is classic or disabled.
+                            enum:
+                            - ipv4
+                            - ipv6
+                            type: string
                         type: object
                       identityRef:
                         description: |-
@@ -1127,12 +1156,11 @@ spec:
                                   description: |-
                                     IPv6CidrBlock is the IPv6 CIDR block to be used when the provider creates a managed VPC.
                                     A subnet can have an IPv4 and an IPv6 address.
-                                    IPv6 is only supported in managed clusters, this field cannot be set on AWSCluster object.
                                   type: string
                                 isIpv6:
-                                  description: |-
-                                    IsIPv6 defines the subnet as an IPv6 subnet. A subnet is IPv6 when it is associated with a VPC that has IPv6 enabled.
-                                    IPv6 is only supported in managed clusters, this field cannot be set on AWSCluster object.
+                                  description: IsIPv6 defines the subnet as an IPv6
+                                    subnet. A subnet is IPv6 when it is associated
+                                    with an IPv6 CIDR.
                                   type: boolean
                                 isPublic:
                                   description: IsPublic defines the subnet as a public
@@ -1310,13 +1338,13 @@ spec:
                                       The netmask length of the IPv4 CIDR you want to allocate to VPC from
                                       an Amazon VPC IP Address Manager (IPAM) pool.
                                       Defaults to /16 for IPv4 if not specified.
+                                      Defaults to /56 for IPv6 if not specified.
                                     format: int64
                                     type: integer
                                 type: object
                               ipv6:
-                                description: |-
-                                  IPv6 contains ipv6 specific settings for the network. Supported only in managed clusters.
-                                  This field cannot be set on AWSCluster object.
+                                description: IPv6 contains ipv6 specific settings
+                                  for the network.
                                 properties:
                                   cidrBlock:
                                     description: |-
@@ -1347,6 +1375,7 @@ spec:
                                           The netmask length of the IPv4 CIDR you want to allocate to VPC from
                                           an Amazon VPC IP Address Manager (IPAM) pool.
                                           Defaults to /16 for IPv4 if not specified.
+                                          Defaults to /56 for IPv6 if not specified.
                                         format: int64
                                         type: integer
                                     type: object
@@ -1419,6 +1448,44 @@ spec:
                           (https://coreos.github.io/ignition/) for bootstrapping (requires
                           BootstrapFormatIgnition feature flag to be enabled).
                         properties:
+                          additionalIAMRoles:
+                            description: |-
+                              AdditionalIAMRoles is a list of additional IAM roles
+                              with custom S3 prefixes for accessing bootstrap data.
+                              This is useful for custom node pools (e.g., Karpenter) that need access
+                              to bootstrap data stored under custom prefixes.
+                            items:
+                              description: |-
+                                AdditionalIAMRole defines an additional IAM role
+                                with a custom S3 prefix for accessing bootstrap data from S3 Bucket.
+                                This enables support for custom node pools (e.g., Karpenter) that need
+                                access to bootstrap data with custom S3 prefixes.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name is the name of the IAM role that will be granted access.
+                                    This must match the IAM role name (not the ARN).
+                                  maxLength: 128
+                                  minLength: 1
+                                  pattern: ^[\w+=,.@-]+$
+                                  type: string
+                                prefix:
+                                  description: |-
+                                    Prefix is the S3 object key prefix (path) this role is granted access to.
+                                    It is appended to the bucket in the policy's resource ARN, so use a trailing "/*"
+                                    for wildcard access to a path (e.g. "karpenter-nodes/*") or "*" for the whole bucket.
+                                  maxLength: 512
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - name
+                              - prefix
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            - prefix
+                            x-kubernetes-list-type: map
                           bestEffortDeleteObjects:
                             description: BestEffortDeleteObjects defines whether access/permission
                               errors during object deletion should be ignored.
@@ -1540,6 +1607,16 @@ spec:
                                   enum:
                                   - TCP
                                   type: string
+                                targetGroupIPType:
+                                  description: |-
+                                    TargetGroupIPType sets the IP address type for the target group.
+                                    Valid values are ipv4 and ipv6. If not specified, defaults to ipv4 unless
+                                    the VPC has IPv6 enabled, in which case it defaults to ipv6.
+                                    This field cannot be set if LoadBalancerType is classic or disabled.
+                                  enum:
+                                  - ipv4
+                                  - ipv6
+                                  type: string
                               required:
                               - port
                               type: object
@@ -1570,6 +1647,15 @@ spec:
                               DisableHostsRewrite disabled the hair pinning issue solution that adds the NLB's address as 127.0.0.1 to the hosts
                               file of each instance. This is by default, false.
                             type: boolean
+                          dnsResolutionCheck:
+                            description: |-
+                              DNSResolutionCheck configures the behavior for checking the load balancer DNS resolution.
+                              Set to "None" to disable the check.
+                              If omitted, the DNS resolution check is enabled.
+                            enum:
+                            - None
+                            - Enabled
+                            type: string
                           healthCheck:
                             description: HealthCheck sets custom health check configuration
                               to the API target group.
@@ -1738,6 +1824,17 @@ spec:
                             items:
                               type: string
                             type: array
+                          targetGroupIPType:
+                            description: |-
+                              TargetGroupIPType sets the IP address type for the target group.
+                              Valid values are ipv4 and ipv6. If not specified, defaults to ipv4 unless
+                              the VPC has IPv6 enabled, in which case it defaults to ipv6.
+                              This applies to the API server target group.
+                              This field cannot be set if LoadBalancerType is classic or disabled.
+                            enum:
+                            - ipv4
+                            - ipv6
+                            type: string
                         type: object
                       sshKeyName:
                         description: SSHKeyName is the name of the ssh key to attach

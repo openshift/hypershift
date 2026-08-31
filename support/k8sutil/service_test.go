@@ -104,7 +104,7 @@ func TestExtractHostedControlPlaneOwnerName(t *testing.T) {
 		want      string
 	}{
 		{
-			name: "When HostedControlPlane owner ref exists it should return the name",
+			name: "When HostedControlPlane owner ref exists, it should return the name",
 			ownerRefs: []metav1.OwnerReference{
 				{
 					APIVersion: hyperv1.GroupVersion.String(),
@@ -115,12 +115,12 @@ func TestExtractHostedControlPlaneOwnerName(t *testing.T) {
 			want: "my-hcp",
 		},
 		{
-			name:      "When no owner refs exist it should return empty string",
+			name:      "When no owner refs exist, it should return empty string",
 			ownerRefs: []metav1.OwnerReference{},
 			want:      "",
 		},
 		{
-			name: "When owner refs exist but none is HostedControlPlane it should return empty string",
+			name: "When owner refs exist but none is HostedControlPlane, it should return empty string",
 			ownerRefs: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
@@ -136,7 +136,7 @@ func TestExtractHostedControlPlaneOwnerName(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "When multiple owner refs exist it should return only the HCP one",
+			name: "When multiple owner refs exist, it should return only the HCP one",
 			ownerRefs: []metav1.OwnerReference{
 				{
 					APIVersion: "apps/v1",
@@ -157,7 +157,7 @@ func TestExtractHostedControlPlaneOwnerName(t *testing.T) {
 			want: "my-hcp",
 		},
 		{
-			name: "When owner ref has wrong APIVersion it should return empty string",
+			name: "When owner ref has wrong APIVersion, it should return empty string",
 			ownerRefs: []metav1.OwnerReference{
 				{
 					APIVersion: "wrong.api/v1",

@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,7 +44,54 @@ const (
 	// podSafeToEvictLocalVolumesAnnotation is an annotation denoting the local volumes of a pod that can be safely evicted.
 	// This is needed for the CA operator to make sure it can properly drain the nodes with those volumes.
 	podSafeToEvictLocalVolumesAnnotation = "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
+
+	// defaultNodeFailureTolerationSeconds is the TolerationSeconds applied to the
+	// well-known node.kubernetes.io/not-ready and node.kubernetes.io/unreachable
+	// NoExecute taints for API-critical components. When a management node fails,
+	// this evicts and replaces those (stateless, highly-available) pods quickly
+	// instead of waiting for the 300s default that the DefaultTolerationSeconds
+	// admission plugin would otherwise inject, reducing HA recovery time. Users can
+	// override this per-key via HostedControlPlane.spec.tolerations.
+	defaultNodeFailureTolerationSeconds int64 = 10
+
+	// etcdNodeFailureTolerationSeconds is the TolerationSeconds applied to the same
+	// node-failure taints for etcd. etcd is a quorum-based StatefulSet, so evicting a
+	// member too aggressively on a transient node partition forces unnecessary member
+	// churn and data re-sync. This value is still far below the 300s default (so full
+	// redundancy is restored faster after a genuine node loss) while long enough to
+	// ride out brief blips.
+	etcdNodeFailureTolerationSeconds int64 = 60
 )
+
+// shortNodeFailureToleration returns a NoExecute toleration for the given
+// well-known node-failure taint key (node.kubernetes.io/not-ready or
+// node.kubernetes.io/unreachable) with the provided short TolerationSeconds.
+func shortNodeFailureToleration(key string, seconds int64) corev1.Toleration {
+	return corev1.Toleration{
+		Key:               key,
+		Operator:          corev1.TolerationOpExists,
+		Effect:            corev1.TaintEffectNoExecute,
+		TolerationSeconds: ptr.To(seconds),
+	}
+}
+
+// tolerationsTolerateTaint reports whether any of the given tolerations tolerates
+// the provided taint using Kubernetes taint-matching semantics. This is used to
+// decide whether a user-specified toleration already covers a node-failure taint,
+// so we don't inject our short default. It correctly handles cases that a naive
+// key/effect comparison would get wrong, e.g. an empty-Effect toleration (which
+// matches all effects) or an Operator=Equal toleration with a non-empty Value
+// (which does NOT tolerate the empty-valued node-failure taints).
+func tolerationsTolerateTaint(tolerations []corev1.Toleration, taint *corev1.Taint) bool {
+	for i := range tolerations {
+		// enableComparisonOperators=false: the Lt/Gt operators are irrelevant for the
+		// empty-valued node-failure taints and are treated as non-matching.
+		if tolerations[i].ToleratesTaint(klog.Background(), taint, false) {
+			return true
+		}
+	}
+	return false
+}
 
 var (
 	apiCriticalComponents = sets.New(
@@ -252,6 +300,29 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 			Effect:   corev1.TaintEffectNoSchedule,
 		})
 	}
+	// For API-critical and etcd components, default to short NoExecute tolerations
+	// so pods are evicted and replaced quickly, reducing HA recovery time after a
+	// management node failure. User-specified tolerations for the same keys take
+	// precedence and are applied unfiltered below.
+	if apiCriticalComponents.Has(c.Name()) || isEtcdComponent(c.Name()) {
+		tolerationSeconds := defaultNodeFailureTolerationSeconds
+		if isEtcdComponent(c.Name()) {
+			// etcd uses a longer value to avoid quorum churn on transient partitions.
+			tolerationSeconds = etcdNodeFailureTolerationSeconds
+		}
+		for _, key := range []string{corev1.TaintNodeNotReady, corev1.TaintNodeUnreachable} {
+			// Only inject our short default if the user hasn't already provided a
+			// toleration that actually tolerates this node-failure taint. The taints
+			// are added by the node-lifecycle-controller with NoExecute and an empty
+			// value, so we match against that exact taint.
+			taint := &corev1.Taint{Key: key, Effect: corev1.TaintEffectNoExecute}
+			if !tolerationsTolerateTaint(hcp.Spec.Tolerations, taint) {
+				podTemplate.Spec.Tolerations = append(podTemplate.Spec.Tolerations,
+					shortNodeFailureToleration(key, tolerationSeconds))
+			}
+		}
+	}
+
 	// set additional Tolerations
 	if len(hcp.Spec.Tolerations) != 0 {
 		podTemplate.Spec.Tolerations = append(podTemplate.Spec.Tolerations, hcp.Spec.Tolerations...)

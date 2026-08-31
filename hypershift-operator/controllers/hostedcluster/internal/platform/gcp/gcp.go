@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -40,6 +41,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
+)
+
+// CredentialStatus represents the status of GCP credentials
+type CredentialStatus int
+
+const (
+	// CredentialStatusValid indicates that GCP credentials are valid
+	CredentialStatusValid CredentialStatus = 0
+	// CredentialStatusInvalid indicates that GCP credentials are invalid
+	CredentialStatusInvalid CredentialStatus = 1
+	// CredentialStatusUnknown indicates that GCP credential status is unknown
+	CredentialStatusUnknown CredentialStatus = 2
 )
 
 // GCP implements the Platform interface for Google Cloud Platform.
@@ -177,7 +190,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 // CAPIProviderDeploymentSpec implements CAPG controller deployment specification.
 // This method creates a deployment spec for the CAPG (Cluster API Provider GCP)
 // controller with proper image handling, feature gates, and WIF preparation.
-func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	// Validate GCP platform configuration is present
 	if hcluster.Spec.Platform.GCP == nil {
 		return nil, fmt.Errorf("GCP platform configuration is missing")
@@ -207,6 +220,15 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 		"--leader-elect=true",
 		fmt.Sprintf("--feature-gates=%s", strings.Join(featureGates, ",")),
 		"--v=2",
+	}
+	if hcp != nil && p.payloadVersion != nil && (p.payloadVersion.Major >= 5 || (p.payloadVersion.Major == 4 && p.payloadVersion.Minor >= 23)) {
+		tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if err != nil {
+			return nil, err
+		}
+		if len(tlsArgs) > 0 {
+			args = append(args, tlsArgs...)
+		}
 	}
 
 	containers := []corev1.Container{
@@ -475,6 +497,39 @@ func ValidCredentials(hc *hyperv1.HostedCluster) bool {
 	}
 
 	return true
+}
+
+// GetCredentialStatus returns the GCP credential status (valid/invalid/unknown)
+func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
+	// Get GCP Workload Identity Federation status
+	var wifStatus metav1.ConditionStatus
+	validWIF := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
+	if validWIF == nil {
+		wifStatus = metav1.ConditionUnknown
+	} else {
+		wifStatus = validWIF.Status
+	}
+
+	// Get GCP credentials status
+	var credsStatus metav1.ConditionStatus
+	validCreds := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
+	if validCreds == nil {
+		credsStatus = metav1.ConditionUnknown
+	} else {
+		credsStatus = validCreds.Status
+	}
+
+	// Combine the results:
+	// - If either is explicitly False → Invalid
+	// - If both are True → Valid
+	// - Otherwise → Unknown
+	if wifStatus == metav1.ConditionFalse || credsStatus == metav1.ConditionFalse {
+		return CredentialStatusInvalid
+	}
+	if wifStatus == metav1.ConditionTrue && credsStatus == metav1.ConditionTrue {
+		return CredentialStatusValid
+	}
+	return CredentialStatusUnknown
 }
 
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.

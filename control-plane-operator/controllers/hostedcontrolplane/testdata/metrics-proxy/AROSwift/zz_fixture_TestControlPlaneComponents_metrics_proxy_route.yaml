@@ -1,6 +1,8 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 02bb339f277da489ee5881d1190fd9d4a1457a9b92de610b4cec929b00c4c774
   labels:
     hypershift.openshift.io/hosted-control-plane: hcp-namespace
     hypershift.openshift.io/internal-route: "true"

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -127,4 +129,16 @@ func ArchToAMILabelKey(arch string) string {
 		return hyperkarpenterv1.UserDataAMILabel
 	}
 	return fmt.Sprintf("%s-%s", hyperkarpenterv1.UserDataAMILabel, arch)
+}
+
+const EnableStandaloneKarpenterOperatorEnvVar = "ENABLE_STANDALONE_KARPENTER_OPERATOR"
+
+// IsStandaloneKarpenterOperatorEnabled returns true if the standalone karpenter-operator
+// should be deployed instead of the embedded karpenter controller.
+// Requires both:
+// - the KarpenterOperator feature gate is on (via TechPreviewNoUpgrade), and
+// - the ENABLE_STANDALONE_KARPENTER_OPERATOR env var is set to "1" (via --enable-standalone-karpenter-operator install flag).
+func IsStandaloneKarpenterOperatorEnabled() bool {
+	return featuregate.Gate().Enabled(featuregate.KarpenterOperator) &&
+		os.Getenv(EnableStandaloneKarpenterOperatorEnvVar) == "1"
 }

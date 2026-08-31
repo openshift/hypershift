@@ -1,7 +1,6 @@
 package packageserver
 
 import (
-	"fmt"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -20,20 +19,21 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	noProxy := []string{"kube-apiserver"}
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
-		noProxy = append(noProxy, "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace")
+		noProxy = append(noProxy, "certified-operators", "community-operators", "redhat-operators")
 	}
 
-	tlsProfile := hcp.Spec.Configuration.GetTLSSecurityProfile()
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		podspec.UpsertEnvVars(c, []corev1.EnvVar{
 			{Name: "RELEASE_VERSION", Value: cpContext.UserReleaseImageProvider.Version()},
 			{Name: "NO_PROXY", Value: strings.Join(noProxy, ",")},
 		})
-		if minTLSVersion := config.MinTLSVersion(tlsProfile); minTLSVersion != "" {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", minTLSVersion))
-		}
-		if cipherSuites := config.CipherSuites(tlsProfile); len(cipherSuites) != 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
 		}
 	})
 

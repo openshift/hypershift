@@ -22,7 +22,7 @@ func TestCreateServiceIDClient(t *testing.T) {
 		input       args
 		errExpected bool
 	}{
-		"Create client ID with proper CR YAML": {
+		"When the CR YAML is valid, it should create the client ID": {
 			input: args{
 				name:               "name",
 				apiKey:             "apiKey",
@@ -34,7 +34,7 @@ func TestCreateServiceIDClient(t *testing.T) {
 			},
 			errExpected: false,
 		},
-		"Create client ID with invalid CR YAML": {
+		"When the CR YAML is invalid, it should return an error": {
 			input: args{
 				name:               "name",
 				apiKey:             "apiKey",

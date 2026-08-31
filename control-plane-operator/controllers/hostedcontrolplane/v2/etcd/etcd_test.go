@@ -223,13 +223,15 @@ func TestDefragControllerPredicate(t *testing.T) {
 	}
 }
 
-func Test_minTLSVersion(t *testing.T) {
+func TestMinTLSVersion(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name     string
-		profile  *configv1.TLSSecurityProfile
-		expected tlsutil.TLSVersion
+		name              string
+		profile           *configv1.TLSSecurityProfile
+		expected          tlsutil.TLSVersion
+		expectError       bool
+		expectedErrSubstr string
 	}{
 		{
 			name:     "When TLS profile is nil, it should return TLS 1.2",
@@ -293,6 +295,14 @@ func Test_minTLSVersion(t *testing.T) {
 			},
 			expected: tlsutil.TLSVersion12,
 		},
+		{
+			name: "When TLS profile is Custom with nil Custom field, it should return error",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+			},
+			expectError:       true,
+			expectedErrSubstr: "Custom but Custom field is nil",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -300,13 +310,19 @@ func Test_minTLSVersion(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			result := minTLSVersion(tc.profile)
+			result, err := minTLSVersion(tc.profile)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrSubstr))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
 }
 
-func Test_adaptStatefulSet(t *testing.T) {
+func TestAdaptStatefulSet(t *testing.T) {
 	t.Parallel()
 
 	testStatefulSet := &appsv1.StatefulSet{
@@ -354,13 +370,13 @@ func Test_adaptStatefulSet(t *testing.T) {
 		expectedCipherSuites  string
 	}{
 		{
-			name:                  "when api server is nil tls version must be 1.2 and cipher suites must be set.",
+			name:                  "When API server config is nil, it should set TLS 1.2 and cipher suites",
 			configuration:         nil,
 			expectedTLSMinVersion: "TLS1.2",
 			expectCipherSuites:    true,
 		},
 		{
-			name: "when tls profile is modern it should set min tls version and not set ciphers",
+			name: "When TLS profile is modern, it should set min TLS version without ciphers",
 			configuration: &hyperv1.ClusterConfiguration{
 				APIServer: &configv1.APIServerSpec{
 					TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType},
@@ -370,7 +386,7 @@ func Test_adaptStatefulSet(t *testing.T) {
 			expectCipherSuites:    false,
 		},
 		{
-			name: "when tls profile is intermediate it should set both min tls version and ciphers",
+			name: "When TLS profile is intermediate, it should set both min TLS version and ciphers",
 			configuration: &hyperv1.ClusterConfiguration{
 				APIServer: &configv1.APIServerSpec{
 					TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
@@ -380,7 +396,7 @@ func Test_adaptStatefulSet(t *testing.T) {
 			expectCipherSuites:    true,
 		},
 		{
-			name: "when tls profile has custom cipher suites, it should set min tls version and cipher suites (openssl to iana conversion)",
+			name: "When TLS profile has custom cipher suites, it should set min TLS version and convert ciphers from OpenSSL to IANA",
 			configuration: &hyperv1.ClusterConfiguration{
 				APIServer: &configv1.APIServerSpec{
 					TLSSecurityProfile: &configv1.TLSSecurityProfile{
@@ -402,7 +418,7 @@ func Test_adaptStatefulSet(t *testing.T) {
 			expectedCipherSuites:  "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
 		},
 		{
-			name: "when tls profile has unsupported cipher suites, it should set only min tls version",
+			name: "When TLS profile has unsupported cipher suites, it should set only min TLS version",
 			configuration: &hyperv1.ClusterConfiguration{
 				APIServer: &configv1.APIServerSpec{
 					TLSSecurityProfile: &configv1.TLSSecurityProfile{
@@ -423,7 +439,7 @@ func Test_adaptStatefulSet(t *testing.T) {
 			expectCipherSuites:    false,
 		},
 		{
-			name: "when tls 1.3 is specified with tls 1.3 cipher suites, it should set min tls version, not cipher suites",
+			name: "When TLS 1.3 is specified with TLS 1.3 cipher suites, it should set min TLS version without cipher suites",
 			configuration: &hyperv1.ClusterConfiguration{
 				APIServer: &configv1.APIServerSpec{
 					TLSSecurityProfile: &configv1.TLSSecurityProfile{

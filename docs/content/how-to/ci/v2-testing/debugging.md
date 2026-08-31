@@ -1,6 +1,6 @@
 # Debugging CI Failures
 
-This guide explains how to diagnose failing v2 CI jobs by tracing test failures to their source clusters and reading diagnostic artifacts.
+This guide explains how to diagnose failing v2 CI jobs by tracing test failures to their source clusters and reading diagnostic artifacts. For background on the overall CI pipeline sequence and process boundaries, see [Test Flow](test-flow.md).
 
 ## Finding Test Results
 

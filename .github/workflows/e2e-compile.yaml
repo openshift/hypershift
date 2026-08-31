@@ -1,0 +1,14 @@
+name: E2E Compile
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+  workflow_dispatch: {}
+
+jobs:
+  e2e-compile:
+    uses: openshift/hypershift/.github/workflows/e2e-compile-reusable.yaml@main
+    permissions:
+      contents: read

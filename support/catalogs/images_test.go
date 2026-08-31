@@ -40,45 +40,40 @@ func TestComputeCatalogImages(t *testing.T) {
 		expected          map[string]string
 	}{
 		{
-			name:           "All current release images are available",
+			name:           "When all current release images are available, it should use them",
 			releaseVersion: semver.MustParse("4.19.2"),
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"registry.redhat.io/redhat/community-operator-index:v4.19",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 		},
 		{
-			name:           "Some catalogs only have previous release images",
+			name:           "When some catalogs only have previous release images, it should use them",
 			releaseVersion: semver.MustParse("4.19.2"),
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"registry.redhat.io/redhat/community-operator-index:v4.17",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.18",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.17",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.18",
 			},
 		},
 		{
-			name:           "image overrides are used if present",
+			name:           "When image overrides are present, it should use them",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.18",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 			registryOverrides: map[string][]string{
@@ -90,17 +85,15 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.19",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 		},
 		{
-			name:           "previous versions are used for overrides",
+			name:           "When current version overrides are not available, it should use previous versions",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.18",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.17",
 			},
 			registryOverrides: map[string][]string{
@@ -112,18 +105,16 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.18",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.17",
 			},
 		},
 		{
-			name:           "overrides with root registry and root registry with namespace mixed",
+			name:           "When overrides mix root registry and root registry with namespace, it should resolve correctly",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.19",
 				"example.org/test/community-operator-index:v4.18",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 			registryOverrides: map[string][]string{
@@ -135,7 +126,6 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/test/certified-operator-index:v4.19",
 				"community-operators": "example.org/test/community-operator-index:v4.19",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -145,13 +135,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"registry.redhat.io/redhat/community-operator-index:v4.22",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.22",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 		},
@@ -161,13 +149,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"registry.redhat.io/redhat/community-operator-index:v4.22",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.22",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 		},
@@ -177,13 +163,11 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"registry.redhat.io/redhat/community-operator-index:v4.19",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -193,18 +177,16 @@ func TestComputeCatalogImages(t *testing.T) {
 			existingImages: []string{
 				"registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"registry.redhat.io/redhat/community-operator-index:v4.22",
-				"registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 			expected: map[string]string{
 				"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.22",
 				"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.22",
-				"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.22",
 				"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.22",
 			},
 		},
 		{
-			name:           "overrides with root registry only",
+			name:           "When overrides use root registry only, it should resolve correctly",
 			releaseVersion: semver.MustParse("4.19.0"),
 			existingImages: []string{
 				"example.org/test/certified-operator-index:v4.19",
@@ -212,7 +194,6 @@ func TestComputeCatalogImages(t *testing.T) {
 				"example.org/test/community-operator-index:v4.18",
 				"example.org/redhat/certified-operator-index:v4.19",
 				"example.org/redhat/community-operator-index:v4.19",
-				"another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 			registryOverrides: map[string][]string{
@@ -224,7 +205,6 @@ func TestComputeCatalogImages(t *testing.T) {
 			expected: map[string]string{
 				"certified-operators": "example.org/redhat/certified-operator-index:v4.19",
 				"community-operators": "example.org/redhat/community-operator-index:v4.19",
-				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 		},
@@ -251,13 +231,13 @@ func TestImagesCacheGetImages(t *testing.T) {
 		expected  map[string]string
 	}{
 		{
-			name:      "cache empty",
+			name:      "When cache is empty, it should return nil",
 			cache:     &imagesCache{},
 			inputHash: "1234",
 			expected:  nil,
 		},
 		{
-			name: "valid entry",
+			name: "When cache has valid entry, it should return images",
 			cache: &imagesCache{
 				timeStamp: time.Now(),
 				hash:      "4567",
@@ -273,7 +253,7 @@ func TestImagesCacheGetImages(t *testing.T) {
 			},
 		},
 		{
-			name: "hash doesn't match",
+			name: "When hash does not match, it should return nil",
 			cache: &imagesCache{
 				timeStamp: time.Now(),
 				hash:      "4567",
@@ -286,7 +266,7 @@ func TestImagesCacheGetImages(t *testing.T) {
 			expected:  nil,
 		},
 		{
-			name: "cache expired",
+			name: "When cache is expired, it should return nil",
 			cache: &imagesCache{
 				timeStamp: time.Now().Add(-30 * time.Minute),
 				hash:      "4567",
@@ -337,7 +317,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		imgs := []string{
 			"registry.redhat.io/redhat/certified-operator-index:v4.17",
 			"registry.redhat.io/redhat/community-operator-index:v4.17",
-			"registry.redhat.io/redhat/redhat-marketplace-index:v4.17",
 			"registry.redhat.io/redhat/redhat-operator-index:v4.17",
 		}
 		return slices.Contains(imgs, img), nil
@@ -352,7 +331,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		map[string]string{
 			"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 			"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-			"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 			"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 		},
 	))
@@ -364,7 +342,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		map[string]string{
 			"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.19",
 			"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.19",
-			"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.19",
 			"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.19",
 		},
 	))
@@ -377,7 +354,6 @@ func TestGetCatalogImagesWithCache(t *testing.T) {
 		map[string]string{
 			"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.17",
 			"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.17",
-			"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.17",
 			"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.17",
 		},
 	))

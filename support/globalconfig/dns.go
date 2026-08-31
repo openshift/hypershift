@@ -19,11 +19,7 @@ func DNSConfig() *configv1.DNS {
 }
 
 func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
-	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		dns.Spec.BaseDomain = hcp.Spec.DNS.BaseDomain
-	} else {
-		dns.Spec.BaseDomain = BaseDomain(hcp)
-	}
+	dns.Spec.BaseDomain = BaseDomain(hcp)
 	if len(hcp.Spec.DNS.PublicZoneID) > 0 {
 		dns.Spec.PublicZone = &configv1.DNSZone{
 			ID: hcp.Spec.DNS.PublicZoneID,
@@ -34,10 +30,20 @@ func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
 			ID: hcp.Spec.DNS.PrivateZoneID,
 		}
 	}
-	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
-		dns.Spec.Platform.Type = configv1.AWSPlatformType
-		dns.Spec.Platform.AWS = &configv1.AWSDNSSpec{
-			PrivateZoneIAMRole: hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN,
+	applyPlatformDNSConfig(dns, hcp)
+}
+
+// applyPlatformDNSConfig applies platform-specific DNS configuration overrides.
+func applyPlatformDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.IBMCloudPlatform:
+		dns.Spec.BaseDomain = hcp.Spec.DNS.BaseDomain
+	case hyperv1.AWSPlatform:
+		if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
+			dns.Spec.Platform.Type = configv1.AWSPlatformType
+			dns.Spec.Platform.AWS = &configv1.AWSDNSSpec{
+				PrivateZoneIAMRole: hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN,
+			}
 		}
 	}
 }

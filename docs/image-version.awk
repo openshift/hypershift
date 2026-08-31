@@ -1,1 +1,1 @@
-BEGIN { FS = " |==="}; /mkdocs-material/{print $2}
+BEGIN { FS = "==" }; /^mkdocs-material==/{split($2, p, " "); print p[1]}
