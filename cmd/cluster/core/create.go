@@ -57,6 +57,7 @@ func DefaultOptions() *RawCreateOptions {
 		FeatureSet:                     string(configv1.Default),
 		EnableClusterCapabilities:      []string{},
 		DisableClusterCapabilities:     []string{},
+		NodeDrainTimeout:               60 * time.Second,
 	}
 }
 
