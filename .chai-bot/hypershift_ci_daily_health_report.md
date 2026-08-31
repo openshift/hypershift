@@ -61,6 +61,8 @@ Prefer a direct link returned by the Prow API or history page when available. Ot
 
 If a category has no `SUCCESS` or `FAILURE` builds, render it as `⚪ No data available`. Do not calculate a pass rate or trend for it, do not treat it as healthy, and do not include it in the below-80% failure threads or below-50% incident proposal.
 
+If every category has no `SUCCESS` or `FAILURE` builds, render the overall line as `⚪ *Overall*: No data available | 0/{Y} categories healthy`. Omit `{total_pass}/{total_runs}` entirely, do not create failure threads or an incident proposal, and still post the report with any available release context.
+
 **Per-job trend (last 10 vs prior 10)**: For each job, split the 20 collected builds into the most recent 10 and the prior 10. Compare pass rates between the two halves:
 - 📈 Improving: recent rate is more than 10 percentage points higher
 - 📉 Degrading: recent rate is more than 10 percentage points lower
@@ -172,6 +174,8 @@ Use the registry metadata to build the groups:
 
 **If all categories are ≥ 80%:**
 Post the scoreboard with a one-line positive summary. No threaded details needed.
+
+The all-categories no-data case takes precedence over the healthy-scoreboard rule.
 
 **Constraints:**
 - Top-level message MUST be under 2000 characters
