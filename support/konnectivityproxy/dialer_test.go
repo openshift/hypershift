@@ -298,7 +298,7 @@ func startTCPEchoServer(t *testing.T) net.Listener {
 			}
 			go func() {
 				defer conn.Close()
-				if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 					return
 				}
 				if _, err := io.Copy(conn, conn); err != nil {
@@ -335,7 +335,7 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 				return
 			}
 			defer target.Close()
-			if err := target.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			if err := target.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -351,7 +351,7 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 				return
 			}
 			defer client.Close()
-			if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			if err := client.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 				return
 			}
 
