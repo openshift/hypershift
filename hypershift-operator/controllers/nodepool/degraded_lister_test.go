@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/go-logr/logr"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
