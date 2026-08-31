@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 1dc24510b3949ff6e92e893df560d37d1ff6565ed58fae85864baa454d71b833
+    hypershift.openshift.io/desired-state-hash: 08fa84bdeede28cd9063daa95c92139f6b79d7220dd3e63dd3c77d609bb3142e
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ingress-operator
@@ -132,6 +132,7 @@ spec:
       - args:
         - run
         - --connect-directly-to-cloud-apis=true
+        - --serving-port=8090
         command:
         - /usr/bin/control-plane-operator
         - konnectivity-https-proxy
@@ -140,6 +141,11 @@ spec:
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
         name: konnectivity-proxy-https
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          tcpSocket:
+            port: 8090
         resources:
           requests:
             cpu: 10m

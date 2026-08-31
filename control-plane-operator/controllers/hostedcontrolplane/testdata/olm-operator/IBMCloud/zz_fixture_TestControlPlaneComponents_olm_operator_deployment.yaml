@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 96be5f4080c9d854b5dbb2e453c1a086c8d70d331067000b2fd2b91fa78aea2c
+    hypershift.openshift.io/desired-state-hash: b3a792114766baf2ffb17045c0a00cd39a8355a818ebafb9ec0bfe1c7718b7c4
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: olm-operator
@@ -128,6 +128,7 @@ spec:
           name: tmp-dir
       - args:
         - run
+        - --serving-port=8090
         command:
         - /usr/bin/control-plane-operator
         - konnectivity-socks5-proxy
@@ -136,6 +137,11 @@ spec:
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
         name: konnectivity-proxy-socks5
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          tcpSocket:
+            port: 8090
         resources:
           requests:
             cpu: 10m

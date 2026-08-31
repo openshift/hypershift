@@ -14,6 +14,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
@@ -25,6 +26,8 @@ const (
 
 	// Dual mode will inject 2 konnectivity containers, one using HTTPS mode and the other using Socks5 mode.
 	Dual ProxyMode = "dual"
+
+	defaultKonnectivityServingPort uint32 = 8090
 )
 
 type KonnectivityContainerOptions struct {
@@ -156,9 +159,6 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		if port := opts.HTTPSOptions.KonnectivityPort; port != 0 {
 			args = append(args, fmt.Sprintf("--konnectivity-port=%d", port))
 		}
-		if servingPort := opts.HTTPSOptions.ServingPort; servingPort != 0 {
-			args = append(args, fmt.Sprintf("--serving-port=%d", servingPort))
-		}
 		if value := opts.HTTPSOptions.ConnectDirectlyToCloudAPIs; value != nil {
 			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
 		}
@@ -172,9 +172,6 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		}
 		if port := opts.Socks5Options.KonnectivityPort; port != 0 {
 			args = append(args, fmt.Sprintf("--konnectivity-port=%d", port))
-		}
-		if servingPort := opts.Socks5Options.ServingPort; servingPort != 0 {
-			args = append(args, fmt.Sprintf("--serving-port=%d", servingPort))
 		}
 		if value := opts.Socks5Options.ConnectDirectlyToCloudAPIs; value != nil {
 			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
@@ -193,6 +190,8 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		}
 	}
 
+	args = append(args, fmt.Sprintf("--serving-port=%d", opts.servingPort()))
+
 	kubeconfingVolumeName := opts.KubeconfingVolumeName
 	if kubeconfingVolumeName == "" {
 		kubeconfingVolumeName = "kubeconfig"
@@ -209,6 +208,15 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 				corev1.ResourceMemory: resource.MustParse("30Mi"),
 			},
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt32(int32(opts.servingPort())),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       5,
 		},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
@@ -250,6 +258,22 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 	}
 
 	return container
+}
+
+func (opts KonnectivityContainerOptions) servingPort() uint32 {
+	switch opts.Mode {
+	case HTTPS:
+		if opts.HTTPSOptions.ServingPort != 0 {
+			return opts.HTTPSOptions.ServingPort
+		}
+	case Socks5:
+		if opts.Socks5Options.ServingPort != 0 {
+			return opts.Socks5Options.ServingPort
+		}
+	default:
+		return defaultKonnectivityServingPort
+	}
+	return defaultKonnectivityServingPort
 }
 
 func (opts KonnectivityContainerOptions) connectsDirectlyToCloudAPIs() bool {
