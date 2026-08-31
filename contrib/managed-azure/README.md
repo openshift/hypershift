@@ -94,6 +94,21 @@ For subsequent clusters, run the script without this flag to skip the one-time s
 
 You can comment out steps from setup_all.sh to run only what you want.
 
+### Verifying Resources
+
+To check that all required Azure resources exist, use the health check script:
+
+```
+# Check everything
+../contrib/managed-azure/check_resources.sh
+
+# Check only one-time setup resources
+../contrib/managed-azure/check_resources.sh --first-time
+
+# Check only per-cluster resources
+../contrib/managed-azure/check_resources.sh --cluster
+```
+
 ## Microsoft Velero Extension
 
 We already include the managed identity/service principal related with Velero, so you just need to execute these commands:
