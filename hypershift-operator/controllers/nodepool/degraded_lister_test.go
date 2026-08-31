@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	toolscache "k8s.io/client-go/tools/cache"
 )
 
 // mockListerWatcher implements cache.ListerWatcher for testing
@@ -64,7 +65,7 @@ func TestNewDegradedModeInformerFactory(t *testing.T) {
 			}
 
 			// Check if it's wrapped by testing the type
-			_, isWrapped := informer.GetStore().(cache.Store)
+			_, isWrapped := informer.GetStore().(toolscache.Store)
 			if tt.want && !isWrapped {
 				t.Error("expected wrapped ListerWatcher, got standard informer")
 			}
