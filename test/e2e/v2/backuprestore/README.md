@@ -18,10 +18,9 @@ The backup and restore tests validate the ability to:
 2. **Storage for OADP data**: Might be S3 bucket or other storage
 3. **Secret for accessing storage**
 4. **Backup Storage Location**: Configured storage location for backups (e.g., S3 bucket for AWS)
-5. **Volume Snapshot Location**: Configured snapshot location
-6. **DataProtectionApplication**: This resource brings Velero pod that handles the backups
-7. **HyperShift CLI**: The `hypershift` binary must be available in your PATH
-8. **Platform**: Supports AWS, Agent, and KubeVirt platforms
+5. **DataProtectionApplication**: This resource brings Velero pod that handles the backups
+6. **HyperShift CLI**: The `hypershift` binary must be available in your PATH
+7. **Platform**: Supports AWS, Agent, and KubeVirt platforms
 
 #### Platform-specific Prerequisites
 
@@ -158,11 +157,12 @@ The MinIO endpoint accessible from the management cluster depends on your enviro
 
 * Secret
 
-Create an AWS-format credentials file for MinIO and apply the secret:
+Create an AWS-format credentials file for MinIO and apply the secret. The variables must match the values used during MinIO deployment:
 
 ```bash
 minio_user="admin"
 minio_password="admin123"
+bucket_name="oadp-backup"
 
 cat <<EOF > /tmp/minio-credentials
 [default]
