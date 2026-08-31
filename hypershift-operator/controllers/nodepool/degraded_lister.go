@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/go-logr/logr"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,9 +33,9 @@ func NewDegradedModeInformerFactory(
 
 		// Wrap the ListerWatcher to skip bad NodePools
 		wrappedLW := &degradedNodePoolListerWatcher{
-			delegate:   lw,
-			badKeys:    badNodePools,
-			log:        log,
+			delegate: lw,
+			badKeys:  badNodePools,
+			log:      log,
 		}
 		return toolscache.NewSharedIndexInformer(wrappedLW, obj, resync, indexers)
 	}
@@ -70,13 +70,14 @@ func (d *degradedNodePoolListerWatcher) List(opts metav1.ListOptions) (runtime.O
 			// Convert NodePool to unstructured for validation check
 			unstruct, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&item)
 			if err == nil {
-				if badFields := findBadDurationFields(&unstructured.Unstructured{Object: unstruct}); len(badFields) == 0 {
+				badFields := findBadDurationFields(&unstructured.Unstructured{Object: unstruct})
+				if len(badFields) == 0 {
 					// NodePool has recovered; remove from badKeys so it appears in future LISTs
 					delete(d.badKeys, key)
 					filtered.Items = append(filtered.Items, item)
 				}
-				// Otherwise skip it (still invalid)
 			}
+			// Otherwise skip it (still invalid or conversion error)
 		} else {
 			filtered.Items = append(filtered.Items, item)
 		}
