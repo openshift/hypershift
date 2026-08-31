@@ -48,6 +48,7 @@ type degradedNodePoolListerWatcher struct {
 }
 
 // List calls the delegate LIST and filters out bad NodePools.
+// It also revalidates items: if a previously-bad NodePool is now valid, removes it from badKeys.
 func (d *degradedNodePoolListerWatcher) List(opts metav1.ListOptions) (runtime.Object, error) {
 	list, err := d.delegate.List(opts)
 	if err != nil {
@@ -64,7 +65,19 @@ func (d *degradedNodePoolListerWatcher) List(opts metav1.ListOptions) (runtime.O
 
 	for _, item := range npList.Items {
 		key := fmt.Sprintf("%s/%s", item.Namespace, item.Name)
-		if _, isBad := d.badKeys[key]; !isBad {
+		if _, isBad := d.badKeys[key]; isBad {
+			// Revalidate: check if the NodePool is still invalid
+			// Convert NodePool to unstructured for validation check
+			unstruct, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&item)
+			if err == nil {
+				if badFields := findBadDurationFields(&unstructured.Unstructured{Object: unstruct}); len(badFields) == 0 {
+					// NodePool has recovered; remove from badKeys so it appears in future LISTs
+					delete(d.badKeys, key)
+					filtered.Items = append(filtered.Items, item)
+				}
+				// Otherwise skip it (still invalid)
+			}
+		} else {
 			filtered.Items = append(filtered.Items, item)
 		}
 	}
