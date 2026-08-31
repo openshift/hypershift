@@ -43,7 +43,7 @@ spec:
     max: 6
   platform:
     azure:
-      vmSize: Standard_D4s_v3
+      vmSize: Standard_D4s_v5
       # ... other required fields (image, osDisk) omitted for brevity
 ---
 apiVersion: hypershift.openshift.io/v1beta1
@@ -58,7 +58,7 @@ spec:
     max: 6
   platform:
     azure:
-      vmSize: Standard_D4s_v3
+      vmSize: Standard_D4s_v5
       # ... other required fields (image, osDisk) omitted for brevity
 ```
 

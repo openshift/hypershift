@@ -218,7 +218,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			}},
 			nodePool:        &hyperv1.NodePool{},
 			object:          &capiv1.MachineDeployment{},
-			machineTemplate: newAzureTemplate("Standard_D4s_v3"),
+			machineTemplate: newAzureTemplate("Standard_D4s_v5"),
 			expectErr:       false,
 			validate: func(g Gomega, md *capiv1.MachineDeployment) {
 				a := md.GetAnnotations()
@@ -242,7 +242,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			provider:        nil,
 			nodePool:        &hyperv1.NodePool{},
 			object:          &capiv1.MachineDeployment{},
-			machineTemplate: newAzureTemplate("Standard_D4s_v3"),
+			machineTemplate: newAzureTemplate("Standard_D4s_v5"),
 			expectErr:       false,
 			validate: func(g Gomega, md *capiv1.MachineDeployment) {
 				g.Expect(md.GetAnnotations()).ToNot(HaveKey(cpuKey))

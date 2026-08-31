@@ -48,7 +48,7 @@ tests:
           max: 3
         platform:
           azure:
-            vmSize: Standard_D4s_v4
+            vmSize: Standard_D4s_v5
             image:
               type: AzureMarketplace
               azureMarketplace: {}
@@ -119,7 +119,7 @@ tests:
           max: 3
         platform:
           azure:
-            vmSize: Standard_D4s_v4
+            vmSize: Standard_D4s_v5
             image:
               type: AzureMarketplace
               azureMarketplace: {}
