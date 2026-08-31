@@ -98,6 +98,8 @@ The resulting link must have this form (with the filter object URL-encoded):
 
 `https://sippy.dptools.openshift.org/sippy-ng/jobs/{VERSION}?filters={encoded_hypershift_name_filter}`
 
+Use Sippy's existing double-encoded `filters` convention when constructing the URL so the `name contains hypershift` filter is applied.
+
 ### Step 5 — Channel Response (Top-Level Message)
 
 Always post the top-level status to the channel (never call `no_action_required()`).
@@ -176,6 +178,7 @@ Post the scoreboard with a one-line positive summary. No threaded details needed
 - Headers count toward the character limit
 - Do not sort categories by pass rate
 - If the message would exceed 2000 characters, first remove notes from healthy category lines, then collapse healthy v1/v2 lines within a platform into one `◦ 🟢 Healthy` line. Preserve the established version/platform/framework order and all failure notes. Never omit a failing, no-data, payload, or Component Readiness entry.
+- If the message still exceeds 2000 characters, move the last ordered category groups into one continuation reply immediately after the top-level message. Add `◦ More categories in the continuation thread` at the end of the top-level message, and preserve the same grouping, links, and order in that reply.
 
 ### Step 6 — Threaded Failure Analysis
 
