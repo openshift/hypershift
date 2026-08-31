@@ -7,10 +7,12 @@ import (
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/msi-dataplane/pkg/dataplane"
+	"github.com/openshift/hypershift/support/azureutil"
 )
 
 const (
@@ -24,7 +26,7 @@ const (
 // AzureBlobUploader uploads etcd snapshots to Azure Blob Storage.
 type AzureBlobUploader struct {
 	container       string
-	storageAccount  string
+	serviceURL      string
 	encryptionScope string
 	client          AzureBlobUploadAPI
 }
@@ -48,7 +50,7 @@ type azureCredentialsFile struct {
 //   - "managed-identity": uses msi-dataplane with a certificate file from CSI mount (ARO HCP)
 //
 // If credentialsFile is empty, falls back to DefaultAzureCredential regardless of authType.
-func NewAzureBlobUploader(ctx context.Context, container, storageAccount, credentialsFile, encryptionScope, authType string) (*AzureBlobUploader, error) {
+func NewAzureBlobUploader(ctx context.Context, container, storageAccount, credentialsFile, encryptionScope, authType, cloudName string) (*AzureBlobUploader, error) {
 	if container == "" {
 		return nil, fmt.Errorf("--container is required for AzureBlob storage type")
 	}
@@ -56,12 +58,19 @@ func NewAzureBlobUploader(ctx context.Context, container, storageAccount, creden
 		return nil, fmt.Errorf("--storage-account is required for AzureBlob storage type")
 	}
 
-	cred, err := newAzureCredential(ctx, credentialsFile, authType)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(cloudName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	cred, err := newAzureCredential(ctx, credentialsFile, authType, cloudConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load Azure credentials: %w", err)
 	}
 
-	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net", storageAccount)
+	serviceURL, err := azureBlobServiceURL(storageAccount, cloudName)
+	if err != nil {
+		return nil, err
+	}
 	client, err := azblob.NewClient(serviceURL, cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure Blob client: %w", err)
@@ -69,10 +78,18 @@ func NewAzureBlobUploader(ctx context.Context, container, storageAccount, creden
 
 	return &AzureBlobUploader{
 		container:       container,
-		storageAccount:  storageAccount,
+		serviceURL:      serviceURL,
 		encryptionScope: encryptionScope,
 		client:          client,
 	}, nil
+}
+
+func azureBlobServiceURL(storageAccount, cloudName string) (string, error) {
+	blobDNSSuffix, err := azureutil.GetAzureBlobDNSSuffix(cloudName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get Azure Blob DNS suffix: %w", err)
+	}
+	return fmt.Sprintf("https://%s.%s", storageAccount, blobDNSSuffix), nil
 }
 
 // Upload uploads a snapshot file to Azure Blob Storage with conditional write and optional CMK encryption.
@@ -102,7 +119,7 @@ func (u *AzureBlobUploader) Upload(ctx context.Context, snapshotPath string, key
 		return nil, fmt.Errorf("failed to upload to Azure Blob %s/%s: %w", u.container, key, err)
 	}
 
-	url := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", u.storageAccount, u.container, key)
+	url := fmt.Sprintf("%s/%s/%s", u.serviceURL, u.container, key)
 	return &UploadResult{URL: url}, nil
 }
 
@@ -111,9 +128,11 @@ func (u *AzureBlobUploader) Upload(ctx context.Context, snapshotPath string, key
 // If credentialsFile is provided:
 //   - authType "client-secret": reads a JSON file with clientId/clientSecret/tenantId
 //   - authType "managed-identity": uses msi-dataplane to load a certificate credential (ARO HCP)
-func newAzureCredential(ctx context.Context, credentialsFile, authType string) (azcore.TokenCredential, error) {
+func newAzureCredential(ctx context.Context, credentialsFile, authType string, cloudConfig cloud.Configuration) (azcore.TokenCredential, error) {
 	if credentialsFile == "" {
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+			ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create default Azure credential: %w", err)
 		}
@@ -124,7 +143,7 @@ func newAzureCredential(ctx context.Context, credentialsFile, authType string) (
 	case AuthTypeManagedIdentity:
 		return newManagedIdentityCredential(ctx, credentialsFile)
 	case AuthTypeClientSecret, "":
-		return newClientSecretCredential(credentialsFile)
+		return newClientSecretCredential(credentialsFile, cloudConfig)
 	default:
 		return nil, fmt.Errorf("unsupported auth type: %q (must be %q or %q)", authType, AuthTypeClientSecret, AuthTypeManagedIdentity)
 	}
@@ -132,7 +151,7 @@ func newAzureCredential(ctx context.Context, credentialsFile, authType string) (
 
 // newClientSecretCredential reads a JSON file with clientId/clientSecret/tenantId
 // and returns a ClientSecretCredential.
-func newClientSecretCredential(credentialsFile string) (azcore.TokenCredential, error) {
+func newClientSecretCredential(credentialsFile string, cloudConfig cloud.Configuration) (azcore.TokenCredential, error) {
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read credentials file %q: %w", credentialsFile, err)
@@ -143,7 +162,9 @@ func newClientSecretCredential(credentialsFile string) (azcore.TokenCredential, 
 		return nil, fmt.Errorf("failed to parse credentials file: %w", err)
 	}
 
-	credential, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, nil)
+	credential, err := azidentity.NewClientSecretCredential(creds.TenantID, creds.ClientID, creds.ClientSecret, &azidentity.ClientSecretCredentialOptions{
+		ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
@@ -168,10 +189,10 @@ func etagPtr(e azcore.ETag) *azcore.ETag {
 }
 
 // newAzureBlobUploaderWithClient creates an AzureBlobUploader with a provided client (for testing).
-func newAzureBlobUploaderWithClient(container, storageAccount, encryptionScope string, client AzureBlobUploadAPI) *AzureBlobUploader { //nolint:unparam // parameter kept for API consistency
+func newAzureBlobUploaderWithClient(container, serviceURL, encryptionScope string, client AzureBlobUploadAPI) *AzureBlobUploader {
 	return &AzureBlobUploader{
 		container:       container,
-		storageAccount:  storageAccount,
+		serviceURL:      serviceURL,
 		encryptionScope: encryptionScope,
 		client:          client,
 	}

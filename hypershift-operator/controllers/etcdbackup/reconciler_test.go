@@ -1369,6 +1369,12 @@ func TestCreateBackupJob(t *testing.T) {
 			},
 		}
 		hcp := newHostedControlPlane()
+		hcp.Spec.Platform = hyperv1.PlatformSpec{
+			Type: hyperv1.AzurePlatform,
+			Azure: &hyperv1.AzurePlatformSpec{
+				Cloud: "AzureUSGovernmentCloud",
+			},
+		}
 		pullSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      pullSecretName,
@@ -1399,6 +1405,7 @@ func TestCreateBackupJob(t *testing.T) {
 		g.Expect(upload.Command).To(ContainElements("etcd-upload", "--storage-type", "AzureBlob"))
 		g.Expect(upload.Command).To(ContainElements("--azure-container", "my-container"))
 		g.Expect(upload.Command).To(ContainElements("--azure-storage-account", "mystorageaccount"))
+		g.Expect(upload.Env).To(ContainElement(corev1.EnvVar{Name: "AZURE_CLOUD_NAME", Value: "AzureUSGovernmentCloud"}))
 
 		// Verify credential volume uses Azure secret
 		credVolume := jobList.Items[0].Spec.Template.Spec.Volumes[2]

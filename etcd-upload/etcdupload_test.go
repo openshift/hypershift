@@ -25,11 +25,19 @@ func TestNewStartCommand(t *testing.T) {
 
 	t.Run("When created it should register all optional flags", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		optionalFlags := []string{"aws-bucket", "aws-region", "credentials-file", "aws-kms-key-arn", "azure-container", "azure-storage-account", "azure-encryption-scope", "azure-auth-type"}
+		optionalFlags := []string{"aws-bucket", "aws-region", "credentials-file", "aws-kms-key-arn", "azure-container", "azure-storage-account", "azure-encryption-scope", "azure-auth-type", "azure-cloud"}
 		for _, name := range optionalFlags {
 			g.Expect(cmd.Flags().Lookup(name)).ToNot(BeNil(), "expected flag %q to exist", name)
 		}
 	})
+}
+
+func TestAzureCloudFlagDefaultsFromEnvironment(t *testing.T) {
+	t.Setenv("AZURE_CLOUD_NAME", "AzureUSGovernmentCloud")
+	cmd := NewStartCommand()
+
+	g := NewGomegaWithT(t)
+	g.Expect(cmd.Flags().Lookup("azure-cloud").DefValue).To(Equal("AzureUSGovernmentCloud"))
 }
 
 func TestNewUploader(t *testing.T) {
@@ -56,6 +64,19 @@ func TestNewUploader(t *testing.T) {
 		_, err := newUploader(context.Background(), opts)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("unsupported auth type"))
+	})
+
+	t.Run("When Azure cloud is invalid it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		opts := options{
+			storageType:    "AzureBlob",
+			container:      "test",
+			storageAccount: "testacc",
+			azureCloud:     "InvalidCloud",
+		}
+		_, err := newUploader(context.Background(), opts)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("unknown Azure cloud"))
 	})
 }
 

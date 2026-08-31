@@ -799,6 +799,10 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 	if err != nil {
 		return fmt.Errorf("failed to build upload args: %w", err)
 	}
+	azureCloud := ""
+	if backup.Spec.Storage.StorageType == hyperv1.AzureBlobBackupStorage && hcp.Spec.Platform.Azure != nil {
+		azureCloud = hcp.Spec.Platform.Azure.Cloud
+	}
 
 	jobLabels := map[string]string{
 		LabelApp:          LabelName,
@@ -878,7 +882,7 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 						},
 					},
 					Containers: []corev1.Container{
-						r.buildUploadContainer(cpoImage, uploadArgs, creds),
+						r.buildUploadContainer(cpoImage, uploadArgs, creds, azureCloud),
 					},
 				},
 			},
@@ -972,7 +976,7 @@ func (r *HCPEtcdBackupReconciler) buildJobVolumes(creds resolvedCredentials) []c
 	return volumes
 }
 
-func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []string, creds resolvedCredentials) corev1.Container {
+func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []string, creds resolvedCredentials, azureCloud string) corev1.Container {
 	container := corev1.Container{
 		Name:    "upload",
 		Image:   image,
@@ -995,15 +999,19 @@ func (r *HCPEtcdBackupReconciler) buildUploadContainer(image string, args []stri
 	}
 
 	if creds.needsProjectedToken() {
-		container.Env = []corev1.EnvVar{
-			{Name: "AWS_ROLE_ARN", Value: creds.RoleARN},
-			{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: mountPathAWSIAMToken + "/token"},
-		}
+		container.Env = append(container.Env,
+			corev1.EnvVar{Name: "AWS_ROLE_ARN", Value: creds.RoleARN},
+			corev1.EnvVar{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: mountPathAWSIAMToken + "/token"},
+		)
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
 			Name:      volumeAWSIAMToken,
 			MountPath: mountPathAWSIAMToken,
 			ReadOnly:  true,
 		})
+	}
+
+	if azureCloud != "" {
+		container.Env = append(container.Env, corev1.EnvVar{Name: "AZURE_CLOUD_NAME", Value: azureCloud})
 	}
 
 	return container
