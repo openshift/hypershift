@@ -73,13 +73,15 @@ Always post the top-level status to the channel (never call `no_action_required(
 {emoji} *Overall*: {X}/{Y} categories healthy | {total_pass}/{total_runs} builds passing
 
 *OCP {highest_version}*
-  *{Platform}*
-    {category lines for this platform, one per test framework}
-  *{Next Platform}*
-    {category lines for this platform}
+  • *{Platform}*
+    ◦ {category lines for this platform, one per test framework}
+  • *{Next Platform}*
+    ◦ {category lines for this platform}
 
+---
 *OCP {next_version}*
-  {repeat platform groups with the same indentation}
+  • *{Platform}*
+    ◦ {category lines for this platform}
 
 _Dashboard: <https://prow.ci.openshift.org/?type=periodic&job=*hypershift*|Prow> · <https://sippy.dptools.openshift.org|Sippy> · <https://testgrid.k8s.io/redhat-hypershift|TestGrid>_
 ```
@@ -87,28 +89,31 @@ _Dashboard: <https://prow.ci.openshift.org/?type=periodic&job=*hypershift*|Prow>
 Illustrative grouping:
 ```text
 *OCP 5.1*
-  *AWS*
-    🟡 *v1* — 75% (150/200) ➡️ upgrade flaky
-    🔴 *v2* — 33% (20/60) ➡️ persistent failures
-  *GKE (also OCP 5.0, 4.23)*
-    🟢 *v2* — 88% (132/150) ➡️
+  • *AWS*
+    ◦ 🟡 *v1* — 75% (150/200) ➡️ upgrade flaky
+    ◦ 🔴 *v2* — 33% (20/60) ➡️ persistent failures
+  • *GKE (also OCP 5.0, 4.23)*
+    ◦ 🟢 *v2* — 88% (132/150) ➡️
 
+---
 *OCP 5.0*
-  *AWS*
-    🟢 *v1* — 86% (172/200) ➡️
+  • *AWS*
+    ◦ 🟢 *v1* — 86% (172/200) ➡️
 ```
 
 **Per-category line format:**
 ```text
-{emoji} *{test_framework}* — {pass_rate}% ({pass}/{total}) {trend_arrow} {short_note_if_below_80}
+◦ {emoji} *{test_framework}* — {pass_rate}% ({pass}/{total}) {trend_arrow} {short_note_if_below_80}
 ```
 
 The `short_note` should be under 40 characters and highlight the key issue (e.g., "3 conformance jobs failing", "upgrade flaky").
 
 Use the registry metadata to build the groups:
 - Create OCP version headers in descending numeric order.
-- Under each OCP version, create platform headers in alphabetical order and indent them two spaces.
-- Under each platform, indent category lines four spaces and list the v1 category before the v2 category.
+- Under each OCP version, create platform bullet headers in alphabetical order using two spaces followed by `•`.
+- Under each platform, indent category bullet lines four spaces, use `◦`, and list the v1 category before the v2 category.
+- Use the literal Slack bullet characters `•` and `◦`; do not rely on spaces alone for list structure.
+- Place one `---` separator between OCP version sections, but do not place separators between platforms.
 - Do not create headers for groups with no category data.
 - Place categories covering multiple OCP versions under the highest version they contain, and keep their aggregate metrics intact. Annotate the platform header with the additional OCP versions, as shown above.
 - Do not repeat the OCP version or platform in each category line; the headers provide that context.
