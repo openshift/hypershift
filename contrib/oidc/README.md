@@ -92,10 +92,11 @@ To add a new dependency or update an existing one:
    list. Only direct packages need to be listed; transitive dependencies are
    resolved automatically.
 
-2. Regenerate the lock file:
+2. Regenerate the lock file from the `contrib/oidc/` directory:
 
    ```bash
-   uv lock --project contrib/oidc
+   cd contrib/oidc
+   uv lock
    ```
 
 3. Install:

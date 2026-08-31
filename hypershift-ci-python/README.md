@@ -16,10 +16,11 @@ with `uv run --frozen` to run in the locked environment.
    list. Only direct (top-level) packages need to be listed; transitive
    dependencies are resolved automatically.
 
-2. Regenerate the lock file:
+2. Regenerate the lock file from the `hypershift-ci-python/` directory:
 
    ```bash
-   uv lock --project hypershift-ci-python
+   cd hypershift-ci-python
+   uv lock
    ```
 
 3. Commit both `pyproject.toml` and `uv.lock`.
