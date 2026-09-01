@@ -320,10 +320,8 @@ spec:
                 x-kubernetes-validations:
                 - message: nodeDrainTimeout must be a valid duration string with a
                     unit suffix (e.g. 30s, 5m, 1h) or '0s'
-                  optionalOldSelf: true
                   rule: self == '0s' || matches(self, '^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
                 - message: nodeDrainTimeout must be a non-negative duration
-                  optionalOldSelf: true
                   rule: duration(self) >= duration('0s')
               nodeLabels:
                 additionalProperties:
@@ -343,10 +341,8 @@ spec:
                 x-kubernetes-validations:
                 - message: nodeVolumeDetachTimeout must be a valid duration string
                     with a unit suffix (e.g. 30s, 5m, 1h) or '0s'
-                  optionalOldSelf: true
                   rule: self == '0s' || matches(self, '^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
                 - message: nodeVolumeDetachTimeout must be a non-negative duration
-                  optionalOldSelf: true
                   rule: duration(self) >= duration('0s')
               osImageStream:
                 description: |-
