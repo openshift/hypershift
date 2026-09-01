@@ -103,11 +103,29 @@ metadata:
         4.17 cannot be created.
 
 ### CPO
-The CPO is released as part of each OCP payload release image. You can find those release images here:
+The Control Plane Operator (CPO) is the `hypershift` image inside the HostedCluster control-plane release payload. It is released as part of each OCP payload release image, with one CPO lineage per OCP minor (`release-X.Y`).
+
+Look up the payload CPO for a given release image:
+
+```shell
+oc adm release info <release-image> --image-for=hypershift
+```
+
+You can find those release images here:
 
 - [amd64](https://amd64.ocp.releases.ci.openshift.org/)
 - [arm64](https://arm64.ocp.releases.ci.openshift.org/)
 - [multi-arch](https://multi.ocp.releases.ci.openshift.org/)
+
+When a HostedCluster is created, the HyperShift Operator selects the CPO image in this order:
+
+1. The HostedCluster annotation `hypershift.openshift.io/control-plane-operator-image`, if set.
+2. An optional exact version and platform match from `ENABLE_CPO_OVERRIDES` (AWS and Azure only). This is a per-z-stream hotfix exception, not the alignment rule. See [CPO Overrides](../contribute/cpo-overrides.md).
+3. The `hypershift` image from the HostedCluster control-plane release payload.
+
+The payload `hypershift` image is the aligned default. Pairing a CPO from a different git line than the payload (for example `main` against a GA `4.Y` payload) can render control-plane manifests that payload binaries do not accept. See [Use custom operator images](../contribute/custom-images.md).
+
+The in-tree Konflux CPO streams live in `contrib/konflux/cpo_*_stream.yaml`; each `cpo_X_Y_stream.yaml` uses `hypershift-cpo-template` pinned to git revision `release-X.Y`. Hotfix streams (for example the 4.17 hotfix) use `hypershift-cpo-hotfix-template` instead. The `control-plane-operator-main` component (`.tekton/control-plane-operator-main-push.yaml`) builds from `main` for development and must not be paired with a GA payload.
 
 ### HyperShift CLI
 The HyperShift CLI is a helper utility used only for development and testing purposes. No compatibility policies are 
