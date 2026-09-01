@@ -29,17 +29,17 @@ func TestControllerName(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "private-router service",
+			name:     "When input is private-router, it should return private-router-observer",
 			input:    "private-router",
 			expected: "private-router-observer",
 		},
 		{
-			name:     "custom service name",
+			name:     "When input is custom service name, it should return custom name with observer suffix",
 			input:    "my-service",
 			expected: "my-service-observer",
 		},
 		{
-			name:     "empty service name",
+			name:     "When input is empty, it should return observer suffix only",
 			input:    "",
 			expected: "-observer",
 		},
@@ -208,7 +208,7 @@ func TestReconcile(t *testing.T) {
 			expectPLSCreated: false,
 		},
 		{
-			name:        "When HCP has nil Azure platform it should return an error",
+			name:        "When HCP has nil Azure platform, it should return an error",
 			serviceName: testServiceName,
 			requestName: testServiceName,
 			service:     defaultService(),
@@ -221,7 +221,7 @@ func TestReconcile(t *testing.T) {
 			expectPLSCreated: false,
 		},
 		{
-			name:        "When HCP has empty private connectivity type it should return an error",
+			name:        "When HCP has empty private connectivity type, it should return an error",
 			serviceName: testServiceName,
 			requestName: testServiceName,
 			service:     defaultService(),

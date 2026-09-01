@@ -7,16 +7,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -77,7 +81,7 @@ func (ar *NodePoolDay2TagsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nod
 	day2TagValue := "test-day2-value"
 
 	err = e2eutil.UpdateObject(t, ar.ctx, ar.mgmtClient, &nodePool, func(nodePool *hyperv1.NodePool) {
-		nodePool.Spec.Platform.AWS.ResourceTags = append(nodePool.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+		nodePool.Spec.Platform.AWS.ResourceTags = append(nodePool.Spec.Platform.AWS.ResourceTags, hyperv1.AWSNodePoolResourceTag{
 			Key:   day2TagKey,
 			Value: day2TagValue,
 		})

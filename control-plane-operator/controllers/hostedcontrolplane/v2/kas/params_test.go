@@ -29,27 +29,27 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 		expectedPort       int32
 	}{
 		{
-			name:               "not specified",
+			name:               "When advertise address and port are not specified, it should use defaults",
 			expectedAddress:    config.DefaultAdvertiseIPv4Address,
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedPort:       config.KASPodDefaultPort,
 		},
 		{
-			name:               "address specified",
+			name:               "When advertise address is specified, it should use the configured address",
 			advertiseAddress:   "1.2.3.4",
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedAddress:    "1.2.3.4",
 			expectedPort:       config.KASPodDefaultPort,
 		},
 		{
-			name:               "port set for default service publishing strategies",
+			name:               "When port is set for default service publishing strategies, it should use the configured port",
 			port:               ptr.To[int32](6789),
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedAddress:    config.DefaultAdvertiseIPv4Address,
 			expectedPort:       6789,
 		},
 		{
-			name: "port set for NodePort service Publishing Strategy",
+			name: "When port is set for NodePort service publishing strategy, it should use the configured port",
 			apiServiceMapping: hyperv1.ServicePublishingStrategyMapping{
 				Service: hyperv1.APIServer,
 				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
@@ -140,14 +140,14 @@ func TestNewConfigParams(t *testing.T) {
 		expected     func(*hyperv1.HostedControlPlane, []string) KubeAPIServerConfigParams
 	}{
 		{
-			name: "defaults",
+			name: "When no custom configuration is provided, it should use defaults",
 			hcp:  createDefaultHostedControlPlane(),
 			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
 				return defaultKubeAPIServerConfigParams()
 			},
 		},
 		{
-			name:         "with feature gates",
+			name:         "When feature gates are provided, it should include them in params",
 			hcp:          createDefaultHostedControlPlane(),
 			featureGates: []string{"SomeFeatureGate=true", "AnotherFeatureGate=false"},
 			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -157,7 +157,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "AWS platform",
+			name: "When platform is AWS, it should set cloud provider to aws",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Platform.Type = hyperv1.AWSPlatform
@@ -171,7 +171,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "IBM Cloud platform",
+			name: "When platform is IBM Cloud, it should customize STS directives and console URL",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Platform.Type = hyperv1.IBMCloudPlatform
@@ -186,7 +186,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "managed etcd",
+			name: "When etcd is managed, it should set etcd URL to cluster service",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Etcd.ManagementType = hyperv1.Managed
@@ -201,7 +201,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "unmanaged etcd",
+			name: "When etcd is unmanaged, it should use external endpoint",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Etcd.ManagementType = hyperv1.Unmanaged
@@ -218,7 +218,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "managed etcd with shards",
+			name: "When managed etcd has shards, it should configure server overrides",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Etcd.ManagementType = hyperv1.Managed
@@ -258,7 +258,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "unmanaged etcd with shards",
+			name: "When unmanaged etcd has shards, it should configure server overrides",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Etcd.ManagementType = hyperv1.Unmanaged
@@ -287,7 +287,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "single replica controller availability policy",
+			name: "When controller availability policy is single replica, it should disable GoAway",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.ControllerAvailabilityPolicy = hyperv1.SingleReplica
@@ -301,7 +301,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "single replica controller availability policy with custom annotation",
+			name: "When single replica has custom GoAway annotation, it should use the annotation value",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Annotations = map[string]string{
@@ -318,7 +318,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "audit webhook enabled",
+			name: "When audit webhook is configured, it should enable audit webhook",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.AuditWebhook = &corev1.LocalObjectReference{Name: "audit-webhook"}
@@ -332,7 +332,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "with custom annotations",
+			name: "When custom resource and profiling annotations are set, it should apply them to params",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Annotations = map[string]string{
@@ -354,7 +354,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "with service account token max expiration annotation",
+			name: "When service account token max expiration is set, it should configure token expiration",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Annotations = map[string]string{
@@ -370,7 +370,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "with full configuration",
+			name: "When full configuration is provided, it should apply all custom settings",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
@@ -425,7 +425,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when image registry is disabled, it should clear internal registry hostname",
+			name: "When image registry is disabled, it should clear internal registry hostname",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Capabilities = &hyperv1.Capabilities{
@@ -441,7 +441,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when service network is IPv6, it should use IPv6 advertise address",
+			name: "When service network is IPv6, it should use IPv6 advertise address",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{
@@ -462,7 +462,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when networks are dual-stack, it should include all CIDRs",
+			name: "When networks are dual-stack, it should include all CIDRs",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{
@@ -484,7 +484,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when named certificates are configured, it should set them on params",
+			name: "When named certificates are configured, it should set them on params",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
@@ -514,7 +514,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when audit webhook name is empty, it should not enable audit webhook",
+			name: "When audit webhook name is empty, it should not enable audit webhook",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.AuditWebhook = &corev1.LocalObjectReference{Name: ""}
@@ -527,7 +527,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when disable profiling targets non-KAS component, it should not disable profiling",
+			name: "When disable profiling targets non-KAS component, it should not disable profiling",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Annotations = map[string]string{
@@ -542,7 +542,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when custom DNS base domain prefix is set, it should use it in console URL",
+			name: "When custom DNS base domain prefix is set, it should use it in console URL",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.DNS.BaseDomainPrefix = ptr.To("custom-prefix")
@@ -556,7 +556,7 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
-			name: "when DNS base domain prefix is empty, it should omit prefix from console URL",
+			name: "When DNS base domain prefix is empty, it should omit prefix from console URL",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
 				hcp.Spec.DNS.BaseDomainPrefix = ptr.To("")

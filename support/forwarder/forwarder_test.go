@@ -26,7 +26,7 @@ func TestGetRunningKubeAPIServerPod(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "successfully find running kube-apiserver pod",
+			name: "When a running kube-apiserver pod exists, it should return the pod",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -46,7 +46,7 @@ func TestGetRunningKubeAPIServerPod(t *testing.T) {
 			wantErr:     false,
 		},
 		{
-			name: "no running kube-apiserver pod found",
+			name: "When no running kube-apiserver pod exists, it should return an error",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -67,7 +67,7 @@ func TestGetRunningKubeAPIServerPod(t *testing.T) {
 			errContains: "did not find running kube-apiserver pod",
 		},
 		{
-			name: "no kube-apiserver pods found",
+			name: "When no kube-apiserver pods exist, it should return an error",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{

@@ -20,7 +20,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	noProxy := []string{"kube-apiserver"}
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
-		noProxy = append(noProxy, "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace")
+		noProxy = append(noProxy, "certified-operators", "community-operators", "redhat-operators")
 	}
 
 	tlsProfile := hcp.Spec.Configuration.GetTLSSecurityProfile()

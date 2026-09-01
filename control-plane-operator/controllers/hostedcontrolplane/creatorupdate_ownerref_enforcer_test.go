@@ -28,7 +28,7 @@ func TestCreateOrUpdateWithOwnerRefFactory(t *testing.T) {
 		mutateFN func(crclient.Object) controllerutil.MutateFn
 	}{
 		{
-			name: "Owner ref is added",
+			name: "When creating an object, it should add the owner reference",
 			obj: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -38,7 +38,7 @@ func TestCreateOrUpdateWithOwnerRefFactory(t *testing.T) {
 			expected: []metav1.OwnerReference{*ownerRef.Reference},
 		},
 		{
-			name: "Adding takes precedence",
+			name: "When mutate function clears owner refs, it should still add the owner reference",
 			obj: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
@@ -54,7 +54,7 @@ func TestCreateOrUpdateWithOwnerRefFactory(t *testing.T) {
 			expected: []metav1.OwnerReference{*ownerRef.Reference},
 		},
 		{
-			name: "Do not add ownerRef to cluster scoped resources",
+			name: "When object is cluster scoped it should not add owner reference",
 			obj: &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "foo",

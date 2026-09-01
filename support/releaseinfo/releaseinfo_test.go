@@ -43,13 +43,13 @@ func TestParseComponentVersionsLabel(t *testing.T) {
 			expectName:   "My Component (v1.0): Beta",
 		},
 		{
-			name:         "When display name contains invalid characters it should return an error",
+			name:         "When display name contains invalid characters, it should return an error",
 			label:        "mycomponent=1.0.0",
 			displayNames: "mycomponent=Invalid <Name>",
 			expectError:  true,
 		},
 		{
-			name:        "When version is not valid semver it should return an error",
+			name:        "When version is not valid semver, it should return an error",
 			label:       "mycomponent=not-a-version",
 			expectError: true,
 		},
@@ -125,7 +125,7 @@ func TestReadComponentVersions(t *testing.T) {
 			expectKey:   "component",
 		},
 		{
-			name: "When multiple non-machine-os versions exist it should return an error",
+			name: "When multiple non-machine-os versions exist, it should return an error",
 			tags: []imageapi.TagReference{
 				{
 					Name: "component-a",
@@ -250,7 +250,7 @@ func TestStreamForName(t *testing.T) {
 			expectStream: "rhcos-5.0",
 		},
 		{
-			name: "When name does not match any stream it should return an error listing available streams",
+			name: "When name does not match any stream, it should return an error listing available streams",
 			releaseImage: &ReleaseImage{
 				ImageStream: &imageapi.ImageStream{},
 				StreamMetadata: &stream.Stream{
@@ -279,7 +279,7 @@ func TestStreamForName(t *testing.T) {
 			expectStream: "rhcos-4.10",
 		},
 		{
-			name: "When StreamMetadata is nil and name is empty it should return an error",
+			name: "When StreamMetadata is nil and name is empty, it should return an error",
 			releaseImage: &ReleaseImage{
 				ImageStream: &imageapi.ImageStream{},
 			},
@@ -287,7 +287,7 @@ func TestStreamForName(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "When StreamMetadata is nil and OSStreams has entries it should return an error for empty name",
+			name: "When StreamMetadata is nil and OSStreams has entries, it should return an error for empty name",
 			releaseImage: &ReleaseImage{
 				ImageStream: &imageapi.ImageStream{},
 				OSStreams: map[string]*stream.Stream{
@@ -309,7 +309,7 @@ func TestStreamForName(t *testing.T) {
 			expectStream: "rhcos-4.21",
 		},
 		{
-			name: "When StreamMetadata is nil and OSStreams has no matching entry it should return an error",
+			name: "When StreamMetadata is nil and OSStreams has no matching entry, it should return an error",
 			releaseImage: &ReleaseImage{
 				ImageStream: &imageapi.ImageStream{},
 				OSStreams: map[string]*stream.Stream{
@@ -321,7 +321,7 @@ func TestStreamForName(t *testing.T) {
 			expectContains: "rhel-10",
 		},
 		{
-			name: "When both StreamMetadata and OSStreams are nil it should return an error for non-empty name",
+			name: "When both StreamMetadata and OSStreams are nil, it should return an error for non-empty name",
 			releaseImage: &ReleaseImage{
 				ImageStream: &imageapi.ImageStream{},
 			},
@@ -329,7 +329,7 @@ func TestStreamForName(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "When OSStreams is an empty map it should return an error",
+			name: "When OSStreams is an empty map, it should return an error",
 			releaseImage: &ReleaseImage{
 				ImageStream: &imageapi.ImageStream{},
 				StreamMetadata: &stream.Stream{
@@ -341,7 +341,7 @@ func TestStreamForName(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "When OSStreams entry has nil value it should return an error listing available streams",
+			name: "When OSStreams entry has nil value, it should return an error listing available streams",
 			releaseImage: &ReleaseImage{
 				ImageStream: &imageapi.ImageStream{},
 				StreamMetadata: &stream.Stream{

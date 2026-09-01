@@ -132,7 +132,7 @@ func TestEmptyBucket(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name:       "When deleting objects succeeds it should return nil",
+			name:       "When deleting objects succeeds, it should return nil",
 			bucketName: "test-bucket",
 			setupMock: func(m *awsapi.MockS3API) {
 				m.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
@@ -157,7 +157,7 @@ func TestEmptyBucket(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:       "When partial deletion fails it should return error",
+			name:       "When partial deletion fails, it should return error",
 			bucketName: "test-bucket",
 			setupMock: func(m *awsapi.MockS3API) {
 				m.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
@@ -189,7 +189,7 @@ func TestEmptyBucket(t *testing.T) {
 			errorContains: "failed to delete 1 objects from bucket test-bucket",
 		},
 		{
-			name:       "When bucket does not exist it should succeed",
+			name:       "When bucket does not exist, it should succeed",
 			bucketName: "non-existent-bucket",
 			setupMock: func(m *awsapi.MockS3API) {
 				m.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(
@@ -199,7 +199,7 @@ func TestEmptyBucket(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:       "When API error occurs it should return error",
+			name:       "When API error occurs, it should return error",
 			bucketName: "test-bucket",
 			setupMock: func(m *awsapi.MockS3API) {
 				m.EXPECT().ListObjectsV2(gomock.Any(), gomock.Any(), gomock.Any()).Return(

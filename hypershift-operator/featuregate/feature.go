@@ -52,7 +52,7 @@ const (
 	// (e.g., OCP 5.0+ defaults to rhel-10). When disabled, boot images always use rhel-9.
 	// owner: @jparrill
 	// alpha: v0.1.49
-	// beta: x.y.z
+	// default: OCP 5.0
 	OSStreams featuregate.Feature = "OSStreams"
 )
 
@@ -66,7 +66,7 @@ var (
 	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 )
 
 func init() {

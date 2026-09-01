@@ -188,7 +188,7 @@ func TestNthTaintKey(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "When node has rebalance-recommendation taint it should return the taint key",
+			name: "When node has rebalance-recommendation taint, it should return the taint key",
 			node: &corev1.Node{
 				Spec: corev1.NodeSpec{
 					Taints: []corev1.Taint{
@@ -199,7 +199,7 @@ func TestNthTaintKey(t *testing.T) {
 			expected: "aws-node-termination-handler/rebalance-recommendation",
 		},
 		{
-			name: "When node has spot-itn taint it should return the taint key",
+			name: "When node has spot-itn taint, it should return the taint key",
 			node: &corev1.Node{
 				Spec: corev1.NodeSpec{
 					Taints: []corev1.Taint{
@@ -210,7 +210,7 @@ func TestNthTaintKey(t *testing.T) {
 			expected: "aws-node-termination-handler/spot-itn",
 		},
 		{
-			name: "When node has no NTH taints it should return empty string",
+			name: "When node has no NTH taints, it should return empty string",
 			node: &corev1.Node{
 				Spec: corev1.NodeSpec{
 					Taints: []corev1.Taint{
@@ -221,7 +221,7 @@ func TestNthTaintKey(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "When node has no taints it should return empty string",
+			name: "When node has no taints, it should return empty string",
 			node: &corev1.Node{
 				Spec: corev1.NodeSpec{},
 			},

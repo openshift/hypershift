@@ -147,6 +147,13 @@ var (
 		// until CVO catches up. This is a deterministic ordering issue, not a race.
 		// See https://issues.redhat.com/browse/OCPBUGS-78539
 		"dns-operator": 5,
+		// CVO and CNO may restart once during hosted cluster initialization due to
+		// dependency ordering and kube-apiserver availability timing.
+		// See https://issues.redhat.com/browse/OCPBUGS-109581
+		// See https://issues.redhat.com/browse/OCPBUGS-77042
+		// See https://issues.redhat.com/browse/OCPBUGS-18569
+		"cluster-version-operator": 1,
+		"cluster-network-operator": 1,
 	}
 )
 
@@ -336,7 +343,7 @@ func WaitForGuestKubeConfig(t testing.TB, ctx context.Context, client crclient.C
 	return data
 }
 
-func WaitForGuestRestConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) *rest.Config {
+func WaitForGuestRestConfig(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) *rest.Config {
 	g := NewWithT(t)
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
@@ -833,11 +840,27 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
-func isLeaderElectionFailure(ctx context.Context, client *kubeclient.Clientset, pod *corev1.Pod, containerName string, t *testing.T) bool {
+var LeaderElectionFailurePatterns = []string{
+	"election lost",
+	"failed to renew lease",
+	"stopped leading",
+}
+
+func MatchesLeaderElectionFailure(line string) bool {
+	lower := strings.ToLower(line)
+	for _, pattern := range LeaderElectionFailurePatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLeaderElectionFailure(ctx context.Context, client kubeclient.Interface, pod *corev1.Pod, containerName string, t *testing.T) bool {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
-		TailLines: ptr.To[int64](10),
+		TailLines: ptr.To[int64](100),
 	}
 	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
 	podLogs, err := req.Stream(ctx)
@@ -856,11 +879,12 @@ func isLeaderElectionFailure(ctx context.Context, client *kubeclient.Clientset, 
 	buf := make([]byte, bufSize)
 	scanner.Buffer(buf, maxScanTokenSize)
 	for scanner.Scan() {
-		if strings.Contains(strings.ToLower(scanner.Text()), "election lost") {
+		if MatchesLeaderElectionFailure(scanner.Text()) {
 			return true
 		}
 	}
 
+	_, _ = io.Copy(io.Discard, podLogs)
 	if err = scanner.Err(); err != nil {
 		t.Logf("failed to read pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
 	}
@@ -1283,13 +1307,20 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 // EnsureNodesRuntime ensures that all nodes in the NodePool have the expected runtime handlers.
 // This is only supported on 4.18+ when the default runtime is changed to crun.
-func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node) {
+// On OCP 5.0+ with RHEL-10, only crun is expected (runc is not shipped).
+// RHEL-9 nodes (pre-5.0 or explicit spec.osImageStream.name=rhel-9) ship both runc and crun.
+func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.NodePool) {
 	AtLeast(t, Version418)
 	g := NewWithT(t)
 
+	isRHEL9 := IsLessThan(Version50) ||
+		nodePool.Spec.OSImageStream.Name == string(hyperv1.OSImageStreamRHEL9)
+
 	validHandlers := map[string]bool{
-		"runc": false,
 		"crun": false,
+	}
+	if isRHEL9 {
+		validHandlers["runc"] = false
 	}
 
 	for _, node := range nodes {
@@ -2326,7 +2357,6 @@ func waitForDaemonSetReady(t *testing.T, ctx context.Context, client crclient.Cl
 		return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", name, err)
 	}
 
-	t.Logf("✓ %s DaemonSet is ready", name)
 	return nil
 }
 
@@ -2820,7 +2850,7 @@ func extractDataFromFamilies(metricFamilies map[string]*dto.MetricFamily, metric
 
 // ValidateMetricPresence checks if a metric meets the expected presence criteria
 // Returns true if validation passes, false otherwise
-func ValidateMetricPresence(t *testing.T, mf map[string]*dto.MetricFamily, query, labelKey, labelValue, metricName string, areMetricsExpectedToBePresent bool) bool {
+func ValidateMetricPresence(t testing.TB, mf map[string]*dto.MetricFamily, query, labelKey, labelValue, metricName string, areMetricsExpectedToBePresent bool) bool {
 	labelPairs := extractDataFromFamilies(mf, query, labelKey, labelValue)
 	if areMetricsExpectedToBePresent {
 		if len(labelPairs) < 1 {
@@ -3615,7 +3645,7 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 
 		// Update the hosted cluster to add a day2 tag
 		err = UpdateObject(t, ctx, client, hostedCluster, func(object *hyperv1.HostedCluster) {
-			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 				Key:   day2TagKey,
 				Value: day2TagValue,
 			})
@@ -4697,10 +4727,8 @@ func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, 
 				return fmt.Errorf("ServiceMonitor HTTPS access did not return prometheus format metrics")
 			}
 
-			t.Logf("✓ Successfully retrieved metrics via ServiceMonitor HTTPS at %s", httpsServiceURL)
 			return nil
 		}, 3*time.Minute, 10*time.Second).Should(Succeed(), "should be able to get metrics via ServiceMonitor HTTPS configuration")
 
-		t.Logf("✅ Node-tuning-operator metrics endpoint validation completed successfully")
 	})
 }

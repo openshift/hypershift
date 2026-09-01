@@ -58,37 +58,37 @@ func TestDeserializeImageMetadata(t *testing.T) {
 			expectOSStream: true,
 		},
 		{
-			name:        "When ConfigMap is missing both stream and streams keys it should return an error",
+			name:        "When ConfigMap is missing both stream and streams keys, it should return an error",
 			data:        testConfigMap(map[string]string{"releaseVersion": `"5.0.0"`}),
 			expectError: true,
 		},
 		{
-			name:        "When stream JSON is invalid it should return an error",
+			name:        "When stream JSON is invalid, it should return an error",
 			data:        testConfigMap(map[string]string{"stream": `"not valid json {"`}),
 			expectError: true,
 		},
 		{
-			name:        "When streams JSON is invalid it should return an error",
+			name:        "When streams JSON is invalid, it should return an error",
 			data:        testConfigMap(map[string]string{"streams": `"not valid json {"`}),
 			expectError: true,
 		},
 		{
-			name:        "When input is empty it should return an error",
+			name:        "When input is empty, it should return an error",
 			data:        []byte{},
 			expectError: true,
 		},
 		{
-			name:        "When input is not valid YAML it should return an error",
+			name:        "When input is not valid YAML, it should return an error",
 			data:        []byte(`{not yaml at all`),
 			expectError: true,
 		},
 		{
-			name:        "When streams map is empty it should return an error",
+			name:        "When streams map is empty, it should return an error",
 			data:        testConfigMap(map[string]string{"streams": `"{}"`}),
 			expectError: true,
 		},
 		{
-			name: "When streams is valid but stream JSON is invalid it should return an error",
+			name: "When streams is valid but stream JSON is invalid, it should return an error",
 			data: testConfigMap(map[string]string{
 				"streams": `'{"rhel-9":{"stream":"rhcos-4.21","architectures":{"x86_64":{"artifacts":{},"images":{}}}}}'`,
 				"stream":  `"not valid json {"`,
@@ -195,7 +195,7 @@ func TestDeserializeImageMetadataMultiStreamContent(t *testing.T) {
 			},
 		},
 		{
-			name: "When looking up streams both rhel-9 and rhel-10 should have ppc64le architecture",
+			name: "When looking up streams, it should include ppc64le architecture in both rhel-9 and rhel-10",
 			assert: func(g Gomega) {
 				_, rhel9HasPPC := osStreams["rhel-9"].Architectures["ppc64le"]
 				_, rhel10HasPPC := osStreams["rhel-10"].Architectures["ppc64le"]
@@ -236,7 +236,7 @@ func TestDeserializeImageMetadataMultiStreamContent(t *testing.T) {
 			},
 		},
 		{
-			name: "When looking up Azure marketplace data rhel-10 should have no no-purchase-plan entries",
+			name: "When looking up Azure marketplace data, it should have no no-purchase-plan entries in rhel-10",
 			assert: func(g Gomega) {
 				rhel9Ext := osStreams["rhel-9"].Architectures["x86_64"].RHELCoreOSExtensions
 				rhel10Ext := osStreams["rhel-10"].Architectures["x86_64"].RHELCoreOSExtensions

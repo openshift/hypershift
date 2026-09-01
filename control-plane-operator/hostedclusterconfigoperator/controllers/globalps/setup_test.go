@@ -10,21 +10,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func Test_kubeSystemSecretPredicateFunc(t *testing.T) {
+func TestKubeSystemSecretPredicateFunc(t *testing.T) {
 	tests := []struct {
 		name   string
 		object *corev1.Secret
 		want   bool
 	}{
 		{
-			name: "When secret is in kube-system it should return true",
+			name: "When secret is in kube-system, it should return true",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "any-secret"},
 			},
 			want: true,
 		},
 		{
-			name: "When secret is in a different namespace it should return false",
+			name: "When secret is in a different namespace, it should return false",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-config", Name: "pull-secret"},
 			},
@@ -40,7 +40,7 @@ func Test_kubeSystemSecretPredicateFunc(t *testing.T) {
 	}
 }
 
-func Test_namespacedNamePredicateFunc(t *testing.T) {
+func TestNamespacedNamePredicateFunc(t *testing.T) {
 	predicate := namespacedNamePredicateFunc("my-hcp-namespace", "pull-secret")
 
 	tests := []struct {
@@ -49,21 +49,21 @@ func Test_namespacedNamePredicateFunc(t *testing.T) {
 		want   bool
 	}{
 		{
-			name: "When namespace and name match it should return true",
+			name: "When namespace and name match, it should return true",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "my-hcp-namespace", Name: "pull-secret"},
 			},
 			want: true,
 		},
 		{
-			name: "When namespace differs it should return false",
+			name: "When namespace differs, it should return false",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "other-namespace", Name: "pull-secret"},
 			},
 			want: false,
 		},
 		{
-			name: "When name differs it should return false",
+			name: "When name differs, it should return false",
 			object: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: "my-hcp-namespace", Name: "other-secret"},
 			},
@@ -79,7 +79,7 @@ func Test_namespacedNamePredicateFunc(t *testing.T) {
 	}
 }
 
-func Test_staticReconcileMapper(t *testing.T) {
+func TestStaticReconcileMapper(t *testing.T) {
 	t.Run("When called it should return a single empty reconcile request", func(t *testing.T) {
 		g := NewWithT(t)
 		requests := staticReconcileMapper(context.Background(), &corev1.Secret{})

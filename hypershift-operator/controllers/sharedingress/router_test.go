@@ -28,7 +28,7 @@ func TestReconcileRouterDeployment(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "Valid config map and deployment",
+			name: "When a valid config map and deployment are provided, it should reconcile without error",
 			args: args{
 				deployment: &appsv1.Deployment{
 					ObjectMeta: metav1.ObjectMeta{

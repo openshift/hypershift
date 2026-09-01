@@ -13,6 +13,10 @@ const (
 	// a HostedControlPlane with AutoNode enabled.
 	KarpenterProviderAWSImage = "hypershift.openshift.io/karpenter-provider-aws-image"
 
+	// KarpenterOperatorImage overrides the standalone karpenter-operator image for
+	// a HostedControlPlane with AutoNode enabled.
+	KarpenterOperatorImage = "hypershift.openshift.io/karpenter-operator-image"
+
 	// TokenSecretNodePoolAnnotation is used to annotate the Karpenter token secret with its hyperv1.NodePool namespaced name.
 	TokenSecretNodePoolAnnotation = "hypershift.openshift.io/nodePool"
 

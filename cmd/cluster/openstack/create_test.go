@@ -25,7 +25,7 @@ func TestCreateOptions_Validate(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "missing OpenStack credentials file",
+			name: "When OpenStack credentials file is missing, it should return an error",
 			input: RawCreateOptions{
 				OpenStackCredentialsFile: "thisisajunkfilename.yaml",
 			},
@@ -78,7 +78,7 @@ func TestCreateCluster(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "minimal flags necessary to render",
+			name: "When minimal flags are provided, it should render successfully",
 			args: []string{
 				"--openstack-credentials-file=" + credentialsFile,
 				"--openstack-node-flavor=m1.xlarge",
@@ -89,7 +89,7 @@ func TestCreateCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "default creation flags",
+			name: "When default creation flags are provided, it should render successfully",
 			args: []string{
 				"--openstack-credentials-file=" + credentialsFile,
 				"--openstack-external-network-id=5387f86a-a10e-47fe-91c6-41ac131f9f30",
@@ -147,7 +147,7 @@ func TestExtractCloud(t *testing.T) {
 		}
 	}
 
-	t.Run("invalid path", func(t *testing.T) {
+	t.Run("When path is invalid it should return an error", func(t *testing.T) {
 		tempDir := t.TempDir()
 		// we know a new temporary directory will be empty so this file will never exist
 		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
@@ -159,7 +159,7 @@ func TestExtractCloud(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("empty clouds.yaml", func(t *testing.T) {
+	t.Run("When clouds.yaml contains invalid YAML it should return an error", func(t *testing.T) {
 		tempDir := t.TempDir()
 		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
 		junkData := []byte("{ this is not valid YAML }")
@@ -174,7 +174,7 @@ func TestExtractCloud(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("incomplete clouds.yaml", func(t *testing.T) {
+	t.Run("When clouds.yaml is empty it should return an error", func(t *testing.T) {
 		tempDir := t.TempDir()
 		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
 		junkData := []byte("")
@@ -189,7 +189,7 @@ func TestExtractCloud(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("invalid cloud for clouds.yaml", func(t *testing.T) {
+	t.Run("When cloud name is not found in clouds.yaml it should return an error", func(t *testing.T) {
 		tempDir := t.TempDir()
 		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
 		clouds := map[string]any{
@@ -204,7 +204,7 @@ func TestExtractCloud(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("invalid cacert path in clouds.yaml", func(t *testing.T) {
+	t.Run("When cacert path in clouds.yaml is invalid it should return an error", func(t *testing.T) {
 		tempDir := t.TempDir()
 		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
 		// we know a new temporary directory will be empty so this file will not exist
@@ -228,7 +228,7 @@ func TestExtractCloud(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("drop any additional clouds specified in clouds.yaml", func(t *testing.T) {
+	t.Run("When additional clouds are specified in clouds.yaml it should drop them", func(t *testing.T) {
 		tempDir := t.TempDir()
 		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
 		caCertPath := filepath.Join(tempDir, "valid-ca.crt")
@@ -270,7 +270,7 @@ func TestExtractCloud(t *testing.T) {
 		assert.Nil(t, err)
 	})
 
-	t.Run("explicit cacert preferred to clouds.yaml", func(t *testing.T) {
+	t.Run("When explicit cacert is provided it should be preferred over clouds.yaml cacert", func(t *testing.T) {
 		tempDir := t.TempDir()
 		cloudsYAMLPath := filepath.Join(tempDir, "clouds.yaml")
 		// we know a new temporary directory will be empty so this file will not exist

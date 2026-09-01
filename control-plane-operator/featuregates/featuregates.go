@@ -19,7 +19,7 @@ var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
 	externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
-	externalOIDCWithUpstreamParityFeature           = featuregates.NewFeature(ExternalOIDCWithUpstreamParity, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	externalOIDCWithUpstreamParityFeature           = featuregates.NewFeature(ExternalOIDCWithUpstreamParity, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 )
 
 func init() {

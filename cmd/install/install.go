@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	capicrdmigrator "github.com/openshift/hypershift/support/capi-crdmigrator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -149,6 +150,7 @@ type Options struct {
 	EnableSizeTagging                         bool
 	EnableEtcdRecovery                        bool
 	EnableCPOOverrides                        bool
+	EnableStandaloneKarpenterOperator         bool
 	AroHCPKeyVaultUsersClientID               string
 	TechPreviewNoUpgrade                      bool
 	RegistryOverrides                         string
@@ -446,7 +448,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", opts.EnableConversionWebhook, "Enable webhook for converting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.DisableCAPIConversionWebhook, "disable-capi-conversion-webhook", opts.DisableCAPIConversionWebhook, "Disable conversion webhook for CAPI CRDs during v1beta1/v1beta2 transition")
-	cmd.PersistentFlags().BoolVar(&opts.DisableCAPIMigration, "disable-capi-migration", opts.DisableCAPIMigration, "Placeholder flag for upcoming feature: Disable automatic CAPI CRD storage version migration from v1beta1 to v1beta2")
+	cmd.PersistentFlags().BoolVar(&opts.DisableCAPIMigration, "disable-capi-migration", opts.DisableCAPIMigration, "Disable automatic CAPI CRD storage version migration from v1beta1 to v1beta2")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -499,6 +501,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCPOOverrides, "enable-cpo-overrides", opts.EnableCPOOverrides, "If true, the HyperShift operator uses a set of static overrides for the CPO image given specific release versions")
+	cmd.PersistentFlags().BoolVar(&opts.EnableStandaloneKarpenterOperator, "enable-standalone-karpenter-operator", opts.EnableStandaloneKarpenterOperator, "If true, the HyperShift operator deploys the standalone karpenter-operator binary instead of the karpenter-operator embedded in the HO image (default false)")
 	cmd.PersistentFlags().StringVar(&opts.AroHCPKeyVaultUsersClientID, "aro-hcp-key-vault-users-client-id", opts.AroHCPKeyVaultUsersClientID, "The client ID of the managed identity which can access the Azure Key Vaults, in an AKS management cluster, to retrieve secrets and certificates.")
 	// TODO: Would it make sense to deprecate this flag in favor of a new flag like `--feature-set=TechPreviewNoUpgrade`
 	// and make it so that setting this flag is essentially equivalent to that?
@@ -1010,24 +1013,39 @@ func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(strin
 	}
 }
 
+func capiStorageVersionForOpts(opts Options) string {
+	if opts.DisableCAPIMigration {
+		return capicrdmigrator.CurrentStorageVersion
+	}
+	return capicrdmigrator.TargetStorageVersion
+}
+
 func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
-		for crdName := range ipamCRDNames {
-			existing := &apiextensionsv1.CustomResourceDefinition{}
-			err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
-			if err == nil {
-				existingIPAMCRDs.Insert(crdName)
-				fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
-			} else if !apierrors.IsNotFound(err) {
-				return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
+		// Skip IPAM CRDs only when migration is disabled.
+		// During migration, IPAM CRDs must be updated to set v1beta2 as the storage version.
+		if opts.DisableCAPIMigration {
+			for crdName := range ipamCRDNames {
+				existing := &apiextensionsv1.CustomResourceDefinition{}
+				err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
+				if err == nil {
+					existingIPAMCRDs.Insert(crdName)
+					fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
+				} else if !apierrors.IsNotFound(err) {
+					return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
+				}
 			}
 		}
 	}
 
+	capiStorageVersion := capiStorageVersionForOpts(opts)
+	capiOverrides := crdassets.CAPICRDOverridesWithStorageVersion(capiStorageVersion)
+
 	var crds []crclient.Object
 	crds = append(
 		crds, crdassets.CustomResourceDefinitions(
+			capiStorageVersion,
 			crdIncludeFilter(opts, existingIPAMCRDs),
 			func(crd *apiextensionsv1.CustomResourceDefinition) {
 				// Check if this CRD needs a conversion webhook
@@ -1041,7 +1059,7 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 
 					// CAPI conversion is required during v1beta1 -> v1beta2 transition period
 				} else if !opts.DisableCAPIConversionWebhook {
-					if override, ok := crdassets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
+					if override, ok := capiOverrides[crd.Name]; ok && override.NeedsConversion {
 						needsConversion = true
 						conversionReviewVersions = []string{"v1beta1", "v1beta2"}
 					}
@@ -1170,7 +1188,8 @@ func ensureUnmanagedCRDs(ctx context.Context, out io.Writer, c crclient.Client, 
 			UnmanagedCustomResourceDefinitions: capiCRDNames.SortedList(),
 		},
 	}
-	if err := c.Patch(ctx, clusterAPI, crclient.RawPatch(types.ApplyPatchType, patchData),
+	if err := c.Patch(
+		ctx, clusterAPI, crclient.RawPatch(types.ApplyPatchType, patchData),
 		crclient.ForceOwnership, crclient.FieldOwner("hypershift"),
 	); err != nil {
 		return 0, fmt.Errorf("failed to apply ClusterAPI config: %w", err)
@@ -1227,7 +1246,8 @@ func dryRunValidateCRDs(ctx context.Context, out io.Writer, crds []crclient.Obje
 		// Use a deep copy so the dry-run response (which includes managedFields)
 		// does not mutate the original CRD objects passed to apply().
 		crdCopy := crd.DeepCopyObject().(crclient.Object)
-		if err := client.Patch(ctx, crdCopy, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()),
+		if err := client.Patch(
+			ctx, crdCopy, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()),
 			crclient.ForceOwnership, crclient.FieldOwner("hypershift"), crclient.DryRunAll,
 		); err != nil {
 			errs = append(errs, fmt.Errorf("dry-run validation failed for CRD %s: %w", crd.GetName(), err))
@@ -1383,6 +1403,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
+		EnableKarpenterOperator:                 opts.EnableStandaloneKarpenterOperator,
 		AdditionalOperatorEnvVars:               opts.AdditionalOperatorEnvVars,
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
@@ -1393,6 +1414,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ScaleFromZeroSecret:                     scaleFromZeroSecret,
 		ScaleFromZeroSecretKey:                  opts.ScaleFromZeroCredentialsSecretKey,
 		ScaleFromZeroProvider:                   opts.ScaleFromZeroProvider,
+		CAPIStorageVersion:                      capiStorageVersionForOpts(opts),
 		HCPEgressBlockCIDRs:                     opts.HCPEgressBlockCIDRs,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
@@ -1435,7 +1457,8 @@ func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *core
 	externalDNSClusterRole := assets.ExternalDNSClusterRole{}.Build()
 	if opts.ExternalDNSProvider == "google" {
 		// GCP-386: Allow external-dns to read/update DNSEndpoint resources for ingress zone delegation
-		externalDNSClusterRole.Rules = append(externalDNSClusterRole.Rules,
+		externalDNSClusterRole.Rules = append(
+			externalDNSClusterRole.Rules,
 			rbacv1.PolicyRule{
 				APIGroups: []string{"externaldns.k8s.io"},
 				Resources: []string{"dnsendpoints"},

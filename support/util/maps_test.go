@@ -17,7 +17,7 @@ func TestMapsDiff(t *testing.T) {
 		expectedDifferent bool
 	}{
 		{
-			name:              "Nil maps",
+			name:              "When both maps are nil, it should return empty changes and no difference",
 			current:           nil,
 			input:             nil,
 			expectedChanged:   map[string]string{},
@@ -25,7 +25,7 @@ func TestMapsDiff(t *testing.T) {
 			expectedDifferent: false,
 		},
 		{
-			name:              "Nil current, non-empty input",
+			name:              "When current is nil and input is non-empty, it should return all input as changed",
 			current:           nil,
 			input:             map[string]string{"x": "y"},
 			expectedChanged:   map[string]string{"x": "y"},
@@ -33,7 +33,7 @@ func TestMapsDiff(t *testing.T) {
 			expectedDifferent: true,
 		},
 		{
-			name:              "Nil input, non-empty current",
+			name:              "When input is nil and current is non-empty, it should return all current as deleted",
 			current:           map[string]string{"x": "y"},
 			input:             nil,
 			expectedChanged:   map[string]string{},
@@ -41,7 +41,7 @@ func TestMapsDiff(t *testing.T) {
 			expectedDifferent: true,
 		},
 		{
-			name:              "Multiple changes and deletions",
+			name:              "When maps have multiple changes and deletions, it should detect all differences",
 			current:           map[string]string{"a": "1", "b": "2", "c": "3"},
 			input:             map[string]string{"a": "2", "d": "4"},
 			expectedChanged:   map[string]string{"a": "2", "d": "4"},
@@ -49,7 +49,7 @@ func TestMapsDiff(t *testing.T) {
 			expectedDifferent: true,
 		},
 		{
-			name:              "Empty string values",
+			name:              "When maps have empty string values, it should handle them correctly",
 			current:           map[string]string{"a": "", "b": "2"},
 			input:             map[string]string{"a": "", "b": ""},
 			expectedChanged:   map[string]string{"b": ""},
@@ -57,7 +57,7 @@ func TestMapsDiff(t *testing.T) {
 			expectedDifferent: true,
 		},
 		{
-			name:              "Same keys, different order",
+			name:              "When maps have same keys in different order, it should return no difference",
 			current:           map[string]string{"a": "1", "b": "2"},
 			input:             map[string]string{"b": "2", "a": "1"},
 			expectedChanged:   map[string]string{},

@@ -308,7 +308,7 @@ func TestIsKubeAPIServerAvailable(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "KubeAPIServer exists",
+			name: "When KubeAPIServer exists, it should return true",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kube-apiserver",
@@ -319,7 +319,7 @@ func TestIsKubeAPIServerAvailable(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "KubeAPIServer does not exist",
+			name:        "When KubeAPIServer does not exist, it should return false",
 			deployment:  nil,
 			expected:    false,
 			expectError: false,

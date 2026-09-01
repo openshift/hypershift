@@ -33,7 +33,7 @@ func TestDeploymentName(t *testing.T) {
 	}
 }
 
-func TestPlaceholderCreator_Reconcile(t *testing.T) {
+func TestPlaceholderCreatorReconcile(t *testing.T) {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
@@ -54,7 +54,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 		expectedErr bool
 	}{
 		{
-			name: "invalid config, do nothing",
+			name: "When config is invalid it should do nothing",
 			config: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
 					Conditions: []metav1.Condition{{Type: schedulingv1alpha1.ClusterSizingConfigurationValidType, Status: metav1.ConditionFalse}},
@@ -62,7 +62,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "no placeholders necessary, do nothing",
+			name: "When no placeholders are necessary it should do nothing",
 			config: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 					Sizes: []schedulingv1alpha1.SizeConfiguration{
@@ -74,7 +74,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "some placeholders necessary, none exist, create first",
+			name: "When some placeholders are necessary and none exist, it should create the first",
 			config: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 					Sizes: []schedulingv1alpha1.SizeConfiguration{
@@ -92,7 +92,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			expected: newDeployment(placeholderNamespace, "small", 0, []string{}),
 		},
 		{
-			name: "some placeholders necessary, some exist, create next",
+			name: "When some placeholders are necessary and some exist, it should create the next",
 			config: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 					Sizes: []schedulingv1alpha1.SizeConfiguration{
@@ -112,7 +112,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			expected: newDeployment(placeholderNamespace, "small", 1, []string{}),
 		},
 		{
-			name: "some placeholders necessary, some exist, create missing",
+			name: "When some placeholders are necessary and some exist, it should create the missing one",
 			config: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 					Sizes: []schedulingv1alpha1.SizeConfiguration{
@@ -132,7 +132,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			expected: newDeployment(placeholderNamespace, "small", 0, []string{}),
 		},
 		{
-			name: "some placeholders necessary, all exist, do nothing",
+			name: "When all necessary placeholders exist it should do nothing",
 			config: &schedulingv1alpha1.ClusterSizingConfiguration{
 				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 					Sizes: []schedulingv1alpha1.SizeConfiguration{
@@ -173,7 +173,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 	}
 }
 
-func TestPlaceholderUpdater_Reconcile(t *testing.T) {
+func TestPlaceholderUpdaterReconcile(t *testing.T) {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
@@ -195,7 +195,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 		expectedErr bool
 	}{
 		{
-			name: "non-placeholder deployment, do nothing",
+			name: "When deployment is not a placeholder it should do nothing",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -205,7 +205,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "placeholder deployment without size, do nothing",
+			name: "When placeholder deployment has no size it should do nothing",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -215,7 +215,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid config, do nothing",
+			name: "When config is invalid it should do nothing",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -231,7 +231,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid deployment name, do nothing",
+			name: "When deployment name is invalid it should do nothing",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "whatever",
@@ -248,7 +248,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "too-large placeholder deployment, delete",
+			name: "When placeholder deployment index is too large it should delete it",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-123",
@@ -269,7 +269,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			delete: true,
 		},
 		{
-			name: "too-large placeholder deployment edge-case, delete",
+			name: "When placeholder deployment index equals placeholder count it should delete it",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-2",
@@ -290,7 +290,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			delete: true,
 		},
 		{
-			name: "placeholder deployment paired nodes missing, update",
+			name: "When placeholder deployment has missing paired nodes, it should update it",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-1",
@@ -338,7 +338,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			expected: newDeployment(placeholderNamespace, "small", 1, []string{"first", "second"}),
 		},
 		{
-			name: "placeholder deployment paired nodes out-of-date, update",
+			name: "When placeholder deployment paired nodes are out of date, it should update it",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-1",
@@ -386,7 +386,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 			expected: newDeployment(placeholderNamespace, "small", 1, []string{"first", "second"}),
 		},
 		{
-			name: "placeholder deployment correct, no-op",
+			name: "When placeholder deployment is correct it should be a no-op",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "placeholder-small-1",

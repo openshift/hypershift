@@ -28,6 +28,7 @@ type AzureKMSSpecApplyConfiguration struct {
 	BackupKey        *AzureKMSKeyApplyConfiguration             `json:"backupKey,omitempty"`
 	KMS              *ManagedIdentityApplyConfiguration         `json:"kms,omitempty"`
 	WorkloadIdentity *WorkloadIdentityApplyConfiguration        `json:"workloadIdentity,omitempty"`
+	KeyVaultType     *hypershiftv1beta1.AzureKMSKeyVaultType    `json:"keyVaultType,omitempty"`
 	KeyVaultAccess   *hypershiftv1beta1.AzureKeyVaultAccessType `json:"keyVaultAccess,omitempty"`
 }
 
@@ -66,6 +67,14 @@ func (b *AzureKMSSpecApplyConfiguration) WithKMS(value *ManagedIdentityApplyConf
 // If called multiple times, the WorkloadIdentity field is set to the value of the last call.
 func (b *AzureKMSSpecApplyConfiguration) WithWorkloadIdentity(value *WorkloadIdentityApplyConfiguration) *AzureKMSSpecApplyConfiguration {
 	b.WorkloadIdentity = value
+	return b
+}
+
+// WithKeyVaultType sets the KeyVaultType field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KeyVaultType field is set to the value of the last call.
+func (b *AzureKMSSpecApplyConfiguration) WithKeyVaultType(value hypershiftv1beta1.AzureKMSKeyVaultType) *AzureKMSSpecApplyConfiguration {
+	b.KeyVaultType = &value
 	return b
 }
 

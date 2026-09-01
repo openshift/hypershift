@@ -154,8 +154,17 @@ This section walks through how to:
 1. Set up the flags needed when creating the Azure HostedCluster
 1. Verify the etcd encryption is setup and working properly 
 
-There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of 
-steps mentioned above. However, this guide will manually walk through those steps.
+!!! important "Managed HSM compatibility"
+
+    Azure Managed HSM for KMS encryption requires an OpenShift 4.22 or later HostedCluster release and is supported in Azure Public Cloud, Azure US Government Cloud, Azure China Cloud, Azure German Cloud, and Azure Bleu Cloud.
+    Do not configure Managed HSM on an earlier release because its control plane operator does not configure the Managed HSM endpoint or authentication scope.
+    Downgrading a HostedCluster after enabling Managed HSM is not supported.
+
+    The KMS vault type is immutable. An existing HostedCluster that uses Azure Key Vault cannot migrate to Managed HSM through key rotation; create a new HostedCluster to change between those services.
+    Custom Azure Stack Key Vault endpoints are not supported.
+
+There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of
+steps mentioned above. For Managed HSM, use `setup_etcd_managed_hsm.sh` instead. This guide will manually walk through the Key Vault setup steps below.
 
 1a) Create a resource group for the key vault that will house the key used for etcd encryption. 
 

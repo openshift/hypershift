@@ -30,7 +30,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 		checkError          func(*testing.T, error)
 	}{
 		{
-			name: "basic valid node pool",
+			name: "When a basic valid node pool is configured, it should create the expected template",
 			nodePool: hyperv1.NodePoolSpec{
 				ClusterName: "",
 				Replicas:    nil,
@@ -61,7 +61,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			name: "basic additional port",
+			name: "When an additional port is configured, it should include it in the template",
 			nodePool: hyperv1.NodePoolSpec{
 				ClusterName: "",
 				Replicas:    nil,
@@ -108,7 +108,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			name: "additional port for SR-IOV",
+			name: "When an additional port is configured for SR-IOV, it should set VNICType and disable port security",
 			nodePool: hyperv1.NodePoolSpec{
 				ClusterName: "",
 				Replicas:    nil,
@@ -212,7 +212,7 @@ func TestOpenstackDefaultImage(t *testing.T) {
 		expectedError bool
 	}{
 		{
-			name: "valid metadata",
+			name: "When valid metadata is provided, it should return the image URL and hash",
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &stream.Stream{
 					Architectures: map[string]stream.Arch{
@@ -238,12 +238,12 @@ func TestOpenstackDefaultImage(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			name:          "missing architecture",
+			name:          "When architecture is missing, it should return error",
 			releaseImage:  &releaseinfo.ReleaseImage{StreamMetadata: &stream.Stream{Architectures: map[string]stream.Arch{}}},
 			expectedError: true,
 		},
 		{
-			name: "missing openstack artifact",
+			name: "When openstack artifact is missing, it should return error",
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &stream.Stream{
 					Architectures: map[string]stream.Arch{
@@ -254,7 +254,7 @@ func TestOpenstackDefaultImage(t *testing.T) {
 			expectedError: true,
 		},
 		{
-			name: "missing qcow2.gz format",
+			name: "When qcow2.gz format is missing, it should return error",
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &stream.Stream{
 					Architectures: map[string]stream.Arch{
@@ -269,7 +269,7 @@ func TestOpenstackDefaultImage(t *testing.T) {
 			expectedError: true,
 		},
 		{
-			name: "missing disk artifact",
+			name: "When disk artifact is missing, it should return error",
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &stream.Stream{
 					Architectures: map[string]stream.Arch{
@@ -348,7 +348,7 @@ func TestOpenStackReleaseImage(t *testing.T) {
 		expectedError  bool
 	}{
 		{
-			name: "valid metadata",
+			name: "When valid metadata is provided, it should return the release version",
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &stream.Stream{
 					Architectures: map[string]stream.Arch{
@@ -366,12 +366,12 @@ func TestOpenStackReleaseImage(t *testing.T) {
 			expectedError:  false,
 		},
 		{
-			name:          "missing architecture",
+			name:          "When architecture is missing, it should return error",
 			releaseImage:  &releaseinfo.ReleaseImage{StreamMetadata: &stream.Stream{Architectures: map[string]stream.Arch{}}},
 			expectedError: true,
 		},
 		{
-			name: "missing openstack artifact",
+			name: "When openstack artifact is missing, it should return error",
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &stream.Stream{
 					Architectures: map[string]stream.Arch{
@@ -431,7 +431,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 		expectedErrorSubstring string
 	}{
 		{
-			name: "valid configuration",
+			name: "When valid configuration is provided, it should reconcile the image spec",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-cluster",
@@ -491,7 +491,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 			},
 		},
 		{
-			name: "release image error",
+			name: "When release image has missing architecture, it should return error",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -553,7 +553,7 @@ func TestClusterImageName(t *testing.T) {
 		expectedError  bool
 	}{
 		{
-			name: "valid release image",
+			name: "When valid release image is provided, it should return the cluster image name",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -577,7 +577,7 @@ func TestClusterImageName(t *testing.T) {
 			expectedError:  false,
 		},
 		{
-			name: "missing architecture",
+			name: "When architecture is missing, it should return error",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -592,7 +592,7 @@ func TestClusterImageName(t *testing.T) {
 			expectedError: true,
 		},
 		{
-			name: "missing openstack artifact",
+			name: "When openstack artifact is missing, it should return error",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",

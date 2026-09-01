@@ -183,7 +183,7 @@ func DestroyOIDCProvider(ctx context.Context, log logr.Logger, iamClient awsapi.
 // associates it with an existing private route table (one with a NAT gateway route),
 // and returns the subnet ID plus a cleanup function that disassociates and deletes it.
 // The subnet CIDR is chosen dynamically to avoid overlapping with any existing subnets.
-func CreateTestSubnet(ctx context.Context, t *testing.T, client *ec2v2.Client, vpcID, az, infraID, clusterName string, additionalTags map[string]string) (string, func()) {
+func CreateTestSubnet(ctx context.Context, t testing.TB, client *ec2v2.Client, vpcID, az, infraID, clusterName string, additionalTags map[string]string) (string, func()) {
 	t.Helper()
 
 	// Fetch all existing subnets in the VPC to find a non-overlapping CIDR.

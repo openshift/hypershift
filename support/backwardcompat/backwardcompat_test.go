@@ -16,7 +16,7 @@ func TestNormalizeV1Alpha1ClusterImagePolicy(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "When manifest is a v1alpha1 ClusterImagePolicy it should rewrite apiVersion to v1",
+			name: "When manifest is a v1alpha1 ClusterImagePolicy, it should rewrite apiVersion to v1",
 			input: `apiVersion: config.openshift.io/v1alpha1
 kind: ClusterImagePolicy
 metadata:
@@ -35,7 +35,7 @@ spec:
 `,
 		},
 		{
-			name: "When manifest is already v1 ClusterImagePolicy it should return it unchanged",
+			name: "When manifest is already v1 ClusterImagePolicy, it should return it unchanged",
 			input: `apiVersion: config.openshift.io/v1
 kind: ClusterImagePolicy
 metadata:
@@ -48,7 +48,7 @@ metadata:
 `,
 		},
 		{
-			name: "When manifest is a v1alpha1 ImagePolicy it should return it unchanged",
+			name: "When manifest is a v1alpha1 ImagePolicy, it should return it unchanged",
 			input: `apiVersion: config.openshift.io/v1alpha1
 kind: ImagePolicy
 metadata:
@@ -61,7 +61,7 @@ metadata:
 `,
 		},
 		{
-			name: "When manifest is a different resource it should return it unchanged",
+			name: "When manifest is a different resource, it should return it unchanged",
 			input: `apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -74,17 +74,17 @@ metadata:
 `,
 		},
 		{
-			name:     "When manifest is invalid YAML it should return it unchanged",
+			name:     "When manifest is invalid YAML, it should return it unchanged",
 			input:    `not: valid: yaml: [`,
 			expected: `not: valid: yaml: [`,
 		},
 		{
-			name:     "When manifest is empty it should return it unchanged",
+			name:     "When manifest is empty, it should return it unchanged",
 			input:    ``,
 			expected: ``,
 		},
 		{
-			name: "When manifest has v1alpha1 in a value it should only replace the apiVersion occurrence",
+			name: "When manifest has v1alpha1 in a value, it should only replace the apiVersion occurrence",
 			input: `apiVersion: config.openshift.io/v1alpha1
 kind: ClusterImagePolicy
 metadata:
@@ -119,7 +119,7 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 		requiresBackwardCompat bool
 	}{
 		{
-			name: "test config without an image",
+			name: "When config has no image, it should hash correctly",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",
@@ -128,7 +128,7 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 			expectedHashedJSONE: `{"proxy":{"httpProxy":"http://proxy.example.com"}}`,
 		},
 		{
-			name: "test config with an image and no imageStreamImportMode",
+			name: "When config has image but no imageStreamImportMode, it should require backward compatibility",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",
@@ -143,7 +143,7 @@ func TestGetBackwardCompatibleConfigHash(t *testing.T) {
 			requiresBackwardCompat: true,
 		},
 		{
-			name: "test config with an image and imageStreamImportMode",
+			name: "When config has image with imageStreamImportMode, it should require backward compatibility",
 			input: v1beta1.ClusterConfiguration{
 				Proxy: &v1.ProxySpec{
 					HTTPProxy: "http://proxy.example.com",

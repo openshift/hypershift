@@ -327,14 +327,14 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "public",
 				Variant:     "public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security",
+				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
 				Skip:        "KAS allowed CIDRs",
 				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
 				Name:        "private",
 				Variant:     "private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || nodepool-osimagestream",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
 				JUnitFile:   "junit_self_managed_azure_private.xml",
 			},
 			{
@@ -366,6 +366,12 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 						LabelFilter: "control-plane-upgrade",
 						JUnitFile:   "junit_lifecycle_upgrade.xml",
 						ExtraEnv:    []string{fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE=%s", releaseImage)},
+					},
+					{
+						Name:        "control-plane-tls",
+						Variant:     "upgrade",
+						LabelFilter: "control-plane-pki-operator",
+						JUnitFile:   "junit_control_plane_tls.xml",
 					},
 					{
 						Name:        "etcd-chaos",

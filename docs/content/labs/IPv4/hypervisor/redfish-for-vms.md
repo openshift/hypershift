@@ -1,3 +1,7 @@
+---
+title: BMC Access for Metal3
+---
+
 In a bare metal environment, the preferred approach is to utilize the actual BMC (Baseboard Management Controller) of the nodes used for the management cluster, which can be managed by Metal3 for discovery and provisioning. However, in a virtual environment, this approach is not feasible. As a workaround, we will use `ksushy`, which is an implementation of `sushy-tools`, allowing us to simulate BMCs for the virtual machines.
 
 To configure `ksushy` we need to execute these commands:

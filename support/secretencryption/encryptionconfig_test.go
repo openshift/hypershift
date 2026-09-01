@@ -220,84 +220,84 @@ func TestFindKeyRole(t *testing.T) {
 		expected   TargetKeyRole
 	}{
 		{
-			name:       "When config is nil it should return TargetKeyAbsent",
+			name:       "When config is nil, it should return TargetKeyAbsent",
 			cfg:        nil,
 			targetName: "target",
 			encType:    hyperv1.KMS,
 			expected:   TargetKeyAbsent,
 		},
 		{
-			name:       "When config has no resources it should return TargetKeyAbsent",
+			name:       "When config has no resources, it should return TargetKeyAbsent",
 			cfg:        &apiserverv1.EncryptionConfiguration{},
 			targetName: "target",
 			encType:    hyperv1.KMS,
 			expected:   TargetKeyAbsent,
 		},
 		{
-			name:       "When KMS target key is the first provider it should return TargetKeyWrite",
+			name:       "When KMS target key is the first provider, it should return TargetKeyWrite",
 			cfg:        kmsConfig(kmsProvider("target-key"), kmsProvider("old-key"), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.KMS,
 			expected:   TargetKeyWrite,
 		},
 		{
-			name:       "When KMS target key is the second provider it should return TargetKeyReadOnly",
+			name:       "When KMS target key is the second provider, it should return TargetKeyReadOnly",
 			cfg:        kmsConfig(kmsProvider("old-key"), kmsProvider("target-key"), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.KMS,
 			expected:   TargetKeyReadOnly,
 		},
 		{
-			name:       "When KMS target key is not in config it should return TargetKeyAbsent",
+			name:       "When KMS target key is not in config, it should return TargetKeyAbsent",
 			cfg:        kmsConfig(kmsProvider("old-key"), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.KMS,
 			expected:   TargetKeyAbsent,
 		},
 		{
-			name:       "When KMS target key is the only provider it should return TargetKeyWrite",
+			name:       "When KMS target key is the only provider, it should return TargetKeyWrite",
 			cfg:        kmsConfig(kmsProvider("target-key"), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.KMS,
 			expected:   TargetKeyWrite,
 		},
 		{
-			name:       "When KMS has identity before KMS providers it should still find write correctly",
+			name:       "When KMS has identity before KMS providers, it should still find write correctly",
 			cfg:        kmsConfig(identityProvider(), kmsProvider("target-key"), kmsProvider("old-key")),
 			targetName: "target-key",
 			encType:    hyperv1.KMS,
 			expected:   TargetKeyWrite,
 		},
 		{
-			name:       "When AESCBC target key is the first key it should return TargetKeyWrite",
+			name:       "When AESCBC target key is the first key, it should return TargetKeyWrite",
 			cfg:        kmsConfig(aescbcProvider(aescbcKey("target-key"), aescbcKey("old-key")), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.AESCBC,
 			expected:   TargetKeyWrite,
 		},
 		{
-			name:       "When AESCBC target key is the second key it should return TargetKeyReadOnly",
+			name:       "When AESCBC target key is the second key, it should return TargetKeyReadOnly",
 			cfg:        kmsConfig(aescbcProvider(aescbcKey("old-key"), aescbcKey("target-key")), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.AESCBC,
 			expected:   TargetKeyReadOnly,
 		},
 		{
-			name:       "When AESCBC target key is not present it should return TargetKeyAbsent",
+			name:       "When AESCBC target key is not present, it should return TargetKeyAbsent",
 			cfg:        kmsConfig(aescbcProvider(aescbcKey("old-key")), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.AESCBC,
 			expected:   TargetKeyAbsent,
 		},
 		{
-			name:       "When AESCBC target key is the only key it should return TargetKeyWrite",
+			name:       "When AESCBC target key is the only key, it should return TargetKeyWrite",
 			cfg:        kmsConfig(aescbcProvider(aescbcKey("target-key")), identityProvider()),
 			targetName: "target-key",
 			encType:    hyperv1.AESCBC,
 			expected:   TargetKeyWrite,
 		},
 		{
-			name:       "When encryption type is unrecognized it should return TargetKeyAbsent",
+			name:       "When encryption type is unrecognized, it should return TargetKeyAbsent",
 			cfg:        kmsConfig(kmsProvider("target-key")),
 			targetName: "target-key",
 			encType:    hyperv1.SecretEncryptionType("unknown"),
@@ -326,7 +326,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 		expected     bool
 	}{
 		{
-			name:         "When target key is absent it should not promote",
+			name:         "When target key is absent, it should not promote",
 			cfg:          kmsConfig(kmsProvider("old-key"), identityProvider()),
 			targetName:   "target-key",
 			encType:      hyperv1.KMS,
@@ -334,7 +334,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 			expected:     false,
 		},
 		{
-			name:         "When target key is already write it should promote regardless of convergence",
+			name:         "When target key is already write, it should promote regardless of convergence",
 			cfg:          kmsConfig(kmsProvider("target-key"), kmsProvider("old-key"), identityProvider()),
 			targetName:   "target-key",
 			encType:      hyperv1.KMS,
@@ -342,7 +342,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 			expected:     true,
 		},
 		{
-			name:         "When target key is read-only and KAS is converged it should promote",
+			name:         "When target key is read-only and KAS is converged, it should promote",
 			cfg:          kmsConfig(kmsProvider("old-key"), kmsProvider("target-key"), identityProvider()),
 			targetName:   "target-key",
 			encType:      hyperv1.KMS,
@@ -350,7 +350,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 			expected:     true,
 		},
 		{
-			name:         "When target key is read-only and KAS is not converged it should not promote",
+			name:         "When target key is read-only and KAS is not converged, it should not promote",
 			cfg:          kmsConfig(kmsProvider("old-key"), kmsProvider("target-key"), identityProvider()),
 			targetName:   "target-key",
 			encType:      hyperv1.KMS,
@@ -358,7 +358,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 			expected:     false,
 		},
 		{
-			name:         "When config is nil it should not promote",
+			name:         "When config is nil, it should not promote",
 			cfg:          nil,
 			targetName:   "target-key",
 			encType:      hyperv1.KMS,
@@ -366,7 +366,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 			expected:     false,
 		},
 		{
-			name:         "When AESCBC target key is write it should promote",
+			name:         "When AESCBC target key is write, it should promote",
 			cfg:          kmsConfig(aescbcProvider(aescbcKey("target-key"), aescbcKey("old-key")), identityProvider()),
 			targetName:   "target-key",
 			encType:      hyperv1.AESCBC,
@@ -374,7 +374,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 			expected:     true,
 		},
 		{
-			name:         "When AESCBC target key is read-only and KAS converged it should promote",
+			name:         "When AESCBC target key is read-only and KAS converged, it should promote",
 			cfg:          kmsConfig(aescbcProvider(aescbcKey("old-key"), aescbcKey("target-key")), identityProvider()),
 			targetName:   "target-key",
 			encType:      hyperv1.AESCBC,
@@ -382,7 +382,7 @@ func TestShouldPromoteTargetKey(t *testing.T) {
 			expected:     true,
 		},
 		{
-			name:         "When AESCBC target key is read-only and KAS not converged it should not promote",
+			name:         "When AESCBC target key is read-only and KAS not converged, it should not promote",
 			cfg:          kmsConfig(aescbcProvider(aescbcKey("old-key"), aescbcKey("target-key")), identityProvider()),
 			targetName:   "target-key",
 			encType:      hyperv1.AESCBC,

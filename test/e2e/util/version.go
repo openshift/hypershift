@@ -10,11 +10,11 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/blang/semver"
-	"github.com/onsi/ginkgo/v2"
 )
 
 var (
 	// y-stream versions supported by e2e in main
+	Version51  = semver.MustParse("5.1.0")
 	Version50  = semver.MustParse("5.0.0")
 	Version423 = semver.MustParse("4.23.0")
 	Version422 = semver.MustParse("4.22.0")
@@ -34,6 +34,7 @@ func init() {
 	// Ensure that the version constants are valid semver versions
 	// This is a compile-time check to ensure that the versions are valid
 	// semver versions.
+	_ = Version51
 	_ = Version50
 	_ = Version423
 	_ = Version422
@@ -67,32 +68,9 @@ func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pull
 	return nil
 }
 
-func SetReleaseVersionFromHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster) error {
-	if hostedCluster.Status.Version == nil || len(hostedCluster.Status.Version.History) == 0 || hostedCluster.Status.Version.History[0].Version == "" {
-		fmt.Fprintf(ginkgo.GinkgoWriter, "WARNING: cannot determine release version from HostedCluster")
-		return nil
-	}
-	hcVersion := hostedCluster.Status.Version.History[0].Version
-	var err error
-	releaseVersion, err = semver.Parse(hcVersion)
-	if err != nil {
-		return fmt.Errorf("error parsing version: %w", err)
-	}
-	releaseVersion.Patch = 0
-	releaseVersion.Pre = nil
-	releaseVersion.Build = nil
-	return nil
-}
-
 func AtLeast(t *testing.T, version semver.Version) {
 	if releaseVersion.LT(version) {
 		t.Skipf("Only tested in %s and later", version)
-	}
-}
-
-func GinkgoAtLeast(version semver.Version) {
-	if releaseVersion.LT(version) {
-		ginkgo.Skip(fmt.Sprintf("Only tested in %s and later", version))
 	}
 }
 

@@ -19,7 +19,7 @@ func TestFormatSecretProviderClassObject(t *testing.T) {
 		expected       string
 	}{
 		{
-			name:           "default",
+			name:           "When objectEncoding is base64, it should format correctly",
 			certName:       "cert",
 			objectEncoding: "base64",
 			expected: `
@@ -31,7 +31,7 @@ array:
 `,
 		},
 		{
-			name:           "default",
+			name:           "When objectEncoding is utf-8, it should format correctly",
 			certName:       "cert",
 			objectEncoding: "utf-8",
 			expected: `
@@ -86,7 +86,7 @@ func TestReconcileManagedAzureSecretProviderClass(t *testing.T) {
 		expected            *secretsstorev1.SecretProviderClass
 	}{
 		{
-			name: "expect the objects field to contain the CredentialsSecretName value",
+			name: "When reconciling, it should populate objects field with CredentialsSecretName",
 			secretProviderClass: &secretsstorev1.SecretProviderClass{
 				Spec: secretsstorev1.SecretProviderClassSpec{
 					Provider: "azure",

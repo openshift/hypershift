@@ -24,15 +24,15 @@ import (
 // AWSNodePoolPlatformApplyConfiguration represents a declarative configuration of the AWSNodePoolPlatform type for use
 // with apply.
 type AWSNodePoolPlatformApplyConfiguration struct {
-	InstanceType    *string                                  `json:"instanceType,omitempty"`
-	InstanceProfile *string                                  `json:"instanceProfile,omitempty"`
-	Subnet          *AWSResourceReferenceApplyConfiguration  `json:"subnet,omitempty"`
-	AMI             *string                                  `json:"ami,omitempty"`
-	ImageType       *hypershiftv1beta1.ImageType             `json:"imageType,omitempty"`
-	SecurityGroups  []AWSResourceReferenceApplyConfiguration `json:"securityGroups,omitempty"`
-	RootVolume      *VolumeApplyConfiguration                `json:"rootVolume,omitempty"`
-	ResourceTags    []AWSResourceTagApplyConfiguration       `json:"resourceTags,omitempty"`
-	Placement       *PlacementOptionsApplyConfiguration      `json:"placement,omitempty"`
+	InstanceType    *string                                    `json:"instanceType,omitempty"`
+	InstanceProfile *string                                    `json:"instanceProfile,omitempty"`
+	Subnet          *AWSResourceReferenceApplyConfiguration    `json:"subnet,omitempty"`
+	AMI             *string                                    `json:"ami,omitempty"`
+	ImageType       *hypershiftv1beta1.ImageType               `json:"imageType,omitempty"`
+	SecurityGroups  []AWSResourceReferenceApplyConfiguration   `json:"securityGroups,omitempty"`
+	RootVolume      *VolumeApplyConfiguration                  `json:"rootVolume,omitempty"`
+	ResourceTags    []AWSNodePoolResourceTagApplyConfiguration `json:"resourceTags,omitempty"`
+	Placement       *PlacementOptionsApplyConfiguration        `json:"placement,omitempty"`
 }
 
 // AWSNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AWSNodePoolPlatform type for use with
@@ -105,7 +105,7 @@ func (b *AWSNodePoolPlatformApplyConfiguration) WithRootVolume(value *VolumeAppl
 // WithResourceTags adds the given value to the ResourceTags field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the ResourceTags field.
-func (b *AWSNodePoolPlatformApplyConfiguration) WithResourceTags(values ...*AWSResourceTagApplyConfiguration) *AWSNodePoolPlatformApplyConfiguration {
+func (b *AWSNodePoolPlatformApplyConfiguration) WithResourceTags(values ...*AWSNodePoolResourceTagApplyConfiguration) *AWSNodePoolPlatformApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
 			panic("nil value passed to WithResourceTags")
