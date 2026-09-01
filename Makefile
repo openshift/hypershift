@@ -27,6 +27,7 @@ CODESPELL_BIN := codespell
 GITLINT_VER := 0.19.1
 GITLINT_BIN := gitlint
 PYYAML_VER := 6.0.3
+PYTEST_VER := 8.3.5
 
 PYTHON_VENV := $(TOOLS_BIN_DIR)/python-venv
 PYTHON_VENV_STAMP := $(PYTHON_VENV)/.installed
@@ -672,8 +673,10 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 .PHONY: verify-tekton-pipeline-pairs
 verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
 	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
 		$(PYTHON_VENV)/bin/python3 hack/verify-tekton-pipeline-pairs.py; \
 	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
 	fi
 
@@ -726,13 +729,15 @@ $(PYTHON_VENV_STAMP):
 		uv pip install --python=$(PYTHON_VENV)/bin/python \
 			codespell==$(CODESPELL_VER) \
 			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER); \
+			pyyaml==$(PYYAML_VER) \
+			pytest==$(PYTEST_VER); \
 	else \
 		mkdir -p $(PYTHON_VENV) && \
 		python3 -m pip install --target=$(PYTHON_VENV) \
 			codespell==$(CODESPELL_VER) \
 			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER) --upgrade && \
+			pyyaml==$(PYYAML_VER) \
+			pytest==$(PYTEST_VER) --upgrade && \
 		for cmd in $(CODESPELL_BIN) $(GITLINT_BIN); do \
 			mv $(PYTHON_VENV)/bin/$$cmd $(PYTHON_VENV)/$$cmd.py && \
 			printf '#!/bin/sh\nexport PYTHONPATH="%s$${PYTHONPATH:+:$$PYTHONPATH}"\nexec python3 "%s/%s.py" "$$@"\n' \
