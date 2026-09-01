@@ -757,7 +757,7 @@ func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hype
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent: %w", err))
 	}
 
-	log.Info("reconciling KAS connection checker deployment")
+	log.Info("reconciling KAS connection checker resources")
 	cliImage, ok := releaseImage.ComponentImages()["cli"]
 	if !ok {
 		errs = append(errs, fmt.Errorf("failed to find cli image in release"))
