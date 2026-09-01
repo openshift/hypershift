@@ -4,6 +4,6 @@ version = "0.1.0"
 description = "OIDC Provider Setup with Dex"
 requires-python = ">=3.12"
 dependencies = [
-    "ansible-core>=2.15",
+    "ansible-core==2.21.3",
     "boto3==1.43.57",
 ]
