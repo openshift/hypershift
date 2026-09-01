@@ -4733,4 +4733,3 @@ func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, 
 
 	})
 }
-
