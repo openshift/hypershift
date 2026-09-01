@@ -63,6 +63,13 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 				"--public-only",
 			}...),
 		},
+		{
+			Variant:      "upgrade",
+			ReleaseImage: n1Image,
+			ExtraArgs: append(extraArgs, []string{
+				"--control-plane-availability-policy=HighlyAvailable",
+			}...),
+		},
 		// The KarpenterBillingConsolidationTest actually tests hostedcluster teardown
 		// behavior and so needs its own dedicated cluster. This seems somewhat leaky
 		// in terms of test isolation because a downstream teardown of a cluster the
@@ -155,6 +162,28 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Name:        "karpenter-upgrade",
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
+			},
+		},
+		Sequential: []SequentialGroup{
+			{
+				Name: "upgrade-and-chaos",
+				Steps: []TestGroup{
+					{
+						Name:        "upgrade",
+						Variant:     "upgrade",
+						LabelFilter: "control-plane-upgrade",
+					},
+					{
+						Name:        "control-plane-tls",
+						Variant:     "upgrade",
+						LabelFilter: "control-plane-pki-operator",
+					},
+					{
+						Name:        "etcd-chaos",
+						Variant:     "upgrade",
+						LabelFilter: "etcd-chaos",
+					},
+				},
 			},
 		},
 	}
