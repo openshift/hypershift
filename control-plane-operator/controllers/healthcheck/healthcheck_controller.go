@@ -81,7 +81,12 @@ func (hcu *HealthCheckUpdater) update(ctx context.Context) error {
 		if err := awsHealthCheckIdentityProvider(ctx, hostedControlPlane); err != nil {
 			errs = append(errs, err)
 		}
+	}
 
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.GCPPlatform {
+		if err := gcpHealthCheckIdentityProvider(ctx, hostedControlPlane); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	// Update the status

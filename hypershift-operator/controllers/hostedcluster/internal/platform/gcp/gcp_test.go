@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -18,6 +19,7 @@ import (
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
@@ -301,8 +303,6 @@ func TestDeleteCredentials(t *testing.T) {
 func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 	g := NewWithT(t)
 
-	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
-
 	tests := []struct {
 		name     string
 		mutate   func(*hyperv1.HostedCluster)
@@ -362,7 +362,7 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 			if tt.mutate != nil {
 				tt.mutate(hc)
 			}
-			err := platform.validateWorkloadIdentityConfiguration(hc)
+			err := validateWorkloadIdentityConfiguration(hc)
 			if tt.errorMsg != "" {
 				g.Expect(err).ToNot(BeNil())
 				g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
@@ -526,4 +526,220 @@ func TestCAPIProviderDeploymentSpecWithTLS(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	buildScheme := func(g Gomega) *runtime.Scheme {
+		scheme := runtime.NewScheme()
+		g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+		g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+		g.Expect(capigcp.AddToScheme(scheme)).To(Succeed())
+		return scheme
+	}
+
+	gcpMachines := func() []client.Object {
+		return []client.Object{
+			&capigcp.GCPMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-xl-1",
+					Namespace:         "test-control-plane-namespace",
+					DeletionTimestamp: ptr.To(metav1.Now()),
+					Finalizers:        []string{capigcp.MachineFinalizer, "other-controller-finalizer"},
+				},
+			},
+			&capigcp.GCPMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-xl-2",
+					Namespace:  "test-control-plane-namespace",
+					Finalizers: []string{capigcp.MachineFinalizer, "other-controller-finalizer"},
+				},
+			},
+		}
+	}
+
+	t.Run("When credentials are invalid, it should strip the CAPG finalizer from deleting machines", func(t *testing.T) {
+		g := NewWithT(t)
+		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+		hc := validHostedCluster()
+		hc.Status.Conditions = []metav1.Condition{
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(gcpMachines()...).
+			WithScheme(buildScheme(g)).
+			Build()
+
+		err := platform.DeleteOrphanedMachines(t.Context(), fakeClient, hc, "test-control-plane-namespace")
+		g.Expect(err).To(BeNil())
+
+		gcpMachineList := &capigcp.GCPMachineList{}
+		g.Expect(fakeClient.List(t.Context(), gcpMachineList)).To(Succeed())
+
+		for _, gcpMachine := range gcpMachineList.Items {
+			if !gcpMachine.DeletionTimestamp.IsZero() {
+				g.Expect(controllerutil.ContainsFinalizer(&gcpMachine, capigcp.MachineFinalizer)).To(BeFalse(), "CAPG finalizer should be removed")
+				g.Expect(gcpMachine.Finalizers).To(Equal([]string{"other-controller-finalizer"}), "other finalizers should be preserved")
+			} else {
+				g.Expect(gcpMachine.Finalizers).To(Equal([]string{capigcp.MachineFinalizer, "other-controller-finalizer"}))
+			}
+		}
+	})
+
+	t.Run("When credentials are valid, it should leave finalizers unchanged", func(t *testing.T) {
+		g := NewWithT(t)
+		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+		hc := validHostedCluster()
+		hc.Status.Conditions = []metav1.Condition{
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(gcpMachines()...).
+			WithScheme(buildScheme(g)).
+			Build()
+
+		err := platform.DeleteOrphanedMachines(t.Context(), fakeClient, hc, "test-control-plane-namespace")
+		g.Expect(err).To(BeNil())
+
+		gcpMachineList := &capigcp.GCPMachineList{}
+		g.Expect(fakeClient.List(t.Context(), gcpMachineList)).To(Succeed())
+
+		for _, gcpMachine := range gcpMachineList.Items {
+			g.Expect(gcpMachine.Finalizers).To(Equal([]string{capigcp.MachineFinalizer, "other-controller-finalizer"}))
+		}
+	})
+
+	t.Run("When credentials are unknown, it should leave finalizers unchanged", func(t *testing.T) {
+		g := NewWithT(t)
+		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+		hc := validHostedCluster()
+		// No conditions set — GetCredentialStatus returns Unknown
+
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(gcpMachines()...).
+			WithScheme(buildScheme(g)).
+			Build()
+
+		err := platform.DeleteOrphanedMachines(t.Context(), fakeClient, hc, "test-control-plane-namespace")
+		g.Expect(err).To(BeNil())
+
+		gcpMachineList := &capigcp.GCPMachineList{}
+		g.Expect(fakeClient.List(t.Context(), gcpMachineList)).To(Succeed())
+
+		for _, gcpMachine := range gcpMachineList.Items {
+			g.Expect(gcpMachine.Finalizers).To(Equal([]string{capigcp.MachineFinalizer, "other-controller-finalizer"}))
+		}
+	})
+
+	t.Run("When c.List fails, it should return the error", func(t *testing.T) {
+		g := NewWithT(t)
+		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+		hc := validHostedCluster()
+		hc.Status.Conditions = []metav1.Condition{
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+		}
+
+		listErr := fmt.Errorf("list failed")
+		fakeClient := interceptor.NewClient(
+			fake.NewClientBuilder().WithScheme(buildScheme(g)).Build(),
+			interceptor.Funcs{
+				List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
+					return listErr
+				},
+			},
+		)
+
+		err := platform.DeleteOrphanedMachines(t.Context(), fakeClient, hc, "test-control-plane-namespace")
+		g.Expect(err).To(MatchError(ContainSubstring("failed to list GCPMachines")), "expected list error to be wrapped")
+	})
+
+	t.Run("When c.Update fails for a machine, it should aggregate errors and continue", func(t *testing.T) {
+		g := NewWithT(t)
+		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+		hc := validHostedCluster()
+		hc.Status.Conditions = []metav1.Condition{
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+		}
+
+		// Two deleted machines; Update fails for both.
+		machines := []client.Object{
+			&capigcp.GCPMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-m-1",
+					Namespace:         "test-control-plane-namespace",
+					DeletionTimestamp: ptr.To(metav1.Now()),
+					Finalizers:        []string{capigcp.MachineFinalizer},
+				},
+			},
+			&capigcp.GCPMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-m-2",
+					Namespace:         "test-control-plane-namespace",
+					DeletionTimestamp: ptr.To(metav1.Now()),
+					Finalizers:        []string{capigcp.MachineFinalizer},
+				},
+			},
+		}
+
+		updateErr := fmt.Errorf("update failed")
+		fakeClient := interceptor.NewClient(
+			fake.NewClientBuilder().WithObjects(machines...).WithScheme(buildScheme(g)).Build(),
+			interceptor.Funcs{
+				Update: func(_ context.Context, _ client.WithWatch, _ client.Object, _ ...client.UpdateOption) error {
+					return updateErr
+				},
+			},
+		)
+
+		err := platform.DeleteOrphanedMachines(t.Context(), fakeClient, hc, "test-control-plane-namespace")
+		g.Expect(err).To(HaveOccurred(), "expected aggregated error")
+		g.Expect(err.Error()).To(ContainSubstring("test-m-1"), "error should mention first machine")
+		g.Expect(err.Error()).To(ContainSubstring("test-m-2"), "error should mention second machine")
+	})
+
+	t.Run("When GCPMachine has no CAPG finalizer, it should skip it without error", func(t *testing.T) {
+		g := NewWithT(t)
+		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+		hc := validHostedCluster()
+		hc.Status.Conditions = []metav1.Condition{
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+		}
+
+		// Deleted machine, but without the CAPG finalizer (already removed by another path).
+		machines := []client.Object{
+			&capigcp.GCPMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-no-finalizer",
+					Namespace:         "test-control-plane-namespace",
+					DeletionTimestamp: ptr.To(metav1.Now()),
+					Finalizers:        []string{"some-other-finalizer"},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithObjects(machines...).
+			WithScheme(buildScheme(g)).
+			Build()
+
+		err := platform.DeleteOrphanedMachines(t.Context(), fakeClient, hc, "test-control-plane-namespace")
+		g.Expect(err).To(BeNil(), "machine without CAPG finalizer should be skipped without error")
+
+		// Verify the other finalizer is untouched.
+		gcpMachineList := &capigcp.GCPMachineList{}
+		g.Expect(fakeClient.List(t.Context(), gcpMachineList)).To(Succeed())
+		g.Expect(gcpMachineList.Items[0].Finalizers).To(Equal([]string{"some-other-finalizer"}), "other finalizers must not be modified")
+	})
 }
