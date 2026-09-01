@@ -1,0 +1,7 @@
+bootDisk:
+  diskSizeGB: 120
+  diskType: pd-standard
+machineType: n2-standard-4
+provisioningModel: Standard
+subnet: test-subnet
+zone: us-central1-a
