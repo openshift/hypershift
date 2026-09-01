@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 8b18e826f0a0ae64effb6c98a634e8764aaa159a33c9a193368e022467f840ff
+    hypershift.openshift.io/desired-state-hash: 781892fbf2b6b2351b047b1ab43d2bc8df088f5729724d5acf79c8d5b9d84c85
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -266,8 +266,23 @@ spec:
       - args:
         - -c
         - |
-          #!/bin/sh
+          #!/bin/bash
+          set -e
+          # Wait for etcd DNS to be resolvable
+          echo "Waiting for etcd DNS..."
           while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done
+          echo "DNS resolved, now verifying etcd connectivity..."
+          # Wait for etcd to actually accept connections (not just DNS)
+          # Use curl to hit etcd health endpoint with proper TLS authentication
+          until curl --connect-timeout 1 --max-time 2 --fail --silent \
+            --cacert /etc/kubernetes/certs/etcd-client-ca/ca.crt \
+            --cert /etc/kubernetes/certs/etcd-client/etcd-client.crt \
+            --key /etc/kubernetes/certs/etcd-client/etcd-client.key \
+            https://etcd-client.$(POD_NAMESPACE).svc:2379/health 2>/dev/null; do
+            echo "etcd not yet ready, retrying..."
+            sleep 1
+          done
+          echo "etcd is ready and accepting connections"
         command:
         - /bin/bash
         env:
@@ -279,8 +294,27 @@ spec:
         image: cli
         imagePullPolicy: IfNotPresent
         name: wait-for-etcd
-        resources: {}
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 0
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes/certs/etcd-client-ca
+          name: etcd-client-ca
+        - mountPath: /etc/kubernetes/certs/etcd-client
+          name: etcd-client-cert
       priorityClassName: hypershift-api-critical
       terminationGracePeriodSeconds: 120
       tolerations:
