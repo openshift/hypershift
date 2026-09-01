@@ -17,8 +17,6 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
-	configv1 "github.com/openshift/api/config/v1"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -142,32 +140,7 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			}()
 
 			By("Waiting for control plane components to complete rollout")
-			Eventually(func(g Gomega) {
-				currentHC := &hyperv1.HostedCluster{}
-				hcErr := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC)
-				if hcErr != nil {
-					g.Expect(hcErr).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
-					return
-				}
-
-				g.Expect(currentHC.Status.ControlPlaneVersion.Desired.Image).To(Equal(latestImage))
-				if len(currentHC.Status.ControlPlaneVersion.History) == 0 {
-					g.Expect(currentHC.Status.ControlPlaneVersion.History).NotTo(BeEmpty())
-					return
-				}
-				g.Expect(currentHC.Status.ControlPlaneVersion.History[0].State).To(Equal(configv1.CompletedUpdate))
-
-				if currentHC.Status.Version == nil {
-					g.Expect(currentHC.Status.Version).NotTo(BeNil())
-					return
-				}
-				g.Expect(currentHC.Status.Version.Desired.Image).To(Equal(latestImage))
-				if len(currentHC.Status.Version.History) == 0 {
-					g.Expect(currentHC.Status.Version.History).NotTo(BeEmpty())
-					return
-				}
-				g.Expect(currentHC.Status.Version.History[0].State).To(Equal(configv1.CompletedUpdate))
-			}).WithContext(ctx).WithTimeout(30 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+			ExpectHostedClusterUpgradeToComplete(ctx, tc.MgmtClient, hc, latestImage)
 
 			GinkgoWriter.Printf("Control plane upgraded, awaiting drift\n")
 			<-driftChan

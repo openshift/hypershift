@@ -18,7 +18,6 @@ package tests
 
 import (
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,8 +25,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -62,32 +59,7 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 		Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster release image")
 
 		By(fmt.Sprintf("Waiting for the control plane and data plane to reach image %s", latestImage))
-		Eventually(func(g Gomega) {
-			currentHC := &hyperv1.HostedCluster{}
-			hcErr := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC)
-			if hcErr != nil {
-				g.Expect(hcErr).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
-				return
-			}
-
-			g.Expect(currentHC.Status.ControlPlaneVersion.Desired.Image).To(Equal(latestImage))
-			if len(currentHC.Status.ControlPlaneVersion.History) == 0 {
-				g.Expect(currentHC.Status.ControlPlaneVersion.History).NotTo(BeEmpty())
-				return
-			}
-			g.Expect(currentHC.Status.ControlPlaneVersion.History[0].State).To(Equal(configv1.CompletedUpdate))
-
-			if currentHC.Status.Version == nil {
-				g.Expect(currentHC.Status.Version).NotTo(BeNil())
-				return
-			}
-			g.Expect(currentHC.Status.Version.Desired.Image).To(Equal(latestImage))
-			if len(currentHC.Status.Version.History) == 0 {
-				g.Expect(currentHC.Status.Version.History).NotTo(BeEmpty())
-				return
-			}
-			g.Expect(currentHC.Status.Version.History[0].State).To(Equal(configv1.CompletedUpdate))
-		}).WithContext(ctx).WithTimeout(30 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+		ExpectHostedClusterUpgradeToComplete(ctx, testCtx.MgmtClient, hc, latestImage)
 
 		// Re-fetch HC after upgrade
 		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
