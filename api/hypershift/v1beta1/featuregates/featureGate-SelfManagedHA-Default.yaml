@@ -35,6 +35,9 @@
                     },
                     {
                         "name": "EtcdSharding"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "enabled": [

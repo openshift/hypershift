@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 1f7a869189567df1391f23c77db0d649fec1e2ca58bdc080e3a4a6a833aa7df6
+    hypershift.openshift.io/desired-state-hash: 8b18e826f0a0ae64effb6c98a634e8764aaa159a33c9a193368e022467f840ff
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -97,7 +97,6 @@ spec:
         - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
         - --cors-allowed-origins='//127\.0\.0\.1(:|$)'
         - --cors-allowed-origins='//localhost(:|$)'
-        - --v=2
         - --requestheader-client-ca-file=/etc/kubernetes/certs/aggregator-client-ca/ca.crt
         - --requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator
         - --requestheader-username-headers=X-Remote-User
@@ -108,6 +107,7 @@ spec:
         - --etcd-servers=https://etcd-client:2379
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --v=2
         command:
         - /usr/bin/oauth-apiserver
         env:
