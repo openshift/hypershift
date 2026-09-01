@@ -763,6 +763,21 @@ oc annotate hostedcluster my-hosted-cluster -n clusters \
   --overwrite
 ```
 
+!!! warning "The CPO must match the payload's release line"
+
+    A custom CPO owns the control-plane manifests it renders, but the binaries those manifests launch come from the payload. When the CPO is from a newer git line than the payload, it can render a command line the older payload binary does not understand, and that component crash-loops.
+
+    This is a real failure, not a hypothetical. A CPO built from a `main`-based fork branch was annotated onto a HostedCluster with a `4.20.2` payload. The CPO renders the `cluster-image-registry-operator` Deployment, and its `main` base included flags (`--config`/`--files`) added after `release-4.20` was cut. The `4.20.2` payload's image-registry-operator binary did not recognize those flags and exited with an unknown-flag error.
+
+    Being an *ancestor* of `release-X.Y` is not sufficient either: a descendant on the same branch can still render a flag the payload binary predates. The only reliable rule is same release line.
+
+    Prefer, in this order:
+
+    1. The payload `hypershift` image (`oc adm release info <release-image> --image-for=hypershift`). This is the aligned, safest CPO.
+    2. A CPO from the same `release-X.Y` line as the payload.
+
+    See Versioning and support: CPO for the full selection order and the CPO-to-payload alignment rule.
+
 This triggers a rollout of the control plane with your custom CPO image. You can verify the new image is running:
 
 ```shell
@@ -1406,7 +1421,7 @@ title: Release process
 
 The hypershift repo produces two different artifacts: Hypershift Operator (HO) and Control Plane Operator (CPO).
 
-The CPO release lifecycle is dictated by the OCP release payload.
+The CPO release lifecycle is dictated by the OCP release payload. Each OCP minor's CPO must stay aligned with its payload; see Versioning and support: CPO for the alignment rule and the in-tree stream mapping.
 
 The HO has an independent release cadence. For consumer products:
 
@@ -67700,11 +67715,29 @@ metadata:
         4.17 cannot be created.
 
 ### CPO
-The CPO is released as part of each OCP payload release image. You can find those release images here:
+The Control Plane Operator (CPO) is the `hypershift` image inside the HostedCluster control-plane release payload. It is released as part of each OCP payload release image, with one CPO lineage per OCP minor (`release-X.Y`).
+
+Look up the payload CPO for a given release image:
+
+```shell
+oc adm release info <release-image> --image-for=hypershift
+```
+
+You can find those release images here:
 
 - amd64
 - arm64
 - multi-arch
+
+When a HostedCluster is created, the HyperShift Operator selects the CPO image in this order:
+
+1. The HostedCluster annotation `hypershift.openshift.io/control-plane-operator-image`, if set.
+2. An optional exact version and platform match from `ENABLE_CPO_OVERRIDES` (AWS and Azure only). This is a per-z-stream hotfix exception, not the alignment rule. See CPO Overrides.
+3. The `hypershift` image from the HostedCluster control-plane release payload.
+
+The payload `hypershift` image is the aligned default. Pairing a CPO from a different git line than the payload (for example `main` against a GA `4.Y` payload) can render control-plane manifests that payload binaries do not accept. See Use custom operator images.
+
+The in-tree Konflux CPO streams live in `contrib/konflux/cpo_*_stream.yaml`; each `cpo_X_Y_stream.yaml` uses `hypershift-cpo-template` pinned to git revision `release-X.Y`. Hotfix streams (for example the 4.17 hotfix) use `hypershift-cpo-hotfix-template` instead. The `control-plane-operator-main` component (`.tekton/control-plane-operator-main-push.yaml`) builds from `main` for development and must not be paired with a GA payload.
 
 ### HyperShift CLI
 The HyperShift CLI is a helper utility used only for development and testing purposes. No compatibility policies are

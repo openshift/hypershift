@@ -84,6 +84,21 @@ oc annotate hostedcluster my-hosted-cluster -n clusters \
   --overwrite
 ```
 
+!!! warning "The CPO must match the payload's release line"
+
+    A custom CPO owns the control-plane manifests it renders, but the binaries those manifests launch come from the payload. When the CPO is from a newer git line than the payload, it can render a command line the older payload binary does not understand, and that component crash-loops.
+
+    This is a real failure, not a hypothetical. A CPO built from a `main`-based fork branch was annotated onto a HostedCluster with a `4.20.2` payload. The CPO renders the `cluster-image-registry-operator` Deployment, and its `main` base included flags (`--config`/`--files`) added after `release-4.20` was cut. The `4.20.2` payload's image-registry-operator binary did not recognize those flags and exited with an unknown-flag error.
+
+    Being an *ancestor* of `release-X.Y` is not sufficient either: a descendant on the same branch can still render a flag the payload binary predates. The only reliable rule is same release line.
+
+    Prefer, in this order:
+
+    1. The payload `hypershift` image (`oc adm release info <release-image> --image-for=hypershift`). This is the aligned, safest CPO.
+    2. A CPO from the same `release-X.Y` line as the payload.
+
+    See [Versioning and support: CPO](../reference/versioning-support.md#cpo) for the full selection order and the CPO-to-payload alignment rule.
+
 This triggers a rollout of the control plane with your custom CPO image. You can verify the new image is running:
 
 ```shell
