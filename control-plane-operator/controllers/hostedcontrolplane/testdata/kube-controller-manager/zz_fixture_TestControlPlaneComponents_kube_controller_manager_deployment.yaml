@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 5dcd9cdd4612c560be76102e34018a691b3813fceb2d67264e46bd79d1d5becc
+    hypershift.openshift.io/desired-state-hash: a30d39e22a02898e02ca48b937642e50557a8c4d98464475f220a82c0b713ebe
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-controller-manager
@@ -110,6 +110,7 @@ spec:
         - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
         - --terminated-pod-gc-threshold=1000
         - --concurrent-gc-syncs=5
+        - --v=2
         - --cluster-cidr=10.132.0.0/14
         - --service-cluster-ip-range=
         - --allocate-node-cidrs=false

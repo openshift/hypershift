@@ -18,7 +18,7 @@ const (
 	KubevirtDefaultV4InternalSubnet = "100.66.0.0/16"
 )
 
-// +kubebuilder:validation:Enum="";Normal;Debug;Trace;TraceAll
+// +kubebuilder:validation:Enum=Normal;Debug;Trace;TraceAll
 type LogLevel string
 
 var (
@@ -39,6 +39,72 @@ var (
 	// of logs. In kube, this is probably glog=8.
 	TraceAll LogLevel = "TraceAll"
 )
+
+// ComponentLogLevelSpec configures the log verbosity for a hosted control plane component.
+// +kubebuilder:validation:MinProperties=1
+type ComponentLogLevelSpec struct {
+	// logLevel sets the log verbosity for the component.
+	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+	// When set to Normal, standard operational log messages are produced for auditing and common operations.
+	// When set to Debug, more verbose logging is enabled for diagnosing problems.
+	// When set to Trace, very verbose logging is enabled including function-level tracing.
+	// When set to TraceAll, the most verbose logging is used, including full API body content,
+	// this can cause significant performance impact and produce large volumes of logs.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	LogLevel LogLevel `json:"logLevel,omitempty"`
+}
+
+// KubeAPIServerOperatorSpec specifies the configuration for the Kube API Server.
+// +kubebuilder:validation:MinProperties=1
+type KubeAPIServerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
+// EtcdOperatorSpec specifies the configuration for the etcd.
+// +kubebuilder:validation:MinProperties=1
+// +kubebuilder:validation:XValidation:rule="!has(self.logLevel) || self.logLevel in ['Normal', 'Debug']",message="etcd only supports Normal and Debug log levels; Trace and TraceAll are not valid for etcd"
+type EtcdOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
+// KubeControllerManagerOperatorSpec specifies the configuration for the Kube Controller Manager.
+// +kubebuilder:validation:MinProperties=1
+type KubeControllerManagerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
+// KubeSchedulerOperatorSpec specifies the configuration for the Kube Scheduler.
+// +kubebuilder:validation:MinProperties=1
+type KubeSchedulerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
+// OpenShiftControllerManagerOperatorSpec specifies the configuration for the OpenShift Controller Manager.
+// +kubebuilder:validation:MinProperties=1
+type OpenShiftControllerManagerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
+// OpenShiftAPIServerOperatorSpec specifies the configuration for the OpenShift API Server.
+// +kubebuilder:validation:MinProperties=1
+type OpenShiftAPIServerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
+// OpenShiftOAuthAPIServerOperatorSpec specifies the configuration for the OpenShift OAuth API Server.
+// +kubebuilder:validation:MinProperties=1
+type OpenShiftOAuthAPIServerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
+
+// OAuthServerOperatorSpec specifies the configuration for the OAuth Server.
+// +kubebuilder:validation:MinProperties=1
+type OAuthServerOperatorSpec struct {
+	ComponentLogLevelSpec `json:",inline"`
+}
 
 // ClusterVersionOperatorSpec is the specification of the desired behavior of the Cluster Version Operator.
 type ClusterVersionOperatorSpec struct {

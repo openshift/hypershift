@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -35,6 +36,7 @@ const (
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveOAuthVerbosity(cpContext.HCP)))
 		if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)))
 			c.Args = append(c.Args, "--audit-webhook-mode=batch")
@@ -118,6 +120,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	}
 
 	return nil
+}
+
+func resolveOAuthVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.OAuthServer.LogLevel
+	}
+	return util.LogLevelToKlogVerbosity(level)
 }
 
 func applyNamedCertificateMounts(certs []configv1.APIServerNamedServingCert, spec *corev1.PodSpec) {

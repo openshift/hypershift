@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 3db0e1e51777f6e54c81986405a87d9b8044350590933cc106efb63e45365f90
+    hypershift.openshift.io/desired-state-hash: 307da74b39266f84df22f435dde3217cf67743a9b6103c13a8c94696dc8c9acf
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: oauth-openshift
@@ -89,6 +89,7 @@ spec:
         - --audit-log-maxsize=10
         - --audit-log-path=/var/run/kubernetes/audit.log
         - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
+        - --v=2
         env:
         - name: HTTP_PROXY
           value: http://127.0.0.1:8092

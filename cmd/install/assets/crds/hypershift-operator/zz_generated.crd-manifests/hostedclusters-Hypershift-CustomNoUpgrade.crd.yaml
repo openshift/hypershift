@@ -5606,13 +5606,49 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           Defaults to "Normal".
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
                         - TraceAll
                         type: string
                     type: object
+                  etcd:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      etcd configures the etcd component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      Note: etcd supports fewer log levels than klog-based components,
+                      etcd supports only Normal and Debug log levels.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: etcd only supports Normal and Debug log levels; Trace
+                        and TraceAll are not valid for etcd
+                      rule: '!has(self.logLevel) || self.logLevel in [''Normal'',
+                        ''Debug'']'
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
@@ -6338,6 +6374,216 @@ spec:
                         - type
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                    type: object
+                  kubeAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeAPIServer configures the kube-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  kubeControllerManager:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeControllerManager configures the kube-controller-manager component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  kubeScheduler:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeScheduler configures the kube-scheduler component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  oauthServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      oauthServer configures the oauth-server component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftAPIServer configures the openshift-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftControllerManager:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftControllerManager configures the openshift-controller-manager component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftOAuthAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
                     type: object
                 type: object
               pausedUntil:

@@ -11,6 +11,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	util "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -100,6 +101,14 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 				Value: "https://[::]:2382",
 			})
 		}
+		var etcdLogLevel hyperv1.LogLevel
+		if hcp.Spec.OperatorConfiguration != nil {
+			etcdLogLevel = hcp.Spec.OperatorConfiguration.Etcd.LogLevel
+		}
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "ETCD_LOG_LEVEL",
+			Value: util.LogLevelToEtcdLevel(etcdLogLevel),
+		})
 	})
 
 	podspec.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
