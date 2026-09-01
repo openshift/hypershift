@@ -342,8 +342,12 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 	return utilerrors.NewAggregate(errs)
 }
 
-// ReconcileSignedCert reconciles a certificate secret using the provided config. It will
-// rotate the cert if there are less than 30 days of validity left.
+// ReconcileSignedCert reconciles a certificate secret using the provided config. It
+// re-signs the leaf whenever ValidateKeyPair reports the existing certificate no longer
+// matches the desired config - a SAN (DNS or IP), subject, key-usage/EKU, or IsCA change,
+// or insufficient remaining validity (30 days by default, tunable via
+// CertificateRenewalEnvVar) - or when the existing leaf was not signed by the current CA
+// (e.g. the CA secret was regenerated since the leaf was last issued).
 func ReconcileSignedCert(
 	secret *corev1.Secret,
 	ca *corev1.Secret,
@@ -410,9 +414,11 @@ func ReconcileSignedCert(
 		minimumRemainingValidity = time.Duration(float64(certValidity) * renewalPercentage)
 	}
 
-	if err := ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, minimumRemainingValidity); err == nil {
+	certValid := ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, minimumRemainingValidity) == nil
+	if certValid && certSignedByCurrentCA(secret.Data[crtKey], ca, opts) {
 		return nil
 	}
+
 	certBytes, keyBytes, _, err := signCertificate(cfg, ca, opts)
 	if err != nil {
 		return fmt.Errorf("error signing cert(cn=%s,o=%v): %w", cn, org, err)
@@ -510,6 +516,25 @@ func annotateWithCA(secret, ca *corev1.Secret, opts *CAOpts) {
 		secret.Annotations = map[string]string{}
 	}
 	secret.Annotations[CAHashAnnotation] = computeCAHash(ca, opts)
+}
+
+// certSignedByCurrentCA reports whether the given PEM-encoded leaf certificate was actually
+// signed by (chains to) the CA secret's certificate. It returns false if the leaf is
+// missing, malformed, or the CA secret's cert cannot be parsed, since in those cases
+// the leaf must be (re)signed regardless.
+func certSignedByCurrentCA(leafPEM []byte, ca *corev1.Secret, opts *CAOpts) bool {
+	if len(leafPEM) == 0 {
+		return false
+	}
+	leaf, err := PemToCertificate(leafPEM)
+	if err != nil {
+		return false
+	}
+	caCert, err := PemToCertificate(ca.Data[opts.CASignerCertMapKey])
+	if err != nil {
+		return false
+	}
+	return leaf.CheckSignatureFrom(caCert) == nil
 }
 
 func decodeCA(ca *corev1.Secret, opts *CAOpts) (*x509.Certificate, *rsa.PrivateKey, error) {
