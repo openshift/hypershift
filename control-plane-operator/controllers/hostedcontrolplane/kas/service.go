@@ -31,6 +31,9 @@ func kasLabels() map[string]string {
 }
 
 func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiAllowedCIDRBlocks []string, hcp *hyperv1.HostedControlPlane) error {
+	// CreateOrUpdate leaves ResourceVersion empty only when it did not find an
+	// existing object and will create the Service.
+	isCreate := svc.ResourceVersion == ""
 	isPublic := netutil.IsPublicHCP(hcp)
 	isPrivate := netutil.IsPrivateHCP(hcp)
 	k8sutil.EnsureOwnerRef(svc, owner)
@@ -65,17 +68,19 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		svc.Annotations = map[string]string{}
 	}
 
-	// Remove stale AWS NLB annotation before reconciling.
-	// It will be re-added only when the service is actually a LoadBalancer.
-	delete(svc.Annotations, AWSNLBAnnotation)
-
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		// AWS requires the load balancer type annotation to remain unchanged after
+		// Service creation. The cluster-wide ValidatingAdmissionPolicy
+		// "openshift-cloud-controller-manager-cloud-provider-aws" (OCPBUGS-16728)
+		// blocks any UPDATE that adds, removes, or changes this annotation. Seed it
+		// only on CREATE, which the policy does not match, even for private services
+		// that may become public LoadBalancer services when endpoint access changes.
+		if isCreate && hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+			svc.Annotations[AWSNLBAnnotation] = "nlb"
+		}
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-			if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-				svc.Annotations[AWSNLBAnnotation] = "nlb"
-			}
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
@@ -191,6 +196,9 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 }
 
 func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, owner *metav1.OwnerReference) error {
+	// CreateOrUpdate leaves ResourceVersion empty only when it did not find an
+	// existing object and will create the Service.
+	isCreate := svc.ResourceVersion == ""
 	k8sutil.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
 
@@ -231,7 +239,9 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 		// AWS Load Balancer Controller annotation for cross-zone load balancing (EKS Auto Mode).
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-attributes"] = "load_balancing.cross_zone.enabled=true"
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
-		svc.Annotations[AWSNLBAnnotation] = "nlb"
+		if isCreate && hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+			svc.Annotations[AWSNLBAnnotation] = "nlb"
+		}
 	}
 	svc.Spec.Ports[0] = portSpec
 	return nil
