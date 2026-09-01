@@ -65,10 +65,9 @@ import (
 )
 
 const (
-	// ExternalDNSImage - external-dns-rhel9 1.3.9 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel9
-	// Contains NS record trailing dot fix for Google Cloud DNS (upstream PR#4847, openshift/external-dns PR#125)
-	// Multi-arch manifest list (amd64 + arm64/v8).
-	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel9@sha256:4450e6eac021e7f88f756f62e1043d6f8d6baddf99080ec4ad367c68ef5191f5"
+	// ExternalDNSImage - This is specifically tag 1.2.1 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel8/61d4c35023156829b87a434a
+	// TODO this needs to be updated to a multi-arch image including Arm - https://issues.redhat.com/browse/NE-1298
+	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel8@sha256:9f60c682b44497d9736a04991c0d2b3485d477f6c89a87c4a44a211a3d1f3cd4"
 )
 
 var HyperShiftImage = fmt.Sprintf("%s:%s", config.HypershiftImageBase, config.HypershiftImageTag)
@@ -958,15 +957,12 @@ var ipamCRDNames = set.New(
 	"ipaddresses.ipam.cluster.x-k8s.io",
 )
 
-// crdIncludeFilter returns a predicate that determines which CRDs to install based on Options.
+// setupCRDs returns the CRDs from all the manifests under the assets directory as list of CustomResourceDefinition objects
 //
-// Filters CRDs by:
-//   - ExcludeEtcdManifests: exclude etcd CRDs
-//   - TechPreviewNoUpgrade: include only CRDs with matching feature-set annotation
-//   - PlatformsToInstall: include only platform-specific CRDs (awsendpointservices, azureprivatelinkservices, CAPI provider CRDs)
-//   - EnableAuditLogPersistence: include auditlogpersistence CRDs
-//   - ExternalDNSProvider: include external-dns CRDs only when provider uses --source=crd (currently google only)
-//   - existingIPAMCRDs: skip IPAM CRDs already present in the cluster to avoid conflicts
+// The CRDs are filtered based on the options provided. If the option ExcludeEtcdManifests is set to true, the CRDs
+// related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
+// to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
+// If a client is provided, IPAM CRDs that already exist in the cluster are skipped to avoid conflicts.
 func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(string, *apiextensionsv1.CustomResourceDefinition) bool {
 	return func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool {
 		if strings.Contains(path, "payload-manifests") || strings.Contains(path, "tests/") {
@@ -1004,10 +1000,6 @@ func crdIncludeFilter(opts Options, existingIPAMCRDs set.Set[string]) func(strin
 		}
 		if strings.Contains(path, "auditlogpersistence") {
 			return opts.EnableAuditLogPersistence
-		}
-		// Include external-dns CRDs only when external-dns runs with --source=crd
-		if strings.Contains(path, "external-dns") {
-			return assets.ExternalDNSProvider(opts.ExternalDNSProvider).UsesCRDSource()
 		}
 		if len(opts.PlatformsToInstall) > 0 {
 			for _, platform := range opts.PlatformsToInstall {
