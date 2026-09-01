@@ -82,6 +82,17 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 				"--endpoint-access=PublicAndPrivate",
 			}...),
 		},
+		{
+			Variant:      "karpenter-upgrade",
+			ReleaseImage: n1Image,
+			ExtraArgs: append(extraArgs, []string{
+				// Enables Karpenter-based node provisioning (AutoNode)
+				"--auto-node",
+				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
+				"--endpoint-access=PublicAndPrivate",
+				"--control-plane-availability-policy=HighlyAvailable",
+			}...),
+		},
 	}
 }
 
@@ -139,6 +150,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Name:        "karpenter",
 				Variant:     "karpenter",
 				LabelFilter: "karpenter",
+			},
+			{
+				Name:        "karpenter-upgrade",
+				Variant:     "karpenter-upgrade",
+				LabelFilter: "karpenter-upgrade",
 			},
 		},
 	}
