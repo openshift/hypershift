@@ -11,6 +11,8 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 
+	"github.com/openshift/api/image/docker10"
+
 	"k8s.io/apimachinery/pkg/util/cache"
 
 	"github.com/docker/distribution"
@@ -544,6 +546,62 @@ func TestGetMetadataGetter(t *testing.T) {
 		_, _, _, _ = getter(context.Background(), "", nil)
 		g.Expect(called).To(BeTrue())
 	})
+}
+
+func TestImageLabels(t *testing.T) {
+	testCases := []struct {
+		name     string
+		metadata *dockerv1client.DockerImageConfig
+		expected map[string]string
+	}{
+		{
+			name: "When Config carries labels, it should return Config labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{"from": "config"},
+				},
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{"from": "container-config"},
+				},
+			},
+			expected: map[string]string{"from": "config"},
+		},
+		{
+			// Regression for OCPBUGS-105464: some images carry labels only on
+			// ContainerConfig. Returning Config.Labels unconditionally would drop the
+			// io.openshift.hypershift.control-plane-operator-creates-aws-sg label, causing
+			// the CPO capability to fail open and read false.
+			name: "When Config is nil, it should fall back to ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{"from": "container-config"},
+				},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			name: "When Config has no labels, it should fall back to ContainerConfig labels",
+			metadata: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{},
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{"from": "container-config"},
+				},
+			},
+			expected: map[string]string{"from": "container-config"},
+		},
+		{
+			name:     "When neither Config nor ContainerConfig carry labels, it should return nil",
+			metadata: &dockerv1client.DockerImageConfig{},
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(ImageLabels(tc.metadata)).To(Equal(tc.expected))
+		})
+	}
 }
 
 func fakeOverrides() map[string][]string {

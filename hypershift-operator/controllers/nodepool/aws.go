@@ -194,13 +194,31 @@ func buildAWSSecurityGroups(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.H
 			Filters: filters,
 		})
 	}
-	if defaultSG {
-		if hostedCluster.Status.Platform == nil || hostedCluster.Status.Platform.AWS == nil || hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
-			return nil, &NotReadyError{fmt.Errorf("the default security group for the HostedCluster has not been created")}
-		}
-		sgID := hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID
+	// Default worker security group ID as recorded in HostedCluster status by the control
+	// plane operator (empty until the CPO creates it, or forever for a CPO that does not
+	// manage a default worker SG).
+	var defaultWorkerSGID string
+	if hostedCluster.Status.Platform != nil && hostedCluster.Status.Platform.AWS != nil {
+		defaultWorkerSGID = hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID
+	}
+
+	// When the CPO is known to create a default worker security group (defaultSG is derived
+	// from the CPO image capability label), block template rendering until its ID has been
+	// recorded in status. This is what tells us an SG is coming for this cluster; a CPO that
+	// does not manage a default worker SG reports defaultSG=false and is never gated here.
+	if defaultSG && defaultWorkerSGID == "" {
+		return nil, &NotReadyError{fmt.Errorf("the default security group for the HostedCluster has not been created")}
+	}
+
+	// Inject the default worker security group whenever its ID is present in status, even if
+	// the per-reconcile capability flag transiently reads false. The status ID is the
+	// authoritative, monotonic signal: keying injection on it (rather than solely on the
+	// fail-open capability flag) keeps the AWSMachineTemplate hash stable across reconciles
+	// and prevents a false->true capability flip from re-rendering the template and
+	// triggering an unwanted rolling replacement of all workers (OCPBUGS-105464).
+	if defaultWorkerSGID != "" {
 		securityGroups = append(securityGroups, capiaws.AWSResourceReference{
-			ID: &sgID,
+			ID: &defaultWorkerSGID,
 		})
 	}
 	return securityGroups, nil
