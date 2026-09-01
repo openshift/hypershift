@@ -6,6 +6,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -78,7 +79,8 @@ func (hcu *HealthCheckUpdater) update(ctx context.Context) error {
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
 		// This is the best effort ping to the identity provider
 		// that enables access from the operator to the cloud provider resources.
-		if err := awsHealthCheckIdentityProvider(ctx, hostedControlPlane); err != nil {
+		ec2Client, _ := hostedcontrolplane.GetEC2Client(ctx)
+		if err := awsHealthCheckIdentityProvider(ctx, hostedControlPlane, ec2Client); err != nil {
 			errs = append(errs, err)
 		}
 
