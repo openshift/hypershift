@@ -11,8 +11,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/hypershift-operator/controllers/webhookcerts"
+	"github.com/openshift/hypershift/support/api"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/go-logr/logr"
 )
@@ -118,7 +122,7 @@ func TestWaitAndConfigureServingCert(t *testing.T) {
 		g.Expect(result).To(BeNil())
 	})
 
-	t.Run("When the context is cancelled before certs appear, it should return an error", func(t *testing.T) {
+	t.Run("When the context is canceled before certs appear, it should return an error", func(t *testing.T) {
 		g := NewWithT(t)
 
 		dir := t.TempDir()
@@ -129,6 +133,63 @@ func TestWaitAndConfigureServingCert(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("serving cert never became available"))
 		g.Expect(result).To(BeNil())
+	})
+}
+
+func TestBootstrapAndWaitForServingCert(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace   = "hypershift"
+		serviceName = "operator"
+	)
+
+	t.Run("When cert dir is empty, it should skip bootstrap and return the original TLS options", func(t *testing.T) {
+		g := NewWithT(t)
+
+		existing := func(c *tls.Config) { c.MinVersion = tls.VersionTLS12 }
+		tlsOpts := []func(*tls.Config){existing}
+
+		result, err := bootstrapAndWaitForServingCert(t.Context(), nil, namespace, serviceName, "", tlsOpts, time.Millisecond, 50*time.Millisecond, logr.Discard())
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(HaveLen(1))
+	})
+
+	t.Run("When serving cert secrets are missing, it should create them before waiting for files", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cl := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		dir := t.TempDir()
+
+		result, err := bootstrapAndWaitForServingCert(t.Context(), cl, namespace, serviceName, dir, nil, 20*time.Millisecond, 150*time.Millisecond, logr.Discard())
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("serving cert never became available"))
+		g.Expect(result).To(BeNil())
+
+		caSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: webhookcerts.CASecretName}, caSecret)).To(Succeed())
+		g.Expect(caSecret.Data).NotTo(BeEmpty())
+
+		servingSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: webhookcerts.ServingCertSecretName}, servingSecret)).To(Succeed())
+		g.Expect(servingSecret.Data).To(HaveKey(corev1.TLSCertKey))
+		g.Expect(servingSecret.Data).To(HaveKey(corev1.TLSPrivateKeyKey))
+	})
+
+	t.Run("When serving cert secrets are bootstrapped and files exist, it should configure GetCertificate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cl := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		dir := t.TempDir()
+		writeServingCertFiles(t, dir)
+
+		result, err := bootstrapAndWaitForServingCert(t.Context(), cl, namespace, serviceName, dir, nil, 20*time.Millisecond, time.Second, logr.Discard())
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(HaveLen(1))
+
+		cfg := &tls.Config{}
+		result[0](cfg)
+		g.Expect(cfg.GetCertificate).NotTo(BeNil())
 	})
 }
 

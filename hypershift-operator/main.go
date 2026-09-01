@@ -221,6 +221,20 @@ const (
 	servingCertWaitTimeout  = 30 * time.Second
 )
 
+// bootstrapAndWaitForServingCert creates the webhook serving-cert Secret if
+// needed, then waits for kubelet to project tls.crt and tls.key into certDir.
+// Bootstrap must run first: the serving-cert volume is optional, so a first
+// install has no files on disk until the Secret exists.
+func bootstrapAndWaitForServingCert(ctx context.Context, c crclient.Client, namespace, serviceName, certDir string, tlsOpts []func(*tls.Config), interval, timeout time.Duration, log logr.Logger) ([]func(*tls.Config), error) {
+	if certDir == "" {
+		return tlsOpts, nil
+	}
+	if err := webhookcerts.EnsureWebhookCerts(ctx, c, namespace, serviceName); err != nil {
+		return nil, fmt.Errorf("failed to bootstrap webhook certs: %w", err)
+	}
+	return waitAndConfigureServingCert(ctx, certDir, tlsOpts, interval, timeout, log)
+}
+
 // waitAndConfigureServingCert waits until tls.crt and tls.key exist in certDir
 // and can be loaded, starts a cert watcher, and appends a TLS option that
 // supplies the loaded certificate.
@@ -329,7 +343,26 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		webhookOptions.TLSOpts = []func(*tls.Config){minTLSVersionSetter, cipherSuitesSetter}
 	}
 
-	webhookOptions.TLSOpts, err = waitAndConfigureServingCert(ctx, opts.CertDir, webhookOptions.TLSOpts, servingCertPollInterval, servingCertWaitTimeout, log)
+	// The manager cache is not started yet, so construct a client that reads
+	// directly from the API. Webhook cert bootstrap must happen before waiting
+	// for tls.crt/tls.key: the serving-cert volume is optional, and a first
+	// install has no files on disk until the Secret exists.
+	apiReadingClient, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
+	webhookOptions.TLSOpts, err = bootstrapAndWaitForServingCert(
+		ctx,
+		apiReadingClient,
+		opts.Namespace,
+		assets.HypershiftOperatorName,
+		opts.CertDir,
+		webhookOptions.TLSOpts,
+		servingCertPollInterval,
+		servingCertWaitTimeout,
+		log,
+	)
 	if err != nil {
 		return err
 	}
@@ -422,19 +455,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 				return fmt.Errorf("unable to load SRE metrics configuration: %w", err)
 			}
 			sreConfigHash = metrics.SREMetricsSetConfigHash(cm)
-		}
-	}
-
-	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
-	// directly reads from the api.
-	apiReadingClient, err := crclient.New(mgr.GetConfig(), crclient.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to construct api reading client: %w", err)
-	}
-
-	if opts.CertDir != "" {
-		if err := webhookcerts.EnsureWebhookCerts(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName); err != nil {
-			return fmt.Errorf("failed to bootstrap webhook certs: %w", err)
 		}
 	}
 
