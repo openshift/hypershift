@@ -840,6 +840,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Aggregate deprecated-configuration warnings from the HostedCluster and the HCP.
+	r.reconcileDeprecatedConfigurationStatus(hcluster, hcp)
+
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
@@ -1593,6 +1596,52 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		log.Info("reconciliation completed with errors", "summary", msg)
 	}
 	return result, report.aggregate()
+}
+
+// reconcileDeprecatedConfigurationStatus aggregates deprecated-configuration warnings
+// from two sources and surfaces them on the generic HostedClusterConfigurationDeprecated
+// condition: mechanisms visible only on the HostedCluster, and those detected by the HCP
+// controller (which reports them on the HCP's own copy of the condition). If any fire, the
+// condition is True with all messages joined together; otherwise it is False. When the HCP
+// does not yet exist and there are no HostedCluster-only warnings, the condition is left
+// Unknown, since the HCP-sourced warnings cannot be evaluated yet. Each HostedCluster-only
+// deprecation check appends its message to the list, so new checks are easy to add.
+func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	var messages []string
+
+	// HostedCluster-only deprecation checks go here as they are added, e.g.:
+	// if <deprecated hcluster field/annotation is set> {
+	//     messages = append(messages, "...")
+	// }
+
+	// Fold in deprecations detected by the HCP controller.
+	if hcp != nil {
+		if c := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedClusterConfigurationDeprecated)); c != nil && c.Status == metav1.ConditionTrue && c.Message != "" {
+			messages = append(messages, c.Message)
+		}
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+		ObservedGeneration: hcluster.Generation,
+	}
+	switch {
+	case len(messages) > 0:
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.DeprecatedConfigurationInUseReason
+		condition.Message = strings.Join(messages, "; ")
+	case hcp == nil:
+		// No HostedCluster-only warnings and the HCP is not available yet, so the
+		// HCP-sourced warnings cannot be evaluated.
+		condition.Status = metav1.ConditionUnknown
+		condition.Reason = hyperv1.StatusUnknownReason
+		condition.Message = "The hosted control plane is not found"
+	default:
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = "No deprecated configuration is in use"
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 }
 
 // reconcileCoreHCPChain reconciles the core HCP chain: reconcile the HCP object,

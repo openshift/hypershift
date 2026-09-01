@@ -548,6 +548,39 @@ func (r *HostedControlPlaneReconciler) reconcileKASStatus(ctx context.Context, h
 	return nil
 }
 
+// reconcileDeprecatedConfigurationStatus surfaces a generic warning condition whenever a
+// deprecated mechanism is used to configure the hosted control plane. Each deprecation
+// check appends a message to the collected list; if any fire, the condition is set to True
+// with the messages joined together, otherwise it is set to False. This makes it easy to
+// add new deprecation checks over time. Today the only such mechanism is the
+// hypershift.openshift.io/kube-apiserver-verbosity-level annotation, which fires whenever
+// the annotation is present, even if spec.operatorConfiguration.kubeAPIServer.logLevel is
+// also set and taking precedence, so that users are guided to remove the deprecated
+// annotation entirely. The condition is message-only: it does not affect verbosity
+// resolution, config hashes, or rollouts.
+func (r *HostedControlPlaneReconciler) reconcileDeprecatedConfigurationStatus(hostedControlPlane *hyperv1.HostedControlPlane) {
+	var deprecationMessages []string
+
+	if _, hasVerbosityAnnotation := hostedControlPlane.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; hasVerbosityAnnotation {
+		deprecationMessages = append(deprecationMessages, fmt.Sprintf("The deprecated %q annotation is set; migrate to spec.operatorConfiguration.kubeAPIServer.logLevel and remove the annotation", hyperv1.KubeAPIServerVerbosityLevelAnnotation))
+	}
+
+	newCondition := metav1.Condition{
+		Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.AsExpectedReason,
+		Message: "No deprecated configuration is in use",
+	}
+	if len(deprecationMessages) > 0 {
+		newCondition.Status = metav1.ConditionTrue
+		newCondition.Reason = hyperv1.DeprecatedConfigurationInUseReason
+		newCondition.Message = strings.Join(deprecationMessages, "; ")
+	}
+
+	newCondition.ObservedGeneration = hostedControlPlane.Generation
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+}
+
 func (r *HostedControlPlaneReconciler) reconcileDegradedStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
 	condition := metav1.Condition{
 		Type:               string(hyperv1.HostedControlPlaneDegraded),
@@ -645,6 +678,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.reconcileKASStatus(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	r.reconcileDeprecatedConfigurationStatus(hostedControlPlane)
 
 	if err := r.reconcileDegradedStatus(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, err
