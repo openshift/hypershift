@@ -121,7 +121,7 @@ func TestNodePool(t *testing.T) {
 					},
 					{
 						name: "KubeVirtNodeMultinetTest",
-						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
+						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
 					{
 						name: "OpenStackAdvancedTest",
@@ -181,7 +181,7 @@ func TestNodePool(t *testing.T) {
 				return []NodePoolTestCase{
 					{
 						name: "KubeVirtNodeAdvancedMultinetTest",
-						test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster),
+						test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
 					{
 						name: "KubeVirtHostNetworkIngressPassthroughTest",
