@@ -73,11 +73,18 @@ func (a *computeServiceAdapter) ListSubnetworks(ctx context.Context, project, re
 }
 
 func (a *computeServiceAdapter) ListServiceAttachments(ctx context.Context, project, region string) ([]*compute.ServiceAttachment, error) {
-	resp, err := a.svc.ServiceAttachments.List(project, region).Context(ctx).Do()
+	var allItems []*compute.ServiceAttachment
+
+	err := a.svc.ServiceAttachments.List(project, region).Context(ctx).Pages(ctx, func(page *compute.ServiceAttachmentList) error {
+		allItems = append(allItems, page.Items...)
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	return resp.Items, nil
+
+	return allItems, nil
 }
 
 func (a *computeServiceAdapter) GetServiceAttachment(ctx context.Context, project, region, name string) (*compute.ServiceAttachment, error) {
@@ -267,31 +274,6 @@ func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRule(ctx context.Co
 	return rule, nil
 }
 
-// isSubnetInUse checks if a subnet is already being used by existing Service Attachments
-func (r *GCPPrivateServiceConnectReconciler) isSubnetInUse(ctx context.Context, subnetName string) (bool, error) {
-	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
-	defer cancel()
-
-	serviceAttachments, err := r.GcpClient.ListServiceAttachments(apiCtx, r.ProjectID, r.Region)
-	if err != nil {
-		return false, fmt.Errorf("failed to list service attachments: %w", err)
-	}
-
-	// Check if any Service Attachment is using this subnet
-	for _, sa := range serviceAttachments {
-		for _, natSubnet := range sa.NatSubnets {
-			// NatSubnets contains full URLs like:
-			// "projects/PROJECT_ID/regions/REGION/subnetworks/SUBNET_NAME"
-			// Extract just the subnet name for comparison
-			if strings.HasSuffix(natSubnet, "/"+subnetName) {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
 // discoverNATSubnet finds an available PRIVATE_SERVICE_CONNECT subnet scoped to the given VPC network.
 // networkURL is the full GCP network URL from the forwarding rule (e.g.
 // "https://www.googleapis.com/compute/v1/projects/…/global/networks/my-vpc").
@@ -310,27 +292,37 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 		return "", fmt.Errorf("failed to list subnets: %w", err)
 	}
 
-	// Find the first available PSC subnet in the MC's VPC not already in use by another Service Attachment.
-	var checkErrors int
+	// Fetch all service attachments once (now with pagination support) before checking subnet usage.
+	// This replaces N individual API calls with a single paginated fetch.
+	serviceAttachments, err := r.GcpClient.ListServiceAttachments(apiCtx, r.ProjectID, r.Region)
+	if err != nil {
+		return "", fmt.Errorf("failed to list service attachments: %w", err)
+	}
+
+	// Build in-memory map of subnet names currently in use by service attachments.
+	// NatSubnets contains full URLs like "projects/PROJECT_ID/regions/REGION/subnetworks/SUBNET_NAME"
+	usedSubnets := make(map[string]bool)
+	for _, sa := range serviceAttachments {
+		for _, natSubnet := range sa.NatSubnets {
+			// Extract subnet name from URL by taking the suffix after the last "/"
+			if idx := strings.LastIndex(natSubnet, "/"); idx >= 0 {
+				subnetName := natSubnet[idx+1:]
+				usedSubnets[subnetName] = true
+			}
+		}
+	}
+
+	// Find the first available PSC subnet in the MC's VPC not already in use.
 	for _, subnet := range subnets {
-		inUse, err := r.isSubnetInUse(ctx, subnet.Name)
-		if err != nil {
-			log.Error(err, "Failed to check subnet usage", "subnet", subnet.Name)
-			checkErrors++
+		if usedSubnets[subnet.Name] {
+			log.V(1).Info("Subnet already in use, trying next", "subnet", subnet.Name)
 			continue
 		}
 
-		if !inUse {
-			log.Info("Found available PSC subnet", "subnet", subnet.Name)
-			return subnet.Name, nil
-		}
-
-		log.V(1).Info("Subnet already in use, trying next", "subnet", subnet.Name)
+		log.Info("Found available PSC subnet", "subnet", subnet.Name)
+		return subnet.Name, nil
 	}
 
-	if checkErrors > 0 {
-		return "", fmt.Errorf("no available PRIVATE_SERVICE_CONNECT subnet found in region %s (failed to check %d of %d candidates due to API errors)", r.Region, checkErrors, len(subnets))
-	}
 	return "", fmt.Errorf("no available PRIVATE_SERVICE_CONNECT subnet found in region %s", r.Region)
 }
 
