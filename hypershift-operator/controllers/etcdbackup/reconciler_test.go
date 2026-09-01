@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func TestMain(m *testing.M) {
@@ -86,6 +87,10 @@ func newHCPEtcdBackup() *hyperv1.HCPEtcdBackup {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testBackupName,
 			Namespace: testHCPNamespace,
+			// Real backups are always stamped by the API server; the fake client is
+			// not, so set a recent timestamp to keep the credential-wait deadline
+			// (credentialWaitTimeout) from tripping immediately in tests.
+			CreationTimestamp: metav1.Now(),
 		},
 		Spec: hyperv1.HCPEtcdBackupSpec{
 			Storage: hyperv1.HCPEtcdBackupStorage{
@@ -388,12 +393,12 @@ func TestReconcile(t *testing.T) {
 		g.Expect(result).To(Equal(ctrl.Result{}))
 	})
 
-	t.Run("When credential Secret does not exist it should set BackupFailed without creating RBAC or NetworkPolicy", func(t *testing.T) {
+	t.Run("When credential Secret does not exist it should wait (non-terminal) and requeue without creating RBAC or NetworkPolicy", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
 		hcp := newHostedControlPlane()
 		sts := newEtcdStatefulSet(3, 3)
-		// No credential secret — should trigger BackupFailed before creating any resources
+		// No credential secret — should mark waiting and requeue before creating any resources.
 		r := newReconciler(backup, hcp, sts)
 		ctx := context.Background()
 
@@ -404,15 +409,17 @@ func TestReconcile(t *testing.T) {
 			},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(result).To(Equal(ctrl.Result{}))
+		g.Expect(result).To(Equal(ctrl.Result{RequeueAfter: credentialWaitRequeueInterval}))
 
 		updated := &hyperv1.HCPEtcdBackup{}
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
 		g.Expect(updated.Status.Conditions).To(HaveLen(1))
 		g.Expect(updated.Status.Conditions[0].Type).To(Equal(string(hyperv1.BackupCompleted)))
 		g.Expect(updated.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
-		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupFailedReason))
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupWaitingForCredentialsReason))
 		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("credential Secret"))
+		// Waiting is non-terminal so the backup can still recover.
+		g.Expect(isTerminal(updated)).To(BeFalse())
 
 		// Verify no RBAC or NetworkPolicy was created (early validation prevents resource waste)
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: RBACName, Namespace: testHCPNamespace}, &rbacv1.Role{})).ToNot(Succeed())
@@ -1985,12 +1992,12 @@ func TestGetHostedControlPlane(t *testing.T) {
 
 func TestValidatePrerequisites(t *testing.T) {
 	tests := []struct {
-		name        string
-		backup      *hyperv1.HCPEtcdBackup
-		objects     []client.Object
-		expectDone  bool
-		expectError bool
-		expectFail  bool
+		name         string
+		backup       *hyperv1.HCPEtcdBackup
+		objects      []client.Object
+		expectDone   bool
+		expectError  bool
+		expectReason string
 	}{
 		{
 			name:   "When credential secret exists, it should return done=false (proceed)",
@@ -2006,11 +2013,11 @@ func TestValidatePrerequisites(t *testing.T) {
 			expectDone: false,
 		},
 		{
-			name:       "When credential secret is missing, it should set BackupFailed and return done=true",
-			backup:     newHCPEtcdBackup(),
-			objects:    []client.Object{},
-			expectDone: true,
-			expectFail: true,
+			name:         "When credential secret is missing, it should wait (non-terminal) and return done=true",
+			backup:       newHCPEtcdBackup(),
+			objects:      []client.Object{},
+			expectDone:   true,
+			expectReason: hyperv1.BackupWaitingForCredentialsReason,
 		},
 		{
 			name: "When storage type is unsupported, it should set BackupFailed and return done=true",
@@ -2025,9 +2032,9 @@ func TestValidatePrerequisites(t *testing.T) {
 					},
 				},
 			},
-			objects:    []client.Object{},
-			expectDone: true,
-			expectFail: true,
+			objects:      []client.Object{},
+			expectDone:   true,
+			expectReason: hyperv1.BackupFailedReason,
 		},
 	}
 
@@ -2047,12 +2054,12 @@ func TestValidatePrerequisites(t *testing.T) {
 			}
 			g.Expect(done).To(Equal(tt.expectDone))
 
-			if tt.expectFail {
+			if tt.expectReason != "" {
 				updated := &hyperv1.HCPEtcdBackup{}
 				g.Expect(r.Get(t.Context(), types.NamespacedName{Name: tt.backup.Name, Namespace: tt.backup.Namespace}, updated)).To(Succeed())
 				cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
 				g.Expect(cond).ToNot(BeNil())
-				g.Expect(cond.Reason).To(Equal(hyperv1.BackupFailedReason))
+				g.Expect(cond.Reason).To(Equal(tt.expectReason))
 			}
 		})
 	}
@@ -2138,9 +2145,29 @@ func TestCreateResourcesAndJob(t *testing.T) {
 		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("pull secret"))
 	})
 
-	t.Run("When credential secret is not found it should set BackupFailed", func(t *testing.T) {
+	t.Run("When credential secret is not found it should wait (non-terminal) and requeue", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		r := newReconciler(backup, hcp) // no credential secret
+		ctx := context.Background()
+
+		result, err := r.createResourcesAndJob(ctx, backup, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{RequeueAfter: credentialWaitRequeueInterval}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupWaitingForCredentialsReason))
+		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("credential Secret"))
+		g.Expect(isTerminal(updated)).To(BeFalse())
+	})
+
+	t.Run("When credential secret is not found past the wait deadline it should fail terminally", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		// Created longer ago than credentialWaitTimeout so the wait deadline is exceeded.
+		backup.CreationTimestamp = metav1.NewTime(time.Now().Add(-(credentialWaitTimeout + time.Minute)))
 		hcp := newHostedControlPlane()
 		r := newReconciler(backup, hcp) // no credential secret
 		ctx := context.Background()
@@ -2152,7 +2179,96 @@ func TestCreateResourcesAndJob(t *testing.T) {
 		updated := &hyperv1.HCPEtcdBackup{}
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
 		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupFailedReason))
-		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("credential Secret"))
+		g.Expect(updated.Status.Conditions[0].Message).To(ContainSubstring("timed out"))
+		g.Expect(isTerminal(updated)).To(BeTrue())
+	})
+}
+
+func TestReconcileRecoversWhenCredentialSecretAppears(t *testing.T) {
+	t.Run("When the credential Secret is missing then created it should wait then proceed without failing terminally", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		// Credential Secret intentionally absent for the first reconcile.
+		r := newReconciler(backup, hcp, sts, pullSecret)
+		ctx := context.Background()
+
+		req := ctrl.Request{NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}}
+
+		// First reconcile: credential Secret not yet in cache -> wait, non-terminal, requeue.
+		result, err := r.Reconcile(ctx, req)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{RequeueAfter: credentialWaitRequeueInterval}))
+
+		waiting := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, req.NamespacedName, waiting)).To(Succeed())
+		g.Expect(waiting.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupWaitingForCredentialsReason))
+		g.Expect(isTerminal(waiting)).To(BeFalse())
+
+		// The credential Secret lands.
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+		g.Expect(r.Create(ctx, credSecret)).To(Succeed())
+
+		// Second reconcile: prerequisites satisfied -> Job created, backup in progress.
+		result, err = r.Reconcile(ctx, req)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		g.Expect(updated.Status.Conditions[0].Reason).To(Equal(hyperv1.BackupInProgressReason))
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+	})
+}
+
+func TestBackupsForCredentialSecret(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Non-terminal backup referencing credential Secret "aws-creds".
+	waitingBackup := newHCPEtcdBackup()
+
+	// Terminal (failed) backup referencing the same credential Secret name.
+	terminalBackup := newHCPEtcdBackup()
+	terminalBackup.Name = "terminal-backup"
+	terminalBackup.Status.Conditions = []metav1.Condition{{
+		Type:   string(hyperv1.BackupCompleted),
+		Status: metav1.ConditionFalse,
+		Reason: hyperv1.BackupFailedReason,
+	}}
+
+	r := newReconciler(waitingBackup, terminalBackup)
+	ctx := context.Background()
+
+	newSecret := func(name, namespace string) *corev1.Secret {
+		return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
+	}
+
+	t.Run("When a matching credential Secret lands in the operator namespace it enqueues only the non-terminal backup", func(t *testing.T) {
+		requests := r.backupsForCredentialSecret(ctx, newSecret("aws-creds", testHONamespace))
+		g.Expect(requests).To(ConsistOf(reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		}))
+	})
+
+	t.Run("When the Secret name does not match any backup it enqueues nothing", func(t *testing.T) {
+		requests := r.backupsForCredentialSecret(ctx, newSecret("other-creds", testHONamespace))
+		g.Expect(requests).To(BeEmpty())
+	})
+
+	t.Run("When the Secret is in a different namespace it enqueues nothing", func(t *testing.T) {
+		requests := r.backupsForCredentialSecret(ctx, newSecret("aws-creds", testHCPNamespace))
+		g.Expect(requests).To(BeEmpty())
 	})
 }
 
