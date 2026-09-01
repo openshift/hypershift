@@ -1791,19 +1791,24 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 			},
 		}
 
-		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{
-			"app": manifests.KASConnectionCheckerName,
+		if deployment.Spec.Template.ObjectMeta.Labels == nil {
+			deployment.Spec.Template.ObjectMeta.Labels = map[string]string{}
 		}
+		deployment.Spec.Template.ObjectMeta.Labels["app"] = manifests.KASConnectionCheckerName
+
 		// No openshift.io/required-scc annotation: kube-system is exempt from SCC
 		// admission, so the annotation would be inert. Worse, if that exemption ever
 		// changed, restricted-v2 (MustRunAsRange) would reject the explicit UID below
 		// because it falls outside the namespace uid-range, breaking the checker.
-		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
-			// Allow the cluster autoscaler to evict this pod during scale-down.
-			// Without this annotation, kube-system pods without a PDB are treated
-			// as unmovable system pods that block node scale-down.
-			"cluster-autoscaler.kubernetes.io/safe-to-evict": "true",
+		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
+		// Remove stale annotation left by older HCCO versions.
+		delete(deployment.Spec.Template.ObjectMeta.Annotations, "openshift.io/required-scc")
+		// Allow the cluster autoscaler to evict this pod during scale-down.
+		// Without this annotation, kube-system pods without a PDB are treated
+		// as unmovable system pods that block node scale-down.
+		deployment.Spec.Template.ObjectMeta.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"] = "true"
 
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.KASConnectionCheckerName
 		deployment.Spec.Template.Spec.PriorityClassName = "system-node-critical"

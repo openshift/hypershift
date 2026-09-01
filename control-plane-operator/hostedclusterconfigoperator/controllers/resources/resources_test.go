@@ -3210,7 +3210,7 @@ func getKASCheckerDeployment(t *testing.T, c client.Client) *appsv1.Deployment {
 	return dep
 }
 
-func TestReconcilerReconcileKASConnectionChecker(t *testing.T) {
+func TestReconcileKASConnectionChecker(t *testing.T) {
 	t.Parallel()
 	const testCLIImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-test"
 
