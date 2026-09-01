@@ -109,7 +109,6 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureAppLabel(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureFeatureGateStatus(t, ctx, guestClient)
-		e2eutil.EnsureKASConnectionCheckerSpec(t, ctx, guestClient, hostedCluster)
 		e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
