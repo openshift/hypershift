@@ -22,12 +22,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
@@ -37,6 +34,8 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -45,9 +44,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/yaml"
+
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/google/go-cmp/cmp"
 )
 
 // RegisterNodePoolLifecycleTests registers all NodePool lifecycle test cases.
@@ -718,8 +721,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
+						hyperv1.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -743,13 +746,13 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				},
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					if diff := cmp.Diff(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: cm.Labels[nodepool.KubeletConfigConfigMapLabel],
-						hyperv1.NodePoolLabel:                cm.Labels[hyperv1.NodePoolLabel],
-						nodepool.NTOMirroredConfigLabel:      cm.Labels[nodepool.NTOMirroredConfigLabel],
+						hyperv1.KubeletConfigConfigMapLabel: cm.Labels[hyperv1.KubeletConfigConfigMapLabel],
+						hyperv1.NodePoolLabel:               cm.Labels[hyperv1.NodePoolLabel],
+						hyperv1.NTOMirroredConfigLabel:      cm.Labels[hyperv1.NTOMirroredConfigLabel],
 					}, map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
-						nodepool.NTOMirroredConfigLabel:      "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
+						hyperv1.NTOMirroredConfigLabel:      "true",
 					}); diff != "" {
 						return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 					}
@@ -772,8 +775,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
+						hyperv1.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {

@@ -45,7 +45,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -305,7 +304,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	//  so it could run properly on the cluster.
 	p := predicate.NewPredicateFuncs(func(o client.Object) bool {
 		cm := o.(*corev1.ConfigMap)
-		if _, ok := cm.Labels[nodepool.KubeletConfigConfigMapLabel]; ok {
+		if _, ok := cm.Labels[hyperv1.KubeletConfigConfigMapLabel]; ok {
 			return true
 		}
 		return false
@@ -2976,7 +2975,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 
 	wantCMList := &corev1.ConfigMapList{}
 	if err := r.cpClient.List(ctx, wantCMList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		LabelSelector: labels.SelectorFromSet(map[string]string{hyperv1.KubeletConfigConfigMapLabel: "true"}),
 		Namespace:     r.hcpNamespace,
 	}); err != nil {
 		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from controlplane namespace %s: %w", r.hcpNamespace, err)
@@ -3028,7 +3027,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 
 	haveCMList := &corev1.ConfigMapList{}
 	if err := r.client.List(ctx, haveCMList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		LabelSelector: labels.SelectorFromSet(map[string]string{hyperv1.KubeletConfigConfigMapLabel: "true"}),
 		Namespace:     ConfigManagedNamespace,
 	}); err != nil {
 		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from hostedcluster namespace %s: %w", ConfigManagedNamespace, err)
@@ -3044,7 +3043,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		// without it, triggering MCO node rollouts. However, if the owning NodePool has been
 		// deleted, its finalizer has already removed all its CMs from the HCP namespace, so
 		// the guest copy is orphaned and safe to delete.
-		if cm.Labels[nodepool.NTOMirroredConfigLabel] == "true" {
+		if cm.Labels[hyperv1.NTOMirroredConfigLabel] == "true" {
 			npName := cm.Labels[hyperv1.NodePoolLabel]
 			// Defensive: if the CM has no NodePoolLabel, we cannot determine whether
 			// its owning NodePool still exists; preserve it to avoid spurious rollouts.
@@ -3070,7 +3069,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 // as mutable by the subsequent CreateOrUpdate.
 func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap) error {
 	_, err := k8sutil.DeleteIfNeededWithPredicate(ctx, r.client, cm, func(existing *corev1.ConfigMap) bool {
-		if existing.Labels[nodepool.KubeletConfigConfigMapLabel] != "true" {
+		if existing.Labels[hyperv1.KubeletConfigConfigMapLabel] != "true" {
 			return false
 		}
 		if existing.Immutable != nil && *existing.Immutable {
@@ -3085,9 +3084,9 @@ func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log l
 
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
 	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
-		nodepool.KubeletConfigConfigMapLabel: "true",
-		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
-		nodepool.NTOMirroredConfigLabel:      "true",
+		hyperv1.KubeletConfigConfigMapLabel: "true",
+		hyperv1.NodePoolLabel:               controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
+		hyperv1.NTOMirroredConfigLabel:      "true",
 	})
 	hostedClusterConfigMap.Data = controlPlaneConfigMap.Data
 	return nil

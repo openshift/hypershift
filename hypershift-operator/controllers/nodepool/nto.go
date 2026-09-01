@@ -55,8 +55,8 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	if err := r.List(ctx, existingConfigsList, &client.ListOptions{
 		Namespace: controlPlaneNamespace,
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			NTOMirroredConfigLabel: "true",
-			hyperv1.NodePoolLabel:  nodePool.Name}),
+			hyperv1.NTOMirroredConfigLabel: "true",
+			hyperv1.NodePoolLabel:          nodePool.Name}),
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -95,9 +95,9 @@ func (r *NodePoolReconciler) reconcileMirroredConfigs(ctx context.Context, logr 
 	if err := r.List(ctx, ntoGeneratedKubeletConfigs, &client.ListOptions{
 		Namespace: controlPlaneNamespace,
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			nodeTuningGeneratedConfigLabel: "true",
-			KubeletConfigConfigMapLabel:    "true",
-			hyperv1.NodePoolLabel:          nodePool.Name,
+			nodeTuningGeneratedConfigLabel:      "true",
+			hyperv1.KubeletConfigConfigMapLabel: "true",
+			hyperv1.NodePoolLabel:               nodePool.Name,
 		}),
 	}); err != nil {
 		return err
@@ -135,7 +135,7 @@ func validateMirroredConfigs(generatedKubeletConfigs []corev1.ConfigMap, mirrore
 	KubeletConfigConfigMapCount := len(generatedKubeletConfigs)
 
 	for _, mirroredConfig := range mirroredConfigs {
-		if _, ok := mirroredConfig.Labels[KubeletConfigConfigMapLabel]; ok {
+		if _, ok := mirroredConfig.Labels[hyperv1.KubeletConfigConfigMapLabel]; ok {
 			KubeletConfigConfigMapCount++
 		}
 	}
@@ -205,7 +205,7 @@ func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, no
 		cm.Labels = make(map[string]string)
 	}
 	cm.Labels[hyperv1.NodePoolLabel] = nodePool.GetName()
-	cm.Labels[NTOMirroredConfigLabel] = "true"
+	cm.Labels[hyperv1.NTOMirroredConfigLabel] = "true"
 	cm.Labels = labels.Merge(cm.Labels, mirroredConfig.Labels)
 	cm.Data = mirroredConfig.Data
 	return nil
@@ -213,7 +213,7 @@ func mutateMirroredConfig(cm *corev1.ConfigMap, mirroredConfig *MirrorConfig, no
 
 func (r *NodePoolReconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap, nodePoolName string) error {
 	_, err := k8sutil.DeleteIfNeededWithPredicate(ctx, r.Client, cm, func(existing *corev1.ConfigMap) bool {
-		if existing.Labels[NTOMirroredConfigLabel] != "true" || existing.Labels[hyperv1.NodePoolLabel] != nodePoolName {
+		if existing.Labels[hyperv1.NTOMirroredConfigLabel] != "true" || existing.Labels[hyperv1.NodePoolLabel] != nodePoolName {
 			return false
 		}
 		if existing.Immutable != nil && *existing.Immutable {
@@ -480,12 +480,12 @@ func getMirrorConfigForManifest(manifest []byte) (*MirrorConfig, error) {
 	case *mcfgv1.ContainerRuntimeConfig:
 		mirrorConfig = &MirrorConfig{Labels: map[string]string{
 			ContainerRuntimeConfigConfigMapLabel: "true",
-			NTOMirroredConfigLabel:               "true",
+			hyperv1.NTOMirroredConfigLabel:       "true",
 		}}
 	case *mcfgv1.KubeletConfig:
 		mirrorConfig = &MirrorConfig{Labels: map[string]string{
-			KubeletConfigConfigMapLabel: "true",
-			NTOMirroredConfigLabel:      "true",
+			hyperv1.KubeletConfigConfigMapLabel: "true",
+			hyperv1.NTOMirroredConfigLabel:      "true",
 		}}
 	}
 	return mirrorConfig, err
