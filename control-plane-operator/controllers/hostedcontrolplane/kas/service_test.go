@@ -125,6 +125,51 @@ func TestReconcileService(t *testing.T) {
 	}
 }
 
+func TestReconcileServicePreservesNLBAnnotation(t *testing.T) {
+	// Regression test for OCPBUGS-113712: the cluster-wide ValidatingAdmissionPolicy
+	// "openshift-cloud-controller-manager-cloud-provider-aws" blocks any Service UPDATE
+	// that removes the aws-load-balancer-type annotation. When an existing service already
+	// has the annotation (legacy or set by an older CPO) and the strategy is not LoadBalancer,
+	// the reconciler must preserve it to avoid an infinite error loop.
+	testCases := []struct {
+		name     string
+		strategy hyperv1.ServicePublishingStrategy
+	}{
+		{
+			name:     "When AWS Route strategy with existing NLB annotation it should preserve the annotation",
+			strategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+		},
+		{
+			name:     "When AWS NodePort strategy with existing NLB annotation it should preserve the annotation",
+			strategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Port: 31000}},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			}
+			// Simulate an existing service that already has the NLB annotation (legacy state).
+			svc := &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						AWSNLBAnnotation: "nlb",
+					},
+				},
+			}
+
+			err := ReconcileService(svc, &tc.strategy, &v1.OwnerReference{}, 6443, []string{}, &hcp)
+			g.Expect(err).To(BeNil())
+			// The annotation must be preserved to avoid triggering the ValidatingAdmissionPolicy.
+			g.Expect(svc.Annotations).To(HaveKeyWithValue(AWSNLBAnnotation, "nlb"),
+				"NLB annotation must not be removed — the ValidatingAdmissionPolicy blocks its removal")
+		})
+	}
+}
+
 func TestReconcileServiceAzureInternalLB(t *testing.T) {
 	// The main KAS service (kube-apiserver-azure-lb) should never have the internal LB
 	// annotation. For Azure Private, this service becomes ClusterIP because isPublic=false.

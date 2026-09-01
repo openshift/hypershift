@@ -65,9 +65,12 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		svc.Annotations = map[string]string{}
 	}
 
-	// Remove stale AWS NLB annotation before reconciling.
-	// It will be re-added only when the service is actually a LoadBalancer.
-	delete(svc.Annotations, AWSNLBAnnotation)
+	// NOTE: Do not delete AWSNLBAnnotation from existing services.
+	// The cluster-wide ValidatingAdmissionPolicy
+	// "openshift-cloud-controller-manager-cloud-provider-aws" (OCPBUGS-16728)
+	// blocks any UPDATE that adds, removes, or changes this annotation.
+	// Removing it here would cause an infinite reconciliation error loop.
+	// A stale annotation on a ClusterIP service is harmless.
 
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
