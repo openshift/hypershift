@@ -521,6 +521,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
+	// Aggregate deprecated-configuration warnings from the HostedCluster and the HCP.
+	r.reconcileDeprecatedConfigurationStatus(hcluster, hcp)
+
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
