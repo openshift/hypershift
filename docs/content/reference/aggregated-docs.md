@@ -26198,10 +26198,9 @@ oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-ope
 
 # OpenShift Route CRD
 oc apply -f https://raw.githubusercontent.com/openshift/api/6bababe9164ea6c78274fd79c94a3f951f8d5ab2/route/v1/zz_generated.crd-manifests/routes.crd.yaml
-
-# DNSEndpoint CRD (for ExternalDNS)
-oc apply -f https://raw.githubusercontent.com/kubernetes-sigs/external-dns/v0.15.0/docs/contributing/crd-source/crd-manifest.yaml
 ```
+
+Note: The DNSEndpoint CRD is automatically installed by `hypershift install` when `--external-dns-provider=google` is set (see below).
 
 ## Install HyperShift Operator
 

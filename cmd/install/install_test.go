@@ -618,6 +618,26 @@ func TestCRDIncludeFilter(t *testing.T) {
 			crd:    defaultCRD(),
 			expect: false,
 		},
+		{
+			name:   "When path contains external-dns and ExternalDNSProvider is google (uses CRD source), it should be included",
+			opts:   Options{ExternalDNSProvider: "google"},
+			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
+			crd:    defaultCRD(),
+			expect: true,
+		},
+		{
+			name:   "When path contains external-dns and ExternalDNSProvider is aws (doesn't use CRD source), it should be excluded",
+			opts:   Options{ExternalDNSProvider: "aws"},
+			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
+		{
+			name:   "When path contains external-dns and ExternalDNSProvider is empty, it should be excluded",
+			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
+			crd:    defaultCRD(),
+			expect: false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -662,10 +682,26 @@ func TestSetupCRDs(t *testing.T) {
 			},
 		},
 		{
-			name: "When PlatformOptions is set to AWS,Azure, it should include only AWS When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs it should be present Azure CAPI CRDs",
+			name: "When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs should be present",
 			inputOptions: Options{
 				PlatformsToInstall: []string{"aws", "azure"},
 			},
+		},
+		{
+			name: "When ExternalDNSProvider is google (uses CRD source), it should include DNSEndpoint CRD",
+			inputOptions: Options{
+				ExternalDNSProvider: "google",
+			},
+		},
+		{
+			name: "When ExternalDNSProvider is aws (doesn't use CRD source), it should exclude DNSEndpoint CRD",
+			inputOptions: Options{
+				ExternalDNSProvider: "aws",
+			},
+		},
+		{
+			name:         "When ExternalDNSProvider is empty, it should exclude DNSEndpoint CRD",
+			inputOptions: Options{},
 		},
 	}
 
@@ -677,6 +713,7 @@ func TestSetupCRDs(t *testing.T) {
 			nodePoolCRDS := make([]crclient.Object, 0)
 			var machineDeploymentCRD crclient.Object
 			var awsEndpointServicesCRD crclient.Object
+			var dnsEndpointCRD crclient.Object
 			for _, crd := range crds {
 				if crd.GetName() == "nodepools.hypershift.openshift.io" {
 					nodePoolCRDS = append(nodePoolCRDS, crd)
@@ -686,6 +723,9 @@ func TestSetupCRDs(t *testing.T) {
 				}
 				if crd.GetName() == "awsendpointservices.hypershift.openshift.io" {
 					awsEndpointServicesCRD = crd
+				}
+				if crd.GetName() == "dnsendpoints.externaldns.k8s.io" {
+					dnsEndpointCRD = crd
 				}
 			}
 
@@ -749,6 +789,13 @@ func TestSetupCRDs(t *testing.T) {
 
 			if wantedPlatforms.Has("AWS") {
 				g.Expect(awsEndpointServicesCRD).ToNot(BeNil())
+			}
+
+			// Validate external-dns CRD presence based on CRD source usage.
+			if assets.ExternalDNSProvider(tc.inputOptions.ExternalDNSProvider).UsesCRDSource() {
+				g.Expect(dnsEndpointCRD).ToNot(BeNil(), "DNSEndpoint CRD should be present when provider uses CRD source")
+			} else {
+				g.Expect(dnsEndpointCRD).To(BeNil(), "DNSEndpoint CRD should be absent when provider doesn't use CRD source")
 			}
 
 			g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))

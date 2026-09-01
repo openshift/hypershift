@@ -23,6 +23,7 @@ import (
 //go:embed cluster-api-provider-agent/*
 //go:embed cluster-api-provider-azure/*
 //go:embed cluster-api-provider-openstack/*
+//go:embed external-dns/*
 var CRDS embed.FS
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
