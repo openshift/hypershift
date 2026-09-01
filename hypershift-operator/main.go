@@ -218,7 +218,7 @@ func NewStartCommand() *cobra.Command {
 
 const (
 	servingCertPollInterval = time.Second
-	servingCertWaitTimeout  = 30 * time.Second
+	servingCertWaitTimeout  = 6 * time.Minute
 )
 
 // bootstrapAndWaitForServingCert creates the webhook serving-cert Secret if
