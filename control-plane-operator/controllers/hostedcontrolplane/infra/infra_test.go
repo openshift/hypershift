@@ -1452,6 +1452,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
 					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
+					s.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 				}),
 				kasPrivateService(withCrossZoneAnnotation),
 			},
@@ -1471,6 +1472,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
 					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
+					s.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 				}),
 			},
 			expectedRoutes: []routev1.Route{
@@ -1493,6 +1495,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
 					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
+					s.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 				}),
 			},
 			expectedRoutes: []routev1.Route{
@@ -1515,6 +1518,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
 					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
+					s.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 				}),
 			},
 			expectedRoutes: []routev1.Route{
@@ -1538,6 +1542,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
 					delete(s.Annotations, "service.beta.kubernetes.io/aws-load-balancer-type")
+					s.Annotations["service.kubernetes.io/topology-mode"] = "Auto"
 				}),
 			},
 			expectedRoutes: []routev1.Route{
