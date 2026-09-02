@@ -18,13 +18,17 @@ import (
 func TestReconcileService(t *testing.T) {
 
 	testCases := []struct {
-		name          string
-		platform      hyperv1.PlatformType
-		strategy      hyperv1.ServicePublishingStrategy
-		apiServerPort int
-		svc_in        corev1.Service
-		svc_out       corev1.Service
-		err           error
+		name                   string
+		platform               hyperv1.PlatformType
+		strategy               hyperv1.ServicePublishingStrategy
+		endpointAccess         hyperv1.AWSEndpointAccessType
+		apiServerPort          int
+		checkNLBAnnotation     bool
+		wantNLBAnnotation      bool
+		wantNLBAnnotationValue string
+		svc_in                 corev1.Service
+		svc_out                corev1.Service
+		err                    error
 	}{
 		{
 			name:          "IBM Cloud, NodePort strategy, NodePort service, expected to fill port number from strategy",
@@ -82,10 +86,13 @@ func TestReconcileService(t *testing.T) {
 			err: nil,
 		},
 		{
-			name:          "Non-IBM Cloud, Route strategy, ClusterIP service, expected to fill port value only",
-			platform:      hyperv1.AWSPlatform,
-			strategy:      hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
-			apiServerPort: 1125,
+			name:               "When creating an AWS Route service, it should not add the NLB annotation",
+			platform:           hyperv1.AWSPlatform,
+			strategy:           hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+			endpointAccess:     hyperv1.Public,
+			apiServerPort:      1125,
+			checkNLBAnnotation: true,
+			wantNLBAnnotation:  false,
 			svc_in: corev1.Service{Spec: corev1.ServiceSpec{
 				Type: corev1.ServiceTypeClusterIP,
 			}},
@@ -102,14 +109,126 @@ func TestReconcileService(t *testing.T) {
 			err: nil,
 		},
 		{
-			name:     "Invalid strategy",
+			name:                   "When creating a private AWS LoadBalancer service, it should seed the NLB annotation for future endpoint transitions",
+			platform:               hyperv1.AWSPlatform,
+			strategy:               hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+			endpointAccess:         hyperv1.Private,
+			apiServerPort:          6443,
+			checkNLBAnnotation:     true,
+			wantNLBAnnotation:      true,
+			wantNLBAnnotationValue: "nlb",
+			svc_in: corev1.Service{Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeClusterIP,
+			}},
+			svc_out: corev1.Service{Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeClusterIP,
+				Ports: []corev1.ServicePort{
+					{
+						Protocol:   corev1.ProtocolTCP,
+						Port:       6443,
+						TargetPort: intstr.IntOrString{Type: intstr.String, StrVal: "client"},
+					},
+				},
+			}},
+			err: nil,
+		},
+		{
+			name:                   "When updating a legacy AWS Route service, it should preserve the NLB annotation",
+			platform:               hyperv1.AWSPlatform,
+			strategy:               hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+			endpointAccess:         hyperv1.Public,
+			apiServerPort:          6443,
+			checkNLBAnnotation:     true,
+			wantNLBAnnotation:      true,
+			wantNLBAnnotationValue: "nlb",
+			svc_in: corev1.Service{ObjectMeta: v1.ObjectMeta{
+				ResourceVersion: "1",
+				Annotations: map[string]string{
+					AWSNLBAnnotation: "nlb",
+				},
+			}, Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeClusterIP,
+			}},
+			svc_out: corev1.Service{Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeClusterIP,
+				Ports: []corev1.ServicePort{
+					{
+						Protocol:   corev1.ProtocolTCP,
+						Port:       6443,
+						TargetPort: intstr.IntOrString{Type: intstr.String, StrVal: "client"},
+					},
+				},
+			}},
+			err: nil,
+		},
+		{
+			name:               "When updating an AWS LoadBalancer service without an annotation, it should not add one",
+			platform:           hyperv1.AWSPlatform,
+			strategy:           hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+			endpointAccess:     hyperv1.Public,
+			apiServerPort:      6443,
+			checkNLBAnnotation: true,
+			wantNLBAnnotation:  false,
+			svc_in: corev1.Service{ObjectMeta: v1.ObjectMeta{
+				ResourceVersion: "1",
+				Annotations:     map[string]string{},
+			}, Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+			}},
+			svc_out: corev1.Service{Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+				Ports: []corev1.ServicePort{
+					{
+						Protocol:   corev1.ProtocolTCP,
+						Port:       6443,
+						TargetPort: intstr.IntOrString{Type: intstr.String, StrVal: "client"},
+					},
+				},
+			}},
+			err: nil,
+		},
+		{
+			name:                   "When updating an AWS service with a non-NLB annotation, it should preserve its value",
+			platform:               hyperv1.AWSPlatform,
+			strategy:               hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+			endpointAccess:         hyperv1.Public,
+			apiServerPort:          6443,
+			checkNLBAnnotation:     true,
+			wantNLBAnnotation:      true,
+			wantNLBAnnotationValue: "clb",
+			svc_in: corev1.Service{ObjectMeta: v1.ObjectMeta{
+				ResourceVersion: "1",
+				Annotations: map[string]string{
+					AWSNLBAnnotation: "clb",
+				},
+			}, Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+			}},
+			svc_out: corev1.Service{Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+				Ports: []corev1.ServicePort{
+					{
+						Protocol:   corev1.ProtocolTCP,
+						Port:       6443,
+						TargetPort: intstr.IntOrString{Type: intstr.String, StrVal: "client"},
+					},
+				},
+			}},
+			err: nil,
+		},
+		{
+			name:     "When using an invalid publishing strategy, it should return an error",
 			strategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.None},
 			err:      fmt.Errorf("invalid publishing strategy for Kube API server service: None"),
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			hcp := hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{Type: tc.platform}}}
+			platform := hyperv1.PlatformSpec{Type: tc.platform}
+			if tc.endpointAccess != "" {
+				platform.AWS = &hyperv1.AWSPlatformSpec{EndpointAccess: tc.endpointAccess}
+			}
+			hcp := hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: platform}}
 
 			err := ReconcileService(&tc.svc_in, &tc.strategy, &v1.OwnerReference{}, tc.apiServerPort, []string{}, &hcp)
 
@@ -118,6 +237,13 @@ func TestReconcileService(t *testing.T) {
 				g.Expect(err).To(BeNil())
 				g.Expect(tc.svc_in.Spec.Type).To(Equal(tc.svc_out.Spec.Type))
 				g.Expect(tc.svc_in.Spec.Ports).To(Equal(tc.svc_out.Spec.Ports))
+				if tc.checkNLBAnnotation {
+					if tc.wantNLBAnnotation {
+						g.Expect(tc.svc_in.Annotations).To(HaveKeyWithValue(AWSNLBAnnotation, tc.wantNLBAnnotationValue))
+					} else {
+						g.Expect(tc.svc_in.Annotations).ToNot(HaveKey(AWSNLBAnnotation))
+					}
+				}
 			} else {
 				g.Expect(tc.err.Error()).To(Equal(err.Error()))
 			}
@@ -189,6 +315,7 @@ func TestReconcilePrivateService(t *testing.T) {
 		hcp                     *hyperv1.HostedControlPlane
 		expectAzureILB          bool
 		expectAWSAnnotations    bool
+		expectAWSNLBAnnotation  bool
 		expectedPort            int32
 		expectIPFamilyDualStack bool
 	}{
@@ -254,6 +381,7 @@ func TestReconcilePrivateService(t *testing.T) {
 			},
 			expectAzureILB:          false,
 			expectAWSAnnotations:    true,
+			expectAWSNLBAnnotation:  true,
 			expectedPort:            int32(config.KASSVCPort),
 			expectIPFamilyDualStack: true,
 		},
@@ -329,9 +457,67 @@ func TestReconcilePrivateService(t *testing.T) {
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsCrossZoneAnnotation, "true"))
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsLBAttributesAnnotation, "load_balancing.cross_zone.enabled=true"))
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsInternalAnnotation, "true"))
-				g.Expect(svc.Annotations).To(HaveKeyWithValue(awsNLBAnnotation, "nlb"))
+				if tc.expectAWSNLBAnnotation {
+					g.Expect(svc.Annotations).To(HaveKeyWithValue(awsNLBAnnotation, "nlb"))
+				} else {
+					g.Expect(svc.Annotations).ToNot(HaveKey(awsNLBAnnotation))
+				}
 				// Non-Azure should NOT have Azure ILB annotation
 				g.Expect(svc.Annotations).ToNot(HaveKey(azureILBAnnotation))
+			}
+		})
+	}
+}
+
+func TestReconcilePrivateServiceAWSNLBAnnotation(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name            string
+		resourceVersion string
+		annotationValue string
+		wantAnnotation  bool
+		wantValue       string
+	}{
+		{
+			name:           "When creating an AWS private service, it should set the NLB annotation",
+			wantAnnotation: true,
+			wantValue:      "nlb",
+		},
+		{
+			name:            "When updating an AWS private service without an annotation, it should not add one",
+			resourceVersion: "1",
+			wantAnnotation:  false,
+		},
+		{
+			name:            "When updating an AWS private service with a non-NLB annotation, it should preserve its value",
+			resourceVersion: "1",
+			annotationValue: "clb",
+			wantAnnotation:  true,
+			wantValue:       "clb",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			}}
+			svc := &corev1.Service{ObjectMeta: v1.ObjectMeta{
+				ResourceVersion: tc.resourceVersion,
+				Annotations:     map[string]string{},
+			}}
+			if tc.annotationValue != "" {
+				svc.Annotations[AWSNLBAnnotation] = tc.annotationValue
+			}
+
+			err := ReconcilePrivateService(svc, hcp, &v1.OwnerReference{})
+			g.Expect(err).ToNot(HaveOccurred())
+			if tc.wantAnnotation {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(AWSNLBAnnotation, tc.wantValue))
+			} else {
+				g.Expect(svc.Annotations).ToNot(HaveKey(AWSNLBAnnotation))
 			}
 		})
 	}
