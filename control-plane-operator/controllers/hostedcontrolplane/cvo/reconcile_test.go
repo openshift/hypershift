@@ -107,10 +107,10 @@ func TestResourcesToRemove(t *testing.T) {
 			},
 		},
 		{
-			name:     "When platform is default (e.g., AWS), it should return 11 resources",
+			name:     "When platform is default (e.g., AWS), it should return the expected resources",
 			platform: hyperv1.AWSPlatform,
 			validate: func(g Gomega, resources []client.Object) {
-				g.Expect(resources).To(HaveLen(11))
+				g.Expect(resources).To(HaveLen(13))
 			},
 		},
 		{
