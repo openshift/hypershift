@@ -27,11 +27,20 @@ func (m *mockAzureBlobClient) UploadFile(ctx context.Context, containerName stri
 	return azblob.UploadFileResponse{}, nil
 }
 
+func newAzureBlobUploaderWithClient(encryptionScope string, client AzureBlobUploadAPI) *AzureBlobUploader {
+	return &AzureBlobUploader{
+		container:       "my-container",
+		serviceURL:      "https://mystorageaccount.blob.core.windows.net",
+		encryptionScope: encryptionScope,
+		client:          client,
+	}
+}
+
 func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When uploading successfully it should return the correct Azure Blob URL", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "https://mystorageaccount.blob.core.windows.net", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		result, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -42,7 +51,7 @@ func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When uploading it should set IfNoneMatch for conditional write", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "https://mystorageaccount.blob.core.windows.net", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -56,7 +65,7 @@ func TestAzureBlobUploader(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
 		encryptionScope := "my-encryption-scope"
-		uploader := newAzureBlobUploaderWithClient("my-container", "https://mystorageaccount.blob.core.windows.net", encryptionScope, mock)
+		uploader := newAzureBlobUploaderWithClient(encryptionScope, mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -69,7 +78,7 @@ func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When no encryption scope is provided it should not set CPKScopeInfo", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "https://mystorageaccount.blob.core.windows.net", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -84,7 +93,7 @@ func TestAzureBlobUploader(t *testing.T) {
 				return azblob.UploadFileResponse{}, fmt.Errorf("ConditionNotMet: The condition specified using HTTP conditional header(s) is not met")
 			},
 		}
-		uploader := newAzureBlobUploaderWithClient("my-container", "https://mystorageaccount.blob.core.windows.net", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 		snapshotPath := createTempSnapshot(t)
 
 		_, err := uploader.Upload(context.Background(), snapshotPath, "backups/12345.db")
@@ -95,10 +104,44 @@ func TestAzureBlobUploader(t *testing.T) {
 	t.Run("When snapshot file does not exist it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		mock := &mockAzureBlobClient{}
-		uploader := newAzureBlobUploaderWithClient("my-container", "https://mystorageaccount.blob.core.windows.net", "", mock)
+		uploader := newAzureBlobUploaderWithClient("", mock)
 
 		_, err := uploader.Upload(context.Background(), "/nonexistent/snapshot.db", "backups/12345.db")
 		g.Expect(err).To(HaveOccurred())
+	})
+}
+
+func TestNewAzureBlobUploader(t *testing.T) {
+	t.Run("When required options are provided it should return a configured uploader", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		uploader, err := NewAzureBlobUploader(context.Background(), "my-container", "mystorageaccount", "", "my-scope", AuthTypeClientSecret, "")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(uploader).ToNot(BeNil())
+		g.Expect(uploader.container).To(Equal("my-container"))
+		g.Expect(uploader.encryptionScope).To(Equal("my-scope"))
+		g.Expect(uploader.serviceURL).To(Equal("https://mystorageaccount.blob.core.windows.net"))
+		g.Expect(uploader.client).ToNot(BeNil())
+	})
+
+	t.Run("When container is empty it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewAzureBlobUploader(context.Background(), "", "mystorageaccount", "", "", "", "")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--container is required"))
+	})
+
+	t.Run("When storage account is empty it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewAzureBlobUploader(context.Background(), "my-container", "", "", "", "", "")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--storage-account is required"))
+	})
+
+	t.Run("When cloud name is invalid it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewAzureBlobUploader(context.Background(), "my-container", "mystorageaccount", "", "", "", "InvalidCloud")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to get Azure cloud configuration"))
 	})
 }
 
@@ -191,5 +234,22 @@ func TestAzureCredential(t *testing.T) {
 		credential, err := newAzureCredential(context.Background(), credFile, AuthTypeClientSecret, cloud.AzurePublic)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(credential).ToNot(BeNil())
+	})
+
+	t.Run("When auth type is client-secret and file is missing it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := newAzureCredential(context.Background(), "/nonexistent/client-secret-creds.json", AuthTypeClientSecret, cloud.AzurePublic)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to read credentials file"))
+	})
+
+	t.Run("When auth type is client-secret and JSON is invalid it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		credFile := filepath.Join(t.TempDir(), "invalid-client-secret-creds.json")
+		g.Expect(os.WriteFile(credFile, []byte("not-json"), 0644)).To(Succeed())
+
+		_, err := newAzureCredential(context.Background(), credFile, AuthTypeClientSecret, cloud.AzurePublic)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to parse credentials file"))
 	})
 }

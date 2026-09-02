@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/support/azureutil"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/msi-dataplane/pkg/dataplane"
-	"github.com/openshift/hypershift/support/azureutil"
 )
 
 const (
@@ -186,14 +187,4 @@ func newManagedIdentityCredential(ctx context.Context, credentialsFile string) (
 
 func etagPtr(e azcore.ETag) *azcore.ETag {
 	return &e
-}
-
-// newAzureBlobUploaderWithClient creates an AzureBlobUploader with a provided client (for testing).
-func newAzureBlobUploaderWithClient(container, serviceURL, encryptionScope string, client AzureBlobUploadAPI) *AzureBlobUploader {
-	return &AzureBlobUploader{
-		container:       container,
-		serviceURL:      serviceURL,
-		encryptionScope: encryptionScope,
-		client:          client,
-	}
 }
