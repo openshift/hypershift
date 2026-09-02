@@ -35,6 +35,7 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
 
+    // TODO: Just a test
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
 		Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
 
