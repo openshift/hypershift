@@ -37,12 +37,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // AutoscalingScaleUpDownTest tests autoscaling scale-up and scale-down behavior
 func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
-	It("should scale up when workload increases and scale down when workload decreases", func() {
+	It("should scale up when workload increases and scale down when workload decreases", Label("nodepool-autoscaling-scale-up-down"), func() {
 		testCtx := getTestCtx()
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
@@ -107,7 +108,7 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 // It configures the HostedCluster with the Random expander so the cluster autoscaler
 // distributes scale-up events across NodePools instead of favoring one.
 func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
-	It("should balance pods across multiple autoscaling NodePools", func() {
+	It("should balance pods across multiple autoscaling NodePools", Label("nodepool-autoscaling-balancing"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -146,27 +147,6 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 				"cleanup: failed to reset autoscaler config on HostedCluster")
 		})
 
-		// Wait for autoscaler deployment to pick up the new config
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, "autoscaler deployment to have balancing config",
-			func(ctx context.Context) (*appsv1.Deployment, error) {
-				dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
-					Namespace: cpNamespace, Name: "cluster-autoscaler",
-				}}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(dep), dep)
-				return dep, err
-			},
-			[]e2eutil.Predicate[*appsv1.Deployment]{func(dep *appsv1.Deployment) (bool, string, error) {
-				for _, arg := range dep.Spec.Template.Spec.Containers[0].Args {
-					if strings.Contains(arg, balancingLabel) {
-						return dep.Status.ReadyReplicas > 0, fmt.Sprintf("ready replicas: %d", dep.Status.ReadyReplicas), nil
-					}
-				}
-				return false, "balancing-ignore-label not found in autoscaler args", nil
-			}},
-			e2eutil.WithInterval(10*time.Second),
-			e2eutil.WithTimeout(5*time.Minute),
-		)
-
 		// Find the default NodePool to copy platform config
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
@@ -196,6 +176,28 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 		DeferCleanup(func() {
 			cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP2)
 		})
+
+		// The autoscaler is enabled only when an autoscaling NodePool exists.
+		// Create the NodePools before waiting for the configured deployment.
+		e2eutil.EventuallyObject(GinkgoTB(), ctx, "autoscaler deployment to have balancing config",
+			func(ctx context.Context) (*appsv1.Deployment, error) {
+				dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+					Namespace: cpNamespace, Name: "cluster-autoscaler",
+				}}
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(dep), dep)
+				return dep, err
+			},
+			[]e2eutil.Predicate[*appsv1.Deployment]{func(dep *appsv1.Deployment) (bool, string, error) {
+				for _, arg := range dep.Spec.Template.Spec.Containers[0].Args {
+					if strings.Contains(arg, balancingLabel) {
+						return dep.Status.ReadyReplicas > 0, fmt.Sprintf("ready replicas: %d", dep.Status.ReadyReplicas), nil
+					}
+				}
+				return false, "balancing-ignore-label not found in autoscaler args", nil
+			}},
+			e2eutil.WithInterval(10*time.Second),
+			e2eutil.WithTimeout(5*time.Minute),
+		)
 
 		np1LabelSelector := e2eutil.WithClientOptions(crclient.MatchingLabelsSelector{
 			Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: autoscalingNP1.Name}),
@@ -358,11 +360,19 @@ func cleanupNodePool(ctx context.Context, client crclient.Client, np *hyperv1.No
 	GinkgoHelper()
 
 	err := client.Delete(ctx, np)
-	if err != nil && !apierrors.IsNotFound(err) {
-		GinkgoWriter.Printf("Warning: failed to delete NodePool %s: %v\n", np.Name, err)
-	} else if err == nil {
-		GinkgoWriter.Printf("Deleted NodePool %s\n", np.Name)
+	if apierrors.IsNotFound(err) {
+		return
 	}
+	if err != nil {
+		GinkgoWriter.Printf("Warning: failed to delete NodePool %s: %v\n", np.Name, err)
+		return
+	}
+	GinkgoWriter.Printf("Deleting NodePool %s\n", np.Name)
+
+	e2eutil.EventuallyNotFound(GinkgoTB(), ctx, client, np,
+		e2eutil.WithTimeout(nodePoolUpgradeTimeout(np.Spec.Platform.Type)),
+		e2eutil.WithInterval(15*time.Second),
+	)
 }
 
 // cleanupWorkload deletes a Job workload if it exists
