@@ -390,6 +390,11 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 						LabelFilter: "control-plane-upgrade",
 					},
 					{
+						Name:        "post-upgrade-health",
+						Variant:     "upgrade",
+						LabelFilter: "hosted-cluster-health || control-plane-workloads",
+					},
+					{
 						Name:        "control-plane-tls",
 						Variant:     "upgrade",
 						LabelFilter: "control-plane-pki-operator",
