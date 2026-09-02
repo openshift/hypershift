@@ -65,6 +65,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	hcp := cpContext.HCP
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 
+	tlsArgs, err := getTLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		serverCount := component.DefaultReplicas(hcp, &KubeAPIServer{}, ComponentName)
 		c.Args = append(c.Args,
@@ -72,16 +77,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			strconv.Itoa(int(serverCount)),
 		)
 
-		minTLSVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile())
-		if len(minTLSVersion) != 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--tls-min-version=%s", minTLSVersion))
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
 		}
-
-		cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile())
-		if len(cipherSuites) != 0 {
-			c.Args = append(c.Args, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
-		}
-
 	})
 
 	payloadVersion := cpContext.UserReleaseImageProvider.Version()
@@ -131,7 +129,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp)
+		if err := applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
+			return fmt.Errorf("failed to apply AWS pod identity webhook container: %w", err)
+		}
 	case hyperv1.AzurePlatform:
 		if hcp.Spec.Platform.Azure == nil {
 			return fmt.Errorf("azure platform type requires spec.platform.azure")
@@ -201,20 +201,32 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
+func resolveKASVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	// New API field takes precedence
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.KubeAPIServer.LogLevel
+	}
+	if level != "" {
+		return util.LogLevelToKlogVerbosity(level)
+	}
+
+	// Fallback: deprecated annotation (raw integer)
+	if v := hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			// TODO(CNTRLPLANE-3998): Emit deprecation warning condition on HCP status
+			return parsed
+		}
+	}
+
+	return util.LogLevelToKlogVerbosity(level)
+}
+
 func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
 	podspec.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
 		c.Ports[0].ContainerPort = netutil.KASPodPort(hcp)
 
-		kasVerbosityLevel := 2
-		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
-			parsedKASVerbosityValue, err := strconv.Atoi(hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation])
-			if err == nil {
-				kasVerbosityLevel = parsedKASVerbosityValue
-			}
-		}
-		c.Args = append(c.Args,
-			fmt.Sprintf("--v=%d", kasVerbosityLevel),
-		)
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveKASVerbosity(hcp)))
 
 		// We have to exempt the pod and service CIDR, otherwise the proxy will get respected by the transport inside
 		// the egress transport and that breaks the egress selection/konnektivity usage.
@@ -338,7 +350,7 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 	return nil
 }
 
-func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
 	command := []string{
 		"/usr/bin/aws-pod-identity-webhook",
 		"--annotation-prefix=eks.amazonaws.com",
@@ -352,11 +364,13 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 		"--token-audience=openshift",
 	}
 
-	if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
-		command = append(command, fmt.Sprintf("--tls-min-version=%s", tlsMinVersion))
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
 	}
-	if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
-		command = append(command, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ",")))
+
+	if len(tlsArgs) > 0 {
+		command = append(command, tlsArgs...)
 	}
 
 	podSpec.Containers = append(podSpec.Containers, corev1.Container{
@@ -390,14 +404,24 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 			},
 		},
 	)
+	return nil
 }
 
 func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
 	extraCommandLineFlags := map[string]string{}
-	if tlsMinVersion := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
+	tlsMinVersion, err := config.MinTLSVersion(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return fmt.Errorf("failed to get min TLS version: %w", err)
+	}
+	if tlsMinVersion != "" {
 		extraCommandLineFlags["--tls-min-version"] = tlsMinVersion
 	}
-	if cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile()); len(cipherSuites) != 0 {
+
+	cipherSuites, err := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return fmt.Errorf("failed to get cipher suites: %w", err)
+	}
+	if len(cipherSuites) != 0 {
 		extraCommandLineFlags["--tls-cipher-suites"] = strings.Join(cipherSuites, ",")
 	}
 
@@ -515,6 +539,30 @@ func addImagePrePullInitContainers(podSpec *corev1.PodSpec) {
 	// Prepend the pre-pull init container to the existing init containers.
 	// This ensures the image is pulled before any other init containers run.
 	podSpec.InitContainers = append([]corev1.Container{prePullInitContainer}, podSpec.InitContainers...)
+}
+
+func getTLSArgs(profile *configv1.TLSSecurityProfile) ([]string, error) {
+	var tlsArgs []string
+
+	minTLSVersion, err := config.MinTLSVersion(profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get min TLS version: %w", err)
+	}
+
+	cipherSuites, err := config.CipherSuites(profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cipher suites: %w", err)
+	}
+
+	if len(minTLSVersion) != 0 {
+		tlsArgs = append(tlsArgs, fmt.Sprintf("--tls-min-version=%s", minTLSVersion))
+	}
+
+	if len(cipherSuites) != 0 {
+		tlsArgs = append(tlsArgs, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
+	}
+
+	return tlsArgs, nil
 }
 
 const (

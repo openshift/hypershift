@@ -132,82 +132,82 @@ func TestShouldSkipProxyForKAS(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When noProxy is empty it should not skip proxy",
+			name:     "When noProxy is empty, it should not skip proxy",
 			noProxy:  "",
 			expected: false,
 		},
 		{
-			name:     "When noProxy contains exact external address it should skip proxy",
+			name:     "When noProxy contains exact external address, it should skip proxy",
 			noProxy:  "localhost,127.0.0.1," + externalAddress,
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains exact internal address it should skip proxy",
+			name:     "When noProxy contains exact internal address, it should skip proxy",
 			noProxy:  "localhost,127.0.0.1," + internalAddress,
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains leading-dot domain matching external address it should skip proxy",
+			name:     "When noProxy contains leading-dot domain matching external address, it should skip proxy",
 			noProxy:  "localhost,.example.com",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains bare parent domain matching external address it should skip proxy",
+			name:     "When noProxy contains bare parent domain matching external address, it should skip proxy",
 			noProxy:  "localhost,example.com",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains leading-dot partial domain matching external address it should skip proxy",
+			name:     "When noProxy contains leading-dot partial domain matching external address, it should skip proxy",
 			noProxy:  "localhost,.test.example.com",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains CIDR covering internal address it should skip proxy",
+			name:     "When noProxy contains CIDR covering internal address, it should skip proxy",
 			noProxy:  "localhost,172.16.0.0/12",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains kubernetes keyword it should skip proxy",
+			name:     "When noProxy contains kubernetes keyword, it should skip proxy",
 			noProxy:  "localhost,kubernetes.svc,127.0.0.1",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains exact service network CIDR it should skip proxy",
+			name:     "When noProxy contains exact service network CIDR, it should skip proxy",
 			noProxy:  "localhost," + serviceNetwork,
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains exact cluster network CIDR it should skip proxy",
+			name:     "When noProxy contains exact cluster network CIDR, it should skip proxy",
 			noProxy:  "localhost," + clusterNetwork,
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains wildcard it should skip proxy",
+			name:     "When noProxy contains wildcard, it should skip proxy",
 			noProxy:  "*",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains unrelated entries it should not skip proxy",
+			name:     "When noProxy contains unrelated entries, it should not skip proxy",
 			noProxy:  "localhost,127.0.0.1,.other-domain.com,192.168.0.0/16",
 			expected: false,
 		},
 		{
-			name:     "When noProxy has extra whitespace around entries it should still match",
+			name:     "When noProxy has extra whitespace around entries, it should still match",
 			noProxy:  " localhost , .example.com , 127.0.0.1 ",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains port-qualified domain matching KAS port it should skip proxy",
+			name:     "When noProxy contains port-qualified domain matching KAS port, it should skip proxy",
 			noProxy:  "localhost,api.test.example.com:6443",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains port-qualified IP matching KAS port it should skip proxy",
+			name:     "When noProxy contains port-qualified IP matching KAS port, it should skip proxy",
 			noProxy:  "localhost,172.20.0.1:6443",
 			expected: true,
 		},
 		{
-			name:     "When noProxy contains port-qualified domain with non-matching port it should not skip proxy",
+			name:     "When noProxy contains port-qualified domain with non-matching port, it should not skip proxy",
 			noProxy:  "localhost,api.test.example.com:8080",
 			expected: false,
 		},
@@ -548,22 +548,22 @@ func TestJoinDefaultPortIfMissing(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:     "When HTTPS URL has no port it should add port 443",
+			name:     "When HTTPS URL has no port, it should add port 443",
 			addr:     "https://proxy.example.com",
 			expected: "https://proxy.example.com:443",
 		},
 		{
-			name:     "When HTTP URL has no port it should add port 80",
+			name:     "When HTTP URL has no port, it should add port 80",
 			addr:     "http://proxy.example.com",
 			expected: "http://proxy.example.com:80",
 		},
 		{
-			name:     "When HTTPS URL already has a port it should keep existing port",
+			name:     "When HTTPS URL already has a port, it should keep existing port",
 			addr:     "https://proxy.example.com:8443",
 			expected: "https://proxy.example.com:8443",
 		},
 		{
-			name:    "When URL has no scheme it should return an error",
+			name:    "When URL has no scheme, it should return an error",
 			addr:    "proxy.example.com",
 			wantErr: true,
 		},

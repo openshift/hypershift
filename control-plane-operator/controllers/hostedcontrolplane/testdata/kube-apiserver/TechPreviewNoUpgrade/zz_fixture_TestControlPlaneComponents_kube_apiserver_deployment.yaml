@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 33e473d21500f85f0a5f9811f68b2f28da18c75f836bf74bc5ba466341669dce
+    hypershift.openshift.io/desired-state-hash: 8156037aa6470d1020585eb8b84d4c49691b677314f0857a5c1b6f28674060c3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -96,22 +96,21 @@ spec:
         image: hyperkube
         imagePullPolicy: IfNotPresent
         livenessProbe:
-          failureThreshold: 6
+          failureThreshold: 3
           httpGet:
             path: livez?exclude=etcd
             port: client
             scheme: HTTPS
-          initialDelaySeconds: 300
-          periodSeconds: 180
+          periodSeconds: 60
           successThreshold: 1
-          timeoutSeconds: 160
+          timeoutSeconds: 30
         name: kube-apiserver
         ports:
         - containerPort: 6443
           name: client
           protocol: TCP
         readinessProbe:
-          failureThreshold: 18
+          failureThreshold: 6
           httpGet:
             path: readyz
             port: client
@@ -125,6 +124,14 @@ spec:
             memory: 2Gi
         securityContext:
           readOnlyRootFilesystem: true
+        startupProbe:
+          failureThreshold: 36
+          httpGet:
+            path: readyz
+            port: client
+            scheme: HTTPS
+          periodSeconds: 10
+          timeoutSeconds: 10
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-ca
@@ -496,6 +503,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 10
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 10
       volumes:
       - emptyDir: {}
         name: bootstrap-manifests

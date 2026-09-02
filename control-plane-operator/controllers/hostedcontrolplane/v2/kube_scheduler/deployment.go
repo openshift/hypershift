@@ -19,8 +19,17 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return err
 	}
 	configuration := cpContext.HCP.Spec.Configuration
+
+	tlsArgs, err := config.TLSArgs(configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		c.Args = append(c.Args, config.TLSArgs(configuration.GetTLSSecurityProfile())...)
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
+		}
+
 		if util.StringListContains(cpContext.HCP.Annotations[hyperv1.DisableProfilingAnnotation], ComponentName) {
 			c.Args = append(c.Args, "--profiling=false")
 		}
@@ -31,7 +40,16 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, fmt.Sprintf("--policy-config-map=%s", configuration.Scheduler.Policy.Name))
 			c.Args = append(c.Args, fmt.Sprintf("--policy-config-namespace=%s", cpContext.HCP.Namespace))
 		}
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveSchedulerVerbosity(cpContext.HCP)))
 	})
 
 	return nil
+}
+
+func resolveSchedulerVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel
+	}
+	return util.LogLevelToKlogVerbosity(level)
 }

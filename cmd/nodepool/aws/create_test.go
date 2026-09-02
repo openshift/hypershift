@@ -17,14 +17,14 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 		args []string
 	}{
 		{
-			name: "minimal configuration",
+			name: "When minimal configuration is provided, it should generate correct nodepool",
 			args: []string{
 				"--instance-type=m5.large",
 				"--subnet-id=subnet-test123",
 			},
 		},
 		{
-			name: "full configuration",
+			name: "When full configuration is provided, it should generate correct nodepool",
 			args: []string{
 				"--instance-type=m5.xlarge",
 				"--subnet-id=subnet-test456",
@@ -37,7 +37,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 			},
 		},
 		{
-			name: "custom root volume configuration",
+			name: "When custom root volume configuration is provided, it should generate correct nodepool",
 			args: []string{
 				"--instance-type=m6g.large",
 				"--subnet-id=subnet-arm64",
@@ -140,9 +140,9 @@ func TestValidate_When_root_volume_size_is_valid_it_should_succeed(t *testing.T)
 		name string
 		size int64
 	}{
-		{"minimum size", 8},
-		{"default size", 120},
-		{"large size", 1000},
+		{"When size is minimum it should succeed", 8},
+		{"When size is default it should succeed", 120},
+		{"When size is large it should succeed", 1000},
 	}
 
 	for _, tc := range testCases {

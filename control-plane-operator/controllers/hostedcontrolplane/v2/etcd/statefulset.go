@@ -11,6 +11,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	util "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -24,12 +25,16 @@ import (
 
 // minTLSVersion assesses what is the minimum TLS version we should use. This
 // function takes into account that etcd supports only 1.2 and 1.3.
-func minTLSVersion(profile *configv1.TLSSecurityProfile) tlsutil.TLSVersion {
-	switch config.MinTLSVersion(profile) {
+func minTLSVersion(profile *configv1.TLSSecurityProfile) (tlsutil.TLSVersion, error) {
+	minVer, err := config.MinTLSVersion(profile)
+	if err != nil {
+		return "", err
+	}
+	switch minVer {
 	case string(configv1.VersionTLS13):
-		return tlsutil.TLSVersion13
+		return tlsutil.TLSVersion13, nil
 	default:
-		return tlsutil.TLSVersion12
+		return tlsutil.TLSVersion12, nil
 	}
 }
 
@@ -46,8 +51,15 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	// assess what is the min tls version to be used and also the list of
 	// cipher suites. if the cipher list is empty then the go default's
 	// cipher will be used.
-	tlsMinVersion := minTLSVersion(profile)
-	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, config.CipherSuites(profile))
+	tlsMinVersion, err := minTLSVersion(profile)
+	if err != nil {
+		return fmt.Errorf("failed to get min TLS version: %w", err)
+	}
+	ciphers, err := config.CipherSuites(profile)
+	if err != nil {
+		return fmt.Errorf("failed to get cipher suites: %w", err)
+	}
+	cipherSuites := config.SupportedEtcdCipherSuites(cpContext, ciphers)
 
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
@@ -89,6 +101,14 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 				Value: "https://[::]:2382",
 			})
 		}
+		var etcdLogLevel hyperv1.LogLevel
+		if hcp.Spec.OperatorConfiguration != nil {
+			etcdLogLevel = hcp.Spec.OperatorConfiguration.Etcd.LogLevel
+		}
+		podspec.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "ETCD_LOG_LEVEL",
+			Value: util.LogLevelToEtcdLevel(etcdLogLevel),
+		})
 	})
 
 	podspec.UpdateContainer("etcd-metrics", sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {

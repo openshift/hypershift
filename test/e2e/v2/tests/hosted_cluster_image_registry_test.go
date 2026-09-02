@@ -47,19 +47,13 @@ func RegisterHostedClusterImageRegistryTests(getTestCtx internal.TestContextGett
 // (waiting for the ClusterOperator to become Available) fails, all subsequent specs are
 // automatically skipped.
 func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
-	var (
-		tc                  *internal.TestContext
-		hc                  *hyperv1.HostedCluster
-		hostedClusterClient crclient.Client
-	)
+	var tc *internal.TestContext
 
 	When("the ImageRegistry capability is enabled", Ordered, func() {
 		BeforeAll(func() {
 			tc = getTestCtx()
-			hc = tc.GetHostedCluster()
-			if hc == nil {
-				Skip("HostedCluster is not available")
-			}
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 			if hc.Spec.Capabilities != nil {
 				for _, disabled := range hc.Spec.Capabilities.Disabled {
 					if disabled == hyperv1.ImageRegistryCapability {
@@ -67,11 +61,14 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 					}
 				}
 			}
-			hostedClusterClient = tc.GetHostedClusterClient()
-			Expect(hostedClusterClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
 		})
 
 		It("should have a healthy image-registry ClusterOperator", func() {
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("waiting for the image-registry ClusterOperator to be Available and not Degraded")
 			Eventually(func(g Gomega) {
 				co := &configv1.ClusterOperator{}
@@ -99,6 +96,11 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should have installer-cloud-credentials in the hosted cluster", func() {
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+
 			secret := &corev1.Secret{}
 			Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{
 				Namespace: "openshift-image-registry",
@@ -109,6 +111,11 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should have storage configured in the registry config", func() {
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+
 			config := &imageregistryv1.Config{}
 			Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, config)).To(Succeed())
 
@@ -139,9 +146,9 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 			var imageRegistryEmail string
 
 			BeforeEach(func() {
-				if hc == nil || hc.Spec.Platform.Type != hyperv1.GCPPlatform {
-					Skip("image registry GCP tests are only for GCP platform")
-				}
+				tc.SkipIfNotPlatform(hyperv1.GCPPlatform)
+				hc, err := tc.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
 				Expect(hc.Spec.Platform.GCP).NotTo(BeNil(),
 					"GCP platform spec must be set for GCP HostedCluster %s/%s", hc.Namespace, hc.Name)
 				Expect(hc.Spec.Platform.GCP.WorkloadIdentity).NotTo(BeNil(),
@@ -153,6 +160,11 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			It("should use GCS storage with a bucket name", func() {
+				hc, err := tc.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
+				hostedClusterClient, err := tc.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
+
 				config := &imageregistryv1.Config{}
 				Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, config)).To(Succeed())
 				Expect(config.Spec.Storage.GCS).NotTo(BeNil(),
@@ -162,6 +174,11 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			It("should have valid WIF credentials in installer-cloud-credentials", func() {
+				hc, err := tc.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
+				hostedClusterClient, err := tc.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred())
+
 				secret := &corev1.Secret{}
 				Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{
 					Namespace: "openshift-image-registry",
@@ -190,10 +207,8 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 
 		BeforeEach(func() {
 			tc = getTestCtx()
-			hc := tc.GetHostedCluster()
-			if hc == nil {
-				Skip("HostedCluster is not available")
-			}
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
 
 			isDisabled := false
 			if hc.Spec.Capabilities != nil {
@@ -208,8 +223,8 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 				Skip("ImageRegistry capability is not disabled on this HostedCluster")
 			}
 
-			hostedClusterClient = tc.GetHostedClusterClient()
-			Expect(hostedClusterClient).NotTo(BeNil(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
+			hostedClusterClient, err = tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should not have the image-registry ClusterOperator", func() {
@@ -285,8 +300,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ImageRegistry] Hoste
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-
-		testCtx.ValidateHostedCluster()
 	})
 
 	RegisterHostedClusterImageRegistryTests(func() *internal.TestContext { return testCtx })

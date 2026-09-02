@@ -105,7 +105,7 @@ These checks only run when relevant files change:
 |------------|-------------|-----------------|
 | **Envtest OCP API Validation** | `api/`, `test/envtest/`, CRD test assets | `FAIL` with the test name — see `test/envtest/README.md` for details |
 | **Envtest Vanilla Kube API Validation** | Same as above | Same as above |
-| **Docs Build** | `docs/**` changes | MkDocs build errors — usually a broken link or YAML syntax error |
+| **Docs Build** | `docs/**` changes | Zensical build errors — usually a broken link or YAML syntax error |
 | **Validate CPO Overrides** | `hypershift-operator/controlplaneoperator-overrides/assets/overrides.yaml` changes | Validation error for the CPO overrides file |
 | **gocacheprog Tests** | `contrib/ci/gocacheprog/**` changes | `FAIL` with the test name |
 
@@ -213,8 +213,8 @@ Konflux checks appear as `Red Hat Konflux / <component>-on-pull-request` or `Red
 |---------------|-------------|
 | `hypershift-operator-main-on-pull-request` | Builds the hypershift-operator image via Konflux |
 | `control-plane-operator-main-on-pull-request` | Builds the control-plane-operator image |
-| `hypershift-cli-mce-50-on-pull-request` | Builds the hypershift CLI image |
-| `hypershift-release-mce-50-on-pull-request` | Builds the release image |
+| `hypershift-cli-mce-51-on-pull-request` | Builds the hypershift CLI image |
+| `hypershift-release-mce-51-on-pull-request` | Builds the release image |
 | `enterprise-contract-*` | Validates image provenance and policy compliance |
 
 Common causes:

@@ -935,7 +935,7 @@ func TestTransportForCARef(t *testing.T) {
 		expectedProxyRequestURL string
 	}{
 		{
-			name: "When no proxy configuration is provided, the transport should not be modified",
+			name: "When no proxy configuration is provided, it should not modify the transport",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp-test",
@@ -947,7 +947,7 @@ func TestTransportForCARef(t *testing.T) {
 			expectedProxyRequestURL: "",
 		},
 		{
-			name: "When proxy configuration is provided, the transport should use proxy",
+			name: "When proxy configuration is provided, it should use proxy for the transport",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp-test",
@@ -971,7 +971,7 @@ func TestTransportForCARef(t *testing.T) {
 			expectedProxyRequestURL: "https://10.0.0.1",
 		},
 		{
-			name: "When proxy configuration is provided and request is to ignored url, the transport should not use proxy",
+			name: "When proxy configuration is provided and request is to ignored url, it should not use proxy for the transport",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp-test",

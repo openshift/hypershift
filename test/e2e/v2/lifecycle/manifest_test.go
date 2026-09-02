@@ -13,7 +13,7 @@ func TestManifestRoundTrip(t *testing.T) {
 		want *ClusterManifest
 	}{
 		{
-			name: "when written with a single cluster should deserialize identically",
+			name: "When written with a single cluster, it should deserialize identically",
 			want: &ClusterManifest{
 				Clusters: []ClusterEntry{
 					{Variant: "public", Name: "public-abc1234567", InfraID: "public-abc1234567", Namespace: "clusters"},
@@ -21,7 +21,7 @@ func TestManifestRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name: "when written with multiple clusters should deserialize identically",
+			name: "When written with multiple clusters, it should deserialize identically",
 			want: &ClusterManifest{
 				Clusters: []ClusterEntry{
 					{Variant: "public", Name: "public-abc1234567", InfraID: "public-abc1234567", Namespace: "clusters"},
@@ -64,7 +64,7 @@ func TestResolveVariants(t *testing.T) {
 		wantError bool
 	}{
 		{
-			name: "when all parallel variants exist should return resolved map",
+			name: "When all parallel variants exist, it should return resolved map",
 			matrix: TestMatrix{
 				Parallel: []TestGroup{
 					{Variant: "public"},
@@ -77,7 +77,7 @@ func TestResolveVariants(t *testing.T) {
 			},
 		},
 		{
-			name: "when sequential variants exist should return resolved map",
+			name: "When sequential variants exist, it should return resolved map",
 			matrix: TestMatrix{
 				Sequential: []SequentialGroup{
 					{Steps: []TestGroup{{Variant: "public"}, {Variant: "private"}}},
@@ -89,7 +89,7 @@ func TestResolveVariants(t *testing.T) {
 			},
 		},
 		{
-			name: "when a parallel variant is missing should return an error",
+			name: "When a parallel variant is missing, it should return an error",
 			matrix: TestMatrix{
 				Parallel: []TestGroup{
 					{Variant: "public"},
@@ -99,7 +99,7 @@ func TestResolveVariants(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name: "when a sequential variant is missing should return an error",
+			name: "When a sequential variant is missing, it should return an error",
 			matrix: TestMatrix{
 				Sequential: []SequentialGroup{
 					{Steps: []TestGroup{{Variant: "nonexistent"}}},
@@ -108,7 +108,7 @@ func TestResolveVariants(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name: "when duplicate variants exist across parallel and sequential should deduplicate",
+			name: "When duplicate variants exist across parallel and sequential, it should deduplicate",
 			matrix: TestMatrix{
 				Parallel:   []TestGroup{{Variant: "public"}},
 				Sequential: []SequentialGroup{{Steps: []TestGroup{{Variant: "public"}}}},

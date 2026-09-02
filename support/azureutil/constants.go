@@ -25,3 +25,16 @@ const (
 	// PEConnectionStateRejected indicates a Private Endpoint connection has been rejected.
 	PEConnectionStateRejected = "Rejected"
 )
+
+const (
+	azurePublicKeyVaultDNSSuffix       = "vault.azure.net"
+	azurePublicManagedHSMDNSSuffix     = "managedhsm.azure.net"
+	azureGovernmentKeyVaultDNSSuffix   = "vault.usgovcloudapi.net"
+	azureGovernmentManagedHSMDNSSuffix = "managedhsm.usgovcloudapi.net"
+	azureChinaKeyVaultDNSSuffix        = "vault.azure.cn"
+	azureChinaManagedHSMDNSSuffix      = "managedhsm.azure.cn"
+	azureGermanKeyVaultDNSSuffix       = "vault.microsoftazure.de"
+	azureGermanManagedHSMDNSSuffix     = "managedhsm.microsoftazure.de"
+	azureBleuKeyVaultDNSSuffix         = "vault.sovcloud-api.fr"
+	azureBleuManagedHSMDNSSuffix       = "managedhsm.sovcloud-api.fr"
+)

@@ -93,7 +93,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "When a multi-arch release is passed, the function should return no errors",
+			name: "When a multi-arch release is passed, it should return no errors",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-multi",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
@@ -103,7 +103,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When no release image was passed and a valid multi-arch stream is passed, the function should return no errors",
+			name: "When no release image is provided and a valid multi-arch stream is passed, it should return no errors",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
@@ -113,7 +113,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When a single arch release is passed and the NodePool arch matches the arch of the release, the function should return no errors",
+			name: "When a single arch release is passed and the NodePool arch matches the release arch, it should return no errors",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
@@ -123,7 +123,7 @@ func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When a single arch release is passed and the NodePool arch doesn't match the arch of the release, the function should return an error",
+			name: "When a single arch release is passed and the NodePool arch doesn't match the release arch, it should return an error",
 			opts: &RawCreateOptions{
 				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64",
 				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
@@ -1785,7 +1785,7 @@ func TestValidateClusterExistence(t *testing.T) {
 		expectError bool
 		errorMsg    string
 	}{
-		"When the cluster does not exist it should succeed": {
+		"When the cluster does not exist, it should succeed": {
 			opts: &RawCreateOptions{
 				Namespace: "test-ns",
 				Name:      "test-cluster",
@@ -1793,7 +1793,7 @@ func TestValidateClusterExistence(t *testing.T) {
 			client:      fake.NewClientBuilder().WithScheme(scheme).Build(),
 			expectError: false,
 		},
-		"When the cluster already exists it should return an error": {
+		"When the cluster already exists, it should return an error": {
 			opts: &RawCreateOptions{
 				Namespace: "test-ns",
 				Name:      "test-cluster",
@@ -1809,7 +1809,7 @@ func TestValidateClusterExistence(t *testing.T) {
 			expectError: true,
 			errorMsg:    "already exists",
 		},
-		"When the API server returns a transient timeout it should retry and succeed": {
+		"When the API server returns a transient timeout, it should retry and succeed": {
 			opts: &RawCreateOptions{
 				Namespace: "test-ns",
 				Name:      "test-cluster",
@@ -1817,7 +1817,7 @@ func TestValidateClusterExistence(t *testing.T) {
 			client:      &transientErrorClient{callsBeforeSuccess: 2, scheme: scheme},
 			expectError: false,
 		},
-		"When the API server returns persistent timeouts it should eventually fail": {
+		"When the API server returns persistent timeouts, it should eventually fail": {
 			opts: &RawCreateOptions{
 				Namespace: "test-ns",
 				Name:      "test-cluster",
@@ -1826,7 +1826,7 @@ func TestValidateClusterExistence(t *testing.T) {
 			expectError: true,
 			errorMsg:    "hostedcluster doesn't exist validation failed",
 		},
-		"When the API server returns a forbidden error it should fail immediately without retry": {
+		"When the API server returns a forbidden error, it should fail immediately without retry": {
 			opts: &RawCreateOptions{
 				Namespace: "test-ns",
 				Name:      "test-cluster",
@@ -1835,7 +1835,7 @@ func TestValidateClusterExistence(t *testing.T) {
 			expectError: true,
 			errorMsg:    "forbidden",
 		},
-		"When the API server returns a service unavailable error it should retry and succeed": {
+		"When the API server returns a service unavailable error, it should retry and succeed": {
 			opts: &RawCreateOptions{
 				Namespace: "test-ns",
 				Name:      "test-cluster",
@@ -1843,7 +1843,7 @@ func TestValidateClusterExistence(t *testing.T) {
 			client:      &transientErrorClient{callsBeforeSuccess: 2, scheme: scheme, errFunc: func() error { return apierrors.NewServiceUnavailable("service unavailable") }},
 			expectError: false,
 		},
-		"When the API server times out then finds the cluster exists it should return already exists": {
+		"When the API server times out then finds the cluster exists, it should return already exists": {
 			opts: &RawCreateOptions{
 				Namespace: "test-ns",
 				Name:      "test-cluster",

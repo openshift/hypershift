@@ -15,17 +15,17 @@ func TestSchedulerResourceRelabelConfigs(t *testing.T) {
 		want int
 	}{
 		{
-			name: "When using Telemetry metrics set it should return a drop-all relabel config",
+			name: "When using Telemetry metrics set, it should return a drop-all relabel config",
 			set:  MetricsSetTelemetry,
 			want: 1,
 		},
 		{
-			name: "When using SRE metrics set it should return SRE config",
+			name: "When using SRE metrics set, it should return SRE config",
 			set:  MetricsSetSRE,
 			want: 0,
 		},
 		{
-			name: "When using All metrics set it should return nil",
+			name: "When using All metrics set, it should return nil",
 			set:  MetricsSetAll,
 			want: 0,
 		},

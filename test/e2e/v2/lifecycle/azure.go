@@ -10,12 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -110,37 +113,55 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+	// Parse EXTRA_ARGS from environment if provided
+	var extraArgs []string
+	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
+		extraArgs = strings.Fields(envArgs)
+	}
+
 	var publicExtraArgs []string
 	if a.encryptionKeyID != "" {
 		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
 	}
+	publicExtraArgs = append(publicExtraArgs, extraArgs...)
+
+	oneInitialReplica := 1
+	twoInitialReplicas := 2
 
 	return []ClusterSpec{
 		{
-			Variant:   "public",
-			ExtraArgs: publicExtraArgs,
+			Variant:                 "public",
+			ExtraArgs:               publicExtraArgs,
+			InitialNodePoolReplicas: &twoInitialReplicas,
 		},
 		{
-			Variant: "private",
-			ExtraArgs: []string{
+			Variant:                 "private",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs: append([]string{
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-			},
+			}, extraArgs...),
 		},
 		{
-			Variant:   "oauth-lb",
-			ExtraArgs: []string{"--oauth-publishing-strategy=LoadBalancer"},
+			Variant:                 "oauth-lb",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
 		},
 		{
-			Variant:      "upgrade",
-			ReleaseImage: n1Image,
-			ExtraArgs:    []string{"--control-plane-availability-policy=HighlyAvailable"},
+			Variant:                 "upgrade",
+			ReleaseImage:            n1Image,
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			ExtraArgs:               append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
 		},
 		{
-			Variant: "autoscaling",
+			Variant:                 "autoscaling",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               extraArgs,
 		},
 		{
-			Variant: "external-oidc",
+			Variant:                 "external-oidc",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               extraArgs,
 		},
 	}
 }
@@ -321,39 +342,42 @@ func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crc
 	return nil
 }
 
-func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+func (a *AzurePlatformConfig) DefaultTestPlan() TestPlan {
+	return TestPlan{
+		Name:       "azure-full",
+		Platform:   "azure",
+		TestMatrix: a.TestMatrix(),
+	}
+}
+
+func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
 				Name:        "public",
 				Variant:     "public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || secret-encryption || control-plane-workloads || hosted-cluster-security",
+				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
 				Skip:        "KAS allowed CIDRs",
-				JUnitFile:   "junit_self_managed_azure_public.xml",
 			},
 			{
 				Name:        "private",
 				Variant:     "private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || nodepool-osimagestream",
-				JUnitFile:   "junit_self_managed_azure_private.xml",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
 			},
 			{
 				Name:        "oauth-lb",
 				Variant:     "oauth-lb",
 				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
-				JUnitFile:   "junit_self_managed_azure_oauth_lb.xml",
 			},
 			{
 				Name:        "autoscaling",
 				Variant:     "autoscaling",
 				LabelFilter: "nodepool-autoscaling",
-				JUnitFile:   "junit_self_managed_azure_nodepool_autoscaling.xml",
 			},
 			{
 				Name:        "external-oidc",
 				Variant:     "external-oidc",
 				LabelFilter: "external-oidc || global-pull-secret",
-				JUnitFile:   "junit_self_managed_azure_external_oidc.xml",
 			},
 		},
 		Sequential: []SequentialGroup{
@@ -364,14 +388,16 @@ func (a *AzurePlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 						Name:        "upgrade",
 						Variant:     "upgrade",
 						LabelFilter: "control-plane-upgrade",
-						JUnitFile:   "junit_lifecycle_upgrade.xml",
-						ExtraEnv:    []string{fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE=%s", releaseImage)},
+					},
+					{
+						Name:        "control-plane-tls",
+						Variant:     "upgrade",
+						LabelFilter: "control-plane-pki-operator",
 					},
 					{
 						Name:        "etcd-chaos",
 						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
-						JUnitFile:   "junit_lifecycle_etcd_chaos.xml",
 					},
 				},
 			},
@@ -405,7 +431,6 @@ func (a *AzurePlatformConfig) DestroyArgs() []string {
 		"--dns-zone-rg-name=" + a.dnsZoneRG,
 	}
 }
-
 
 func envOrDefault(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {

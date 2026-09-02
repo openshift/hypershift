@@ -221,9 +221,9 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	if err != nil {
 		return fmt.Errorf("failed to parse additional tags: %w", err)
 	}
-	var tags []hyperv1.AWSResourceTag
+	var tags []hyperv1.AWSClusterResourceTag
 	for k, v := range tagMap {
-		tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+		tags = append(tags, hyperv1.AWSClusterResourceTag{Key: k, Value: v})
 	}
 
 	cluster.Spec.InfraID = o.infra.InfraID

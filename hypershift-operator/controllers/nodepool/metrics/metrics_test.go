@@ -22,7 +22,9 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -431,6 +433,46 @@ func TestCollectConcurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestCollect(t *testing.T) {
+	t.Run("When a cache read is blocked, it should stop collecting after the cache read timeout", func(t *testing.T) {
+		g := NewWithT(t)
+		var deadlineSeen bool
+		var listErr error
+
+		blockedClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+					_, deadlineSeen = ctx.Deadline()
+					<-ctx.Done()
+					listErr = ctx.Err()
+					return listErr
+				},
+			}).
+			Build()
+
+		collector := createNodePoolsMetricsCollector(blockedClient, nil, clock.RealClock{}).(*nodePoolsMetricsCollector)
+		collector.cacheReadTimeout = 10 * time.Millisecond
+
+		ch := make(chan prometheus.Metric)
+		done := make(chan struct{})
+		go func() {
+			for range ch {
+			}
+			close(done)
+		}()
+
+		start := time.Now()
+		collector.Collect(ch)
+		close(ch)
+		<-done
+
+		g.Expect(deadlineSeen).To(BeTrue())
+		g.Expect(listErr).To(MatchError(context.DeadlineExceeded))
+		g.Expect(time.Since(start)).To(BeNumerically("<", time.Second))
+	})
 }
 
 // drainVCpuValue reads all metrics from a closed channel and returns the

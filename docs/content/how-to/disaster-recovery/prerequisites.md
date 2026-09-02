@@ -127,4 +127,4 @@ hypershift fix dr-oidc-iam \
   --aws-creds ~/.aws/credentials
 ```
 
-This re-uploads the OIDC discovery documents using the existing cluster signing key and recreates the IAM OIDC provider if needed. See the [AWS Disaster Recovery](../aws/disaster-recovery.md#fixing-oidc-identity-provider-after-oadp-restore) documentation for full details.
+This re-uploads the OIDC discovery documents using the existing cluster signing key and recreates the IAM OIDC provider if needed. See the [AWS Platform Guide](platform-guides/aws.md#fixing-oidc-after-restore) for full details.

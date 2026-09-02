@@ -14,8 +14,10 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
 	capzv1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -23,12 +25,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func TestDestroyCluster(t *testing.T) {
 	t.Run("When HostedCluster is nil and platform specifics provided it should call destroyPlatformSpecifics", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
 
 		platformSpecificsCalled := false
 		var receivedOpts *DestroyOptions
@@ -50,7 +52,8 @@ func TestDestroyCluster(t *testing.T) {
 			},
 		}
 
-		err := DestroyCluster(context.Background(), nil, opts, mockPlatformSpecifics)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		err := destroyCluster(context.Background(), c, nil, opts, mockPlatformSpecifics)
 
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(platformSpecificsCalled).To(BeTrue())
@@ -60,7 +63,6 @@ func TestDestroyCluster(t *testing.T) {
 
 	t.Run("When kubeconfig is set it should use it for the client", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
 
 		platformSpecificsCalled := false
 		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
@@ -77,7 +79,90 @@ func TestDestroyCluster(t *testing.T) {
 			Log:                log.Log,
 		}
 
-		err := DestroyCluster(context.Background(), nil, opts, mockPlatformSpecifics)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		err := destroyCluster(context.Background(), c, nil, opts, mockPlatformSpecifics)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(platformSpecificsCalled).To(BeTrue())
+	})
+
+	t.Run("When destroying a hosted cluster with platform specifics, it should set the destroy finalizer and complete successfully", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		// Start with a realistic HC: operator's finalizer present, no destroy finalizer yet.
+		// setFinalizer() inside destroyCluster will add "openshift.io/destroy-cluster".
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:  "clusters",
+				Name:       "test-cluster",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID: "test-infra",
+			},
+		}
+
+		g.Expect(controllerutil.ContainsFinalizer(hc, destroyFinalizer)).To(BeFalse(),
+			"destroy finalizer should not be present before destroyCluster runs")
+
+		platformSpecificsCalled := false
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		}
+
+		opts := &DestroyOptions{
+			ClusterGracePeriod: 1 * time.Second,
+			Name:               "test-cluster",
+			Namespace:          "clusters",
+			InfraID:            "test-infra",
+			Log:                log.Log,
+		}
+
+		// Fake client store is intentionally empty — removeFinalizer() will get
+		// NotFound (the operator has already cleaned up) and return nil.
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		err := destroyCluster(context.Background(), c, hc, opts, mockPlatformSpecifics)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(platformSpecificsCalled).To(BeTrue())
+		// setFinalizer() should have added the destroy finalizer during the flow.
+		// removeFinalizer() handles it (returns nil on NotFound since the fake
+		// client has no HC in its store, which is the expected path when the
+		// operator has already cleaned up).
+		g.Expect(controllerutil.ContainsFinalizer(hc, destroyFinalizer)).To(BeTrue(),
+			"destroy finalizer should have been set by setFinalizer()")
+	})
+
+	t.Run("When deleteCLISecrets fails it should log and continue", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				DeleteAllOf: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteAllOfOption) error {
+					if _, ok := obj.(*corev1.Secret); ok {
+						return apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "", fmt.Errorf("access denied"))
+					}
+					return cl.DeleteAllOf(ctx, obj, opts...)
+				},
+			}).
+			Build()
+
+		platformSpecificsCalled := false
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		}
+
+		opts := &DestroyOptions{
+			ClusterGracePeriod: 1 * time.Second,
+			Name:               "test-cluster",
+			Namespace:          "clusters",
+			InfraID:            "test-infra",
+			Log:                log.Log,
+		}
+
+		err := destroyCluster(context.Background(), c, nil, opts, mockPlatformSpecifics)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(platformSpecificsCalled).To(BeTrue())
 	})
@@ -102,6 +187,20 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 				Name:       "test-cluster-np1",
 				Namespace:  "clusters",
 				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "test-cluster",
+			},
+		}
+
+		unrelatedNodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "other-cluster-np1",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "other-cluster",
 			},
 		}
 
@@ -153,7 +252,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
-			WithObjects(hc, nodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, ns).
+			WithObjects(hc, nodePool, unrelatedNodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, ns).
 			Build()
 
 		opts := &DestroyOptions{
@@ -177,6 +276,12 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		err = c.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "test-cluster-np1"}, updatedNP)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updatedNP.Finalizers).To(BeEmpty())
+
+		// Verify unrelated NodePool finalizers are preserved
+		unrelatedNP := &hyperv1.NodePool{}
+		err = c.Get(ctx, types.NamespacedName{Namespace: "clusters", Name: "other-cluster-np1"}, unrelatedNP)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(unrelatedNP.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}))
 
 		// Verify HCP finalizers are gone
 		updatedHCP := &hyperv1.HostedControlPlane{}
@@ -327,6 +432,52 @@ func TestStripFinalizersFromList(t *testing.T) {
 
 		errs := stripFinalizersFromList(ctx, c, &capzv1.AzureMachineList{}, "test-ns", log.Log)
 		g.Expect(errs).To(BeEmpty())
+	})
+}
+
+func TestStripNodePoolFinalizers(t *testing.T) {
+	t.Run("When NodePools belong to different HostedClusters, it should only strip finalizers from matching NodePools", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster-np1",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "test-cluster",
+			},
+		}
+		unrelatedNodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "other-cluster-np1",
+				Namespace:  "clusters",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "other-cluster",
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(nodePool, unrelatedNodePool).
+			Build()
+
+		errs := stripNodePoolFinalizers(ctx, c, "clusters", "test-cluster", log.Log)
+		g.Expect(errs).To(BeEmpty())
+
+		updatedNodePool := &hyperv1.NodePool{}
+		err := c.Get(ctx, client.ObjectKeyFromObject(nodePool), updatedNodePool)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updatedNodePool.Finalizers).To(BeEmpty())
+
+		updatedUnrelatedNodePool := &hyperv1.NodePool{}
+		err = c.Get(ctx, client.ObjectKeyFromObject(unrelatedNodePool), updatedUnrelatedNodePool)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updatedUnrelatedNodePool.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}))
 	})
 }
 

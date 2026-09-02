@@ -22,7 +22,7 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 		imageVersion   string
 	}{
 		{
-			name: "happy case - versions are valid",
+			name: "When versions are valid, it should not return an error",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -47,7 +47,7 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 			imageVersion: "4.16.0",
 		},
 		{
-			name: "wrong json",
+			name: "When JSON annotation is invalid, it should return an error",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -103,7 +103,7 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 		imageVersion   string
 	}{
 		{
-			name: "happy case - versions are valid",
+			name: "When versions are valid, it should not return an error",
 			oldHC: &v1beta1.HostedCluster{
 				Spec: v1beta1.HostedClusterSpec{
 					Release: v1beta1.Release{
@@ -133,7 +133,7 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 			imageVersion: "4.16.0",
 		},
 		{
-			name: "wrong json",
+			name: "When JSON annotation is invalid, it should return an error",
 			oldHC: &v1beta1.HostedCluster{
 				Spec: v1beta1.HostedClusterSpec{
 					Release: v1beta1.Release{
@@ -191,19 +191,19 @@ func TestValidateJsonAnnotation(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "no annotation",
+			name:        "When no annotation is present, it should not return an error",
 			annotations: nil,
 			expectError: false,
 		},
 		{
-			name: "valid annotation",
+			name: "When annotation is valid, it should not return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}]`,
 			},
 			expectError: false,
 		},
 		{
-			name: "valid remove without value",
+			name: "When remove operation has no value, it should not return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "remove","path": "/spec/template/metadata/annotations/kubevirt.io~1allow-pod-bridge-network-live-migration"}]`,
 			},
@@ -211,42 +211,42 @@ func TestValidateJsonAnnotation(t *testing.T) {
 		},
 
 		{
-			name: "not an array",
+			name: "When annotation is not an array, it should return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}`,
 			},
 			expectError: true,
 		},
 		{
-			name: "corrupted json",
+			name: "When JSON is corrupted, it should return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}`,
 			},
 			expectError: true,
 		},
 		{
-			name: "missing op",
+			name: "When op field is missing, it should return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"path": "/spec/domain/cpu/cores","value": 3}]`,
 			},
 			expectError: true,
 		},
 		{
-			name: "missing path",
+			name: "When path field is missing, it should return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "replace","value": 3}]`,
 			},
 			expectError: true,
 		},
 		{
-			name: "missing value",
+			name: "When value field is missing, it should return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores"}]`,
 			},
 			expectError: true,
 		},
 		{
-			name: "bad operation",
+			name: "When operation type is invalid, it should return an error",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "delete","path": "/spec/domain/cpu/cores", "value": "1"}]`,
 			},
@@ -278,7 +278,7 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 		imageVersion   string
 	}{
 		{
-			name: "happy case - versions are valid",
+			name: "When versions are valid, it should not return an error",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -316,7 +316,7 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 			imageVersion: "4.16.0",
 		},
 		{
-			name: "wrong json",
+			name: "When JSON annotation is invalid, it should return an error",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -386,7 +386,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 		imageVersion   string
 	}{
 		{
-			name: "happy case - versions are valid",
+			name: "When versions are valid, it should not return an error",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -429,7 +429,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 			imageVersion: "4.16.0",
 		},
 		{
-			name: "wrong json",
+			name: "When JSON annotation is invalid, it should return an error",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -521,7 +521,7 @@ func TestKubevirtClusterServiceDefaulting(t *testing.T) {
 		expectedServices []v1beta1.ServicePublishingStrategyMapping
 	}{
 		{
-			name: "default services in webhook",
+			name: "When services are not specified it should default them",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -540,7 +540,7 @@ func TestKubevirtClusterServiceDefaulting(t *testing.T) {
 			expectedServices: core.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false, false),
 		},
 		{
-			name: "don't default when services already exist",
+			name: "When services already exist it should not override them",
 			hc: &v1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -594,7 +594,7 @@ func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
 		expectedUpgradeType v1beta1.UpgradeType
 	}{
 		{
-			name: "default upgrade type in webhook",
+			name: "When upgrade type is not specified it should default to Replace",
 			np: &v1beta1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",
@@ -612,7 +612,7 @@ func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
 			expectedUpgradeType: v1beta1.UpgradeTypeReplace,
 		},
 		{
-			name: "non default upgrade type in webhook",
+			name: "When upgrade type is InPlace it should not override it",
 			np: &v1beta1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster-under-test",

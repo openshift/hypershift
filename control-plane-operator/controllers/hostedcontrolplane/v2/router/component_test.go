@@ -28,7 +28,7 @@ func TestUseHCPRouter(t *testing.T) {
 		want     bool
 	}{
 		{
-			name: "When platform is IBMCloud it should return false",
+			name: "When platform is IBMCloud, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -39,7 +39,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When ARO Swift is enabled it should return true because the HCP router handles routing",
+			name: "When ARO Swift is enabled, it should return true because the HCP router handles routing",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -58,7 +58,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When ARO with no Swift annotation (CI) it should return false",
+			name: "When ARO with no Swift annotation (CI), it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -72,7 +72,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When NonePlatform has services exposed with Routes it should return true",
+			name: "When NonePlatform has services exposed with Routes, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -121,7 +121,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When AWS has private endpoint access it should return true",
+			name: "When AWS has private endpoint access, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -135,7 +135,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When AWS has public and private endpoint access with KAS LoadBalancer it should return true",
+			name: "When AWS has public and private endpoint access with KAS LoadBalancer, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -157,7 +157,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true, // Router infrastructure needed for internal routes
 		},
 		{
-			name: "When AWS has public and private endpoint access with KAS Route it should return true",
+			name: "When AWS has public and private endpoint access with KAS Route, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -182,7 +182,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When AWS has public endpoint access without DNS it should return false",
+			name: "When AWS has public endpoint access without DNS, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -196,7 +196,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When AWS has public endpoint access with DNS for APIServer it should return true",
+			name: "When AWS has public endpoint access with DNS for APIServer, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -221,7 +221,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When GCP has private endpoint access it should return true",
+			name: "When GCP has private endpoint access, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -235,7 +235,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When GCP has public and private endpoint access with KAS Route it should return true",
+			name: "When GCP has public and private endpoint access with KAS Route, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -260,7 +260,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When Agent platform has KAS LoadBalancer it should return false",
+			name: "When Agent platform has KAS LoadBalancer, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -282,7 +282,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: false, // Router infrastructure not needed when KAS uses LoadBalancer
 		},
 		{
-			name: "When Agent platform has KAS Route it should return true",
+			name: "When Agent platform has KAS Route, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -307,7 +307,7 @@ func TestUseHCPRouter(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When platform is None it should return false",
+			name: "When platform is None, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{

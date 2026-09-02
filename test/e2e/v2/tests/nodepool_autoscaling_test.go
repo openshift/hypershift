@@ -44,10 +44,10 @@ import (
 func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 	It("should scale up when workload increases and scale down when workload decreases", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
-
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 		ctx := testCtx.Context
 
 		// Find the default NodePool to copy platform config
@@ -58,7 +58,7 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 		// so the workload targets only this NodePool's nodes.
 		autoscalingLabel := map[string]string{"e2e-autoscaling-test": "scale-up-down"}
 		autoscalingNP := buildAutoscalingNodePool(defaultNP, 1, 3, autoscalingLabel)
-		err := testCtx.MgmtClient.Create(ctx, autoscalingNP)
+		err = testCtx.MgmtClient.Create(ctx, autoscalingNP)
 		Expect(err).NotTo(HaveOccurred(), "failed to create autoscaling NodePool")
 		GinkgoWriter.Printf("Created autoscaling NodePool %s with min=1, max=3\n", autoscalingNP.Name)
 
@@ -109,12 +109,13 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 	It("should balance pods across multiple autoscaling NodePools", func() {
 		testCtx := getTestCtx()
-		testCtx.ValidateHostedClusterClient()
 
-		e2eutil.GinkgoAtLeast(e2eutil.Version420)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		testCtx.SkipIfVersionBelow(e2eutil.Version420)
 
-		hc := testCtx.GetHostedCluster()
-		hcClient := testCtx.GetHostedClusterClient()
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
 
@@ -131,7 +132,7 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 			},
 			MaxFreeDifferenceRatioPercent: ptr.To[int32](70),
 		}
-		err := testCtx.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(originalHC))
+		err = testCtx.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(originalHC))
 		Expect(err).NotTo(HaveOccurred(), "failed to configure autoscaler on HostedCluster")
 		GinkgoWriter.Println("Configured HostedCluster autoscaling with Random expander")
 

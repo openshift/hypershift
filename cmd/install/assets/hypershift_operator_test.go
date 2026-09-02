@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
@@ -593,8 +594,24 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			deployment := test.inputBuildParameters.Build()
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(BeEquivalentTo(test.expectedArgs))
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
-			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
-			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(test.expectedEnvVars))
+			container := deployment.Spec.Template.Spec.Containers[0]
+			g.Expect(container.VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
+			g.Expect(container.Env).To(ContainElements(test.expectedEnvVars))
+			g.Expect(container.LivenessProbe.HTTPGet).To(Equal(&corev1.HTTPGetAction{
+				Path:   "/healthz",
+				Port:   intstr.FromInt(HypershiftOperatorHealthProbePort),
+				Scheme: corev1.URISchemeHTTP,
+			}))
+			g.Expect(container.ReadinessProbe.HTTPGet).To(Equal(&corev1.HTTPGetAction{
+				Path:   "/readyz",
+				Port:   intstr.FromInt(HypershiftOperatorHealthProbePort),
+				Scheme: corev1.URISchemeHTTP,
+			}))
+			g.Expect(container.Ports).To(ContainElement(corev1.ContainerPort{
+				Name:          "health",
+				ContainerPort: HypershiftOperatorHealthProbePort,
+				Protocol:      corev1.ProtocolTCP,
+			}))
 		})
 	}
 }
@@ -669,6 +686,16 @@ func TestExternalDNSDeployment_Build(t *testing.T) {
 				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=30m"))
 			},
 		},
+		"When AWS provider is used it should not include CRD source": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Provider = AWSExternalDNSProvider
+			},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				for _, arg := range args {
+					g.Expect(arg).NotTo(Equal("--source=crd"), "AWS provider should not include --source=crd")
+				}
+			},
+		},
 		"When Azure provider is used it should not include AWS zones cache duration arg": {
 			modify: func(d *ExternalDNSDeployment) {
 				d.Provider = AzureExternalDNSProvider
@@ -683,12 +710,14 @@ func TestExternalDNSDeployment_Build(t *testing.T) {
 				g.Expect(envVars).To(ContainElement(corev1.EnvVar{Name: "AZURE_SDK_MAX_RETRIES", Value: "5"}))
 			},
 		},
-		"When GCP provider is used it should not include AWS zones cache duration arg": {
+		"When GCP provider is used it should include CRD source and not include AWS zones cache duration arg": {
 			modify: func(d *ExternalDNSDeployment) {
 				d.Provider = GCPExternalDNSProvider
 			},
 			assertArgs: func(g *GomegaWithT, args []string) {
 				g.Expect(args).To(ContainElement("--interval=" + DefaultExternalDNSInterval))
+				g.Expect(args).To(ContainElement("--source=crd"), "GCP provider should include --source=crd")
+				g.Expect(args).To(ContainElement("--managed-record-types=NS"), "GCP provider should manage NS records for zone delegation")
 				for _, arg := range args {
 					g.Expect(arg).NotTo(HavePrefix("--aws-zones-cache-duration"))
 				}
@@ -990,6 +1019,15 @@ func TestBuildEnvVars(t *testing.T) {
 			},
 		},
 		{
+			name: "When CAPI migration is enabled, it should include CAPI_STORAGE_VERSION env var",
+			deployment: HyperShiftOperatorDeployment{
+				CAPIStorageVersion: "v1beta2",
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: "CAPI_STORAGE_VERSION", Value: "v1beta2"},
+			},
+		},
+		{
 			name: "When no optional features are enabled, it should not include optional env vars",
 			deployment: HyperShiftOperatorDeployment{
 				CertRotationScale: 24 * time.Hour,
@@ -1000,6 +1038,7 @@ func TestBuildEnvVars(t *testing.T) {
 				"MANAGED_SERVICE",
 				"ENABLE_SIZE_TAGGING",
 				"MONITORING_DASHBOARDS",
+				"CAPI_STORAGE_VERSION",
 			},
 		},
 	}

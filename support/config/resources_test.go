@@ -78,7 +78,7 @@ func TestApplyResourceRequestOverrides(t *testing.T) {
 		expected  corev1.PodSpec
 	}{
 		{
-			name: "simple memory override",
+			name: "When memory override is provided, it should apply it",
 			input: corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -114,7 +114,7 @@ func TestApplyResourceRequestOverrides(t *testing.T) {
 			},
 		},
 		{
-			name: "simple memory override, does not affect other settings",
+			name: "When memory override is provided, it should not affect other resource settings",
 			input: corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -160,7 +160,7 @@ func TestApplyResourceRequestOverrides(t *testing.T) {
 			},
 		},
 		{
-			name: "overrides to multiple containers",
+			name: "When overrides are provided for multiple containers, it should apply them all",
 			input: corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -249,7 +249,7 @@ func TestApplyResourceRequestOverrides(t *testing.T) {
 			},
 		},
 		{
-			name: "different deployment",
+			name: "When override is for different deployment, it should not apply",
 			input: corev1.PodSpec{
 				Containers: []corev1.Container{
 					{

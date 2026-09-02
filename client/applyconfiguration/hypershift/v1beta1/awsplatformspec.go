@@ -28,7 +28,7 @@ type AWSPlatformSpecApplyConfiguration struct {
 	CloudProviderConfig         *AWSCloudProviderConfigApplyConfiguration `json:"cloudProviderConfig,omitempty"`
 	ServiceEndpoints            []AWSServiceEndpointApplyConfiguration    `json:"serviceEndpoints,omitempty"`
 	RolesRef                    *AWSRolesRefApplyConfiguration            `json:"rolesRef,omitempty"`
-	ResourceTags                []AWSResourceTagApplyConfiguration        `json:"resourceTags,omitempty"`
+	ResourceTags                []AWSClusterResourceTagApplyConfiguration `json:"resourceTags,omitempty"`
 	EndpointAccess              *hypershiftv1beta1.AWSEndpointAccessType  `json:"endpointAccess,omitempty"`
 	AdditionalAllowedPrincipals []string                                  `json:"additionalAllowedPrincipals,omitempty"`
 	MultiArch                   *bool                                     `json:"multiArch,omitempty"`
@@ -82,7 +82,7 @@ func (b *AWSPlatformSpecApplyConfiguration) WithRolesRef(value *AWSRolesRefApply
 // WithResourceTags adds the given value to the ResourceTags field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the ResourceTags field.
-func (b *AWSPlatformSpecApplyConfiguration) WithResourceTags(values ...*AWSResourceTagApplyConfiguration) *AWSPlatformSpecApplyConfiguration {
+func (b *AWSPlatformSpecApplyConfiguration) WithResourceTags(values ...*AWSClusterResourceTagApplyConfiguration) *AWSPlatformSpecApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
 			panic("nil value passed to WithResourceTags")

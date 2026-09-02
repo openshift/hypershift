@@ -22,6 +22,8 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
 
+	librarycrypto "github.com/openshift/library-go/pkg/crypto"
+
 	corev1 "k8s.io/api/core/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -55,6 +57,26 @@ func init() {
 	)
 }
 
+func buildTLSConfig(certWatcher *certwatcher.CertWatcher, opts Options) *tls.Config {
+	cfg := &tls.Config{
+		GetCertificate: certWatcher.GetCertificate,
+	}
+
+	if opts.TLSMinVersion != "" {
+		minVersion, err := librarycrypto.TLSVersion(opts.TLSMinVersion)
+		if err != nil {
+			log.Fatalf("invalid TLS min version: %v", err)
+		}
+		cfg.MinVersion = minVersion
+	}
+
+	if len(opts.TLSCipherSuites) > 0 {
+		cfg.CipherSuites = librarycrypto.CipherSuitesOrDie(opts.TLSCipherSuites)
+	}
+
+	return librarycrypto.SecureTLSConfig(cfg)
+}
+
 type Options struct {
 	Addr                string
 	CertFile            string
@@ -64,6 +86,8 @@ type Options struct {
 	WorkDir             string
 	MetricsAddr         string
 	FeatureGateManifest string
+	TLSMinVersion       string
+	TLSCipherSuites     []string
 }
 
 // This is a https server that enable us to satisfy
@@ -97,6 +121,8 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.WorkDir, "work-dir", opts.WorkDir, "Directory in which to store transient working data")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&opts.FeatureGateManifest, "feature-gate-manifest", opts.FeatureGateManifest, "Path to a rendered featuregates.config.openshift.io/v1 file")
+	cmd.Flags().StringVar(&opts.TLSMinVersion, "tls-min-version", "", "Minimum TLS version (e.g., VersionTLS12, VersionTLS13)")
+	cmd.Flags().StringSliceVar(&opts.TLSCipherSuites, "tls-cipher-suites", nil, "TLS cipher suites (comma-separated)")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -290,22 +316,7 @@ func run(ctx context.Context, opts Options) error {
 		Handler:      mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		TLSConfig: &tls.Config{GetCertificate: certWatcher.GetCertificate,
-			MinVersion: tls.VersionTLS12,
-			CipherSuites: []uint16{
-				//TLS 1.3 ciphers from openshift tls modern profile
-				tls.TLS_AES_128_GCM_SHA256,
-				tls.TLS_AES_256_GCM_SHA384,
-				tls.TLS_CHACHA20_POLY1305_SHA256,
-				//TLS 1.2 subset from openshift intermediate tls profile
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-			},
-		},
+		TLSConfig:    buildTLSConfig(certWatcher, opts),
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 

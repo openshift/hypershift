@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 07b7498ba387b63b345f1687e4fe2fdad2b456be08dd31370f6659c714ae3ce8
+    hypershift.openshift.io/desired-state-hash: efe510ea0cd60be72b693b567e06b004c4484078f7f96b8a2f2d5ccb4069e4b2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -97,7 +97,6 @@ spec:
         - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
         - --cors-allowed-origins='//127\.0\.0\.1(:|$)'
         - --cors-allowed-origins='//localhost(:|$)'
-        - --v=2
         - --requestheader-client-ca-file=/etc/kubernetes/certs/aggregator-client-ca/ca.crt
         - --requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator
         - --requestheader-username-headers=X-Remote-User
@@ -107,6 +106,7 @@ spec:
         - --api-audiences=https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
         - --etcd-servers=https://etcd-client:2379
         - --tls-min-version=VersionTLS13
+        - --v=2
         command:
         - /usr/bin/oauth-apiserver
         env:
@@ -291,6 +291,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 10
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 10
       volumes:
       - emptyDir: {}
         name: work-logs

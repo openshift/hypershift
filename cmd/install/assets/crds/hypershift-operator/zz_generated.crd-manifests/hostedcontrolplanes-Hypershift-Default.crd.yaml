@@ -816,6 +816,8 @@ spec:
                     description: |-
                       authentication specifies cluster-wide settings for authentication (like OAuth and
                       webhook token authenticators).
+                      Note: the serviceAccountIssuer field within this configuration is ignored; the
+                      HostedCluster's spec.issuerURL is always used as the service account issuer instead.
                     properties:
                       oauthMetadata:
                         description: |-
@@ -967,6 +969,19 @@ spec:
                                         claim is required when the ExternalOIDCWithUpstreamParity feature gate is not enabled.
                                       maxLength: 256
                                       type: string
+                                    expression:
+                                      description: |-
+                                        expression is an optional CEL expression used to derive
+                                        group values from JWT claims.
+
+                                        CEL expressions have access to the token claims through a CEL variable, 'claims'.
+
+                                        expression must be at least 1 character and must not exceed 1024 characters in length .
+
+                                        When specified, claim must not be set or be explicitly set to the empty string (`""`).
+                                      maxLength: 1024
+                                      minLength: 1
+                                      type: string
                                     prefix:
                                       description: |-
                                         prefix is an optional field that configures the prefix that will be applied to the cluster identity attribute during the process of mapping JWT claims to cluster identity attributes.
@@ -978,8 +993,15 @@ spec:
                                       type: string
                                   type: object
                                   x-kubernetes-validations:
-                                  - message: claim is required
-                                    rule: has(self.claim)
+                                  - message: prefix must not be set to a non-empty
+                                      value when expression is set
+                                    rule: 'has(self.expression) && size(self.expression)
+                                      > 0 ? (!has(self.prefix) || size(self.prefix)
+                                      == 0) : true'
+                                  - message: expression must not be set if claim is
+                                      specified and is not an empty string
+                                    rule: '(size(self.?claim.orValue("")) > 0) ? !has(self.expression)
+                                      : true'
                                 uid:
                                   description: |-
                                     uid is an optional field for configuring the claim mapping used to construct the uid for the cluster identity.
@@ -1039,6 +1061,19 @@ spec:
                                       maxLength: 256
                                       minLength: 1
                                       type: string
+                                    expression:
+                                      description: |-
+                                        expression is an optional CEL expression used to derive
+                                        the username from JWT claims.
+
+                                        CEL expressions have access to the token claims
+                                        through a CEL variable, 'claims'.
+
+                                        expression must be at least 1 character and must not exceed 1024 characters in length.
+                                        expression must not be set when claim is set.
+                                      maxLength: 1024
+                                      minLength: 1
+                                      type: string
                                     prefix:
                                       description: |-
                                         prefix configures the prefix that should be prepended to the value of the JWT claim.
@@ -1082,8 +1117,15 @@ spec:
                                       type: string
                                   type: object
                                   x-kubernetes-validations:
-                                  - message: claim is required
-                                    rule: has(self.claim)
+                                  - message: precisely one of claim or expression
+                                      must be set
+                                    rule: 'has(self.claim) ? !has(self.expression)
+                                      : has(self.expression)'
+                                  - message: prefixPolicy must not be set to 'Prefix'
+                                      when expression is set
+                                    rule: 'has(self.expression) && size(self.expression)
+                                      > 0 ? !has(self.prefixPolicy) || self.prefixPolicy
+                                      != ''Prefix'' : true'
                                   - message: prefix must be set if prefixPolicy is
                                       'Prefix', but must remain unset otherwise
                                     rule: 'has(self.prefixPolicy) && self.prefixPolicy
@@ -1103,6 +1145,30 @@ spec:
                                   If type is RequiredClaim, requiredClaim must be set.
                                   If Type is CEL, CEL must be set and RequiredClaim must be omitted.
                                 properties:
+                                  cel:
+                                    description: |-
+                                      cel holds the CEL expression and message for validation.
+                                      Must be set when Type is "CEL", and forbidden otherwise.
+                                    properties:
+                                      expression:
+                                        description: |-
+                                          expression is a CEL expression evaluated against token claims.
+                                          expression is required, must be at least 1 character in length and must not exceed 1024 characters.
+                                          The expression must return a boolean value where 'true' signals a valid token and 'false' an invalid one.
+                                        maxLength: 1024
+                                        minLength: 1
+                                        type: string
+                                      message:
+                                        description: |-
+                                          message is a required human-readable message to be logged by the Kubernetes API server if the CEL expression defined in 'expression' fails.
+                                          message must be at least 1 character in length and must not exceed 256 characters.
+                                        maxLength: 256
+                                        minLength: 1
+                                        type: string
+                                    required:
+                                    - expression
+                                    - message
+                                    type: object
                                   requiredClaim:
                                     description: |-
                                       requiredClaim allows configuring a required claim name and its expected value.
@@ -1140,11 +1206,16 @@ spec:
                                       When set to 'CEL', the Kubernetes API server will be configured to validate the incoming JWT against the configured CEL expression.
                                     enum:
                                     - RequiredClaim
+                                    - CEL
                                     type: string
                                 required:
                                 - type
                                 type: object
                                 x-kubernetes-validations:
+                                - message: cel must be set when type is 'CEL', and
+                                    forbidden otherwise
+                                  rule: 'has(self.type) && self.type == ''CEL'' ?
+                                    has(self.cel) : !has(self.cel)'
                                 - message: requiredClaim must be set when type is
                                     'RequiredClaim', and forbidden otherwise
                                   rule: 'has(self.type) && self.type == ''RequiredClaim''
@@ -1170,6 +1241,29 @@ spec:
                                   minItems: 1
                                   type: array
                                   x-kubernetes-list-type: set
+                                discoveryURL:
+                                  description: |-
+                                    discoveryURL is an optional field that, if specified, overrides the default discovery endpoint used to retrieve OIDC configuration metadata.
+                                    By default, the discovery URL is derived from `issuerURL` as "{issuerURL}/.well-known/openid-configuration".
+
+                                    The discoveryURL must be a valid absolute HTTPS URL.
+                                    It must not contain query parameters, user information, or fragments.
+                                    Additionally, it must differ from the value of `issuerURL` (ignoring trailing slashes).
+                                    The discoveryURL value must be at least 1 character long and no longer than 2048 characters.
+                                  maxLength: 2048
+                                  minLength: 1
+                                  type: string
+                                  x-kubernetes-validations:
+                                  - message: discoveryURL must be a valid URL
+                                    rule: isURL(self)
+                                  - message: discoveryURL must be a valid https URL
+                                    rule: url(self).getScheme() == 'https'
+                                  - message: discoveryURL must not contain query parameters
+                                    rule: url(self).getQuery().size() == 0
+                                  - message: discoveryURL must not contain fragments
+                                    rule: self.matches('^[^#]*$')
+                                  - message: discoveryURL must not contain user info
+                                    rule: '!self.matches(''^https://.+:.+@.+/.*$'')'
                                 issuerCertificateAuthority:
                                   description: |-
                                     issuerCertificateAuthority is an optional field that configures the certificate authority, used by the Kubernetes API server, to validate the connection to the identity provider when fetching discovery information.
@@ -1211,6 +1305,11 @@ spec:
                               - audiences
                               - issuerURL
                               type: object
+                              x-kubernetes-validations:
+                              - message: discoveryURL must be different from issuerURL
+                                rule: 'self.?discoveryURL.orValue("").size() > 0 ?
+                                  (self.issuerURL.size() == 0 || self.discoveryURL.find(''^.+[^/]'')
+                                  != self.issuerURL.find(''^.+[^/]'')) : true'
                             name:
                               description: |-
                                 name is a required field that configures the unique human-readable identifier associated with the identity provider.
@@ -1295,6 +1394,45 @@ spec:
                               x-kubernetes-list-map-keys:
                               - componentNamespace
                               - componentName
+                              x-kubernetes-list-type: map
+                            userValidationRules:
+                              description: |-
+                                userValidationRules is an optional field that configures the set of rules used to validate the cluster user identity that was constructed via mapping token claims to user identity attributes.
+                                Rules are CEL expressions that must evaluate to 'true' for authentication to succeed.
+                                If any rule in the chain of rules evaluates to 'false', authentication will fail.
+                                When specified, at least one rule must be specified and no more than 64 rules may be specified.
+                              items:
+                                description: |-
+                                  TokenUserValidationRule provides a CEL-based rule used to validate a token subject.
+                                  Each rule contains a CEL expression that is evaluated against the token’s claims.
+                                properties:
+                                  expression:
+                                    description: |-
+                                      expression is a required CEL expression that performs a validation on cluster user identity attributes like username, groups, etc.
+
+                                      The expression must evaluate to a boolean value.
+                                      When the expression evaluates to 'true', the cluster user identity is considered valid.
+                                      When the expression evaluates to 'false', the cluster user identity is not considered valid.
+                                      expression must be at least 1 character in length and must not exceed 1024 characters.
+                                    maxLength: 1024
+                                    minLength: 1
+                                    type: string
+                                  message:
+                                    description: |-
+                                      message is a required human-readable message to be logged by the Kubernetes API server if the CEL expression defined in 'expression' fails.
+                                      message must be at least 1 character in length and must not exceed 256 characters.
+                                    maxLength: 256
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - expression
+                                - message
+                                type: object
+                              maxItems: 64
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - expression
                               x-kubernetes-list-type: map
                           required:
                           - claimMappings
@@ -4745,28 +4883,58 @@ spec:
                           Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                           These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                           Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                          For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+                          By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+                          To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
+                          Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                           These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                         items:
-                          description: AWSResourceTag is a tag to apply to AWS resources
-                            created for the cluster.
+                          description: |-
+                            AWSClusterResourceTag is a tag to apply to AWS resources created for a
+                            HostedCluster. It extends the base tag with an overridePolicy field that
+                            controls whether NodePool-level tags can override this tag.
                           properties:
                             key:
-                              description: key is the key of the tag.
+                              description: |-
+                                key is the key of the tag.
+                                Must be between 1 and 128 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
                               maxLength: 128
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                              x-kubernetes-validations:
+                              - message: 'key must only contain letters, digits, and
+                                  the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
+                            overridePolicy:
+                              description: |-
+                                overridePolicy controls whether a NodePool-level tag with the same key can
+                                override this HostedCluster-level tag.
+
+                                When set to "Allow", a NodePool tag with the same key will take precedence
+                                over this HostedCluster tag. When set to "Deny" or omitted, the
+                                HostedCluster value is preserved and the NodePool tag is ignored for that
+                                key.
+                              enum:
+                              - Allow
+                              - Deny
                               type: string
                             value:
                               description: |-
                                 value is the value of the tag.
+                                Must be between 1 and 256 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
                                 requirements of all services.
                               maxLength: 256
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: 'value must only contain letters, digits,
+                                  and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
                           required:
                           - key
                           - value
@@ -5800,13 +5968,13 @@ spec:
                             ? has(self.workloadIdentities) : !has(self.workloadIdentities)'
                       cloud:
                         default: AzurePublicCloud
-                        description: 'cloud is the cloud environment identifier, valid
-                          values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
+                        description: cloud is the Azure cloud environment identifier.
                         enum:
                         - AzurePublicCloud
                         - AzureUSGovernmentCloud
                         - AzureChinaCloud
                         - AzureGermanCloud
+                        - AzureBleuCloud
                         - AzureStackCloud
                         type: string
                       containerRegistry:
@@ -6748,15 +6916,15 @@ spec:
                               encrypt new secrets
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
@@ -6781,15 +6949,15 @@ spec:
                               The system automatically manages the previous key via the status field.
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
@@ -6815,6 +6983,18 @@ spec:
                             - Public
                             - Private
                             - ""
+                            type: string
+                          keyVaultType:
+                            description: |-
+                              keyVaultType specifies whether activeKey and backupKey are hosted by Azure Key Vault or Azure Managed HSM.
+                              Valid values are "KeyVault" and "ManagedHSM".
+                              When set to "KeyVault", both keys are hosted by Azure Key Vault.
+                              When set to "ManagedHSM", both keys are hosted by Azure Managed HSM.
+                              The type is immutable; key rotation must remain within the same service.
+                              When omitted, the keys are treated as Key Vault keys.
+                            enum:
+                            - KeyVault
+                            - ManagedHSM
                             type: string
                           kms:
                             description: |-
@@ -6899,6 +7079,10 @@ spec:
                             both keys must reside in the same Key Vault
                           rule: '!has(self.backupKey) || self.backupKey.keyVaultName
                             == self.activeKey.keyVaultName'
+                        - message: keyVaultType is immutable
+                          rule: '(has(self.keyVaultType) ? self.keyVaultType : ''KeyVault'')
+                            == (has(oldSelf.keyVaultType) ? oldSelf.keyVaultType :
+                            ''KeyVault'')'
                         - message: kms and workloadIdentity are mutually exclusive
                           rule: '!(has(self.kms) && has(self.workloadIdentity))'
                         - message: one of kms or workloadIdentity must be set
@@ -7867,15 +8051,14 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1
@@ -8102,15 +8285,14 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1

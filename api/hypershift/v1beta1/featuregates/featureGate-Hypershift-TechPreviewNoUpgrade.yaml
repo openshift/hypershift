@@ -51,6 +51,12 @@
                     },
                     {
                         "name": "EtcdSharding"
+                    },
+                    {
+                        "name": "TLSAdherence"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "version": ""

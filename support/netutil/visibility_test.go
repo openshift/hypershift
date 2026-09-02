@@ -1054,7 +1054,7 @@ func TestUseSwiftNetworkingHCP(t *testing.T) {
 		want     bool
 	}{
 		{
-			name: "When Azure platform with Private.Type=Swift it should return true",
+			name: "When Azure platform with Private.Type=Swift, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1073,7 +1073,7 @@ func TestUseSwiftNetworkingHCP(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When Azure platform with annotation fallback it should return true",
+			name: "When Azure platform with annotation fallback, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -1092,7 +1092,7 @@ func TestUseSwiftNetworkingHCP(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When Azure platform with neither API field nor annotation it should return false",
+			name: "When Azure platform with neither API field nor annotation, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1104,7 +1104,7 @@ func TestUseSwiftNetworkingHCP(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When AWS platform it should return false",
+			name: "When AWS platform, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1116,7 +1116,7 @@ func TestUseSwiftNetworkingHCP(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When Azure platform with Private.Type=PrivateLink it should return false",
+			name: "When Azure platform with Private.Type=PrivateLink, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1152,7 +1152,7 @@ func TestUseSwiftNetworkingHC(t *testing.T) {
 		want     bool
 	}{
 		{
-			name: "When Azure platform with Private.Type=Swift it should return true",
+			name: "When Azure platform with Private.Type=Swift, it should return true",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1171,7 +1171,7 @@ func TestUseSwiftNetworkingHC(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When Azure platform with annotation fallback it should return true",
+			name: "When Azure platform with annotation fallback, it should return true",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -1190,7 +1190,7 @@ func TestUseSwiftNetworkingHC(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When Azure platform with neither API field nor annotation it should return false",
+			name: "When Azure platform with neither API field nor annotation, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1202,7 +1202,7 @@ func TestUseSwiftNetworkingHC(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When AWS platform it should return false",
+			name: "When AWS platform, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1214,7 +1214,7 @@ func TestUseSwiftNetworkingHC(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When Azure platform with Private.Type=PrivateLink it should return false",
+			name: "When Azure platform with Private.Type=PrivateLink, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1249,7 +1249,7 @@ func TestUseSharedIngressHCP(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "When Swift with PublicAndPrivate topology it should return true",
+			name: "When Swift with PublicAndPrivate topology, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1272,7 +1272,7 @@ func TestUseSharedIngressHCP(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When Swift with Private topology it should return false",
+			name: "When Swift with Private topology, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1295,7 +1295,7 @@ func TestUseSharedIngressHCP(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When Swift with empty topology it should return true",
+			name: "When Swift with empty topology, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1317,7 +1317,7 @@ func TestUseSharedIngressHCP(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When ManagedIdentities without Swift and empty topology it should return true",
+			name: "When ManagedIdentities without Swift and empty topology, it should return true",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1333,7 +1333,7 @@ func TestUseSharedIngressHCP(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When non-Swift it should return false",
+			name: "When non-Swift, it should return false",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1366,7 +1366,7 @@ func TestUseSharedIngressHC(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "When Swift with PublicAndPrivate topology it should return true",
+			name: "When Swift with PublicAndPrivate topology, it should return true",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1389,7 +1389,7 @@ func TestUseSharedIngressHC(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When Swift with Private topology it should return false",
+			name: "When Swift with Private topology, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1412,7 +1412,7 @@ func TestUseSharedIngressHC(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "When Swift with empty topology it should return true",
+			name: "When Swift with empty topology, it should return true",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1434,7 +1434,7 @@ func TestUseSharedIngressHC(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When ManagedIdentities without Swift and empty topology it should return true",
+			name: "When ManagedIdentities without Swift and empty topology, it should return true",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1450,7 +1450,7 @@ func TestUseSharedIngressHC(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "When non-Swift it should return false",
+			name: "When non-Swift, it should return false",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1483,7 +1483,7 @@ func TestSwiftPodNetworkInstanceHCP(t *testing.T) {
 		want string
 	}{
 		{
-			name: "When Azure with Private.Type=Swift it should return PodNetworkInstance from API field",
+			name: "When Azure with Private.Type=Swift, it should return PodNetworkInstance from API field",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1502,7 +1502,7 @@ func TestSwiftPodNetworkInstanceHCP(t *testing.T) {
 			want: "test-pni",
 		},
 		{
-			name: "When Azure with annotation fallback it should return value from annotation",
+			name: "When Azure with annotation fallback, it should return value from annotation",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -1519,7 +1519,7 @@ func TestSwiftPodNetworkInstanceHCP(t *testing.T) {
 			want: "annotation-pni",
 		},
 		{
-			name: "When Azure with neither API field nor annotation it should return empty string",
+			name: "When Azure with neither API field nor annotation, it should return empty string",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -1531,7 +1531,7 @@ func TestSwiftPodNetworkInstanceHCP(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "When non-Azure platform it should return empty string",
+			name: "When non-Azure platform, it should return empty string",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{

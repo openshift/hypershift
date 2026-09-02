@@ -443,3 +443,76 @@ func TestPatchStatusCondition_GetFailure(t *testing.T) {
 	g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	g.Expect(recorder.called).To(BeFalse())
 }
+
+func TestSyncCondition(t *testing.T) {
+	tests := []struct {
+		name string
+		src  []metav1.Condition
+		dst  []metav1.Condition
+		want []metav1.Condition
+	}{
+		{
+			name: "When the condition is present in src, it should be set on dst",
+			src: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllGood"},
+			},
+			dst: nil,
+			want: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllGood"},
+			},
+		},
+		{
+			name: "When the condition is present in both src and dst, it should overwrite dst",
+			src: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllGood"},
+			},
+			dst: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionFalse, Reason: "NotReady"},
+			},
+			want: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllGood"},
+			},
+		},
+		{
+			name: "When the condition is absent from src, it should be removed from dst",
+			src:  nil,
+			dst: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllGood"},
+			},
+			want: []metav1.Condition{},
+		},
+		{
+			name: "When the condition is absent from both src and dst, it should leave dst unchanged",
+			src:  nil,
+			dst:  nil,
+			want: nil,
+		},
+		{
+			name: "When src has other condition types, it should leave dst's unrelated conditions untouched",
+			src: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllGood"},
+			},
+			dst: []metav1.Condition{
+				{Type: "Other", Status: metav1.ConditionFalse, Reason: "Unrelated"},
+			},
+			want: []metav1.Condition{
+				{Type: "Other", Status: metav1.ConditionFalse, Reason: "Unrelated"},
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "AllGood"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			dst := tc.dst
+			SyncCondition(tc.src, &dst, "Ready")
+
+			// SetStatusCondition stamps LastTransitionTime, so compare everything else.
+			for i := range dst {
+				dst[i].LastTransitionTime = metav1.Time{}
+			}
+			g.Expect(dst).To(Equal(tc.want))
+		})
+	}
+}

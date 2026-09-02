@@ -29,6 +29,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,18 +38,21 @@ import (
 	"sync"
 	"time"
 
-	routev1 "github.com/openshift/api/route/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
+
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/tools/cache"
+	toolswatch "k8s.io/client-go/tools/watch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -66,6 +70,7 @@ const defaultNamespace = "clusters"
 
 // envConfig captures the common environment configuration.
 type envConfig struct {
+	testPlanPath string
 	prowJobID    string
 	sharedDir    string
 	artifactDir  string
@@ -104,6 +109,7 @@ func loadEnvConfig() envConfig {
 	}
 
 	cfg := envConfig{
+		testPlanPath: os.Getenv("TEST_PLAN"),
 		prowJobID:    mustGetenv("PROW_JOB_ID"),
 		sharedDir:    sharedDir,
 		artifactDir:  mustGetenv("ARTIFACT_DIR"),
@@ -130,7 +136,17 @@ func loadEnvConfig() envConfig {
 }
 
 func run(ctx context.Context, cfg envConfig) error {
-	specs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	plan, err := lifecycle.ResolveTestPlan(cfg.testPlanPath, cfg.platform)
+	if err != nil {
+		return fmt.Errorf("resolving test plan: %w", err)
+	}
+	log.Printf("Using test plan %q", plan.Name)
+
+	allSpecs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	if err := plan.Validate(allSpecs); err != nil {
+		return err
+	}
+	specs := plan.FilterClusterSpecs(allSpecs)
 
 	// Phase 0: The manifest must exist before any infra is provisioned so
 	// destroy-guests can always clean up, even if create-guests fails
@@ -260,13 +276,17 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 	if ns.ReleaseImage != "" {
 		releaseImage = ns.ReleaseImage
 	}
+	nodeCount := cfg.nodeCount
+	if ns.InitialNodePoolReplicas != nil {
+		nodeCount = *ns.InitialNodePoolReplicas
+	}
 
 	args := []string{
 		"create", "cluster", cfg.platform.Name(),
 		"--name=" + ns.name,
 		"--namespace=" + cfg.namespace,
 		"--infra-id=" + ns.name,
-		"--node-pool-replicas=" + strconv.Itoa(cfg.nodeCount),
+		"--node-pool-replicas=" + strconv.Itoa(nodeCount),
 		"--base-domain=" + cfg.baseDomain,
 		"--pull-secret=" + cfg.pullSecret,
 		"--release-image=" + releaseImage,
@@ -323,6 +343,10 @@ func newMgmtClient() (crclient.WithWatch, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getting management cluster kubeconfig: %w", err)
 	}
+	restConfig.Dial = (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
 	return crclient.NewWithWatch(restConfig, crclient.Options{Scheme: scheme})
 }
 
@@ -393,56 +417,35 @@ func waitForVersionRollout(ctx context.Context, cl crclient.WithWatch, cfg envCo
 }
 
 func watchForCondition(ctx context.Context, cl crclient.WithWatch, namespace, name string, predicate func(*hyperv1.HostedCluster) bool) error {
-	key := crclient.ObjectKey{Namespace: namespace, Name: name}
-	hc := &hyperv1.HostedCluster{}
-
-	for {
-		if err := cl.Get(ctx, key, hc); err == nil {
-			if predicate(hc) {
-				return nil
-			}
-		}
-
-		hcList := &hyperv1.HostedClusterList{}
-		watcher, err := cl.Watch(ctx, hcList,
-			crclient.InNamespace(namespace),
-			crclient.MatchingFields{"metadata.name": name},
-		)
-		if err != nil {
-			return fmt.Errorf("starting watch for %s/%s: %w", namespace, name, err)
-		}
-
-		closed := false
-		for !closed {
-			select {
-			case <-ctx.Done():
-				watcher.Stop()
-				return fmt.Errorf("timed out waiting for %s/%s: %w", namespace, name, ctx.Err())
-			case event, ok := <-watcher.ResultChan():
-				if !ok {
-					closed = true
-					break
-				}
-				if event.Type == watch.Error {
-					closed = true
-					break
-				}
-				if event.Type != watch.Added && event.Type != watch.Modified {
-					continue
-				}
-				watchedHC, ok := event.Object.(*hyperv1.HostedCluster)
-				if !ok {
-					continue
-				}
-				logClusterProgress(watchedHC)
-				if predicate(watchedHC) {
-					watcher.Stop()
-					return nil
-				}
-			}
-		}
-		watcher.Stop()
+	fieldSelector := fields.OneTermEqualSelector("metadata.name", name).String()
+	lw := &cache.ListWatch{
+		ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+			opts.FieldSelector = fieldSelector
+			list := &hyperv1.HostedClusterList{}
+			err := cl.List(ctx, list, &crclient.ListOptions{Raw: &opts, Namespace: namespace})
+			return list, err
+		},
+		WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+			opts.FieldSelector = fieldSelector
+			list := &hyperv1.HostedClusterList{}
+			return cl.Watch(ctx, list, &crclient.ListOptions{Raw: &opts, Namespace: namespace})
+		},
 	}
+
+	_, err := toolswatch.UntilWithSync(ctx, lw, &hyperv1.HostedCluster{}, nil,
+		func(event watch.Event) (bool, error) {
+			hc, ok := event.Object.(*hyperv1.HostedCluster)
+			if !ok || hc == nil {
+				return false, nil
+			}
+			logClusterProgress(hc)
+			return predicate(hc), nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("waiting for %s/%s: %w", namespace, name, err)
+	}
+	return nil
 }
 
 func logClusterProgress(hc *hyperv1.HostedCluster) {

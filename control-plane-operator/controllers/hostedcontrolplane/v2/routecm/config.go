@@ -28,7 +28,9 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return fmt.Errorf("unable to decode existing openshift route controller manager configuration: %w", err)
 	}
 
-	adaptConfig(config, cpContext.HCP.Spec.Configuration, cpContext.HCP.Spec.Capabilities)
+	if err := adaptConfig(config, cpContext.HCP.Spec.Configuration, cpContext.HCP.Spec.Capabilities); err != nil {
+		return err
+	}
 	configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift route controller manager configuration: %w", err)
@@ -38,12 +40,15 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, _ *hyperv1.Capabilities) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, _ *hyperv1.Capabilities) error {
 	// network config
 	if cidrs := configuration.GetAutoAssignCIDRs(); len(cidrs) > 0 {
 		cfg.Ingress.IngressIPNetworkCIDR = cidrs[0]
 	}
 
-	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
-	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
+	if err := config.ApplyServingInfoFromTLSProfile(&cfg.ServingInfo.ServingInfo, configuration.GetTLSSecurityProfile()); err != nil {
+		return err
+	}
+
+	return nil
 }

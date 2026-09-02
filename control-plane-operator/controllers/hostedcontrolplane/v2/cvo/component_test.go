@@ -34,7 +34,7 @@ func TestIsManagementClusterMetricsAccessEnabled(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{Key: "red-hat-managed", Value: "true"},
 							},
 						},
@@ -72,7 +72,7 @@ func TestIsManagementClusterMetricsAccessEnabled(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{Key: "some-other-tag", Value: "some-value"},
 							},
 						},
@@ -89,7 +89,7 @@ func TestIsManagementClusterMetricsAccessEnabled(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{Key: "red-hat-managed", Value: "true"},
 							},
 						},
@@ -106,7 +106,7 @@ func TestIsManagementClusterMetricsAccessEnabled(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
-							ResourceTags: []hyperv1.AWSResourceTag{
+							ResourceTags: []hyperv1.AWSClusterResourceTag{
 								{Key: "red-hat-managed", Value: "true"},
 							},
 						},

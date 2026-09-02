@@ -46,7 +46,7 @@ func TestMapToTags(t *testing.T) {
 		validateFunc func(t *testing.T, result string)
 	}{
 		{
-			name: "When tags are provided it should URL-encode them correctly",
+			name: "When tags are provided, it should URL-encode them correctly",
 			input: map[string]string{
 				"env":            "production",
 				"team":           "platform",
@@ -78,7 +78,7 @@ func TestMapToTags(t *testing.T) {
 			},
 		},
 		{
-			name:  "When map is empty or nil it should return empty string",
+			name:  "When map is empty or nil, it should return empty string",
 			input: nil,
 			validateFunc: func(t *testing.T, result string) {
 				if result != "" {
@@ -92,7 +92,7 @@ func TestMapToTags(t *testing.T) {
 			},
 		},
 		{
-			name: "When single tag is provided it should not have ampersand",
+			name: "When single tag is provided, it should not have ampersand",
 			input: map[string]string{
 				"env": "prod",
 			},
@@ -106,7 +106,7 @@ func TestMapToTags(t *testing.T) {
 			},
 		},
 		{
-			name: "When tags contain complex values it should preserve them in round-trip",
+			name: "When tags contain complex values, it should preserve them in round-trip",
 			input: map[string]string{
 				"url": "https://example.com?key=value",
 				"key": "value&special=chars@test",

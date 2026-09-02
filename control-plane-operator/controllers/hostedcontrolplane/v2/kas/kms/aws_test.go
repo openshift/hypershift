@@ -178,7 +178,7 @@ func TestGenerateKMSEncryptionConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When called, the KMS provider name should be based on a hash of the ARN",
+			name: "When called, it should base KMS provider name on a hash of the ARN",
 			provider: func() (*awsKMSProvider, error) {
 				return NewAWSKMSProvider(
 					hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id"},

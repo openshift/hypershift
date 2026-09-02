@@ -1535,6 +1535,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return nil
 	})
 
+	// Block reconciliation when Managed HSM is configured on a release that
+	// does not support it (< 4.22). Sets ValidHostedClusterConfiguration=False.
+	report.execute("ManagedHSMVersionCheck", critical, func() error {
+		if report.shouldBlock() {
+			return nil
+		}
+		if err := validateManagedHSMVersion(hcluster, releaseImageVersion); err != nil {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidHostedClusterConfiguration),
+				ObservedGeneration: hcluster.Generation,
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.InvalidConfigurationReason,
+				Message:            err.Error(),
+			})
+			return err
+		}
+		return nil
+	})
+
 	report.executeOrBlock("OperatorDeployments", func() error {
 		return r.reconcileOperatorDeployments(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespace, p,
 			controlPlaneOperatorImage, utilitiesImage,
@@ -2055,6 +2074,10 @@ func (r *HostedClusterReconciler) reconcileSSHKeySync(
 	controlPlaneNamespace string,
 ) error {
 	if len(hcluster.Spec.SSHKey.Name) == 0 {
+		dest := controlplaneoperator.SSHKey(controlPlaneNamespace)
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
+			return fmt.Errorf("failed to delete unused SSHKey secret: %w", err)
+		}
 		return nil
 	}
 	var src corev1.Secret
@@ -2624,6 +2647,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.AWSMachinePublicIPs,
 		hyperv1.AWSKarpenterDefaultInstanceProfile,
 		hyperkarpenterv1.KarpenterProviderAWSImage,
+		hyperkarpenterv1.KarpenterOperatorImage,
 		hyperv1.KubeAPIServerGoAwayChance,
 		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
@@ -2734,6 +2758,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
+	} else {
+		hcp.Spec.SSHKey = corev1.LocalObjectReference{}
 	}
 	if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 		hcp.Spec.AuditWebhook = hcluster.Spec.AuditWebhook.DeepCopy()
@@ -4407,6 +4433,27 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 	return nil
 }
 
+var minManagedHSMVersion = semver.MustParse("4.22.0")
+
+func validateManagedHSMVersion(hc *hyperv1.HostedCluster, releaseVersion semver.Version) error {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+	if hc.Spec.SecretEncryption == nil ||
+		hc.Spec.SecretEncryption.KMS == nil ||
+		hc.Spec.SecretEncryption.KMS.Azure == nil {
+		return nil
+	}
+	if hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		return nil
+	}
+	releaseVersion.Pre = nil
+	if releaseVersion.LT(minManagedHSMVersion) {
+		return fmt.Errorf("release image version %s does not support Azure Managed HSM, which requires version %s or newer", releaseVersion, minManagedHSMVersion)
+	}
+	return nil
+}
+
 func (r *HostedClusterReconciler) validateAgentConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	if hc.Spec.Platform.Type != hyperv1.AgentPlatform {
 		return nil
@@ -5008,7 +5055,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 		return nil
 	}
 
-	var existing *hyperv1.AWSResourceTag
+	var existing *hyperv1.AWSClusterResourceTag
 	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
 		if tag.Key == "kubernetes.io/cluster/"+hcluster.Spec.InfraID {
 			existing = &hcluster.Spec.Platform.AWS.ResourceTags[idx]
@@ -5022,7 +5069,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	if existing != nil {
 		existing.Value = "owned"
 	} else {
-		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+		hcluster.Spec.Platform.AWS.ResourceTags = append(hcluster.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 			Key:   "kubernetes.io/cluster/" + hcluster.Spec.InfraID,
 			Value: "owned",
 		})

@@ -81,11 +81,12 @@ func KeyStatusFromSpec(spec *hyperv1.SecretEncryptionSpec, aescbcDataHash string
 }
 
 // KeyReferenceFromStatus extracts an EncryptionKeyReference from a SecretEncryptionKeyStatus.
-func KeyReferenceFromStatus(status *hyperv1.SecretEncryptionKeyStatus) hyperv1.EncryptionKeyReference {
+// keyVaultType is only used for Azure KMS keys and is ignored for other providers.
+func KeyReferenceFromStatus(status *hyperv1.SecretEncryptionKeyStatus, keyVaultType hyperv1.AzureKMSKeyVaultType) hyperv1.EncryptionKeyReference {
 	if status == nil {
 		return hyperv1.EncryptionKeyReference{}
 	}
-	fp := FingerprintFromKeyStatus(status)
+	fp := FingerprintFromKeyStatus(status, keyVaultType)
 	return hyperv1.EncryptionKeyReference{
 		Provider:    status.Provider,
 		Fingerprint: fp,

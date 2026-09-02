@@ -58,8 +58,40 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 	}
 	return []ClusterSpec{
 		{
-			Variant:   "public",
-			ExtraArgs: extraArgs,
+			Variant: "public",
+			ExtraArgs: append(extraArgs, []string{
+				"--public-only",
+			}...),
+		},
+		// The KarpenterBillingConsolidationTest actually tests hostedcluster teardown
+		// behavior and so needs its own dedicated cluster. This seems somewhat leaky
+		// in terms of test isolation because a downstream teardown of a cluster the
+		// test doesn't actually own is only indirectly related to the test and the
+		// test can't actually make any assertions. This is a fundamental difference
+		// from v1 where tests own the lifecycle of the hostedcluster. In v2 tests are
+		// explicitly decoupled from the hostedcluster lifecycle and so have no inherent
+		// ability to make any such lifecycle assertions. This could mean that either
+		// the assertion itself needs to change to decouple it from lifecycle somehow,
+		// or there's a gap in the v2 framework for this sort of use case...
+		{
+			Variant: "karpenter",
+			ExtraArgs: append(extraArgs, []string{
+				// Enables Karpenter-based node provisioning (AutoNode)
+				"--auto-node",
+				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
+				"--endpoint-access=PublicAndPrivate",
+			}...),
+		},
+		{
+			Variant:      "karpenter-upgrade",
+			ReleaseImage: n1Image,
+			ExtraArgs: append(extraArgs, []string{
+				// Enables Karpenter-based node provisioning (AutoNode)
+				"--auto-node",
+				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
+				"--endpoint-access=PublicAndPrivate",
+				"--control-plane-availability-policy=HighlyAvailable",
+			}...),
 		},
 	}
 }
@@ -70,7 +102,6 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 		"--zones=" + strings.Join(a.zones, ","),
 		"--root-volume-size=64",
 		"--root-volume-type=gp3",
-		"--public-only",
 		"--pods-labels=hypershift-e2e-test-label=test",
 		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
 		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
@@ -99,19 +130,35 @@ func (a *AWSPlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.
 	return nil
 }
 
-func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
+func (a *AWSPlatformConfig) DefaultTestPlan() TestPlan {
+	return TestPlan{
+		Name:       "aws-full",
+		Platform:   "aws",
+		TestMatrix: a.TestMatrix(),
+	}
+}
+
+func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
-				Name:        "aws-public",
+				Name:        "public",
 				Variant:     "public",
-				LabelFilter: "!lifecycle || hosted-cluster-aws",
-				JUnitFile:   "junit_aws_public.xml",
+				LabelFilter: "!lifecycle || hosted-cluster-aws || nodepool-osimagestream",
+			},
+			{
+				Name:        "karpenter",
+				Variant:     "karpenter",
+				LabelFilter: "karpenter",
+			},
+			{
+				Name:        "karpenter-upgrade",
+				Variant:     "karpenter-upgrade",
+				LabelFilter: "karpenter-upgrade",
 			},
 		},
 	}
 }
-
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {}
 

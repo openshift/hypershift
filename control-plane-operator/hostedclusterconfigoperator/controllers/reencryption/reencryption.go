@@ -14,13 +14,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/secretencryption"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/util"
 
 	"github.com/openshift/library-go/pkg/operator/encryption/controllers/migrators"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,25 +62,40 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, fmt.Errorf("failed to get HCP: %w", err)
 	}
 
-	originalHCP := hcp.DeepCopy()
-	result, err := r.reconcile(ctx, log, hcp)
+	// Snapshot pre-reconcile encryption state for metrics comparison.
+	previousEncryption := *hcp.Status.SecretEncryption.DeepCopy()
+
+	// Reconcile against a copy — PatchStatus below re-fetches hcp from the server,
+	// which would otherwise overwrite the in-memory mutations reconcile() makes.
+	workingCopy := hcp.DeepCopy()
+	result, err := r.reconcile(ctx, log, workingCopy)
 	if err != nil {
 		return result, err
 	}
 
-	if !equality.Semantic.DeepEqual(hcp.Status, originalHCP.Status) {
-		log.Info("Patching HCP status with secret encryption changes")
-		patch := crclient.MergeFrom(originalHCP)
-		if err := r.cpClient.Status().Patch(ctx, hcp, patch); err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to patch HCP status: %w", err)
-		}
-		log.Info("Successfully patched HCP status")
-		recordMigrationState(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
-		previousState := encryptionHistoryState(originalHCP.Status.SecretEncryption)
-		currentState := encryptionHistoryState(hcp.Status.SecretEncryption)
-		if currentState == hyperv1.EncryptionMigrationStateCompleted && previousState != currentState {
-			recordMigrationDuration(r.hcpNamespace, r.hcpName, hcp.Status.SecretEncryption)
-		}
+	// hcp.Status.SecretEncryption and the EtcdDataEncryptionUpToDate condition are
+	// written exclusively by this reconciler for this HCP — no other controller
+	// touches them, and controller-runtime serializes reconciles per object key, so
+	// re-applying the workingCopy snapshot on a PatchStatus retry is safe: there is
+	// no concurrent writer whose update could be clobbered. If either field ever
+	// gains another writer, this blind re-apply would need to recompute from the
+	// freshly fetched hcp instead.
+	if patchErr := statuspatching.PatchStatus(ctx, r.cpClient, hcp, func() error {
+		hcp.Status.SecretEncryption = workingCopy.Status.SecretEncryption
+		statuspatching.SyncCondition(workingCopy.Status.Conditions, &hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
+		return nil
+	}); patchErr != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to patch HCP status: %w", patchErr)
+	}
+
+	// Always re-emit the current migration state gauge so it survives pod restarts.
+	recordMigrationState(r.hcpNamespace, r.hcpName, workingCopy.Status.SecretEncryption)
+
+	// Record duration only on actual state transitions.
+	previousState := encryptionHistoryState(previousEncryption)
+	currentState := encryptionHistoryState(workingCopy.Status.SecretEncryption)
+	if currentState == hyperv1.EncryptionMigrationStateCompleted && previousState != currentState {
+		recordMigrationDuration(r.hcpNamespace, r.hcpName, workingCopy.Status.SecretEncryption)
 	}
 
 	return result, nil
@@ -102,9 +117,10 @@ func (r *Reconciler) reconcile(ctx context.Context, log logr.Logger, hcp *hyperv
 		return reconcile.Result{}, nil
 	}
 
-	specFingerprint := secretencryption.FingerprintFromKeyStatus(specKeyStatus)
+	kvt := azureKeyVaultType(hcp)
+	specFingerprint := secretencryption.FingerprintFromKeyStatus(specKeyStatus, kvt)
 
-	statusActiveFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.ActiveKey)
+	statusActiveFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.ActiveKey, kvt)
 
 	// Case 1: Status has no active key (first-time setup or upgrade bootstrap).
 	if hcp.Status.SecretEncryption.ActiveKey.Provider == "" {
@@ -163,8 +179,9 @@ func (r *Reconciler) startNewRotation(log logr.Logger, hcp *hyperv1.HostedContro
 
 	hcp.Status.SecretEncryption.TargetKey = *specKeyStatus.DeepCopy()
 
-	fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey)
-	toRef := secretencryption.KeyReferenceFromStatus(specKeyStatus)
+	kvt := azureKeyVaultType(hcp)
+	fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey, kvt)
+	toRef := secretencryption.KeyReferenceFromStatus(specKeyStatus, kvt)
 
 	entry := hyperv1.EncryptionMigrationHistory{
 		From:        fromRef,
@@ -191,7 +208,8 @@ func (r *Reconciler) startNewRotation(log logr.Logger, hcp *hyperv1.HostedContro
 // It inspects the EncryptionConfiguration and KAS Deployment convergence rather than
 // reading history[0].state. The history state is updated for observability only.
 func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, specFingerprint string) (reconcile.Result, error) {
-	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey)
+	kvt := azureKeyVaultType(hcp)
+	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey, kvt)
 
 	if specFingerprint != targetFingerprint {
 		log.Info("Spec key differs from target key during rotation, current rotation will complete first",
@@ -201,8 +219,8 @@ func (r *Reconciler) handleInProgressRotation(ctx context.Context, log logr.Logg
 
 	if len(hcp.Status.SecretEncryption.History) == 0 {
 		log.Info("Target key set but no history entry found, creating one")
-		fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey)
-		toRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.TargetKey)
+		fromRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.ActiveKey, kvt)
+		toRef := secretencryption.KeyReferenceFromStatus(&hcp.Status.SecretEncryption.TargetKey, kvt)
 		entry := hyperv1.EncryptionMigrationHistory{
 			From:        fromRef,
 			To:          toRef,
@@ -342,7 +360,7 @@ func (r *Reconciler) computeTargetKeyProviderName(ctx context.Context, hcp *hype
 			KeyVaultName: tk.Azure.KeyVaultName,
 			KeyName:      tk.Azure.KeyName,
 			KeyVersion:   tk.Azure.KeyVersion,
-		})
+		}, azureKeyVaultType(hcp))
 
 	case hyperv1.SecretEncryptionProviderAWS:
 		if tk.AWS.ARN == "" {
@@ -389,7 +407,7 @@ func (r *Reconciler) handleMigratingPhase(log logr.Logger, hcp *hyperv1.HostedCo
 	}
 
 	resources := r.encryptedResources(hcp)
-	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey)
+	targetFingerprint := secretencryption.FingerprintFromKeyStatus(&hcp.Status.SecretEncryption.TargetKey, azureKeyVaultType(hcp))
 	writeKey := fmt.Sprintf("encryption-key-%s", targetFingerprint)
 
 	allFinished := true
@@ -555,6 +573,15 @@ func parseGroupResource(rs string) schema.GroupResource {
 		return schema.GroupResource{Resource: parts[0]}
 	}
 	return schema.GroupResource{Resource: parts[0], Group: parts[1]}
+}
+
+// azureKeyVaultType returns the vault type (Key Vault or Managed HSM) from the Azure KMS configuration.
+// Returns empty string when the HCP is not configured for Azure KMS.
+func azureKeyVaultType(hcp *hyperv1.HostedControlPlane) hyperv1.AzureKMSKeyVaultType {
+	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
+		return ""
+	}
+	return hcp.Spec.SecretEncryption.KMS.Azure.KeyVaultType
 }
 
 // prependHistory prepends a new entry to the history and trims it to maxHistoryEntries.

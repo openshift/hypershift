@@ -25,28 +25,28 @@ func TestHasAnnotationWithValue(t *testing.T) {
 		want        bool
 	}{
 		{
-			name:        "When annotation exists with matching value it should return true",
+			name:        "When annotation exists with matching value, it should return true",
 			annotations: map[string]string{"foo": "bar"},
 			key:         "foo",
 			value:       "bar",
 			want:        true,
 		},
 		{
-			name:        "When annotation exists with different value it should return false",
+			name:        "When annotation exists with different value, it should return false",
 			annotations: map[string]string{"foo": "baz"},
 			key:         "foo",
 			value:       "bar",
 			want:        false,
 		},
 		{
-			name:        "When annotation does not exist it should return false",
+			name:        "When annotation does not exist, it should return false",
 			annotations: map[string]string{"other": "value"},
 			key:         "foo",
 			value:       "bar",
 			want:        false,
 		},
 		{
-			name:        "When annotations map is nil it should return false",
+			name:        "When annotations map is nil, it should return false",
 			annotations: nil,
 			key:         "foo",
 			value:       "bar",
@@ -89,7 +89,7 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 		errSubstr string
 	}{
 		{
-			name: "When annotation is missing it should return an error",
+			name: "When annotation is missing, it should return an error",
 			obj: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -100,7 +100,7 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			errSubstr: "missing",
 		},
 		{
-			name: "When annotation value is empty it should return a format error",
+			name: "When annotation value is empty, it should return a format error",
 			obj: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -114,7 +114,7 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			errSubstr: "invalid",
 		},
 		{
-			name: "When annotation has no slash it should return a format error",
+			name: "When annotation has no slash, it should return a format error",
 			obj: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -128,7 +128,7 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			errSubstr: "invalid",
 		},
 		{
-			name: "When annotation has empty namespace it should return a format error",
+			name: "When annotation has empty namespace, it should return a format error",
 			obj: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -142,7 +142,7 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			errSubstr: "invalid",
 		},
 		{
-			name: "When annotation has empty name it should return a format error",
+			name: "When annotation has empty name, it should return a format error",
 			obj: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",
@@ -156,7 +156,7 @@ func TestHostedClusterFromAnnotation(t *testing.T) {
 			errSubstr: "invalid",
 		},
 		{
-			name: "When annotation is valid but HostedCluster does not exist it should return an error",
+			name: "When annotation is valid but HostedCluster does not exist, it should return an error",
 			obj: &hyperv1.AzurePrivateLinkService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pls",

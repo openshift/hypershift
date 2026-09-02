@@ -388,6 +388,9 @@ const (
 	RecommendedClusterSizeAnnotation = "hypershift.openshift.io/recommended-cluster-size"
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifying the log verbosity of kube-apiserver.
+	// Deprecated: Use spec.operatorConfiguration.kubeAPIServer.logLevel instead.
+	// When both are set, the OperatorConfiguration field takes precedence.
+	// This annotation will be removed in a future release.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 
 	// NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation indicates if the NodePool currently supports
@@ -709,6 +712,7 @@ type HostedClusterSpec struct {
 	// validation.
 	// If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
 	// The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.
+	// Once set, this value is immutable.
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	// +immutable
 	// +optional
@@ -2815,6 +2819,8 @@ type ClusterConfiguration struct {
 
 	// authentication specifies cluster-wide settings for authentication (like OAuth and
 	// webhook token authenticators).
+	// Note: the serviceAccountIssuer field within this configuration is ignored; the
+	// HostedCluster's spec.issuerURL is always used as the service account issuer instead.
 	// +optional
 	Authentication *configv1.AuthenticationSpec `json:"authentication,omitempty"`
 
@@ -2892,6 +2898,80 @@ type OperatorConfiguration struct {
 	//
 	// +optional
 	IngressOperator *IngressOperatorSpec `json:"ingressOperator,omitempty"`
+
+	// kubeAPIServer configures the kube-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
+
+	// etcd configures the etcd component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// Note: etcd supports fewer log levels than klog-based components,
+	// etcd supports only Normal and Debug log levels.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	Etcd EtcdOperatorSpec `json:"etcd,omitzero"`
+
+	// kubeControllerManager configures the kube-controller-manager component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeControllerManager KubeControllerManagerOperatorSpec `json:"kubeControllerManager,omitzero"`
+
+	// kubeScheduler configures the kube-scheduler component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeScheduler KubeSchedulerOperatorSpec `json:"kubeScheduler,omitzero"`
+
+	// openShiftControllerManager configures the openshift-controller-manager component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftControllerManager OpenShiftControllerManagerOperatorSpec `json:"openShiftControllerManager,omitzero"`
+
+	// openShiftAPIServer configures the openshift-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftAPIServer OpenShiftAPIServerOperatorSpec `json:"openShiftAPIServer,omitzero"`
+
+	// openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftOAuthAPIServer OpenShiftOAuthAPIServerOperatorSpec `json:"openShiftOAuthAPIServer,omitzero"`
+
+	// oauthServer configures the oauth-server component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`
 }
 
 // +genclient
@@ -2915,6 +2995,8 @@ type OperatorConfiguration struct {
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 // +kubebuilder:printcolumn:name="CP Progress",type="string",JSONPath=".status.controlPlaneVersion.history[0].state",description="Control Plane Progress",priority=1
 // +kubebuilder:printcolumn:name="DP Progress",type="string",JSONPath=".status.version.history[0].state",description="Data Plane Progress",priority=1
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec) || !has(oldSelf.spec.infraID) || (has(self.spec) && has(self.spec.infraID))",message="infraID cannot be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec) || !has(oldSelf.spec.clusterID) || (has(self.spec) && has(self.spec.clusterID))",message="clusterID cannot be removed once set"
 type HostedCluster struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is the metadata for the HostedCluster.

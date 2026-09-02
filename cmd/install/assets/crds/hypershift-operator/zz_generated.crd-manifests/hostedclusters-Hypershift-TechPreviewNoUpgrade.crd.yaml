@@ -708,6 +708,42 @@ spec:
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
+                      tlsAdherence:
+                        description: |-
+                          tlsAdherence controls if components in the cluster adhere to the TLS security profile
+                          configured on this APIServer resource.
+
+                          Valid values are "LegacyAdheringComponentsOnly" and "StrictAllComponents".
+
+                          When set to "LegacyAdheringComponentsOnly", components that already honor the
+                          cluster-wide TLS profile continue to do so. Components that do not already honor
+                          it continue to use their individual TLS configurations.
+
+                          When set to "StrictAllComponents", all components must honor the configured TLS
+                          profile unless they have a component-specific TLS configuration that overrides
+                          it. This mode is recommended for security-conscious deployments and is required
+                          for certain compliance frameworks.
+
+                          Note: Some components such as Kubelet and IngressController have their own
+                          dedicated TLS configuration mechanisms via KubeletConfig and IngressController
+                          CRs respectively. When these component-specific TLS configurations are set,
+                          they take precedence over the cluster-wide tlsSecurityProfile. When not set,
+                          these components fall back to the cluster-wide default.
+
+                          Components that encounter an unknown value for tlsAdherence should treat it
+                          as "StrictAllComponents" and log a warning to ensure forward compatibility
+                          while defaulting to the more secure behavior.
+
+                          This field is optional.
+                          When omitted, this means the user has no opinion and the platform is left
+                          to choose reasonable defaults. These defaults are subject to change over time.
+                          The current default is LegacyAdheringComponentsOnly.
+
+                          Once set, this field may be changed to a different value, but may not be removed.
+                        enum:
+                        - LegacyAdheringComponentsOnly
+                        - StrictAllComponents
+                        type: string
                       tlsSecurityProfile:
                         description: |-
                           tlsSecurityProfile specifies settings for TLS connections for externally exposed servers.
@@ -865,10 +901,16 @@ spec:
                             type: string
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: tlsAdherence may not be removed once set
+                      rule: 'has(oldSelf.tlsAdherence) ? has(self.tlsAdherence) :
+                        true'
                   authentication:
                     description: |-
                       authentication specifies cluster-wide settings for authentication (like OAuth and
                       webhook token authenticators).
+                      Note: the serviceAccountIssuer field within this configuration is ignored; the
+                      HostedCluster's spec.issuerURL is always used as the service account issuer instead.
                     properties:
                       oauthMetadata:
                         description: |-
@@ -3341,16 +3383,17 @@ spec:
                             properties:
                               encryptionKeyURL:
                                 description: |-
-                                  encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
-                                  Must be a valid Azure Key Vault key URL in the format
-                                  "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
+                                  encryptionKeyURL is the URL of the Azure Key Vault or Managed HSM key to use for encrypting etcd backup artifacts.
+                                  Key Vault URLs are supported in Azure Public Cloud (vault.azure.net), Azure US Government Cloud (vault.usgovcloudapi.net), Azure China Cloud (vault.azure.cn), Azure German Cloud (vault.microsoftazure.de), and Azure Bleu Cloud (vault.sovcloud-api.fr).
+                                  Managed HSM URLs are supported in Azure Public Cloud (managedhsm.azure.net), Azure US Government Cloud (managedhsm.usgovcloudapi.net), Azure China Cloud (managedhsm.azure.cn), Azure German Cloud (managedhsm.microsoftazure.de), and Azure Bleu Cloud (managedhsm.sovcloud-api.fr).
+                                  Supporting another cloud requires adding its DNS suffix to this validation and the Azure endpoint resolver.
                                 maxLength: 210
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
                                 - message: encryptionKeyURL must be a valid Azure
-                                    Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])
-                                  rule: self.matches('^https://[a-zA-Z0-9-]+\\.vault\\.azure\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')
+                                    Key Vault or Managed HSM HTTPS URL
+                                  rule: self.matches('^https://[a-zA-Z0-9-]+\\.(vault\\.(azure\\.net|usgovcloudapi\\.net|azure\\.cn|microsoftazure\\.de|sovcloud-api\\.fr)|managedhsm\\.(azure\\.net|usgovcloudapi\\.net|azure\\.cn|microsoftazure\\.de|sovcloud-api\\.fr))/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')
                             required:
                             - encryptionKeyURL
                             type: object
@@ -4068,6 +4111,7 @@ spec:
                   validation.
                   If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
                   The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.
+                  Once set, this value is immutable.
                 maxLength: 255
                 type: string
                 x-kubernetes-validations:
@@ -4684,13 +4728,49 @@ spec:
                           Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                           Defaults to "Normal".
                         enum:
-                        - ""
                         - Normal
                         - Debug
                         - Trace
                         - TraceAll
                         type: string
                     type: object
+                  etcd:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      etcd configures the etcd component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      Note: etcd supports fewer log levels than klog-based components,
+                      etcd supports only Normal and Debug log levels.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: etcd only supports Normal and Debug log levels; Trace
+                        and TraceAll are not valid for etcd
+                      rule: '!has(self.logLevel) || self.logLevel in [''Normal'',
+                        ''Debug'']'
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
@@ -5417,6 +5497,216 @@ spec:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
                     type: object
+                  kubeAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeAPIServer configures the kube-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  kubeControllerManager:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeControllerManager configures the kube-controller-manager component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  kubeScheduler:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      kubeScheduler configures the kube-scheduler component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  oauthServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      oauthServer configures the oauth-server component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftAPIServer configures the openshift-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftControllerManager:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftControllerManager configures the openshift-controller-manager component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
+                  openShiftOAuthAPIServer:
+                    allOf:
+                    - minProperties: 1
+                    - minProperties: 1
+                    description: |-
+                      openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+                      Setting the logLevel field triggers a rolling restart of the component.
+                      When omitted, this means the user has no opinion and the platform
+                      chooses a reasonable default, which is subject to change over time.
+                      The current default log level is Normal.
+                    properties:
+                      logLevel:
+                        description: |-
+                          logLevel sets the log verbosity for the component.
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          When set to Normal, standard operational log messages are produced for auditing and common operations.
+                          When set to Debug, more verbose logging is enabled for diagnosing problems.
+                          When set to Trace, very verbose logging is enabled including function-level tracing.
+                          When set to TraceAll, the most verbose logging is used, including full API body content,
+                          this can cause significant performance impact and produce large volumes of logs.
+                          When omitted, this means the user has no opinion and the platform
+                          chooses a reasonable default, which is subject to change over time.
+                          The current default log level is Normal.
+                        enum:
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
                 type: object
               pausedUntil:
                 description: |-
@@ -5559,28 +5849,58 @@ spec:
                           Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                           These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                           Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                          For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+                          By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+                          To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
+                          Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                           These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                         items:
-                          description: AWSResourceTag is a tag to apply to AWS resources
-                            created for the cluster.
+                          description: |-
+                            AWSClusterResourceTag is a tag to apply to AWS resources created for a
+                            HostedCluster. It extends the base tag with an overridePolicy field that
+                            controls whether NodePool-level tags can override this tag.
                           properties:
                             key:
-                              description: key is the key of the tag.
+                              description: |-
+                                key is the key of the tag.
+                                Must be between 1 and 128 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
                               maxLength: 128
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                              type: string
+                              x-kubernetes-validations:
+                              - message: 'key must only contain letters, digits, and
+                                  the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
+                            overridePolicy:
+                              description: |-
+                                overridePolicy controls whether a NodePool-level tag with the same key can
+                                override this HostedCluster-level tag.
+
+                                When set to "Allow", a NodePool tag with the same key will take precedence
+                                over this HostedCluster tag. When set to "Deny" or omitted, the
+                                HostedCluster value is preserved and the NodePool tag is ignored for that
+                                key.
+                              enum:
+                              - Allow
+                              - Deny
                               type: string
                             value:
                               description: |-
                                 value is the value of the tag.
+                                Must be between 1 and 256 characters and may only contain letters, digits,
+                                and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
                                 requirements of all services.
                               maxLength: 256
                               minLength: 1
-                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
+                              x-kubernetes-validations:
+                              - message: 'value must only contain letters, digits,
+                                  and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
                           required:
                           - key
                           - value
@@ -6614,13 +6934,13 @@ spec:
                             ? has(self.workloadIdentities) : !has(self.workloadIdentities)'
                       cloud:
                         default: AzurePublicCloud
-                        description: 'cloud is the cloud environment identifier, valid
-                          values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
+                        description: cloud is the Azure cloud environment identifier.
                         enum:
                         - AzurePublicCloud
                         - AzureUSGovernmentCloud
                         - AzureChinaCloud
                         - AzureGermanCloud
+                        - AzureBleuCloud
                         - AzureStackCloud
                         type: string
                       containerRegistry:
@@ -7062,7 +7382,8 @@ spec:
                                 - Contain only lowercase letters, digits, underscores, or hyphens
                                 - End with a lowercase letter or digit (not a hyphen or underscore)
                                 - Be 1-63 characters long
-                                GCP reserves the 'goog' prefix for system labels.
+                                GCP reserves the 'goog' prefix for system labels, with the exception of
+                                'goog-partner-solution' which Google requires for partner attribution tracking.
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 1
@@ -7072,9 +7393,9 @@ spec:
                                   only lowercase letters, digits, underscores, or
                                   hyphens, and end with a letter or digit
                                 rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
-                              - message: Label keys starting with the reserved 'goog'
-                                  prefix are not allowed
-                                rule: '!self.startsWith(''goog'')'
+                              - message: 'Label keys starting with the reserved ''goog''
+                                  prefix are not allowed (exception: ''goog-partner-solution'')'
+                                rule: '!self.startsWith(''goog'') || self == ''goog-partner-solution'''
                             value:
                               description: |-
                                 value is the value part of the label. A label value can have a maximum of 63 characters.
@@ -8566,15 +8887,15 @@ spec:
                               encrypt new secrets
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
@@ -8599,15 +8920,15 @@ spec:
                               The system automatically manages the previous key via the status field.
                             properties:
                               keyName:
-                                description: keyName is the name of the keyvault key
-                                  used for encrypt/decrypt
+                                description: keyName is the name of the key used for
+                                  encrypt/decrypt.
                                 maxLength: 255
                                 minLength: 1
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                                  Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                                  keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                                 maxLength: 255
                                 minLength: 1
@@ -8633,6 +8954,18 @@ spec:
                             - Public
                             - Private
                             - ""
+                            type: string
+                          keyVaultType:
+                            description: |-
+                              keyVaultType specifies whether activeKey and backupKey are hosted by Azure Key Vault or Azure Managed HSM.
+                              Valid values are "KeyVault" and "ManagedHSM".
+                              When set to "KeyVault", both keys are hosted by Azure Key Vault.
+                              When set to "ManagedHSM", both keys are hosted by Azure Managed HSM.
+                              The type is immutable; key rotation must remain within the same service.
+                              When omitted, the keys are treated as Key Vault keys.
+                            enum:
+                            - KeyVault
+                            - ManagedHSM
                             type: string
                           kms:
                             description: |-
@@ -8717,6 +9050,10 @@ spec:
                             both keys must reside in the same Key Vault
                           rule: '!has(self.backupKey) || self.backupKey.keyVaultName
                             == self.activeKey.keyVaultName'
+                        - message: keyVaultType is immutable
+                          rule: '(has(self.keyVaultType) ? self.keyVaultType : ''KeyVault'')
+                            == (has(oldSelf.keyVaultType) ? oldSelf.keyVaultType :
+                            ''KeyVault'')'
                         - message: kms and workloadIdentity are mutually exclusive
                           rule: '!(has(self.kms) && has(self.workloadIdentity))'
                         - message: one of kms or workloadIdentity must be set
@@ -9720,15 +10057,14 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1
@@ -9955,15 +10291,14 @@ spec:
                         description: azure holds the Azure KMS key identity fields.
                         properties:
                           keyName:
-                            description: keyName is the name of the keyvault key used
-                              for encrypt/decrypt
+                            description: keyName is the name of the key used for encrypt/decrypt.
                             maxLength: 255
                             minLength: 1
                             type: string
                           keyVaultName:
                             description: |-
-                              keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
-                              Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+                              keyVaultName is the name of the Key Vault or Managed HSM. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                              Your Microsoft Entra application used to create the cluster must be authorized to access this resource, e.g using the AzureCLI:
                               `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
                             maxLength: 255
                             minLength: 1
@@ -10427,6 +10762,13 @@ spec:
                 type: object
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: infraID cannot be removed once set
+          rule: '!has(oldSelf.spec) || !has(oldSelf.spec.infraID) || (has(self.spec)
+            && has(self.spec.infraID))'
+        - message: clusterID cannot be removed once set
+          rule: '!has(oldSelf.spec) || !has(oldSelf.spec.clusterID) || (has(self.spec)
+            && has(self.spec.clusterID))'
     served: true
     storage: true
     subresources:

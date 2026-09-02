@@ -23,6 +23,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -109,7 +110,13 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *
 		"--disable-controllers-or-webhooks=DisableASOSecretController",
 	}
 	if hcp != nil && a.payloadVersion != nil && (a.payloadVersion.Major >= 5 || (a.payloadVersion.Major == 4 && a.payloadVersion.Minor >= 23)) {
-		args = append(args, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+		tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if err != nil {
+			return nil, err
+		}
+		if len(tlsArgs) > 0 {
+			args = append(args, tlsArgs...)
+		}
 	}
 
 	defaultMode := int32(0640)
@@ -371,9 +378,14 @@ func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster 
 const deletionFailedThreshold = 10 * time.Minute
 
 // DeleteOrphanedMachines removes the finalizer from AzureMachines that are stuck in deletion
-// due to credential failures. This is detected by checking each AzureMachine's Status.Conditions
-// for a Ready=False condition with Reason=DeletionFailed. Orphaning the machine allows management
-// cluster cleanup to proceed without requiring valid cloud credentials.
+// either due to credential failures or because the capi-provider (CAPZ) deployment has been
+// unable to run for at least deletionFailedThreshold (e.g. its availability-prober init
+// container is blocked on an unreachable guest API and can never start the manager). The
+// credential-failure case is detected by checking each AzureMachine's Status.Conditions for a
+// Ready=False condition with Reason=DeletionFailed. The CAPZ-unavailable case is detected by
+// checking whether the capi-provider deployment's Available condition has been reporting False
+// for that long. Orphaning the machine allows management cluster cleanup to proceed without
+// requiring valid cloud credentials or a healthy guest API.
 func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	// This orphaning behavior is intended for managed-identity cleanup flow.
 	if hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities == nil {
@@ -383,6 +395,11 @@ func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hy
 	azureMachineList := capiazure.AzureMachineList{}
 	if err := c.List(ctx, &azureMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
 		return fmt.Errorf("failed to list AzureMachines in %s: %w", controlPlaneNamespace, err)
+	}
+
+	providerUnavailable, err := capiProviderUnavailable(ctx, c, controlPlaneNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to determine capi-provider availability in %s: %w", controlPlaneNamespace, err)
 	}
 
 	logger := ctrl.LoggerFrom(ctx)
@@ -396,11 +413,13 @@ func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hy
 		if time.Since(azureMachine.DeletionTimestamp.Time) < deletionFailedThreshold {
 			continue
 		}
-		if !hasDeletionFailedCondition(azureMachine) {
+		deletionFailed := hasDeletionFailedCondition(azureMachine)
+		if !deletionFailed && !providerUnavailable {
 			continue
 		}
 		// Remove the AzureMachine finalizer to orphan the machine, leaving Azure
-		// infrastructure intact rather than attempting cloud API calls with invalid credentials.
+		// infrastructure intact rather than attempting cloud API calls with invalid credentials
+		// or waiting indefinitely for a CAPZ manager that can never start.
 		if removed := controllerutil.RemoveFinalizer(azureMachine, capiazure.MachineFinalizer); !removed {
 			continue
 		}
@@ -409,11 +428,37 @@ func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hy
 				azureMachine.Namespace, azureMachine.Name, err))
 			continue
 		}
-		logger.Info("orphaning azuremachine stuck in deletion due to credential failure",
-			"machine", client.ObjectKeyFromObject(azureMachine))
+		reason := "credential failure"
+		if !deletionFailed {
+			reason = "capi-provider unavailable"
+		}
+		logger.Info("orphaning azuremachine stuck in deletion",
+			"machine", client.ObjectKeyFromObject(azureMachine), "reason", reason)
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+// capiProviderUnavailable reports whether the capi-provider (CAPZ) deployment has been unable
+// to process AzureMachine finalizers for at least deletionFailedThreshold. A missing deployment
+// is treated as immediately unavailable. Otherwise this requires the deployment's Available
+// condition to have been reporting False for at least that long, rather than a point-in-time
+// replica count, so a brief CAPZ restart (e.g. an OOM kill or rolling update) that could still
+// finish real Azure cleanup does not cause a machine to be orphaned prematurely.
+func capiProviderUnavailable(ctx context.Context, c client.Client, controlPlaneNamespace string) (bool, error) {
+	dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "capi-provider", Namespace: controlPlaneNamespace}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(dep), dep); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	for _, cond := range dep.Status.Conditions {
+		if cond.Type == appsv1.DeploymentAvailable {
+			return cond.Status == corev1.ConditionFalse && time.Since(cond.LastTransitionTime.Time) >= deletionFailedThreshold, nil
+		}
+	}
+	return false, nil
 }
 
 // hasDeletionFailedCondition returns true if the AzureMachine has a Ready condition with

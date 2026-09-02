@@ -20,6 +20,7 @@ aliases:
     - cblecker
     - jparrill
     - devguyio
+    - clebs
   core-reviewers:
     - enxebre
     - csrwng
@@ -32,6 +33,13 @@ aliases:
     - clebs
     - Nirshal
     - ironcladlou
+    - georgelipceanu
+    - MehaBhalodiya
+    - dhgautam99
+    - vsolanki12
+    - PoornimaSingour
+    - vismishr
+    - rutvik23
   karpenter-approvers:
     - elmiko
     - enxebre
@@ -68,6 +76,7 @@ aliases:
     - ryan-cradick
     - twodcube
   gcp-reviewers:
+    - acwalczyk
     - apahim
     - cblecker
     - ckandag

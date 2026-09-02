@@ -19,9 +19,6 @@
                       "name": "AROHCPManagedIdentities"
                     },
                     {
-                        "name": "ExternalOIDCWithUpstreamParity"
-                    },
-                    {
                         "name": "OpenStack"
                     },
                     {
@@ -40,7 +37,7 @@
                         "name": "EtcdSharding"
                     },
                     {
-                        "name": "OSStreams"
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "enabled": [
@@ -53,10 +50,16 @@
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
                     },
                     {
+                        "name": "ExternalOIDCWithUpstreamParity"
+                    },
+                    {
                         "name": "HyperShiftOnlyDynamicResourceAllocation"
                     },
                     {
                         "name": "NetworkDiagnosticsConfig"
+                    },
+                    {
+                        "name": "OSStreams"
                     }
                 ],
                 "version": ""

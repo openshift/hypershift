@@ -16,9 +16,6 @@
             {
                 "disabled": [
                     {
-                        "name": "ExternalOIDCWithUpstreamParity"
-                    },
-                    {
                       "name": "AROHCPManagedIdentities"
                     },
                     {
@@ -40,7 +37,7 @@
                         "name": "EtcdSharding"
                     },
                     {
-                        "name": "OSStreams"
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "enabled": [
@@ -53,10 +50,16 @@
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
                     },
                     {
+                        "name": "ExternalOIDCWithUpstreamParity"
+                    },
+                    {
                         "name": "DynamicResourceAllocation"
                     },
                     {
                         "name": "NetworkDiagnosticsConfig"
+                    },
+                    {
+                        "name": "OSStreams"
                     }
                 ],
                 "version": ""

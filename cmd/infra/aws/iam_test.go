@@ -68,7 +68,7 @@ func TestCreateRole(t *testing.T) {
 			expectARN: roleARN,
 		},
 		{
-			name: "When GetRole returns an API error it should return the error",
+			name: "When GetRole returns an API error, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(nil, errors.New("api error"))
@@ -77,7 +77,7 @@ func TestCreateRole(t *testing.T) {
 			errorContains: "api error",
 		},
 		{
-			name: "When CreateRole fails it should return the error",
+			name: "When CreateRole fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -171,7 +171,7 @@ func TestCreateRoleWithInlinePolicy(t *testing.T) {
 			expectARN: roleARN,
 		},
 		{
-			name: "When PutRolePolicy fails it should return the error",
+			name: "When PutRolePolicy fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -273,7 +273,7 @@ func TestCreateRoleWithManagedPolicy(t *testing.T) {
 			expectARN: "arn:aws:iam::123456789012:role/" + roleName,
 		},
 		{
-			name: "When AttachRolePolicy fails it should return the error",
+			name: "When AttachRolePolicy fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -369,7 +369,7 @@ func TestCreateOIDCProvider(t *testing.T) {
 			expectARN: newARN,
 		},
 		{
-			name: "When ListOpenIDConnectProviders fails it should return the error",
+			name: "When ListOpenIDConnectProviders fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(nil, errors.New("api error"))
@@ -378,7 +378,7 @@ func TestCreateOIDCProvider(t *testing.T) {
 			errorContains: "api error",
 		},
 		{
-			name: "When DeleteOpenIDConnectProvider fails it should return the error",
+			name: "When DeleteOpenIDConnectProvider fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -395,7 +395,7 @@ func TestCreateOIDCProvider(t *testing.T) {
 			errorContains: "delete failed",
 		},
 		{
-			name: "When CreateOpenIDConnectProvider fails it should return the error",
+			name: "When CreateOpenIDConnectProvider fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().ListOpenIDConnectProviders(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -522,7 +522,7 @@ func TestCreateWorkerInstanceProfile(t *testing.T) {
 			},
 		},
 		{
-			name: "When CreateRole fails it should return the error",
+			name: "When CreateRole fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -535,7 +535,7 @@ func TestCreateWorkerInstanceProfile(t *testing.T) {
 			errorContains: "cannot create worker role",
 		},
 		{
-			name: "When CreateInstanceProfile fails it should return the error",
+			name: "When CreateInstanceProfile fails, it should return the error",
 			setupMock: func(m *awsapi.MockIAMAPI) {
 				gomock.InOrder(
 					m.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -689,12 +689,12 @@ func TestEnsureHostedZonePrefix(t *testing.T) {
 		expectOut string
 	}{
 		{
-			name:      "When hostedZone lacks prefix it should prepend hostedzone/",
+			name:      "When hostedZone lacks prefix, it should prepend hostedzone/",
 			input:     "Z1234567890ABC",
 			expectOut: "hostedzone/Z1234567890ABC",
 		},
 		{
-			name:      "When hostedZone already has prefix it should return it unchanged",
+			name:      "When hostedZone already has prefix, it should return it unchanged",
 			input:     "hostedzone/Z1234567890ABC",
 			expectOut: "hostedzone/Z1234567890ABC",
 		},

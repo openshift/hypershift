@@ -50,47 +50,57 @@ sequenceDiagram
 - `assets/` - Directory containing images and other assets
   - `login-screen.png` - Screenshot of the Dex login page
 - `requirements.yml` - Ansible Galaxy requirements
-- `requirements.txt` - Python package requirements
 
 ## Prerequisites
 
 1. AWS CLI configured with appropriate credentials
-2. Ansible installed on your local machine
-3. Required Python packages and Ansible collections:
+2. Required Python packages and Ansible collections:
    ```bash
-   pip install --require-hashes -r requirements.txt
+   uv sync
    ansible-galaxy install -r requirements.yml
    ```
 
+### Running the playbooks
+
+After `uv sync`, use **one of these approaches** to run the playbooks:
+
+**Option A: Activate the virtual environment first (recommended for repeated runs)**
+```bash
+source .venv/bin/activate
+ansible-playbook playbooks/main.yml
+```
+
+**Option B: Run through uv (simpler, one-liner)**
+```bash
+uv run ansible-playbook playbooks/main.yml
+```
+
+Both approaches ensure boto3 and other locked dependencies are available to Ansible's AWS modules.
+
 ### Managing Python dependencies
 
-`requirements.txt` pins every Python dependency (boto3, botocore, and their
-transitive dependencies) to an exact version and includes
-`--hash=sha256:...` entries for each published artifact, enabling pip's
-hash-checking mode (`pip install --require-hashes`) used above.
+Dependencies are declared in `pyproject.toml` and locked in `uv.lock`. The
+`uv sync` command installs the exact locked versions of boto3 and all
+transitive dependencies (botocore, jmespath, python-dateutil, s3transfer, six,
+urllib3). These are required by Ansible's `amazon.aws` collection modules to
+communicate with AWS APIs.
 
 To add a new dependency or update an existing one:
 
-1. Add or update the package's version constraint in `requirements.txt`
-   (e.g. `newpackage>=1.0.0`, or bump an existing pin).
-2. Regenerate the file with [`uv`](https://docs.astral.sh/uv/), compiling to
-   a new temporary path rather than overwriting `requirements.txt` directly,
-   then move it into place:
+1. Edit `pyproject.toml` — add or update the dependency in the `dependencies`
+   list. Only direct packages need to be listed; transitive dependencies are
+   resolved automatically.
+
+2. Regenerate the lock file from the `contrib/oidc/` directory:
 
    ```bash
-   uv pip compile --generate-hashes contrib/oidc/requirements.txt \
-     -o /tmp/requirements.txt.new
-   mv /tmp/requirements.txt.new contrib/oidc/requirements.txt
+   cd contrib/oidc
+   uv lock
    ```
 
-   This resolves the constraint to a concrete version, pulls in any new
-   transitive dependencies, and adds `--hash=sha256:...` entries for all
-   published wheel/sdist artifacts. Don't edit hashes by hand — always
-   regenerate so they're guaranteed to match the published artifact.
-3. Validate, forcing pip to actually verify every package's hash rather
-   than skipping ones already present locally:
+3. Install:
    ```bash
-   pip install --dry-run --ignore-installed --require-hashes -r requirements.txt
+   uv sync
    ```
 
 ## Configuration

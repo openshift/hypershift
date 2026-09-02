@@ -290,7 +290,6 @@ openshift-apiserver-64b4669d54-ffpw2              2/2     Running    0          
 openshift-controller-manager-7847ddf4fb-x5659     1/1     Running    0               6m38s
 openshift-oauth-apiserver-554c449b8f-lk97w        1/1     Running    0               6m41s
 packageserver-6fd9f8479-pbvzl                     0/2     Init:0/1   0               6m22s
-redhat-marketplace-catalog-8cc88f5cb-hbxv9        1/1     Running    0               6m29s
 redhat-operators-catalog-b749d6945-2bx8k          1/1     Running    0               6m29s
 ~~~
 

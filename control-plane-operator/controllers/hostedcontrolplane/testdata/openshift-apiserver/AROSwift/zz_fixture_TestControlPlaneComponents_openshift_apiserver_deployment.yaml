@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 9dc15fba8b7768bf1022f38f84f9fdf43efef88123716a9adf709536ed87280a
+    hypershift.openshift.io/desired-state-hash: 5bb2b4289933b94c0ee664f06c78103e08b4799a1a4fc4f6d36e398f6209e965
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-apiserver
@@ -89,6 +89,7 @@ spec:
         - --requestheader-group-headers=X-Remote-Group
         - --requestheader-extra-headers-prefix=X-Remote-Extra-
         - --client-ca-file=/etc/kubernetes/certs/client-ca/ca.crt
+        - --v=2
         env:
         - name: HTTP_PROXY
           value: http://127.0.0.1:8090
@@ -302,6 +303,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 10
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 10
       volumes:
       - emptyDir: {}
         name: work-logs

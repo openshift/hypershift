@@ -8,6 +8,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -113,13 +116,13 @@ func TestSupportedArchitectures(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name:          "AWS",
+			name:          "When platform is AWS, it should return AMD64 and ARM64 architectures",
 			platform:      hyperv1.AWSPlatform,
 			expected:      []string{hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64},
 			expectedError: nil,
 		},
 		{
-			name:          "Azure",
+			name:          "When platform is Azure, it should return unsupported platform error",
 			platform:      hyperv1.AzurePlatform,
 			expected:      nil,
 			expectedError: fmt.Errorf("unsupported platform: Azure"),
@@ -149,12 +152,12 @@ func TestArchToAMILabelKey(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "AMD64",
+			name:     "When architecture is AMD64, it should return the standard AMI label key",
 			arch:     hyperv1.ArchitectureAMD64,
 			expected: "hypershift.openshift.io/ami",
 		},
 		{
-			name:     "ARM64",
+			name:     "When architecture is ARM64, it should return the ARM64-specific AMI label key",
 			arch:     hyperv1.ArchitectureARM64,
 			expected: "hypershift.openshift.io/ami-arm64",
 		},
@@ -208,6 +211,62 @@ func TestKarpenterTaintConfigManifest(t *testing.T) {
 		g.Expect(taint["value"]).To(Equal(KarpenterBaseTaints[0].Value))
 		g.Expect(taint["effect"]).To(Equal(string(KarpenterBaseTaints[0].Effect)))
 	})
+}
+
+func TestIsStandaloneKarpenterOperatorEnabled(t *testing.T) {
+	testCases := []struct {
+		name       string
+		featureSet configv1.FeatureSet
+		envValue   string
+		expected   bool
+	}{
+		{
+			name:       "When both feature gate and env var are enabled, it should return true",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			envValue:   "1",
+			expected:   true,
+		},
+		{
+			name:       "When feature gate is enabled but env var is unset, it should return false",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			envValue:   "",
+			expected:   false,
+		},
+		{
+			name:       "When feature gate is enabled but env var is set to 0, it should return false",
+			featureSet: configv1.TechPreviewNoUpgrade,
+			envValue:   "0",
+			expected:   false,
+		},
+		{
+			name:       "When feature gate is disabled but env var is set to 1, it should return false",
+			featureSet: configv1.Default,
+			envValue:   "1",
+			expected:   false,
+		},
+		{
+			name:       "When both feature gate and env var are disabled, it should return false",
+			featureSet: configv1.Default,
+			envValue:   "",
+			expected:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			previousFeatureSet := featuregate.FeatureSet()
+			featuregate.ConfigureFeatureSet(string(tc.featureSet))
+			t.Cleanup(func() {
+				featuregate.ConfigureFeatureSet(string(previousFeatureSet))
+			})
+
+			t.Setenv(EnableStandaloneKarpenterOperatorEnvVar, tc.envValue)
+
+			g.Expect(IsStandaloneKarpenterOperatorEnabled()).To(Equal(tc.expected))
+		})
+	}
 }
 
 func TestKarpenterBaseTaintMap(t *testing.T) {

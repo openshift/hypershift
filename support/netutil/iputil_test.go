@@ -14,25 +14,25 @@ func TestFirstUsableIP(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "Given IPv4 CIDR, it should return the first ip of the network range",
+			name:    "When IPv4 CIDR is provided, it should return the first ip of the network range",
 			cidr:    "192.168.1.0/24",
 			want:    "192.168.1.1",
 			wantErr: false,
 		},
 		{
-			name:    "Given IPv6 CIDR, it should return the first ip of the network range",
+			name:    "When IPv6 CIDR is provided, it should return the first ip of the network range",
 			cidr:    "2000::/3",
 			want:    "2000::1",
 			wantErr: false,
 		},
 		{
-			name:    "Given a malformed IPv4 CIDR, it should return empty string and err",
+			name:    "When a malformed IPv4 CIDR is provided, it should return empty string and err",
 			cidr:    "192.168.1.35.53/24",
 			want:    "",
 			wantErr: true,
 		},
 		{
-			name:    "Given a malformed IPv6 CIDR, it should return empty string and err",
+			name:    "When a malformed IPv6 CIDR is provided, it should return empty string and err",
 			cidr:    "2001::44444444444444/17",
 			want:    "",
 			wantErr: true,

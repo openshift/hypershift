@@ -1,0 +1,21 @@
+name: Unit Tests (HyperShift Linter)
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+    paths:
+      - 'hack/tools/hypershiftlinter/**'
+      - 'hack/tools/go.mod'
+      - 'hack/tools/go.sum'
+      - 'hack/tools/vendor/**'
+      - 'Makefile'
+      - '.github/workflows/test-linter.yaml'
+      - '.github/workflows/test-linter-reusable.yaml'
+
+jobs:
+  test-linter:
+    uses: openshift/hypershift/.github/workflows/test-linter-reusable.yaml@main
+    permissions:
+      contents: read

@@ -1,6 +1,13 @@
 version: "2"
 run:
   allow-parallel-runners: true
+  build-tags:
+    - integration
+    - e2e
+    - reqserving
+    - e2ev2
+    - backuprestore
+    - envtest
 linters:
   enable:
     - dupword
@@ -13,7 +20,12 @@ linters:
     - noctx
     - unparam
     - usestdlibvars
+    - hypershiftlinter
   settings:
+    custom:
+      hypershiftlinter:
+        path: hack/tools/bin/hypershiftlinter.so
+        description: "Enforces HyperShift test conventions from TESTING.md and test/e2e/v2/AGENTS.md"
     gocyclo:
       min-complexity: 30
     govet:
@@ -98,6 +110,76 @@ linters:
       - linters:
           - staticcheck
         text: 'SA1019: "sigs.k8s.io/cluster-api/(.*)" is deprecated: This package is deprecated and is going to be removed when support for v1beta1 will be dropped.'
+      # The rules below baseline findings in build-tagged main-module sources that were not
+      # previously linted. Keep them file-scoped and remove paths as the findings are fixed.
+      - linters:
+          - dupword
+        path: '^test/e2e/v2/backuprestore/etcd_snapshot_test\.go$'
+      - linters:
+          - errcheck
+        path: '^test/e2e/(e2e_test|karpenter_control_plane_upgrade_test)\.go$'
+      - linters:
+          - errorlint
+        path: '^test/e2e/v2/(backuprestore/velero|internal/workload_registry)\.go$'
+      - linters:
+          - fatcontext
+        path: '^test/(e2e/e2e_test|integration/integration_test|reqserving-e2e/reqserving_e2e_test)\.go$'
+      - linters:
+          - gocyclo
+        path: '^test/e2e/(karpenter_test|v2/tests/karpenter_test)\.go$'
+      - linters:
+          - hypershiftlinter
+        path: '^test/e2e/v2/tests/karpenter_test\.go$'
+        text: '^(contextbackground|e2eutilallowlist):'
+      - linters:
+          - ineffassign
+        path: '^test/e2e/(nodepool_osp_advanced_test|v2/tests/control_plane_tls_operator_test)\.go$'
+      - linters:
+          - misspell
+        path: '^test/(e2e/(e2e_test|nodepool_imagetype_test|v2/backuprestore/prober)|envtest/generator|integration/integration_test|reqserving-e2e/(cp_autoscaling_test|reqserving_e2e_test))\.go$'
+      - linters:
+          - nilerr
+        path: '^test/e2e/(karpenter_test|nodepool_kv_advanced_multinet_test|nodepool_test|v2/(backuprestore/velero|internal/workload_registry|tests/karpenter_test))\.go$'
+      - linters:
+          - noctx
+        path: '^test/e2e/(e2e_test|v2/(cmd/(destroy-guests|dump-guests|run-tests)/main|tests/(hosted_cluster_azure_test|hosted_cluster_external_oidc_test)))\.go$'
+      - linters:
+          - unparam
+        path: '^test/(e2e/v2/backuprestore/velero|integration/control_plane_pki_operator)\.go$'
+      - linters:
+          - unused
+        path: '^test/(e2e/(azure_scheduler_test|nodepool_nto_machineconfig_test|nodepool_test)|envtest/crd_filter)\.go$'
+      - linters:
+          - usestdlibvars
+        path: '^test/e2e/e2e_test\.go$'
+      - linters:
+          - staticcheck
+        path: '^test/e2e/(nodepool_arm64_create_test|v2/tests/nodepool_arm64_create_test)\.go$'
+        text: '^QF1003:'
+      - linters:
+          - staticcheck
+        path: '^test/e2e/nodepool_test\.go$'
+        text: '^S1005:'
+      - linters:
+          - staticcheck
+        path: '^test/e2e/(chaos_test|nodepool_kv_jsonpatch_test|nodepool_mirrorconfigs_test|nodepool_nto_performanceprofile_test)\.go$'
+        text: '^S1039:'
+      - linters:
+          - staticcheck
+        path: '^test/integration/oadp/cli/restore_cli_test\.go$'
+        text: '^SA1012:'
+      - linters:
+          - staticcheck
+        path: '^test/e2e/nodepool_osp_advanced_test\.go$'
+        text: '^SA4006:'
+      - linters:
+          - staticcheck
+        path: '^test/(e2e/(e2e_test|nodepool_test|podtimingcontroller/podtimingcontroller|v2/tests/hosted_cluster_security_test)|envtest/crd_filter|integration/integration_test)\.go$'
+        text: '^SA1019:'
+      - linters:
+          - staticcheck
+        path: '^test/(e2e/(e2e_test|nodepool_kv_advanced_multinet_test|nodepool_machineconfig_test|nodepool_nto_machineconfig_test)|integration/control_plane_pki_operator)\.go$'
+        text: '^ST1019'
     paths:
       - third_party$
       - builtin$
@@ -127,3 +209,95 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+      # Temporary GCI baseline for files first covered by the main-module build tags.
+      # Keep every expression file-scoped so new tagged files remain enforced.
+      - '^cmd/cluster/powervs/create\.go'
+      - '^support/capi-crdmigrator/crd_migrator_test\.go$'
+      - '^test/e2e/autoscaling_test\.go$'
+      - '^test/e2e/azure_oauth_lb_test\.go$'
+      - '^test/e2e/azure_private_link_test\.go$'
+      - '^test/e2e/azure_scheduler_test\.go$'
+      - '^test/e2e/capi_storage_migration_test\.go$'
+      - '^test/e2e/chaos_test\.go$'
+      - '^test/e2e/cilium_network_policy_test\.go$'
+      - '^test/e2e/control_plane_upgrade_test\.go$'
+      - '^test/e2e/create_cluster_test\.go$'
+      - '^test/e2e/e2e_test\.go$'
+      - '^test/e2e/external_oidc_test\.go$'
+      - '^test/e2e/karpenter_control_plane_upgrade_test\.go$'
+      - '^test/e2e/karpenter_test\.go$'
+      - '^test/e2e/nodepool_additionalTrustBundlePropagation_test\.go$'
+      - '^test/e2e/nodepool_arm64_create_test\.go$'
+      - '^test/e2e/nodepool_autorepair_test\.go$'
+      - '^test/e2e/nodepool_imagetype_test\.go$'
+      - '^test/e2e/nodepool_kms_root_volume_test\.go$'
+      - '^test/e2e/nodepool_kv_advanced_multinet_test\.go$'
+      - '^test/e2e/nodepool_kv_cache_image_test\.go$'
+      - '^test/e2e/nodepool_kv_evictionstrategy_test\.go$'
+      - '^test/e2e/nodepool_kv_jsonpatch_test\.go$'
+      - '^test/e2e/nodepool_kv_multinet_test\.go$'
+      - '^test/e2e/nodepool_kv_nodeselector_test\.go$'
+      - '^test/e2e/nodepool_kv_qos_guaranteed_test\.go$'
+      - '^test/e2e/nodepool_machineconfig_test\.go$'
+      - '^test/e2e/nodepool_major_version_upgrade_test\.go$'
+      - '^test/e2e/nodepool_mirrorconfigs_test\.go$'
+      - '^test/e2e/nodepool_nto_machineconfig_test\.go$'
+      - '^test/e2e/nodepool_nto_performanceprofile_test\.go$'
+      - '^test/e2e/nodepool_osp_advanced_test\.go$'
+      - '^test/e2e/nodepool_prev_release_test\.go$'
+      - '^test/e2e/nodepool_rolling_upgrade_test\.go$'
+      - '^test/e2e/nodepool_spot_termination_handler_test\.go$'
+      - '^test/e2e/nodepool_test\.go$'
+      - '^test/e2e/nodepool_upgrade_test\.go$'
+      - '^test/e2e/olm_test\.go$'
+      - '^test/e2e/podtimingcontroller/podtimingcontroller\.go$'
+      - '^test/e2e/upgrade_hypershift_operator_test\.go$'
+      - '^test/e2e/util/util_metrics_proxy\.go$'
+      - '^test/e2e/v2/backuprestore/cleanup\.go$'
+      - '^test/e2e/v2/backuprestore/cli\.go$'
+      - '^test/e2e/v2/backuprestore/etcd_snapshot\.go$'
+      - '^test/e2e/v2/backuprestore/prober\.go$'
+      - '^test/e2e/v2/backuprestore/velero\.go$'
+      - '^test/e2e/v2/cmd/create-guests/main\.go$'
+      - '^test/e2e/v2/internal/fail_handler\.go$'
+      - '^test/e2e/v2/internal/test_context\.go$'
+      - '^test/e2e/v2/internal/validation\.go$'
+      - '^test/e2e/v2/internal/workload_registry\.go$'
+      - '^test/e2e/v2/lifecycle/azure\.go$'
+      - '^test/e2e/v2/tests/backup_restore_test\.go$'
+      - '^test/e2e/v2/backuprestore/etcd_snapshot_test\.go'
+      - '^test/e2e/v2/tests/control_plane_infrastructure_test\.go$'
+      - '^test/e2e/v2/tests/control_plane_tls_operator_test\.go$'
+      - '^test/e2e/v2/tests/etcd_chaos_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_azure_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_ccm_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_compliance_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_cpo_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_external_oidc_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_image_registry_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_ingress_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_metrics_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_psc_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_pull_secret_test\.go$'
+      - '^test/e2e/v2/tests/hosted_cluster_security_test\.go$'
+      - '^test/e2e/v2/tests/karpenter_test\.go$'
+      - '^test/e2e/v2/tests/nodepool_autoscaling_test\.go$'
+      - '^test/e2e/v2/tests/nodepool_lifecycle_test\.go$'
+      - '^test/e2e/v2/tests/nodepool_osimagestream_test\.go$'
+      - '^test/e2e/v2/tests/suite_test\.go$'
+      - '^test/e2e/v2/util/keycloak\.go$'
+      - '^test/e2e/v2/util/pod_exec\.go$'
+      - '^test/envtest/generator\.go$'
+      - '^test/integration/control_plane_pki_operator\.go$'
+      - '^test/integration/hosted_cluster_sizing_test\.go$'
+      - '^test/integration/integration_test\.go$'
+      - '^test/integration/oadp/backup/etcd_backup_test\.go$'
+      - '^test/integration/oadp/cli/backup_cli_test\.go$'
+      - '^test/integration/oadp/cli/restore_cli_test\.go$'
+      - '^test/integration/oadp/cli/schedule_cli_test\.go$'
+      - '^test/integration/oadp/cli/utils\.go$'
+      - '^test/integration/oadp/upload/upload_test\.go$'
+      - '^test/integration/placeholder_test\.go$'
+      - '^test/reqserving-e2e/cp_autoscaling_test\.go$'
+      - '^test/reqserving-e2e/create_reqserving_cluster_test\.go$'
+      - '^test/reqserving-e2e/reqserving_e2e_test\.go$'

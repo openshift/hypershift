@@ -119,7 +119,7 @@ func TestKeyReferenceFromStatus(t *testing.T) {
 	t.Parallel()
 	t.Run("When status is nil it should return empty reference", func(t *testing.T) {
 		g := NewWithT(t)
-		ref := KeyReferenceFromStatus(nil)
+		ref := KeyReferenceFromStatus(nil, "")
 		g.Expect(ref.Provider).To(BeEmpty())
 		g.Expect(ref.Fingerprint).To(BeEmpty())
 	})
@@ -130,7 +130,7 @@ func TestKeyReferenceFromStatus(t *testing.T) {
 			Provider: hyperv1.SecretEncryptionProviderAzure,
 			Azure:    hyperv1.AzureKMSKey{KeyVaultName: "v", KeyName: "k", KeyVersion: "1"},
 		}
-		ref := KeyReferenceFromStatus(status)
+		ref := KeyReferenceFromStatus(status, "")
 		g.Expect(ref.Provider).To(Equal(hyperv1.SecretEncryptionProviderAzure))
 		g.Expect(ref.Fingerprint).ToNot(BeEmpty())
 	})

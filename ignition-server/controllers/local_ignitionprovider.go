@@ -868,8 +868,9 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 // writeOSImageStreamManifest writes a 99_osimagestream.yaml manifest to mccDir.
 // The MCC bootstrap reads this CR to discover available RHEL streams from OCI
 // labels and select the requested stream for OS image resolution.
+// Uses v1 API version per https://github.com/openshift/machine-config-operator/pull/6076
 func writeOSImageStreamManifest(mccDir, osStream string) error {
-	manifest := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1alpha1
+	manifest := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1
 kind: OSImageStream
 metadata:
   name: cluster

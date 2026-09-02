@@ -1,3 +1,7 @@
+---
+title: Networking
+---
+
 Firstly, we need to ensure that we have the right networks prepared for use in the Hypervisor. These networks will be used to host both the Management and Hosted clusters.
 
 To configure these networks, we will use the following `kcli` command:

@@ -94,7 +94,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 		expected   map[string]bool
 	}{
 		{
-			name:       "Default feature set",
+			name:       "When using Default feature set, it should disable all feature gates",
 			featureSet: configv1.Default,
 			expected: map[string]bool{
 				"AROHCPManagedIdentities": false,
@@ -102,10 +102,11 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"GCPPlatform":             false,
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
+				"OSStreams":               true,
 			},
 		},
 		{
-			name:       "TechPreviewNoUpgrade feature set",
+			name:       "When using TechPreviewNoUpgrade feature set, it should enable all feature gates",
 			featureSet: configv1.TechPreviewNoUpgrade,
 			expected: map[string]bool{
 				"AROHCPManagedIdentities": true,
@@ -113,10 +114,11 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"GCPPlatform":             true,
 				"HCPEtcdBackup":           true,
 				"KarpenterOperator":       true,
+				"OSStreams":               true,
 			},
 		},
 		{
-			name:       "DevPreviewNoUpgrade feature set",
+			name:       "When using DevPreviewNoUpgrade feature set, it should disable all feature gates",
 			featureSet: configv1.DevPreviewNoUpgrade,
 			expected: map[string]bool{
 				"AROHCPManagedIdentities": false,
@@ -124,6 +126,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"GCPPlatform":             false,
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
+				"OSStreams":               false,
 			},
 		},
 	}
@@ -162,6 +165,12 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			assert.Equal(t, tc.expected["KarpenterOperator"], actualKarpenterOperator,
 				"KarpenterOperator should be %v for feature set %s",
 				tc.expected["KarpenterOperator"], tc.featureSet)
+
+			// Test OSStreams
+			actualOSStreams := featuregate.Gate().Enabled(featuregate.OSStreams)
+			assert.Equal(t, tc.expected["OSStreams"], actualOSStreams,
+				"OSStreams should be %v for feature set %s",
+				tc.expected["OSStreams"], tc.featureSet)
 		})
 	}
 }
@@ -173,4 +182,5 @@ func TestFeatureGateConstants(t *testing.T) {
 	assert.Equal(t, "GCPPlatform", string(featuregate.GCPPlatform))
 	assert.Equal(t, "HCPEtcdBackup", string(featuregate.HCPEtcdBackup))
 	assert.Equal(t, "KarpenterOperator", string(featuregate.KarpenterOperator))
+	assert.Equal(t, "OSStreams", string(featuregate.OSStreams))
 }

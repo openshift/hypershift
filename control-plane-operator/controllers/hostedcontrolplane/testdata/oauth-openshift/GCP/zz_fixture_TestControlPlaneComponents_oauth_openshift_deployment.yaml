@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a59a2f4ce83d76d56ba500c91e789486df291511020151103605845ef3c878ac
+    hypershift.openshift.io/desired-state-hash: d69c21759ea1a20a5ba6a617e388ba2c5857b36cd49d3220bb9dddcffc5b3090
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: oauth-openshift
@@ -89,6 +89,7 @@ spec:
         - --audit-log-maxsize=10
         - --audit-log-path=/var/run/kubernetes/audit.log
         - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
+        - --v=2
         env:
         - name: HTTP_PROXY
           value: http://127.0.0.1:8092
@@ -287,6 +288,14 @@ spec:
         key: hypershift.openshift.io/cluster
         operator: Equal
         value: hcp-namespace
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 10
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 10
       volumes:
       - configMap:
           defaultMode: 420

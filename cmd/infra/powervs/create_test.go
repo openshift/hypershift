@@ -22,11 +22,11 @@ func TestUseExistingDHCP(t *testing.T) {
 		input    models.DHCPServers
 		expected expected
 	}{
-		"DHCPServerDetail returned with no error": {
+		"When one DHCP server exists, it should return its details without an error": {
 			input:    models.DHCPServers{{ID: &id1}},
 			expected: expected{dhcpServerID: id1, err: nil, errExpected: false},
 		},
-		"Error expected when more than one DHCPServer exist": {
+		"When more than one DHCP server exists, it should return an error": {
 			input:    models.DHCPServers{{ID: &id1}, {ID: &id2}},
 			expected: expected{"", dhcpServerLimitExceeds(2), true},
 		},
