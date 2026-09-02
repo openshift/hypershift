@@ -503,37 +503,34 @@ func WaitForNodePoolConfigUpdateCompleteWithPlatform(t testing.TB, ctx context.C
 		// KubeVirt also tends to be slower for config updates
 		configUpdateTimeout = 45 * time.Minute
 	}
-	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to start config update", np.Namespace, np.Name),
-		func(ctx context.Context) (*hyperv1.NodePool, error) {
-			nodePool := &hyperv1.NodePool{}
-			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
-			return nodePool, err
-		},
-		[]Predicate[*hyperv1.NodePool]{
-			ConditionPredicate[*hyperv1.NodePool](Condition{
-				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
-				Status: metav1.ConditionTrue,
-			}),
-		},
-		// TODO:https://issues.redhat.com/browse/OCPBUGS-43824
-		WithTimeout(5*time.Minute),   // Increased from 1 minute
-		WithInterval(15*time.Second), // Increased from 10 seconds to reduce API calls and prevent rate limiting
-	)
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finish config update", np.Namespace, np.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
 			nodePool := &hyperv1.NodePool{}
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
 			return nodePool, err
 		},
-		[]Predicate[*hyperv1.NodePool]{
-			ConditionPredicate[*hyperv1.NodePool](Condition{
-				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
-				Status: metav1.ConditionFalse,
-			}),
-		},
+		[]Predicate[*hyperv1.NodePool]{nodePoolConfigUpdateCompletePredicate(np.Generation)},
 		WithTimeout(configUpdateTimeout),
 		WithInterval(20*time.Second), // Increased from 15 seconds to reduce API calls and prevent rate limiting
 	)
+}
+
+func nodePoolConfigUpdateCompletePredicate(expectedGeneration int64) Predicate[*hyperv1.NodePool] {
+	return func(nodePool *hyperv1.NodePool) (bool, string, error) {
+		for _, condition := range nodePool.Status.Conditions {
+			if condition.Type != hyperv1.NodePoolUpdatingConfigConditionType {
+				continue
+			}
+			if condition.ObservedGeneration < expectedGeneration {
+				return false, fmt.Sprintf("condition %s observed generation %d, want at least %d", condition.Type, condition.ObservedGeneration, expectedGeneration), nil
+			}
+			if condition.Status != corev1.ConditionFalse {
+				return false, fmt.Sprintf("condition %s is %s, want %s", condition.Type, condition.Status, corev1.ConditionFalse), nil
+			}
+			return true, fmt.Sprintf("condition %s is %s for generation %d", condition.Type, condition.Status, condition.ObservedGeneration), nil
+		}
+		return false, fmt.Sprintf("condition %s is missing", hyperv1.NodePoolUpdatingConfigConditionType), nil
+	}
 }
 
 type NodePoolPollOptions struct {
