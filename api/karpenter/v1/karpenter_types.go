@@ -2,6 +2,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -284,6 +285,15 @@ type OpenshiftEC2NodeClassSpec struct {
 	// These settings are injected into the node's ignition configuration via MachineConfig.
 	// +optional
 	Kubelet KubeletConfiguration `json:"kubelet,omitzero"`
+
+	// tuningConfig embeds Node Tuning Operator configurations to apply to nodes
+	// provisioned by this NodeClass. Each entry is a raw Tuned or PerformanceProfile
+	// manifest that is validated and forwarded to NTO at reconcile time.
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	// +listType=atomic
+	TuningConfig []runtime.RawExtension `json:"tuningConfig,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
