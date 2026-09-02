@@ -257,7 +257,7 @@ func TestUpdateNodePool_When_machine_type_is_empty_it_should_default_based_on_ar
 		expectedMachineType string
 	}{
 		{"amd64", "n2-standard-4"},
-		{"arm64", "n2-standard-4"}, // GCP doesn't have direct arm64 equivalent, uses default
+		{"arm64", "t2a-standard-4"}, // Tau T2A family for ARM64
 	}
 
 	for _, tc := range testCases {

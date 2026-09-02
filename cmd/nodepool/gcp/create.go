@@ -157,8 +157,8 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 		case "amd64":
 			machineType = defaultGCPMachineType
 		case "arm64":
-			// GCP doesn't have direct arm64 equivalent, use default for now
-			machineType = defaultGCPMachineType
+			// Tau T2A family for ARM64 architecture
+			machineType = "t2a-standard-4"
 		default:
 			machineType = defaultGCPMachineType
 		}
