@@ -19,6 +19,7 @@ package v1
 
 import (
 	karpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // OpenshiftEC2NodeClassSpecApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassSpec type for use
@@ -35,6 +36,7 @@ type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 	MetadataOptions                  *MetadataOptionsApplyConfiguration                  `json:"metadataOptions,omitempty"`
 	Version                          *string                                             `json:"version,omitempty"`
 	Kubelet                          *KubeletConfigurationApplyConfiguration             `json:"kubelet,omitempty"`
+	TuningConfig                     []corev1.LocalObjectReference                       `json:"tuningConfig,omitempty"`
 }
 
 // OpenshiftEC2NodeClassSpecApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassSpec type for use with
@@ -154,5 +156,15 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithVersion(value string) 
 // If called multiple times, the Kubelet field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithKubelet(value *KubeletConfigurationApplyConfiguration) *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	b.Kubelet = value
+	return b
+}
+
+// WithTuningConfig adds the given value to the TuningConfig field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the TuningConfig field.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithTuningConfig(values ...corev1.LocalObjectReference) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	for i := range values {
+		b.TuningConfig = append(b.TuningConfig, values[i])
+	}
 	return b
 }
