@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -45,6 +47,10 @@ const (
 	RestorePhaseCompleted                                 = "Completed"
 	RestorePhaseFailed                                    = "Failed"
 	RestorePhasePartiallyFailed                           = "PartiallyFailed"
+
+	BSLPhaseAvailable = "Available"
+
+	ScheduleBackupCreationTimeout = 5 * time.Minute
 )
 
 // EnsureVeleroPodRunning checks if at least one Velero pod is running and ready in the specified namespace.
@@ -95,6 +101,34 @@ func isPodReady(pod *corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// WaitForBackupStorageLocationAvailable waits for the BackupStorageLocation with the given
+// name to reach the Available phase. OADP reconciles the BSL from the DataProtectionApplication
+// asynchronously, so it can still be Unavailable for a short time after Velero itself is running,
+// which would otherwise fail any Backup/Schedule created against it with FailedValidation.
+//
+// It retries NotFound errors through BackupTimeout, returns other lookup or status errors
+// immediately, and wraps timeout errors with a descriptive message.
+func WaitForBackupStorageLocationAvailable(testCtx *internal.TestContext, name string) error {
+	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
+		bsl, err := getVeleroResource(ctx, testCtx.MgmtClient, DefaultOADPNamespace, name, "BackupStorageLocation")
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		phase, _, err := unstructured.NestedString(bsl.Object, "status", "phase")
+		if err != nil {
+			return false, fmt.Errorf("failed to get BackupStorageLocation phase: %w", err)
+		}
+		return phase == BSLPhaseAvailable, nil
+	})
+	if err != nil {
+		return fmt.Errorf("BackupStorageLocation %s did not become Available: %w", name, err)
+	}
+	return nil
 }
 
 // WaitForBackupCompletion waits for a backup to complete.
@@ -186,32 +220,11 @@ func getLatestBackupForHostedCluster(ctx context.Context, client crclient.Client
 	return getLatestVeleroResourceForHostedCluster(ctx, client, oadpNamespace, hcName, hcNamespace, "Backup", "BackupList")
 }
 
-// WaitForScheduleCompletion waits for the most recent backup created by a schedule to complete.
-// It finds the latest backup with label velero.io/schedule-name: scheduleName and waits for it to finish.
-func WaitForScheduleCompletion(testCtx *internal.TestContext, scheduleName string) error {
-	// Find the most recent backup created by this schedule
-	backupName, err := getLatestBackupForSchedule(testCtx.Context, testCtx.MgmtClient, DefaultOADPNamespace, scheduleName)
-	if err != nil {
-		return fmt.Errorf("failed to find backup for schedule %s: %w", scheduleName, err)
-	}
-
-	// Wait for backup to reach a final state
-	checkFn := isBackupInFinalState(testCtx.MgmtClient, DefaultOADPNamespace, backupName)
-	if err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
-		return checkFn(ctx)
-	}); err != nil {
-		return fmt.Errorf("backup %s (from schedule %s) did not reach final state within %v: %w", backupName, scheduleName, BackupTimeout, err)
-	}
-
-	return ensureBackupSuccessful(testCtx.Context, testCtx.MgmtClient, DefaultOADPNamespace, backupName)
-}
-
-// getLatestBackupForSchedule finds the most recent backup with label velero.io/schedule-name: scheduleName.
-// It waits for a backup to exist before returning, polling until a backup is created by the schedule.
-func getLatestBackupForSchedule(ctx context.Context, client crclient.Client, oadpNamespace string, scheduleName string) (string, error) {
-	var backupName string
+// WaitForScheduleBackupCreated waits until a schedule has created a backup, without waiting
+// for that backup to reach a final state.
+func WaitForScheduleBackupCreated(testCtx *internal.TestContext, scheduleName string) error {
 	// Wait for a backup to be created by the schedule
-	err := wait.PollUntilContextTimeout(ctx, PollInterval, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(testCtx.Context, PollInterval, ScheduleBackupCreationTimeout, true, func(ctx context.Context) (bool, error) {
 		backupList := &unstructured.UnstructuredList{}
 		backupList.SetGroupVersionKind(schema.GroupVersionKind{
 			Group:   "velero.io",
@@ -223,27 +236,28 @@ func getLatestBackupForSchedule(ctx context.Context, client crclient.Client, oad
 		labelSelector := crclient.MatchingLabels{
 			"velero.io/schedule-name": scheduleName,
 		}
-		if lastErr := client.List(ctx, backupList, crclient.InNamespace(oadpNamespace), labelSelector); lastErr != nil {
+		if lastErr := testCtx.MgmtClient.List(ctx, backupList, crclient.InNamespace(DefaultOADPNamespace), labelSelector); lastErr != nil {
 			return false, lastErr
 		}
 		if len(backupList.Items) == 0 {
 			return false, nil
 		}
-
-		// Sort by creation timestamp (most recent first)
-		sort.Slice(backupList.Items, func(i, j int) bool {
-			return backupList.Items[i].GetCreationTimestamp().After(backupList.Items[j].GetCreationTimestamp().Time)
-		})
-
-		backupName = backupList.Items[0].GetName()
+		backupName := backupList.Items[0].GetName()
+		failed, err := isBackupInFailedState(testCtx.MgmtClient, DefaultOADPNamespace, backupName)(ctx)
+		if err != nil {
+			return false, err
+		}
+		if failed {
+			return false, fmt.Errorf("backup %s is in a failing state", backupName)
+		}
 		return true, nil
 	})
 
 	if err != nil {
-		return "", fmt.Errorf("failed to find backup for schedule %s within timeout: %w", scheduleName, err)
+		return fmt.Errorf("failed to find backup for schedule %s within timeout: %w", scheduleName, err)
 	}
 
-	return backupName, nil
+	return nil
 }
 
 // getVeleroResource retrieves a Velero resource (Backup, Restore, or Schedule) by name.
@@ -270,12 +284,12 @@ func getBackup(ctx context.Context, client crclient.Client, namespace, name stri
 	return getVeleroResource(ctx, client, namespace, name, "Backup")
 }
 
-// isVeleroResourceInFinalState returns a function that checks if a Velero resource (Backup or Restore)
-// is in a final state. This can be both success and failure.
-func isVeleroResourceInFinalState(
+// isVeleroResourceInState returns a function that checks if a Velero resource (Backup or Restore)
+// is in a desired state.
+func isVeleroResourceInState(
 	client crclient.Client,
 	namespace, name, kind string,
-	phasesNotDone []string,
+	states []string,
 	getResourceFunc func(context.Context, crclient.Client, string, string) (*unstructured.Unstructured, error),
 ) func(context.Context) (bool, error) {
 	return func(ctx context.Context) (bool, error) {
@@ -294,30 +308,31 @@ func isVeleroResourceInFinalState(
 			return false, nil
 		}
 
-		// Check if phase is in the "not done" list
-		for _, notDonePhase := range phasesNotDone {
-			if phase == notDonePhase {
-				return false, nil
-			}
-		}
-		return true, nil
+		return slices.Contains(states, phase), nil
 	}
 }
 
 // isBackupInFinalState returns a function that checks if a backup is in a final state. This
 // can be both success and failure.
 func isBackupInFinalState(client crclient.Client, namespace, name string) func(context.Context) (bool, error) {
-	phasesNotDone := []string{
-		BackupPhaseNew,
-		BackupPhaseQueued,
-		BackupPhaseReadyToStart,
-		BackupPhaseInProgress,
-		BackupPhaseWaitingForPluginOperations,
-		BackupPhaseWaitingForPluginOperationsPartiallyFailed,
-		BackupPhaseFinalizing,
-		BackupPhaseFinalizingPartiallyFailed,
+	finalStates := []string{
+		BackupPhaseCompleted,
+		BackupPhaseFailed,
+		BackupPhasePartiallyFailed,
 	}
-	return isVeleroResourceInFinalState(client, namespace, name, "backup", phasesNotDone, getBackup)
+	return isVeleroResourceInState(client, namespace, name, "backup", finalStates, getBackup)
+}
+
+// isBackupInFailedState returns a function that checks if a backup is in a failing state.
+// This can be both partially failed and failed.
+func isBackupInFailedState(client crclient.Client, namespace, name string) func(context.Context) (bool, error) {
+	failedStates := []string{
+		BackupPhaseWaitingForPluginOperationsPartiallyFailed,
+		BackupPhaseFinalizingPartiallyFailed,
+		BackupPhaseFailed,
+		BackupPhasePartiallyFailed,
+	}
+	return isVeleroResourceInState(client, namespace, name, "backup", failedStates, getBackup)
 }
 
 // WaitForRestoreCompletion waits for a restore to complete.
@@ -384,15 +399,12 @@ func getRestore(ctx context.Context, client crclient.Client, namespace, name str
 // isRestoreInFinalState returns a function that checks if a restore is in a final state.
 // This can be both success and failure.
 func isRestoreInFinalState(client crclient.Client, namespace, name string) func(context.Context) (bool, error) {
-	phasesNotDone := []string{
-		RestorePhaseNew,
-		RestorePhaseInProgress,
-		RestorePhaseWaitingForPluginOperations,
-		RestorePhaseWaitingForPluginOperationsPartiallyFailed,
-		RestorePhaseFinalizing,
-		RestorePhaseFinalizingPartiallyFailed,
+	finalStates := []string{
+		RestorePhaseCompleted,
+		RestorePhaseFailed,
+		RestorePhasePartiallyFailed,
 	}
-	return isVeleroResourceInFinalState(client, namespace, name, "restore", phasesNotDone, getRestore)
+	return isVeleroResourceInState(client, namespace, name, "restore", finalStates, getRestore)
 }
 
 // DeleteOADPSchedule deletes a Velero Schedule resource.
