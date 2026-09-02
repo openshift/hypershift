@@ -10,38 +10,38 @@ The v1 framework produced test results where a single test case failure appeared
 flowchart TD
     Prow[Prow Job Trigger] --> CIO[ci-operator]
     CIO --> Build[Build hypershift-tests image]
-    
+
     Build --> Image[hypershift-tests image]
-    
+
     subgraph "openshift/hypershift repo"
         Tests[test/e2e/v2/tests/]
         CMD[test/e2e/v2/cmd/]
         Platform[test/e2e/v2/lifecycle/]
         Dockerfile[Dockerfile.e2e]
     end
-    
+
     subgraph "openshift/release repo"
         StepRegistry[Step Registry]
         JobConfig[Job Config]
         Workflow[workflow YAML]
         Chain[chain YAML]
         Ref[ref YAML]
-        
+
         Workflow --> Chain
         Chain --> Ref
     end
-    
+
     Tests --> Dockerfile
     CMD --> Dockerfile
     Platform --> Dockerfile
     Dockerfile --> Image
-    
+
     Image --> Binaries["hypershift/bin/<br>create-guests, run-tests,<br>dump-guests, destroy-guests,<br>test-e2e-v2"]
-    
+
     Binaries --> Ref
     StepRegistry --> Workflow
     JobConfig --> Workflow
-    
+
     style Image fill:#e1f5ff
     style Binaries fill:#ffe1e1
 ```
@@ -52,6 +52,8 @@ flowchart TD
 ## Key Concepts
 
 - **Ginkgo labels** — Tags on `Describe`/`It` blocks (e.g., `hosted-cluster-health`, `lifecycle`) used by `--ginkgo.label-filter` to select which tests run on which cluster.
+
+- **TestPlan** — Declarative selection of cluster variants and their test matrix. The platform supplies a default plan, or CI can load a JSON/YAML plan through `TEST_PLAN`.
 
 - **PlatformConfig** — Interface in `test/e2e/v2/lifecycle/platform.go` that encapsulates all platform-specific configuration. Implement this to add a new platform.
 
@@ -68,7 +70,7 @@ flowchart TD
 1. Prow triggers the CI job (e.g., `e2e-azure-v2-self-managed`)
 2. ci-operator builds the `hypershift-tests` image from `Dockerfile.e2e`
 3. **create-guests** creates clusters in parallel — 5 phases: create, post-create hooks, wait Available, wait version rollout, write cluster names to `SHARED_DIR`. Emits JUnit XML to `ARTIFACT_DIR` recording success or failure for each cluster's version rollout.
-4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and `E2E_HOSTED_CLUSTER_NAME`. Whether groups run concurrently or sequentially is determined by placement in the `TestMatrix` struct — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
+4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and cluster identity. Whether groups run concurrently or sequentially is determined by placement in the resolved `TestPlan`'s `TestMatrix` — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
 5. **dump-guests** collects diagnostic artifacts in parallel. Always exits 0.
 6. **destroy-guests** tears down all clusters in parallel. Exits non-zero if any destroy fails.
 
