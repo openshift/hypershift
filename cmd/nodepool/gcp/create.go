@@ -183,13 +183,18 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 		}
 	}
 
-	// Build resource labels
+	// Build resource labels (sorted by key for deterministic output)
+	keys := make([]string, 0, len(o.ResourceLabels))
+	for k := range o.ResourceLabels {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
 	var resourceLabels []hyperv1.GCPResourceLabel
-	for key, value := range o.ResourceLabels {
-		labelValue := value
+	for _, key := range keys {
 		resourceLabels = append(resourceLabels, hyperv1.GCPResourceLabel{
 			Key:   key,
-			Value: ptr.To(labelValue),
+			Value: ptr.To(o.ResourceLabels[key]),
 		})
 	}
 
