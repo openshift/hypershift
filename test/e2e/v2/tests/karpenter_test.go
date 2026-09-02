@@ -28,7 +28,9 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	"github.com/openshift/hypershift/support/capabilities"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/ntotuning"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -79,6 +81,7 @@ func RegisterKarpenterTests(getTestCtx internal.TestContextGetter) {
 	KarpenterArbitrarySubnetTest(getTestCtx)
 	KarpenterKubeletPropagationTest(getTestCtx)
 	KarpenterAutoNodeLifecycleTest(getTestCtx)
+	KarpenterNodeTuningTest(getTestCtx)
 	// This test intentionally leaves dangling resources so cluster teardown must
 	// force-terminate nodes despite a blocking PDB. It must run last.
 	KarpenterBillingConsolidationTest(getTestCtx)
@@ -1612,6 +1615,302 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 	})
+}
+
+const karpenterNtoTunedVMDirtyRatio = "55"
+
+const karpenterNtoSysctlTunedYAML = `apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  name: karpenter-nto-sysctl
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile for Karpenter NTO e2e
+      include=openshift-node
+      [sysctl]
+      vm.dirty_ratio="55"
+    name: karpenter-nto-sysctl-profile
+  recommend:
+  - priority: 20
+    profile: karpenter-nto-sysctl-profile
+`
+
+func KarpenterNodeTuningTest(getTestCtx internal.TestContextGetter) {
+	Context("[Feature:AutoNode] Node Tuning", func() {
+		BeforeEach(func() {
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+				Skip("AutoNode not configured on hosted cluster")
+			}
+			if !capabilities.IsNodeTuningCapabilityEnabled(hc.Spec.Capabilities) {
+				Skip("NodeTuning capability is disabled on hosted cluster")
+			}
+		})
+
+		It("should apply sysctl tuning via OpenshiftEC2NodeClass tuningConfig", func() {
+			tc := getTestCtx()
+			ctx := tc.Context
+			t := GinkgoTB()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+			hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+			tuningCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "karpenter-nto-sysctl-tuned",
+					Namespace: hc.Namespace,
+				},
+				Data: map[string]string{tuningConfigKey: karpenterNtoSysctlTunedYAML},
+			}
+			Expect(tc.MgmtClient.Create(ctx, tuningCM)).To(Succeed())
+			GinkgoWriter.Printf("Created tuning ConfigMap %s/%s", tuningCM.Namespace, tuningCM.Name)
+			DeferCleanup(func() {
+				if err := tc.MgmtClient.Delete(ctx, tuningCM); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete ConfigMap %s", tuningCM.Name)
+				}
+			})
+
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("mirrored tuning ConfigMap %s in HCP", tuningCM.Name),
+				func(ctx context.Context) (*corev1.ConfigMap, error) {
+					cm := &corev1.ConfigMap{}
+					err := tc.MgmtClient.Get(ctx, crclient.ObjectKey{Name: tuningCM.Name, Namespace: hcpNamespace}, cm)
+					return cm, err
+				},
+				[]e2eutil.Predicate[*corev1.ConfigMap]{
+					func(cm *corev1.ConfigMap) (bool, string, error) {
+						if cm.Labels["hypershift.openshift.io/mirrored-tuning-config"] != "true" {
+							return false, "mirrored-tuning-config label not set", nil
+						}
+						if cm.Data[tuningConfigKey] == "" {
+							return false, "tuning data key missing", nil
+						}
+						return true, "mirrored tuning ConfigMap present", nil
+					},
+				},
+				e2eutil.WithTimeout(1*time.Minute), e2eutil.WithInterval(5*time.Second),
+			)
+
+			nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "nto-sysctl-test"},
+			}
+			Expect(hcClient.Create(ctx, nc)).To(Succeed())
+			GinkgoWriter.Printf("Created OpenshiftEC2NodeClass %q", nc.Name)
+			DeferCleanup(func() {
+				if err := hcClient.Delete(ctx, nc); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete OpenshiftEC2NodeClass %s", nc.Name)
+				}
+			})
+
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass %q to be Ready", nc.Name),
+				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+					updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, updated)
+					return updated, err
+				},
+				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   "Ready",
+						Status: metav1.ConditionTrue,
+					}),
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
+
+			testNodePool := baseNodePool("nto-sysctl-test", nc.Name)
+			testWorkLoads := testWorkload("nto-sysctl-web-app", 1, map[string]string{
+				karpenterv1.NodePoolLabelKey: testNodePool.Name,
+			})
+			testNodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name}
+
+			Expect(hcClient.Create(ctx, testNodePool)).To(Succeed())
+			GinkgoWriter.Printf("Created Karpenter NodePool %s", testNodePool.Name)
+			DeferCleanup(func() {
+				if err := hcClient.Delete(ctx, testNodePool); err != nil {
+					if apierrors.IsNotFound(err) {
+						return
+					}
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", testNodePool.Name)
+				}
+				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+			})
+
+			Expect(hcClient.Create(ctx, testWorkLoads)).To(Succeed())
+			GinkgoWriter.Printf("Created workload %s", testWorkLoads.Name)
+			DeferCleanup(func() {
+				if err := hcClient.Delete(ctx, testWorkLoads); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete Deployment %s", testWorkLoads.Name)
+				}
+			})
+
+			e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+
+			guestConfig := e2eutil.WaitForGuestRestConfig(t, ctx, tc.MgmtClient, hc)
+			guestClientset, err := kubeclient.NewForConfig(guestConfig)
+			Expect(err).NotTo(HaveOccurred())
+
+			var baselineVMDirtyRatio string
+			Eventually(func(g Gomega) {
+				baselineVMDirtyRatio, err = readVMDirtyRatioOnKarpenterNode(ctx, hcClient, guestClientset, testNodeLabels)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(baselineVMDirtyRatio).NotTo(BeEmpty())
+			}).WithTimeout(5 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
+			Expect(baselineVMDirtyRatio).NotTo(Equal(karpenterNtoTunedVMDirtyRatio),
+				"baseline vm.dirty_ratio should differ from the tuned value we are about to apply")
+			GinkgoWriter.Printf("Baseline vm.dirty_ratio=%s before tuning is referenced", baselineVMDirtyRatio)
+
+			GinkgoWriter.Printf("Referencing tuning ConfigMap %q on OpenshiftEC2NodeClass %q", tuningCM.Name, nc.Name)
+			err = e2eutil.UpdateObject(t, ctx, hcClient, nc, func(obj *hyperkarpenterv1.OpenshiftEC2NodeClass) {
+				obj.Spec.TuningConfig = []corev1.LocalObjectReference{{Name: tuningCM.Name}}
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			tunedCMName := ntotuning.TunedConfigMap(hcpNamespace, karpenterutil.KarpenterNodePoolName(nc)).Name
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("tuned output ConfigMap %s/%s", hcpNamespace, tunedCMName),
+				func(ctx context.Context) (*corev1.ConfigMap, error) {
+					cm := &corev1.ConfigMap{}
+					err := tc.MgmtClient.Get(ctx, crclient.ObjectKey{Name: tunedCMName, Namespace: hcpNamespace}, cm)
+					return cm, err
+				},
+				[]e2eutil.Predicate[*corev1.ConfigMap]{
+					func(cm *corev1.ConfigMap) (bool, string, error) {
+						if cm.Labels[ntotuning.TunedConfigMapLabel] != "true" {
+							return false, fmt.Sprintf("missing label %s=true", ntotuning.TunedConfigMapLabel), nil
+						}
+						if cm.Data[ntotuning.ConfigKey] == "" {
+							return false, "tuning data key missing", nil
+						}
+						return true, "tuned output ConfigMap present", nil
+					},
+				},
+				e2eutil.WithTimeout(5*time.Minute), e2eutil.WithInterval(5*time.Second),
+			)
+
+			GinkgoWriter.Printf("Verifying vm.dirty_ratio=%s after tuning is applied", karpenterNtoTunedVMDirtyRatio)
+			expectNodeVMDirtyRatioEventually(ctx, hcClient, guestClientset, testNodeLabels, karpenterNtoTunedVMDirtyRatio, 10*time.Minute)
+
+			GinkgoWriter.Printf("Removing tuning ConfigMap and clearing OpenshiftEC2NodeClass tuningConfig")
+			Expect(tc.MgmtClient.Delete(ctx, tuningCM)).To(Succeed())
+			err = e2eutil.UpdateObject(t, ctx, hcClient, nc, func(obj *hyperkarpenterv1.OpenshiftEC2NodeClass) {
+				obj.Spec.TuningConfig = nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				cm := &corev1.ConfigMap{}
+				err := tc.MgmtClient.Get(ctx, crclient.ObjectKey{Name: tunedCMName, Namespace: hcpNamespace}, cm)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "tuned output ConfigMap should be deleted")
+			}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+			GinkgoWriter.Printf("Verifying vm.dirty_ratio=%s after tuning is removed", baselineVMDirtyRatio)
+			expectNodeVMDirtyRatioEventually(ctx, hcClient, guestClientset, testNodeLabels, baselineVMDirtyRatio, 10*time.Minute)
+
+			Expect(hcClient.Delete(ctx, testWorkLoads)).To(Succeed())
+			Expect(hcClient.Delete(ctx, testNodePool)).To(Succeed())
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+		})
+	})
+
+	// TODO(maxcao13): Add a test for kernel boot parameters when that code exists..
+}
+
+func expectNodeVMDirtyRatioEventually(
+	ctx context.Context,
+	hcClient crclient.Client,
+	guestClientset *kubeclient.Clientset,
+	nodeLabels map[string]string,
+	expected string,
+	timeout time.Duration,
+) {
+	Eventually(func(g Gomega) {
+		actual, err := readVMDirtyRatioOnKarpenterNode(ctx, hcClient, guestClientset, nodeLabels)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(actual).To(Equal(expected), "vm.dirty_ratio on karpenter node")
+	}).WithTimeout(timeout).WithPolling(15 * time.Second).Should(Succeed())
+}
+
+func readVMDirtyRatioOnKarpenterNode(
+	ctx context.Context,
+	hcClient crclient.Client,
+	guestClientset *kubeclient.Clientset,
+	nodeLabels map[string]string,
+) (string, error) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "sysctl-check-",
+			Namespace:    "kube-system",
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			NodeSelector:  nodeLabels,
+			Tolerations: []corev1.Toleration{{
+				Operator: corev1.TolerationOpExists,
+			}},
+			Containers: []corev1.Container{{
+				Name:    "checker",
+				Image:   "alpine",
+				Command: []string{"/bin/sh", "-c", "chroot /host sysctl -n vm.dirty_ratio"},
+				SecurityContext: &corev1.SecurityContext{
+					Privileged: ptr.To(true),
+				},
+				VolumeMounts: []corev1.VolumeMount{{
+					Name:      "host",
+					MountPath: "/host",
+					ReadOnly:  true,
+				}},
+			}},
+			Volumes: []corev1.Volume{{
+				Name: "host",
+				VolumeSource: corev1.VolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{Path: "/"},
+				},
+			}},
+		},
+	}
+
+	if err := hcClient.Create(ctx, pod); err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = hcClient.Delete(ctx, pod)
+	}()
+
+	if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		p := &corev1.Pod{}
+		if err := hcClient.Get(ctx, crclient.ObjectKeyFromObject(pod), p); err != nil {
+			return false, err
+		}
+		return p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed, nil
+	}); err != nil {
+		return "", fmt.Errorf("sysctl checker pod did not complete: %w", err)
+	}
+
+	p := &corev1.Pod{}
+	if err := hcClient.Get(ctx, crclient.ObjectKeyFromObject(pod), p); err != nil {
+		return "", err
+	}
+	if p.Status.Phase != corev1.PodSucceeded {
+		return "", fmt.Errorf("sysctl checker pod failed with phase %s", p.Status.Phase)
+	}
+
+	logReq := guestClientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: "checker"})
+	logStream, err := logReq.Stream(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer logStream.Close()
+	logBytes, err := io.ReadAll(logStream)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(logBytes)), nil
 }
 
 func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {

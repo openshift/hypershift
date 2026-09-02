@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/ntotuning"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/tracing"
@@ -35,7 +36,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -87,10 +87,9 @@ const (
 	nodePoolAnnotationCanonicalDataPlaneImages = "hypershift.openshift.io/canonical-data-plane-images"
 	nodePoolCoreIgnitionConfigLabel            = "hypershift.openshift.io/core-ignition-config"
 
-	tuningConfigKey                                      = "tuning"
-	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"
-	nodeTuningGeneratedConfigLabel                       = "hypershift.openshift.io/nto-generated-machine-config"
-	PerformanceProfileConfigMapLabel                     = "hypershift.openshift.io/performanceprofile-config"
+	nodeTuningGeneratedConfigLabel = "hypershift.openshift.io/nto-generated-machine-config"
+	// PerformanceProfileConfigMapLabel is re-exported for external callers (e.g. e2e tests).
+	PerformanceProfileConfigMapLabel = ntotuning.PerformanceProfileConfigMapLabel
 	NodeTuningGeneratedPerformanceProfileStatusLabel     = "hypershift.openshift.io/nto-generated-performance-profile-status"
 	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
 	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
@@ -1063,7 +1062,7 @@ func (r *NodePoolReconciler) getNodePoolNamespacedName(nodePoolName string, cont
 }
 
 func isNodePoolGeneratedTuningConfigMap(cm *corev1.ConfigMap) bool {
-	if _, ok := cm.GetLabels()[tunedConfigMapLabel]; ok {
+	if _, ok := cm.GetLabels()[ntotuning.TunedConfigMapLabel]; ok {
 		return true
 	}
 	_, ok := cm.GetLabels()[PerformanceProfileConfigMapLabel]
@@ -1345,22 +1344,6 @@ func aggregateMachineMessages(msgs []string) string {
 	return builder.String()
 }
 
-func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]string, controlPlaneNamespace string) error {
-	cmList := &corev1.ConfigMapList{}
-	if err := c.List(ctx, cmList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(lbl),
-		Namespace:     controlPlaneNamespace,
-	}); err != nil {
-		return err
-	}
-	for i := range cmList.Items {
-		cm := &cmList.Items[i]
-		if _, err := k8sutil.DeleteIfNeeded(ctx, c, cm); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // reconcileScaleFromZeroAnnotations sets scale-from-zero annotations on MachineDeployment/MachineSet.
 // It supports multiple platforms by switching on the NodePool's platform type.
