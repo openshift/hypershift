@@ -277,6 +277,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			infraID:      "test-infra-123",
 			images: map[string]string{
 				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+				"token-minter":               "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -298,6 +299,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 					corev1.EnvVar{Name: "AWS_SDK_LOAD_CONFIG", Value: "true"},
 					corev1.EnvVar{Name: KarpenterImageAWSEnvVar, Value: "quay.io/openshift/karpenter-aws:latest"},
 					corev1.EnvVar{Name: ManagementClusterEnvVar, Value: "true"},
+					corev1.EnvVar{Name: TokenMinterImageEnvVar, Value: "quay.io/openshift/token-minter:latest"},
 				))
 
 				g.Expect(container.Args).To(ContainElement(ContainSubstring("--target-kubeconfig=")))
@@ -318,6 +320,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			infraID:       "test-azure-456",
 			images: map[string]string{
 				"azure-karpenter-provider-azure": "quay.io/openshift/karpenter-azure:latest",
+				"token-minter":                   "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -336,6 +339,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 					corev1.EnvVar{Name: "REGION", Value: "eastus"},
 					corev1.EnvVar{Name: KarpenterImageAzureEnvVar, Value: "quay.io/openshift/karpenter-azure:latest"},
 					corev1.EnvVar{Name: ManagementClusterEnvVar, Value: "true"},
+					corev1.EnvVar{Name: TokenMinterImageEnvVar, Value: "quay.io/openshift/token-minter:latest"},
 				))
 
 				// Azure should not have AWS-specific env vars
@@ -352,6 +356,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			rhobsEnabled: true,
 			images: map[string]string{
 				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+				"token-minter":               "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -376,6 +381,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			rhobsEnabled: false,
 			images: map[string]string{
 				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+				"token-minter":               "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -401,6 +407,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			images: map[string]string{
 				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
 				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+				"token-minter":               "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -423,6 +430,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			images: map[string]string{
 				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
 				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+				"token-minter":               "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -448,6 +456,7 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			images: map[string]string{
 				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
 				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
+				"token-minter":               "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
