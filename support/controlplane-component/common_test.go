@@ -14,34 +14,62 @@ import (
 )
 
 func TestAdaptPodDisruptionBudget(t *testing.T) {
+	t.Parallel()
+
+	yamlMinAvailable := ptr.To(intstr.FromInt32(1))
 	tests := []struct {
-		name               string
-		availabilityPolicy hyperv1.AvailabilityPolicy
-		wantMinAvailable   *intstr.IntOrString
-		wantMaxUnavailable *intstr.IntOrString
+		name                  string
+		availabilityPolicy    hyperv1.AvailabilityPolicy
+		initialMinAvailable   *intstr.IntOrString
+		initialMaxUnavailable *intstr.IntOrString
+		wantPredicate         bool
+		wantMinAvailable      *intstr.IntOrString
+		wantMaxUnavailable    *intstr.IntOrString
 	}{
 		{
-			name:               "When SingleReplica it should set minAvailable to 1",
+			name:               "When SingleReplica, it should disable the PDB",
 			availabilityPolicy: hyperv1.SingleReplica,
-			wantMinAvailable:   ptr.To(intstr.FromInt32(1)),
-			wantMaxUnavailable: nil,
+			wantPredicate:      false,
 		},
 		{
-			name:               "When HighlyAvailable it should set maxUnavailable to 1",
-			availabilityPolicy: hyperv1.HighlyAvailable,
-			wantMinAvailable:   nil,
-			wantMaxUnavailable: ptr.To(intstr.FromInt32(1)),
+			name:                "When HighlyAvailable, it should set maxUnavailable to 1 and clear minAvailable",
+			availabilityPolicy:  hyperv1.HighlyAvailable,
+			initialMinAvailable: yamlMinAvailable,
+			wantPredicate:       true,
+			wantMinAvailable:    nil,
+			wantMaxUnavailable:  ptr.To(intstr.FromInt32(1)),
+		},
+		{
+			name:                "When availability policy is unset, it should clear minAvailable from the YAML default",
+			availabilityPolicy:  "",
+			initialMinAvailable: yamlMinAvailable,
+			wantPredicate:       true,
+			wantMinAvailable:    nil,
+			wantMaxUnavailable:  nil,
+		},
+		{
+			name:                  "When availability policy is unset and maxUnavailable is set, it should clear maxUnavailable",
+			availabilityPolicy:    "",
+			initialMaxUnavailable: ptr.To(intstr.FromInt32(1)),
+			wantPredicate:         true,
+			wantMinAvailable:      nil,
+			wantMaxUnavailable:    nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGomegaWithT(t)
 
 			pdb := &policyv1.PodDisruptionBudget{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pdb",
 					Namespace: "test-ns",
+				},
+				Spec: policyv1.PodDisruptionBudgetSpec{
+					MinAvailable:   tt.initialMinAvailable,
+					MaxUnavailable: tt.initialMaxUnavailable,
 				},
 			}
 
@@ -57,17 +85,24 @@ func TestAdaptPodDisruptionBudget(t *testing.T) {
 				},
 			}
 
+			g.Expect(ga.predicate).ToNot(BeNil(), "AdaptPodDisruptionBudget must configure a predicate")
+			g.Expect(ga.predicate(cpContext)).To(Equal(tt.wantPredicate), "unexpected predicate result for availability policy %q", tt.availabilityPolicy)
+
+			if !tt.wantPredicate {
+				return
+			}
+
 			err := ga.adapt(cpContext, pdb)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			g.Expect(pdb.Spec.MinAvailable).To(Equal(tt.wantMinAvailable))
-			g.Expect(pdb.Spec.MaxUnavailable).To(Equal(tt.wantMaxUnavailable))
+			g.Expect(pdb.Spec.MinAvailable).To(Equal(tt.wantMinAvailable), "minAvailable should be cleared or replaced for policy %q", tt.availabilityPolicy)
+			g.Expect(pdb.Spec.MaxUnavailable).To(Equal(tt.wantMaxUnavailable), "maxUnavailable mismatch for policy %q", tt.availabilityPolicy)
 			g.Expect(pdb.Spec.UnhealthyPodEvictionPolicy).ToNot(BeNil())
 			g.Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
 		})
 	}
 
-	t.Run("When PDB already has unhealthyPodEvictionPolicy set to IfHealthyBudget it should overwrite to AlwaysAllow", func(t *testing.T) {
+	t.Run("When PDB already has unhealthyPodEvictionPolicy set to IfHealthyBudget, it should overwrite to AlwaysAllow", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
 		pdb := &policyv1.PodDisruptionBudget{

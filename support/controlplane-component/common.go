@@ -11,22 +11,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// AdaptPodDisruptionBudget configures a PDB for HighlyAvailable control planes
+// (maxUnavailable=1) and skips the PDB entirely for SingleReplica.
+//
+// A SingleReplica PDB with minAvailable=1 can never permit a disruption
+// (disruptionsAllowed stays 0), so it blocks node drain indefinitely rather
+// than expressing a budget. ControllerAvailabilityPolicy is immutable, so
+// there is no later transition that would need the PDB added.
+// Existing SingleReplica PDBs are deleted by the predicate-false path.
 func AdaptPodDisruptionBudget() option {
-	return WithAdaptFunction(func(cpContext WorkloadContext, pdb *policyv1.PodDisruptionBudget) error {
-		var minAvailable *intstr.IntOrString
-		var maxUnavailable *intstr.IntOrString
-		switch cpContext.HCP.Spec.ControllerAvailabilityPolicy {
-		case hyperv1.SingleReplica:
-			minAvailable = ptr.To(intstr.FromInt32(1))
-		case hyperv1.HighlyAvailable:
-			maxUnavailable = ptr.To(intstr.FromInt32(1))
-		}
-
-		pdb.Spec.MinAvailable = minAvailable
-		pdb.Spec.MaxUnavailable = maxUnavailable
-		pdb.Spec.UnhealthyPodEvictionPolicy = ptr.To(policyv1.AlwaysAllow)
-		return nil
-	})
+	return func(ga *genericAdapter) {
+		WithPredicate(func(cpContext WorkloadContext) bool {
+			return cpContext.HCP.Spec.ControllerAvailabilityPolicy != hyperv1.SingleReplica
+		})(ga)
+		WithAdaptFunction(func(cpContext WorkloadContext, pdb *policyv1.PodDisruptionBudget) error {
+			// YAML assets ship minAvailable: 1; clear it so HA can use maxUnavailable.
+			pdb.Spec.MinAvailable = nil
+			pdb.Spec.MaxUnavailable = nil
+			if cpContext.HCP.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+				pdb.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(1))
+			}
+			pdb.Spec.UnhealthyPodEvictionPolicy = ptr.To(policyv1.AlwaysAllow)
+			return nil
+		})(ga)
+	}
 }
 
 // SetHostedClusterAnnotation is a helper function to set the HostedCluster annotation on a resource.
