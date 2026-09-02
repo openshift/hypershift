@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -36,7 +35,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -582,7 +584,7 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 // reports the version-derived stream after upgrade. The RHEL version follows the
 // release version: upgrading to OCP 5.0+ results in rhel-10.
 func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContextGetter) {
-	It("When a NodePool is upgraded, it should report the correct osImageStream in status", func() {
+	It("When a NodePool is upgraded, it should report the correct osImageStream in status", Label("nodepool-osimagestream-upgrade"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
