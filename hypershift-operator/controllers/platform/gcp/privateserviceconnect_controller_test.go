@@ -660,9 +660,9 @@ func TestComputeServiceAdapterListServiceAttachmentsPagination(t *testing.T) {
 
 		pageToken := r.URL.Query().Get("pageToken")
 		requestedPages[pageToken] = true
-		
+
 		var response compute.ServiceAttachmentList
-		
+
 		switch pageToken {
 		case "":
 			// First page: return 2 items + next page token
