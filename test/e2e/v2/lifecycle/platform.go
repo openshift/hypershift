@@ -17,6 +17,10 @@ type ClusterSpec struct {
 	Variant      string   `json:"variant"`
 	ExtraArgs    []string `json:"extraArgs,omitempty"`
 	ReleaseImage string   `json:"releaseImage,omitempty"` // override (empty = use default)
+
+	// InitialNodePoolReplicas overrides the default initial NodePool replica count.
+	// A nil value uses HYPERSHIFT_NODE_COUNT.
+	InitialNodePoolReplicas *int `json:"initialNodePoolReplicas,omitempty"`
 }
 
 // TestGroup describes one logical group of e2e tests to execute.

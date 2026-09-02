@@ -38,11 +38,11 @@ import (
 	"sync"
 	"time"
 
-	routev1 "github.com/openshift/api/route/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
+
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -276,13 +276,17 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 	if ns.ReleaseImage != "" {
 		releaseImage = ns.ReleaseImage
 	}
+	nodeCount := cfg.nodeCount
+	if ns.InitialNodePoolReplicas != nil {
+		nodeCount = *ns.InitialNodePoolReplicas
+	}
 
 	args := []string{
 		"create", "cluster", cfg.platform.Name(),
 		"--name=" + ns.name,
 		"--namespace=" + cfg.namespace,
 		"--infra-id=" + ns.name,
-		"--node-pool-replicas=" + strconv.Itoa(cfg.nodeCount),
+		"--node-pool-replicas=" + strconv.Itoa(nodeCount),
 		"--base-domain=" + cfg.baseDomain,
 		"--pull-secret=" + cfg.pullSecret,
 		"--release-image=" + releaseImage,
