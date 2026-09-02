@@ -1,3 +1,5 @@
+//go:build e2ev2
+
 package tests
 
 import (
@@ -41,6 +43,10 @@ func ExpectHostedClusterUpgradeToComplete(
 // for assertions so this function can be called from Eventually.
 func ExpectHostedClusterUpgradeComplete(ctx context.Context, g Gomega, mgmtClient crclient.Client, hc *hyperv1.HostedCluster, image string) {
 	GinkgoHelper()
+
+	if !g.Expect(hc).NotTo(BeNil(), "HostedCluster input cannot be nil") {
+		return
+	}
 
 	currentHC := &hyperv1.HostedCluster{}
 	if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {

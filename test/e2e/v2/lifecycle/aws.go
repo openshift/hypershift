@@ -158,6 +158,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Variant:     "karpenter",
 				LabelFilter: "karpenter",
 			},
+			// TODO: It might be possible to decompose the karpenter upgrade test
+			// into pre and post upgrade specs which communicate with a well defined
+			// IPC protocol, like the pre step serializing observations which the
+			// post step can use. Then we can compose the regular upgrade test here
+			// instead of duplicating upgrade logic inside the karpenter test.
 			{
 				Name:        "karpenter-upgrade",
 				Variant:     "karpenter-upgrade",
@@ -172,6 +177,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						Name:        "upgrade",
 						Variant:     "upgrade",
 						LabelFilter: "control-plane-upgrade",
+					},
+					{
+						Name:        "post-upgrade-health",
+						Variant:     "upgrade",
+						LabelFilter: "hosted-cluster-health || control-plane-workloads",
 					},
 					{
 						Name:        "control-plane-tls",
