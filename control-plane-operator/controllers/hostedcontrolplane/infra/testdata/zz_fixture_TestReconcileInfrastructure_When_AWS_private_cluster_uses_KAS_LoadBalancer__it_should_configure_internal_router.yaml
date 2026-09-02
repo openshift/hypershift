@@ -99,6 +99,8 @@ services:
     status:
       loadBalancer: {}
   - metadata:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: nlb
       labels:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
