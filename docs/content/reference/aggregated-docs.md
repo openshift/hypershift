@@ -14012,7 +14012,7 @@ After identifying the error, check the job history to determine if this is speci
 
 A test assertion failed. To find which test:
 
-1. Open the **Artifacts** tab and look for JUnit XML files (e.g., `junit_self_managed_azure_public.xml`). The failed test name and assertion message are in the XML.
+1. Open the **Artifacts** tab and look for JUnit XML files (e.g., `junit_public.xml`). The failed test name and assertion message are in the XML.
 2. Alternatively, search the `run-tests` step log for `[FAIL]` to find the Ginkgo failure output, which includes the test description, the failed assertion, and the source file and line number.
 
 After identifying the failing test, check the job history to determine if this is specific to your PR.
@@ -14383,7 +14383,7 @@ All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and 
 
 Creates hosted clusters in parallel using a five-phase flow:
 
-1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` in the platform's test matrix. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
+1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` selected by the resolved `TestPlan`. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
 
 2. **Post-create hooks**: Runs platform-specific `PostCreate()` hooks. For example, Azure patches the `OperatorConfiguration` CRD to enable lifecycle tests
 
@@ -14400,7 +14400,7 @@ If any cluster fails to create or roll out, the binary exits non-zero and the jo
 **Source:** `test/e2e/v2/cmd/run-tests/`
 **Shipped as:** `/hypershift/bin/run-tests`
 
-Reads cluster names from `SHARED_DIR` files, then executes the platform's test matrix. For each `TestGroup`:
+Reads cluster names from `SHARED_DIR` files, then executes the resolved `TestPlan`. For each `TestGroup`:
 
 ```bash
 bin/test-e2e-v2 \
@@ -14411,11 +14411,11 @@ bin/test-e2e-v2 \
   --ginkgo.v
 ```
 
-with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the appropriate cluster name and namespace. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
+with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the selected cluster. The JUnit filename is derived as `junit_<TestGroup.Name>.xml`. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
 
 Before running any tests, `run-tests` calls `platform.SetupTestEnv(sharedDir)` to let the platform configure any environment variables needed by tests (for example, reading subnet IDs or other infrastructure details from `SHARED_DIR` files).
 
-Whether a group runs in parallel or sequentially is determined by its placement in the `TestMatrix` struct returned by `PlatformConfig.TestMatrix()`:
+By default, the binaries use `PlatformConfig.DefaultTestPlan()`. Set `TEST_PLAN` to a JSON or YAML file to provide a custom plan. The plan's `TestMatrix` determines whether a group runs in parallel or sequentially:
 
 ```go
 type TestMatrix struct {
@@ -14468,27 +14468,26 @@ flowchart TD
 
 ### Adding a New ClusterSpec
 
-If you need a new cluster variant, add it to both `ClusterSpecs()` and `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
+If you need a new cluster variant, add it to `ClusterSpecs()` and include it in the default plan's `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
 
 ```diff
 // ClusterSpecs() — cluster creation parameters
 +{
-+    Variant:    "my-new-variant",
-+    OutputFile: "cluster-name-my-new-variant",
-+    ExtraArgs:  []string{"--my-flag=value"},
++    Variant:   "my-new-variant",
++    ExtraArgs: []string{"--my-flag=value"},
 +},
 
 // TestMatrix() — test execution parameters
 +{
 +    Name:        "my-new-variant",
-+    ClusterFile: "cluster-name-my-new-variant",
++    Variant:     "my-new-variant",
 +    LabelFilter: "my-new-label",
-+    JUnitFile:   "junit_my_new_variant.xml",
 +    // Optional fields:
-+    // Skip:     "regex-of-tests-to-skip",
-+    // ExtraEnv: []string{"KEY=value"},
++    // Skip: "regex-of-tests-to-skip",
 +},
 ```
+
+JUnit filenames are derived from `TestGroup.Name` by `TestGroup.JUnitFile()` and do not need to be configured separately.
 
 Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cluster creation + rollout + deletion). Only add new variants when state sharing is impossible.
 
@@ -14496,21 +14495,20 @@ Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cl
 
 When you write a new v2 test and want it to run in CI, the process depends on whether your test's label is already in an existing label filter.
 
-### Case 1: Label Already Exists in Filter
+### Case 1: Label Already Exists in a Matrix Filter
 
-If your test uses a label that's already in a `TestGroup.LabelFilter` (e.g., `nodepool-lifecycle`), **no changes are needed**. The test automatically runs the next time the job executes.
+If your test uses a label that's already in a `TestGroup.LabelFilter`, **no changes are needed**. The test automatically runs the next time the job executes.
 
-### Case 2: New Label
+### Case 2: New or Independently Sharded Label
 
-If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix:
+If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix. Suites such as NodePool lifecycle retain a broad parent label for non-lifecycle CI filtering, but long specs also have fine-grained labels so the Azure lifecycle job can assign them independently:
 
 ```diff
  {
-     Name:        "public",
-     ClusterFile: "cluster-name-public",
--    LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
-+    LabelFilter: "self-managed-azure-public || nodepool-lifecycle || my-new-label",
-     JUnitFile:   "junit_self_managed_azure_public.xml",
+     Name:        "oauth-lb-nodepool-config",
+     Variant:     "oauth-lb",
+-    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout",
++    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config || my-new-rollout",
  },
 ```
 
@@ -14528,7 +14526,8 @@ Create `test/e2e/v2/lifecycle/<platform>.go` implementing the `PlatformConfig` i
 // Abbreviated — see platform.go for the full interface.
 type PlatformConfig interface {
     ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
-    TestMatrix(releaseImage string) TestMatrix
+    DefaultTestPlan() TestPlan
+    TestMatrix() TestMatrix
     PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
     // Also: Name(), DefaultBaseDomain(), CreateArgs(),
     // SetupTestEnv(sharedDir), DestroyArgs()
@@ -14604,16 +14603,27 @@ This guide explains how to diagnose failing v2 CI jobs by tracing test failures 
 
 ## Finding Test Results
 
-Each `TestGroup` produces a JUnit XML file named by its `JUnitFile` field. These land in `ARTIFACT_DIR` in the Prow job artifacts.
+Each `TestGroup` produces a JUnit XML file named `junit_<TestGroup.Name>.xml` by `TestGroup.JUnitFile()`. These land in `ARTIFACT_DIR` in the Prow job artifacts.
 
 For example, the Azure self-managed job produces:
 
-- `junit_self_managed_azure_public.xml`
-- `junit_self_managed_azure_private.xml`
-- `junit_self_managed_azure_oauth_lb.xml`
-- `junit_nodepool_autoscaling.xml`
-- `junit_lifecycle_upgrade.xml`
-- `junit_lifecycle_etcd_chaos.xml`
+- `junit_public.xml`
+- `junit_public-nodepool-rollouts.xml`
+- `junit_private.xml`
+- `junit_oauth-lb.xml`
+- `junit_oauth-lb-nodepool-config.xml`
+- `junit_autoscaling-nodepool-machineconfig.xml`
+- `junit_autoscaling-balancing.xml`
+- `junit_external-oidc.xml`
+- `junit_external-oidc-autoscaling.xml`
+- `junit_external-oidc-trust-bundle.xml`
+- `junit_upgrade.xml`
+- `junit_post-upgrade-health.xml`
+- `junit_control-plane-tls.xml`
+- `junit_etcd-chaos.xml`
+
+When a group has informing test failures, the suite also emits a supplemental
+`junit_<TestGroup.Name>_informing.xml` file for lifecycle-aware reporting.
 
 Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each cluster that reaches Phase 4 (version rollout wait), recording either success or failure. On failure, the JUnit file contains the `HostedCluster` and `NodePool` conditions at the time of failure. On success, it records a passing test case confirming the rollout completed.
 
@@ -14621,9 +14631,9 @@ Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each c
 
 To find which cluster a failing test ran against, trace the path:
 
-1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_self_managed_azure_public.xml` → `"public"`)
-2. **TestGroup.Name** → `TestGroup.ClusterFile` (e.g., `"public"` → `"cluster-name-public"`)
-3. **ClusterFile** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
+1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_public-nodepool-rollouts.xml` → `"public-nodepool-rollouts"`)
+2. **TestGroup.Name** → `TestGroup.Variant` (e.g., `"public-nodepool-rollouts"` → `"public"`)
+3. **Variant** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
 
 The `run-tests` step log shows the mapping explicitly:
 
@@ -14769,6 +14779,8 @@ flowchart TD
 
 - **Ginkgo labels** — Tags on `Describe`/`It` blocks (e.g., `hosted-cluster-health`, `lifecycle`) used by `--ginkgo.label-filter` to select which tests run on which cluster.
 
+- **TestPlan** — Declarative selection of cluster variants and their test matrix. The platform supplies a default plan, or CI can load a JSON/YAML plan through `TEST_PLAN`.
+
 - **PlatformConfig** — Interface in `test/e2e/v2/lifecycle/platform.go` that encapsulates all platform-specific configuration. Implement this to add a new platform.
 
 - **TestContext** — Shared context initialized in `BeforeSuite` from environment variables. Provides management client (created eagerly in `SetupTestContextFromEnv`) and hosted cluster client (lazy-loaded via `sync.Once` in `GetHostedClusterClient`), along with cluster name/namespace.
@@ -14784,7 +14796,7 @@ flowchart TD
 1. Prow triggers the CI job (e.g., `e2e-azure-v2-self-managed`)
 2. ci-operator builds the `hypershift-tests` image from `Dockerfile.e2e`
 3. **create-guests** creates clusters in parallel — 5 phases: create, post-create hooks, wait Available, wait version rollout, write cluster names to `SHARED_DIR`. Emits JUnit XML to `ARTIFACT_DIR` recording success or failure for each cluster's version rollout.
-4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and `E2E_HOSTED_CLUSTER_NAME`. Whether groups run concurrently or sequentially is determined by placement in the `TestMatrix` struct — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
+4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and cluster identity. Whether groups run concurrently or sequentially is determined by placement in the resolved `TestPlan`'s `TestMatrix` — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
 5. **dump-guests** collects diagnostic artifacts in parallel. Always exits 0.
 6. **destroy-guests** tears down all clusters in parallel. Exits non-zero if any destroy fails.
 
@@ -15602,34 +15614,39 @@ Labels are attached to `Describe` or `Context` blocks to categorize tests:
 
 | Category | Labels |
 |----------|--------|
-| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, `etcd-chaos`, `backup-restore` |
+| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, fine-grained NodePool shard labels, `etcd-chaos`, `backup-restore` |
 | Health/Compliance | `hosted-cluster-health`, `hosted-cluster-compliance`, `hosted-cluster-security`, `hosted-cluster-dns`, `hosted-cluster-metrics`, `hosted-cluster-image-registry`, `hosted-cluster-ccm`, `control-plane-workloads`, `routes` |
 | Platform-specific | `Azure`, `GCP`, `hosted-cluster-azure`, `self-managed-azure-public`, `self-managed-azure-private`, `self-managed-azure-oauth-lb` |
 | Meta | `Informing` |
 
 ### Layer 2: Label-filter expressions
 
-The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. Example from Azure TestMatrix:
+The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. The following is a simplified example based on the Azure TestMatrix:
 
 ```go
-Parallel: []TestGroup{
-    {
-        Name:        "public",
-        ClusterFile: "cluster-name-public",
-        LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
-        JUnitFile:   "junit_self_managed_azure_public.xml",
-    },
-    // ...
-},
 Sequential: []SequentialGroup{
     {
-        Name: "upgrade",
+        Name: "public",
         Steps: []TestGroup{
             {
-                Name:        "control-plane-upgrade",
-                ClusterFile: "cluster-name-upgrade",
+                Name:        "public",
+                Variant:     "public",
+                LabelFilter: "self-managed-azure-public || control-plane-workloads",
+            },
+            {
+                Name:        "public-nodepool-rollouts",
+                Variant:     "public",
+                LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade",
+            },
+        },
+    },
+    {
+        Name: "upgrade-and-chaos",
+        Steps: []TestGroup{
+            {
+                Name:        "upgrade",
+                Variant:     "upgrade",
                 LabelFilter: "control-plane-upgrade",
-                JUnitFile:   "junit_control_plane_upgrade.xml",
             },
             // additional steps run in order within this group
         },
@@ -15638,6 +15655,10 @@ Sequential: []SequentialGroup{
 ```
 
 `Parallel` groups all run concurrently. Each `SequentialGroup` also runs concurrently with everything else, but its internal `Steps` run one after another -- if any step fails, subsequent steps are skipped.
+
+JUnit filenames are derived from each `TestGroup.Name`; configure the group name rather than a separate filename.
+
+When multiple filters target the same hosted-cluster variant, put them in the same `SequentialGroup`. Never add separate `Parallel` groups for one variant, because that launches concurrent test processes against the same hosted cluster.
 
 !!! tip "Adding a test with an existing label"
     If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).

@@ -190,7 +190,7 @@ After identifying the error, [check the job history](#checking-prow-job-history)
 
 A test assertion failed. To find which test:
 
-1. Open the **Artifacts** tab and look for JUnit XML files (e.g., `junit_self_managed_azure_public.xml`). The failed test name and assertion message are in the XML.
+1. Open the **Artifacts** tab and look for JUnit XML files (e.g., `junit_public.xml`). The failed test name and assertion message are in the XML.
 2. Alternatively, search the `run-tests` step log for `[FAIL]` to find the Ginkgo failure output, which includes the test description, the failed assertion, and the source file and line number.
 
 After identifying the failing test, [check the job history](#checking-prow-job-history) to determine if this is specific to your PR.

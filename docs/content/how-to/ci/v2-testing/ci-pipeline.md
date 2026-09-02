@@ -91,7 +91,7 @@ All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and 
 
 Creates hosted clusters in parallel using a five-phase flow:
 
-1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` in the platform's test matrix. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
+1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` selected by the resolved `TestPlan`. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
 
 2. **Post-create hooks**: Runs platform-specific `PostCreate()` hooks. For example, Azure patches the `OperatorConfiguration` CRD to enable lifecycle tests
 
@@ -108,7 +108,7 @@ If any cluster fails to create or roll out, the binary exits non-zero and the jo
 **Source:** `test/e2e/v2/cmd/run-tests/`  
 **Shipped as:** `/hypershift/bin/run-tests`
 
-Reads cluster names from `SHARED_DIR` files, then executes the platform's test matrix. For each `TestGroup`:
+Reads cluster names from `SHARED_DIR` files, then executes the resolved `TestPlan`. For each `TestGroup`:
 
 ```bash
 bin/test-e2e-v2 \
@@ -119,11 +119,11 @@ bin/test-e2e-v2 \
   --ginkgo.v
 ```
 
-with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the appropriate cluster name and namespace. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
+with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the selected cluster. The JUnit filename is derived as `junit_<TestGroup.Name>.xml`. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
 
 Before running any tests, `run-tests` calls `platform.SetupTestEnv(sharedDir)` to let the platform configure any environment variables needed by tests (for example, reading subnet IDs or other infrastructure details from `SHARED_DIR` files).
 
-Whether a group runs in parallel or sequentially is determined by its placement in the `TestMatrix` struct returned by `PlatformConfig.TestMatrix()`:
+By default, the binaries use `PlatformConfig.DefaultTestPlan()`. Set `TEST_PLAN` to a JSON or YAML file to provide a custom plan. The plan's `TestMatrix` determines whether a group runs in parallel or sequentially:
 
 ```go
 type TestMatrix struct {
@@ -176,27 +176,26 @@ flowchart TD
 
 ### Adding a New ClusterSpec
 
-If you need a new cluster variant, add it to both `ClusterSpecs()` and `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
+If you need a new cluster variant, add it to `ClusterSpecs()` and include it in the default plan's `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
 
 ```diff
 // ClusterSpecs() — cluster creation parameters
 +{
-+    Variant:    "my-new-variant",
-+    OutputFile: "cluster-name-my-new-variant",
-+    ExtraArgs:  []string{"--my-flag=value"},
++    Variant:   "my-new-variant",
++    ExtraArgs: []string{"--my-flag=value"},
 +},
 
 // TestMatrix() — test execution parameters
 +{
 +    Name:        "my-new-variant",
-+    ClusterFile: "cluster-name-my-new-variant",
++    Variant:     "my-new-variant",
 +    LabelFilter: "my-new-label",
-+    JUnitFile:   "junit_my_new_variant.xml",
 +    // Optional fields:
-+    // Skip:     "regex-of-tests-to-skip",
-+    // ExtraEnv: []string{"KEY=value"},
++    // Skip: "regex-of-tests-to-skip",
 +},
 ```
+
+JUnit filenames are derived from `TestGroup.Name` by `TestGroup.JUnitFile()` and do not need to be configured separately.
 
 Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cluster creation + rollout + deletion). Only add new variants when state sharing is impossible.
 
@@ -204,21 +203,20 @@ Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cl
 
 When you write a new v2 test and want it to run in CI, the process depends on whether your test's label is already in an existing label filter.
 
-### Case 1: Label Already Exists in Filter
+### Case 1: Label Already Exists in a Matrix Filter
 
-If your test uses a label that's already in a `TestGroup.LabelFilter` (e.g., `nodepool-lifecycle`), **no changes are needed**. The test automatically runs the next time the job executes.
+If your test uses a label that's already in a `TestGroup.LabelFilter`, **no changes are needed**. The test automatically runs the next time the job executes.
 
-### Case 2: New Label
+### Case 2: New or Independently Sharded Label
 
-If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix:
+If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix. Suites such as NodePool lifecycle retain a broad parent label for non-lifecycle CI filtering, but long specs also have fine-grained labels so the Azure lifecycle job can assign them independently:
 
 ```diff
  {
-     Name:        "public",
-     ClusterFile: "cluster-name-public",
--    LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
-+    LabelFilter: "self-managed-azure-public || nodepool-lifecycle || my-new-label",
-     JUnitFile:   "junit_self_managed_azure_public.xml",
+     Name:        "oauth-lb-nodepool-config",
+     Variant:     "oauth-lb",
+-    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout",
++    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config || my-new-rollout",
  },
 ```
 
@@ -236,7 +234,8 @@ Create `test/e2e/v2/lifecycle/<platform>.go` implementing the `PlatformConfig` i
 // Abbreviated — see platform.go for the full interface.
 type PlatformConfig interface {
     ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
-    TestMatrix(releaseImage string) TestMatrix
+    DefaultTestPlan() TestPlan
+    TestMatrix() TestMatrix
     PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
     // Also: Name(), DefaultBaseDomain(), CreateArgs(),
     // SetupTestEnv(sharedDir), DestroyArgs()
