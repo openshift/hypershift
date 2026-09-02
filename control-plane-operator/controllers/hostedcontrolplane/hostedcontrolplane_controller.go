@@ -384,10 +384,10 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 	return handlers
 }
 
-func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, originalHostedControlPlane *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, _ *hyperv1.HostedControlPlane) (ctrl.Result, error) {
 	allCleanupDone := true
 
-	condition := &metav1.Condition{
+	condition := metav1.Condition{
 		Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 	}
 	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {

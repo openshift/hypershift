@@ -309,6 +309,25 @@ const (
 	HostedControlPlaneDegraded  ConditionType = "Degraded"
 	EtcdSnapshotRestored        ConditionType = "EtcdSnapshotRestored"
 	CVOScaledDown               ConditionType = "CVOScaledDown"
+
+	// PrivateConnectivityCleanedUp signals whether platform private connectivity
+	// resources (AWS PrivateLink endpoints, Azure Private Endpoints) have been
+	// cleaned up during HostedControlPlane deletion. Set by platform controllers
+	// and gated with a 10-minute timeout in CPO's deletion path. The timeout allows
+	// HCP deletion to proceed even when cleanup is stuck (trading orphaned cloud
+	// resources for avoiding indefinite deletion blocking), while the condition
+	// provides visibility into whether cleanup completed successfully or timed out.
+	PrivateConnectivityCleanedUp ConditionType = "PrivateConnectivityCleanedUp"
+
+	// PrivateConnectivityCleanupCompleteReason is set when platform controllers
+	// have finished cleaning up all private connectivity resources.
+	PrivateConnectivityCleanupCompleteReason = "CleanupComplete"
+
+	// PrivateConnectivityCleanupTimedOutReason is set when the cleanup timeout
+	// elapsed before the platform controller signaled completion. When this occurs,
+	// cloud resources (endpoints, DNS zones, security groups) may be orphaned and
+	// require manual cleanup.
+	PrivateConnectivityCleanupTimedOutReason = "PrivateConnectivityCleanupTimedOut"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane
