@@ -424,6 +424,7 @@ nav:
   - reference/SLOs.md
   - reference/versioning-support.md
   - reference/service-publishing-strategies.md
+  - 'CAPI Provider Image Overrides': reference/capi-image-overrides.md
 - 'Contribute':
   - contribute/index.md
   - 'Repositories': contribute/repositories.md
