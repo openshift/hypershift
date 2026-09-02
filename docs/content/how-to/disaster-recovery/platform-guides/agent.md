@@ -55,15 +55,6 @@ spec:
           key: cloud
           name: cloud-credentials
           default: true
-  snapshotLocations:
-    - velero:
-        provider: aws
-        config:
-          region: minio
-          profile: "default"
-        credential:
-          key: cloud
-          name: cloud-credentials
   configuration:
     nodeAgent:
       enable: true
