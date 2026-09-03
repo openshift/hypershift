@@ -331,7 +331,7 @@ func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePo
 // (no osImageStream set), an explicit rhel-9 NodePool, and an explicit rhel-10
 // NodePool. This is a lifecycle test because it creates additional NodePools.
 func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContextGetter) {
-	It("When NodePools have different osImageStream values, nodes should run the matching OS version", func() {
+	It("When NodePools have different osImageStream values, nodes should run the matching OS version", Label("Informing"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
