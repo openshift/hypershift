@@ -38,6 +38,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -210,6 +211,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				HCNamespace:       testCtx.ClusterNamespace,
 				StorageLocation:   testCtx.ClusterName,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
 			}
 			err = backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
 			Expect(err).NotTo(HaveOccurred())
@@ -233,6 +235,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				HCNamespace:       testCtx.ClusterNamespace,
 				StorageLocation:   testCtx.ClusterName,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
 			}
 			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
 			Expect(err).NotTo(HaveOccurred())
