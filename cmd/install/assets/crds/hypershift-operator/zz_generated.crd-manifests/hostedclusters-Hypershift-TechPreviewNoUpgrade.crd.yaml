@@ -3223,6 +3223,37 @@ spec:
                         type: object
                     type: object
                 type: object
+              controlPlaneAvailabilityZoneScheduling:
+                description: |-
+                  controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+                  components are distributed across management-cluster availability zones. It is only valid
+                  when controllerAvailabilityPolicy is HighlyAvailable and the platform is Azure. When
+                  unset, all highly-available components are spread across availability zones and the
+                  API-critical components run with three replicas (the historical behavior).
+                properties:
+                  nonZonalPlacement:
+                    default: Preferred
+                    description: |-
+                      nonZonalPlacement controls how strictly non-zone-critical ("float") components are
+                      kept off the zonal node pools. "Preferred" (the default) allows spillover onto zonal
+                      nodes when overflow capacity is unavailable; "Required" does not. This field has no
+                      effect unless policy is set.
+                    enum:
+                    - Preferred
+                    - Required
+                    type: string
+                  policy:
+                    description: |-
+                      policy selects the availability-zone spreading strategy for control plane components.
+                      The only supported value is "Minimal", which spreads only quorum, request-serving,
+                      and blocking-webhook components across availability zones and places the remainder on
+                      non-zonal (overflow) capacity.
+                    enum:
+                    - Minimal
+                    type: string
+                required:
+                - policy
+                type: object
               controlPlaneRelease:
                 description: |-
                   controlPlaneRelease is like spec.release but only for the components running on the management cluster.
@@ -9420,6 +9451,14 @@ spec:
             - services
             type: object
             x-kubernetes-validations:
+            - message: controlPlaneAvailabilityZoneScheduling can only be set when
+                controllerAvailabilityPolicy is HighlyAvailable
+              rule: '!has(self.controlPlaneAvailabilityZoneScheduling) || self.controllerAvailabilityPolicy
+                == ''HighlyAvailable'''
+            - message: controlPlaneAvailabilityZoneScheduling is only supported on
+                the Azure platform
+              rule: '!has(self.controlPlaneAvailabilityZoneScheduling) || self.platform.type
+                == ''Azure'''
             - message: spec.services in body should have at least 4 items or 3 for
                 IBMCloud
               rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3

@@ -171,6 +171,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ComponentLogLevelSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ConfigurationStatus"):
 		return &hypershiftv1beta1.ConfigurationStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneAvailabilityZoneScheduling"):
+		return &hypershiftv1beta1.ControlPlaneAvailabilityZoneSchedulingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
 		return &hypershiftv1beta1.ControlPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneUpdateHistory"):

@@ -840,6 +840,20 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Report whether the Minimal control plane availability-zone scheduling policy is
+	// being applied. This surfaces the two conditions that cannot be validated at
+	// admission time: conflict with the dedicated request-serving topology (annotation
+	// driven) and the management-cluster node contract.
+	if hcluster.Spec.ControlPlaneAvailabilityZoneScheduling.Policy == hyperv1.ControlPlaneAvailabilityZoneSchedulingMinimal {
+		nodeList := &corev1.NodeList{}
+		if err := r.List(ctx, nodeList); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list management cluster nodes: %w", err)
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, controlPlaneAvailabilityZoneSchedulingCondition(hcluster, nodeList.Items))
+	} else {
+		meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.ControlPlaneAvailabilityZoneSchedulingAvailable))
+	}
+
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
@@ -2805,6 +2819,17 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.Tolerations = hcluster.Spec.Tolerations
 	hcp.Spec.Labels = hcluster.Spec.Labels
 	hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
+
+	// Pass through the control plane availability-zone scheduling policy, unless the
+	// mutually-exclusive dedicated request-serving topology is also requested, in which
+	// case that topology takes precedence and the Minimal policy is not applied. This
+	// precedence cannot be enforced via CEL because it depends on an annotation, which CRD
+	// validation rules cannot read.
+	if hcluster.Annotations[hyperv1.TopologyAnnotation] != hyperv1.DedicatedRequestServingComponentsTopology {
+		hcp.Spec.ControlPlaneAvailabilityZoneScheduling = hcluster.Spec.ControlPlaneAvailabilityZoneScheduling
+	} else {
+		hcp.Spec.ControlPlaneAvailabilityZoneScheduling = hyperv1.ControlPlaneAvailabilityZoneScheduling{}
+	}
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()

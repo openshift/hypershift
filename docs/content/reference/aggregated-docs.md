@@ -40518,6 +40518,24 @@ Possible values are HighlyAvailable and SingleReplica. The default value is Sing
 </tr>
 <tr>
 <td>
+<code>controlPlaneAvailabilityZoneScheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">
+ControlPlaneAvailabilityZoneScheduling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones. It is only valid
+when controllerAvailabilityPolicy is HighlyAvailable and the platform is Azure. When
+unset, all highly-available components are spread across availability zones and the
+API-critical components run with three replicas (the historical behavior).</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>dns</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.DNSSpec">
@@ -46282,6 +46300,14 @@ CRDs, RBAC, and connectivity checks).
 A failure here often means a software bug, a non-stable cluster, or
 connectivity issues between the control plane and the hosted cluster.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneAvailabilityZoneSchedulingAvailable&#34;</p></td>
+<td><p>ControlPlaneAvailabilityZoneSchedulingAvailable indicates whether the Minimal
+control plane availability-zone scheduling policy (spec.controlPlaneAvailabilityZoneScheduling)
+is being applied. <strong>True</strong> means the policy is in effect. <strong>False</strong> means it is
+not being applied, either because the management cluster does not satisfy the
+node contract (labeled zonal/overflow pools), or because the hosted cluster also
+requests the dedicated request-serving topology, which takes precedence.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.</p>
 </td>
@@ -46558,6 +46584,83 @@ OIDC client status, and other authentication-related configurations.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###ControlPlaneAvailabilityZoneScheduling { #hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>ControlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>policy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneSchedulingPolicy">
+ControlPlaneAvailabilityZoneSchedulingPolicy
+</a>
+</em>
+</td>
+<td>
+<p>policy selects the availability-zone spreading strategy for control plane components.
+The only supported value is &ldquo;Minimal&rdquo;, which spreads only quorum, request-serving,
+and blocking-webhook components across availability zones and places the remainder on
+non-zonal (overflow) capacity.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nonZonalPlacement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NonZonalPlacementPolicy">
+NonZonalPlacementPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nonZonalPlacement controls how strictly non-zone-critical (&ldquo;float&rdquo;) components are
+kept off the zonal node pools. &ldquo;Preferred&rdquo; (the default) allows spillover onto zonal
+nodes when overflow capacity is unavailable; &ldquo;Required&rdquo; does not. This field has no
+effect unless policy is set.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneAvailabilityZoneSchedulingPolicy { #hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneSchedulingPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">ControlPlaneAvailabilityZoneScheduling</a>)
+</p>
+<p>
+<p>ControlPlaneAvailabilityZoneSchedulingPolicy is the strategy used to distribute
+highly-available control plane components across management-cluster availability zones.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Minimal&#34;</p></td>
+<td><p>ControlPlaneAvailabilityZoneSchedulingMinimal spreads only quorum (etcd),
+request-serving, and blocking-webhook components across availability zones. etcd
+runs with three replicas; the other zone-critical components run as two-replica
+pairs. All remaining components are placed on non-zonal (overflow) capacity.</p>
+</td>
+</tr></tbody>
 </table>
 ###ControlPlaneComponent { #hypershift.openshift.io/v1beta1.ControlPlaneComponent }
 <p>
@@ -49711,6 +49814,24 @@ Possible values are HighlyAvailable and SingleReplica. The default value is Sing
 </tr>
 <tr>
 <td>
+<code>controlPlaneAvailabilityZoneScheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">
+ControlPlaneAvailabilityZoneScheduling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones. It is only valid
+when controllerAvailabilityPolicy is HighlyAvailable and the platform is Azure. When
+unset, all highly-available components are spread across availability zones and the
+API-critical components run with three replicas (the historical behavior).</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>dns</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.DNSSpec">
@@ -50572,6 +50693,23 @@ AvailabilityPolicy
 <p>infrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
 SingleReplica.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneAvailabilityZoneScheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">
+ControlPlaneAvailabilityZoneScheduling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones. It is copied
+from the HostedCluster of the same name by the hypershift-operator and is only honored
+when controllerAvailabilityPolicy is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>
@@ -54960,6 +55098,32 @@ progress and detecting stuck nodes.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###NonZonalPlacementPolicy { #hypershift.openshift.io/v1beta1.NonZonalPlacementPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">ControlPlaneAvailabilityZoneScheduling</a>)
+</p>
+<p>
+<p>NonZonalPlacementPolicy controls how strictly non-zone-critical (&ldquo;float&rdquo;) control
+plane components are kept off the zonal node pools.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Preferred&#34;</p></td>
+<td><p>NonZonalPlacementPreferred means float components prefer overflow capacity but may
+spill onto zonal nodes when overflow capacity is unavailable.</p>
+</td>
+</tr><tr><td><p>&#34;Required&#34;</p></td>
+<td><p>NonZonalPlacementRequired means float components must run on overflow capacity; if
+none is available they remain Pending.</p>
+</td>
+</tr></tbody>
 </table>
 ###OAuthServerOperatorSpec { #hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec }
 <p>
@@ -62181,6 +62345,102 @@ This URL provides the full task logs, results, and pipeline visualization even a
 - `stale-threshold-days` is set too low in the ITS (e.g. `1` would alert on the first failure)
 - Test PipelineRuns from integration testing contribute to the real streak history because they are archived with the same ITS label. The streak resets automatically on the first successful nightly run
 - KubeArchive returned incomplete data (e.g. after a data migration or cleanup)
+
+
+---
+
+## Source: docs/content/reference/hostedcluster-bringup-phases.md
+
+# HostedCluster Bring-up: Phase Decomposition
+
+Goal: attribute the wall-clock time from HostedCluster creation to a fully
+installed cluster into discrete, controller-owned phases, so regressions can be
+pinned to a specific phase.
+
+Method: phase boundaries are the `lastTransitionTime` of specific gate
+conditions on the HostedCluster `.status.conditions`. Consecutive deltas between
+gate timestamps = phase durations. These gates are stable because each is set by
+a distinct controller / reconcile step.
+
+## Critical Path Composition (create -> Available=True)
+
+The first `Available=True` is gated by this sequential dependency chain:
+
+```
+create
+  -> configValid    (ValidConfiguration=True / ReconciliationSucceeded=True)
+  -> infraReady     (InfrastructureReady=True)      [CAPI provisioning]
+  -> etcd+KAS       (EtcdAvailable=True -> PublicEndpointExposed=True -> KubeAPIServerAvailable=True)
+  -> componentRollout (Available drains ComponentsNotAvailable list)
+  -> Available=True
+```
+
+Phases:
+
+| Phase | Gate condition(s) | What happens | Typical cost |
+|-------|-------------------|--------------|--------------|
+| A. Admission & config validation | `ValidReleaseImage`, `SupportedHostedCluster`, `ClusterSizeComputed`, `ValidConfiguration`, `PlatformCredentialsFound`, `ReconciliationSucceeded` | HC accepted; PKI/config validated. Initial `ValidConfiguration=False` on missing PKI secrets is a normal startup race that self-heals. | small (~seconds) |
+| B. Infrastructure & external prereqs | `InfrastructureReady=True` (gate); parallel: `ExternalDNSReachable`, `ValidHostedControlPlaneConfiguration`, `ValidReleaseInfo`, `IgnitionEndpointAvailable`, `ValidAzureKMSConfig` | CAPI provisions infra; DNS, ignition, release, KMS/creds settle. Watch for transient cloud-cred errors (e.g. Azure KMS `401` during credential propagation). | DOMINANT #1 (~1.5 min) |
+| C. Control-plane core | `EtcdAvailable=True` -> `PublicEndpointExposed=True` -> `KubeAPIServerAvailable=True` | etcd reaches quorum, external endpoint admitted, KAS deployment available. Strictly sequential. | ~1 min |
+| D. Control-plane component rollout | `Available` transitions off `ComponentsNotAvailable` | ~30 control-plane components roll out; last blockers are usually `cluster-network-operator` and `ingress-operator`. May blip on `KASLoadBalancerNotReachable`. | DOMINANT #2 (~2 min) |
+
+Key takeaway: Phases B (infra provisioning) and D (component rollout) dominate
+time-to-Available. A and C are small, mostly sequential dependencies. Optimize/
+watch B and D.
+
+Note: `Available` can briefly flap back to `False` (e.g. `KASLoadBalancerNotReachable`)
+shortly after first going `True`. Filter these blips when measuring
+time-to-Available (use first sustained `True`).
+
+## Phase E: Guest Cluster Operators / CVO (after Available=True)
+
+`Available=True` does NOT mean the guest cluster is installed — it means the
+hosted *control plane* is healthy. Full install continues in the guest cluster:
+
+- Gate conditions: `ClusterVersionReleaseAccepted` -> `ClusterVersionProgressing`
+  -> `ClusterVersionSucceeding=True` / `ClusterVersionAvailable=True`.
+- The CVO applies the payload and brings up cluster operators. Progress churns
+  through `ClusterOperatorsNotAvailable` as operators come online; the last
+  operators (commonly `console`, `monitoring`, `image-registry`) gate completion.
+- Related data-plane gate: `DataPlaneConnectionAvailable=True` when worker nodes
+  join (depends on NodePool provisioning + ignition).
+
+This phase is typically the largest contributor to *total* install time and is
+independent of the control-plane Available path above.
+
+## Operationalizing
+
+Compute per-phase durations from the ordered gate timestamps:
+
+```
+t_create
+t_configValid   = ValidConfiguration=True (or ReconciliationSucceeded=True)
+t_infra         = InfrastructureReady=True
+t_etcd          = EtcdAvailable=True
+t_kas           = KubeAPIServerAvailable=True
+t_available     = first sustained Available=True
+t_dataplane     = DataPlaneConnectionAvailable=True
+t_cvo           = ClusterVersionAvailable=True (or ClusterVersionSucceeding=True)
+
+phaseA = t_configValid - t_create
+phaseB = t_infra       - t_configValid
+phaseC = t_kas         - t_infra
+phaseD = t_available   - t_kas
+phaseE = t_cvo         - t_available   (guest operators; overlaps t_dataplane)
+```
+
+Attribute any regression to the phase whose delta grew.
+
+## Worked Example (single run)
+
+create 16:13:28 -> Available=True 16:18:03 (~4m35s):
+
+- A (config):     ~4s     (16:13:28 -> 16:13:32)
+- B (infra):      ~1m29s  (16:13:32 -> 16:15:01)  <- dominant
+- C (etcd+KAS):   ~1m     (16:15:01 -> 16:16:00)
+- D (components): ~2m3s   (16:16:00 -> 16:18:03)  <- dominant
+- E (CVO/guest):  Available 16:18:03 -> console operator last 16:29:11 (~11m);
+                  DataPlaneConnectionAvailable 16:25:42
 
 
 ---

@@ -266,6 +266,26 @@ const (
 	// cluster's shared ingress. Status reflects observed state: True means
 	// public endpoints are reachable, False means they are not.
 	PublicEndpointExposed ConditionType = "PublicEndpointExposed"
+
+	// ControlPlaneAvailabilityZoneSchedulingAvailable indicates whether the Minimal
+	// control plane availability-zone scheduling policy (spec.controlPlaneAvailabilityZoneScheduling)
+	// is being applied. **True** means the policy is in effect. **False** means it is
+	// not being applied, either because the management cluster does not satisfy the
+	// node contract (labeled zonal/overflow pools), or because the hosted cluster also
+	// requests the dedicated request-serving topology, which takes precedence.
+	ControlPlaneAvailabilityZoneSchedulingAvailable ConditionType = "ControlPlaneAvailabilityZoneSchedulingAvailable"
+)
+
+// Reasons for the ControlPlaneAvailabilityZoneSchedulingAvailable condition.
+const (
+	// ControlPlaneAvailabilityZoneSchedulingAppliedReason indicates the policy is in effect.
+	ControlPlaneAvailabilityZoneSchedulingAppliedReason = "Applied"
+	// ControlPlaneAvailabilityZoneSchedulingNodeContractUnsatisfiedReason indicates the
+	// management cluster lacks the labeled zonal/overflow node pools required by the policy.
+	ControlPlaneAvailabilityZoneSchedulingNodeContractUnsatisfiedReason = "NodeContractUnsatisfied"
+	// ControlPlaneAvailabilityZoneSchedulingConflictsWithRequestServingReason indicates the
+	// dedicated request-serving topology is also requested and takes precedence.
+	ControlPlaneAvailabilityZoneSchedulingConflictsWithRequestServingReason = "ConflictsWithRequestServingTopology"
 )
 
 // Reasons for PublicEndpointExposed condition.

@@ -54,19 +54,28 @@ const (
 	// alpha: v0.1.49
 	// default: OCP 5.0
 	OSStreams featuregate.Feature = "OSStreams"
+
+	// ControlPlaneAvailabilityZoneScheduling gates the
+	// HostedCluster.spec.controlPlaneAvailabilityZoneScheduling API and the Minimal
+	// control plane availability-zone scheduling policy (minimal zone-critical set,
+	// two-replica pairs for non-quorum HA components, and overflow placement for the rest).
+	// alpha: v0.1.80
+	// beta: x.y.z
+	ControlPlaneAvailabilityZoneScheduling featuregate.Feature = "ControlPlaneAvailabilityZoneScheduling"
 )
 
 // Initialize new features here
 var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
-	aroHCPManagedIdentitiesFeature = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
+	aroHCPManagedIdentitiesFeature  = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	openStackFeature                = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	gcpHCPFeature                   = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	hcpEtcdBackupFeature            = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	karpenterOperatorFeature        = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	etcdShardingFeature             = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	osStreamsFeature                = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
+	controlPlaneAZSchedulingFeature = featuregates.NewFeature(ControlPlaneAvailabilityZoneScheduling, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -78,6 +87,7 @@ func init() {
 	allFeatures.AddFeature(karpenterOperatorFeature)
 	allFeatures.AddFeature(etcdShardingFeature)
 	allFeatures.AddFeature(osStreamsFeature)
+	allFeatures.AddFeature(controlPlaneAZSchedulingFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
