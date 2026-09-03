@@ -391,14 +391,14 @@ func EnsureWebhookCerts(ctx context.Context, c client.Client, namespace, service
 	// (e.g. created by another replica or a previous startup) we reuse it
 	// rather than generating a new CA which would invalidate existing
 	// caBundle entries on CRDs and webhook configurations.
-	caObj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, c, caObj, func() error {
-		if len(caObj.Data[certs.CASignerCertMapKey]) > 0 && len(caObj.Data[certs.CASignerKeyMapKey]) > 0 {
+	caSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, caSecret, func() error {
+		if len(caSecret.Data[certs.CASignerCertMapKey]) > 0 && len(caSecret.Data[certs.CASignerKeyMapKey]) > 0 {
 			return nil
 		}
 		log.Info("Generating webhook CA")
-		caObj.Type = corev1.SecretTypeOpaque
-		return certs.ReconcileSelfSignedCA(caObj, "hypershift-webhook-ca", "openshift")
+		caSecret.Type = corev1.SecretTypeOpaque
+		return certs.ReconcileSelfSignedCA(caSecret, "hypershift-webhook-ca", "openshift")
 	}); err != nil {
 		return fmt.Errorf("failed to create or update CA secret: %w", err)
 	}
@@ -406,16 +406,16 @@ func EnsureWebhookCerts(ctx context.Context, c client.Client, namespace, service
 	// Step 2: Ensure the serving cert exists, signed by the (possibly
 	// pre-existing) CA from step 1.
 	dnsNames := webhookDNSNames(serviceName, namespace)
-	servingObj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ServingCertSecretName, Namespace: namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, c, servingObj, func() error {
-		if len(servingObj.Data[corev1.TLSCertKey]) > 0 && len(servingObj.Data[corev1.TLSPrivateKeyKey]) > 0 {
+	servingSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ServingCertSecretName, Namespace: namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, servingSecret, func() error {
+		if len(servingSecret.Data[corev1.TLSCertKey]) > 0 && len(servingSecret.Data[corev1.TLSPrivateKeyKey]) > 0 {
 			return nil
 		}
 		log.Info("Generating webhook serving cert")
-		servingObj.Type = corev1.SecretTypeTLS
+		servingSecret.Type = corev1.SecretTypeTLS
 		return certs.ReconcileSignedCert(
-			servingObj,
-			caObj,
+			servingSecret,
+			caSecret,
 			"hypershift-operator",
 			[]string{"openshift"},
 			[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
