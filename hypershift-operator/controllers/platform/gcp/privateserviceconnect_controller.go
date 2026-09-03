@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"path"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -30,7 +30,9 @@ import (
 const (
 	finalizer = "hypershift.openshift.io/gcp-private-service-connect"
 
-	// gcpAPITimeout is the timeout for individual GCP API calls to prevent hung reconcilers.
+	// gcpAPITimeout is the timeout for GCP API operations to prevent hung reconcilers.
+	// A single context with this timeout may be shared across multiple API calls
+	// (e.g., ListSubnetworks + paginated ListServiceAttachments in discoverNATSubnet).
 	// GCP SDK has connection-level timeouts (dial: 30s, TLS: 10s) but no overall request timeout.
 	gcpAPITimeout = 30 * time.Second
 )
@@ -65,11 +67,18 @@ func (a *computeServiceAdapter) ListForwardingRules(ctx context.Context, project
 }
 
 func (a *computeServiceAdapter) ListSubnetworks(ctx context.Context, project, region, filter string) ([]*compute.Subnetwork, error) {
-	resp, err := a.svc.Subnetworks.List(project, region).Filter(filter).Context(ctx).Do()
+	var allItems []*compute.Subnetwork
+
+	err := a.svc.Subnetworks.List(project, region).Filter(filter).Context(ctx).Pages(ctx, func(page *compute.SubnetworkList) error {
+		allItems = append(allItems, page.Items...)
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	return resp.Items, nil
+
+	return allItems, nil
 }
 
 func (a *computeServiceAdapter) ListServiceAttachments(ctx context.Context, project, region string) ([]*compute.ServiceAttachment, error) {
@@ -304,9 +313,9 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 	usedSubnets := make(map[string]bool)
 	for _, sa := range serviceAttachments {
 		for _, natSubnet := range sa.NatSubnets {
-			// Extract subnet name from URL by taking the suffix after the last "/"
-			if idx := strings.LastIndex(natSubnet, "/"); idx >= 0 {
-				subnetName := natSubnet[idx+1:]
+			// Extract subnet name from URL (e.g., "projects/.../subnetworks/NAME" → "NAME")
+			subnetName := path.Base(natSubnet)
+			if subnetName != "" && subnetName != "." && subnetName != "/" {
 				usedSubnets[subnetName] = true
 			}
 		}
