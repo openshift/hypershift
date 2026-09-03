@@ -60710,7 +60710,7 @@ reporting semantics.
 
 ### Decorators
 
-| Decorator | Purpose | Used by |
+| Decorator | Purpose | Example uses |
 |-----------|---------|---------|
 | **`Ordered`** | Specs in the container run in declaration order. If one fails, subsequent specs in the same container are skipped. Prevents dependent steps from running against corrupted state. | [BackupRestore, EtcdSnapshot][backup-restore-test], [EtcdChaos][etcd-chaos-test], [AzurePrivateLink, AzureEndpointAccess][azure-test], [PKI operator TLS modification][pki-test], [AdmissionPolicies][security-test], [ImageRegistryCapability][image-registry-test], [ExternalOIDCKeycloakAuth][external-oidc-test] |
 | **`Serial`** | Specs never run concurrently with other specs, even if Ginkgo parallel mode were enabled. Applied alongside `Ordered` when a test mutates shared cluster state that could interfere with other specs. | [BackupRestore, EtcdSnapshot][backup-restore-test] (separate binary), [PKI operator TLS modification][pki-test] |
@@ -60727,10 +60727,10 @@ future-proof.
 
 | Hook | Scope | Purpose |
 |------|-------|---------|
-| **`BeforeSuite`** | Once per process | Initializes the global [`TestContext`][test-context] from env vars (cluster name, namespace, artifact dir, management client). Runs before any spec. See [`suite_test.go`][suite-test]. |
+| **`BeforeSuite`** | Once per process | Initializes the global [`TestContext`][test-context] from env vars (cluster name, namespace, artifact dir, etc.). Runs before any spec. See [`suite_test.go`][suite-test]. |
 | **`BeforeAll`** | Once per `Ordered` container | Initializes shared state for an ordered sequence (e.g., resolve `TestContext`, validate platform support, capture original config for later restoration). Runs once before the first spec in the container. |
 | **`AfterAll`** | Once per `Ordered` container | Tears down shared state created by `BeforeAll` (e.g., delete backup resources, restore original HostedCluster config). |
-| **`BeforeEach`** | Before every spec | Top-level: resolves `TestContext` and validates the hosted cluster resource exists on the management cluster. (`Ordered` containers use `BeforeAll` for the same purpose.) Nested (in `Context`/`When` blocks) or inline in specs: runs platform guards (`Skip()` if wrong platform) or other precondition checks. |
+| **`BeforeEach`** | Before every spec | Top-level: resolves `TestContext`. (`Ordered` containers use `BeforeAll` for the same purpose.) Nested (in `Context`/`When` blocks) or inline in specs: runs platform guards (`Skip()` if wrong platform) or other precondition checks. |
 | **`DeferCleanup`** | After each spec (LIFO) | Restores mutated state or deletes created resources. Registered immediately after mutation/creation so cleanup runs even if the test panics or fails before reaching manual deletion. |
 
 The `BeforeAll`/`AfterAll` pair is critical for lifecycle tests that share expensive
@@ -60742,8 +60742,8 @@ once, then multiple specs verify different aspects of the restore). Without `Ord
 
 | Label | Effect |
 |-------|--------|
-| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The simple [`hypershift-e2e-v2` CI chain][e2e-v2-chain] filters these out with `--ginkgo.label-filter='!lifecycle'` so that read-only compliance runs don't trigger mutations. The `run-tests` orchestrator runs lifecycle tests on dedicated clusters via specific label filters. |
-| **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features (e.g., metrics forwarding, custom labels/tolerations). |
+| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The `run-tests` orchestrator runs lifecycle tests on dedicated clusters via specific label filters. |
+| **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features. |
 | **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` with non-overlapping label sets so each process only runs specs relevant to its assigned cluster variant. The label-to-cluster mapping is defined by [`TestMatrix`][azure-platform] in the platform config. |
 
 ### How These Layers Compose
@@ -60780,8 +60780,7 @@ job level.
 
 The diagram below shows the general v2 e2e flow. The framework is
 platform-agnostic — each platform implements the [`PlatformConfig`][platform]
-interface — but Azure is currently the only implementation and serves as the
-reference. The concrete examples here follow the
+interface. The concrete examples here follow the
 [`e2e-azure-v2-self-managed`][ci-job-config] CI job and its
 [workflow][workflow]. ci-operator builds the [`hypershift-tests`][dockerfile-e2e]
 image (via [`Dockerfile.e2e`][dockerfile-e2e], which invokes several
@@ -60838,9 +60837,11 @@ sequenceDiagram
     activate CG
     Note over CG: Single Go process, phases run sequentially.<br/>Phases 1, 3, and 5 use internal goroutines for parallelism.
 
-    CG->>MC: Phase 0: PreCreate hooks<br/>(deploy Keycloak for external-oidc)
+    CG->>Shell: Phase 0: Write cluster manifest to SHARED_DIR
 
-    par Phase 1: Create 6 clusters in parallel (goroutines + exec.Command)
+    CG->>MC: Phase 1: PreCreate hooks<br/>(deploy Keycloak for external-oidc)
+
+    par Phase 2: Create 6 clusters in parallel (goroutines + exec.Command)
         CG->>MC: Create public-{hash}
         CG->>MC: Create private-{hash} (Private endpoint access)
         CG->>MC: Create oauth-lb-{hash} (OAuth via LoadBalancer)
@@ -60850,20 +60851,17 @@ sequenceDiagram
     end
     Note right of CG: Each calls `hypershift create cluster azure`<br/>with variant-specific flags
 
-    CG->>MC: Phase 2: PostCreate hooks<br/>(patch public cluster OperatorConfiguration)
+    CG->>MC: Phase 3: PostCreate hooks<br/>(patch public cluster OperatorConfiguration)
 
-    CG->>MC: Phase 3: Watch all clusters for Available condition<br/>(controller-runtime Watch, 45m timeout)
+    CG->>MC: Phase 4: Watch all clusters for Available condition<br/>(controller-runtime Watch, 45m timeout)
     MC-->>CG: All 6 clusters Available
 
-    CG->>MC: Phase 4: PostAvailable hooks
+    CG->>MC: Phase 5: PostAvailable hooks
 
-    CG->>MC: Phase 5: Watch for version rollout completion<br/>(VersionState=Completed on all history entries)
+    CG->>MC: Phase 6: Watch for version rollout completion<br/>(VersionState=Completed on all history entries)
     MC-->>CG: All 6 clusters rolled out
 
-    CG->>MC: Phase 6: PostVersionRollout hooks<br/>(patch external-oidc cluster with OIDC config)
-
-    CG->>Shell: Phase 7: Write cluster names and<br/>platform-specific config to SHARED_DIR
-    deactivate CG
+    CG->>MC: Phase 7: PostVersionRollout hooks<br/>(patch external-oidc cluster with OIDC config)
 
     Note over Prow,HC: Phase 3: Test Execution (run-tests binary)
 
@@ -60970,17 +60968,6 @@ sequenceDiagram
     loop For each matching spec (It block)
         G->>G: BeforeEach: get TestContext,<br/>platform guard (Skip if wrong platform)
 
-        alt First access to HostedCluster (sync.Once)
-            G->>MC: Get HostedCluster {name}/{namespace}
-            MC-->>G: HostedCluster object (cached for process lifetime)
-        end
-
-        alt First access to HostedCluster client (sync.Once)
-            G->>MC: Get kubeconfig Secret from HC status
-            MC-->>G: Secret with kubeconfig data
-            G->>G: Build REST config + controller-runtime client<br/>(cached for process lifetime)
-        end
-
         G->>MC: Test assertions against management cluster
         G->>HCA: Test assertions against hosted cluster
 
@@ -61004,10 +60991,10 @@ sequenceDiagram
 |---------|--------|-----------|---------------|
 | **ci-operator** | CI infrastructure | Manages the entire [job][ci-job-config] | Runs [workflow steps][workflow] as pods |
 | **Step shell** | bash | One per CI step | Sets KUBECONFIG, runs Go binaries ([create][create-guests-sh], [run][run-tests-chain], [destroy][destroy-guests-chain]) |
-| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster names and platform-specific config to `SHARED_DIR` |
-| **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
-| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group (7 total, up to 6 concurrent) | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
-| **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
+| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster manifest and platform-specific config to `SHARED_DIR` |
+| **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Consumes cluster manifest and forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
+| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test step according to the TestMatrix | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
+| **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Consumes cluster manifest and forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
 
 ## Sequencing of Mutually Exclusive Tests
 
@@ -61066,7 +61053,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph "SHARED_DIR (filesystem)"
-        F1["cluster-name-{variant}<br/>(one per cluster)"]
+        F1["cluster manifest JSON"]
         F2["management_cluster_kubeconfig"]
         F3["platform-specific config<br/>(OIDC bundles, subnet IDs, etc.)"]
     end
@@ -61079,21 +61066,18 @@ flowchart LR
     RT -->|"env vars"| TB["test-e2e-v2<br/>(subprocess)"]
     TB -->|"JUnit XML"| AD["ARTIFACT_DIR"]
 
-    DG["destroy-guests"] -->|"derives names from<br/>PROW_JOB_ID + sha256"| MC["Management Cluster"]
-
+    DG["destroy-guests"] -->|"reads"| F1
 ```
 
 - **SHARED_DIR**: Filesystem directory shared across all CI steps within a job.
-  [`create-guests`][create-guests] writes cluster names and platform-specific
+  [`create-guests`][create-guests] writes a structured cluster manifest and platform-specific
   config; [`run-tests`][run-tests] reads them. This is the primary IPC mechanism
   between CI steps.
 - **Environment variables**: `run-tests` passes cluster identity to each `test-e2e-v2`
   subprocess via `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` env vars.
-- **PROW_JOB_ID + SHA256**: [`destroy-guests`][destroy-guests] does not read
-  SHARED_DIR cluster names. Instead, it re-derives cluster names deterministically
-  from `PROW_JOB_ID` using the same [`DeriveClusterName()`][platform] function as
-  `create-guests`. This makes teardown idempotent and independent of whether creation
-  succeeded.
+- **Cluster manifest**: [`destroy-guests`][destroy-guests] re-derives cluster details
+  deterministically from the manifest written by [`create-guests`][create-guests].
+  This makes teardown idempotent and independent of whether creation succeeded.
 - **KUBECONFIG**: All processes authenticate to the management cluster via the
   kubeconfig file at `${SHARED_DIR}/management_cluster_kubeconfig`, set up by the
   nested management cluster provisioning step.
@@ -61127,7 +61111,6 @@ flowchart LR
 [create-guests-sh]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/azure/create-selfmanaged-guests/hypershift-azure-create-selfmanaged-guests-commands.sh
 [run-tests-chain]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/azure/run-e2e-v2-selfmanaged/hypershift-azure-run-e2e-v2-selfmanaged-chain.yaml
 [destroy-guests-chain]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/azure/destroy-selfmanaged-guests/hypershift-azure-destroy-selfmanaged-guests-chain.yaml
-[e2e-v2-chain]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/e2e-v2/hypershift-e2e-v2-chain.yaml
 
 
 ---
