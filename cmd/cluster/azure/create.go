@@ -393,6 +393,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 						KeyName:      o.encryptionKey.KeyName,
 						KeyVersion:   o.encryptionKey.KeyVersion,
 					},
+					KeyVaultType: o.encryptionKey.KeyVaultType,
 					KMS: hyperv1.ManagedIdentity{
 						CredentialsSecretName: o.KMSUserAssignedCredsSecretName,
 						ObjectEncoding:        ObjectEncoding,

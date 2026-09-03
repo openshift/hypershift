@@ -10,20 +10,35 @@ import (
 
 func TestFingerprintAzureKMSKey(t *testing.T) {
 	t.Parallel()
-	t.Run("When computing Azure KMS fingerprint it should be deterministic", func(t *testing.T) {
+	t.Run("When computing Azure KMS fingerprint, it should be deterministic", func(t *testing.T) {
 		g := NewWithT(t)
 		key := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}
-		fp1 := FingerprintAzureKMSKey(key)
-		fp2 := FingerprintAzureKMSKey(key)
+		fp1 := FingerprintAzureKMSKey(key, "")
+		fp2 := FingerprintAzureKMSKey(key, "")
 		g.Expect(fp1).To(Equal(fp2))
 		g.Expect(fp1).ToNot(BeEmpty())
 	})
 
-	t.Run("When Azure KMS key version changes it should produce a different fingerprint", func(t *testing.T) {
+	t.Run("When Azure KMS key version changes, it should produce a different fingerprint", func(t *testing.T) {
 		g := NewWithT(t)
 		key1 := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}
 		key2 := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v2"}
-		g.Expect(FingerprintAzureKMSKey(key1)).ToNot(Equal(FingerprintAzureKMSKey(key2)))
+		g.Expect(FingerprintAzureKMSKey(key1, "")).ToNot(Equal(FingerprintAzureKMSKey(key2, "")))
+	})
+
+	t.Run("When KeyVault type is explicit, it should preserve the legacy fingerprint", func(t *testing.T) {
+		const legacyFingerprint = "d5962eb588f841eaa664c407524cfeff2eb31432751370611c35737a8b81da35"
+
+		g := NewWithT(t)
+		legacyKey := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}
+		g.Expect(FingerprintAzureKMSKey(legacyKey, "")).To(Equal(legacyFingerprint))
+		g.Expect(FingerprintAzureKMSKey(legacyKey, hyperv1.AzureKMSKeyVaultTypeKeyVault)).To(Equal(legacyFingerprint))
+	})
+
+	t.Run("When vault type changes to ManagedHSM, it should produce a different fingerprint", func(t *testing.T) {
+		g := NewWithT(t)
+		key := hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"}
+		g.Expect(FingerprintAzureKMSKey(key, hyperv1.AzureKMSKeyVaultTypeManagedHSM)).ToNot(Equal(FingerprintAzureKMSKey(key, "")))
 	})
 }
 
@@ -106,7 +121,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 	t.Parallel()
 	t.Run("When status is nil it should return empty string", func(t *testing.T) {
 		g := NewWithT(t)
-		g.Expect(FingerprintFromKeyStatus(nil)).To(BeEmpty())
+		g.Expect(FingerprintFromKeyStatus(nil, "")).To(BeEmpty())
 	})
 
 	t.Run("When Azure status is provided it should match spec fingerprint", func(t *testing.T) {
@@ -116,7 +131,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 			Provider: hyperv1.SecretEncryptionProviderAzure,
 			Azure:    hyperv1.AzureKMSKey{KeyVaultName: "vault", KeyName: "key", KeyVersion: "v1"},
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintAzureKMSKey(key)))
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(Equal(FingerprintAzureKMSKey(key, "")))
 	})
 
 	t.Run("When AWS status is provided it should match spec fingerprint", func(t *testing.T) {
@@ -126,7 +141,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 			Provider: hyperv1.SecretEncryptionProviderAWS,
 			AWS:      hyperv1.AWSKMSKeyEntry{ARN: arn},
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintAWSKMSKey(arn)))
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(Equal(FingerprintAWSKMSKey(arn)))
 	})
 
 	t.Run("When IBMCloud status is provided it should match spec fingerprint", func(t *testing.T) {
@@ -136,7 +151,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 			Provider: hyperv1.SecretEncryptionProviderIBMCloud,
 			IBMCloud: entry,
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintIBMCloudKMSKeyList([]hyperv1.IBMCloudKMSKeyEntry{entry})))
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(Equal(FingerprintIBMCloudKMSKeyList([]hyperv1.IBMCloudKMSKeyEntry{entry})))
 	})
 
 	t.Run("When AESCBC status is provided it should match spec fingerprint", func(t *testing.T) {
@@ -148,7 +163,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 				DataHash: "abc123",
 			},
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(Equal(FingerprintAESCBCKey("my-secret", "abc123")))
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(Equal(FingerprintAESCBCKey("my-secret", "abc123")))
 	})
 
 	t.Run("When Azure status has empty fields it should return empty string", func(t *testing.T) {
@@ -156,7 +171,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 		status := &hyperv1.SecretEncryptionKeyStatus{
 			Provider: hyperv1.SecretEncryptionProviderAzure,
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(BeEmpty())
 	})
 
 	t.Run("When AWS status has empty ARN it should return empty string", func(t *testing.T) {
@@ -164,7 +179,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 		status := &hyperv1.SecretEncryptionKeyStatus{
 			Provider: hyperv1.SecretEncryptionProviderAWS,
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(BeEmpty())
 	})
 
 	t.Run("When IBMCloud status has empty CRKID it should return empty string", func(t *testing.T) {
@@ -172,7 +187,7 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 		status := &hyperv1.SecretEncryptionKeyStatus{
 			Provider: hyperv1.SecretEncryptionProviderIBMCloud,
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(BeEmpty())
 	})
 
 	t.Run("When AESCBC status has empty data hash it should return empty string", func(t *testing.T) {
@@ -180,6 +195,6 @@ func TestFingerprintFromKeyStatus(t *testing.T) {
 		status := &hyperv1.SecretEncryptionKeyStatus{
 			Provider: hyperv1.SecretEncryptionProviderAESCBC,
 		}
-		g.Expect(FingerprintFromKeyStatus(status)).To(BeEmpty())
+		g.Expect(FingerprintFromKeyStatus(status, "")).To(BeEmpty())
 	})
 }

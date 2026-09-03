@@ -15,8 +15,12 @@ func DataHash(data []byte) string {
 }
 
 // FingerprintAzureKMSKey computes the SHA-256 fingerprint for an Azure KMS key.
-func FingerprintAzureKMSKey(key hyperv1.AzureKMSKey) string {
-	return DataHash([]byte(key.KeyVaultName + "/" + key.KeyName + "/" + key.KeyVersion))
+func FingerprintAzureKMSKey(key hyperv1.AzureKMSKey, keyVaultType hyperv1.AzureKMSKeyVaultType) string {
+	identity := key.KeyVaultName + "/" + key.KeyName + "/" + key.KeyVersion
+	if keyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+		identity += "/" + string(keyVaultType)
+	}
+	return DataHash([]byte(identity))
 }
 
 // FingerprintAWSKMSKey computes the SHA-256 fingerprint for an AWS KMS key.
@@ -41,7 +45,8 @@ func FingerprintAESCBCKey(secretName string, dataHash string) string {
 }
 
 // FingerprintFromKeyStatus computes the fingerprint from a SecretEncryptionKeyStatus.
-func FingerprintFromKeyStatus(status *hyperv1.SecretEncryptionKeyStatus) string {
+// keyVaultType is only used for Azure KMS keys and is ignored for other providers.
+func FingerprintFromKeyStatus(status *hyperv1.SecretEncryptionKeyStatus, keyVaultType hyperv1.AzureKMSKeyVaultType) string {
 	if status == nil {
 		return ""
 	}
@@ -50,7 +55,7 @@ func FingerprintFromKeyStatus(status *hyperv1.SecretEncryptionKeyStatus) string 
 		if status.Azure.KeyVaultName == "" {
 			return ""
 		}
-		return FingerprintAzureKMSKey(status.Azure)
+		return FingerprintAzureKMSKey(status.Azure, keyVaultType)
 	case hyperv1.SecretEncryptionProviderAWS:
 		if status.AWS.ARN == "" {
 			return ""
