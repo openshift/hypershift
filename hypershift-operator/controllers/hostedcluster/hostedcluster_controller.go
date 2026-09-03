@@ -3864,7 +3864,8 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 			// ValidAWSIdentityProvider is copied from the HostedControlPlane, which no longer exists at
 			// this point, so the status is normally Unknown and the finalizer is removed immediately.
 			// The grace period only applies if credentials are still reported as valid.
-			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
+			credStatus := platformaws.GetCredentialStatus(hc)
+			if credStatus == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
 				continue
 			}
 
@@ -3876,11 +3877,11 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 				reason := "the HC has no valid aws credentials"
-				if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid {
+				if credStatus == platformaws.CredentialStatusValid {
 					reason = "deletion grace period expired"
 				}
 
-				log.Info("Removed CPO finalizer for awsendpointservice because "+reason, "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
+				log.Info("Removed CPO finalizer for awsendpointservice", "reason", reason, "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			}
 			continue
 		}
