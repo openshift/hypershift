@@ -227,9 +227,11 @@ func Test_minTLSVersion(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name     string
-		profile  *configv1.TLSSecurityProfile
-		expected tlsutil.TLSVersion
+		name              string
+		profile           *configv1.TLSSecurityProfile
+		expected          tlsutil.TLSVersion
+		expectError       bool
+		expectedErrSubstr string
 	}{
 		{
 			name:     "When TLS profile is nil, it should return TLS 1.2",
@@ -293,6 +295,14 @@ func Test_minTLSVersion(t *testing.T) {
 			},
 			expected: tlsutil.TLSVersion12,
 		},
+		{
+			name: "When TLS profile is Custom with nil Custom field, it should return error",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+			},
+			expectError:       true,
+			expectedErrSubstr: "Custom but Custom field is nil",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -300,7 +310,13 @@ func Test_minTLSVersion(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			result := minTLSVersion(tc.profile)
+			result, err := minTLSVersion(tc.profile)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrSubstr))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected))
 		})
 	}
