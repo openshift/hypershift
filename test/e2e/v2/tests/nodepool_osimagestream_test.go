@@ -326,10 +326,46 @@ func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePo
 	ensureNodesRuntimeV2(nodeList.Items, expectedStream)
 }
 
+// getNodePoolWithReadyNode returns a NodePool for the hosted cluster that is not
+// being deleted and has at least one observed replica (status.replicas), so its
+// backing node object can be inspected. Unlike getDefaultNodePool, it skips
+// NodePools that carry a deletion timestamp (e.g. test NodePools mid-teardown).
+// It returns nil if no such NodePool exists; callers should assert the result is
+// non-nil.
+//
+// NOTE: this helper is NOT Eventually-compatible. It uses Gomega assertions (via
+// GinkgoHelper), so a list failure is reported at the caller's line and aborts
+// the spec immediately rather than retrying. Do not call it inside an
+// Eventually/Consistently polling loop.
+func getNodePoolWithReadyNode(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster) *hyperv1.NodePool {
+	GinkgoHelper()
+
+	npList := &hyperv1.NodePoolList{}
+	Expect(client.List(ctx, npList, crclient.InNamespace(hc.Namespace))).To(Succeed(),
+		"failed to list NodePools for HostedCluster %s/%s", hc.Namespace, hc.Name)
+
+	for i := range npList.Items {
+		np := &npList.Items[i]
+		if np.Spec.ClusterName != hc.Name {
+			continue
+		}
+		if np.DeletionTimestamp != nil {
+			continue
+		}
+		if np.Status.Replicas < 1 {
+			continue
+		}
+		return np
+	}
+
+	return nil
+}
+
 // NodePoolOSImageStreamNodeOSVerificationTest verifies that actual node OS versions
-// match the expected osImageStream across three scenarios: the default NodePool
-// (no osImageStream set), an explicit rhel-9 NodePool, and an explicit rhel-10
-// NodePool. This is a lifecycle test because it creates additional NodePools.
+// match the expected osImageStream across two scenarios: an existing NodePool
+// running its version-derived (or explicitly configured) stream, and an explicit
+// NodePool created with the alternate stream. This is a lifecycle test because it
+// creates additional NodePools.
 func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContextGetter) {
 	It("When NodePools have different osImageStream values, nodes should run the matching OS version", Label("Informing"), func() {
 		testCtx := getTestCtx()
@@ -342,12 +378,11 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
-		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
-		Expect(defaultNP.Spec.OSImageStream.Name).To(BeEmpty(),
-			"default NodePool %s should not have an explicit spec.osImageStream set", defaultNP.Name)
+		defaultNP := getNodePoolWithReadyNode(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(),
+			"a non-deleting NodePool with at least one replica should exist for HostedCluster %s/%s", hc.Namespace, hc.Name)
 
-		By("waiting for the default NodePool to have status.osImageStream resolved")
+		By("waiting for the NodePool to have status.osImageStream resolved")
 		e2eutil.EventuallyObject[*hyperv1.NodePool](
 			GinkgoTB(), ctx,
 			fmt.Sprintf("NodePool %s/%s status.osImageStream to be set", defaultNP.Namespace, defaultNP.Name),
@@ -363,11 +398,12 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 			e2eutil.WithInterval(15*time.Second),
 		)
 
-		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), defaultNP)).To(Succeed())
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), defaultNP)).To(Succeed(),
+			"failed to get NodePool %s/%s", defaultNP.Namespace, defaultNP.Name)
 		defaultStream := defaultNP.Status.OSImageStream.Name
-		Expect(defaultStream).NotTo(BeEmpty(), "default NodePool %s should have status.osImageStream.name set", defaultNP.Name)
+		Expect(defaultStream).NotTo(BeEmpty(), "NodePool %s/%s should have status.osImageStream.name set", defaultNP.Namespace, defaultNP.Name)
 
-		By(fmt.Sprintf("verifying the default NodePool (spec.osImageStream=%q, status.osImageStream=%s) runs the expected OS",
+		By(fmt.Sprintf("verifying the NodePool (spec.osImageStream=%q, status.osImageStream=%s) runs the expected OS",
 			defaultNP.Spec.OSImageStream.Name, defaultStream))
 		verifyNodeOSMatchesStream(testCtx, defaultNP, defaultStream)
 
@@ -378,7 +414,7 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 		case hyperv1.OSImageStreamRHEL9:
 			alternateStream = hyperv1.OSImageStreamRHEL10
 		default:
-			Fail(fmt.Sprintf("unexpected default stream %q", defaultStream))
+			Fail(fmt.Sprintf("unexpected stream %q on NodePool %s/%s", defaultStream, defaultNP.Namespace, defaultNP.Name))
 		}
 
 		By(fmt.Sprintf("creating a NodePool with osImageStream=%s", alternateStream))
