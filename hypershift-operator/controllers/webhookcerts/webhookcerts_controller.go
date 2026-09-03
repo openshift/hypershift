@@ -370,34 +370,61 @@ func GenerateInitialWebhookCerts(namespace, serviceName string) (*corev1.Secret,
 // server can start. If the serving cert secret already exists with valid data,
 // this is a no-op (the volume mount handles file delivery). If the secret is
 // missing or has empty data, new certs are generated and persisted as secrets.
+//
+// This function is careful NOT to overwrite an existing valid CA: transient API
+// errors (e.g. during heavy CRD apply) must not be mistaken for "certs missing",
+// because regenerating the CA would invalidate the caBundle already patched into
+// CRDs and webhook configurations, causing TLS handshake failures during rollout.
 func EnsureWebhookCerts(ctx context.Context, c client.Client, namespace, serviceName string) error {
 	log := ctrl.LoggerFrom(ctx).WithName("webhook-cert-bootstrap")
 
-	if certsExist(ctx, c, namespace) {
+	exists, err := certsExist(ctx, c, namespace)
+	if err != nil {
+		return fmt.Errorf("failed to check webhook cert secrets: %w", err)
+	}
+	if exists {
 		log.Info("Webhook cert secrets already exist with valid data, skipping bootstrap")
 		return nil
 	}
 
-	log.Info("Generating webhook certificates")
-	caSecret, servingSecret, _, err := GenerateInitialWebhookCerts(namespace, serviceName)
-	if err != nil {
-		return fmt.Errorf("failed to generate webhook certs: %w", err)
-	}
-
+	// Step 1: Ensure the CA secret exists. If it already has valid data
+	// (e.g. created by another replica or a previous startup) we reuse it
+	// rather than generating a new CA which would invalidate existing
+	// caBundle entries on CRDs and webhook configurations.
 	caObj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: namespace}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, c, caObj, func() error {
+		if len(caObj.Data[certs.CASignerCertMapKey]) > 0 && len(caObj.Data[certs.CASignerKeyMapKey]) > 0 {
+			return nil
+		}
+		log.Info("Generating webhook CA")
 		caObj.Type = corev1.SecretTypeOpaque
-		caObj.Data = caSecret.Data
-		return nil
+		return certs.ReconcileSelfSignedCA(caObj, "hypershift-webhook-ca", "openshift")
 	}); err != nil {
 		return fmt.Errorf("failed to create or update CA secret: %w", err)
 	}
 
+	// Step 2: Ensure the serving cert exists, signed by the (possibly
+	// pre-existing) CA from step 1.
+	dnsNames := webhookDNSNames(serviceName, namespace)
 	servingObj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ServingCertSecretName, Namespace: namespace}}
 	if _, err := controllerutil.CreateOrUpdate(ctx, c, servingObj, func() error {
+		if len(servingObj.Data[corev1.TLSCertKey]) > 0 && len(servingObj.Data[corev1.TLSPrivateKeyKey]) > 0 {
+			return nil
+		}
+		log.Info("Generating webhook serving cert")
 		servingObj.Type = corev1.SecretTypeTLS
-		servingObj.Data = servingSecret.Data
-		return nil
+		return certs.ReconcileSignedCert(
+			servingObj,
+			caObj,
+			"hypershift-operator",
+			[]string{"openshift"},
+			[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			corev1.TLSCertKey,
+			corev1.TLSPrivateKeyKey,
+			"",
+			dnsNames,
+			nil,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to create or update serving cert secret: %w", err)
 	}
@@ -406,19 +433,31 @@ func EnsureWebhookCerts(ctx context.Context, c client.Client, namespace, service
 	return nil
 }
 
-// certsExist returns true when both the CA and serving cert secrets exist with non-empty data.
-func certsExist(ctx context.Context, c client.Client, namespace string) bool {
+// certsExist checks whether both the CA and serving cert secrets exist with
+// non-empty data. It returns (true, nil) when both are present, (false, nil)
+// when at least one secret is not found or has empty data, and (false, err) on
+// transient API errors so the caller can distinguish "missing" from "unknown".
+func certsExist(ctx context.Context, c client.Client, namespace string) (bool, error) {
 	ca := &corev1.Secret{}
 	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: CASecretName}, ca); err != nil {
-		return false
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get CA secret %s/%s: %w", namespace, CASecretName, err)
 	}
 	if len(ca.Data[certs.CASignerCertMapKey]) == 0 || len(ca.Data[certs.CASignerKeyMapKey]) == 0 {
-		return false
+		return false, nil
 	}
 
 	serving := &corev1.Secret{}
 	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ServingCertSecretName}, serving); err != nil {
-		return false
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get serving cert secret %s/%s: %w", namespace, ServingCertSecretName, err)
 	}
-	return len(serving.Data[corev1.TLSCertKey]) > 0 && len(serving.Data[corev1.TLSPrivateKeyKey]) > 0
+	if len(serving.Data[corev1.TLSCertKey]) == 0 || len(serving.Data[corev1.TLSPrivateKeyKey]) == 0 {
+		return false, nil
+	}
+	return true, nil
 }

@@ -516,6 +516,82 @@ func TestEnsureWebhookCerts(t *testing.T) {
 	})
 }
 
+func TestCertsExistDistinguishesNotFoundFromTransient(t *testing.T) {
+	t.Run("When both secrets exist with valid data it should return true and no error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		caSecret, servingSecret, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, servingSecret).Build()
+
+		exists, err := certsExist(t.Context(), cl, "hypershift")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeTrue())
+	})
+
+	t.Run("When CA secret is not found it should return false and no error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).Build()
+
+		exists, err := certsExist(t.Context(), cl, "hypershift")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeFalse())
+	})
+
+	t.Run("When CA secret has empty data it should return false and no error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		emptyCA := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: "hypershift"},
+			Data:       map[string][]byte{},
+		}
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(emptyCA).Build()
+
+		exists, err := certsExist(t.Context(), cl, "hypershift")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeFalse())
+	})
+}
+
+func TestEnsureWebhookCertsDoesNotOverwriteExistingCerts(t *testing.T) {
+	t.Run("When another replica already created secrets it should not overwrite them", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Simulate the race: replica A created the secrets between replica B's
+		// certsExist check (which returned false) and its CreateOrUpdate.
+		// Use GenerateInitialWebhookCerts to create realistic secrets.
+		caSecret, servingSecret, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		originalCAData := make([]byte, len(caSecret.Data[certs.CASignerCertMapKey]))
+		copy(originalCAData, caSecret.Data[certs.CASignerCertMapKey])
+		originalServingData := make([]byte, len(servingSecret.Data[corev1.TLSCertKey]))
+		copy(originalServingData, servingSecret.Data[corev1.TLSCertKey])
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, servingSecret).Build()
+
+		// Call EnsureWebhookCerts pretending certs didn't exist (fresh namespace).
+		// Because CreateOrUpdate in EnsureWebhookCerts now guards against overwriting
+		// valid data, the existing secrets should be preserved.
+		err = EnsureWebhookCerts(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Verify CA was NOT replaced.
+		updatedCA := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, updatedCA)).To(Succeed())
+		g.Expect(updatedCA.Data[certs.CASignerCertMapKey]).To(Equal(originalCAData),
+			"CA cert should not be overwritten when valid data already exists")
+
+		// Verify serving cert was NOT replaced.
+		updatedServing := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, updatedServing)).To(Succeed())
+		g.Expect(updatedServing.Data[corev1.TLSCertKey]).To(Equal(originalServingData),
+			"Serving cert should not be overwritten when valid data already exists")
+	})
+}
+
 func TestWebhookDNSNames(t *testing.T) {
 	t.Run("When given service name and namespace it should return correct DNS names", func(t *testing.T) {
 		g := NewWithT(t)
