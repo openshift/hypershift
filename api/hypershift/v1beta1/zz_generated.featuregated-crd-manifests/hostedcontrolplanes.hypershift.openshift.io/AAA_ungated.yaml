@@ -445,12 +445,12 @@ spec:
                       rule: self == oldSelf
                 type: object
                 x-kubernetes-validations:
-                - message: Capabilities is immutable. Changes might result in unpredictable
-                    and disruptive behavior.
-                  rule: self == oldSelf
                 - message: Capabilities can not be both enabled and disabled at once.
                   rule: 'has(self.enabled) && has(self.disabled) ? self.enabled.all(e,
                     !(e in self.disabled)) : true'
+                - message: Capabilities is immutable. Changes might result in unpredictable
+                    and disruptive behavior.
+                  rule: self == oldSelf
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default
@@ -5463,11 +5463,11 @@ spec:
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
-                                - message: natSubnetID is immutable once set
-                                  rule: self == oldSelf
                                 - message: must be a valid Azure subnet resource ID
                                     (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})
                                   rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')
+                                - message: natSubnetID is immutable once set
+                                  rule: self == oldSelf
                             type: object
                           swift:
                             description: |-

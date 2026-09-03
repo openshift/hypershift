@@ -115,10 +115,10 @@ spec:
                 minLength: 1
                 type: string
                 x-kubernetes-validations:
-                - message: guestSubnetID is immutable once set
-                  rule: self == oldSelf
                 - message: must be a valid Azure subnet resource ID (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})
                   rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')
+                - message: guestSubnetID is immutable once set
+                  rule: self == oldSelf
               guestVNetID:
                 description: |-
                   guestVNetID is the full Azure resource ID of the guest VNet for Private DNS zone linking.
@@ -128,10 +128,10 @@ spec:
                 minLength: 1
                 type: string
                 x-kubernetes-validations:
-                - message: guestVNetID is immutable once set
-                  rule: self == oldSelf
                 - message: must be a valid Azure VNet resource ID (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet})
                   rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+$')
+                - message: guestVNetID is immutable once set
+                  rule: self == oldSelf
               loadBalancerIP:
                 description: |-
                   loadBalancerIP is the frontend IP address of the internal load balancer that
@@ -170,10 +170,10 @@ spec:
                 minLength: 1
                 type: string
                 x-kubernetes-validations:
-                - message: natSubnetID is immutable once set
-                  rule: self == oldSelf
                 - message: must be a valid Azure subnet resource ID (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})
                   rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')
+                - message: natSubnetID is immutable once set
+                  rule: self == oldSelf
               resourceGroupName:
                 description: |-
                   resourceGroupName is the name of the Azure resource group where the Private Link
@@ -199,10 +199,10 @@ spec:
                 minLength: 36
                 type: string
                 x-kubernetes-validations:
-                - message: subscriptionID is immutable once set
-                  rule: self == oldSelf
                 - message: must be a valid UUID (e.g., 550e8400-e29b-41d4-a716-446655440000)
                   rule: self.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+                - message: subscriptionID is immutable once set
+                  rule: self == oldSelf
             required:
             - guestSubnetID
             - guestVNetID

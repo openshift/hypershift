@@ -489,12 +489,12 @@ spec:
                       rule: self == oldSelf
                 type: object
                 x-kubernetes-validations:
-                - message: Capabilities is immutable. Changes might result in unpredictable
-                    and disruptive behavior.
-                  rule: self == oldSelf
                 - message: Capabilities can not be both enabled and disabled at once.
                   rule: 'has(self.enabled) && has(self.disabled) ? self.enabled.all(e,
                     !(e in self.disabled)) : true'
+                - message: Capabilities is immutable. Changes might result in unpredictable
+                    and disruptive behavior.
+                  rule: self == oldSelf
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
@@ -5577,11 +5577,11 @@ spec:
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
-                                - message: natSubnetID is immutable once set
-                                  rule: self == oldSelf
                                 - message: must be a valid Azure subnet resource ID
                                     (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})
                                   rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')
+                                - message: natSubnetID is immutable once set
+                                  rule: self == oldSelf
                             type: object
                           swift:
                             description: |-
@@ -6046,11 +6046,11 @@ spec:
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: CloudController is immutable
-                                  rule: self == oldSelf
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                                - message: CloudController is immutable
+                                  rule: self == oldSelf
                               controlPlane:
                                 description: |-
                                   controlPlane is the Google Service Account email for the Control Plane Operator
@@ -6069,11 +6069,11 @@ spec:
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: ControlPlane is immutable
-                                  rule: self == oldSelf
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                                - message: ControlPlane is immutable
+                                  rule: self == oldSelf
                               imageRegistry:
                                 description: |-
                                   imageRegistry is the Google Service Account email for the Image Registry Operator
@@ -6090,11 +6090,11 @@ spec:
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: ImageRegistry is immutable
-                                  rule: self == oldSelf
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                                - message: ImageRegistry is immutable
+                                  rule: self == oldSelf
                               network:
                                 description: |-
                                   network is the Google Service Account email for the Cloud Network Config Controller
@@ -6112,11 +6112,11 @@ spec:
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: Network is immutable
-                                  rule: self == oldSelf
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                                - message: Network is immutable
+                                  rule: self == oldSelf
                               nodePool:
                                 description: |-
                                   nodePool is the Google Service Account email for CAPG controllers
@@ -6135,11 +6135,11 @@ spec:
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: NodePool is immutable
-                                  rule: self == oldSelf
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                                - message: NodePool is immutable
+                                  rule: self == oldSelf
                               storage:
                                 description: |-
                                   storage is the Google Service Account email for the GCP PD CSI Driver
@@ -6159,11 +6159,11 @@ spec:
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: Storage is immutable
-                                  rule: self == oldSelf
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                                - message: Storage is immutable
+                                  rule: self == oldSelf
                             required:
                             - cloudController
                             - controlPlane
