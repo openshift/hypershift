@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/testutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -391,23 +392,6 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 	}
 }
 
-func hostedClusterWithCredentialConditions(oidcStatus, awsIdpStatus metav1.ConditionStatus) *hyperv1.HostedCluster {
-	hc := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
-	}
-	meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-		Type:   string(hyperv1.ValidOIDCConfiguration),
-		Status: oidcStatus,
-		Reason: "test",
-	})
-	meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-		Type:   string(hyperv1.ValidAWSIdentityProvider),
-		Status: awsIdpStatus,
-		Reason: "test",
-	})
-	return hc
-}
-
 func TestDeleteOrphanedMachines(t *testing.T) {
 	namespace := "clusters-test"
 	deletionTime := metav1.Now()
@@ -421,7 +405,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 	}{
 		{
 			name: "When credentials are valid, it should skip cleanup",
-			hc:   hostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
+			hc:   testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
 			machines: []capiaws.AWSMachine{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -443,7 +427,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		},
 		{
 			name: "When credentials are invalid and machines have deletion timestamps, it should clear finalizers",
-			hc:   hostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
+			hc:   testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
 			machines: []capiaws.AWSMachine{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -458,7 +442,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		},
 		{
 			name: "When credentials are invalid and machines have no deletion timestamps, it should not modify them",
-			hc:   hostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
+			hc:   testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
 			machines: []capiaws.AWSMachine{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -472,7 +456,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		},
 		{
 			name:                    "When no AWSMachines exist, it should return nil",
-			hc:                      hostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
+			hc:                      testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
 			machines:                []capiaws.AWSMachine{},
 			expectFinalizersCleared: false,
 		},

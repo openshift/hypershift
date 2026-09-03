@@ -8,31 +8,14 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/testutil"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-func hostedClusterWithCredentialConditions(oidcStatus, awsIdpStatus metav1.ConditionStatus) *hyperv1.HostedCluster {
-	hc := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
-	}
-	meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-		Type:   string(hyperv1.ValidOIDCConfiguration),
-		Status: oidcStatus,
-		Reason: "test",
-	})
-	meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-		Type:   string(hyperv1.ValidAWSIdentityProvider),
-		Status: awsIdpStatus,
-		Reason: "test",
-	})
-	return hc
-}
 
 func TestDeleteAWSEndpointServices(t *testing.T) {
 	cpoFinalizer := "hypershift.openshift.io/control-plane-operator-finalizer"
@@ -48,7 +31,7 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 	}{
 		{
 			name: "When endpoint is deleting with invalid creds, it should remove CPO finalizer",
-			hc:   hostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
+			hc:   testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue),
 			endpoints: []hyperv1.AWSEndpointService{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -64,7 +47,7 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 		},
 		{
 			name: "When endpoint is deleting with valid creds past grace period, it should remove CPO finalizer",
-			hc:   hostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
+			hc:   testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
 			endpoints: []hyperv1.AWSEndpointService{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -80,7 +63,7 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 		},
 		{
 			name: "When endpoint is deleting with valid creds within grace period, it should keep CPO finalizer",
-			hc:   hostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
+			hc:   testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
 			endpoints: []hyperv1.AWSEndpointService{
 				{
 					ObjectMeta: metav1.ObjectMeta{
