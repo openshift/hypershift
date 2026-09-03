@@ -19,6 +19,8 @@ package internal
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
 
 	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
@@ -27,9 +29,12 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	supportforwarder "github.com/openshift/hypershift/support/forwarder"
+	"github.com/openshift/hypershift/support/netutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -131,6 +136,124 @@ func (tc *TestContext) GetHostedClusterClient(hc *hyperv1.HostedCluster) (crclie
 		return nil, fmt.Errorf("failed to create hosted cluster client: %w", err)
 	}
 	return client, nil
+}
+
+// PortForwardedClient holds a controller-runtime client connected to the hosted
+// cluster via a port-forward to the kube-apiserver pod. Callers must call Close
+// when done to release the port-forward.
+type PortForwardedClient struct {
+	crclient.Client
+	stopChan chan struct{}
+}
+
+// Close stops the port-forward tunnel. Safe to call multiple times.
+func (c *PortForwardedClient) Close() {
+	select {
+	case <-c.stopChan:
+		// already closed
+	default:
+		close(c.stopChan)
+	}
+}
+
+// GetHostedClusterClientViaPortForward returns a controller-runtime client for
+// the hosted cluster by port-forwarding to the kube-apiserver pod in the control
+// plane namespace. This bypasses external DNS and load balancers, making it work
+// for every provider and every visibility mode (public, private,
+// publicAndPrivate).
+//
+// Callers MUST call Close on the returned PortForwardedClient to release the
+// port-forward tunnel. Use DeferCleanup in tests:
+//
+//	pfc, err := tc.GetHostedClusterClientViaPortForward(hc)
+//	Expect(err).NotTo(HaveOccurred())
+//	DeferCleanup(pfc.Close)
+func (tc *TestContext) GetHostedClusterClientViaPortForward(hc *hyperv1.HostedCluster) (*PortForwardedClient, error) {
+	// 1. Find a running kube-apiserver pod.
+	kasPod, err := supportforwarder.GetRunningKubeAPIServerPod(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find running kube-apiserver pod in %s: %w", tc.ControlPlaneNamespace, err)
+	}
+
+	// 2. Read the localhost-kubeconfig secret. This kubeconfig uses TLS
+	//    credentials that the kube-apiserver trusts, but its server URL
+	//    points to localhost (for in-pod use). We override it below.
+	var kubeconfigSecret corev1.Secret
+	if err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+		Namespace: tc.ControlPlaneNamespace,
+		Name:      "localhost-kubeconfig",
+	}, &kubeconfigSecret); err != nil {
+		return nil, fmt.Errorf("failed to get localhost-kubeconfig secret in %s: %w", tc.ControlPlaneNamespace, err)
+	}
+	kubeconfigData, ok := kubeconfigSecret.Data["kubeconfig"]
+	if !ok || len(kubeconfigData) == 0 {
+		return nil, fmt.Errorf("kubeconfig key not found or empty in localhost-kubeconfig secret in %s", tc.ControlPlaneNamespace)
+	}
+
+	// 3. Allocate a random local port.
+	listener, err := (&net.ListenConfig{}).Listen(tc.Context, "tcp", "localhost:0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate local port for port-forward: %w", err)
+	}
+	localPort := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	// 4. Set up the port-forward.
+	mgmtRESTConfig, err := e2eutil.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get management cluster REST config: %w", err)
+	}
+	kubeClient, err := kubernetes.NewForConfig(mgmtRESTConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes client for port-forward: %w", err)
+	}
+
+	podPort := netutil.KASPodPortFromHostedCluster(hc)
+	stopChan := make(chan struct{})
+	fwd := &supportforwarder.PortForwarder{
+		Namespace: kasPod.Namespace,
+		PodName:   kasPod.Name,
+		Client:    kubeClient,
+		Config:    mgmtRESTConfig,
+		Out:       io.Discard,
+		ErrOut:    io.Discard,
+	}
+	if err := fwd.ForwardPorts([]string{fmt.Sprintf("%d:%d", localPort, podPort)}, stopChan); err != nil {
+		close(stopChan)
+		return nil, fmt.Errorf("failed to start port-forward to kube-apiserver pod %s/%s: %w", kasPod.Namespace, kasPod.Name, err)
+	}
+
+	// 5. Parse the localhost kubeconfig and override the server URL.
+	localhostKubeconfig, err := clientcmd.Load(kubeconfigData)
+	if err != nil {
+		close(stopChan)
+		return nil, fmt.Errorf("failed to parse localhost kubeconfig: %w", err)
+	}
+	for k := range localhostKubeconfig.Clusters {
+		localhostKubeconfig.Clusters[k].Server = fmt.Sprintf("https://localhost:%d", localPort)
+	}
+	modifiedKubeconfig, err := clientcmd.Write(*localhostKubeconfig)
+	if err != nil {
+		close(stopChan)
+		return nil, fmt.Errorf("failed to serialize modified kubeconfig: %w", err)
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(modifiedKubeconfig)
+	if err != nil {
+		close(stopChan)
+		return nil, fmt.Errorf("failed to create REST config from modified kubeconfig: %w", err)
+	}
+	restConfig.QPS = -1
+	restConfig.Burst = -1
+
+	// 6. Create the controller-runtime client.
+	hcClient, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		close(stopChan)
+		return nil, fmt.Errorf("failed to create hosted cluster client via port-forward: %w", err)
+	}
+
+	return &PortForwardedClient{Client: hcClient, stopChan: stopChan}, nil
 }
 
 // VersionAtLeast returns true if the hosted cluster version is at least v.

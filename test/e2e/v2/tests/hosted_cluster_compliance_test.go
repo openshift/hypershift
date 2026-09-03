@@ -75,6 +75,12 @@ func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 // EnsureKASConnectionCheckerSpecTest verifies that the kas-connection-checker
 // deployment in the hosted cluster has the cluster-autoscaler safe-to-evict
 // annotation, no custom tolerations, and a topology spread constraint.
+//
+// The test connects to the hosted cluster's kube-apiserver via port-forward
+// rather than the external endpoint. This ensures the test works for every
+// provider and visibility mode (public, private, publicAndPrivate), even
+// when the external API endpoint is temporarily unreachable — for example,
+// after Azure endpoint access transition tests cycle the topology.
 func EnsureKASConnectionCheckerSpecTest(getTestCtx internal.TestContextGetter) {
 	When("kas-connection-checker deployment is reconciled", func() {
 		It("should have safe-to-evict annotation, no tolerations, and topology spread constraint", func() {
@@ -87,11 +93,12 @@ func EnsureKASConnectionCheckerSpecTest(getTestCtx internal.TestContextGetter) {
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
-			hcClient, err := tc.GetHostedClusterClient(hc)
-			Expect(err).NotTo(HaveOccurred())
+			pfc, err := tc.GetHostedClusterClientViaPortForward(hc)
+			Expect(err).NotTo(HaveOccurred(), "failed to establish port-forward to kube-apiserver")
+			DeferCleanup(pfc.Close)
 
 			dep := &appsv1.Deployment{}
-			err = hcClient.Get(tc.Context, crclient.ObjectKey{
+			err = pfc.Get(tc.Context, crclient.ObjectKey{
 				Namespace: hccomanifests.KASConnectionCheckerNamespace,
 				Name:      hccomanifests.KASConnectionCheckerName,
 			}, dep)
