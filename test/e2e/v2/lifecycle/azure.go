@@ -151,6 +151,18 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			Variant:   "external-oidc",
 			ExtraArgs: extraArgs,
 		},
+		{
+			// minimal-zonal exercises the Minimal control plane availability-zone
+			// scheduling policy. It requires a management cluster with at least three
+			// availability zones (labeled by PreCreate). Preferred placement is used so
+			// float components can spill onto zonal capacity and never wedge on overflow.
+			Variant: "minimal-zonal",
+			ExtraArgs: append([]string{
+				"--control-plane-availability-policy=HighlyAvailable",
+				"--control-plane-availability-zone-scheduling-policy=Minimal",
+				"--control-plane-non-zonal-placement=Preferred",
+			}, extraArgs...),
+		},
 	}
 }
 
@@ -188,6 +200,17 @@ func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWat
 	}
 	a.keycloakConfig = kcConfig
 	log.Printf("Keycloak deployed: issuer=%s", kcConfig.IssuerURL)
+
+	// Establish the node contract for the minimal-zonal variant by labeling existing
+	// management-cluster nodes (no new node pools). This is non-fatal: on a management
+	// cluster with fewer than three availability zones the minimal-zonal cluster will
+	// simply fail to become available and its tests will surface the misconfiguration,
+	// while the other variants are unaffected (the labels are additive and namespaced).
+	if _, err := LabelManagementNodesForZonalScheduling(ctx, cl); err != nil {
+		log.Printf("skipping minimal-zonal node labeling: %v", err)
+	} else {
+		log.Printf("labeled management nodes for the Minimal availability-zone scheduling policy")
+	}
 	return nil
 }
 
@@ -366,6 +389,11 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 				Name:        "external-oidc",
 				Variant:     "external-oidc",
 				LabelFilter: "external-oidc || global-pull-secret",
+			},
+			{
+				Name:        "minimal-zonal",
+				Variant:     "minimal-zonal",
+				LabelFilter: "control-plane-workloads || hosted-cluster-health",
 			},
 		},
 		Sequential: []SequentialGroup{
