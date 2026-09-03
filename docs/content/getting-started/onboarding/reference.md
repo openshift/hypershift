@@ -59,7 +59,7 @@ These are the design rules that should inform **every decision**:
 | `hypershift-operator/controllers/nodepool/conditions.go` | SetStatusCondition helpers | Reference |
 | `hypershift-operator/controllers/nodepool/version.go` | NodesInfo aggregation from CAPI Machines | Reference |
 | `hypershift-operator/controllers/nodepool/scale_from_zero.go` | Scale-from-zero annotation management | Reference |
-| `hypershift-operator/controllers/manifests/manifests.go` | Namespace naming, resource naming helpers | Reference |
+| `support/manifests/manifests.go` | Namespace naming, resource naming helpers | Reference |
 
 ### CPO Controllers
 
