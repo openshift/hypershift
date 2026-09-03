@@ -608,6 +608,22 @@ func TestDiscoverNATSubnetAllSubnetsInUse(t *testing.T) {
 	}
 }
 
+func TestDiscoverNATSubnetServiceAttachmentsError(t *testing.T) {
+	networkURL := "https://example.com/network"
+	fc := &fakeComputeClient{
+		subnetworks:           []*compute.Subnetwork{{Name: "subnet-1"}},
+		serviceAttachmentsErr: errors.New("GCP API error"),
+	}
+	r := newReconciler(t, fc)
+	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
+	if err == nil {
+		t.Error("expected error when ListServiceAttachments fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to list service attachments") {
+		t.Errorf("expected 'failed to list service attachments' error, got: %v", err)
+	}
+}
+
 // TestDiscoverNATSubnetSingleAPICall verifies the GCP-883 optimization:
 // ListServiceAttachments is called only ONCE (not N times, once per subnet).
 func TestDiscoverNATSubnetSingleAPICall(t *testing.T) {
@@ -741,6 +757,111 @@ func TestComputeServiceAdapterListServiceAttachmentsPagination(t *testing.T) {
 	for name, found := range expectedNames {
 		if !found {
 			t.Errorf("missing service attachment: %s", name)
+		}
+	}
+}
+
+// TestComputeServiceAdapterListSubnetworksPagination verifies that
+// computeServiceAdapter.ListSubnetworks correctly handles paginated
+// responses from the GCP API by following next-page tokens and returning
+// items from all pages.
+func TestComputeServiceAdapterListSubnetworksPagination(t *testing.T) {
+	ctx := context.Background()
+
+	// Track which pages were requested to verify pagination logic
+	requestedPages := make(map[string]bool)
+
+	// Create a mock HTTP server that simulates GCP API pagination
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only handle subnetwork list requests
+		if !strings.Contains(r.URL.Path, "/subnetworks") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		pageToken := r.URL.Query().Get("pageToken")
+		requestedPages[pageToken] = true
+
+		var response compute.SubnetworkList
+
+		switch pageToken {
+		case "":
+			// First page: return 2 items + next page token
+			response = compute.SubnetworkList{
+				Items: []*compute.Subnetwork{
+					{Name: "subnet-page1-item1", Purpose: "PRIVATE_SERVICE_CONNECT"},
+					{Name: "subnet-page1-item2", Purpose: "PRIVATE_SERVICE_CONNECT"},
+				},
+				NextPageToken: "page2-token",
+			}
+		case "page2-token":
+			// Second page: return 2 more items, no next page token (end of results)
+			response = compute.SubnetworkList{
+				Items: []*compute.Subnetwork{
+					{Name: "subnet-page2-item1", Purpose: "PRIVATE_SERVICE_CONNECT"},
+					{Name: "subnet-page2-item2", Purpose: "PRIVATE_SERVICE_CONNECT"},
+				},
+				NextPageToken: "", // Last page
+			}
+		default:
+			http.Error(w, "invalid page token", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	// Create a real compute service pointing to our mock server
+	svc, err := compute.NewService(ctx, option.WithoutAuthentication(), option.WithEndpoint(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create compute service: %v", err)
+	}
+
+	adapter := &computeServiceAdapter{svc: svc}
+
+	// Call ListSubnetworks - it should automatically handle pagination
+	result, err := adapter.ListSubnetworks(ctx, "test-project", "test-region", `purpose="PRIVATE_SERVICE_CONNECT"`)
+	if err != nil {
+		t.Fatalf("ListSubnetworks failed: %v", err)
+	}
+
+	// Verify that both pages were requested
+	if !requestedPages[""] {
+		t.Error("first page (empty token) was not requested")
+	}
+	if !requestedPages["page2-token"] {
+		t.Error("second page (page2-token) was not requested")
+	}
+	if len(requestedPages) != 2 {
+		t.Errorf("expected exactly 2 page requests, got %d", len(requestedPages))
+	}
+
+	// Verify all items from both pages are returned
+	if len(result) != 4 {
+		t.Errorf("got %d subnetworks, want 4", len(result))
+	}
+
+	expectedNames := map[string]bool{
+		"subnet-page1-item1": false,
+		"subnet-page1-item2": false,
+		"subnet-page2-item1": false,
+		"subnet-page2-item2": false,
+	}
+
+	for _, subnet := range result {
+		if _, ok := expectedNames[subnet.Name]; !ok {
+			t.Errorf("unexpected subnetwork: %s", subnet.Name)
+		}
+		expectedNames[subnet.Name] = true
+	}
+
+	for name, found := range expectedNames {
+		if !found {
+			t.Errorf("missing subnetwork: %s", name)
 		}
 	}
 }
