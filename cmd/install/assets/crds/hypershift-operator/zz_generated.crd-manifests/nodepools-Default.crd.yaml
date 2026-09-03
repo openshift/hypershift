@@ -316,6 +316,13 @@ spec:
                   The default value is 0, meaning that the node can retry drain without any time limitations.
                   Changing this field propagate inplace into existing Nodes.
                 type: string
+                x-kubernetes-validations:
+                - message: nodeDrainTimeout must be a valid duration string with a
+                    unit suffix (e.g. 30s, 5m, 1h)
+                  rule: self.matches('^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
+                - message: nodeDrainTimeout must be a non-negative duration
+                  rule: '!self.matches(''^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$'')
+                    || duration(self) >= duration(''0s'')'
               nodeLabels:
                 additionalProperties:
                   type: string
@@ -330,39 +337,13 @@ spec:
                   After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
                   Changing this field propagate inplace into existing Nodes.
                 type: string
-              osImageStream:
-                description: |-
-                  osImageStream specifies an OS stream to be used for nodes in this pool.
-
-                  This field can be optionally set to a known OSImageStream name to change
-                  the OS and Extension images with a well-known, tested, release-provided
-                  set of images. This enables a streamlined way of switching the pool's
-                  node OS to a different version than the cluster default, such as
-                  transitioning to a major RHEL version.
-
-                  When set, the referenced stream overrides the default OS images for the
-                  pool. When omitted, the pool uses the release version's default stream
-                  (rhel-9 for OCP < 5.0, rhel-10 for OCP >= 5.0).
-                  Changing this field triggers a rollout. Forward transitions
-                  (rhel-9 -> rhel-10) are allowed; backward transitions
-                  (rhel-10 -> rhel-9) are rejected by CEL validation because
-                  in-place OS downgrades are not supported.
-                properties:
-                  name:
-                    description: name is a required reference to an OSImageStream
-                      to be used for the pool.
-                    enum:
-                    - rhel-9
-                    - rhel-10
-                    type: string
-                required:
-                - name
-                type: object
                 x-kubernetes-validations:
-                - message: OS stream downgrade from rhel-10 to rhel-9 is not allowed;
-                    create a new NodePool instead
-                  rule: '!has(oldSelf.name) || oldSelf.name != ''rhel-10'' || (has(self.name)
-                    && self.name != ''rhel-9'')'
+                - message: nodeVolumeDetachTimeout must be a valid duration string
+                    with a unit suffix (e.g. 30s, 5m, 1h)
+                  rule: self.matches('^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
+                - message: nodeVolumeDetachTimeout must be a non-negative duration
+                  rule: '!self.matches(''^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$'')
+                    || duration(self) >= duration(''0s'')'
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
@@ -619,60 +600,38 @@ spec:
                             == ''Spot'')'
                       resourceTags:
                         description: |-
-                          resourceTags is a list of additional tags to apply to AWS resources created
-                          for the NodePool. Changes to this field will be propagated in-place to AWS
-                          EC2 instances and their initial EBS volumes. Volumes created by the storage
-                          operator and attached to instances after they are created do not get these
-                          tags applied.
-                          These are merged with HostedCluster-level tags. By default, HostedCluster
-                          tags take precedence when both specify the same key. To allow a NodePool
-                          tag to override a specific HostedCluster tag, set overridePolicy to "Allow"
-                          on the HostedCluster tag.
-                          Tags that only exist at the NodePool level (no conflict) are always applied.
-                          These take precedence over tags defined out of band (i.e., tags added
-                          manually or by other tools outside of HyperShift) in AWS in case of
-                          conflicts.
+                          resourceTags is an optional list of additional tags to apply to AWS node
+                          instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
+                          Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
+
+                          These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
+                          These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
 
                           See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                           information on tagging AWS resources. AWS supports a maximum of 50 tags per
                           resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
                           for the user.
                         items:
-                          description: |-
-                            AWSNodePoolResourceTag is a tag to apply to AWS resources created for a
-                            NodePool. These tags are merged with HostedCluster-level tags. By default,
-                            HostedCluster tags take precedence when both specify the same key. To allow
-                            a NodePool tag to override a specific HostedCluster tag, set overridePolicy
-                            to "Allow" on the HostedCluster tag.
+                          description: AWSResourceTag is a tag to apply to AWS resources
+                            created for the cluster.
                           properties:
                             key:
-                              description: |-
-                                key is the key of the tag.
-                                Must be between 1 and 128 characters and may only contain letters, digits,
-                                and the characters _ . : / = + - @
+                              description: key is the key of the tag.
                               maxLength: 128
                               minLength: 1
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
-                              x-kubernetes-validations:
-                              - message: 'key must only contain letters, digits, and
-                                  the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
                             value:
                               description: |-
                                 value is the value of the tag.
-                                Must be between 1 and 256 characters and may only contain letters, digits,
-                                and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
                                 requirements of all services.
                               maxLength: 256
                               minLength: 1
+                              pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
-                              x-kubernetes-validations:
-                              - message: 'value must only contain letters, digits,
-                                  and the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
                           required:
                           - key
                           - value
@@ -1561,9 +1520,6 @@ spec:
             - release
             type: object
             x-kubernetes-validations:
-            - message: osImageStream cannot be removed once set; create a new NodePool
-                instead
-              rule: '!has(oldSelf.osImageStream) || has(self.osImageStream)'
             - message: Arch is required once set
               rule: '!has(oldSelf.arch) || has(self.arch)'
             - message: Setting Arch to arm64 is only supported for AWS, Azure, Agent,
@@ -1708,22 +1664,6 @@ spec:
                     x-kubernetes-list-type: atomic
                 required:
                 - nodeVersions
-                type: object
-              osImageStream:
-                description: |-
-                  osImageStream reports the OS stream observed on the nodes in this pool.
-
-                  When omitted, the pool is using the release version's default OS images.
-                properties:
-                  name:
-                    description: name is a required reference to an OSImageStream
-                      to be used for the pool.
-                    enum:
-                    - rhel-9
-                    - rhel-10
-                    type: string
-                required:
-                - name
                 type: object
               platform:
                 description: platform holds the specific statuses
