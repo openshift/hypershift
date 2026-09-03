@@ -297,6 +297,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 }
 
 // validateAWSGuestResourcesDeletedFunc waits for 15min or until the guest cluster resources are gone.
+// It is a leak check only: it does not delete AWS resources. NLBs/ELBs are owned by DestroyInfra.
 func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, infraID, awsCreds, awsRegion string) func() {
 	if IsLessThan(Version415) {
 		return func() {
@@ -312,9 +313,8 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		})
 		var lastOutput *resourcegroupstaggingapi.GetResourcesOutput
 
-		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
+		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster.
 		err := wait.PollUntilContextTimeout(ctx, 20*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
-			// Filter get cluster resources.
 			output, err := taggingClient.GetResources(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 				ResourceTypeFilters: []string{
 					"elasticloadbalancing:loadbalancer",
