@@ -215,14 +215,9 @@ spec:
                         x-kubernetes-int-or-string: true
                     type: object
                   replace:
-                    default:
-                      rollingUpdate:
-                        maxSurge: 1
-                        maxUnavailable: 0
-                      strategy: RollingUpdate
                     description: |-
                       replace is the configuration for rolling upgrades.
-                      It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.
+                      When upgradeType is Replace and this field is nil, the controller defaults to RollingUpdate with maxSurge=1 and maxUnavailable=0.
                     properties:
                       rollingUpdate:
                         description: |-
@@ -310,6 +305,9 @@ spec:
                 - message: The 'inPlace' field can only be set when 'upgradeType'
                     is 'InPlace'
                   rule: '!has(self.inPlace) || self.upgradeType == ''InPlace'''
+                - message: The 'replace' field can only be set when 'upgradeType'
+                    is 'Replace'
+                  rule: '!has(self.replace) || self.upgradeType == ''Replace'''
               nodeDrainTimeout:
                 description: |-
                   nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
