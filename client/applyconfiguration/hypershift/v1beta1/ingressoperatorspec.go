@@ -24,7 +24,8 @@ import (
 // IngressOperatorSpecApplyConfiguration represents a declarative configuration of the IngressOperatorSpec type for use
 // with apply.
 type IngressOperatorSpecApplyConfiguration struct {
-	EndpointPublishingStrategy *v1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
+	EndpointPublishingStrategy *v1.EndpointPublishingStrategy                        `json:"endpointPublishingStrategy,omitempty"`
+	DefaultCertificate         *IngressDefaultCertificateReferenceApplyConfiguration `json:"defaultCertificate,omitempty"`
 }
 
 // IngressOperatorSpecApplyConfiguration constructs a declarative configuration of the IngressOperatorSpec type for use with
@@ -38,5 +39,13 @@ func IngressOperatorSpec() *IngressOperatorSpecApplyConfiguration {
 // If called multiple times, the EndpointPublishingStrategy field is set to the value of the last call.
 func (b *IngressOperatorSpecApplyConfiguration) WithEndpointPublishingStrategy(value v1.EndpointPublishingStrategy) *IngressOperatorSpecApplyConfiguration {
 	b.EndpointPublishingStrategy = &value
+	return b
+}
+
+// WithDefaultCertificate sets the DefaultCertificate field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DefaultCertificate field is set to the value of the last call.
+func (b *IngressOperatorSpecApplyConfiguration) WithDefaultCertificate(value *IngressDefaultCertificateReferenceApplyConfiguration) *IngressOperatorSpecApplyConfiguration {
+	b.DefaultCertificate = value
 	return b
 }
