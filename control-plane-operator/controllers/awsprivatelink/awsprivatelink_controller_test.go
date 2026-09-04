@@ -569,6 +569,180 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: true,
 		},
 		{
+			name: "When VPC endpoint is in deleting state, it should proceed to SG cleanup and requeue",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID:      "vpce-12345",
+					SecurityGroupID: "sg-12345",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				vpceInput := &ec2v2.DeleteVpcEndpointsInput{VpcEndpointIds: []string{"vpce-12345"}}
+				describeVpceInput := &ec2v2.DescribeVpcEndpointsInput{VpcEndpointIds: []string{"vpce-12345"}}
+				describeSGInput := &ec2v2.DescribeSecurityGroupsInput{GroupIds: []string{"sg-12345"}}
+				// VPC endpoint delete succeeds but describe shows it still in "Deleting" state
+				mockEC2.EXPECT().DeleteVpcEndpoints(gomock.Any(), gomock.Eq(vpceInput)).Return(&ec2v2.DeleteVpcEndpointsOutput{}, nil)
+				mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Eq(describeVpceInput)).Return(&ec2v2.DescribeVpcEndpointsOutput{
+					VpcEndpoints: []ec2types.VpcEndpoint{{
+						VpcEndpointId: aws.String("vpce-12345"),
+						State:         ec2types.StateDeleting,
+					}},
+				}, nil)
+				// The controller should proceed to SG cleanup despite the endpoint still being in "Deleting" state.
+				// The SG deletion will fail with DependencyViolation because the endpoint ENI is still attached.
+				mockEC2.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Eq(describeSGInput)).Return(&ec2v2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{{
+						GroupId:             aws.String("sg-12345"),
+						IpPermissions:       []ec2types.IpPermission{ingressPermission},
+						IpPermissionsEgress: []ec2types.IpPermission{egressPermission},
+					}},
+				}, nil)
+				mockEC2.EXPECT().RevokeSecurityGroupIngress(gomock.Any(), gomock.Eq(&ec2v2.RevokeSecurityGroupIngressInput{
+					GroupId:       aws.String("sg-12345"),
+					IpPermissions: []ec2types.IpPermission{ingressPermission},
+				})).Return(&ec2v2.RevokeSecurityGroupIngressOutput{}, nil)
+				mockEC2.EXPECT().RevokeSecurityGroupEgress(gomock.Any(), gomock.Eq(&ec2v2.RevokeSecurityGroupEgressInput{
+					GroupId:       aws.String("sg-12345"),
+					IpPermissions: []ec2types.IpPermission{egressPermission},
+				})).Return(&ec2v2.RevokeSecurityGroupEgressOutput{}, nil)
+				mockEC2.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Eq(&ec2v2.DeleteSecurityGroupInput{
+					GroupId: aws.String("sg-12345"),
+				})).Return(nil, &smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has a dependent object"})
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectRequeue:   true,
+			expectFinalizer: true,
+		},
+		{
+			name: "When VPC endpoint is in deleted state, it should proceed to SG cleanup and complete deletion",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID:      "vpce-12345",
+					SecurityGroupID: "sg-12345",
+					DNSNames:        []string{"api.example.com"},
+					DNSZoneID:       "Z1234567890",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				vpceInput := &ec2v2.DeleteVpcEndpointsInput{VpcEndpointIds: []string{"vpce-12345"}}
+				describeVpceInput := &ec2v2.DescribeVpcEndpointsInput{VpcEndpointIds: []string{"vpce-12345"}}
+				describeSGInput := &ec2v2.DescribeSecurityGroupsInput{GroupIds: []string{"sg-12345"}}
+				// VPC endpoint delete succeeds but describe shows it in "Deleted" state (AWS can return
+				// endpoints in this state for minutes after deletion)
+				mockEC2.EXPECT().DeleteVpcEndpoints(gomock.Any(), gomock.Eq(vpceInput)).Return(&ec2v2.DeleteVpcEndpointsOutput{}, nil)
+				mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Eq(describeVpceInput)).Return(&ec2v2.DescribeVpcEndpointsOutput{
+					VpcEndpoints: []ec2types.VpcEndpoint{{
+						VpcEndpointId: aws.String("vpce-12345"),
+						State:         ec2types.StateDeleted,
+					}},
+				}, nil)
+				// The controller should proceed to SG cleanup since the endpoint is in terminal "Deleted" state.
+				// The ENI should already be detached, so SG deletion succeeds.
+				mockEC2.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Eq(describeSGInput)).Return(&ec2v2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{{
+						GroupId:             aws.String("sg-12345"),
+						IpPermissions:       []ec2types.IpPermission{ingressPermission},
+						IpPermissionsEgress: []ec2types.IpPermission{egressPermission},
+					}},
+				}, nil)
+				mockEC2.EXPECT().RevokeSecurityGroupIngress(gomock.Any(), gomock.Eq(&ec2v2.RevokeSecurityGroupIngressInput{
+					GroupId:       aws.String("sg-12345"),
+					IpPermissions: []ec2types.IpPermission{ingressPermission},
+				})).Return(&ec2v2.RevokeSecurityGroupIngressOutput{}, nil)
+				mockEC2.EXPECT().RevokeSecurityGroupEgress(gomock.Any(), gomock.Eq(&ec2v2.RevokeSecurityGroupEgressInput{
+					GroupId:       aws.String("sg-12345"),
+					IpPermissions: []ec2types.IpPermission{egressPermission},
+				})).Return(&ec2v2.RevokeSecurityGroupEgressOutput{}, nil)
+				mockEC2.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Eq(&ec2v2.DeleteSecurityGroupInput{
+					GroupId: aws.String("sg-12345"),
+				})).Return(&ec2v2.DeleteSecurityGroupOutput{}, nil)
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				// DNS cleanup: FindRecord constructs a targeted query with StartRecordName/Type/MaxItems
+				dnsRecord := route53types.ResourceRecordSet{
+					Name: aws.String("api.example.com."),
+					Type: route53types.RRTypeCname,
+					TTL:  aws.Int64(300),
+					ResourceRecords: []route53types.ResourceRecord{
+						{Value: aws.String("vpce-12345.vpce-svc.us-east-1.vpce.amazonaws.com")},
+					},
+				}
+				mockRoute53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Eq(&route53sdk.ListResourceRecordSetsInput{
+					HostedZoneId:    aws.String("Z1234567890"),
+					StartRecordName: aws.String("api.example.com."),
+					StartRecordType: route53types.RRTypeCname,
+					MaxItems:        aws.Int32(1),
+				})).Return(
+					&route53sdk.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{dnsRecord},
+					}, nil)
+				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Eq(&route53sdk.ChangeResourceRecordSetsInput{
+					HostedZoneId: aws.String("Z1234567890"),
+					ChangeBatch: &route53types.ChangeBatch{
+						Changes: []route53types.Change{{
+							Action:            route53types.ChangeActionDelete,
+							ResourceRecordSet: &dnsRecord,
+						}},
+					},
+				})).Return(&route53sdk.ChangeResourceRecordSetsOutput{}, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectFinalizer: false,
+		},
+		{
+			name: "When VPC endpoint is in available state after delete call, it should return error to requeue",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID: "vpce-12345",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				vpceInput := &ec2v2.DeleteVpcEndpointsInput{VpcEndpointIds: []string{"vpce-12345"}}
+				describeVpceInput := &ec2v2.DescribeVpcEndpointsInput{VpcEndpointIds: []string{"vpce-12345"}}
+				// VPC endpoint delete was called but it's still in "Available" state (unusual but possible)
+				mockEC2.EXPECT().DeleteVpcEndpoints(gomock.Any(), gomock.Eq(vpceInput)).Return(&ec2v2.DeleteVpcEndpointsOutput{}, nil)
+				mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Eq(describeVpceInput)).Return(&ec2v2.DescribeVpcEndpointsOutput{
+					VpcEndpoints: []ec2types.VpcEndpoint{{
+						VpcEndpointId: aws.String("vpce-12345"),
+						State:         ec2types.StateAvailable,
+					}},
+				}, nil)
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				return mockBuilder
+			},
+			expectError:     true,
+			expectFinalizer: true,
+		},
+		{
 			name: "When Route53 hosted zone is already deleted externally, it should treat deletion as successful",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
