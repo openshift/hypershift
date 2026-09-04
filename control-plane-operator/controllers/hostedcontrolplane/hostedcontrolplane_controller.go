@@ -1829,6 +1829,30 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 	return nil
 }
 
+// reconcileGCPPlatformCerts reconciles the metrics serving-cert secrets for the GCP PD CSI
+// driver operator and controller.
+//
+// csi-operator stamps the service.beta.openshift.io/serving-cert-secret-name annotation on the
+// GCP PD CSI metrics Services unconditionally. On a GKE management cluster there is no
+// service-ca-operator to honor that annotation, so self-sign unconditionally.
+func (r *HostedControlPlaneReconciler) reconcileGCPPlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	gcpPDCsiDriverOperatorServingCert := manifests.GCPPDCsiDriverOperatorServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, gcpPDCsiDriverOperatorServingCert, func() error {
+		return pki.ReconcileGCPPDCsiDriverOperatorMetricsServingCertSecret(gcpPDCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile gcp pd csi driver operator serving cert: %w", err)
+	}
+
+	gcpPDCsiDriverControllerMetricsServingCert := manifests.GCPPDCsiDriverControllerMetricsServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, gcpPDCsiDriverControllerMetricsServingCert, func() error {
+		return pki.ReconcileGCPPDCsiDriverControllerMetricsServingCertSecret(gcpPDCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile gcp pd csi driver controller metrics serving cert: %w", err)
+	}
+
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
 	azureWorkloadIdentityWebhookServingCert := manifests.AzureWorkloadIdentityWebhookServingCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, azureWorkloadIdentityWebhookServingCert, func() error {
@@ -2007,17 +2031,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}
 	}
 
+	return r.reconcilePlatformSpecificCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
+}
+
+// reconcilePlatformSpecificCerts dispatches to the platform-specific PKI reconciliation logic, if any,
+// for the given HostedControlPlane's platform type.
+func (r *HostedControlPlaneReconciler) reconcilePlatformSpecificCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		if err := r.reconcileAWSPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
-			return err
-		}
+		return r.reconcileAWSPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
 	case hyperv1.AzurePlatform:
-		if err := r.reconcileAzurePlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
-			return err
-		}
+		return r.reconcileAzurePlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
+	case hyperv1.GCPPlatform:
+		return r.reconcileGCPPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
 	}
-
 	return nil
 }
 

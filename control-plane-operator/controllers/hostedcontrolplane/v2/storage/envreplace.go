@@ -51,6 +51,7 @@ var (
 		"POWERVS_BLOCK_CSI_DRIVER_IMAGE":                  "powervs-block-csi-driver",
 		"HYPERSHIFT_IMAGE":                                "token-minter",
 		"AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE":              "aws-ebs-csi-driver",
+		"GCP_PD_DRIVER_CONTROL_PLANE_IMAGE":               "gcp-pd-csi-driver",
 		"AZURE_DISK_DRIVER_CONTROL_PLANE_IMAGE":           "azure-disk-csi-driver",
 		"AZURE_FILE_DRIVER_CONTROL_PLANE_IMAGE":           "azure-file-csi-driver",
 		"OPENSTACK_CINDER_DRIVER_CONTROL_PLANE_IMAGE":     "openstack-cinder-csi-driver",

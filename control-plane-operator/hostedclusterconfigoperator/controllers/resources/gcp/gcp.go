@@ -17,10 +17,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// defaultCredentialSecretKey is the data key OpenShift's GCP-facing operators
+// (e.g. the image-registry operator) conventionally expect a GCP credential
+// secret to use.
+const defaultCredentialSecretKey = "service_account.json"
+
+// applicationDefaultCredentialsSecretKey is the data key the GCP PD CSI
+// driver operator/controller expect, matching the key the HyperShift
+// operator uses when it populates the equivalent control-plane-namespace
+// secret (see hypershift-operator/controllers/hostedcluster/internal/platform/gcp).
+// Keeping these two secrets consistent avoids the credential-key mismatch
+// bug found while smoke-testing GCP PD CSI (application_default_credentials.json
+// vs service_account.json).
+const applicationDefaultCredentialsSecretKey = "application_default_credentials.json"
+
 // gcpCredentialConfig defines configuration for a single credential secret.
 type gcpCredentialConfig struct {
 	manifestFunc        func() *corev1.Secret
 	serviceAccountEmail string
+	secretKey           string
 	capabilityChecker   func(*hyperv1.Capabilities) bool
 	errorContext        string
 }
@@ -37,8 +52,16 @@ func SetupOperandCredentials(
 		{
 			manifestFunc:        manifests.GCPImageRegistryCloudCredsSecret,
 			serviceAccountEmail: string(hcp.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry),
+			secretKey:           defaultCredentialSecretKey,
 			capabilityChecker:   capabilities.IsImageRegistryCapabilityEnabled,
 			errorContext:        "guest cluster image-registry credential",
+		},
+		{
+			manifestFunc:        manifests.GCPPDCSICloudCredsSecret,
+			serviceAccountEmail: string(hcp.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage),
+			secretKey:           applicationDefaultCredentialsSecretKey,
+			capabilityChecker:   nil, // Always enabled
+			errorContext:        "guest cluster CSI storage credential",
 		},
 	}
 	return reconcileGCPCredentials(ctx, c, upsertProvider, hcp, configs)
@@ -55,6 +78,11 @@ func reconcileGCPCredentials(
 
 	for _, cfg := range configs {
 		if cfg.capabilityChecker != nil && !cfg.capabilityChecker(hcp.Spec.Capabilities) {
+			continue
+		}
+
+		if cfg.secretKey == "" {
+			errs = append(errs, fmt.Errorf("missing secretKey in credential config for %s", cfg.errorContext))
 			continue
 		}
 
@@ -80,7 +108,7 @@ func reconcileGCPCredentials(
 
 		if _, err := upsertProvider.CreateOrUpdate(ctx, c, secret, func() error {
 			secret.Data = map[string][]byte{
-				"service_account.json": []byte(credentialJSON),
+				cfg.secretKey: []byte(credentialJSON),
 			}
 			secret.Type = corev1.SecretTypeOpaque
 			return nil
