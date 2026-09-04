@@ -43,6 +43,16 @@
                 "enabled": [
                     # We enable all OCP feature gates only so the CRD contains the fields.
                     # Each HostedCluster can configure their specific feature gate CR at creation time via spec.configuration.
+                    #
+                    # TEMPORARY (do not ship): ControlPlaneAvailabilityZoneScheduling is a
+                    # TechPreviewNoUpgrade-gated feature. It is force-enabled here only so the
+                    # Default-featureset CRD carries the controlPlaneAvailabilityZoneScheduling
+                    # field, allowing the existing (non-TechPreview) Azure e2e lane to exercise
+                    # the Minimal scheduling policy. Revert this move (back to "disabled") before
+                    # merging; real validation belongs in a TechPreview-enabled lane.
+                    {
+                        "name": "ControlPlaneAvailabilityZoneScheduling"
+                    },
                     {
                         "name": "ExternalOIDC"
                     },

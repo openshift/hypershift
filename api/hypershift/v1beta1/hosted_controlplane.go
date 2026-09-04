@@ -136,6 +136,14 @@ type HostedControlPlaneSpec struct {
 	// +kubebuilder:default:="SingleReplica"
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
+	// controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+	// components are distributed across management-cluster availability zones. It is copied
+	// from the HostedCluster of the same name by the hypershift-operator and is only honored
+	// when controllerAvailabilityPolicy is HighlyAvailable.
+	// +optional
+	// +openshift:enable:FeatureGate=ControlPlaneAvailabilityZoneScheduling
+	ControlPlaneAvailabilityZoneScheduling ControlPlaneAvailabilityZoneScheduling `json:"controlPlaneAvailabilityZoneScheduling,omitzero"`
+
 	// fips specifies if the nodes for the cluster will be running in FIPS mode
 	// +optional
 	FIPS bool `json:"fips"`
