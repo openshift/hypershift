@@ -28158,6 +28158,51 @@ be `*.apps.guest.apps.mgmt-cluster.example.com`.
     limitation only applies to the default ingress behavior and not the custom ingress
     behavior where manual creation of an ingress LoadBalancer and DNS is performed.
 
+### How the default ingress passthrough works
+
+The default ingress passthrough is implemented in the infra cluster namespace
+where the KubeVirt VMs run with:
+
+- A selector-less `ClusterIP` Service (`default-ingress-passthrough-service-<id>`)
+  exposing port `443`.
+- `EndpointSlice`s for that Service, one per worker VM, pointing at the VM
+  internal IPs and the port where the guest routers listen.
+- A wildcard passthrough `Route` (`default-ingress-passthrough-route-<id>`) for
+  `*.apps.<guest>.<infra base domain>` targeting that Service.
+
+The port targeted on the VMs depends on the guest default `IngressController`
+`endpointPublishingStrategy`:
+
+- `NodePortService` (default for KubeVirt): the HTTPS `nodePort` of the
+  `openshift-ingress/router-nodeport-default` Service in the guest cluster.
+- `HostNetwork`: the `hostNetwork.httpsPort` (defaults to `443`). This strategy
+  can be selected at creation time through
+  `spec.operatorConfiguration.ingressOperator.endpointPublishingStrategy` in the
+  `HostedCluster`, for example:
+
+    ```yaml
+    spec:
+      operatorConfiguration:
+        ingressOperator:
+          endpointPublishingStrategy:
+            type: HostNetwork
+            hostNetwork:
+              httpPort: 80
+              httpsPort: 443
+              statsPort: 1936
+              protocol: TCP
+    ```
+
+!!! note
+
+    With `HostNetwork`, every running worker VM is added as an endpoint. Only the
+    nodes where a router pod is scheduled accept connections; the infra cluster
+    router health checks exclude the other endpoints.
+
+Other endpoint publishing strategies (e.g. `LoadBalancerService`) are not
+supported by the default ingress passthrough; use the customized ingress
+behavior described below instead.
+
 ## Customized Ingress and DNS Behavior
 
 In lieu of the default ingress and DNS behavior, it is also possible to
