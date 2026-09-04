@@ -23,11 +23,17 @@ az group create \
 export AKS_CP_MI_ID=$(az identity show --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
 export AKS_KUBELET_MI_ID=$(az identity show --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
 
-# Create AKS Cluster
+# Create AKS Cluster.
+# --zones spreads the 3 nodes across availability zones (one per zone). This is
+# required by the hypershift-sharedingress router, which runs 2 replicas with a
+# required pod anti-affinity on topology.kubernetes.io/zone; without multiple
+# zones the second replica stays Pending ("didn't match pod anti-affinity rules").
+# Azure zone-enabled regions always expose 3 zones, which is what this setup uses.
 az aks create \
 --resource-group ${AKS_RG} \
 --name ${AKS_CLUSTER_NAME} \
 --node-count 3 \
+--zones 1 2 3 \
 --generate-ssh-keys \
 --load-balancer-sku standard \
 --os-sku AzureLinux \
