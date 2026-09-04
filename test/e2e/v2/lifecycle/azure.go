@@ -344,7 +344,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 			{
 				Name:        "public",
 				Variant:     "public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
+				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
 				Skip:        "KAS allowed CIDRs",
 			},
 			{
