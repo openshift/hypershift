@@ -11,8 +11,81 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
+
+func TestNodePoolConfigUpdateCompletePredicate(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions []hyperv1.NodePoolCondition
+		generation int64
+		wantDone   bool
+	}{
+		{
+			name:       "When the UpdatingConfig condition is missing, it should report incomplete",
+			generation: 2,
+			wantDone:   false,
+		},
+		{
+			name: "When the UpdatingConfig condition has not observed the expected generation, it should report incomplete",
+			conditions: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				ObservedGeneration: 1,
+			}},
+			generation: 2,
+			wantDone:   false,
+		},
+		{
+			name: "When the current generation is still updating, it should report incomplete",
+			conditions: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+				Status:             corev1.ConditionTrue,
+				ObservedGeneration: 2,
+			}},
+			generation: 2,
+			wantDone:   false,
+		},
+		{
+			name: "When the current generation is no longer updating, it should report complete",
+			conditions: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				ObservedGeneration: 2,
+			}},
+			generation: 2,
+			wantDone:   true,
+		},
+		{
+			name: "When a newer generation is no longer updating, it should report complete",
+			conditions: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				ObservedGeneration: 3,
+			}},
+			generation: 2,
+			wantDone:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Generation: tc.generation},
+				Status:     hyperv1.NodePoolStatus{Conditions: tc.conditions},
+			}
+
+			done, reason, err := nodePoolConfigUpdateCompletePredicate(tc.generation)(nodePool)
+
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(done).To(Equal(tc.wantDone), reason)
+			g.Expect(reason).NotTo(BeEmpty())
+		})
+	}
+}
 
 func TestAllowedCIDRsTargetService(t *testing.T) {
 	const ns = "test-hcp"
