@@ -1448,17 +1448,23 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		// Here we are creating a route and service in the hosted control plane namespace
 		// while in the HCCO (which typically only works on the guest client, not the mgmt client).
 		//
-		// This is being done in the HCCO because we have to get the NodePort's port used by the
-		// default ingress services in the guest cluster in order to create the service in the
+		// This is being done in the HCCO because we have to know the port on the guest nodes
+		// where the default ingress routers listen in order to create the service in the
 		// mgmt/infra cluster. basically, the mgmt cluster service has to point the backend
-		// "somewhere", and that somewhere is the nodeport's port of the routers in the guest cluster.
-		// The component that can get that information about the nodeport's port is the HCCO, so
-		// that's why we're reconciling a service and route within hosted control plane in the HCCO
+		// "somewhere", and that somewhere is either the nodeport's port of the routers in the
+		// guest cluster (NodePortService strategy) or the routers' host network https port
+		// (HostNetwork strategy). The component that can get that information is the HCCO,
+		// so that's why we're reconciling a service and route within hosted control plane in the HCCO
 
-		defaultIngressNodePortService := manifests.IngressDefaultIngressNodePortService()
-		err := r.client.Get(ctx, client.ObjectKeyFromObject(defaultIngressNodePortService), defaultIngressNodePortService)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to retrieve guest cluster ingress NodePort: %w", err))
+		strategy := ingress.EffectiveEndpointPublishingStrategy(ingressController, hcp)
+
+		var defaultIngressNodePortService *corev1.Service
+		if strategy.Type == operatorv1.NodePortServiceStrategyType {
+			defaultIngressNodePortService = manifests.IngressDefaultIngressNodePortService()
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(defaultIngressNodePortService), defaultIngressNodePortService); err != nil {
+				errs = append(errs, fmt.Errorf("failed to retrieve guest cluster ingress NodePort: %w", err))
+				defaultIngressNodePortService = nil
+			}
 		}
 
 		var namespace string
@@ -1483,7 +1489,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 			hcp.Spec.Platform.Kubevirt.GenerateID)
 
 		if _, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, cpService, func() error {
-			return ingress.ReconcileDefaultIngressPassthroughService(cpService, defaultIngressNodePortService, hcp)
+			return ingress.ReconcileDefaultIngressPassthroughService(cpService, defaultIngressNodePortService, strategy, hcp)
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough service: %w", err))
 		}
