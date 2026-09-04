@@ -31,7 +31,7 @@ cyphar.com/go-pathrs
 cyphar.com/go-pathrs/internal/fdutils
 cyphar.com/go-pathrs/internal/libpathrs
 cyphar.com/go-pathrs/procfs
-# github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
+# github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
 ## explicit; go 1.25.0
 github.com/Azure/azure-sdk-for-go/sdk/azcore
 github.com/Azure/azure-sdk-for-go/sdk/azcore/arm
@@ -54,7 +54,7 @@ github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime
 github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming
 github.com/Azure/azure-sdk-for-go/sdk/azcore/to
 github.com/Azure/azure-sdk-for-go/sdk/azcore/tracing
-# github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0
+# github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
 ## explicit; go 1.25.0
 github.com/Azure/azure-sdk-for-go/sdk/azidentity
 github.com/Azure/azure-sdk-for-go/sdk/azidentity/internal
@@ -122,7 +122,7 @@ github.com/Azure/go-ansiterm/winterm
 github.com/Azure/msi-dataplane/pkg/dataplane
 github.com/Azure/msi-dataplane/pkg/dataplane/internal/challenge
 github.com/Azure/msi-dataplane/pkg/dataplane/internal/client
-# github.com/AzureAD/microsoft-authentication-library-for-go v1.7.2
+# github.com/AzureAD/microsoft-authentication-library-for-go v1.8.0
 ## explicit; go 1.18
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential
@@ -1263,10 +1263,12 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.10
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/stretchr/testify v1.11.1
+# github.com/stretchr/testify v1.12.1
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/internal/difflib
+github.com/stretchr/testify/internal/spew
 github.com/stretchr/testify/require
 # github.com/vincent-petithory/dataurl v1.0.0
 ## explicit
@@ -1432,10 +1434,10 @@ go.uber.org/zap/zaptest
 # go.yaml.in/yaml/v2 v2.4.4
 ## explicit; go 1.15
 go.yaml.in/yaml/v2
-# go.yaml.in/yaml/v3 v3.0.4
+# go.yaml.in/yaml/v3 v3.0.5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
-# golang.org/x/crypto v0.54.0
+# golang.org/x/crypto v0.55.0
 ## explicit; go 1.25.0
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blowfish
@@ -1461,7 +1463,7 @@ golang.org/x/exp/slices
 # golang.org/x/mod v0.38.0
 ## explicit; go 1.25.0
 golang.org/x/mod/semver
-# golang.org/x/net v0.57.0
+# golang.org/x/net v0.58.0
 ## explicit; go 1.25.0
 golang.org/x/net/context
 golang.org/x/net/html
@@ -1505,7 +1507,7 @@ golang.org/x/sys/windows/registry
 # golang.org/x/term v0.45.0
 ## explicit; go 1.25.0
 golang.org/x/term
-# golang.org/x/text v0.40.0
+# golang.org/x/text v0.41.0
 ## explicit; go 1.25.0
 golang.org/x/text/cases
 golang.org/x/text/encoding
