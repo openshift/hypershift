@@ -24806,7 +24806,7 @@ These gates apply to the following scenarios:
 - A feature that impacts HyperShift Operator install (e.g. new CRDs are required for CPOv2)
 - A feature that impacts the whole cluster fleet (e.g. fleet-wide shared ingress to be validated in targeted environments)
 - A feature that impacts individual clusters (e.g. introduce using CPOv2 for some HostedClusters)
-- A feature that impacts the HyperShift API (e.g. introduce a new provider like OpenStack, or a new field like AWS tenancy)
+- A feature that impacts the HyperShift API (e.g. introduce a new provider like OpenStack, GCP or OCI, or a new field like AWS tenancy)
 
 All management cluster feature gates are grouped under a single `TechPreviewNoUpgrade` feature set. To enable them, pass `--tech-preview-no-upgrade` at install time:
 
