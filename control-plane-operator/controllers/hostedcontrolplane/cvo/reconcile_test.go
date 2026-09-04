@@ -107,10 +107,10 @@ func TestResourcesToRemove(t *testing.T) {
 			},
 		},
 		{
-			name:     "When platform is default (e.g., AWS), it should return 11 resources",
+			name:     "When platform is default (e.g., AWS), it should return the expected resources",
 			platform: hyperv1.AWSPlatform,
 			validate: func(g Gomega, resources []client.Object) {
-				g.Expect(resources).To(HaveLen(11))
+				g.Expect(resources).To(HaveLen(13))
 			},
 		},
 		{
@@ -148,6 +148,8 @@ func TestResourcesToRemove(t *testing.T) {
 					"csi-snapshot-controller-operator": "openshift-cluster-storage-operator",
 					"aws-ebs-csi-driver-operator":      "openshift-cluster-csi-drivers",
 					"aws-ebs-csi-driver-controller":    "openshift-cluster-csi-drivers",
+					"gcp-pd-csi-driver-operator":       "openshift-cluster-csi-drivers",
+					"gcp-pd-csi-driver-controller":     "openshift-cluster-csi-drivers",
 					"csi-snapshot-controller":          "openshift-cluster-storage-operator",
 				}
 				for expectedName, expectedNS := range storageDeployments {
