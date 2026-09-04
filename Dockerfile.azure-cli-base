@@ -1,0 +1,20 @@
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-5.1
+
+RUN dnf install -y python3 && \
+    rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
+    dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm && \
+    sed -i 's/repo_gpgcheck=1/repo_gpgcheck=0/' /etc/yum.repos.d/microsoft-prod.repo && \
+    dnf install -y azure-cli && \
+    dnf clean all
+
+# Note: repo_gpgcheck=0 disables GPG verification for Microsoft repo metadata.
+# This matches the existing behavior in Dockerfile.e2e and is required for CI
+# compatibility with the OpenShift release image environment.
+
+RUN useradd -m -u 1001 -s /sbin/nologin hypershift && \
+    mkdir -p /hypershift && \
+    chown -R 1001:1001 /hypershift
+
+RUN azure --version
+
+USER 1001
