@@ -61,13 +61,13 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred())
 
 			np := getDefaultNodePool(tc.Context, tc.MgmtClient, hc)
-			if np == nil ||
-				np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace ||
-				np.Spec.Replicas == nil ||
-				*np.Spec.Replicas == 0 {
-				Skip("no suitable NodePool found (need non-InPlace upgrade type with replicas > 0)")
+			// getDefaultNodePool already guarantees a non-deleting NodePool with at
+			// least one ready replica, so nodeCount comes from status.replicas rather
+			// than spec.replicas; only the InPlace upgrade type remains unsupported here.
+			if np == nil || np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+				Skip("no suitable NodePool found (need non-InPlace upgrade type with a ready replica)")
 			}
-			nodeCount := *np.Spec.Replicas
+			nodeCount := np.Status.Replicas
 
 			var dummyPullSecretData = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
 			var updatedPullSecretData = []byte(`{"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNzd29yZA=="}}}`)

@@ -326,41 +326,6 @@ func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePo
 	ensureNodesRuntimeV2(nodeList.Items, expectedStream)
 }
 
-// getNodePoolWithReadyNode returns a NodePool for the hosted cluster that is not
-// being deleted and has at least one observed replica (status.replicas), so its
-// backing node object can be inspected. Unlike getDefaultNodePool, it skips
-// NodePools that carry a deletion timestamp (e.g. test NodePools mid-teardown).
-// It returns nil if no such NodePool exists; callers should assert the result is
-// non-nil.
-//
-// NOTE: this helper is NOT Eventually-compatible. It uses Gomega assertions (via
-// GinkgoHelper), so a list failure is reported at the caller's line and aborts
-// the spec immediately rather than retrying. Do not call it inside an
-// Eventually/Consistently polling loop.
-func getNodePoolWithReadyNode(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster) *hyperv1.NodePool {
-	GinkgoHelper()
-
-	npList := &hyperv1.NodePoolList{}
-	Expect(client.List(ctx, npList, crclient.InNamespace(hc.Namespace))).To(Succeed(),
-		"failed to list NodePools for HostedCluster %s/%s", hc.Namespace, hc.Name)
-
-	for i := range npList.Items {
-		np := &npList.Items[i]
-		if np.Spec.ClusterName != hc.Name {
-			continue
-		}
-		if np.DeletionTimestamp != nil {
-			continue
-		}
-		if np.Status.Replicas < 1 {
-			continue
-		}
-		return np
-	}
-
-	return nil
-}
-
 // NodePoolOSImageStreamNodeOSVerificationTest verifies that actual node OS versions
 // match the expected osImageStream across two scenarios: an existing NodePool
 // running its version-derived (or explicitly configured) stream, and an explicit
@@ -378,7 +343,7 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 
 		ctx := testCtx.Context
 
-		defaultNP := getNodePoolWithReadyNode(ctx, testCtx.MgmtClient, hc)
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(),
 			"a non-deleting NodePool with at least one replica should exist for HostedCluster %s/%s", hc.Namespace, hc.Name)
 
