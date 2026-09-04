@@ -280,6 +280,32 @@ func ReconcileGenericMetricsClusterRoleBinding(cn string) func(*rbacv1.ClusterRo
 	}
 }
 
+func ReconcileMetricsResourcesClusterRole(r *rbacv1.ClusterRole) error {
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			NonResourceURLs: []string{"/metrics/resources"},
+			Verbs:           []string{"get"},
+		},
+	}
+	return nil
+}
+
+func ReconcileMetricsResourcesClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "hypershift-metrics-resources-reader",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			APIGroup: rbacv1.SchemeGroupVersion.Group,
+			Kind:     "User",
+			Name:     "system:serviceaccount:hypershift:prometheus",
+		},
+	}
+	return nil
+}
+
 func ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding(r *rbacv1.RoleBinding) error {
 	r.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
