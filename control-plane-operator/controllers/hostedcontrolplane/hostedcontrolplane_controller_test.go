@@ -2582,7 +2582,9 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 		name              string
 		sts               *appsv1.StatefulSet
 		pvcs              []corev1.PersistentVolumeClaim
+		events            []corev1.Event
 		expectedCondition metav1.Condition
+		messageContains   []string
 		expectError       bool
 	}{
 		{
@@ -2699,16 +2701,236 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 				Message: "Waiting for etcd to reach quorum",
 			},
 		},
+		{
+			name: "When PVC is pending within grace period without events, it should report waiting for quorum",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "data-etcd-0",
+						Namespace:         testNamespace,
+						Labels:            map[string]string{"app": "etcd"},
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("premiumv2-csi"),
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimPending,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:    string(hyperv1.EtcdAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.EtcdWaitingForQuorumReason,
+				Message: "Waiting for etcd to reach quorum",
+			},
+		},
+		{
+			name: "When PVC is pending within grace period with events, it should report waiting for quorum with event details",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "data-etcd-0",
+						Namespace:         testNamespace,
+						Labels:            map[string]string{"app": "etcd"},
+						UID:               "pvc-uid-1",
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("premiumv2-csi"),
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimPending,
+					},
+				},
+			},
+			events: []corev1.Event{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "data-etcd-0.event1",
+						Namespace: testNamespace,
+					},
+					InvolvedObject: corev1.ObjectReference{
+						UID: "pvc-uid-1",
+					},
+					Type:    "Warning",
+					Reason:  "ProvisioningFailed",
+					Message: "failed to provision volume",
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.EtcdWaitingForQuorumReason,
+			},
+			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "failed to provision volume"},
+		},
+		{
+			name: "When PVC is pending past grace period with events, it should report EtcdPVCPending with event details",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "data-etcd-0",
+						Namespace:         testNamespace,
+						Labels:            map[string]string{"app": "etcd"},
+						UID:               "pvc-uid-2",
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("premiumv2-csi"),
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimPending,
+					},
+				},
+			},
+			events: []corev1.Event{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "data-etcd-0.event2",
+						Namespace: testNamespace,
+					},
+					InvolvedObject: corev1.ObjectReference{
+						UID: "pvc-uid-2",
+					},
+					Type:    "Warning",
+					Reason:  "ProvisioningFailed",
+					Message: "invalid availability zone",
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.EtcdPVCPendingReason,
+			},
+			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "invalid availability zone", "more than 10m0s"},
+		},
+		{
+			name: "When PVC is pending past grace period without events, it should report EtcdPVCPending with StorageClass",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "data-etcd-0",
+						Namespace:         testNamespace,
+						Labels:            map[string]string{"app": "etcd"},
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("premiumv2-csi"),
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimPending,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.EtcdPVCPendingReason,
+			},
+			messageContains: []string{"data-etcd-0", `"premiumv2-csi"`, "more than 10m0s"},
+		},
+		{
+			name: "When PVC is pending past grace period with default StorageClass, it should report EtcdPVCPending with default label",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "data-etcd-0",
+						Namespace:         testNamespace,
+						Labels:            map[string]string{"app": "etcd"},
+						CreationTimestamp: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimPending,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.EtcdPVCPendingReason,
+			},
+			messageContains: []string{"data-etcd-0", `"<default>"`, "more than 10m0s"},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			clientBuilder := fake.NewClientBuilder()
+			clientBuilder := fake.NewClientBuilder().
+				WithIndex(&corev1.Event{}, "involvedObject.uid", func(obj client.Object) []string {
+					event := obj.(*corev1.Event)
+					return []string{string(event.InvolvedObject.UID)}
+				})
 			if len(tc.pvcs) > 0 {
 				pvcList := &corev1.PersistentVolumeClaimList{Items: tc.pvcs}
 				clientBuilder = clientBuilder.WithLists(pvcList)
+			}
+			if len(tc.events) > 0 {
+				eventList := &corev1.EventList{Items: tc.events}
+				clientBuilder = clientBuilder.WithLists(eventList)
 			}
 			fakeClient := clientBuilder.Build()
 
@@ -2729,6 +2951,9 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 			g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
 			if tc.expectedCondition.Message != "" {
 				g.Expect(condition.Message).To(Equal(tc.expectedCondition.Message))
+			}
+			for _, substr := range tc.messageContains {
+				g.Expect(condition.Message).To(ContainSubstring(substr))
 			}
 		})
 	}
