@@ -26,6 +26,21 @@ linters:
       hypershiftlinter:
         path: hack/tools/bin/hypershiftlinter.so
         description: "Enforces HyperShift test conventions from TESTING.md and test/e2e/v2/AGENTS.md"
+        settings:
+          analyzers:
+            # hcpstatuspatch is intentionally excluded here: enabling it now would fail
+            # on the last couple of HostedControlPlane status-patch call sites still being
+            # migrated to support/statuspatching in-flight PRs. Add it to this list once
+            # those land. See hack/tools/hypershiftlinter/README.md's staged rollout section.
+            enable:
+              - testcasename
+              - testfuncname
+              - sippyannotation
+              - guestcluster
+              - contextbackground
+              - vacuouspass
+              - ipv6url
+              - e2eutilallowlist
     gocyclo:
       min-complexity: 30
     govet:
