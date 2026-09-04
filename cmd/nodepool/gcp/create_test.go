@@ -176,4 +176,32 @@ func TestUpdateNodePool(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When provisioning model is invalid, it should return error", func(t *testing.T) {
+		ctx := t.Context()
+		opts := &CompletedGCPNodePoolCreateOptions{
+			completedGCPNodePoolCreateOptions: &completedGCPNodePoolCreateOptions{
+				GCPNodePoolCreateOptions: &GCPNodePoolCreateOptions{
+					Zone:              "us-central1-a",
+					Subnet:            "test-subnet",
+					ProvisioningModel: "InvalidModel",
+					ResourceLabels:    make(map[string]string),
+					NetworkTags:       []string{},
+				},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{Spec: hyperv1.NodePoolSpec{Arch: "amd64"}}
+		hcluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{InfraID: "test", Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform}}}
+
+		err := opts.UpdateNodePool(ctx, nodePool, hcluster, nil)
+		if err == nil {
+			t.Fatal("expected error for invalid provisioning model")
+		}
+
+		expectedError := `invalid provisioning model "InvalidModel", must be one of: Standard, Spot, Preemptible`
+		if err.Error() != expectedError {
+			t.Errorf("expected error %q, got %q", expectedError, err.Error())
+		}
+	})
 }

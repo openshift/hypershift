@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -177,12 +178,14 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 	// Convert provisioning model string to enum
 	var provisioningModel hyperv1.GCPProvisioningModel
 	switch o.ProvisioningModel {
+	case "", "Standard":
+		provisioningModel = hyperv1.GCPProvisioningModelStandard
 	case "Spot":
 		provisioningModel = hyperv1.GCPProvisioningModelSpot
 	case "Preemptible":
 		provisioningModel = hyperv1.GCPProvisioningModelPreemptible
 	default:
-		provisioningModel = hyperv1.GCPProvisioningModelStandard
+		return fmt.Errorf("invalid provisioning model %q, must be one of: Standard, Spot, Preemptible", o.ProvisioningModel)
 	}
 
 	// Build GCP NodePool platform configuration
