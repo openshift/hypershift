@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/support/certs"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 )
 
 // TestGenerateCustomCertificate verifies that our certificate generation works correctly
@@ -44,7 +45,7 @@ func TestGenerateCustomCertificate(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			certPEM, keyPEM, err := GenerateCustomCertificate(tc.dnsNames, tc.duration)
+			certPEM, keyPEM, err := v2util.GenerateCustomCertificate(tc.dnsNames, tc.duration)
 
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())
