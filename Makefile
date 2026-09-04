@@ -27,6 +27,7 @@ CODESPELL_BIN := codespell
 GITLINT_VER := 0.19.1
 GITLINT_BIN := gitlint
 PYYAML_VER := 6.0.3
+PYTEST_VER := 8.3.5
 
 PYTHON_VENV := $(TOOLS_BIN_DIR)/python-venv
 PYTHON_VENV_STAMP := $(PYTHON_VENV)/.installed
@@ -175,10 +176,10 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
@@ -669,6 +670,16 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-docs-nav-order.py; \
 	fi
 
+.PHONY: verify-tekton-pipeline-pairs
+verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
+		$(PYTHON_VENV)/bin/python3 hack/verify-tekton-pipeline-pairs.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
+		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
+	fi
+
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
@@ -718,13 +729,15 @@ $(PYTHON_VENV_STAMP):
 		uv pip install --python=$(PYTHON_VENV)/bin/python \
 			codespell==$(CODESPELL_VER) \
 			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER); \
+			pyyaml==$(PYYAML_VER) \
+			pytest==$(PYTEST_VER); \
 	else \
 		mkdir -p $(PYTHON_VENV) && \
 		python3 -m pip install --target=$(PYTHON_VENV) \
 			codespell==$(CODESPELL_VER) \
 			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER) --upgrade && \
+			pyyaml==$(PYYAML_VER) \
+			pytest==$(PYTEST_VER) --upgrade && \
 		for cmd in $(CODESPELL_BIN) $(GITLINT_BIN); do \
 			mv $(PYTHON_VENV)/bin/$$cmd $(PYTHON_VENV)/$$cmd.py && \
 			printf '#!/bin/sh\nexport PYTHONPATH="%s$${PYTHONPATH:+:$$PYTHONPATH}"\nexec python3 "%s/%s.py" "$$@"\n' \
