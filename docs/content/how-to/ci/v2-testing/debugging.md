@@ -4,16 +4,24 @@ This guide explains how to diagnose failing v2 CI jobs by tracing test failures 
 
 ## Finding Test Results
 
-Each `TestGroup` produces a JUnit XML file named by its `JUnitFile` field. These land in `ARTIFACT_DIR` in the Prow job artifacts.
+Each `TestGroup` produces a JUnit XML file named `junit_<TestGroup.Name>.xml` by `TestGroup.JUnitFile()`. These land in `ARTIFACT_DIR` in the Prow job artifacts.
 
 For example, the Azure self-managed job produces:
 
-- `junit_self_managed_azure_public.xml`
-- `junit_self_managed_azure_private.xml`
-- `junit_self_managed_azure_oauth_lb.xml`
-- `junit_nodepool_autoscaling.xml`
-- `junit_lifecycle_upgrade.xml`
-- `junit_lifecycle_etcd_chaos.xml`
+- `junit_public.xml`
+- `junit_public-nodepool-rollouts.xml`
+- `junit_private.xml`
+- `junit_oauth-lb.xml`
+- `junit_oauth-lb-nodepool-config.xml`
+- `junit_autoscaling-nodepool-machineconfig.xml`
+- `junit_autoscaling-balancing.xml`
+- `junit_external-oidc.xml`
+- `junit_external-oidc-autoscaling.xml`
+- `junit_external-oidc-trust-bundle.xml`
+- `junit_upgrade.xml`
+- `junit_control-plane-tls.xml`
+- `junit_etcd-chaos.xml`
+- `junit_lifecycle_informing.xml` when a group contains informing specs
 
 Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each cluster that reaches Phase 4 (version rollout wait), recording either success or failure. On failure, the JUnit file contains the `HostedCluster` and `NodePool` conditions at the time of failure. On success, it records a passing test case confirming the rollout completed.
 
@@ -21,9 +29,9 @@ Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each c
 
 To find which cluster a failing test ran against, trace the path:
 
-1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_self_managed_azure_public.xml` → `"public"`)
-2. **TestGroup.Name** → `TestGroup.ClusterFile` (e.g., `"public"` → `"cluster-name-public"`)
-3. **ClusterFile** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
+1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_public-nodepool-rollouts.xml` → `"public-nodepool-rollouts"`)
+2. **TestGroup.Name** → `TestGroup.Variant` (e.g., `"public-nodepool-rollouts"` → `"public"`)
+3. **Variant** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
 
 The `run-tests` step log shows the mapping explicitly:
 

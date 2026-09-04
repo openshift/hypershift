@@ -122,7 +122,7 @@ Labels are attached to `Describe` or `Context` blocks to categorize tests:
 
 | Category | Labels |
 |----------|--------|
-| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, `etcd-chaos`, `backup-restore` |
+| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, fine-grained NodePool shard labels, `etcd-chaos`, `backup-restore` |
 | Health/Compliance | `hosted-cluster-health`, `hosted-cluster-compliance`, `hosted-cluster-security`, `hosted-cluster-dns`, `hosted-cluster-metrics`, `hosted-cluster-image-registry`, `hosted-cluster-ccm`, `control-plane-workloads`, `routes` |
 | Platform-specific | `Azure`, `GCP`, `hosted-cluster-azure`, `self-managed-azure-public`, `self-managed-azure-private`, `self-managed-azure-oauth-lb` |
 | Meta | `Informing` |
@@ -132,24 +132,29 @@ Labels are attached to `Describe` or `Context` blocks to categorize tests:
 The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. Example from Azure TestMatrix:
 
 ```go
-Parallel: []TestGroup{
-    {
-        Name:        "public",
-        ClusterFile: "cluster-name-public",
-        LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
-        JUnitFile:   "junit_self_managed_azure_public.xml",
-    },
-    // ...
-},
 Sequential: []SequentialGroup{
     {
-        Name: "upgrade",
+        Name: "public",
         Steps: []TestGroup{
             {
-                Name:        "control-plane-upgrade",
-                ClusterFile: "cluster-name-upgrade",
+                Name:        "public",
+                Variant:     "public",
+                LabelFilter: "self-managed-azure-public || control-plane-workloads",
+            },
+            {
+                Name:        "public-nodepool-rollouts",
+                Variant:     "public",
+                LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade",
+            },
+        },
+    },
+    {
+        Name: "upgrade-and-chaos",
+        Steps: []TestGroup{
+            {
+                Name:        "upgrade",
+                Variant:     "upgrade",
                 LabelFilter: "control-plane-upgrade",
-                JUnitFile:   "junit_control_plane_upgrade.xml",
             },
             // additional steps run in order within this group
         },
@@ -158,6 +163,10 @@ Sequential: []SequentialGroup{
 ```
 
 `Parallel` groups all run concurrently. Each `SequentialGroup` also runs concurrently with everything else, but its internal `Steps` run one after another -- if any step fails, subsequent steps are skipped.
+
+JUnit filenames are derived from each `TestGroup.Name`; configure the group name rather than a separate filename.
+
+When multiple filters target the same hosted-cluster variant, put them in the same `SequentialGroup`. Never add separate `Parallel` groups for one variant, because that launches concurrent test processes against the same hosted cluster.
 
 !!! tip "Adding a test with an existing label"
     If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).
