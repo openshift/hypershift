@@ -66,6 +66,7 @@ const (
 	nodePoolAnnotation                       = "hypershift.openshift.io/nodePool"
 	nodePoolAnnotationCurrentConfig          = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	nodePoolAnnotationConfigHashVersion      = "hypershift.openshift.io/nodePoolConfigHashVersion"
 	nodePoolAnnotationTargetConfigVersion    = "hypershift.openshift.io/nodePoolTargetConfigVersion"
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
@@ -432,6 +433,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	// Ensure config hash version migration runs before CAPI decides whether to rewrite
+	// MachineDeployment/MachineSet user-data Secret names.
+	configHashOutcome := reconcileConfigHashAnnotations(nodePool, configGenerator)
+	if configHashOutcome.AnnotationsUpdated && configHashOutcome.VersionMigrated {
+		log.Info("Migrated NodePool config hash version",
+			"currentConfig", nodePool.Annotations[nodePoolAnnotationCurrentConfig],
+			"currentConfigVersion", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion],
+			"configHashVersion", nodePool.Annotations[nodePoolAnnotationConfigHashVersion])
+	}
+	capi.SetConfigHashReconcileOutcome(configHashOutcome)
+
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
 		targetConfigHash := token.HashWithoutVersion()
@@ -443,9 +455,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 			log.Info("Config update complete",
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
-			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+			writeConfigHashAnnotations(nodePool, targetConfigHash, targetPayloadConfigHash)
+		} else {
+			nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
+			nodePool.Annotations[nodePoolAnnotationConfigHashVersion] = CurrentConfigHashVersion
 		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
 		return ctrl.Result{}, nil
 	}
 
@@ -955,6 +969,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 	}
 
 	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
+	seen := map[string]struct{}{}
 	for key := range nodePoolList.Items {
 		reconcileNodePool := false
 		for _, v := range nodePoolList.Items[key].Spec.Config {
@@ -974,11 +989,40 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 			}
 		}
 		if reconcileNodePool {
-			result = append(result,
-				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
-			)
+			req := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])}
+			seen[req.String()] = struct{}{}
+			result = append(result, req)
 		}
 
+	}
+
+	// Reconcile NodePools when a ConfigMap referenced by the HostedCluster changes in place.
+	hcCache := map[string]*hyperv1.HostedCluster{}
+	for key := range nodePoolList.Items {
+		np := &nodePoolList.Items[key]
+		req := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(np)}
+		if _, ok := seen[req.String()]; ok {
+			continue
+		}
+		hc, ok := hcCache[np.Spec.ClusterName]
+		if !ok {
+			hc = &hyperv1.HostedCluster{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: np.Namespace, Name: np.Spec.ClusterName}, hc); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				ctrl.LoggerFrom(ctx).Error(err, "Failed to get HostedCluster",
+					"hostedCluster", np.Spec.ClusterName,
+					"nodePool", client.ObjectKeyFromObject(np))
+				return result
+			}
+			hcCache[np.Spec.ClusterName] = hc
+		}
+		if !hostedClusterReferencesConfigMap(hc, cm.Name) {
+			continue
+		}
+		seen[req.String()] = struct{}{}
+		result = append(result, req)
 	}
 
 	return result
@@ -1138,12 +1182,9 @@ func getPullSecretName(ctx context.Context, crclient client.Client, hostedCluste
 }
 
 func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*corev1.ConfigMap, error) {
-	additionalTrustBundle := &corev1.ConfigMap{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.AdditionalTrustBundle.Name}, additionalTrustBundle); err != nil {
-		return additionalTrustBundle, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
-	}
-	if _, hasKey := additionalTrustBundle.Data["ca-bundle.crt"]; !hasKey {
-		return additionalTrustBundle, fmt.Errorf(" additionalTrustBundle %s/%s missing %q key", additionalTrustBundle.Namespace, additionalTrustBundle.Name, "ca-bundle.crt")
+	additionalTrustBundle, err := getConfigMapWithCABundle(ctx, r.Client, hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name)
+	if err != nil {
+		return &corev1.ConfigMap{}, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
 	}
 	return additionalTrustBundle, nil
 }

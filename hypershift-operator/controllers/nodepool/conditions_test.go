@@ -18,7 +18,9 @@ import (
 	"github.com/openshift/api/image/docker10"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -27,6 +29,60 @@ import (
 
 	"github.com/blang/semver"
 )
+
+func TestSetValidMachineConfigConditionForError(t *testing.T) {
+	testCases := []struct {
+		name           string
+		err            error
+		expectedReason string
+		expectError    bool
+	}{
+		{
+			name: "When trust bundle ConfigMap is not found, it should soft-fail with NotFound reason",
+			err: &TrustBundleConfigError{err: fmt.Errorf("cannot get ConfigMap clusters/user-ca: %w",
+				apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, "user-ca"))},
+			expectedReason: hyperv1.NodePoolNotFoundReason,
+			expectError:    false,
+		},
+		{
+			name: "When trust bundle ConfigMap is missing ca-bundle.crt, it should soft-fail with ValidationFailed reason",
+			err: &TrustBundleConfigError{err: fmt.Errorf("ConfigMap clusters/user-ca missing %q key",
+				"ca-bundle.crt")},
+			expectedReason: hyperv1.NodePoolValidationFailedReason,
+			expectError:    false,
+		},
+		{
+			name:           "When a non-trust-bundle config error occurs, it should hard-fail with ValidationFailed reason",
+			err:            fmt.Errorf("expected 3 core ignition configs, found 0"),
+			expectedReason: hyperv1.NodePoolValidationFailedReason,
+			expectError:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "clusters", Generation: 2},
+			}
+
+			result, err := setValidMachineConfigConditionForError(nodePool, tc.err)
+			g.Expect(result).NotTo(BeNil())
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			g.Expect(condition.Message).To(Equal(tc.err.Error()))
+			g.Expect(condition.ObservedGeneration).To(Equal(nodePool.Generation))
+		})
+	}
+}
 
 func TestIgnitionEndpointAvailableCondition(t *testing.T) {
 	const ignitionHostname = "ignition-example.service.hypershift.example.com"
