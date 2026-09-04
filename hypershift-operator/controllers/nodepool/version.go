@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 )
@@ -35,12 +36,14 @@ func (r *NodePoolReconciler) nodeVersionsFromMachines(machines []*capiv1.Machine
 
 		kubeletVersion := machine.Status.NodeInfo.KubeletVersion
 
-		// Resolve OCP version from Machine annotation.
-		// For replace upgrades, the annotation is propagated via the MachineDeployment template at Machine creation.
-		// For in-place upgrades, the annotation is set by the in-place upgrader (sourced from the token secret)
-		// after each node completes its upgrade.
-		// Fallback to nodePool.Status.Version for machines created before this annotation existed.
+		// For replace upgrades, Machine.spec.version records the release selected when
+		// the Machine was created and remains stable during a rolling replacement. For
+		// in-place upgrades, the upgrader annotates each Machine after its node finishes.
 		ocpVersion := machine.Annotations[hyperv1.NodePoolReleaseVersionAnnotation]
+		if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+			ocpVersion = ptr.Deref(machine.Spec.Version, "")
+		}
+		// Fall back for Machines created before either per-Machine version source existed.
 		if ocpVersion == "" {
 			ocpVersion = nodePool.Status.Version
 		}

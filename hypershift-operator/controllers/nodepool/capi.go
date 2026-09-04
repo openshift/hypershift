@@ -457,11 +457,12 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 				resourcesName:           resourcesName,
 				capiv1.ClusterNameLabel: capiClusterName,
 			},
-			// Annotations here propagate down to Machines
-			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
+			// Annotations here are propagated in-place to all Machines owned by the
+			// MachineDeployment. The release version is reconciled directly on each
+			// Machine from its immutable spec.version so old Machines keep their version
+			// during a rolling replacement.
 			Annotations: map[string]string{
-				nodePoolAnnotation:                       client.ObjectKeyFromObject(nodePool).String(),
-				hyperv1.NodePoolReleaseVersionAnnotation: c.Version(),
+				nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
 			},
 		},
 		Spec: capiv1.MachineSpec{
@@ -540,8 +541,8 @@ func setMachineDeploymentFailureDomain(nodePool *hyperv1.NodePool, machineDeploy
 	}
 }
 
-// propagateLabelsAndTaintsToMachines propagates label/taints directly into Machines
-// to avoid a NodePool label/taints change triggering a rolling upgrade.
+// propagateLabelsAndTaintsToMachines propagates labels, taints, and the release version
+// directly into Machines to avoid a NodePool metadata change triggering a rolling upgrade.
 // TODO(Alberto): drop this and rely on core in-place propagation once CAPI 1.4.0
 // https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
 // https://issues.redhat.com/browse/HOSTEDCP-971
@@ -562,6 +563,15 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 			}
 			if machine.Annotations == nil {
 				machine.Annotations = make(map[string]string)
+			}
+			// Machine.spec.version is set from the NodePool release when the Machine is
+			// created and is not updated in place by Cluster API. Use it instead of the
+			// MachineDeployment template metadata, which Cluster API propagates to old
+			// Machines during a rolling replacement.
+			if machineVersion := ptr.Deref(machine.Spec.Version, ""); machineVersion != "" {
+				machine.Annotations[hyperv1.NodePoolReleaseVersionAnnotation] = machineVersion
+			} else {
+				delete(machine.Annotations, hyperv1.NodePoolReleaseVersionAnnotation)
 			}
 
 			for k, v := range nodePool.Spec.NodeLabels {

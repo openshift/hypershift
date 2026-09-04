@@ -3713,10 +3713,28 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 				},
 			}
 
+			objects := []client.Object{tt.hcluster, tt.nodePool, pullSecret}
+			if tt.name == "When ignition endpoint is missing, it should exit early from condition loop" {
+				objects = append(objects, &capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machine",
+						Namespace: "test-ns-test-hc",
+						Annotations: map[string]string{
+							nodePoolAnnotation:                       "test-ns/test-np",
+							hyperv1.NodePoolReleaseVersionAnnotation: "4.17.0",
+						},
+					},
+					Spec: capiv1.MachineSpec{Version: ptr.To("4.18.5")},
+					Status: capiv1.MachineStatus{
+						NodeInfo: &corev1.NodeSystemInfo{KubeletVersion: "v1.31.4"},
+					},
+				})
+			}
+
 			r := NodePoolReconciler{
 				Client: fake.NewClientBuilder().
 					WithScheme(api.Scheme).
-					WithObjects([]client.Object{tt.hcluster, tt.nodePool, pullSecret}...).
+					WithObjects(objects...).
 					Build(),
 				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
 					Version: "4.18.5",
@@ -3785,6 +3803,10 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 				g.Expect(ignitionCondition).NotTo(BeNil(), "IgnitionEndpointAvailable condition should be set")
 				g.Expect(ignitionCondition.Status).To(Equal(corev1.ConditionFalse), "IgnitionEndpointAvailable should be False")
 				g.Expect(ignitionCondition.Reason).To(Equal(hyperv1.IgnitionEndpointMissingReason), "Reason should be IgnitionEndpointMissing")
+
+				// NodesInfo must use Machine.spec.version even though CAPI reconciliation is skipped.
+				g.Expect(tt.nodePool.Status.NodesInfo.NodeVersions).To(HaveLen(1))
+				g.Expect(tt.nodePool.Status.NodesInfo.NodeVersions[0].OCPVersion).To(Equal("4.18.5"))
 
 				// Verify that conditions processed after ignitionEndpointAvailableCondition are NOT set
 				// These conditions come later in the signalConditions array and should not be evaluated
