@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,13 +31,13 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -2396,7 +2394,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 
 		// Generate a custom certificate for the KAS
 		t.Log("Generating custom certificate with DNS name", customApiServerHost)
-		customCert, customKey, err := GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
+		customCert, customKey, err := v2util.GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to generate custom certificate")
 
 		// Create secret with the custom certificate
@@ -3882,29 +3880,6 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 	})
-}
-
-// GenerateCustomCertificate generates a self-signed certificate for the given DNS names
-func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byte, []byte, error) {
-	if len(dnsNames) == 0 {
-		return nil, nil, fmt.Errorf("no DNS names provided")
-	}
-
-	cfg := &certs.CertCfg{
-		Subject:      pkix.Name{CommonName: dnsNames[0], Organization: []string{"kubernetes"}, OrganizationalUnit: []string{"test"}},
-		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		Validity:     validity,
-		DNSNames:     dnsNames,
-		IsCA:         false,
-	}
-
-	key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate self-signed certificate: %w", err)
-	}
-
-	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), nil
 }
 
 // EnsureOpenshiftSamplesCapabilityDisabled validates the expectations for when OpenShiftSamplesCapability is Disabled

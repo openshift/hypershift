@@ -1417,6 +1417,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 }
 
 func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
 	var errs []error
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
@@ -1426,10 +1427,36 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
 
-	sourceCert := cpomanifests.IngressCert(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
-		errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+	// When the user provides a custom default certificate, use the secret synced
+	// into the control plane namespace as the source. Otherwise, fall back to the
+	// CPO-generated wildcard cert. IBM Cloud's ingress controller does not consume a
+	// user-provided default certificate (ReconcileDefaultIngressController skips
+	// spec.defaultCertificate for IBM Cloud), so the custom secret is never synced
+	// there; keep sourcing the generated wildcard so this loop does not chase a
+	// secret that will never appear.
+	usingCustomCert := len(p.DefaultCertificate.Name) > 0 && p.PlatformType != hyperv1.IBMCloudPlatform
+	var sourceCert *corev1.Secret
+	if usingCustomCert {
+		sourceCert = cpomanifests.ServiceProviderDefaultIngressServingCert(hcp.Namespace)
 	} else {
+		sourceCert = cpomanifests.IngressCert(hcp.Namespace)
+	}
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
+		if usingCustomCert {
+			// The custom certificate is synced independently by the HyperShift
+			// Operator and may not have landed in the control plane namespace yet
+			// (or the source may be missing). Do not fail reconciliation: leave the
+			// previously synced certificate in place so the HostedCluster does not
+			// become degraded. The IngressDefaultCertificateSynced condition on the
+			// HostedCluster surfaces the underlying problem.
+			log.Info("user-provided ingress default certificate not yet available in the control plane namespace; keeping the existing certificate",
+				"secret", client.ObjectKeyFromObject(sourceCert).String(), "error", err.Error())
+		} else {
+			errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+		}
+		sourceCert = nil
+	}
+	if sourceCert != nil {
 		ingressControllerCert := manifests.IngressDefaultIngressControllerCert()
 		if _, err := r.CreateOrUpdate(ctx, r.client, ingressControllerCert, func() error {
 			return ingress.ReconcileDefaultIngressControllerCertSecret(ingressControllerCert, sourceCert)

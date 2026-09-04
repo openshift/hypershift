@@ -24,6 +24,7 @@ import (
 	"net/netip"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ import (
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -67,6 +68,7 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -240,6 +242,13 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		r.now = metav1.Now
 	}
 	r.createOrUpdate = createOrUpdateWithAnnotationFactory(createOrUpdate)
+
+	// Index HostedClusters by the referenced ingress default certificate Secret name
+	// so the Secret watch can map a recreated (unannotated) Secret back to its owner.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &hyperv1.HostedCluster{}, hostedClusterIngressDefaultCertSecretIndex, indexHostedClusterByIngressDefaultCertSecret); err != nil {
+		return fmt.Errorf("failed to set up ingress default certificate secret index: %w", err)
+	}
+
 	// Set up watches for resource types the controller manages. The list basically
 	// tracks types of the resources in the clusterapi, controlplaneoperator, and
 	// ignitionserver manifests packages. Since we're receiving watch events across
@@ -1445,6 +1454,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return r.reconcileSSHKeySync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
 
+	report.execute("IngressDefaultCertSync", nonCritical, func() error {
+		return r.reconcileIngressDefaultCertSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+	})
+
 	report.execute("AdditionalTrustBundle", nonCritical, func() error {
 		return r.reconcileAdditionalTrustBundle(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
@@ -2101,6 +2114,114 @@ func (r *HostedClusterReconciler) reconcileSSHKeySync(
 		return nil
 	})
 	return err
+}
+
+// reconcileIngressDefaultCertSync syncs the user-provided ingress default
+// certificate secret from the HostedCluster namespace to the control plane
+// namespace and reports the outcome via the IngressDefaultCertificateSynced
+// condition on the HostedCluster status.
+//
+// A missing or malformed source secret is user-correctable: it is surfaced
+// through the condition (set to False) without failing reconciliation, so the
+// previously synced certificate — or the auto-generated wildcard certificate —
+// keeps serving and the HostedCluster does not become degraded.
+func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
+	controlPlaneNamespace string,
+) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Skip when the ingress capability is disabled — no ingress controller will be
+	// created to consume the certificate — or when no certificate is configured.
+	if !capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) ||
+		hcluster.Spec.OperatorConfiguration == nil ||
+		hcluster.Spec.OperatorConfiguration.IngressOperator == nil ||
+		len(hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name) == 0 {
+		// Fast path: with no synced condition the feature was never active for this
+		// HostedCluster, so there is nothing to clean up. This is the common case
+		// and runs on every reconcile, so avoid the re-Get/DeepCopy that PatchStatus
+		// would otherwise do.
+		if meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced)) == nil {
+			return nil
+		}
+		// The feature was active before; clean up the stale synced secret and drop
+		// the condition.
+		staleSecret := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, staleSecret); err != nil {
+			return fmt.Errorf("failed to delete stale ingress default certificate secret: %w", err)
+		}
+		return statuspatching.PatchStatus(ctx, r.Client, hcluster, func() error {
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
+			return nil
+		})
+	}
+
+	// setSyncedCondition records the outcome on the HostedCluster status using an
+	// optimistic-lock patch. It only returns an error if persisting the status fails.
+	setSyncedCondition := func(status metav1.ConditionStatus, reason, message string) error {
+		return statuspatching.PatchStatusCondition(ctx, r.Client, hcluster, &hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.IngressDefaultCertificateSynced),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hcluster.Generation,
+		})
+	}
+
+	// The IBM Cloud ingress controller does not consume a user-provided default
+	// certificate: ReconcileDefaultIngressController skips spec.defaultCertificate
+	// for IBM Cloud, so nothing in the guest cluster would use the synced secret.
+	// Skip the sync entirely and surface it, rather than reporting a successful
+	// sync that has no effect.
+	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		log.Info("ingress default certificate is not supported on the IBM Cloud platform; skipping sync")
+		return setSyncedCondition(metav1.ConditionFalse, hyperv1.IngressDefaultCertificatePlatformNotSupportedReason,
+			"ingress default certificate is not supported on the IBM Cloud platform")
+	}
+
+	sourceSecretName := hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name
+	var src corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: sourceSecretName}, &src); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("ingress default certificate secret not found; keeping the previously synced certificate", "secret", sourceSecretName)
+			return setSyncedCondition(metav1.ConditionFalse, hyperv1.SecretNotFoundReason,
+				fmt.Sprintf("ingress default certificate secret %q not found in namespace %q", sourceSecretName, hcluster.Namespace))
+		}
+		return fmt.Errorf("failed to get ingress default certificate secret %s: %w", sourceSecretName, err)
+	}
+
+	// Annotate the referenced secret before validating it so that a later
+	// correction to a malformed secret (or any content change) enqueues the
+	// HostedCluster for reconciliation via the secret watch.
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+
+	// Validate the source before touching the destination so a malformed secret
+	// leaves the previously synced certificate in place.
+	for _, key := range []string{corev1.TLSCertKey, corev1.TLSPrivateKeyKey} {
+		if _, ok := src.Data[key]; !ok {
+			log.Info("ingress default certificate secret is missing a required key; keeping the previously synced certificate", "secret", sourceSecretName, "key", key)
+			return setSyncedCondition(metav1.ConditionFalse, hyperv1.IngressDefaultCertificateInvalidReason,
+				fmt.Sprintf("ingress default certificate secret %q must contain a %s key", sourceSecretName, key))
+		}
+	}
+
+	dest := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)
+	if _, err := createOrUpdate(ctx, r.Client, dest, func() error {
+		dest.Type = corev1.SecretTypeTLS
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data[corev1.TLSCertKey] = src.Data[corev1.TLSCertKey]
+		dest.Data[corev1.TLSPrivateKeyKey] = src.Data[corev1.TLSPrivateKeyKey]
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to sync ingress default certificate to control plane namespace: %w", err)
+	}
+
+	return setSyncedCondition(metav1.ConditionTrue, hyperv1.AsExpectedReason,
+		fmt.Sprintf("ingress default certificate synced from secret %q", sourceSecretName))
 }
 
 // reconcileUnmanagedEtcdMTLSSync syncs the unmanaged etcd client MTLS secret
@@ -3964,6 +4085,51 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	return true, nil
 }
 
+// hostedClusterIngressDefaultCertSecretIndex indexes HostedClusters by the name of
+// the Secret referenced via spec.operatorConfiguration.ingressOperator.defaultCertificate.
+// It lets the Secret watch map a referenced Secret back to its owner with an
+// O(matches) cache lookup, independent of the referenced-resource annotation, which
+// a freshly recreated Secret would not yet carry.
+const hostedClusterIngressDefaultCertSecretIndex = "spec.operatorConfiguration.ingressOperator.defaultCertificate.name"
+
+func indexHostedClusterByIngressDefaultCertSecret(o client.Object) []string {
+	hc, ok := o.(*hyperv1.HostedCluster)
+	if !ok {
+		return nil
+	}
+	if hc.Spec.OperatorConfiguration != nil &&
+		hc.Spec.OperatorConfiguration.IngressOperator != nil &&
+		hc.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name != "" {
+		return []string{hc.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name}
+	}
+	return nil
+}
+
+// hostedClustersReferencingSecret appends reconcile requests for HostedClusters
+// that reference the given Secret by name through spec (via the field index),
+// skipping any already present in requests. Unlike the referenced-resource
+// annotation, a spec reference survives delete+recreate of the Secret (the
+// recreated object carries no annotation yet). The field index keeps this an
+// O(matches) cache lookup that returns nothing for unrelated Secrets.
+func hostedClustersReferencingSecret(ctx context.Context, c client.Client, secret *corev1.Secret, requests []reconcile.Request) []reconcile.Request {
+	hcList := &hyperv1.HostedClusterList{}
+	if err := c.List(ctx, hcList,
+		client.InNamespace(secret.Namespace),
+		client.MatchingFields{hostedClusterIngressDefaultCertSecretIndex: secret.Name},
+	); err != nil {
+		ctrllog.Log.Error(err, "failed to list hosted clusters referencing secret", "secret", client.ObjectKeyFromObject(secret).String())
+		return requests
+	}
+	for i := range hcList.Items {
+		hc := &hcList.Items[i]
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}
+		if !slices.Contains(requests, req) {
+			requests = append(requests, req)
+		}
+	}
+	return requests
+}
+
 func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
@@ -4059,7 +4225,10 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 					}
 				}
 			}
-			return handleDefault(typedObj)
+			// Enqueue via the referenced-resource annotation, and also via the spec
+			// field index so a delete+recreate of a referenced Secret (which drops the
+			// annotation) still re-enqueues its owner.
+			return hostedClustersReferencingSecret(ctx, c, typedObj, handleDefault(typedObj))
 		default:
 			return handleDefault(typedObj)
 		}
