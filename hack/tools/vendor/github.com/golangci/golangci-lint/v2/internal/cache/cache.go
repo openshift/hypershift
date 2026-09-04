@@ -172,6 +172,10 @@ func (c *Cache) computePkgHash(pkg *packages.Package) (hashResults, error) {
 			return nil, fmt.Errorf("failed to calculate file %s hash: %w", f, fErr)
 		}
 
+		if rel, ok := toRelativePath(pkg.Module, f); ok {
+			f = pkg.Module.Path + "/" + rel
+		}
+
 		fmt.Fprintf(key, "file %s %x\n", f, h)
 	}
 
@@ -290,7 +294,7 @@ func SetSalt(b *bytes.Buffer) {
 	cache.SetSalt(b.Bytes())
 }
 
-func DefaultDir() string {
-	cacheDir, _ := cache.DefaultDir()
-	return cacheDir
+func DefaultDir() (string, error) {
+	cacheDir, _, err := cache.DefaultDir()
+	return cacheDir, err
 }
