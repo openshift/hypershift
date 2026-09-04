@@ -2801,13 +2801,11 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		Message: message,
 	}
 
-	originalHCP := hcp.DeepCopy()
-	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
-
-	if !equality.Semantic.DeepEqual(hcp, originalHCP) {
-		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to patch resources destroyed condition: %w", err)
-		}
+	// resourcesDestroyedCond is derived from a live guest-cluster check above, not a stale
+	// snapshot, so replaying it on PatchStatusCondition's retry is safe even if CPO's
+	// fallback timeout condition landed on the object in between.
+	if err := statuspatching.PatchStatusCondition(ctx, r.cpClient, hcp, &hcp.Status.Conditions, *resourcesDestroyedCond); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to patch resources destroyed condition: %w", err)
 	}
 
 	if remaining.Len() > 0 {
