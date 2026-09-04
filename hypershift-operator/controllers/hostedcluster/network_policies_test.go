@@ -992,14 +992,14 @@ func TestReconcileServiceNetworkPolicies(t *testing.T) {
 			expectedPolicies: []string{"nodeport-ignition", "nodeport-ignition-proxy"},
 		},
 		{
-			name: "When Ignition uses Route, it should not create ignition policies",
+			name: "When Ignition uses Route, it should create ignition and ignition-proxy policies",
 			services: []hyperv1.ServicePublishingStrategyMapping{
 				{
 					Service:                   hyperv1.Ignition,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
 				},
 			},
-			absentPolicies: []string{"nodeport-ignition", "nodeport-ignition-proxy"},
+			expectedPolicies: []string{"nodeport-ignition", "nodeport-ignition-proxy"},
 		},
 		{
 			name: "When Konnectivity uses NodePort, it should create konnectivity and konnectivity-kas policies",
@@ -1188,10 +1188,10 @@ func TestReconcileIgnitionNetworkPolicies(t *testing.T) {
 			expectIgnitionProxy: true,
 		},
 		{
-			name:                "When Ignition uses Route, it should create no ignition policies",
+			name:                "When Ignition uses Route, it should create both ignition and ignition-proxy policies",
 			serviceType:         hyperv1.Route,
-			expectIgnition:      false,
-			expectIgnitionProxy: false,
+			expectIgnition:      true,
+			expectIgnitionProxy: true,
 		},
 		{
 			name:                "When Ignition uses LoadBalancer, it should create no ignition policies",
