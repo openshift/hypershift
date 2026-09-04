@@ -18,6 +18,7 @@ type IngressParams struct {
 	LoadBalancerScope          v1.LoadBalancerScope
 	LoadBalancerIP             string
 	EndpointPublishingStrategy *v1.EndpointPublishingStrategy
+	DefaultCertificate         hyperv1.IngressDefaultCertificateReference
 }
 
 func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
@@ -28,6 +29,7 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	var loadBalancerIP string
 	loadBalancerScope := v1.ExternalLoadBalancer
 	var endpointPublishingStrategy *v1.EndpointPublishingStrategy
+	var defaultCertificate hyperv1.IngressDefaultCertificateReference
 
 	if hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
 		ibmCloudUPI = true
@@ -51,9 +53,10 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 		loadBalancerIP = hcp.Spec.Platform.OpenStack.IngressFloatingIP
 	}
 
-	// Extract endpointPublishingStrategy from OperatorConfiguration if configured
+	// Extract endpointPublishingStrategy and defaultCertificate from OperatorConfiguration if configured
 	if hcp.Spec.OperatorConfiguration != nil && hcp.Spec.OperatorConfiguration.IngressOperator != nil {
 		endpointPublishingStrategy = hcp.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy
+		defaultCertificate = hcp.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate
 	}
 
 	return &IngressParams{
@@ -66,5 +69,6 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 		LoadBalancerScope:          loadBalancerScope,
 		LoadBalancerIP:             loadBalancerIP,
 		EndpointPublishingStrategy: endpointPublishingStrategy,
+		DefaultCertificate:         defaultCertificate,
 	}
 }
