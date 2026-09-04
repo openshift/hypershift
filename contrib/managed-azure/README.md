@@ -28,7 +28,7 @@ cat <<EOF > ./azure-creds.json
     permission must be added to your Service Principal and it also must be assigned to User Access Administrator at the
     subscription level.
 
-    In most cases, you'll need to submit a DPTP request to have this done.
+    In most cases, you'll need to submit a [DPP request](https://devservices.dpp.openshift.com/support/general_request/?template=general_azure_ticket) to have this done.
 
 From this repo root folder:
 
