@@ -1115,7 +1115,6 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	CustomTolerationsTest(getTestCtx)
 	SecurityContextUIDTest(getTestCtx)
 	DesiredStateHashAnnotationTest(getTestCtx)
-	MinimalZonalSchedulingTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {

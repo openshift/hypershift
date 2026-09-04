@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -28,13 +29,15 @@ const minimalZonalRequiredZones = 3
 //
 // It returns an error if fewer than three distinct availability zones are present among
 // schedulable nodes, so callers can Skip on management clusters that cannot satisfy the
-// contract. The returned cleanup function removes the labels this call added; it is safe
-// to call even if some nodes were deleted in the meantime.
+// contract. The returned cleanup function restores each modified label to its prior state
+// (re-setting the previous value, or removing the label if it was absent) and returns an
+// error if any restore fails; it is safe to call even if some nodes were deleted in the
+// meantime.
 //
 // The labels are additive and namespaced under hypershift.openshift.io; no other
 // workload selects on them, so labeling is non-disruptive to other hosted clusters on
 // the same management cluster.
-func LabelManagementNodesForZonalScheduling(ctx context.Context, cl crclient.Client) (cleanup func(), err error) {
+func LabelManagementNodesForZonalScheduling(ctx context.Context, cl crclient.Client) (cleanup func() error, err error) {
 	nodeList := &corev1.NodeList{}
 	if err := cl.List(ctx, nodeList); err != nil {
 		return nil, fmt.Errorf("listing management cluster nodes: %w", err)
@@ -98,13 +101,14 @@ func LabelManagementNodesForZonalScheduling(ctx context.Context, cl crclient.Cli
 		}
 	}
 
-	labeled := make([]string, 0, len(roleByNode))
+	var changes []nodeLabelState
 	for name, role := range roleByNode {
 		node := &corev1.Node{}
 		if err := cl.Get(ctx, crclient.ObjectKey{Name: name}, node); err != nil {
-			return makeCleanup(cl, labeled), fmt.Errorf("getting node %s: %w", name, err)
+			return makeCleanup(cl, changes), fmt.Errorf("getting node %s: %w", name, err)
 		}
-		if node.Labels[hyperv1.ControlPlaneNodeRoleLabel] == role {
+		priorValue, existed := node.Labels[hyperv1.ControlPlaneNodeRoleLabel]
+		if existed && priorValue == role {
 			continue
 		}
 		original := node.DeepCopy()
@@ -113,29 +117,49 @@ func LabelManagementNodesForZonalScheduling(ctx context.Context, cl crclient.Cli
 		}
 		node.Labels[hyperv1.ControlPlaneNodeRoleLabel] = role
 		if err := cl.Patch(ctx, node, crclient.MergeFrom(original)); err != nil {
-			return makeCleanup(cl, labeled), fmt.Errorf("labeling node %s as %s: %w", name, role, err)
+			return makeCleanup(cl, changes), fmt.Errorf("labeling node %s as %s: %w", name, role, err)
 		}
-		labeled = append(labeled, name)
+		changes = append(changes, nodeLabelState{name: name, existed: existed, priorValue: priorValue})
 	}
 
-	return makeCleanup(cl, labeled), nil
+	return makeCleanup(cl, changes), nil
 }
 
-// makeCleanup returns a function that removes hyperv1.ControlPlaneNodeRoleLabel from the
-// named nodes, tolerating nodes that no longer exist.
-func makeCleanup(cl crclient.Client, nodeNames []string) func() {
-	return func() {
-		for _, name := range nodeNames {
+// nodeLabelState records the prior state of the control-plane-node-role label on a node
+// that LabelManagementNodesForZonalScheduling modified, so cleanup can restore it.
+type nodeLabelState struct {
+	name       string
+	existed    bool
+	priorValue string
+}
+
+// makeCleanup returns a function that restores hyperv1.ControlPlaneNodeRoleLabel on each
+// modified node to its prior state (re-setting the previous value, or removing the label
+// if it was absent). It ignores nodes that no longer exist, stops on the first
+// non-NotFound Get error, and propagates Patch errors.
+func makeCleanup(cl crclient.Client, changes []nodeLabelState) func() error {
+	return func() error {
+		for _, change := range changes {
 			node := &corev1.Node{}
-			if err := cl.Get(context.Background(), crclient.ObjectKey{Name: name}, node); err != nil {
-				continue
-			}
-			if _, ok := node.Labels[hyperv1.ControlPlaneNodeRoleLabel]; !ok {
-				continue
+			if err := cl.Get(context.Background(), crclient.ObjectKey{Name: change.name}, node); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return fmt.Errorf("getting node %s for cleanup: %w", change.name, err)
 			}
 			original := node.DeepCopy()
-			delete(node.Labels, hyperv1.ControlPlaneNodeRoleLabel)
-			_ = cl.Patch(context.Background(), node, crclient.MergeFrom(original))
+			if change.existed {
+				if node.Labels == nil {
+					node.Labels = map[string]string{}
+				}
+				node.Labels[hyperv1.ControlPlaneNodeRoleLabel] = change.priorValue
+			} else {
+				delete(node.Labels, hyperv1.ControlPlaneNodeRoleLabel)
+			}
+			if err := cl.Patch(context.Background(), node, crclient.MergeFrom(original)); err != nil {
+				return fmt.Errorf("restoring node %s label for cleanup: %w", change.name, err)
+			}
 		}
+		return nil
 	}
 }

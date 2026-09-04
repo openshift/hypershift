@@ -202,15 +202,20 @@ func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWat
 	log.Printf("Keycloak deployed: issuer=%s", kcConfig.IssuerURL)
 
 	// Establish the node contract for the minimal-zonal variant by labeling existing
-	// management-cluster nodes (no new node pools). This is non-fatal: on a management
-	// cluster with fewer than three availability zones the minimal-zonal cluster will
-	// simply fail to become available and its tests will surface the misconfiguration,
-	// while the other variants are unaffected (the labels are additive and namespaced).
+	// management-cluster nodes (no new node pools). The minimal-zonal variant is a fixed
+	// member of the test matrix (ClusterSpecs is consumed before PreCreate runs, so it
+	// cannot be skipped dynamically here), and it requires at least three availability
+	// zones. If the contract cannot be established, fail loudly rather than let the
+	// minimal-zonal cluster silently fail to become available. The labels are additive and
+	// namespaced under hypershift.openshift.io, so they do not affect the other variants.
+	//
+	// The returned cleanup is intentionally not retained: the lifecycle framework exposes
+	// no teardown hook, and the management-cluster node labels are additive/namespaced and
+	// harmless on the ephemeral CI cluster.
 	if _, err := LabelManagementNodesForZonalScheduling(ctx, cl); err != nil {
-		log.Printf("skipping minimal-zonal node labeling: %v", err)
-	} else {
-		log.Printf("labeled management nodes for the Minimal availability-zone scheduling policy")
+		return fmt.Errorf("labeling management nodes for the minimal-zonal variant: %w", err)
 	}
+	log.Printf("labeled management nodes for the Minimal availability-zone scheduling policy")
 	return nil
 }
 
@@ -393,7 +398,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 			{
 				Name:        "minimal-zonal",
 				Variant:     "minimal-zonal",
-				LabelFilter: "control-plane-workloads || hosted-cluster-health",
+				LabelFilter: "minimal-zonal-scheduling || control-plane-workloads || hosted-cluster-health",
 			},
 		},
 		Sequential: []SequentialGroup{

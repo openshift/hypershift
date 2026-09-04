@@ -29,7 +29,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,11 +72,11 @@ func nodeAffinityPrefersRole(na *corev1.NodeAffinity, value string) bool {
 	return false
 }
 
-// MinimalZonalSchedulingTest registers verification tests for the Minimal control
-// plane availability-zone scheduling policy. All tests skip unless the hosted cluster
-// is opted into the policy (per the v2 convention that non-lifecycle tests only verify
-// existing state and never mutate the hosted cluster to create preconditions).
-func MinimalZonalSchedulingTest(getTestCtx internal.TestContextGetter) {
+// RegisterMinimalZonalSchedulingTests registers verification tests for the Minimal
+// control plane availability-zone scheduling policy. All tests skip unless the hosted
+// cluster is opted into the policy (per the v2 convention that non-lifecycle tests only
+// verify existing state and never mutate the hosted cluster to create preconditions).
+func RegisterMinimalZonalSchedulingTests(getTestCtx internal.TestContextGetter) {
 	Context("Minimal availability-zone scheduling", func() {
 		skipUnlessMinimal := func() *internal.TestContext {
 			testCtx := getTestCtx()
@@ -100,8 +99,22 @@ func MinimalZonalSchedulingTest(getTestCtx internal.TestContextGetter) {
 				It("should have tier-consistent placement and spreading", func() {
 					testCtx := skipUnlessMinimal()
 
+					// Apply the standard platform/version guards so platform-specific
+					// workloads that do not run on this cluster are skipped rather than
+					// treated as failures.
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred())
+					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+						Skip(fmt.Sprintf("workload %s does not run on this cluster platform", workload.Name))
+					}
+					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
+
 					pods := getWorkloadPods(testCtx, workload)
 					if len(pods) == 0 {
+						// A component may be legitimately absent (e.g. disabled by a
+						// capability); skip rather than fail, matching the sibling
+						// PodAffinitiesAndTolerationsTest. The loop below never runs on an
+						// empty list, so this also avoids a vacuous pass.
 						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
 					}
 
@@ -139,14 +152,13 @@ func MinimalZonalSchedulingTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		// Anchor assertions catch tier mis-classification and the etcd/pair replica policy.
+		// etcd, kube-apiserver, and kube-controller-manager are always present on a
+		// HighlyAvailable hosted cluster, so their absence is a failure, not a skip.
 		It("keeps etcd as a strict three-replica quorum across zones", func() {
 			testCtx := skipUnlessMinimal()
 			sts := &appsv1.StatefulSet{}
-			err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: "etcd"}, sts)
-			if apierrors.IsNotFound(err) {
-				Skip("etcd StatefulSet not found")
-			}
-			Expect(err).NotTo(HaveOccurred())
+			Expect(testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: "etcd"}, sts)).
+				To(Succeed(), "etcd StatefulSet must be present under the Minimal policy")
 			Expect(sts.Spec.Replicas).NotTo(BeNil())
 			Expect(*sts.Spec.Replicas).To(Equal(int32(3)), "etcd must run three replicas")
 			Expect(sts.Spec.Template.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneSchedulingTierLabel, hyperv1.ControlPlaneNodeRoleZonal))
@@ -160,11 +172,8 @@ func MinimalZonalSchedulingTest(getTestCtx internal.TestContextGetter) {
 		It("runs kube-apiserver as a zone-critical two-replica pair", func() {
 			testCtx := skipUnlessMinimal()
 			deploy := &appsv1.Deployment{}
-			err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: "kube-apiserver"}, deploy)
-			if apierrors.IsNotFound(err) {
-				Skip("kube-apiserver Deployment not found")
-			}
-			Expect(err).NotTo(HaveOccurred())
+			Expect(testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: "kube-apiserver"}, deploy)).
+				To(Succeed(), "kube-apiserver Deployment must be present under the Minimal policy")
 			Expect(deploy.Spec.Replicas).NotTo(BeNil())
 			Expect(*deploy.Spec.Replicas).To(Equal(int32(2)), "kube-apiserver must run as a two-replica pair under the Minimal policy")
 			Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneSchedulingTierLabel, hyperv1.ControlPlaneNodeRoleZonal))
@@ -173,11 +182,8 @@ func MinimalZonalSchedulingTest(getTestCtx internal.TestContextGetter) {
 		It("places kube-controller-manager on overflow capacity", func() {
 			testCtx := skipUnlessMinimal()
 			deploy := &appsv1.Deployment{}
-			err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: "kube-controller-manager"}, deploy)
-			if apierrors.IsNotFound(err) {
-				Skip("kube-controller-manager Deployment not found")
-			}
-			Expect(err).NotTo(HaveOccurred())
+			Expect(testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: "kube-controller-manager"}, deploy)).
+				To(Succeed(), "kube-controller-manager Deployment must be present under the Minimal policy")
 			Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneSchedulingTierLabel, hyperv1.ControlPlaneNodeRoleOverflow))
 		})
 
@@ -198,3 +204,14 @@ func MinimalZonalSchedulingTest(getTestCtx internal.TestContextGetter) {
 		})
 	})
 }
+
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:MinimalZonalScheduling] Minimal Zonal Scheduling", Label("minimal-zonal-scheduling"), func() {
+	var testCtx *internal.TestContext
+
+	BeforeEach(func() {
+		testCtx = internal.GetTestContext()
+		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+	})
+
+	RegisterMinimalZonalSchedulingTests(func() *internal.TestContext { return testCtx })
+})
