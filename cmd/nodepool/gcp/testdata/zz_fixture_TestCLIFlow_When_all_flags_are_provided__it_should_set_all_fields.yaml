@@ -1,0 +1,20 @@
+bootDisk:
+  diskSizeGB: 200
+  diskType: pd-ssd
+  encryptionKey:
+    kmsKeyName: projects/test-project/locations/us-west1/keyRings/test-ring/cryptoKeys/test-key
+image: projects/rhcos-cloud/global/images/rhcos-test
+machineType: n2-standard-8
+networkTags:
+- tag1
+- tag2
+provisioningModel: Spot
+resourceLabels:
+- key: env
+  value: prod
+- key: team
+  value: platform
+serviceAccount:
+  email: test-sa@test-project.iam.gserviceaccount.com
+subnet: prod-subnet
+zone: us-west1-b
