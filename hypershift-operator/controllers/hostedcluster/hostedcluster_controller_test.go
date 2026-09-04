@@ -9524,3 +9524,84 @@ func TestDestroyGracePeriod(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
+	const hcpDeprecationMessage = "The deprecated annotation is set; migrate to the field"
+
+	testCases := []struct {
+		name            string
+		hcp             *hyperv1.HostedControlPlane
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		{
+			name:            "When the HCP is not found yet, it should set the condition to Unknown",
+			hcp:             nil,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  hyperv1.StatusUnknownReason,
+			expectedMessage: "The hosted control plane is not found",
+		},
+		{
+			name: "When the HCP reports a deprecated configuration, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: hcpDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: hcpDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports no deprecated configuration, it should set the condition to False",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status: metav1.ConditionFalse,
+							Reason: hyperv1.AsExpectedReason,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "No deprecated configuration is in use",
+		},
+		{
+			name:            "When the HCP is present but has no deprecation condition, it should set the condition to False",
+			hcp:             &hyperv1.HostedControlPlane{},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "No deprecated configuration is in use",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 9},
+			}
+			r := &HostedClusterReconciler{}
+			r.reconcileDeprecatedConfigurationStatus(hcluster, tc.hcp)
+
+			cond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterConfigurationDeprecated))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+			g.Expect(cond.Message).To(Equal(tc.expectedMessage))
+			g.Expect(cond.ObservedGeneration).To(Equal(hcluster.Generation))
+		})
+	}
+}
