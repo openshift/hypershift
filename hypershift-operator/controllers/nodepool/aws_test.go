@@ -1774,6 +1774,41 @@ func TestBuildAWSSecurityGroups(t *testing.T) {
 			},
 		},
 		{
+			// Regression for OCPBUGS-105464: the CPO capability flag (defaultSG) is derived
+			// from a fail-open image label and can transiently read false even after the
+			// default worker SG has been created. Injection must key on the SG ID recorded in
+			// status, not solely on the flag, so the resulting security group list (and thus
+			// the AWSMachineTemplate hash) is identical whether the flag reads true or false.
+			// Otherwise a false->true flip re-renders the template and rolls all workers. This
+			// must produce the same output as the equivalent "defaultSG is true" case above.
+			name: "When defaultSG is false but the default SG already exists in status, it should still inject it",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							SecurityGroups: []hyperv1.AWSResourceReference{
+								{ID: ptr.To("sg-custom")},
+							},
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Platform: &hyperv1.PlatformStatus{
+						AWS: &hyperv1.AWSPlatformStatus{
+							DefaultWorkerSecurityGroupID: "sg-default",
+						},
+					},
+				},
+			},
+			defaultSG: false,
+			expectedSGs: []capiaws.AWSResourceReference{
+				{ID: ptr.To("sg-custom")},
+				{ID: ptr.To("sg-default")},
+			},
+		},
+		{
 			name: "When security group has filters, it should copy filters to CAPI format",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
