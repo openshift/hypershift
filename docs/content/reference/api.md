@@ -2024,6 +2024,24 @@ PlacementOptions
 <p>placement specifies the placement options for the EC2 instances.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>cpuOptions,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">
+CPUOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cpuOptions specifies CPU configuration for EC2 instances.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, AWS defaults are used (nested virtualization is not enabled).
+To revert to default behavior after setting cpuOptions, remove the entire
+cpuOptions field rather than clearing individual sub-fields.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSNodePoolResourceTag { #hypershift.openshift.io/v1beta1.AWSNodePoolResourceTag }
@@ -5296,6 +5314,41 @@ used in workload identity authentication for Azure Private Link Service operatio
 </p>
 <p>
 </p>
+###CPUOptions { #hypershift.openshift.io/v1beta1.CPUOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>CPUOptions specifies CPU configuration for EC2 instances.
+At least one field must be specified when cpuOptions is present.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nestedVirtualizationPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy">
+NestedVirtualizationPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, nested virtualization is not enabled (AWS default behavior).</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
@@ -13976,6 +14029,29 @@ which produces significantly higher metrics volume.</p>
 <td></td>
 </tr><tr><td><p>&#34;Enable&#34;</p></td>
 <td></td>
+</tr></tbody>
+</table>
+###NestedVirtualizationPolicy { #hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">CPUOptions</a>)
+</p>
+<p>
+<p>NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>NestedVirtualizationDisabled disables nested virtualization on the instance.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>NestedVirtualizationEnabled enables nested virtualization on the instance.</p>
+</td>
 </tr></tbody>
 </table>
 ###NetworkFilter { #hypershift.openshift.io/v1beta1.NetworkFilter }

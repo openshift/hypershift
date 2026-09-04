@@ -177,6 +177,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ControlPlaneUpdateHistoryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneVersionStatus"):
 		return &hypershiftv1beta1.ControlPlaneVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CPUOptions"):
+		return &hypershiftv1beta1.CPUOptionsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
 		return &hypershiftv1beta1.DataPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):

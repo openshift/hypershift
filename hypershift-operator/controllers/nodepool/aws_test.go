@@ -695,6 +695,84 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 	}
 }
 
+func TestValidateNestedVirtualizationInstanceType(t *testing.T) {
+	testCases := []struct {
+		name          string
+		cpuOptions    hyperv1.CPUOptions
+		instanceType  string
+		expectedError string
+	}{
+		{
+			name:         "nestedVirtualizationPolicy unset, any instance type is valid",
+			cpuOptions:   hyperv1.CPUOptions{},
+			instanceType: "m5.large",
+		},
+		{
+			name:         "enabled on supported c8i family",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "c8i.2xlarge",
+		},
+		{
+			name:         "enabled on supported c8i-flex variant",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "c8i-flex.2xlarge",
+		},
+		{
+			name:         "enabled on supported m8i family",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "m8i.4xlarge",
+		},
+		{
+			name:         "enabled on supported r8i-flex variant",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "r8i-flex.xlarge",
+		},
+		{
+			name:         "disabled on unsupported family is still valid (explicit disable is a no-op everywhere)",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationDisabled},
+			instanceType: "m5.large",
+		},
+		{
+			name:          "enabled on unsupported m5 family",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "m5.large",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+		{
+			name:          "enabled on unsupported c7i family (previous generation)",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "c7i.2xlarge",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+		{
+			name:          "enabled on unsupported AMD c8a family",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "c8a.2xlarge",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateNestedVirtualizationInstanceType(tc.cpuOptions, tc.instanceType)
+			if tc.expectedError == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nothing")
+			}
+
+			if !strings.Contains(err.Error(), tc.expectedError) {
+				t.Fatalf("expected error to contain %s, got %v", tc.expectedError, err)
+			}
+		})
+	}
+}
+
 func TestGetWindowsAMI(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -1820,12 +1898,13 @@ func TestBuildAWSSecurityGroups(t *testing.T) {
 	}
 }
 
-func TestApplyAWSPlacementOptions(t *testing.T) {
+func TestApplyAWSMachineOptions(t *testing.T) {
 	capacityReservationID := "cr-0123456789abcdef0"
 
 	testCases := []struct {
 		name                             string
 		nodePool                         *hyperv1.NodePool
+		expectedNestedVirtualization     capiaws.NestedVirtualizationPolicy
 		expectedSpotMarketOptions        *capiaws.SpotMarketOptions
 		expectedMarketType               capiaws.MarketType
 		expectedTenancy                  string
@@ -1840,6 +1919,46 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 						AWS: &hyperv1.AWSNodePoolPlatform{
 							Placement: nil,
 						},
+					},
+				},
+			},
+		},
+		{
+			name: "When nested virtualization is enabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CPUOptions: hyperv1.CPUOptions{
+								NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled,
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyEnabled,
+		},
+		{
+			name: "When nested virtualization is disabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CPUOptions: hyperv1.CPUOptions{
+								NestedVirtualizationPolicy: hyperv1.NestedVirtualizationDisabled,
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyDisabled,
+		},
+		{
+			name: "When AWS platform is nil, it should not modify spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: nil,
 					},
 				},
 			},
@@ -1988,13 +2107,15 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			spec := &capiaws.AWSMachineTemplateSpec{}
+			applyAWSCPUOptions(tc.nodePool, spec)
 			applyAWSPlacementOptions(tc.nodePool, spec)
 
-			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions))
-			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType))
-			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy))
-			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID))
-			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference))
+			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization), "CPUOptions.NestedVirtualization mismatch")
+			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions), "SpotMarketOptions mismatch")
+			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType), "MarketType mismatch")
+			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy), "Tenancy mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID), "CapacityReservationID mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference), "CapacityReservationPreference mismatch")
 		})
 	}
 }

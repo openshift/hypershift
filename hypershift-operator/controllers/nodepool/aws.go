@@ -111,6 +111,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 		},
 	}
 
+	applyAWSCPUOptions(nodePool, awsMachineTemplateSpec)
 	applyAWSPlacementOptions(nodePool, awsMachineTemplateSpec)
 
 	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
@@ -206,7 +207,24 @@ func buildAWSSecurityGroups(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.H
 	return securityGroups, nil
 }
 
+func applyAWSCPUOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if nodePool.Spec.Platform.AWS == nil {
+		return
+	}
+
+	switch nodePool.Spec.Platform.AWS.CPUOptions.NestedVirtualizationPolicy {
+	case hyperv1.NestedVirtualizationEnabled:
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyEnabled
+	case hyperv1.NestedVirtualizationDisabled:
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyDisabled
+	}
+}
+
 func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if nodePool.Spec.Platform.AWS == nil {
+		return
+	}
+
 	placement := nodePool.Spec.Platform.AWS.Placement
 	if placement == nil {
 		return
@@ -248,6 +266,7 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 		spec.Template.Spec.CapacityReservationID = capacityReservation.ID
 		spec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 	}
+
 }
 
 func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
@@ -508,7 +527,37 @@ func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodeP
 		}
 	}
 
+	if err := validateNestedVirtualizationInstanceType(nodePool.Spec.Platform.AWS.CPUOptions, nodePool.Spec.Platform.AWS.InstanceType); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// nestedVirtualizationSupportedInstanceFamilies are the EC2 instance families that support
+// CpuOptions.NestedVirtualization, per AWS's "Supported CPU options" documentation:
+// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/cpu-options-supported-instances-values.html
+// This includes the base family (e.g. "c8i") and its "-flex" variant (e.g. "c8i-flex"), both of
+// which were made generally available together for each family.
+var nestedVirtualizationSupportedInstanceFamilies = []string{"c8i", "m8i", "r8i"}
+
+// validateNestedVirtualizationInstanceType returns an error if cpuOptions.nestedVirtualizationPolicy
+// is set on an EC2 instance type that doesn't support it. Nested virtualization is only supported
+// on 8th generation Intel-based instance types (c8i, m8i, r8i, and their "-flex" variants).
+func validateNestedVirtualizationInstanceType(cpuOptions hyperv1.CPUOptions, instanceType string) error {
+	if cpuOptions.NestedVirtualizationPolicy != hyperv1.NestedVirtualizationEnabled {
+		// Nothing to validate: the field is unset, or explicitly disabled (a no-op on any instance type).
+		return nil
+	}
+
+	family, _, _ := strings.Cut(instanceType, ".")
+	for _, supported := range nestedVirtualizationSupportedInstanceFamilies {
+		if family == supported || family == supported+"-flex" {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families (including their -flex variants), got instanceType %q", instanceType)
 }
 
 // getWindowsAMI returns the appropriate Windows AMI for the given region from release image metadata.
