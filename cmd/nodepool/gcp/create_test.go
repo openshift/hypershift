@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepool tests the full CLI flag parsing → Validate() → Complete() → NodePool manifest generation flow.
-func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepool(t *testing.T) {
+// TestCLIFlow tests the full CLI flag parsing → Validate() → Complete() → UpdateNodePool() manifest generation flow.
+func TestCLIFlow(t *testing.T) {
 	for _, testCase := range []struct {
 		name string
 		args []string
@@ -117,151 +117,27 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 	}
 }
 
-// TestValidate_When_boot_disk_size_is_too_small_it_should_return_error tests validation logic.
-func TestValidate_When_boot_disk_size_is_too_small_it_should_return_error(t *testing.T) {
-	opts := DefaultOptions()
-	opts.BootDiskSize = 7 // Less than minimum of 8
-
-	_, err := opts.Validate(t.Context(), nil)
-	if err == nil {
-		t.Fatal("expected validation to fail for boot disk size < 8")
-	}
-
-	expectedError := "boot disk size must be at least 8 GB, got 7"
-	if err.Error() != expectedError {
-		t.Fatalf("expected error %q, got %q", expectedError, err.Error())
-	}
-}
-
-// TestValidate_When_boot_disk_size_is_valid_it_should_succeed tests validation success.
-func TestValidate_When_boot_disk_size_is_valid_it_should_succeed(t *testing.T) {
+// TestUpdateNodePool tests machine type defaulting logic.
+func TestUpdateNodePool(t *testing.T) {
 	testCases := []struct {
-		name string
-		size int32
-	}{
-		{"minimum size", 8},
-		{"default size", 120},
-		{"large size", 1000},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := DefaultOptions()
-			opts.BootDiskSize = tc.size
-
-			_, err := opts.Validate(t.Context(), nil)
-			if err != nil {
-				t.Fatalf("expected validation to succeed, got error: %v", err)
-			}
-		})
-	}
-}
-
-// TestValidate_When_zone_format_is_invalid_it_should_return_error tests zone validation.
-func TestValidate_When_zone_format_is_invalid_it_should_return_error(t *testing.T) {
-	testCases := []struct {
-		name          string
-		zone          string
-		expectedError string
-	}{
-		{
-			name:          "missing zone suffix",
-			zone:          "us-central1",
-			expectedError: "zone must be in the form of region-zone (e.g., us-central1-a), got \"us-central1\"",
-		},
-		{
-			name:          "invalid characters",
-			zone:          "us_central1-a",
-			expectedError: "zone must be in the form of region-zone (e.g., us-central1-a), got \"us_central1-a\"",
-		},
-		{
-			name:          "uppercase zone",
-			zone:          "US-CENTRAL1-A",
-			expectedError: "zone must be in the form of region-zone (e.g., us-central1-a), got \"US-CENTRAL1-A\"",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := DefaultOptions()
-			opts.Zone = tc.zone
-
-			_, err := opts.Validate(t.Context(), nil)
-			if err == nil {
-				t.Fatal("expected validation to fail for invalid zone format")
-			}
-
-			if err.Error() != tc.expectedError {
-				t.Fatalf("expected error %q, got %q", tc.expectedError, err.Error())
-			}
-		})
-	}
-}
-
-// TestValidate_When_machine_type_format_is_invalid_it_should_return_error tests machine type validation.
-func TestValidate_When_machine_type_format_is_invalid_it_should_return_error(t *testing.T) {
-	testCases := []struct {
-		name          string
-		machineType   string
-		expectedError string
-	}{
-		{
-			name:          "uppercase characters",
-			machineType:   "N2-STANDARD-4",
-			expectedError: "machine type must contain only lowercase letters, digits, and hyphens, got \"N2-STANDARD-4\"",
-		},
-		{
-			name:          "invalid characters",
-			machineType:   "n2_standard_4",
-			expectedError: "machine type must contain only lowercase letters, digits, and hyphens, got \"n2_standard_4\"",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := DefaultOptions()
-			opts.MachineType = tc.machineType
-
-			_, err := opts.Validate(t.Context(), nil)
-			if err == nil {
-				t.Fatal("expected validation to fail for invalid machine type format")
-			}
-
-			if err.Error() != tc.expectedError {
-				t.Fatalf("expected error %q, got %q", tc.expectedError, err.Error())
-			}
-		})
-	}
-}
-
-// TestValidate_When_provisioning_model_is_invalid_it_should_return_error tests provisioning model validation.
-func TestValidate_When_provisioning_model_is_invalid_it_should_return_error(t *testing.T) {
-	opts := DefaultOptions()
-	opts.ProvisioningModel = "InvalidModel"
-
-	_, err := opts.Validate(t.Context(), nil)
-	if err == nil {
-		t.Fatal("expected validation to fail for invalid provisioning model")
-	}
-
-	expectedError := "provisioning model must be one of [Standard Spot Preemptible], got \"InvalidModel\""
-	if err.Error() != expectedError {
-		t.Fatalf("expected error %q, got %q", expectedError, err.Error())
-	}
-}
-
-// TestUpdateNodePool_When_machine_type_is_empty_it_should_default_based_on_arch tests machine type defaulting.
-func TestUpdateNodePool_When_machine_type_is_empty_it_should_default_based_on_arch(t *testing.T) {
-	testCases := []struct {
+		name                string
 		arch                string
 		expectedMachineType string
 	}{
-		{"amd64", "n2-standard-4"},
-		{"arm64", "t2a-standard-4"}, // Tau T2A family for ARM64
+		{
+			name:                "When arch is amd64, it should default to n2-standard-4",
+			arch:                "amd64",
+			expectedMachineType: "n2-standard-4",
+		},
+		{
+			name:                "When arch is arm64, it should default to t2a-standard-4",
+			arch:                "arm64",
+			expectedMachineType: "t2a-standard-4",
+		},
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.arch, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			opts := &CompletedGCPNodePoolCreateOptions{
 				completedGCPNodePoolCreateOptions: &completedGCPNodePoolCreateOptions{
@@ -269,8 +145,6 @@ func TestUpdateNodePool_When_machine_type_is_empty_it_should_default_based_on_ar
 						MachineType:       "", // Empty
 						Zone:              "us-central1-a",
 						Subnet:            "test-subnet",
-						BootDiskSize:      120,
-						BootDiskType:      "pd-standard",
 						ProvisioningModel: "Standard",
 						ResourceLabels:    make(map[string]string),
 						NetworkTags:       []string{},

@@ -2,8 +2,6 @@ package gcp
 
 import (
 	"context"
-	"fmt"
-	"regexp"
 	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -42,8 +40,6 @@ type RawGCPNodePoolCreateOptions struct {
 func DefaultOptions() *RawGCPNodePoolCreateOptions {
 	return &RawGCPNodePoolCreateOptions{
 		GCPNodePoolCreateOptions: &GCPNodePoolCreateOptions{
-			BootDiskSize:      120,
-			BootDiskType:      "pd-standard",
 			ProvisioningModel: "Standard",
 			ResourceLabels:    make(map[string]string),
 			NetworkTags:       []string{},
@@ -71,7 +67,7 @@ func BindDeveloperOptions(opts *RawGCPNodePoolCreateOptions, flags *pflag.FlagSe
 	flags.StringVar(&opts.MachineType, "machine-type", opts.MachineType, "The GCP machine type for node instances (e.g. n2-standard-4)")
 	flags.StringVar(&opts.Zone, "zone", opts.Zone, "The GCP zone for node instances (e.g. us-central1-a)")
 	flags.StringVar(&opts.Subnet, "subnet", opts.Subnet, "The subnet name for node instances")
-	flags.Int32Var(&opts.BootDiskSize, "boot-disk-size", opts.BootDiskSize, "The size of the boot disk in GB (minimum 8)")
+	flags.Int32Var(&opts.BootDiskSize, "boot-disk-size", opts.BootDiskSize, "The size of the boot disk in GB (minimum 20)")
 	flags.StringVar(&opts.BootDiskType, "boot-disk-type", opts.BootDiskType, "The type of the boot disk (e.g. pd-standard, pd-ssd)")
 	flags.StringVar(&opts.BootDiskEncryptionKey, "boot-disk-encryption-key", opts.BootDiskEncryptionKey, "The GCP KMS key for boot disk encryption")
 	flags.StringVar(&opts.ServiceAccountEmail, "service-account-email", opts.ServiceAccountEmail, "The Google Service Account email for node instances")
@@ -82,29 +78,6 @@ func BindDeveloperOptions(opts *RawGCPNodePoolCreateOptions, flags *pflag.FlagSe
 }
 
 func (o *RawGCPNodePoolCreateOptions) Validate(_ context.Context, _ *core.CreateNodePoolOptions) (core.NodePoolPlatformCompleter, error) {
-	// Validate boot disk size
-	if o.BootDiskSize < 8 {
-		return nil, fmt.Errorf("boot disk size must be at least 8 GB, got %d", o.BootDiskSize)
-	}
-
-	// Validate zone format: {region}-{zone} (e.g., us-central1-a)
-	zoneRegex := regexp.MustCompile(`^[a-z]+(?:-[a-z0-9]+)*-[a-z]$`)
-	if len(o.Zone) > 0 && !zoneRegex.MatchString(o.Zone) {
-		return nil, fmt.Errorf("zone must be in the form of region-zone (e.g., us-central1-a), got %q", o.Zone)
-	}
-
-	// Validate machine type format
-	machineTypeRegex := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	if len(o.MachineType) > 0 && !machineTypeRegex.MatchString(o.MachineType) {
-		return nil, fmt.Errorf("machine type must contain only lowercase letters, digits, and hyphens, got %q", o.MachineType)
-	}
-
-	// Validate provisioning model
-	validProvisioningModels := []string{"Standard", "Spot", "Preemptible"}
-	if len(o.ProvisioningModel) > 0 && !slices.Contains(validProvisioningModels, o.ProvisioningModel) {
-		return nil, fmt.Errorf("provisioning model must be one of %v, got %q", validProvisioningModels, o.ProvisioningModel)
-	}
-
 	return &ValidatedGCPNodePoolCreateOptions{
 		validatedGCPNodePoolCreateOptions: &validatedGCPNodePoolCreateOptions{
 			RawGCPNodePoolCreateOptions: o,
@@ -165,9 +138,12 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 	}
 
 	// Build boot disk configuration
-	bootDisk := &hyperv1.GCPBootDisk{
-		DiskSizeGB: int64(o.BootDiskSize),
-		DiskType:   o.BootDiskType,
+	bootDisk := &hyperv1.GCPBootDisk{}
+	if o.BootDiskSize > 0 {
+		bootDisk.DiskSizeGB = int64(o.BootDiskSize)
+	}
+	if len(o.BootDiskType) > 0 {
+		bootDisk.DiskType = o.BootDiskType
 	}
 	if len(o.BootDiskEncryptionKey) > 0 {
 		bootDisk.EncryptionKey = hyperv1.GCPDiskEncryptionKey{
