@@ -520,6 +520,9 @@ func NewStartCommand() *cobra.Command {
 
 		enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 
+		// Default enabled for compatibility with an older hypershift-operator that never sets this var
+		enablePlatformMonitoring := (os.Getenv(config.EnablePlatformMonitoringEnvVar) != "0")
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
 			GVKAccessChecker:                        component.NewGVKAccessCache(mgr.GetAPIReader()),
@@ -532,6 +535,7 @@ func NewStartCommand() *cobra.Command {
 			MetricsSet:                              metricsSet,
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
+			EnablePlatformMonitoring:                enablePlatformMonitoring,
 			ImageMetadataProvider:                   imageMetaDataProvider,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate, hcp); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")

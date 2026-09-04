@@ -149,6 +149,17 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			)
 		}
 
+		platformMonitoringValue := "0"
+		if cpo.EnablePlatformMonitoring {
+			platformMonitoringValue = "1"
+		}
+		c.Env = append(c.Env,
+			corev1.EnvVar{
+				Name:  config.EnablePlatformMonitoringEnvVar,
+				Value: platformMonitoringValue,
+			},
+		)
+
 		if watchListClient := os.Getenv("KUBE_FEATURE_WatchListClient"); watchListClient != "" {
 			c.Env = append(c.Env,
 				corev1.EnvVar{

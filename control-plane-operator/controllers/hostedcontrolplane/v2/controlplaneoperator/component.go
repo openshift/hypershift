@@ -28,6 +28,8 @@ type ControlPlaneOperatorOptions struct {
 	DefaultIngressDomain        string
 
 	FeatureSet configv1.FeatureSet
+
+	EnablePlatformMonitoring bool
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
@@ -55,6 +57,9 @@ func NewComponent(options *ControlPlaneOperatorOptions) component.ControlPlaneCo
 		WithManifestAdapter(
 			"podmonitor.yaml",
 			component.WithAdaptFunction(options.adaptPodMonitor),
+			component.WithPredicate(func(_ component.WorkloadContext) bool {
+				return options.EnablePlatformMonitoring
+			}),
 		).
 		WithManifestAdapter(
 			"rolebinding.yaml",

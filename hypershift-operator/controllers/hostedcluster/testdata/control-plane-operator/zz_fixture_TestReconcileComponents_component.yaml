@@ -19,9 +19,6 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
-  - group: monitoring.coreos.com
-    kind: PodMonitor
-    name: controlplane-operator
   - group: rbac.authorization.k8s.io
     kind: Role
     name: control-plane-operator

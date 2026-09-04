@@ -82,6 +82,7 @@ import (
 	"github.com/docker/distribution"
 	"github.com/go-logr/zapr"
 	"github.com/opencontainers/go-digest"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
@@ -748,6 +749,7 @@ func TestEventHandling(t *testing.T) {
 		},
 		SetDefaultSecurityContext: false,
 		ec2Client:                 mockEC2,
+		EnablePlatformMonitoring:  true,
 	}
 	r.setup(controllerutil.CreateOrUpdate)
 
@@ -783,6 +785,38 @@ func TestEventHandling(t *testing.T) {
 
 			if len(fakeQueue.items) != 1 || fakeQueue.items[0].Namespace != hcp.Namespace || fakeQueue.items[0].Name != hcp.Name {
 				t.Errorf("object %+v didn't correctly create event", createdObject)
+			}
+		})
+	}
+}
+
+func TestEventHandlersPlatformMonitoring(t *testing.T) {
+	tests := []struct {
+		name                     string
+		enablePlatformMonitoring bool
+	}{
+		{name: "When platform monitoring is disabled, Prometheus Operator resources are not watched", enablePlatformMonitoring: false},
+		{name: "When platform monitoring is enabled, Prometheus Operator resources are watched", enablePlatformMonitoring: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := &HostedControlPlaneReconciler{
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				EnablePlatformMonitoring:      tc.enablePlatformMonitoring,
+			}
+
+			prometheusCount := 0
+			for _, eh := range r.eventHandlers(api.Scheme, meta.NewDefaultRESTMapper(nil)) {
+				switch eh.obj.(type) {
+				case *prometheusoperatorv1.PodMonitor, *prometheusoperatorv1.ServiceMonitor, *prometheusoperatorv1.PrometheusRule:
+					prometheusCount++
+				}
+			}
+			if tc.enablePlatformMonitoring {
+				g.Expect(prometheusCount).To(Equal(3))
+			} else {
+				g.Expect(prometheusCount).To(Equal(0))
 			}
 		})
 	}

@@ -86,6 +86,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zapcore"
 )
@@ -1752,6 +1753,41 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 	}
 }
 
+func TestManagedResourcesPlatformMonitoring(t *testing.T) {
+	tests := []struct {
+		name                     string
+		enablePlatformMonitoring bool
+	}{
+		{
+			name:                     "When platform monitoring is disabled, PodMonitor is not watched",
+			enablePlatformMonitoring: false,
+		},
+		{
+			name:                     "When platform monitoring is enabled, PodMonitor is watched",
+			enablePlatformMonitoring: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := &HostedClusterReconciler{
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+				EnablePlatformMonitoring:      tc.enablePlatformMonitoring,
+			}
+
+			foundPodMonitor := false
+			for _, resource := range r.managedResources() {
+				if _, ok := resource.(*prometheusoperatorv1.PodMonitor); ok {
+					foundPodMonitor = true
+					break
+				}
+			}
+			g.Expect(foundPodMonitor).To(Equal(tc.enablePlatformMonitoring))
+		})
+	}
+}
+
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
@@ -2193,6 +2229,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					},
 				},
 				EnableEtcdRecovery:         true,
+				EnablePlatformMonitoring:   true,
 				now:                        metav1.Now,
 				OpenShiftTrustedCAFilePath: tmpCABundleFile.Name(),
 				HypershiftOperatorImage:    "test-image",
@@ -2243,6 +2280,156 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
 			}
 		})
+	}
+}
+
+// TestReconcileSkipsPodMonitorWhenPlatformMonitoringDisabled verifies that reconciling a
+// HostedCluster does not create PodMonitor for the control-plane-operator component when
+// platform monitoring is disabled
+func TestReconcileSkipsPodMonitorWhenPlatformMonitoringDisabled(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		GetOpenShiftImageRegistryOverrides().
+		Return(nil).AnyTimes()
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().
+		Return(nil).AnyTimes()
+
+	releaseImage := "quay.io/openshift-release-dev/ocp-release:4.15.0"
+	manifests := []manifestlist.ManifestDescriptor{
+		{
+			Descriptor: distribution.Descriptor{
+				MediaType: ManifestListMediaType,
+				Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+			},
+			Platform: manifestlist.PlatformSpec{
+				Architecture: ArchitectureAMD64,
+				OS:           LinuxOS,
+			},
+		},
+	}
+	deserializeFunc := func(payload []byte) (*manifestlist.DeserializedManifestList, error) {
+		return &manifestlist.DeserializedManifestList{
+			ManifestList: manifestlist.ManifestList{
+				Manifests: manifests,
+			},
+		}, nil
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "none",
+			Namespace: "test",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.NonePlatform,
+			},
+			Release: hyperv1.Release{
+				Image: releaseImage,
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+				{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+				{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+				{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+			},
+			PullSecret: corev1.LocalObjectReference{Name: "secret"},
+			InfraID:    "infra-id",
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+				MachineNetwork: []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			},
+		},
+	}
+
+	objects := []crclient.Object{
+		hostedCluster,
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "secret",
+				Namespace: "test",
+			},
+			Data: map[string][]byte{
+				"credentials":       []byte("creds"),
+				".dockerconfigjson": []byte("{}"),
+			},
+		},
+		&configv1.Network{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+			Spec:       configv1.NetworkSpec{NetworkType: "OVNKubernetes"},
+		},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "none"}},
+		//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+		&corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}},
+		&configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "supported-versions",
+				Namespace: "hypershift",
+				Labels: map[string]string{
+					"hypershift.openshift.io/supported-versions": "true",
+				},
+			},
+			Data: map[string]string{
+				"supported-versions": "{\"versions\":[\"4.22\",\"4.21\",\"4.20\",\"4.19\",\"4.18\",\"4.17\",\"4.16\",\"4.15\",\"4.14\"]}",
+				"server-version":     "some-fake-server-version",
+			},
+		},
+	}
+
+	tmpCABundleFile, err := os.CreateTemp("/tmp", "tls-ca-bundle.pem")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpCABundleFile.Name())
+
+	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
+	r := &HostedClusterReconciler{
+		Client:            client,
+		Clock:             clock.RealClock{},
+		CertRotationScale: 24 * time.Hour,
+		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
+			capabilities.CapabilityInfrastructure,
+			capabilities.CapabilityIngress,
+			capabilities.CapabilityProxy,
+		),
+		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		RegistryProvider: fakeReleaseProvider{
+			releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
+			metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result:    &dockerv1client.DockerImageConfig{},
+				Manifest:  fakeimagemetadataprovider.FakeManifest{},
+				MediaType: ManifestListMediaType,
+			},
+		},
+		EnablePlatformMonitoring:   false,
+		now:                        metav1.Now,
+		OpenShiftTrustedCAFilePath: tmpCABundleFile.Name(),
+		HypershiftOperatorImage:    "test-image",
+	}
+	r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
+		"v1.2.0",
+		"1.28.0")
+
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+
+	ctx := context.WithValue(t.Context(), registryclient.DeserializeFuncName, deserializeFunc)
+	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hostedCluster.Namespace, Name: hostedCluster.Name}}); err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	for _, resourceType := range sets.List(client.createdTypes) {
+		if resourceType == "*v1.PodMonitor" {
+			t.Errorf("expected no PodMonitor to be created when platform monitoring is disabled, but found one")
+		}
 	}
 }
 

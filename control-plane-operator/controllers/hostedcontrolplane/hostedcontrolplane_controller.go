@@ -190,6 +190,7 @@ type HostedControlPlaneReconciler struct {
 	awsSession                              *aws.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
+	EnablePlatformMonitoring                bool
 	ImageMetadataProvider                   util.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
@@ -368,9 +369,6 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 		{obj: &corev1.Secret{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &corev1.ServiceAccount{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &policyv1.PodDisruptionBudget{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
-		{obj: &prometheusoperatorv1.PodMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
-		{obj: &prometheusoperatorv1.ServiceMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
-		{obj: &prometheusoperatorv1.PrometheusRule{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &rbacv1.Role{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &rbacv1.RoleBinding{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &batchv1.CronJob{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
@@ -378,6 +376,13 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
+	}
+	if r.EnablePlatformMonitoring {
+		handlers = append(handlers,
+			eventHandler{obj: &prometheusoperatorv1.PodMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+			eventHandler{obj: &prometheusoperatorv1.ServiceMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+			eventHandler{obj: &prometheusoperatorv1.PrometheusRule{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		)
 	}
 
 	return handlers
