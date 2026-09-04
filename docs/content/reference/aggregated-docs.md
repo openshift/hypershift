@@ -46394,6 +46394,18 @@ and reports missing images if any.</p>
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
 </td>
+</tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
+<td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
+ingress certificate referenced by
+spec.operatorConfiguration.ingressOperator.defaultCertificate has been
+synced from the HostedCluster namespace into the control plane namespace.
+<strong>True</strong> means the referenced Secret was found, contains tls.crt and tls.key,
+and its data was synced.
+<strong>False</strong> means the referenced Secret is missing or malformed; in that case
+the previously synced certificate (or the auto-generated wildcard certificate)
+keeps serving and the HostedCluster does not become degraded.
+The condition is absent when no defaultCertificate is configured.</p>
+</td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td><p>KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
 A failure here often means a software bug or a non-stable cluster.</p>
@@ -51575,6 +51587,41 @@ the update is at least 70% of desired nodes.</p>
 </tr>
 </tbody>
 </table>
+###IngressDefaultCertificateReference { #hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IngressOperatorSpec">IngressOperatorSpec</a>)
+</p>
+<p>
+<p>IngressDefaultCertificateReference contains a reference to a TLS Secret
+in the HostedCluster namespace used as the default serving certificate
+for the ingress controller.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the Secret containing tls.crt and tls.key.
+The Secret must exist in the same namespace as the HostedCluster.
+name must be a valid DNS subdomain name (RFC 1123): it must contain only
+lowercase alphanumeric characters, &lsquo;-&rsquo; or &lsquo;.&rsquo;, and start and end with an
+alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###IngressOperatorSpec { #hypershift.openshift.io/v1beta1.IngressOperatorSpec }
 <p>
 (<em>Appears on:</em>
@@ -51620,6 +51667,36 @@ LoadBalancerService with External scope</p>
 - Other platforms: LoadBalancerService with External scope</p>
 <p>See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
 <a href="https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go">https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>defaultCertificate,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference">
+IngressDefaultCertificateReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>defaultCertificate is a reference to a secret in the HostedCluster namespace
+that contains the default certificate served by the default ingress controller.
+When Routes don&rsquo;t specify their own certificate, defaultCertificate is used.</p>
+<p>The secret must contain the following keys and data:
+tls.crt: certificate file contents
+tls.key: key file contents</p>
+<p>When set, this certificate replaces the auto-generated wildcard certificate
+that is normally created by the control plane operator. The secret is synced
+from the HostedCluster namespace to the control plane, and then propagated
+to the hosted cluster&rsquo;s openshift-ingress namespace.</p>
+<p>When the referenced secret is updated, the new certificate data is
+automatically propagated to the hosted cluster.</p>
+<p>When not set, the control plane operator generates a wildcard certificate
+signed by the cluster&rsquo;s root CA.</p>
+<p>Note: a cluster-admin in the hosted cluster can override the default ingress
+controller&rsquo;s certificate directly. That override takes precedence and the
+certificate referenced here is no longer served.</p>
 </td>
 </tr>
 </tbody>
