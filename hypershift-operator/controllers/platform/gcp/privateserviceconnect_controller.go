@@ -301,8 +301,8 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 		return "", fmt.Errorf("failed to list subnets: %w", err)
 	}
 
-	// Fetch all service attachments once (now with pagination support) before checking subnet usage.
-	// This replaces N individual API calls with a single paginated fetch.
+	// Fetch all service attachments up front (paginated) and build an in-memory set of
+	// in-use NAT subnets, so subnet availability is checked without an API call per candidate.
 	serviceAttachments, err := r.GcpClient.ListServiceAttachments(apiCtx, r.ProjectID, r.Region)
 	if err != nil {
 		return "", fmt.Errorf("failed to list service attachments: %w", err)
@@ -321,7 +321,7 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 		}
 	}
 
-	// Find the first available PSC subnet in the MC's VPC not already in use.
+	// Find the first available PSC subnet in the management cluster's VPC.
 	for _, subnet := range subnets {
 		if usedSubnets[subnet.Name] {
 			log.V(1).Info("Subnet already in use, trying next", "subnet", subnet.Name)

@@ -34,7 +34,7 @@ import (
 // capturedSubnetFilter records the filter string passed to ListSubnetworks so
 // tests can assert that the VPC-scoped filter reaches the API call site.
 // listServiceAttachmentsCallCount tracks how many times ListServiceAttachments
-// is called, used to verify the GCP-883 optimization (1 call vs N calls).
+// is called, used to verify subnet availability is checked via a single API call.
 type fakeComputeClient struct {
 	forwardingRules                 []*compute.ForwardingRule
 	forwardingRulesErr              error
@@ -624,8 +624,8 @@ func TestDiscoverNATSubnetServiceAttachmentsError(t *testing.T) {
 	}
 }
 
-// TestDiscoverNATSubnetSingleAPICall verifies the GCP-883 optimization:
-// ListServiceAttachments is called only ONCE (not N times, once per subnet).
+// TestDiscoverNATSubnetSingleAPICall verifies that ListServiceAttachments
+// is called only once regardless of how many subnets exist.
 func TestDiscoverNATSubnetSingleAPICall(t *testing.T) {
 	networkURL := "https://example.com/network"
 	fc := &fakeComputeClient{
@@ -649,8 +649,7 @@ func TestDiscoverNATSubnetSingleAPICall(t *testing.T) {
 		t.Errorf("got %q, want 'subnet-3-available'", result)
 	}
 
-	// Before GCP-883 fix: would be called 3 times (once per subnet check)
-	// After GCP-883 fix: called exactly once upfront
+	// ListServiceAttachments must be called exactly once, not once per subnet.
 	if fc.listServiceAttachmentsCallCount != 1 {
 		t.Errorf("ListServiceAttachments called %d times, want 1", fc.listServiceAttachmentsCallCount)
 	}
