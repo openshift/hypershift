@@ -46308,6 +46308,15 @@ hosted cluster can be live migrated without experiencing a node restart</p>
 desired platform are valid.
 A failure here is unlikely to resolve without the changing user input.</p>
 </td>
+</tr><tr><td><p>&#34;PrivateConnectivityCleanedUp&#34;</p></td>
+<td><p>PrivateConnectivityCleanedUp signals whether platform private connectivity
+resources (AWS PrivateLink endpoints, Azure Private Endpoints) have been
+cleaned up during HostedControlPlane deletion. Set by platform controllers
+and gated with a 10-minute timeout in CPO&rsquo;s deletion path. The timeout allows
+HCP deletion to proceed even when cleanup is stuck (trading orphaned cloud
+resources for avoiding indefinite deletion blocking), while the condition
+provides visibility into whether cleanup completed successfully or timed out.</p>
+</td>
 </tr><tr><td><p>&#34;PublicEndpointExposed&#34;</p></td>
 <td><p>PublicEndpointExposed indicates whether public API server endpoints are
 currently configured and exposed for this cluster via the management
