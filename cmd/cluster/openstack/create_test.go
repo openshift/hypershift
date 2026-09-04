@@ -258,6 +258,7 @@ func TestExtractCloud(t *testing.T) {
 					"auth": map[string]any{
 						"auth_url": "fakeAuthURL",
 					},
+					"cacert": "/etc/openstack/ca.crt",
 				},
 			},
 		})
@@ -298,6 +299,7 @@ func TestExtractCloud(t *testing.T) {
 					"auth": map[string]any{
 						"auth_url": "fakeAuthURL",
 					},
+					"cacert": "/etc/openstack/ca.crt",
 				},
 			},
 		})
