@@ -3622,7 +3622,8 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	}
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
-			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
+			credStatus := platformaws.GetCredentialStatus(hc)
+			if credStatus == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
 				continue
 			}
 
@@ -3634,7 +3635,12 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
-			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
+			reason := "the HC has no valid aws credentials"
+			if credStatus == platformaws.CredentialStatusValid {
+				reason = "deletion grace period expired"
+			}
+
+			log.Info("Removed CPO finalizer for awsendpointservice", "reason", reason, "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			continue
 		}
 
@@ -5028,14 +5034,19 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 		})
 	}
 
-	if _, err := r.S3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+	output, err := r.S3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
 		Delete: &s3types.Delete{Objects: objectsToDelete},
-	}); err != nil {
+	})
+	if err != nil {
 		var nsbErr *s3types.NoSuchBucket
 		if !errors.As(err, &nsbErr) {
 			return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
 		}
+	} else if output != nil && len(output.Errors) > 0 {
+		return fmt.Errorf("partial failure deleting OIDC objects from %s S3 bucket: %d of %d objects failed, first error: %s",
+			r.OIDCStorageProviderS3BucketName, len(output.Errors), len(objectsToDelete),
+			aws.ToString(output.Errors[0].Message))
 	}
 
 	controllerutil.RemoveFinalizer(hcluster, oidcDocumentsFinalizer)
