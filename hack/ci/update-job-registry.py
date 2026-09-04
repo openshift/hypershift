@@ -66,6 +66,16 @@ PLATFORM_RULES: list[PlatformRule] = [
 # per-version categories. Others are combined across versions.
 VERSION_SPLIT_PLATFORMS: set[str] = {"aws", "aro", "kubevirt", "azure"}
 
+# Slack handles to mention in ChaiBot failure threads when a platform's pass
+# rate drops below 50% or shows a 📉 degrading trend. Sparse — only platforms
+# with a designated triage handle need an entry here.
+SLACK_HANDLES: dict[str, str] = {
+    "openstack": "@team-hcp-openstack",
+    "kubevirt":  "@team-hcp-kubevirt",
+    "gke":       "@gcp-hcp-e2e-watcher",
+    "mce":       "@hypershift-agent-engineering",
+}
+
 # Descriptions per platform key — {version} is substituted for split platforms.
 DESCRIPTIONS: dict[str, str] = {
     "aws":       "AWS hosted control planes — OCP {version}",
@@ -80,13 +90,18 @@ DESCRIPTIONS: dict[str, str] = {
 }
 
 
-class Category(TypedDict):
+class _CategoryBase(TypedDict):
     name: str
     description: str
     platform: str
     ocp_versions: list[str]
     test_framework: str
     jobs: list[str]
+
+
+class Category(_CategoryBase, total=False):
+    # Present only for platforms listed in SLACK_HANDLES.
+    slack_handle: str
 
 
 def sparse_checkout(dest: str) -> str:
@@ -186,20 +201,25 @@ def build_categories(all_jobs: list[str], selected_versions: set[str]) -> list[C
         versions = sorted(grouped[key].keys(), key=version_sort_key, reverse=True)
         desc_template = DESCRIPTIONS.get(key, "")
 
+        slack_handle = SLACK_HANDLES.get(key)
+
         if key in VERSION_SPLIT_PLATFORMS:
             for v in versions:
                 for framework in (FRAMEWORK_V1, FRAMEWORK_V2):
                     jobs = grouped[key][v].get(framework, [])
                     if not jobs:
                         continue
-                    categories.append(Category(
+                    category = Category(
                         name=f"{display_name} ({v}) ({framework})",
                         description=f"{desc_template.format(version=v)} — {framework}",
                         platform=display_name,
                         ocp_versions=[v],
                         test_framework=framework,
                         jobs=sorted(jobs),
-                    ))
+                    )
+                    if slack_handle:
+                        category["slack_handle"] = slack_handle
+                    categories.append(category)
         else:
             for framework in (FRAMEWORK_V1, FRAMEWORK_V2):
                 all_platform_jobs: list[str] = []
@@ -218,14 +238,17 @@ def build_categories(all_jobs: list[str], selected_versions: set[str]) -> list[C
                 elif version_strs:
                     desc += f" — OCP {' + '.join(version_strs)}"
                 desc += f" — {framework}"
-                categories.append(Category(
+                category = Category(
                     name=f"{display_name} ({framework})",
                     description=desc,
                     platform=display_name,
                     ocp_versions=version_strs,
                     test_framework=framework,
                     jobs=sorted(all_platform_jobs),
-                ))
+                )
+                if slack_handle:
+                    category["slack_handle"] = slack_handle
+                categories.append(category)
 
     # Keep the generated registry in the same order the report uses.
     categories.sort(key=lambda c: (
@@ -266,6 +289,8 @@ def render_yaml(categories: list[Category]) -> str:
         for version in cat["ocp_versions"]:
             lines.append(f'      - "{version}"')
         lines.append(f'    test_framework: "{cat["test_framework"]}"')
+        if cat.get("slack_handle"):
+            lines.append(f'    slack_handle: "{cat["slack_handle"]}"')
         lines.append("    jobs:")
         for job in cat["jobs"]:
             lines.append(f"      - {job}")
