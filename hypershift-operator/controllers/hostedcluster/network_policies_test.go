@@ -1117,9 +1117,9 @@ func TestReconcileOAuthNetworkPolicies(t *testing.T) {
 			expectLoadBalancerOauth: true,
 		},
 		{
-			name:                    "When OAuth uses Route, it should create no OAuth policies",
+			name:                    "When OAuth uses Route, it should create nodeport-oauth policy only",
 			serviceType:             hyperv1.Route,
-			expectNodePortOauth:     false,
+			expectNodePortOauth:     true,
 			expectLoadBalancerOauth: false,
 		},
 	}
