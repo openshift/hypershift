@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
+	"net"
+	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -130,7 +134,12 @@ func (c *IAMManager) GetProjectNumber(ctx context.Context) (string, error) {
 	}
 	c.logger.Info("Retrieving project number", "projectID", c.projectID)
 
-	projectNumber, err := c.getProjectNumberFromID(ctx)
+	var projectNumber int64
+	err := c.retryWithExponentialBackoff(ctx, "getProjectNumber", isTransientError, func() error {
+		var getErr error
+		projectNumber, getErr = c.getProjectNumberFromID(ctx)
+		return getErr
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve project number for %s: %w", c.projectID, err)
 	}
@@ -152,10 +161,11 @@ func (c *IAMManager) CreateWorkloadIdentityPool(ctx context.Context) (string, er
 		Disabled:    false,
 	}
 	parent := fmt.Sprintf("projects/%s/locations/global", c.projectID)
-	err := c.createWorkloadIdentityPool(ctx, parent, poolID, pool)
+	err := c.retryWithExponentialBackoff(ctx, "createWorkloadIdentityPool", isRetryableIAMError, func() error {
+		return c.createWorkloadIdentityPool(ctx, parent, poolID, pool)
+	})
 	if err != nil {
 		if isAlreadyExistsError(err) {
-			// Pool exists, check and fix its state if needed
 			c.logger.Info("Workload Identity Pool already exists, checking state", "poolID", poolID)
 			return c.ensurePoolUsable(ctx, parent, poolID)
 		}
@@ -253,7 +263,10 @@ func (c *IAMManager) CreateOIDCProvider(ctx context.Context) (string, string, er
 		},
 	}
 	parent := c.formatPoolParent()
-	if err := c.createWorkloadIdentityProvider(ctx, parent, providerID, provider); err != nil {
+	err = c.retryWithExponentialBackoff(ctx, "createOIDCProvider", isRetryableIAMError, func() error {
+		return c.createWorkloadIdentityProvider(ctx, parent, providerID, provider)
+	})
+	if err != nil {
 		if isAlreadyExistsError(err) {
 			c.logger.Info("OIDC Provider already exists, checking state and configuration", "providerID", providerID)
 			return c.ensureProviderUsable(ctx, providerID, provider, providerAudience)
@@ -350,7 +363,7 @@ func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]stri
 
 		// Create the GSA (with retry for rate limiting)
 		var email string
-		err = c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createServiceAccount-%s", def.Name), func() error {
+		err = c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createServiceAccount-%s", def.Name), isRetryableIAMError, func() error {
 			var createErr error
 			email, createErr = c.createServiceAccount(ctx, def)
 			return createErr
@@ -362,7 +375,7 @@ func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]stri
 
 		// Assign roles to the GSA (with retry for IAM propagation)
 		if len(def.Roles) > 0 {
-			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("assignRoles-%s", def.Name), func() error {
+			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("assignRoles-%s", def.Name), isRetryableIAMError, func() error {
 				return c.assignRoles(ctx, email, def.Roles)
 			})
 			if err != nil {
@@ -372,7 +385,7 @@ func (c *IAMManager) CreateServiceAccounts(ctx context.Context) (map[string]stri
 
 		// Create WIF bindings for each K8s SA (with retry for IAM propagation)
 		for i, k8sSA := range def.K8sServiceAccounts {
-			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createWIFBinding-%s-%d", def.Name, i), func() error {
+			err := c.retryWithExponentialBackoff(ctx, fmt.Sprintf("createWIFBinding-%s-%d", def.Name, i), isRetryableIAMError, func() error {
 				return c.createWorkloadIdentityBinding(ctx, email, &k8sSA)
 			})
 			if err != nil {
@@ -701,8 +714,27 @@ func (c *IAMManager) compareJWKS(jwks1, jwks2 string) bool {
 	return string(canonical1) == string(canonical2)
 }
 
+// isTransientError returns true for errors that are transient for any operation:
+// network blips, rate limits, and server errors.
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isTransientNetworkError(err) {
+		return true
+	}
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case 429, 500, 502, 503, 504:
+			return true
+		}
+	}
+	return false
+}
+
 // isTransientIAMError checks if the error is likely due to IAM eventual consistency.
-// These errors should be retried as they typically resolve once IAM changes propagate.
+// These errors typically resolve once IAM changes propagate.
 func isTransientIAMError(err error) bool {
 	if err == nil {
 		return false
@@ -712,21 +744,14 @@ func isTransientIAMError(err error) bool {
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case 404:
-			// Not found - resource may not have propagated yet
-			return true
-		case 429:
-			// Rate limited - retry after backoff
 			return true
 		case 400:
-			// Bad request - sometimes occurs during IAM propagation
-			// Check if it's related to IAM/permissions or resource propagation
 			return strings.Contains(apiErr.Message, "IAM") ||
 				strings.Contains(apiErr.Message, "permission") ||
 				strings.Contains(apiErr.Message, "policy") ||
 				strings.Contains(apiErr.Message, "does not exist") ||
 				strings.Contains(apiErr.Message, "Service account")
 		case 403:
-			// Permission denied - might be temporary during propagation
 			return strings.Contains(apiErr.Message, "Permission") ||
 				strings.Contains(apiErr.Message, "policy")
 		}
@@ -735,9 +760,61 @@ func isTransientIAMError(err error) bool {
 	return false
 }
 
+// isRetryableIAMError returns true for errors that are retryable for IAM
+// create/binding paths: transient errors plus IAM eventual-consistency conditions.
+func isRetryableIAMError(err error) bool {
+	return isTransientError(err) || isTransientIAMError(err)
+}
+
+// isTransientNetworkError checks if the error is a transient network-level error
+// such as connection reset, connection refused, or network unreachable.
+// Permanent network errors (e.g., DNS not found, invalid address) return false.
+func isTransientNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.IsTimeout || dnsErr.IsTemporary
+	}
+
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return true
+		}
+		return isTransientNetworkError(netErr.Err)
+	}
+
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return isTransientNetworkError(urlErr.Err)
+	}
+
+	if errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.ENETUNREACH) ||
+		errors.Is(err, syscall.EHOSTUNREACH) ||
+		errors.Is(err, syscall.ETIMEDOUT) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, io.EOF) {
+		return true
+	}
+
+	var ne net.Error
+	if errors.As(err, &ne) {
+		return ne.Timeout()
+	}
+
+	return false
+}
+
 // retryWithExponentialBackoff retries an operation with exponential backoff.
-// It only retries on transient IAM errors and respects the context deadline.
-func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationName string, operation func() error) error {
+// The isRetryable predicate controls which errors trigger a retry.
+func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationName string, isRetryable func(error) bool, operation func() error) error {
 	deadline := time.Now().Add(iamPropagationTimeout)
 	backoff := iamPropagationInitialBackoff
 	attempt := 0
@@ -753,16 +830,15 @@ func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationN
 			return nil
 		}
 
-		// Check if error is transient
-		if !isTransientIAMError(err) {
-			c.logger.Info("Operation failed with non-transient error", "operation", operationName, "error", err)
+		if !isRetryable(err) {
+			c.logger.Info("Operation failed with non-retryable error", "operation", operationName, "error", err)
 			return err
 		}
 
 		// Check if we've exceeded the deadline
 		if time.Now().After(deadline) {
 			c.logger.Info("Operation timed out after retries", "operation", operationName, "attempts", attempt, "lastError", err)
-			return fmt.Errorf("operation timed out after %d attempts due to IAM propagation delays: %w", attempt, err)
+			return fmt.Errorf("operation timed out after %d attempts: %w", attempt, err)
 		}
 
 		// Check context cancellation
@@ -773,7 +849,7 @@ func (c *IAMManager) retryWithExponentialBackoff(ctx context.Context, operationN
 		// Add jitter to backoff to avoid thundering herd (±25% randomization)
 		jitter := time.Duration(float64(backoff) * (0.75 + rand.Float64()*0.5))
 
-		c.logger.Info("Retrying operation due to IAM propagation delay",
+		c.logger.Info("Retrying operation due to transient error",
 			"operation", operationName,
 			"attempt", attempt,
 			"backoff", jitter,
