@@ -183,7 +183,7 @@ func (r *NodePoolReconciler) autoscalerEnabledCondition(_ context.Context, nodeP
 			// Check platform-specific support
 			var supported bool
 			switch nodePool.Spec.Platform.Type {
-			case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
+			case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform:
 				supported = true
 			default:
 				// Other platforms don't support autoscaling from zero yet
