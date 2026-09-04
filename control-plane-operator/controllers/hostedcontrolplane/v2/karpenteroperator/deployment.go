@@ -22,6 +22,8 @@ const (
 	KarpenterImageAWSEnvVar = "KARPENTER_IMAGE_AWS"
 	// KarpenterImageAzureEnvVar is the environment variable that sets the Karpenter image for Azure.
 	KarpenterImageAzureEnvVar = "KARPENTER_IMAGE_AZURE"
+	// TokenMinterImageEnvVar is the environment variable that sets the Token Minter image.
+	TokenMinterImageEnvVar = "TOKEN_MINTER_IMAGE"
 )
 
 func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -126,6 +128,9 @@ func adaptStandaloneDeployment(cpContext component.WorkloadContext, deployment *
 	extraEnvVars = append(extraEnvVars, corev1.EnvVar{
 		Name:  ManagementClusterEnvVar,
 		Value: "true",
+	}, corev1.EnvVar{
+		Name:  TokenMinterImageEnvVar,
+		Value: cpContext.ReleaseImageProvider.GetImage("token-minter"),
 	})
 
 	proxy.SetEnvVars(&extraEnvVars)
