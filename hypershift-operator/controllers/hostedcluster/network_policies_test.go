@@ -1012,14 +1012,14 @@ func TestReconcileServiceNetworkPolicies(t *testing.T) {
 			expectedPolicies: []string{"nodeport-konnectivity", "nodeport-konnectivity-kas"},
 		},
 		{
-			name: "When Konnectivity uses Route, it should not create konnectivity policies",
+			name: "When Konnectivity uses Route, it should create konnectivity and konnectivity-kas policies",
 			services: []hyperv1.ServicePublishingStrategyMapping{
 				{
 					Service:                   hyperv1.Konnectivity,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
 				},
 			},
-			absentPolicies: []string{"nodeport-konnectivity", "nodeport-konnectivity-kas"},
+			expectedPolicies: []string{"nodeport-konnectivity", "nodeport-konnectivity-kas"},
 		},
 		{
 			name: "When multiple services use NodePort, it should create all corresponding policies",
@@ -1265,10 +1265,10 @@ func TestReconcileKonnectivityNetworkPolicies(t *testing.T) {
 			expectKonnectivityKAS: true,
 		},
 		{
-			name:                  "When Konnectivity uses Route, it should create no konnectivity policies",
+			name:                  "When Konnectivity uses Route, it should create both konnectivity and konnectivity-kas policies",
 			serviceType:           hyperv1.Route,
-			expectKonnectivity:    false,
-			expectKonnectivityKAS: false,
+			expectKonnectivity:    true,
+			expectKonnectivityKAS: true,
 		},
 		{
 			name:                  "When Konnectivity uses LoadBalancer, it should create no konnectivity policies",

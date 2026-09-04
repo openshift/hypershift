@@ -248,7 +248,7 @@ func (r *HostedClusterReconciler) reconcileIgnitionNetworkPolicies(ctx context.C
 }
 
 func (r *HostedClusterReconciler) reconcileKonnectivityNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, svc hyperv1.ServicePublishingStrategyMapping, controlPlaneNamespaceName string) error {
-	if svc.ServicePublishingStrategy.Type != hyperv1.NodePort {
+	if svc.ServicePublishingStrategy.Type != hyperv1.NodePort && svc.ServicePublishingStrategy.Type != hyperv1.Route {
 		return nil
 	}
 	policy := networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
