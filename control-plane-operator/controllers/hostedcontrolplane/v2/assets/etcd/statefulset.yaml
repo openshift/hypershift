@@ -71,6 +71,8 @@ spec:
           value: /etc/etcd/tls/etcd-ca/ca.crt
         - name:  ETCD_ENABLE_PPROF
           value: "true"
+        - name: ETCD_METRICS
+          value: extensive
         image: etcd
         imagePullPolicy: IfNotPresent
         livenessProbe:
