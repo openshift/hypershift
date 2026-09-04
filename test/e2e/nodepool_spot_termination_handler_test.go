@@ -20,7 +20,9 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -276,27 +278,47 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		}
 		t.Logf("Successfully sent EC2 Rebalance Recommendation event to SQS queue")
 
-		// Step 6: Wait for the node to have the rebalance recommendation taint
-		t.Logf("Waiting for node %s to have taint prefix %s", spotNode.Name, rebalanceRecommendationTaintKey)
-		e2eutil.EventuallyObject(t, s.ctx, fmt.Sprintf("Waiting for node %s to have rebalance recommendation taint", spotNode.Name),
-			func(ctx context.Context) (*corev1.Node, error) {
-				node := &corev1.Node{}
-				err := s.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: spotNode.Name}, node)
-				return node, err
-			},
-			[]e2eutil.Predicate[*corev1.Node]{
-				func(node *corev1.Node) (bool, string, error) {
-					for _, taint := range node.Spec.Taints {
-						if strings.HasPrefix(taint.Key, rebalanceRecommendationTaintKey) {
-							return true, fmt.Sprintf("Node has taint %s with effect %s", taint.Key, taint.Effect), nil
-						}
-					}
-					return false, "Node does not have aws-node-termination-handler taint", nil
-				},
-			},
-			e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(15*time.Minute),
-		)
-		t.Logf("Node %s has the rebalance recommendation taint", spotNode.Name)
+		// Step 6: Wait for the termination handler pipeline to act on the node.
+		//
+		// A successful outcome is either:
+		//   - the node carries the rebalance-recommendation taint (NTH received the event
+		//     and tainted the node), or
+		//   - the node no longer exists.
+		//
+		// The second case is expected: once the taint is applied, the spot remediation
+		// controller deletes the backing Machine, which removes the node. That deletion
+		// can happen faster than our poll interval, so we may never observe the taint
+		// directly. Because these NodePool instances are on-demand (the enable-spot
+		// annotation labels them interruptible without real spot market options), the node
+		// does not disappear on its own — a missing node here means the pipeline ran to
+		// completion. We use a plain poll rather than EventuallyObject because the latter
+		// treats a not-found error as a transient failure to retry, which is precisely the
+		// terminal state we want to accept.
+		t.Logf("Waiting for node %s to be tainted or remediated (taint key %s)", spotNode.Name, rebalanceRecommendationTaintKey)
+		err = wait.PollUntilContextTimeout(s.ctx, 5*time.Second, 15*time.Minute, true, func(ctx context.Context) (bool, error) {
+			node := &corev1.Node{}
+			getErr := s.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: spotNode.Name}, node)
+			if apierrors.IsNotFound(getErr) {
+				// The node was deleted after being tainted; the remediation pipeline completed.
+				t.Logf("Node %s no longer exists; termination handler pipeline remediated it (taint applied then Machine deleted)", spotNode.Name)
+				return true, nil
+			}
+			if getErr != nil {
+				// Transient error talking to the guest API server; keep polling.
+				t.Logf("Transient error getting node %s, retrying: %v", spotNode.Name, getErr)
+				return false, nil //nolint:nilerr
+			}
+			for _, taint := range node.Spec.Taints {
+				if taint.Key == rebalanceRecommendationTaintKey {
+					t.Logf("Node %s has rebalance recommendation taint %s with effect %s", spotNode.Name, taint.Key, taint.Effect)
+					return true, nil
+				}
+			}
+			return false, nil
+		})
+		if err != nil {
+			t.Fatalf("timed out waiting for node %s to be tainted or remediated by the termination handler: %v", spotNode.Name, err)
+		}
 
 		// Step 7: Clean up - remove the SQS queue URL from spec
 		t.Logf("Cleaning up: removing SQS queue URL from HostedCluster spec")
