@@ -29,10 +29,42 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// controlPlaneOperatorManagedByValue is the value of the
+// hypershift.openshift.io/managed-by label that the control-plane-operator
+// stamps on the workloads it owns.
+const controlPlaneOperatorManagedByValue = "control-plane-operator"
+
+// managedByLabel identifies which operator owns a control plane workload.
+const managedByLabel = "hypershift.openshift.io/managed-by"
+
+// workloadManagedBy returns the value of the managed-by label on the workload's
+// top-level controller object (Deployment or StatefulSet) and whether that
+// object exists. The Minimal-policy scheduling tier is stamped by the
+// control-plane-operator only on the components it manages; components deployed
+// by other operators (the CNO's ovnkube-control-plane / multus-admission-
+// controller / network-node-identity / cloud-network-config-controller and the
+// cluster-storage-operator's CSI drivers) are tiered by those operators' own
+// images and are out of scope for this control-plane-operator lane.
+func workloadManagedBy(testCtx *internal.TestContext, workload internal.WorkloadSpec) (string, bool) {
+	var obj crclient.Object
+	if workload.Type == "StatefulSet" {
+		obj = &appsv1.StatefulSet{}
+	} else {
+		obj = &appsv1.Deployment{}
+	}
+	err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: workload.Name}, obj)
+	if apierrors.IsNotFound(err) {
+		return "", false
+	}
+	Expect(err).NotTo(HaveOccurred(), "failed to get %s %s/%s", workload.Type, testCtx.ControlPlaneNamespace, workload.Name)
+	return obj.GetLabels()[managedByLabel], true
+}
 
 func findTopologySpreadConstraint(cs []corev1.TopologySpreadConstraint, topologyKey string) *corev1.TopologySpreadConstraint {
 	for i := range cs {
@@ -108,6 +140,23 @@ func RegisterMinimalZonalSchedulingTests(getTestCtx internal.TestContextGetter) 
 						Skip(fmt.Sprintf("workload %s does not run on this cluster platform", workload.Name))
 					}
 					testCtx.SkipIfWorkloadUnsupportedForVersion(workload)
+
+					// The Minimal-policy tier label and scheduling are applied by the
+					// control-plane-operator to the components it manages. Components owned
+					// by other operators (e.g. the CNO's ovnkube-control-plane,
+					// multus-admission-controller, network-node-identity and
+					// cloud-network-config-controller, or the cluster-storage-operator's
+					// CSI drivers) are tiered by those operators' own images, which are
+					// pulled from the release payload and may not yet carry this feature.
+					// Restrict the assertion to control-plane-operator-managed workloads so
+					// this lane reflects what the CPO image can deliver; the cross-repo
+					// components are covered by their own operators' tests (e.g. the CNO
+					// change for the network components).
+					if managedBy, found := workloadManagedBy(testCtx, workload); !found {
+						Skip(fmt.Sprintf("workload %s not found in %s", workload.Name, testCtx.ControlPlaneNamespace))
+					} else if managedBy != controlPlaneOperatorManagedByValue {
+						Skip(fmt.Sprintf("workload %s is managed by %q, not the control-plane-operator; its scheduling tier is applied by that operator's image", workload.Name, managedBy))
+					}
 
 					pods := getWorkloadPods(testCtx, workload)
 					if len(pods) == 0 {
