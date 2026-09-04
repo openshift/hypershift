@@ -538,6 +538,122 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
+			name: "When HostedCluster has spec.labels, it should propagate them to VM and DataVolume labels",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+					Labels: map[string]string{
+						"custom-label-key": "custom-label-value",
+					},
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							func(template *capikubevirt.VirtualMachineTemplateSpec) {
+								template.ObjectMeta.Labels["custom-label-key"] = "custom-label-value"
+								template.Spec.Template.ObjectMeta.Labels["custom-label-key"] = "custom-label-value"
+								for i := range template.Spec.DataVolumeTemplates {
+									template.Spec.DataVolumeTemplates[i].Labels["custom-label-key"] = "custom-label-value"
+								}
+							},
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "When HostedCluster spec.labels collides with RHCOS volume label, it should preserve the RHCOS label",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+					Labels: map[string]string{
+						hyperv1.IsKubeVirtRHCOSVolumeLabelName: "false",
+					},
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							func(template *capikubevirt.VirtualMachineTemplateSpec) {
+								template.ObjectMeta.Labels[hyperv1.IsKubeVirtRHCOSVolumeLabelName] = "false"
+								template.Spec.Template.ObjectMeta.Labels[hyperv1.IsKubeVirtRHCOSVolumeLabelName] = "false"
+								for i := range template.Spec.DataVolumeTemplates {
+									template.Spec.DataVolumeTemplates[i].Labels[hyperv1.IsKubeVirtRHCOSVolumeLabelName] = "true"
+								}
+							},
+						),
+					},
+				},
+			},
+		},
+		{
 			name: "When host device count has invalid value, it should fail validation",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
