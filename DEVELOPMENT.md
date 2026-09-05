@@ -175,6 +175,7 @@ For unit test creation requirements, naming conventions, and placement rules, se
 
 Additional review-derived rules:
 
+- Use `sets.Set[T]` (from `k8s.io/apimachinery/pkg/util/sets`) instead of `map[T]struct{}` for set semantics. It provides readable methods (`.Has()`, `.Insert()`, `.Delete()`) and is the standard pattern in the codebase.
 - Do not leave dead code (functions defined but never called). Remove unused code before submitting.
 - Do not leave TODO comments in validation regex patterns or CEL rules — resolve them before submitting. Reviewers have blocked PRs for shipping regex patterns with placeholder character classes (e.g., allowing `{` and `}` in UUID fields, or missing anchoring constraints).
 - When writing regex for API validation, match the upstream format exactly. For UUIDs, use `[0-9a-f]{8}-...`; for Azure resource names, verify the allowed character set against Azure documentation. Do not over-broaden patterns with catch-all classes like `[a-zA-Z0-9-_().{}]`.
