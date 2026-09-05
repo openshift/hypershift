@@ -354,33 +354,80 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
-				Name:        "public",
-				Variant:     "public",
-				LabelFilter: "self-managed-azure-public || nodepool-lifecycle || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
-				Skip:        "KAS allowed CIDRs",
-			},
-			{
 				Name:        "private",
 				Variant:     "private",
 				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
 			},
-			{
-				Name:        "oauth-lb",
-				Variant:     "oauth-lb",
-				LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
-			},
-			{
-				Name:        "autoscaling",
-				Variant:     "autoscaling",
-				LabelFilter: "nodepool-autoscaling",
-			},
-			{
-				Name:        "external-oidc",
-				Variant:     "external-oidc",
-				LabelFilter: "external-oidc || global-pull-secret",
-			},
 		},
 		Sequential: []SequentialGroup{
+			{
+				Name: "public",
+				Steps: []TestGroup{
+					{
+						Name:        "public",
+						Variant:     "public",
+						LabelFilter: "self-managed-azure-public || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
+						Skip:        "KAS allowed CIDRs",
+					},
+					{
+						Name:    "public-nodepool-rollouts",
+						Variant: "public",
+						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
+							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || nodepool-osimagestream-upgrade",
+					},
+				},
+			},
+			{
+				Name: "autoscaling",
+				Steps: []TestGroup{
+					{
+						Name:        "autoscaling-nodepool-machineconfig",
+						Variant:     "autoscaling",
+						LabelFilter: "nodepool-machineconfig-rollout",
+					},
+					{
+						Name:        "autoscaling-balancing",
+						Variant:     "autoscaling",
+						LabelFilter: "nodepool-autoscaling-balancing",
+					},
+				},
+			},
+			{
+				Name: "oauth-lb",
+				Steps: []TestGroup{
+					{
+						Name:        "oauth-lb",
+						Variant:     "oauth-lb",
+						LabelFilter: "self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
+					},
+					{
+						Name:    "oauth-lb-nodepool-config",
+						Variant: "oauth-lb",
+						LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || " +
+							"nodepool-performance-profile || nodepool-mirror-config",
+					},
+				},
+			},
+			{
+				Name: "external-oidc",
+				Steps: []TestGroup{
+					{
+						Name:        "external-oidc",
+						Variant:     "external-oidc",
+						LabelFilter: "external-oidc || global-pull-secret",
+					},
+					{
+						Name:        "external-oidc-autoscaling",
+						Variant:     "external-oidc",
+						LabelFilter: "nodepool-autoscaling-scale-up-down",
+					},
+					{
+						Name:        "external-oidc-trust-bundle",
+						Variant:     "external-oidc",
+						LabelFilter: "nodepool-trust-bundle",
+					},
+				},
+			},
 			{
 				Name: "upgrade-and-chaos",
 				Steps: []TestGroup{
