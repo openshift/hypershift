@@ -2985,12 +2985,16 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
 		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
 	}
 	if IsLessThan(Version415) {
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+	}
+	if IsLessThan(Version422) {
+		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 	}
 
 	if IsLessThan(Version421) {
