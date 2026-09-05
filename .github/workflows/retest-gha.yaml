@@ -1,0 +1,70 @@
+name: Retest GHA
+
+# Reruns failed GitHub Actions jobs for a pull request in response to a
+# `/retest gha` comment. Namespaced with `gha` so it does not collide with
+# Prow's `/retest`.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  pull-requests: read
+
+jobs:
+  retest-gha:
+    name: Retest GHA
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/retest gha') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      - name: Rerun failed workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+
+          # startsWith in the job's `if` is only a cheap prefilter; require the
+          # first line to be exactly the command, tolerating trailing
+          # whitespace and the CR of CRLF line endings.
+          if ! printf '%s' "${COMMENT_BODY}" | head -n1 \
+              | grep -qE '^/retest[[:space:]]+gha[[:space:]]*$'; then
+            echo "Not an exact /retest gha command; ignoring."
+            exit 0
+          fi
+
+          HEAD_SHA="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq .head.sha)"
+          echo "PR #${PR_NUMBER} head SHA: ${HEAD_SHA}"
+
+          # Keep only the most recent run per workflow, since a rerun adds an
+          # attempt to an existing run rather than creating a new one.
+          # rerun-failed-jobs only reruns jobs that concluded "failure", so
+          # cancelled and timed out runs need a full rerun instead.
+          gh api --paginate \
+            "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&per_page=100" \
+            --jq '.workflow_runs[] | {id, workflow_id, run_number, status, conclusion, name}' \
+            | jq -s -r 'group_by(.workflow_id) | map(max_by(.run_number))[]
+                        | select(.status == "completed")
+                        | select(.conclusion == "failure"
+                              or .conclusion == "cancelled"
+                              or .conclusion == "timed_out")
+                        | [.id,
+                           (if .conclusion == "failure"
+                            then "rerun-failed-jobs"
+                            else "rerun" end),
+                           .name]
+                        | @tsv' \
+            | while IFS="$(printf '\t')" read -r id endpoint name; do
+                echo "Rerunning ${name} (${id}) via ${endpoint}"
+                gh api --silent -X POST \
+                  "repos/${REPO}/actions/runs/${id}/${endpoint}"
+              done
