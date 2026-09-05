@@ -37,7 +37,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -175,7 +176,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	}
 
 	// Set control plane endpoint (following AWS pattern)
-	gcpCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+	gcpCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
@@ -290,7 +291,7 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 // buildVolumes creates all volumes needed for CAPG deployment including
 // credentials and webhook certificates.
 func (p GCP) buildVolumes(_ *hyperv1.HostedCluster) []corev1.Volume {
-	defaultMode := int32(0640)
+	defaultMode := int32(0o640)
 	return []corev1.Volume{
 		{
 			Name: "capi-webhooks-tls",

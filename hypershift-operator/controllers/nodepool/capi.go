@@ -29,7 +29,7 @@ import (
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -191,7 +191,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		// When MHC RemediationAllowed is False, override the Ready condition to signal
 		// that auto-repair is blocked because too many machines are unhealthy.
 		if remediationAllowed := findMHCRemediationAllowedCondition(mhc.Status.Conditions); remediationAllowed != nil {
-			if remediationAllowed.Status == corev1.ConditionFalse {
+			if remediationAllowed.Status == metav1.ConditionFalse {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolReadyConditionType,
 					Status:             corev1.ConditionFalse,
@@ -274,9 +274,15 @@ func (c *CAPI) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nod
 
 	ref := filtered[0].Spec.Template.Spec.InfrastructureRef
 	machineTemplates := new(unstructured.UnstructuredList)
-	machineTemplates.SetAPIVersion(ref.APIVersion)
+	// v1beta2 ContractVersionedObjectReference has no APIVersion; reconstruct from scheme.
+	versions := api.Scheme.VersionsForGroupKind(schema.GroupKind{Group: ref.APIGroup, Kind: ref.Kind})
+	if len(versions) == 0 {
+		return fmt.Errorf("no versions registered for GroupKind %s/%s", ref.APIGroup, ref.Kind)
+	}
+	apiVersion := schema.GroupVersion{Group: ref.APIGroup, Version: versions[0].Version}.String()
+	machineTemplates.SetAPIVersion(apiVersion)
 	machineTemplates.SetKind(ref.Kind)
-	if err := c.Client.List(ctx, machineTemplates, client.InNamespace(ref.Namespace)); err != nil {
+	if err := c.List(ctx, machineTemplates, client.InNamespace(controlPlaneNamespace)); err != nil {
 		return fmt.Errorf("failed to list MachineTemplates: %w", err)
 	}
 
@@ -469,15 +475,16 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 			Bootstrap: capiv1.Bootstrap{
 				DataSecretName: machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
 			},
-			InfrastructureRef: corev1.ObjectReference{
-				Kind:       gvk.Kind,
-				APIVersion: gvk.GroupVersion().String(),
-				Namespace:  machineTemplateCR.GetNamespace(),
-				Name:       machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
+			InfrastructureRef: capiv1.ContractVersionedObjectReference{
+				Kind:     gvk.Kind,
+				APIGroup: gvk.Group,
+				Name:     machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
 			},
-			Version:                 machineDeployment.Spec.Template.Spec.Version,
-			NodeDrainTimeout:        nodePool.Spec.NodeDrainTimeout,
-			NodeVolumeDetachTimeout: nodePool.Spec.NodeVolumeDetachTimeout,
+			Version: machineDeployment.Spec.Template.Spec.Version,
+			Deletion: capiv1.MachineDeletionSpec{
+				NodeDrainTimeoutSeconds:        durationToSeconds(nodePool.Spec.NodeDrainTimeout),
+				NodeVolumeDetachTimeoutSeconds: durationToSeconds(nodePool.Spec.NodeVolumeDetachTimeout),
+			},
 		},
 	}
 
@@ -492,10 +499,9 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		return err
 	}
 
-	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{}
-	machineDeployment.Spec.Strategy.Type = capiv1.MachineDeploymentStrategyType(nodePool.Spec.Management.Replace.Strategy)
+	machineDeployment.Spec.Rollout.Strategy.Type = capiv1.MachineDeploymentRolloutStrategyType(nodePool.Spec.Management.Replace.Strategy)
 	if nodePool.Spec.Management.Replace.RollingUpdate != nil {
-		machineDeployment.Spec.Strategy.RollingUpdate = &capiv1.MachineRollingUpdateDeployment{
+		machineDeployment.Spec.Rollout.Strategy.RollingUpdate = capiv1.MachineDeploymentRolloutStrategyRollingUpdate{
 			MaxUnavailable: nodePool.Spec.Management.Replace.RollingUpdate.MaxUnavailable,
 			MaxSurge:       nodePool.Spec.Management.Replace.RollingUpdate.MaxSurge,
 		}
@@ -508,7 +514,7 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		return nil
 	}
 
-	c.reconcileMachineDeploymentStatus(log, machineDeployment, machineTemplateCR)
+	c.reconcileMachineDeploymentStatus(ctx, log, machineDeployment, machineTemplateCR)
 
 	return nil
 }
@@ -529,13 +535,13 @@ func setMachineDeploymentFailureDomain(nodePool *hyperv1.NodePool, machineDeploy
 	// The CAPI provider for OpenStack uses the FailureDomain field to set the availability zone.
 	if nodePool.Spec.Platform.Type == hyperv1.OpenStackPlatform && nodePool.Spec.Platform.OpenStack != nil {
 		if nodePool.Spec.Platform.OpenStack.AvailabilityZone != "" {
-			machineDeployment.Spec.Template.Spec.FailureDomain = ptr.To(nodePool.Spec.Platform.OpenStack.AvailabilityZone)
+			machineDeployment.Spec.Template.Spec.FailureDomain = nodePool.Spec.Platform.OpenStack.AvailabilityZone
 		}
 	}
 	// The CAPI provider for GCP uses the FailureDomain field to set the zone.
 	if nodePool.Spec.Platform.Type == hyperv1.GCPPlatform && nodePool.Spec.Platform.GCP != nil {
 		if nodePool.Spec.Platform.GCP.Zone != "" {
-			machineDeployment.Spec.Template.Spec.FailureDomain = ptr.To(nodePool.Spec.Platform.GCP.Zone)
+			machineDeployment.Spec.Template.Spec.FailureDomain = nodePool.Spec.Platform.GCP.Zone
 		}
 	}
 }
@@ -605,7 +611,7 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 			"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
 			"target", userDataSecret.Name)
 
-		if targetVersion != ptr.Deref(machineDeployment.Spec.Template.Spec.Version, "") {
+		if targetVersion != machineDeployment.Spec.Template.Spec.Version {
 			log.Info("Starting version update: Propagating new version to the MachineDeployment",
 				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
 		}
@@ -614,7 +620,7 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 			log.Info("Starting config update: Propagating new config to the MachineDeployment",
 				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
 		}
-		machineDeployment.Spec.Template.Spec.Version = &targetVersion
+		machineDeployment.Spec.Template.Spec.Version = targetVersion
 		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
 		isUpdating = true
 	}
@@ -630,15 +636,29 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	return isUpdating
 }
 
-func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
+func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
 	nodePool := c.nodePool
 	targetVersion := c.Version()
 	targetConfigHash := c.HashWithoutVersion()
 	targetConfigVersionHash := c.Hash()
 
+	// List MachineSets owned by this MachineDeployment to verify rollout completion.
+	// MachineDeployment status counters can be stale after a template change because
+	// ObservedGeneration is set before downstream controllers (Machine, MachineSet)
+	// propagate the UpToDate conditions. Checking MachineSets directly guards against this.
+	// See https://github.com/kubernetes-sigs/cluster-api/issues/13738.
+	machineSets := &capiv1.MachineSetList{}
+	if err := c.List(ctx, machineSets,
+		client.InNamespace(machineDeployment.Namespace),
+		client.MatchingLabels{capiv1.MachineDeploymentNameLabel: machineDeployment.Name},
+	); err != nil {
+		log.Error(err, "failed to list MachineSets for MachineDeployment completion check")
+		return
+	}
+
 	// If the MachineDeployment is now processing we know
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
-	if MachineDeploymentComplete(machineDeployment) {
+	if MachineDeploymentComplete(machineDeployment, machineSets.Items) {
 		if nodePool.Status.Version != targetVersion {
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)
@@ -662,18 +682,21 @@ func (c *CAPI) reconcileMachineDeploymentStatus(log logr.Logger, machineDeployme
 		}
 	}
 
-	nodePool.Status.Replicas = machineDeployment.Status.AvailableReplicas
-	for _, cond := range machineDeployment.Status.Conditions {
-		if cond.Type == capiv1.ReadyCondition {
+	nodePool.Status.Replicas = ptr.Deref(machineDeployment.Status.AvailableReplicas, 0)
+	for _, c := range machineDeployment.Status.Conditions {
+		// In CAPI v1beta2 "Ready" was replaced by "MachinesReady" (True when all machines are ready).
+		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
+		if c.Type == capiv1.MachinesReadyCondition {
 			reason := hyperv1.AsExpectedReason
-			if cond.Reason != "" {
-				reason = cond.Reason
+			if c.Reason != "" {
+				reason = c.Reason
 			}
+
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReadyConditionType,
-				Status:             cond.Status,
+				Status:             corev1.ConditionStatus(c.Status),
 				ObservedGeneration: nodePool.Generation,
-				Message:            cond.Message,
+				Message:            c.Message,
 				Reason:             reason,
 			})
 			break
@@ -688,6 +711,16 @@ func taintsToJSON(taints []hyperv1.Taint) (string, error) {
 	}
 
 	return string(taintsInJSON), nil
+}
+
+// durationToSeconds converts a *metav1.Duration to *int32 seconds.
+// CAPI v1beta2 uses integer seconds for timeouts instead of metav1.Duration.
+// Negative values are clamped to 0 and values exceeding math.MaxInt32 are capped.
+func durationToSeconds(d *metav1.Duration) *int32 {
+	if d == nil {
+		return nil
+	}
+	return ptr.To(supportutil.ClampToInt32(d.Seconds()))
 }
 
 func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
@@ -760,6 +793,8 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 	mhc.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
+	timeoutSec := supportutil.ClampToInt32(timeOut.Seconds())
+	startupSec := supportutil.ClampToInt32(nodeStartupTimeout.Seconds())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: capiClusterName,
 		Selector: metav1.LabelSelector{
@@ -767,25 +802,25 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 				resourcesName: resourcesName,
 			},
 		},
-		UnhealthyConditions: []capiv1.UnhealthyCondition{
-			{
-				Type:   corev1.NodeReady,
-				Status: corev1.ConditionFalse,
-				Timeout: metav1.Duration{
-					Duration: timeOut,
+		Checks: capiv1.MachineHealthCheckChecks{
+			NodeStartupTimeoutSeconds: &startupSec,
+			UnhealthyNodeConditions: []capiv1.UnhealthyNodeCondition{
+				{
+					Type:           corev1.NodeReady,
+					Status:         corev1.ConditionFalse,
+					TimeoutSeconds: &timeoutSec,
 				},
-			},
-			{
-				Type:   corev1.NodeReady,
-				Status: corev1.ConditionUnknown,
-				Timeout: metav1.Duration{
-					Duration: timeOut,
+				{
+					Type:           corev1.NodeReady,
+					Status:         corev1.ConditionUnknown,
+					TimeoutSeconds: &timeoutSec,
 				},
 			},
 		},
-		MaxUnhealthy: &maxUnhealthy,
-		NodeStartupTimeout: &metav1.Duration{
-			Duration: nodeStartupTimeout,
+		Remediation: capiv1.MachineHealthCheckRemediation{
+			TriggerIf: capiv1.MachineHealthCheckRemediationTriggerIf{
+				UnhealthyLessThanOrEqualTo: &maxUnhealthy,
+			},
 		},
 	}
 	return nil
@@ -959,17 +994,18 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 				// Keep current user data for later check.
 				DataSecretName: machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
 			},
-			InfrastructureRef: corev1.ObjectReference{
-				Kind:       gvk.Kind,
-				APIVersion: gvk.GroupVersion().String(),
-				Namespace:  machineTemplateCR.GetNamespace(),
-				// Keep current version for later check.
+			InfrastructureRef: capiv1.ContractVersionedObjectReference{
+				Kind:     gvk.Kind,
+				APIGroup: gvk.Group,
+				// Keep current template name for later check.
 				Name: machineSet.Spec.Template.Spec.InfrastructureRef.Name,
 			},
 			// Keep current version for later check.
-			Version:                 machineSet.Spec.Template.Spec.Version,
-			NodeDrainTimeout:        nodePool.Spec.NodeDrainTimeout,
-			NodeVolumeDetachTimeout: nodePool.Spec.NodeVolumeDetachTimeout,
+			Version: machineSet.Spec.Template.Spec.Version,
+			Deletion: capiv1.MachineDeletionSpec{
+				NodeDrainTimeoutSeconds:        durationToSeconds(nodePool.Spec.NodeDrainTimeout),
+				NodeVolumeDetachTimeoutSeconds: durationToSeconds(nodePool.Spec.NodeVolumeDetachTimeout),
+			},
 		},
 	}
 
@@ -1004,7 +1040,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 			"target", userDataSecret.Name)
 
 		// TODO (alberto): possibly compare with NodePool here instead so we don't rely on impl details to drive decisions.
-		if targetVersion != ptr.Deref(machineSet.Spec.Template.Spec.Version, "") {
+		if targetVersion != machineSet.Spec.Template.Spec.Version {
 			log.Info("Starting version upgrade: Propagating new version to the MachineSet",
 				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
 		}
@@ -1013,7 +1049,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 			log.Info("Starting config upgrade: Propagating new config to the MachineSet",
 				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
 		}
-		machineSet.Spec.Template.Spec.Version = &targetVersion
+		machineSet.Spec.Template.Spec.Version = targetVersion
 		machineSet.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
 
 		// Signal in-place upgrade request.
@@ -1069,11 +1105,11 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	}
 
 	// Bubble up AvailableReplicas and Ready condition from MachineSet.
-	nodePool.Status.Replicas = machineSet.Status.AvailableReplicas
+	nodePool.Status.Replicas = ptr.Deref(machineSet.Status.AvailableReplicas, 0)
 	for _, c := range machineSet.Status.Conditions {
-		// This condition should aggregate and summarize readiness from underlying MachineSets and Machines
+		// In CAPI v1beta2 "Ready" was replaced by "MachinesReady" (True when all machines are ready).
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
-		if c.Type == capiv1.ReadyCondition {
+		if c.Type == capiv1.MachinesReadyCondition {
 			// this is so api server does not complain
 			// invalid value: \"\": status.conditions.reason in body should be at least 1 chars long"
 			reason := hyperv1.AsExpectedReason
@@ -1083,7 +1119,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReadyConditionType,
-				Status:             c.Status,
+				Status:             corev1.ConditionStatus(c.Status),
 				ObservedGeneration: nodePool.Generation,
 				Message:            c.Message,
 				Reason:             reason,
@@ -1215,6 +1251,8 @@ func (c *CAPI) reconcileSpotMachineHealthCheck(_ context.Context, mhc *capiv1.Ma
 	timeOut := 8 * time.Minute
 	nodeStartupTimeout := 20 * time.Minute
 
+	timeoutSec := supportutil.ClampToInt32(timeOut.Seconds())
+	startupSec := supportutil.ClampToInt32(nodeStartupTimeout.Seconds())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: c.capiClusterName,
 		Selector: metav1.LabelSelector{
@@ -1222,25 +1260,25 @@ func (c *CAPI) reconcileSpotMachineHealthCheck(_ context.Context, mhc *capiv1.Ma
 				interruptibleInstanceLabel: "",
 			},
 		},
-		UnhealthyConditions: []capiv1.UnhealthyCondition{
-			{
-				Type:   corev1.NodeReady,
-				Status: corev1.ConditionFalse,
-				Timeout: metav1.Duration{
-					Duration: timeOut,
+		Checks: capiv1.MachineHealthCheckChecks{
+			NodeStartupTimeoutSeconds: &startupSec,
+			UnhealthyNodeConditions: []capiv1.UnhealthyNodeCondition{
+				{
+					Type:           corev1.NodeReady,
+					Status:         corev1.ConditionFalse,
+					TimeoutSeconds: &timeoutSec,
 				},
-			},
-			{
-				Type:   corev1.NodeReady,
-				Status: corev1.ConditionUnknown,
-				Timeout: metav1.Duration{
-					Duration: timeOut,
+				{
+					Type:           corev1.NodeReady,
+					Status:         corev1.ConditionUnknown,
+					TimeoutSeconds: &timeoutSec,
 				},
 			},
 		},
-		MaxUnhealthy: &maxUnhealthy,
-		NodeStartupTimeout: &metav1.Duration{
-			Duration: nodeStartupTimeout,
+		Remediation: capiv1.MachineHealthCheckRemediation{
+			TriggerIf: capiv1.MachineHealthCheckRemediationTriggerIf{
+				UnhealthyLessThanOrEqualTo: &maxUnhealthy,
+			},
 		},
 	}
 
@@ -1438,10 +1476,10 @@ func (r *NodePoolReconciler) getMachinesForNodePool(ctx context.Context, nodePoo
 	return sortedByCreationTimestamp(machinesForNodePool), nil
 }
 
-// findMHCRemediationAllowedCondition finds the RemediationAllowed condition in a CAPI Conditions slice.
-func findMHCRemediationAllowedCondition(conditions capiv1.Conditions) *capiv1.Condition {
+// findMHCRemediationAllowedCondition finds the RemediationAllowed condition in the MachineHealthCheck status conditions.
+func findMHCRemediationAllowedCondition(conditions []metav1.Condition) *metav1.Condition {
 	for i := range conditions {
-		if conditions[i].Type == capiv1.RemediationAllowedCondition {
+		if conditions[i].Type == capiv1.MachineHealthCheckRemediationAllowedCondition {
 			return &conditions[i]
 		}
 	}

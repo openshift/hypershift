@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -313,7 +313,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 						Url:                    "https://" + ignitionEndpoint + "/ignition",
 						CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
 					},
-					ControlPlaneEndpoint: capiv1.APIEndpoint{
+					ControlPlaneEndpoint: capiv1beta1.APIEndpoint{
 						Port: APIEndpoint.Port,
 						Host: APIEndpoint.Host,
 					},
@@ -349,7 +349,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 						Url:                    "https://[fd2e:6f44:5dd8:c956::14]:31936/ignition",
 						CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
 					},
-					ControlPlaneEndpoint: capiv1.APIEndpoint{
+					ControlPlaneEndpoint: capiv1beta1.APIEndpoint{
 						Port: APIEndpoint.Port,
 						Host: APIEndpoint.Host,
 					},
@@ -418,7 +418,8 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 		"--leader-elect",
 	}
 
-	defaultArgsWithAgentNs := append(defaultArgs,
+	defaultArgsWithAgentNs := append(
+		defaultArgs,
 		"--agent-namespace", defaultAgentNamespace,
 	)
 
@@ -491,7 +492,8 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 			}),
 			payloadVersion: ptr.To(semver.MustParse("4.23.0")),
 			expectedImage:  imageCAPAgent,
-			expectedArgs: append(defaultArgsWithAgentNs,
+			expectedArgs: append(
+				defaultArgsWithAgentNs,
 				"--tls-min-version=VersionTLS13",
 			),
 		},
@@ -501,7 +503,8 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 			hcp:            buildHostedControlPlane(customTLSProfile),
 			payloadVersion: ptr.To(semver.MustParse("5.0.0")),
 			expectedImage:  imageCAPAgent,
-			expectedArgs: append(defaultArgs,
+			expectedArgs: append(
+				defaultArgs,
 				"--agent-namespace", "custom-agent-namespace",
 				"--tls-min-version=VersionTLS12",
 				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
