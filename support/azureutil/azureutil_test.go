@@ -1200,6 +1200,37 @@ func TestNewARMClientOptions(t *testing.T) {
 	}
 }
 
+func TestGetAzureBlobDNSSuffix(t *testing.T) {
+	tests := []struct {
+		name       string
+		cloud      string
+		wantSuffix string
+		wantErr    bool
+	}{
+		{name: "When cloud is empty, it should return the public suffix", wantSuffix: "blob.core.windows.net"},
+		{name: "When cloud is public, it should return the public suffix", cloud: "AzurePublicCloud", wantSuffix: "blob.core.windows.net"},
+		{name: "When cloud is government, it should return the government suffix", cloud: "AzureUSGovernmentCloud", wantSuffix: "blob.core.usgovcloudapi.net"},
+		{name: "When cloud is China, it should return the China suffix", cloud: "AzureChinaCloud", wantSuffix: "blob.core.chinacloudapi.cn"},
+		{name: "When cloud is German, it should return the German suffix", cloud: "AzureGermanCloud", wantSuffix: "blob.core.cloudapi.de"},
+		{name: "When cloud is Bleu, it should return the Bleu suffix", cloud: "AzureBleuCloud", wantSuffix: "blob.core.sovcloud-api.fr"},
+		{name: "When cloud is Azure Stack, it should return an error", cloud: "AzureStackCloud", wantErr: true},
+		{name: "When cloud is unknown, it should return an error", cloud: "UnknownCloud", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			got, err := GetAzureBlobDNSSuffix(tt.cloud)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(got).To(Equal(tt.wantSuffix))
+		})
+	}
+}
+
 func TestGetAzureCloudConfiguration(t *testing.T) {
 	tests := []struct {
 		name      string
