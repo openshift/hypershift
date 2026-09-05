@@ -244,20 +244,33 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 
 // Helper functions
 
-// getDefaultNodePool finds an existing NodePool for the hosted cluster to copy platform config
+// getDefaultNodePool finds a NodePool for the hosted cluster that is not being
+// deleted and has at least one ready replica (status.replicas). It is used both
+// as a template for platform config and for inspecting a backing node, so it
+// skips NodePools with a deletion timestamp (e.g. test NodePools mid-teardown)
+// and those without a ready node. Returns nil if none qualifies.
 func getDefaultNodePool(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster) *hyperv1.NodePool {
 	GinkgoHelper()
 
 	npList := &hyperv1.NodePoolList{}
-	err := client.List(ctx, npList, crclient.InNamespace(hc.Namespace))
-	Expect(err).NotTo(HaveOccurred(), "failed to list NodePools")
+	Expect(client.List(ctx, npList, crclient.InNamespace(hc.Namespace))).To(Succeed(),
+		"failed to list NodePools for HostedCluster %s/%s", hc.Namespace, hc.Name)
 	Expect(npList.Items).NotTo(BeEmpty(), "should have at least one NodePool")
 
-	// Find a NodePool for this HostedCluster
+	// Find a live NodePool for this HostedCluster, skipping any that are
+	// terminating or have no ready replica.
 	for i := range npList.Items {
-		if npList.Items[i].Spec.ClusterName == hc.Name {
-			return &npList.Items[i]
+		np := &npList.Items[i]
+		if np.Spec.ClusterName != hc.Name {
+			continue
 		}
+		if np.DeletionTimestamp != nil {
+			continue
+		}
+		if np.Status.Replicas < 1 {
+			continue
+		}
+		return np
 	}
 
 	return nil
