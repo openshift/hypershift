@@ -20,10 +20,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/netutil"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	routev1 "github.com/openshift/api/route/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -31,6 +35,7 @@ import (
 // RegisterHostedClusterComplianceTests registers all hosted cluster compliance tests.
 func RegisterHostedClusterComplianceTests(getTestCtx internal.TestContextGetter) {
 	EnsureAllRoutesUseHCPRouterTest(getTestCtx)
+	EnsureKASConnectionCheckerSpecTest(getTestCtx)
 }
 
 func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
@@ -63,6 +68,58 @@ func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 				Expect(route.Labels).To(Equal(original.Labels),
 					"route %s is missing the label to use the per-HCP router", route.Name)
 			}
+		})
+	})
+}
+
+// EnsureKASConnectionCheckerSpecTest verifies that the kas-connection-checker
+// deployment in the hosted cluster has the cluster-autoscaler safe-to-evict
+// annotation, no custom tolerations, and a topology spread constraint.
+//
+// The test connects to the hosted cluster's kube-apiserver via port-forward
+// rather than the external endpoint. This ensures the test works for every
+// provider and visibility mode (public, private, publicAndPrivate), even
+// when the external API endpoint is temporarily unreachable — for example,
+// after Azure endpoint access transition tests cycle the topology.
+func EnsureKASConnectionCheckerSpecTest(getTestCtx internal.TestContextGetter) {
+	When("kas-connection-checker deployment is reconciled", func() {
+		It("should have safe-to-evict annotation, no tolerations, and topology spread constraint", func() {
+			tc := getTestCtx()
+
+			if !tc.VersionAtLeast(e2eutil.Version423) {
+				Skip("kas-connection-checker spec changes require CPO >= 4.23")
+			}
+
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+
+			pfc, err := tc.GetHostedClusterClientViaPortForward(hc)
+			Expect(err).NotTo(HaveOccurred(), "failed to establish port-forward to kube-apiserver")
+			DeferCleanup(pfc.Close)
+
+			dep := &appsv1.Deployment{}
+			err = pfc.Get(tc.Context, crclient.ObjectKey{
+				Namespace: hccomanifests.KASConnectionCheckerNamespace,
+				Name:      hccomanifests.KASConnectionCheckerName,
+			}, dep)
+			Expect(err).NotTo(HaveOccurred(), "failed to get kas-connection-checker deployment")
+
+			annotations := dep.Spec.Template.Annotations
+			Expect(annotations).To(HaveKeyWithValue(
+				"cluster-autoscaler.kubernetes.io/safe-to-evict", "true",
+			), "kas-connection-checker pod template should have safe-to-evict annotation")
+
+			Expect(dep.Spec.Template.Spec.Tolerations).To(BeEmpty(),
+				"kas-connection-checker pod template should have no custom tolerations")
+
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1),
+				"kas-connection-checker should have exactly one topology spread constraint")
+			tsc := dep.Spec.Template.Spec.TopologySpreadConstraints[0]
+			Expect(tsc.MaxSkew).To(Equal(int32(1)))
+			Expect(tsc.TopologyKey).To(Equal("kubernetes.io/hostname"))
+			Expect(tsc.WhenUnsatisfiable).To(Equal(corev1.ScheduleAnyway))
+			Expect(tsc.LabelSelector).NotTo(BeNil(), "topology spread constraint should have a label selector")
+			Expect(tsc.LabelSelector.MatchLabels).To(HaveKeyWithValue("app", "kas-connection-checker"))
 		})
 	})
 }

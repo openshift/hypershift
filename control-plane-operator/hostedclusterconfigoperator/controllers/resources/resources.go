@@ -757,13 +757,13 @@ func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hype
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent: %w", err))
 	}
 
-	log.Info("reconciling KAS connection checker deployment")
+	log.Info("reconciling KAS connection checker resources")
 	cliImage, ok := releaseImage.ComponentImages()["cli"]
 	if !ok {
 		errs = append(errs, fmt.Errorf("failed to find cli image in release"))
 	} else {
-		if err := r.reconcileKASConnectionCheckerDeployment(ctx, hcp, cliImage); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker deployment: %w", err))
+		if err := r.reconcileKASConnectionChecker(ctx, hcp, cliImage); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker: %w", err))
 		}
 	}
 
@@ -1740,7 +1740,7 @@ func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
-func (r *reconciler) reconcileKASConnectionCheckerDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane, cliImage string) error {
+func (r *reconciler) reconcileKASConnectionChecker(ctx context.Context, hcp *hyperv1.HostedControlPlane, cliImage string) error {
 	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
 
 	serviceAccount := manifests.KASConnectionCheckerServiceAccount()
@@ -1791,15 +1791,24 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 			},
 		}
 
-		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{
-			"app": manifests.KASConnectionCheckerName,
+		if deployment.Spec.Template.ObjectMeta.Labels == nil {
+			deployment.Spec.Template.ObjectMeta.Labels = map[string]string{}
 		}
+		deployment.Spec.Template.ObjectMeta.Labels["app"] = manifests.KASConnectionCheckerName
+
 		// No openshift.io/required-scc annotation: kube-system is exempt from SCC
 		// admission, so the annotation would be inert. Worse, if that exemption ever
 		// changed, restricted-v2 (MustRunAsRange) would reject the explicit UID below
 		// because it falls outside the namespace uid-range, breaking the checker.
-		// Set to nil so the annotation is also cleared from pre-existing deployments.
-		deployment.Spec.Template.ObjectMeta.Annotations = nil
+		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+		}
+		// Remove stale annotation left by older HCCO versions.
+		delete(deployment.Spec.Template.ObjectMeta.Annotations, "openshift.io/required-scc")
+		// Allow the cluster autoscaler to evict this pod during scale-down.
+		// Without this annotation, kube-system pods without a PDB are treated
+		// as unmovable system pods that block node scale-down.
+		deployment.Spec.Template.ObjectMeta.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"] = "true"
 
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.KASConnectionCheckerName
 		deployment.Spec.Template.Spec.PriorityClassName = "system-node-critical"
@@ -1838,30 +1847,24 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 			},
 		}
 
-		// Tolerate NoSchedule taints so it can be scheduled on tainted nodes,
-		// and specific NoExecute taints so it is not evicted from unhealthy nodes.
-		// A catch-all {Operator: Exists} toleration is NOT used because it also
-		// bypasses the NodeUnschedulable filter, causing replacement pods to be
-		// scheduled back onto cordoned nodes during drain — creating an infinite
-		// eviction loop that blocks node rollouts.
-		deployment.Spec.Template.Spec.Tolerations = []corev1.Toleration{
+		// Spread pods across nodes.
+		deployment.Spec.Template.Spec.TopologySpreadConstraints = []corev1.TopologySpreadConstraint{
 			{
-				Operator: corev1.TolerationOpExists,
-				Effect:   corev1.TaintEffectNoSchedule,
-			},
-			{
-				Key:               "node.kubernetes.io/unreachable",
-				Operator:          corev1.TolerationOpExists,
-				Effect:            corev1.TaintEffectNoExecute,
-				TolerationSeconds: ptr.To[int64](120),
-			},
-			{
-				Key:               "node.kubernetes.io/not-ready",
-				Operator:          corev1.TolerationOpExists,
-				Effect:            corev1.TaintEffectNoExecute,
-				TolerationSeconds: ptr.To[int64](120),
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: corev1.ScheduleAnyway,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app": manifests.KASConnectionCheckerName,
+					},
+				},
 			},
 		}
+
+		// No custom tolerations — the previous blanket NoSchedule toleration
+		// matched the cordon taint, causing a drain loop. Kubernetes provides
+		// default NoExecute tolerations via DefaultTolerationSeconds.
+		deployment.Spec.Template.Spec.Tolerations = nil
 
 		return nil
 	}); err != nil {
