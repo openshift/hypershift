@@ -11,6 +11,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/log"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -1929,4 +1931,145 @@ func (c *timeoutThenExistsClient) Get(ctx context.Context, key crclient.ObjectKe
 
 func (c *timeoutThenExistsClient) Scheme() *runtime.Scheme {
 	return c.scheme
+}
+
+func fakeClientFactory(objects ...crclient.Object) func(string) (crclient.Client, error) {
+	return func(_ string) (crclient.Client, error) {
+		return fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(objects...).Build(), nil
+	}
+}
+
+func TestCreateClusterWithFakeClient(t *testing.T) {
+	t.Run("When render mode is enabled it should produce YAML output without a live cluster", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := t.Context()
+		tempDir := t.TempDir()
+
+		pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+		g.Expect(os.WriteFile(pullSecretFile, []byte(`{"auths":{}}`), 0600)).To(Succeed())
+
+		renderFile := filepath.Join(tempDir, "output.yaml")
+
+		opts := DefaultOptions()
+		opts.Name = "test-cluster"
+		opts.Namespace = "clusters"
+		opts.PullSecretFile = pullSecretFile
+		opts.ReleaseImage = "quay.io/openshift/ocp:4.16"
+		opts.Render = true
+		opts.RenderInto = renderFile
+		opts.RenderSensitive = true
+		opts.ClientFactory = fakeClientFactory()
+
+		platform := &fakePlatform{}
+		err := CreateCluster(ctx, opts, platform)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		rendered, err := os.ReadFile(renderFile)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(string(rendered)).To(ContainSubstring("test-cluster"))
+		g.Expect(string(rendered)).To(ContainSubstring("HostedCluster"))
+	})
+
+	t.Run("When a HostedCluster already exists it should fail validation with a fake client", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := t.Context()
+		tempDir := t.TempDir()
+
+		pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+		g.Expect(os.WriteFile(pullSecretFile, []byte(`{"auths":{}}`), 0600)).To(Succeed())
+
+		existingHC := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "existing-cluster",
+				Namespace: "clusters",
+			},
+		}
+
+		opts := DefaultOptions()
+		opts.Name = "existing-cluster"
+		opts.Namespace = "clusters"
+		opts.PullSecretFile = pullSecretFile
+		opts.ReleaseImage = "quay.io/openshift/ocp:4.16"
+		opts.ClientFactory = fakeClientFactory(existingHC)
+
+		platform := &fakePlatform{}
+		err := CreateCluster(ctx, opts, platform)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("already exists"))
+	})
+}
+
+func TestApplyWithFakeClient(t *testing.T) {
+	t.Run("When applying resources with a fake client it should create all objects", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := t.Context()
+
+		ns := &corev1.Namespace{
+			TypeMeta: metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "clusters",
+			},
+		}
+
+		hc := &hyperv1.HostedCluster{
+			TypeMeta: metav1.TypeMeta{Kind: "HostedCluster", APIVersion: hyperv1.GroupVersion.String()},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster",
+				Namespace: "clusters",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID: "test-infra",
+			},
+		}
+
+		factory := fakeClientFactory()
+		err := apply(ctx, log.Log, "test-infra", []crclient.Object{ns, hc}, false, factory, "", nil)
+		g.Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func TestResolveReleaseImageWithFakeClient(t *testing.T) {
+	t.Run("When release image is already set it should not call the client", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{
+							ReleaseImage:  "quay.io/openshift/ocp:4.16",
+							ReleaseStream: "4-stable",
+							ClientFactory: fakeClientFactory(),
+						},
+					},
+				},
+			},
+		}
+		err := resolveReleaseImage(t.Context(), opts)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(opts.ReleaseImage).To(Equal("quay.io/openshift/ocp:4.16"))
+	})
+}
+
+type fakePlatform struct{}
+
+func (p *fakePlatform) Validate(_ context.Context, _ *CreateOptions) (PlatformCompleter, error) {
+	return p, nil
+}
+
+func (p *fakePlatform) Complete(_ context.Context, _ *CreateOptions) (Platform, error) {
+	return p, nil
+}
+
+func (p *fakePlatform) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
+	cluster.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
+	cluster.Spec.Services = GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false, false)
+	return nil
+}
+
+func (p *fakePlatform) GenerateNodePools(_ DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	return nil
+}
+
+func (p *fakePlatform) GenerateResources() ([]crclient.Object, error) {
+	return nil, nil
 }

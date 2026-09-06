@@ -49,9 +49,9 @@ func TestGetConfig(t *testing.T) {
 }
 
 func TestGetClient(t *testing.T) {
-	t.Run("When FAKE_CLIENT is true, it should return a fake client", func(t *testing.T) {
+	t.Run("When a valid kubeconfig is provided, it should create a client", func(t *testing.T) {
 		g := NewWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
+		t.Setenv("KUBECONFIG", writeTestKubeconfig(t))
 		client, err := GetClient()
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(client).ToNot(BeNil())
@@ -119,15 +119,9 @@ func TestGetClientWithKubeconfig(t *testing.T) {
 		name           string
 		kubeconfigPath string
 		useHelper      bool
-		fakeClient     bool
 		expectError    bool
 		errorContains  string
 	}{
-		{
-			name:        "When FAKE_CLIENT is true, it should return a fake client regardless of kubeconfig",
-			fakeClient:  true,
-			expectError: false,
-		},
 		{
 			name:           "When kubeconfig file does not exist, it should return an error",
 			kubeconfigPath: "/nonexistent/path/kubeconfig",
@@ -144,12 +138,6 @@ func TestGetClientWithKubeconfig(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			if tc.fakeClient {
-				t.Setenv("FAKE_CLIENT", "true")
-			} else {
-				t.Setenv("FAKE_CLIENT", "")
-			}
 
 			kubeconfigPath := tc.kubeconfigPath
 			if tc.useHelper {
@@ -168,4 +156,12 @@ func TestGetClientWithKubeconfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClientFactoryType(t *testing.T) {
+	t.Run("When GetClientWithKubeconfig is used as a ClientFactory, it should satisfy the type", func(t *testing.T) {
+		g := NewWithT(t)
+		var factory ClientFactory = GetClientWithKubeconfig
+		g.Expect(factory).ToNot(BeNil())
+	})
 }
