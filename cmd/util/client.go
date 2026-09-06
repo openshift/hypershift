@@ -2,7 +2,6 @@ package util
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -12,8 +11,11 @@ import (
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+// ClientFactory creates a controller-runtime client from a kubeconfig path.
+// An empty path falls back to default kubeconfig resolution.
+type ClientFactory func(kubeconfigPath string) (crclient.Client, error)
 
 const (
 	AutoInfraLabelName = "hypershift.openshift.io/auto-created-for-infra"
@@ -58,10 +60,6 @@ func GetClient() (crclient.Client, error) {
 // the specified kubeconfig file path. If kubeconfigPath is empty, it falls back to
 // the default kubeconfig resolution.
 func GetClientWithKubeconfig(kubeconfigPath string) (crclient.Client, error) {
-	if os.Getenv("FAKE_CLIENT") == "true" {
-		return fake.NewFakeClient(), nil
-	}
-
 	config, err := GetConfigWithKubeconfig(kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)

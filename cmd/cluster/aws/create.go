@@ -127,7 +127,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		opts.EtcdStorageClass = "gp3-csi"
 	}
 
-	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
+	client, err := opts.ClientFactory(opts.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -596,8 +596,8 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 
 // ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
-func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile, kubeconfigPath string) error {
-	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath); err != nil {
+func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile, kubeconfigPath string, clientFactory ...util.ClientFactory) error {
+	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, clientFactory...); err != nil {
 		return err
 	}
 
@@ -611,7 +611,7 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 
 // validateAWSOptions validates different AWS flag parameters
 func validateAWSOptions(_ context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
-	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile, opts.Kubeconfig); err != nil {
+	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile, opts.Kubeconfig, opts.ClientFactory); err != nil {
 		return err
 	}
 

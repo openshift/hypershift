@@ -9,7 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/util"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
@@ -56,6 +56,10 @@ type DestroyOptions struct {
 	Log                   logr.Logger
 	CredentialSecretName  string
 	RedactBaseDomain      bool
+
+	// ClientFactory creates a controller-runtime client from a kubeconfig path.
+	// Defaults to cmdutil.GetClientWithKubeconfig; tests inject a factory returning a fake client.
+	ClientFactory cmdutil.ClientFactory
 }
 
 type AWSPlatformDestroyOptions struct {
@@ -97,7 +101,7 @@ type PowerVSPlatformDestroyOptions struct {
 }
 
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
-	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
+	c, err := o.ClientFactory(o.Kubeconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +120,17 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 }
 
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
-	hostedClusterExists := hostedCluster != nil
-	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
-	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
+	c, err := o.ClientFactory(o.Kubeconfig)
 	if err != nil {
 		return err
 	}
+	return destroyCluster(ctx, c, hostedCluster, o, destroyPlatformSpecifics)
+}
+
+func destroyCluster(ctx context.Context, c client.Client, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
+	var err error
+	hostedClusterExists := hostedCluster != nil
+	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
 
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
@@ -182,9 +191,12 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		return err
 	}
 
-	// clean up CLI generated secrets
+	// Non-fatal: CLI-created secrets are labeled with DeleteWithClusterLabelName: "true"
+	// and AutoInfraLabelName. The operator's reconcileCLISecrets sets the HostedCluster
+	// as their ownerRef, ensuring they are garbage-collected when the HC is deleted.
 	if err = deleteCLISecrets(ctx, o, c); err != nil {
-		return err
+		o.Log.Info("Failed to delete CLI generated secrets, skipping",
+			"error", err.Error(), "namespace", o.Namespace)
 	}
 
 	if shouldDestroyPlatformSpecifics && hostedClusterExists {
@@ -201,9 +213,9 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 
 func deleteCLISecrets(ctx context.Context, o *DestroyOptions, c client.Client) error {
 	o.Log.Info("Deleting Secrets", "namespace", o.Namespace)
-	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: o.InfraID}); err != nil {
+	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{cmdutil.AutoInfraLabelName: o.InfraID}); err != nil {
 		if apierrors.IsNotFound(err) {
-			o.Log.Info("Secrets not found based on labels, skipping delete", "namespace", o.Namespace, "labels", util.AutoInfraLabelName+":"+o.InfraID)
+			o.Log.Info("Secrets not found based on labels, skipping delete", "namespace", o.Namespace, "labels", cmdutil.AutoInfraLabelName+":"+o.InfraID)
 		} else {
 			return fmt.Errorf("failed to clean up secrets in %s namespace: %w", o.Namespace, err)
 		}
@@ -296,6 +308,31 @@ func stripFinalizersFromList(ctx context.Context, c client.Client, list client.O
 	return errs
 }
 
+func stripNodePoolFinalizers(ctx context.Context, c client.Client, namespace, clusterName string, log logr.Logger) []error {
+	nodePools := &hyperv1.NodePoolList{}
+	if err := c.List(ctx, nodePools, client.InNamespace(namespace)); err != nil {
+		if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+			return []error{fmt.Errorf("failed to list %T: %w", nodePools, err)}
+		}
+		return nil
+	}
+
+	var errs []error
+	var count int
+	for i := range nodePools.Items {
+		nodePool := &nodePools.Items[i]
+		if nodePool.Spec.ClusterName != clusterName {
+			continue
+		}
+		count++
+		if err := stripFinalizers(ctx, c, nodePool, log); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	log.Info("Processed resources", "type", fmt.Sprintf("%T", nodePools), "namespace", namespace, "count", count)
+	return errs
+}
+
 // forceRemoveAllFinalizers strips finalizers from all child resources in the
 // control plane namespace and NodePools in the HC namespace, then from the
 // HostedCluster itself (preserving the destroy finalizer for the normal
@@ -329,7 +366,7 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 	}
 
 	// NodePools live in the HC namespace, not the CP namespace
-	errs = append(errs, stripFinalizersFromList(ctx, c, &hyperv1.NodePoolList{}, o.Namespace, o.Log)...)
+	errs = append(errs, stripNodePoolFinalizers(ctx, c, o.Namespace, o.Name, o.Log)...)
 
 	// Strip all HostedCluster finalizers except the destroy finalizer, which
 	// is removed by the normal removeFinalizer path after platform cleanup.

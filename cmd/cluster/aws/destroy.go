@@ -40,7 +40,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, opts.Kubeconfig)
+		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, opts.Kubeconfig, opts.ClientFactory)
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	var err error
 	var secretData *util.CredentialsSecretData
 	if len(o.AWSPlatform.Credentials.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
-		c, clientErr := util.GetClientWithKubeconfig(o.Kubeconfig)
+		c, clientErr := o.ClientFactory(o.Kubeconfig)
 		if clientErr != nil {
 			return clientErr
 		}
@@ -156,17 +156,26 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 // ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds or sts-creds mutually exclusive and are not empty; validates if
 // the credentials secret is not empty, that it can be retrieved.
-func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string) error {
-	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.Validate)
+func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string, clientFactory ...util.ClientFactory) error {
+	factory := factoryOrDefault(clientFactory)
+	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.Validate, factory)
 }
 
 // ValidateProductCredentialInfo is like ValidateCredentialInfo but requires explicit --sts-creds and --role-arn
 // flags rather than allowing SDK default chain fallback.
-func ValidateProductCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string) error {
-	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.ValidateProduct)
+func ValidateProductCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string, clientFactory ...util.ClientFactory) error {
+	factory := factoryOrDefault(clientFactory)
+	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.ValidateProduct, factory)
 }
 
-func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string, validate func() error) error {
+func factoryOrDefault(clientFactory []util.ClientFactory) util.ClientFactory {
+	if len(clientFactory) > 0 && clientFactory[0] != nil {
+		return clientFactory[0]
+	}
+	return util.GetClientWithKubeconfig
+}
+
+func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string, validate func() error, clientFactory util.ClientFactory) error {
 	if len(credentialSecretName) == 0 {
 		if err := validate(); err != nil {
 			return err
@@ -179,8 +188,7 @@ func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecret
 			return err
 		}
 	}
-	// Check the secret exists now, otherwise stop
-	client, err := util.GetClientWithKubeconfig(kubeconfigPath)
+	client, err := clientFactory(kubeconfigPath)
 	if err != nil {
 		return err
 	}

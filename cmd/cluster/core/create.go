@@ -57,6 +57,7 @@ func DefaultOptions() *RawCreateOptions {
 		FeatureSet:                     string(configv1.Default),
 		EnableClusterCapabilities:      []string{},
 		DisableClusterCapabilities:     []string{},
+		ClientFactory:                  util.GetClientWithKubeconfig,
 	}
 }
 
@@ -185,6 +186,10 @@ type RawCreateOptions struct {
 	VersionCheck                     bool
 	RedactBaseDomain                 bool
 	AllocateNodeCIDRs                bool
+
+	// ClientFactory creates a controller-runtime client from a kubeconfig path.
+	// Defaults to util.GetClientWithKubeconfig; tests inject a factory returning a fake client.
+	ClientFactory util.ClientFactory `json:"-"`
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -362,7 +367,7 @@ func resolveReleaseImage(ctx context.Context, opts *CreateOptions) error {
 	if len(opts.ReleaseImage) != 0 || len(opts.ReleaseStream) == 0 {
 		return nil
 	}
-	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
+	client, err := opts.ClientFactory(opts.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("failed to get client: %w", err)
 	}
@@ -620,8 +625,8 @@ func applyFeatureSet(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	}
 }
 
-func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, kubeconfigPath string, mutate func(crclient.Object)) error {
-	client, err := util.GetClientWithKubeconfig(kubeconfigPath)
+func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, clientFactory util.ClientFactory, kubeconfigPath string, mutate func(crclient.Object)) error {
+	client, err := clientFactory(kubeconfigPath)
 	if err != nil {
 		return err
 	}
@@ -765,7 +770,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 func (opts *RawCreateOptions) validateVersionAndWait(ctx context.Context) error {
 	if opts.VersionCheck {
 		versionCLI := supportedversion.GetRevision()
-		client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
+		client, err := opts.ClientFactory(opts.Kubeconfig)
 		if err != nil {
 			return fmt.Errorf("failed to get client: %w", err)
 		}
@@ -783,7 +788,7 @@ func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) erro
 	if opts.Render {
 		return nil
 	}
-	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
+	client, err := opts.ClientFactory(opts.Kubeconfig)
 	if err != nil {
 		return err
 	}
@@ -1048,7 +1053,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	}
 
 	// Otherwise, apply the objects
-	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.Kubeconfig, opts.BeforeApply)
+	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.ClientFactory, opts.Kubeconfig, opts.BeforeApply)
 }
 
 type DefaultNodePoolConstructor func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool

@@ -47,6 +47,7 @@ func NewDestroyCommands() *cobra.Command {
 		Log:                   log.Log,
 		Name:                  "",
 		Namespace:             "clusters",
+		ClientFactory:         util.GetClientWithKubeconfig,
 	}
 
 	cmd := &cobra.Command{

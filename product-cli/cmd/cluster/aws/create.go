@@ -23,7 +23,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	hypershiftaws.BindOptions(awsOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := hypershiftaws.ValidateProductCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.Kubeconfig); err != nil {
+		if err := hypershiftaws.ValidateProductCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.Kubeconfig, opts.ClientFactory); err != nil {
 			return err
 		}
 

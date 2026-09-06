@@ -51,6 +51,7 @@ func NewDestroyCommands() *cobra.Command {
 		ClusterGracePeriod:    10 * time.Minute,
 		Log:                   log.Log,
 		DestroyCloudResources: true,
+		ClientFactory:         util.GetClientWithKubeconfig,
 	}
 
 	cmd := &cobra.Command{
