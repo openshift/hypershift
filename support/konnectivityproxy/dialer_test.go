@@ -363,6 +363,7 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 			go relay(target, client)
 			go relay(client, target)
 			<-done
+			<-done
 		}),
 	}
 	t.Cleanup(func() { srv.Close() })
