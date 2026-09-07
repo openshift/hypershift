@@ -1367,8 +1367,7 @@ func setupSharedIngress() []crclient.Object {
 	return objects
 }
 
-// setupOperatorResources creates the operator Deployment and Service resources.
-//
+// setupOperatorResources creates the operator Deployment, Service and PodDisruptionBudget resources.
 // Returns the Service and a list of resources to apply.
 func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, azureCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, scaleFromZeroSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
@@ -1428,8 +1427,11 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
 	}.Build()
+	operatorPodDisruptionBudget := assets.HyperShiftOperatorPodDisruptionBudget{
+		Namespace: operatorNamespace,
+	}.Build()
 
-	return operatorService, []crclient.Object{operatorDeployment, operatorService}
+	return operatorService, []crclient.Object{operatorDeployment, operatorService, operatorPodDisruptionBudget}
 }
 
 // setupExternalDNS creates the resources for external-dns
