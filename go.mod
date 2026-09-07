@@ -321,3 +321,5 @@ replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-
 replace k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
 
 replace golang.org/x/net => github.com/openshift-sustaining/net v0.50.0-sec.4
+
+replace golang.org/x/crypto => github.com/openshift-sustaining/crypto v0.48.0-sec.3
