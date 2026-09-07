@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 15731acff6d1dc8d8484d846ed943f4823676dc3d3f47b6ece4c65a80a711054
+    hypershift.openshift.io/desired-state-hash: 1f1aeed93580c938f566bf80b2b6d767075b314709b61d77caa2c067a855e02e
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -120,8 +120,8 @@ spec:
           timeoutSeconds: 10
         resources:
           requests:
-            cpu: 350m
-            memory: 2Gi
+            cpu: 500m
+            memory: 3Gi
         securityContext:
           readOnlyRootFilesystem: true
         startupProbe:

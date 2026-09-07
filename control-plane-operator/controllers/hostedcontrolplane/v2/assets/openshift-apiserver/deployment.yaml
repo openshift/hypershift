@@ -73,10 +73,25 @@ spec:
           timeoutSeconds: 10
           successThreshold: 1
           failureThreshold: 30
+        # Initial requests for a newly created control plane, sized for the
+        # smallest supported hosted cluster. Raised from 100m/200Mi: as an
+        # aggregated API server openshift-apiserver serves every project, route,
+        # image and build request, and 200Mi is below the steady-state resident
+        # set of an idle instance, so the container started in a near-OOM state
+        # on any cluster with real traffic.
+        #
+        # These are only the *initial* requests. CPO deliberately preserves the
+        # live requests of an existing Deployment on reconcile (see
+        # support/controlplane-component/controlplane-component.go), so editing
+        # this file does not resize control planes that already exist. Per-cluster
+        # tuning is done with the resource-request-override.hypershift.openshift.io
+        # annotation or with a VPA on the management cluster.
+        #
+        # See docs/content/how-to/cluster-sizing-guidance.md.
         resources:
           requests:
-            cpu: 100m
-            memory: 200Mi
+            cpu: 250m
+            memory: 500Mi
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-client-ca
           name: aggregator-ca

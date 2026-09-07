@@ -76,10 +76,24 @@ spec:
           periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 10
+        # Initial requests for a newly created control plane, sized for the
+        # smallest supported hosted cluster (<= ~10 worker nodes, light API
+        # traffic). Raised from 350m/2Gi: the previous values predated the
+        # default watch/informer load of current OCP releases, and kube-apiserver
+        # is consistently the largest consumer in a hosted control plane.
+        #
+        # These are only the *initial* requests. CPO deliberately preserves the
+        # live requests of an existing Deployment on reconcile (see
+        # support/controlplane-component/controlplane-component.go), so editing
+        # this file does not resize control planes that already exist. Per-cluster
+        # tuning is done with the resource-request-override.hypershift.openshift.io
+        # annotation or with a VPA on the management cluster.
+        #
+        # See docs/content/how-to/cluster-sizing-guidance.md.
         resources:
           requests:
-            cpu: 350m
-            memory: 2Gi
+            cpu: 500m
+            memory: 3Gi
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-ca
           name: aggregator-ca
