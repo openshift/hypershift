@@ -137,12 +137,24 @@ spec:
           echo "DNS resolved, now verifying etcd connectivity..."
           # Wait for etcd to actually accept connections (not just DNS)
           # Use curl to hit etcd health endpoint with proper TLS authentication
+          # Allow approximately five minutes for etcd to become ready before failing.
+          max_attempts=100
+          attempt=1
           until curl --connect-timeout 1 --max-time 2 --fail --silent \
+            --show-error \
             --cacert /etc/kubernetes/certs/etcd-client-ca/ca.crt \
             --cert /etc/kubernetes/certs/etcd-client/etcd-client.crt \
             --key /etc/kubernetes/certs/etcd-client/etcd-client.key \
-            https://etcd-client.$(POD_NAMESPACE).svc:2379/health 2>/dev/null; do
-            echo "etcd not yet ready, retrying..."
+            https://etcd-client.$(POD_NAMESPACE).svc:2379/health; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "ERROR: etcd did not become ready after ${max_attempts} attempts (approximately five minutes); check the etcd pods and the etcd-client service for connectivity or health issues." >&2
+              exit 1
+            fi
+            if [ "${attempt}" -eq 10 ]; then
+              echo "WARNING: etcd is still not ready after ${attempt} attempts; inspect the etcd pods and the etcd-client service while the init container continues waiting." >&2
+            fi
+            echo "etcd not yet ready, retrying (attempt ${attempt}/${max_attempts})..."
+            attempt=$((attempt + 1))
             sleep 1
           done
           echo "etcd is ready and accepting connections"
