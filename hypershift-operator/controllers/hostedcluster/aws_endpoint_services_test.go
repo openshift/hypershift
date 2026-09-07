@@ -22,12 +22,12 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 	namespace := "clusters-test"
 
 	tests := []struct {
-		name                   string
-		hc                     *hyperv1.HostedCluster
-		endpoints              []hyperv1.AWSEndpointService
-		expectErr              bool
-		expectPending          bool
-		expectFinalizerRemoved bool
+		name                    string
+		hc                      *hyperv1.HostedCluster
+		endpoints               []hyperv1.AWSEndpointService
+		expectPending           bool
+		expectFinalizerRemoved  bool
+		expectDeletionTimestamp bool
 	}{
 		{
 			name: "When endpoint is deleting with invalid creds, it should remove CPO finalizer",
@@ -77,6 +77,29 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 			expectPending:          true,
 			expectFinalizerRemoved: false,
 		},
+		{
+			name:                   "When no endpoints exist, it should report no pending endpoints",
+			hc:                     testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
+			endpoints:              nil,
+			expectPending:          false,
+			expectFinalizerRemoved: false,
+		},
+		{
+			name: "When an endpoint is not deleting, it should delete the endpoint",
+			hc:   testutil.NewHostedClusterWithCredentialConditions(metav1.ConditionTrue, metav1.ConditionTrue),
+			endpoints: []hyperv1.AWSEndpointService{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "ep-1",
+						Namespace:  namespace,
+						Finalizers: []string{cpoFinalizer},
+					},
+				},
+			},
+			expectPending:           true,
+			expectFinalizerRemoved:  false,
+			expectDeletionTimestamp: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -95,11 +118,7 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 
 			pending, err := deleteAWSEndpointServices(t.Context(), fakeClient, tc.hc, namespace)
 
-			if tc.expectErr {
-				g.Expect(err).To(HaveOccurred())
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-			}
+			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(pending).To(Equal(tc.expectPending))
 
@@ -125,6 +144,9 @@ func TestDeleteAWSEndpointServices(t *testing.T) {
 					}, updatedEP)
 					g.Expect(err).ToNot(HaveOccurred())
 					g.Expect(updatedEP.Finalizers).To(ContainElement(cpoFinalizer), "expected finalizer to be retained")
+					if tc.expectDeletionTimestamp {
+						g.Expect(updatedEP.DeletionTimestamp.IsZero()).To(BeFalse(), "expected endpoint to be marked for deletion")
+					}
 				}
 			}
 		})

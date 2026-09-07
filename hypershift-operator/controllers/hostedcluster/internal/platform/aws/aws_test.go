@@ -400,7 +400,6 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		name                    string
 		hc                      *hyperv1.HostedCluster
 		machines                []capiaws.AWSMachine
-		expectErr               bool
 		expectFinalizersCleared bool
 	}{
 		{
@@ -479,12 +478,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			a := AWS{}
 			err := a.DeleteOrphanedMachines(t.Context(), fakeClient, tc.hc, namespace)
 
-			if tc.expectErr {
-				g.Expect(err).To(HaveOccurred())
-			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-
+			g.Expect(err).ToNot(HaveOccurred())
 			if tc.expectFinalizersCleared {
 				for _, machine := range tc.machines {
 					m := &capiaws.AWSMachine{}
