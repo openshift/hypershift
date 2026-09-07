@@ -13,7 +13,7 @@ func TestNewHostedClusterWithCredentialConditions(t *testing.T) {
 	hc := NewHostedClusterWithCredentialConditions(metav1.ConditionFalse, metav1.ConditionTrue)
 
 	if hc.Name != "test" || hc.Namespace != "clusters" {
-		t.Errorf("expected HostedCluster to have name %q and namespace %q, got %q/%q", "test", "clusters", hc.Namespace, hc.Name)
+		t.Errorf("expected HostedCluster to have name %q and namespace %q, got %q/%q", "test", "clusters", hc.Name, hc.Namespace)
 	}
 
 	tests := []struct {
