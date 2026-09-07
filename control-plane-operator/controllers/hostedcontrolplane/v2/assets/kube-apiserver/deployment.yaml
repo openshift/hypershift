@@ -76,10 +76,14 @@ spec:
           periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 10
+        # Baseline requests for the smallest supported control plane. Larger
+        # control planes should be sized via ClusterSizingConfiguration effects
+        # rather than by editing this manifest. See
+        # docs/content/how-to/cluster-sizing-guidance.md.
         resources:
           requests:
-            cpu: 350m
-            memory: 2Gi
+            cpu: 500m
+            memory: 3Gi
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-ca
           name: aggregator-ca

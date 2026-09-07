@@ -2,6 +2,8 @@
 
 Resource-based control plane autoscaling enables automatic sizing of HostedClusters based on actual Kube API server resource usage rather than worker node count. This feature uses Vertical Pod Autoscaler (VPA) recommendations to determine the optimal cluster size class for a HostedCluster.
 
+For guidance on whether this feature is the right choice for your fleet — and for recommended `ClusterSizingConfiguration` profiles, management cluster sizing, and per-cluster resource request overrides — see [Hosted Control Plane Sizing Guidance](cluster-sizing-guidance.md).
+
 ## Platform Support
 
 **Important**: This feature is only available for HostedClusters using the request serving isolation architecture on AWS. The feature requires the `dedicated-request-serving-components` topology annotation to be set on the HostedCluster.

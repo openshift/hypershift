@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 649d186c3a9233eb7c82356ff4cd250285c1ca5e86d41c4002d267c576c63d0e
+    hypershift.openshift.io/desired-state-hash: 6ba199b25cf44d01cc06196301bbe1c26656bead5f90c7815bc50e1aaa4f7eb2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-apiserver
@@ -124,8 +124,8 @@ spec:
           timeoutSeconds: 1
         resources:
           requests:
-            cpu: 100m
-            memory: 200Mi
+            cpu: 250m
+            memory: 500Mi
         securityContext:
           readOnlyRootFilesystem: true
         startupProbe:

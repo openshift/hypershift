@@ -13,6 +13,7 @@ import (
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -147,6 +148,72 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 	return nil
 }
 
+// SizeSmall, SizeMedium and SizeLarge are the names of the t-shirt sizes in the
+// default ClusterSizingConfiguration.
+const (
+	SizeSmall  = "small"
+	SizeMedium = "medium"
+	SizeLarge  = "large"
+)
+
+// baselineRequest is a published baseline resource request for a single control
+// plane container at a single t-shirt size.
+type baselineRequest struct {
+	deployment string
+	container  string
+	cpu        string
+	memory     string
+}
+
+// baselineResourceRequests holds the published baseline control plane resource
+// requests per t-shirt size. This is the single place to adjust sizing defaults:
+// entries here are translated into ClusterSizingConfiguration size effects, which
+// the sizing controller turns into resource-request-override annotations on each
+// HostedCluster. That means the values below can be re-tuned per release without
+// touching the reconciliation logic, and management cluster administrators can
+// override them at runtime by editing the ClusterSizingConfiguration directly.
+//
+// The "small" entries intentionally mirror the requests baked into the CPO asset
+// manifests under control-plane-operator/controllers/hostedcontrolplane/v2/assets/,
+// so that a small cluster is sized identically whether or not size tagging is
+// enabled. TestBaselineResourceRequestsMatchAssets enforces that invariant.
+//
+// See docs/content/how-to/cluster-sizing-guidance.md for the rationale behind
+// these numbers and for guidance on tuning them.
+var baselineResourceRequests = map[string][]baselineRequest{
+	SizeSmall: {
+		{deployment: "kube-apiserver", container: "kube-apiserver", cpu: "500m", memory: "3Gi"},
+		{deployment: "etcd", container: "etcd", cpu: "300m", memory: "1Gi"},
+		{deployment: "openshift-apiserver", container: "openshift-apiserver", cpu: "250m", memory: "500Mi"},
+	},
+	SizeMedium: {
+		{deployment: "kube-apiserver", container: "kube-apiserver", cpu: "2", memory: "8Gi"},
+		{deployment: "etcd", container: "etcd", cpu: "1", memory: "4Gi"},
+		{deployment: "openshift-apiserver", container: "openshift-apiserver", cpu: "500m", memory: "1Gi"},
+	},
+	SizeLarge: {
+		{deployment: "kube-apiserver", container: "kube-apiserver", cpu: "4", memory: "16Gi"},
+		{deployment: "etcd", container: "etcd", cpu: "2", memory: "8Gi"},
+		{deployment: "openshift-apiserver", container: "openshift-apiserver", cpu: "1", memory: "2Gi"},
+	},
+}
+
+// resourceRequestsForSize renders the baseline requests for a t-shirt size into
+// the API representation used by ClusterSizingConfiguration size effects.
+func resourceRequestsForSize(size string) []schedulingv1alpha1.ResourceRequest {
+	baselines := baselineResourceRequests[size]
+	requests := make([]schedulingv1alpha1.ResourceRequest, 0, len(baselines))
+	for _, baseline := range baselines {
+		requests = append(requests, schedulingv1alpha1.ResourceRequest{
+			DeploymentName: baseline.deployment,
+			ContainerName:  baseline.container,
+			CPU:            ptr.To(resource.MustParse(baseline.cpu)),
+			Memory:         ptr.To(resource.MustParse(baseline.memory)),
+		})
+	}
+	return requests
+}
+
 func DefaultSizingConfig() *schedulingv1alpha1.ClusterSizingConfiguration {
 	return &schedulingv1alpha1.ClusterSizingConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
@@ -155,23 +222,32 @@ func DefaultSizingConfig() *schedulingv1alpha1.ClusterSizingConfiguration {
 		Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
 			Sizes: []schedulingv1alpha1.SizeConfiguration{
 				{
-					Name: "small",
+					Name: SizeSmall,
 					Criteria: schedulingv1alpha1.NodeCountCriteria{
 						From: 0,
 						To:   ptr.To(uint32(10)),
 					},
+					Effects: &schedulingv1alpha1.Effects{
+						ResourceRequests: resourceRequestsForSize(SizeSmall),
+					},
 				},
 				{
-					Name: "medium",
+					Name: SizeMedium,
 					Criteria: schedulingv1alpha1.NodeCountCriteria{
 						From: 11,
 						To:   ptr.To(uint32(100)),
 					},
+					Effects: &schedulingv1alpha1.Effects{
+						ResourceRequests: resourceRequestsForSize(SizeMedium),
+					},
 				},
 				{
-					Name: "large",
+					Name: SizeLarge,
 					Criteria: schedulingv1alpha1.NodeCountCriteria{
 						From: 101,
+					},
+					Effects: &schedulingv1alpha1.Effects{
+						ResourceRequests: resourceRequestsForSize(SizeLarge),
 					},
 				},
 			},
