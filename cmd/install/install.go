@@ -1428,8 +1428,11 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
 	}.Build()
+	operatorPodDisruptionBudget := assets.HyperShiftOperatorPodDisruptionBudget{
+		Namespace: operatorNamespace,
+	}.Build()
 
-	return operatorService, []crclient.Object{operatorDeployment, operatorService}
+	return operatorService, []crclient.Object{operatorDeployment, operatorService, operatorPodDisruptionBudget}
 }
 
 // setupExternalDNS creates the resources for external-dns
