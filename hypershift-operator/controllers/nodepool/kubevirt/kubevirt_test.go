@@ -618,7 +618,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
 							archTmpltOpt(hyperv1.ArchitectureAMD64),
-							machineTypeTmpltOpt("q35"),
 							nodeSelectorTmpltOpt(map[string]string{"kubernetes.io/arch": hyperv1.ArchitectureAMD64}),
 						),
 					},
@@ -626,9 +625,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			// s390x nodepool: Architecture, Machine.Type and NodeSelector must all
-			// resolve to s390x values so the VM lands on an s390x infra node.
-			name: "When arch is s390x, it should set Architecture=s390x, Machine.Type=s390-ccw-virtio and inject kubernetes.io/arch=s390x NodeSelector",
+			// s390x nodepool: Architecture and NodeSelector must resolve to s390x
+			// values. Machine.Type is resolved automatically by the KubeVirt webhook.
+			name: "When arch is s390x, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
@@ -664,7 +663,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
 							archTmpltOpt(hyperv1.ArchitectureS390X),
-							machineTypeTmpltOpt("s390-ccw-virtio"),
 							nodeSelectorTmpltOpt(map[string]string{"kubernetes.io/arch": hyperv1.ArchitectureS390X}),
 						),
 					},
@@ -714,7 +712,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
 							archTmpltOpt(hyperv1.ArchitectureAMD64),
-							machineTypeTmpltOpt("q35"),
 							nodeSelectorTmpltOpt(map[string]string{
 								"kubernetes.io/arch": hyperv1.ArchitectureAMD64,
 								"custom-label":       "custom-value",

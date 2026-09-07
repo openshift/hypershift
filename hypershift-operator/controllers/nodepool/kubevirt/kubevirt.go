@@ -170,18 +170,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		guaranteedResources = kvPlatform.Compute.QosClass != nil && *kvPlatform.Compute.QosClass == hyperv1.QoSClassGuaranteed
 	}
 
-	// archMachineType maps a NodePool architecture to the base QEMU machine
-	// type that KubeVirt must use. On a multi-arch infra cluster KubeVirt
-	// inherits the cluster's compiled-in default for both Architecture and
-	// Machine.Type, so both must be set explicitly to avoid mismatches
-	// (e.g. s390-ccw-virtio being applied to an amd64 nodepool on an
-	// s390x-default cluster). KubeVirt expands the base name to a versioned
-	// form at admission time (e.g. "q35" → "pc-q35-rhel9.8.0").
-	archMachineType := map[string]string{
-		hyperv1.ArchitectureAMD64: "q35",
-		hyperv1.ArchitectureS390X: "s390-ccw-virtio",
-	}
-
 	vmiSpec := kubevirtv1.VirtualMachineInstanceSpec{
 		Domain: kubevirtv1.DomainSpec{
 			Devices: kubevirtv1.Devices{
@@ -192,15 +180,18 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		Networks:         virtualMachineNetworks(kvPlatform),
 	}
 
-	// Set Architecture and Machine.Type together — both are required.
-	// Setting Architecture alone is not enough: KubeVirt still inherits
-	// Machine.Type from the cluster default, producing an invalid combination
-	// (e.g. architecture=amd64 + machine=s390-ccw-virtio).
+	// Set Architecture from nodePool.Spec.Arch so that VMs are always created
+	// with the correct arch on multi-arch infra clusters. Without this, KubeVirt
+	// inherits the cluster's compiled-in default (e.g. s390x on an s390x cluster)
+	// for every VM regardless of the NodePool arch.
+	//
+	// Machine.Type is intentionally left unset here. When Architecture is
+	// explicitly provided, the KubeVirt admission webhook automatically resolves
+	// the correct machine type from the cluster's ArchitectureConfiguration
+	// (e.g. amd64 → pc-q35-rhel9.x.x, s390x → s390-ccw-virtio-rhel9.x.x).
+	// Hardcoding Machine.Type would bypass the cluster admin's configuration.
 	if nodePool.Spec.Arch != "" {
 		vmiSpec.Architecture = nodePool.Spec.Arch
-		if machineType, ok := archMachineType[nodePool.Spec.Arch]; ok {
-			vmiSpec.Domain.Machine = &kubevirtv1.Machine{Type: machineType}
-		}
 	}
 
 	template := &capikubevirt.VirtualMachineTemplateSpec{
