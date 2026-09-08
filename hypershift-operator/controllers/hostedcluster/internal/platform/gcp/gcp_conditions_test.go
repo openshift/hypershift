@@ -8,125 +8,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 )
-
-// TestValidCredentials tests the ValidCredentials method for various condition states.
-// This tests the logic for checking both ValidGCPWorkloadIdentity and ValidGCPCredentials conditions.
-func TestValidCredentials(t *testing.T) {
-	tests := []struct {
-		name        string
-		conditions  []metav1.Condition
-		expected    bool
-		description string
-	}{
-		{
-			name: "When both conditions are true, it should return true",
-			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionTrue,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionTrue,
-				},
-			},
-			expected:    true,
-			description: "Both conditions are present and true",
-		},
-		{
-			name: "When ValidGCPWorkloadIdentity is false, it should return false",
-			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionFalse,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionTrue,
-				},
-			},
-			expected:    false,
-			description: "ValidGCPWorkloadIdentity is false",
-		},
-		{
-			name: "When ValidGCPCredentials is false, it should return false",
-			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionTrue,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionFalse,
-				},
-			},
-			expected:    false,
-			description: "ValidGCPCredentials is false",
-		},
-		{
-			name: "When both conditions are false, it should return false",
-			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionFalse,
-				},
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionFalse,
-				},
-			},
-			expected:    false,
-			description: "Both conditions are false",
-		},
-		{
-			name: "When ValidGCPWorkloadIdentity is missing, it should return false",
-			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPCredentials),
-					Status: metav1.ConditionTrue,
-				},
-			},
-			expected:    false,
-			description: "ValidGCPWorkloadIdentity condition is missing",
-		},
-		{
-			name: "When ValidGCPCredentials is missing, it should return false",
-			conditions: []metav1.Condition{
-				{
-					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
-					Status: metav1.ConditionTrue,
-				},
-			},
-			expected:    false,
-			description: "ValidGCPCredentials condition is missing",
-		},
-		{
-			name:        "When no conditions exist, it should return false",
-			conditions:  []metav1.Condition{},
-			expected:    false,
-			description: "No conditions present",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			hc := &hyperv1.HostedCluster{
-				Status: hyperv1.HostedClusterStatus{
-					Conditions: tt.conditions,
-				},
-			}
-
-			result := ValidCredentials(hc)
-			g.Expect(result).To(Equal(tt.expected), tt.description)
-		})
-	}
-}
 
 // TestGetCredentialStatus tests the GetCredentialStatus function for various condition states.
 // This tests the tri-state logic (valid/invalid/unknown) for GCP credential conditions.
@@ -267,7 +153,6 @@ func TestGetCredentialStatus(t *testing.T) {
 // This expands on the existing TestValidateWorkloadIdentityConfiguration with more comprehensive coverage.
 func TestWorkloadIdentityValidationScenarios(t *testing.T) {
 	g := NewWithT(t)
-	platform := New("test-utilities-image", "test-capg-image", nil)
 
 	tests := []struct {
 		name        string
@@ -348,7 +233,7 @@ func TestWorkloadIdentityValidationScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := platform.validateWorkloadIdentityConfiguration(tt.hcluster)
+			err := validateWorkloadIdentityConfiguration(tt.hcluster)
 			if tt.expectError {
 				g.Expect(err).ToNot(BeNil())
 				if tt.errorMsg != "" {
@@ -404,6 +289,141 @@ func TestNetworkConfigAccessSafety(t *testing.T) {
 	g.Expect(gcpCluster.Spec.Region).To(Equal("us-central1"))
 	// Network should not be configured since Name is empty
 	g.Expect(gcpCluster.Spec.Network.Name).To(BeNil())
+}
+
+func TestComputeGCPCredentialConditions(t *testing.T) {
+	tests := []struct {
+		name               string
+		hcConditions       []metav1.Condition
+		hcp                *hyperv1.HostedControlPlane
+		expectedChanged    bool
+		expectedWIFStatus  metav1.ConditionStatus
+		expectedWIFReason  string
+		expectedCredStatus metav1.ConditionStatus
+	}{
+		{
+			name: "When HCP has True conditions, it should bubble them up to HC",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+					},
+				},
+			},
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionTrue,
+			expectedWIFReason:  hyperv1.AsExpectedReason,
+			expectedCredStatus: metav1.ConditionTrue,
+		},
+		{
+			name:               "When HCP is nil, it should set conditions to Unknown",
+			hcp:                nil,
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionUnknown,
+			expectedWIFReason:  hyperv1.StatusUnknownReason,
+			expectedCredStatus: metav1.ConditionUnknown,
+		},
+		{
+			name: "When HCP has no conditions, it should set conditions to Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{},
+				},
+			},
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionUnknown,
+			expectedWIFReason:  hyperv1.StatusUnknownReason,
+			expectedCredStatus: metav1.ConditionUnknown,
+		},
+		{
+			name: "When HCP has False conditions, it should propagate them to HC",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+					},
+				},
+			},
+			expectedChanged:    true,
+			expectedWIFStatus:  metav1.ConditionFalse,
+			expectedWIFReason:  hyperv1.InvalidIdentityProvider,
+			expectedCredStatus: metav1.ConditionFalse,
+		},
+		{
+			name: "When HC already has the same conditions, it should not report a change",
+			hcConditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: 3},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: 3},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+					},
+				},
+			},
+			expectedChanged:    false,
+			expectedWIFStatus:  metav1.ConditionTrue,
+			expectedWIFReason:  hyperv1.AsExpectedReason,
+			expectedCredStatus: metav1.ConditionTrue,
+		},
+		{
+			// Latch: during teardown KAS goes away, HCP sends Unknown. An existing
+			// False on the HC must not be clobbered so DeleteOrphanedMachines keeps firing.
+			name: "When HC has False conditions and HCP sends Unknown, it should latch False and not update",
+			hcConditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider, ObservedGeneration: 3},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider, ObservedGeneration: 3},
+			},
+			hcp:                nil,
+			expectedChanged:    false,
+			expectedWIFStatus:  metav1.ConditionFalse,
+			expectedWIFReason:  hyperv1.InvalidIdentityProvider,
+			expectedCredStatus: metav1.ConditionFalse,
+		},
+		{
+			// Partial latch: WIF is False (latched), Credentials was Unknown — HCP now
+			// sends Unknown for both. WIF stays False; Credentials stays Unknown (no change).
+			name: "When HC has False WIF and Unknown Credentials and HCP sends Unknown, it should latch False WIF only",
+			hcConditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider, ObservedGeneration: 3},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionUnknown, Reason: hyperv1.StatusUnknownReason, ObservedGeneration: 3},
+			},
+			hcp:                nil,
+			expectedChanged:    false,
+			expectedWIFStatus:  metav1.ConditionFalse,
+			expectedWIFReason:  hyperv1.InvalidIdentityProvider,
+			expectedCredStatus: metav1.ConditionUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tt.hcConditions,
+				},
+			}
+
+			changed := ComputeGCPCredentialConditions(hc, tt.hcp)
+			g.Expect(changed).To(Equal(tt.expectedChanged), "changed flag mismatch")
+
+			wifCond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
+			g.Expect(wifCond).ToNot(BeNil(), "ValidGCPWorkloadIdentity condition must be set")
+			g.Expect(wifCond.Status).To(Equal(tt.expectedWIFStatus), "ValidGCPWorkloadIdentity status mismatch")
+			g.Expect(wifCond.Reason).To(Equal(tt.expectedWIFReason), "ValidGCPWorkloadIdentity reason mismatch")
+
+			credCond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
+			g.Expect(credCond).ToNot(BeNil(), "ValidGCPCredentials condition must be set")
+			g.Expect(credCond.Status).To(Equal(tt.expectedCredStatus), "ValidGCPCredentials status mismatch")
+		})
+	}
 }
 
 // TestServiceAccountEmailValidation tests that the regex pattern validation for service account emails is working correctly.

@@ -43,7 +43,9 @@ var (
 	_ Platform      = agent.Agent{}
 	_ Platform      = kubevirt.Kubevirt{}
 	_ Platform      = gcp.GCP{}
-	_ OrphanDeleter = &azure.Azure{}
+	_ OrphanDeleter = aws.AWS{}
+	_ OrphanDeleter = azure.Azure{}
+	_ OrphanDeleter = gcp.GCP{}
 )
 
 type Platform interface {
