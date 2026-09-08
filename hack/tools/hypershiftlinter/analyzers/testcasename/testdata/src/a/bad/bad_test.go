@@ -110,3 +110,25 @@ func TestWithSetupField(t *testing.T) {
 		_ = tt
 	}
 }
+
+func TestWithDomainSpecificField(t *testing.T) {
+	tests := []struct {
+		name string
+		ips  []string
+	}{
+		{
+			name: "ipv4-only", // want `test case name "ipv4-only" must match format "When <condition>, it should <expected behavior>"`
+			ips:  []string{"127.0.0.1"},
+		},
+		{
+			name: "dual-stack", // want `test case name "dual-stack" must match format "When <condition>, it should <expected behavior>"`
+			ips:  []string{"127.0.0.1", "2001:db8::1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_ = tt.ips
+		})
+	}
+}
