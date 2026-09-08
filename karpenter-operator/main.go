@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/spf13/cobra"
 )
@@ -38,10 +39,11 @@ var (
 	hypershiftOperatorImage   string
 	ignitionEndpoint          string
 	registryOverrides         map[string]string
+	standaloneAdapter         bool
 )
 
 func main() {
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "karpenter-operator",
 		Short: "Karpenter Operator is a Kubernetes operator for managing Karpenter",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -65,6 +67,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&hypershiftOperatorImage, "hypershift-operator-image", "", "The HyperShift operator image to use for token generation")
 	rootCmd.PersistentFlags().StringVar(&ignitionEndpoint, "ignition-endpoint", "", "The ignition server endpoint for node bootstrap")
 	rootCmd.PersistentFlags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "Registry overrides in format: sr1=dr1,sr2=dr2")
+	rootCmd.PersistentFlags().BoolVar(&standaloneAdapter, "enable-standalone-karpenter-operator", false, "Run HyperShift Karpenter adapter controllers alongside standalone operator")
 
 	_ = rootCmd.MarkPersistentFlagRequired("target-kubeconfig")
 	_ = rootCmd.MarkPersistentFlagRequired("namespace")
@@ -107,10 +110,23 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create guest kubeconfig: %w", err)
 	}
 
-	mgr, err := ctrl.NewManager(guestKubeconfig, ctrl.Options{
+	if standaloneAdapter {
+		// In standalone mode the standalone karpenter-operator reconciles the Karpenter CRDs we need
+		if err := waitForKarpenterCRDs(ctx, guestKubeconfig); err != nil {
+			return fmt.Errorf("failed waiting for standalone Karpenter CRDs: %w", err)
+		}
+	}
+
+	managerOptions := ctrl.Options{
 		Scheme:         scheme,
 		LeaderElection: false,
-	})
+	}
+	if standaloneAdapter {
+		// TODO(linkvt): Both the standalone operator and the adapter expose metrics on :8080, check if adapter metrics are needed
+		managerOptions.Metrics = metricsserver.Options{BindAddress: "0"}
+	}
+
+	mgr, err := ctrl.NewManager(guestKubeconfig, managerOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
 	}
@@ -125,6 +141,7 @@ func run(ctx context.Context) error {
 	}
 
 	r := karpenter.Reconciler{
+		StandaloneAdapter:         standaloneAdapter,
 		Namespace:                 namespace,
 		ControlPlaneOperatorImage: controlPlaneOperatorImage,
 		ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
@@ -134,13 +151,17 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
 	}
 
-	mac := karpenter.MachineApproverController{}
-	if err := mac.SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("failed to setup controller with manager: %w", err)
+	if !standaloneAdapter {
+		// MachineApprover was already migrated to standalone karpenter, don't enable in the adapter
+		mac := karpenter.MachineApproverController{}
+		if err := mac.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("failed to setup controller with manager: %w", err)
+		}
 	}
 
 	encr := nodeclass.EC2NodeClassReconciler{
-		Namespace: namespace,
+		Namespace:       namespace,
+		SkipUpstreamCRD: standaloneAdapter,
 	}
 	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
