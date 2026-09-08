@@ -191,6 +191,17 @@ func TestResourcesToRemove(t *testing.T) {
 			},
 		},
 		{
+			name:         "When platform is GCP, it should return the full list including GCP PD CSI driver operator and controller",
+			platformType: hyperv1.GCPPlatform,
+			assertions: func(g Gomega, resources []string) {
+				g.Expect(resources).To(ContainElement("cluster-storage-operator"))
+				g.Expect(resources).To(ContainElement("csi-snapshot-controller-operator"))
+				g.Expect(resources).To(ContainElement("gcp-pd-csi-driver-operator"))
+				g.Expect(resources).To(ContainElement("gcp-pd-csi-driver-controller"))
+				g.Expect(resources).To(ContainElement("csi-snapshot-controller"))
+			},
+		},
+		{
 			name:         "When platform is IBMCloud, it should return fewer resources than the default platform",
 			platformType: hyperv1.IBMCloudPlatform,
 			assertions: func(g Gomega, resources []string) {

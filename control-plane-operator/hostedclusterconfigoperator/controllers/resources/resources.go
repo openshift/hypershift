@@ -3498,6 +3498,8 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 				operatorv1.AzureFileCSIDriver,
 			}
 		}
+	case hyperv1.GCPPlatform:
+		driverNames = []operatorv1.CSIDriverName{operatorv1.GCPPDCSIDriver}
 	}
 	for _, driverName := range driverNames {
 		driver := manifests.ClusterCSIDriver(driverName)
