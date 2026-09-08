@@ -499,7 +499,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("control-plane-pki-operator should have control-plane-pki-operator-config ConfigMap with TLS configuration", func() {
+		It("control-plane-pki-operator should have control-plane-pki-operator-config ConfigMap with TLS configuration", Label(internal.BlockingLabel), func() {
 			// Check in management cluster's control plane namespace, not hosted cluster
 			mgmtClient := tc.MgmtClient
 			cm := &corev1.ConfigMap{}
@@ -516,7 +516,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			Expect(cm.Data["config.yaml"]).NotTo(BeEmpty(), "config.yaml should not be empty")
 		})
 
-		It("control-plane-pki-operator should have minTLSVersion set to VersionTLS12 with default/intermediate profile", func() {
+		It("control-plane-pki-operator should have minTLSVersion set to VersionTLS12 with default/intermediate profile", Label(internal.BlockingLabel), func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
@@ -534,7 +534,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				"PKI operator config should have minTLSVersion: VersionTLS12 for intermediate profile")
 		})
 
-		It("aws-pod-identity-webhook should have --tls-min-version set to VersionTLS12 with default/intermediate profile", func() {
+		It("aws-pod-identity-webhook should have --tls-min-version set to VersionTLS12 with default/intermediate profile", Label(internal.BlockingLabel), func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
@@ -546,7 +546,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 1*time.Minute, 5*time.Second).Should(Succeed())
 		})
 
-		It("konnectivity-server should have --tls-min-version set to VersionTLS12 with default/intermediate profile", func() {
+		It("konnectivity-server should have --tls-min-version set to VersionTLS12 with default/intermediate profile", Label(internal.BlockingLabel), func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
@@ -557,7 +557,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 1*time.Minute, 5*time.Second).Should(Succeed())
 		})
 
-		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
+		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", Label(internal.BlockingLabel), func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
@@ -569,7 +569,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("aws-pod-identity-webhook should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
+		It("aws-pod-identity-webhook should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", Label(internal.BlockingLabel), func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
@@ -582,7 +582,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", func() {
+		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections with intermediate profile", Label(internal.BlockingLabel), func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
@@ -594,7 +594,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("should update HostedCluster TLS profile to Modern", func() {
+		It("should update HostedCluster TLS profile to Modern", Label(internal.BlockingLabel), func() {
 			// Get the HostedCluster from management cluster and update its TLS profile
 			mgmtClient := tc.MgmtClient
 
@@ -643,7 +643,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Updated HostedCluster to Modern TLS profile, waiting for changes to propagate\n")
 		})
 
-		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS13 with Modern profile", func() {
+		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS13 with Modern profile", Label(internal.BlockingLabel), func() {
 			requireModernProfileSet(tc)
 
 			Eventually(func(g Gomega) {
@@ -652,7 +652,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS13 with Modern profile", func() {
+		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS13 with Modern profile", Label(internal.BlockingLabel), func() {
 			hostedCluster := requireModernProfileSet(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
@@ -662,7 +662,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("konnectivity-server should propagate --tls-min-version VersionTLS13 with Modern profile", func() {
+		It("konnectivity-server should propagate --tls-min-version VersionTLS13 with Modern profile", Label(internal.BlockingLabel), func() {
 			requireModernProfileSet(tc)
 
 			Eventually(func(g Gomega) {
@@ -671,7 +671,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("control-plane-pki-operator should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
+		It("control-plane-pki-operator should accept TLS 1.3 but reject TLS 1.2 with Modern profile", Label(internal.BlockingLabel), func() {
 			requireModernProfileSet(tc)
 
 			// Wait for PKI operator pod to restart and pick up the new TLS config
@@ -686,7 +686,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("aws-pod-identity-webhook should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
+		It("aws-pod-identity-webhook should accept TLS 1.3 but reject TLS 1.2 with Modern profile", Label(internal.BlockingLabel), func() {
 			hostedCluster := requireModernProfileSet(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
@@ -703,7 +703,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("konnectivity-server should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
+		It("konnectivity-server should accept TLS 1.3 but reject TLS 1.2 with Modern profile", Label(internal.BlockingLabel), func() {
 			requireModernProfileSet(tc)
 
 			// Wait for the kube-apiserver pod (which hosts konnectivity-server) to restart
@@ -720,7 +720,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("should downgrade HostedCluster TLS profile to default/intermediate", func() {
+		It("should downgrade HostedCluster TLS profile to default/intermediate", Label(internal.BlockingLabel), func() {
 			// First verify it currently has Modern profile (fetch fresh, not cached)
 			requireModernProfileSet(tc)
 
@@ -743,7 +743,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Removed Modern TLS profile from HostedCluster (downgraded to default/Intermediate), waiting for changes to propagate\n")
 		})
 
-		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS12 after downgrade", func() {
+		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS12 after downgrade", Label(internal.BlockingLabel), func() {
 			requireModernProfileCleared(tc)
 
 			Eventually(func(g Gomega) {
@@ -752,7 +752,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS12 after downgrade", func() {
+		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS12 after downgrade", Label(internal.BlockingLabel), func() {
 			hostedCluster := requireModernProfileCleared(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
@@ -762,7 +762,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("konnectivity-server should propagate --tls-min-version VersionTLS12 after downgrade", func() {
+		It("konnectivity-server should propagate --tls-min-version VersionTLS12 after downgrade", Label(internal.BlockingLabel), func() {
 			requireModernProfileCleared(tc)
 
 			Eventually(func(g Gomega) {
@@ -771,7 +771,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
+		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", Label(internal.BlockingLabel), func() {
 			requireModernProfileCleared(tc)
 
 			// Wait for PKI operator pod to restart and pick up the downgraded TLS config
@@ -786,7 +786,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("aws-pod-identity-webhook should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
+		It("aws-pod-identity-webhook should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", Label(internal.BlockingLabel), func() {
 			hostedCluster := requireModernProfileCleared(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
@@ -802,7 +802,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 				})
 		})
 
-		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
+		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", Label(internal.BlockingLabel), func() {
 			requireModernProfileCleared(tc)
 
 			// Wait for the kube-apiserver pod (which hosts konnectivity-server) to restart

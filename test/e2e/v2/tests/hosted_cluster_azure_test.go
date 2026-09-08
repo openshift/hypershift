@@ -53,7 +53,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 			testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
 		})
 
-		It("should mutate pods with workload identity federated credentials", func() {
+		It("should mutate pods with workload identity federated credentials", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -65,7 +65,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.ValidateAzureWorkloadIdentityWebhookMutation(GinkgoTB(), testCtx.Context, hostedClusterClient)
 		})
 
-		It("should have expected KAS allowed CIDRs", func() {
+		It("should have expected KAS allowed CIDRs", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -76,7 +76,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 			e2eutil.ValidateKubeAPIServerAllowedCIDRs(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, restConfig, hc)
 		})
 
-		It("should have Ingress Operator configuration applied", func() {
+		It("should have Ingress Operator configuration applied", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -111,7 +111,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 			Expect(controlPlaneNamespace).NotTo(BeEmpty(), "control plane namespace must be set")
 		})
 
-		It("should have Azure internal LB annotation on private-router Service", func() {
+		It("should have Azure internal LB annotation on private-router Service", Label(internal.BlockingLabel), func() {
 			ctx := testCtx.Context
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "private-router Service has Azure internal LB annotation",
 				func(ctx context.Context) (*corev1.Service, error) {
@@ -138,7 +138,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should create AzurePrivateLinkService CR with PLS alias", func() {
+		It("should create AzurePrivateLinkService CR with PLS alias", Label(internal.BlockingLabel), func() {
 			ctx := testCtx.Context
 			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "AzurePrivateLinkService CR is created with PLS alias",
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
@@ -163,7 +163,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should populate Private Endpoint IP in PLS status", func() {
+		It("should populate Private Endpoint IP in PLS status", Label(internal.BlockingLabel), func() {
 			ctx := testCtx.Context
 			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "AzurePrivateLinkService has Private Endpoint IP",
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
@@ -188,7 +188,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should populate Private DNS Zone ID in PLS status", func() {
+		It("should populate Private DNS Zone ID in PLS status", Label(internal.BlockingLabel), func() {
 			ctx := testCtx.Context
 			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "AzurePrivateLinkService has Private DNS Zone ID",
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
@@ -250,7 +250,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			})
 		})
 
-		It("should transition from Private to PublicAndPrivate", func() {
+		It("should transition from Private to PublicAndPrivate", Label(internal.BlockingLabel), func() {
 			ctx := testCtx.Context
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -359,7 +359,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			verifyAPIReachable(testCtx, "after transition to PublicAndPrivate")
 		})
 
-		It("should transition from PublicAndPrivate back to Private", func() {
+		It("should transition from PublicAndPrivate back to Private", Label(internal.BlockingLabel), func() {
 			ctx := testCtx.Context
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -447,7 +447,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should remain available after restoring Private topology", func() {
+		It("should remain available after restoring Private topology", Label(internal.BlockingLabel), func() {
 			// Private clusters' DNS zones are linked only to the guest VNet, so the
 			// management cluster cannot resolve the KAS hostname. Validate health
 			// via HostedCluster conditions instead of direct API connectivity,
@@ -643,7 +643,7 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should create oauth-openshift Service as LoadBalancer with external IP", func() {
+		It("should create oauth-openshift Service as LoadBalancer with external IP", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 			ctx := testCtx.Context
 			controlPlaneNamespace := testCtx.ControlPlaneNamespace
@@ -680,7 +680,7 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should complete OAuth token flow through LoadBalancer endpoint", func() {
+		It("should complete OAuth token flow through LoadBalancer endpoint", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())

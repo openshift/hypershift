@@ -30,7 +30,7 @@ relying on reviewer memory. That matters for several reasons:
 
 ## Analyzers
 
-The plugin ships 9 analyzers, scoped so each rule only fires where it applies.
+The plugin ships 10 analyzers, scoped so each rule only fires where it applies.
 
 ### Unit test conventions (`TESTING.md`, unit tests only)
 
@@ -43,6 +43,7 @@ The plugin ships 9 analyzers, scoped so each rule only fires where it applies.
 
 | Analyzer            | Enforces                                                                                          |
 | ------------------- | ------------------------------------------------------------------------------------------------ |
+| `e2eteststate`      | Requires each v2 Ginkgo subject node to be explicitly labeled `Informing` or `Blocking`.         |
 | `guestcluster`      | Bans "guest cluster" terminology; use "hosted cluster" instead.                                  |
 | `contextbackground` | Bans `context.Background()` / `context.TODO()` in tests; use `tc.Context` instead.               |
 | `vacuouspass`       | Flags vacuously-passing tests that iterate a collection without asserting it is non-empty.        |

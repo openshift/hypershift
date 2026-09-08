@@ -87,7 +87,7 @@ func validateContainerResourceRequests(podNamespace, podName string, containers 
 
 func InfrastructureRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("Infrastructure registry validation", func() {
-		It("should not contain any unrecognized pods", func() {
+		It("should not contain any unrecognized pods", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 
 			var podsNotBelongingToWorkloads []string
@@ -139,7 +139,7 @@ func InfrastructureResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 			workload := workload // capture range variable
 
 			Context(workload.Name, func() {
-				It("should have resource requests for containers", func() {
+				It("should have resource requests for containers", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 
 					ns := &corev1.Namespace{}
