@@ -51,8 +51,7 @@ func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecr
 	config += "use-clouds = true\n"
 	config += "clouds-file = " + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
 	config += "cloud = " + platformSpec.IdentityRef.CloudName + "\n"
-	// This takes priority over the 'cacert' value in 'clouds.yaml' and we therefore
-	// unset that when creating the initial secret.
+	// This takes priority over the 'cacert' value in 'clouds.yaml'
 	if caCertData != nil {
 		config += "ca-file = " + CADir + "/" + CABundleKey + "\n"
 	}
