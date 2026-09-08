@@ -122,15 +122,23 @@ const (
 	ImageRegistryRoleDefinitionID = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
 	CAPZCustomRoleDefinitionID    = "Azure Red Hat OpenShift NodePool Management Role"
 
+	// Built-in Azure roles used by Karpenter (see Azure/karpenter-provider-azure).
+	VirtualMachineContributorRoleDefinitionID = "9980e02c-c2be-4d73-94e8-173b1dc7cf3c"
+	NetworkContributorRoleDefinitionID        = "4d97b98b-1d4f-4787-a291-c67834d212e7"
+	ManagedIdentityOperatorRoleDefinitionID   = "f1a07417-d97a-45cb-824c-7a7467783830"
+
 	// Azure Components with Control Plane Managed Identities
-	AzureDisk     = "azure-disk"
-	AzureFile     = "azure-file"
-	CIRO          = "ciro"
-	CloudProvider = "cloud-provider"
-	CNCC          = "cncc"
-	CPO           = "cpo"
-	Ingress       = "ingress"
-	NodePoolMgmt  = "capz"
+	AzureDisk        = "azure-disk"
+	AzureFile        = "azure-file"
+	CIRO             = "ciro"
+	CloudProvider    = "cloud-provider"
+	CNCC             = "cncc"
+	CPO              = "cpo"
+	Ingress          = "ingress"
+	NodePoolMgmt     = "capz"
+	KarpenterVM      = "karpenter-vm"
+	KarpenterNetwork = "karpenter-network"
+	KarpenterMI      = "karpenter-mi"
 )
 
 var (

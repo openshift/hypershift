@@ -43338,6 +43338,7 @@ This is only valid for self-managed Azure.</p>
 ###AzureClientID { #hypershift.openshift.io/v1beta1.AzureClientID }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterAzureConfig">KarpenterAzureConfig</a>,
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>,
 <a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">WorkloadIdentity</a>)
 </p>
@@ -51992,6 +51993,44 @@ Example:
 </tr>
 </tbody>
 </table>
+###KarpenterAzureConfig { #hypershift.openshift.io/v1beta1.KarpenterAzureConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
+</p>
+<p>
+<p>KarpenterAzureConfig specifies Azure-specific configuration for the Karpenter provisioner.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>clientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureClientID">
+AzureClientID
+</a>
+</em>
+</td>
+<td>
+<p>clientID is the client ID of the user-assigned managed identity Karpenter uses
+to provision and manage Azure VMs in the hosted cluster&rsquo;s subscription.</p>
+<p>The identity must have a federated credential that trusts the hosted cluster
+OIDC issuer for subject system:serviceaccount:kube-system:karpenter.</p>
+<p>The identity must be granted Virtual Machine Contributor, Network Contributor,
+and Managed Identity Operator on the cluster resource group (and Network Contributor
+on the VNet resource group when it differs).</p>
+<p>The client ID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KarpenterConfig { #hypershift.openshift.io/v1beta1.KarpenterConfig }
 <p>
 (<em>Appears on:</em>
@@ -52033,7 +52072,23 @@ KarpenterAWSConfig
 </td>
 <td>
 <em>(Optional)</em>
-<p>aws specifies the AWS-specific configuration for Karpenter.</p>
+<p>aws specifies the AWS-specific configuration for Karpenter.
+Required when platform is &ldquo;AWS&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterAzureConfig">
+KarpenterAzureConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure specifies the Azure-specific configuration for Karpenter.
+Required when platform is &ldquo;Azure&rdquo;, and forbidden otherwise.</p>
 </td>
 </tr>
 </tbody>

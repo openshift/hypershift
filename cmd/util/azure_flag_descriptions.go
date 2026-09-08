@@ -46,6 +46,9 @@ const (
 	EncryptionAtHostDescription    = "Enable host-based encryption for VM disks and temp disks. Valid values: Enabled, Disabled."
 	DiskEncryptionSetIDDescription = "Full resource ID of an Azure Disk Encryption Set used to encrypt NodePool OS disks with customer-managed keys."
 
+	// AutoNode / Karpenter
+	EnableKarpenterDescription = "Create a Karpenter workload identity for AutoNode. Use this when the cluster will be created with --auto-node."
+
 	// VM configuration
 	InstanceTypeDescription = "Azure VM size for NodePool instances (e.g. Standard_D4s_v5, Standard_D8s_v5)."
 	RootDiskSizeDescription = "Size of the OS disk in GB for each NodePool VM. Minimum: 16 GB."

@@ -172,6 +172,10 @@ type WorkloadIdentityOptions struct {
 	// IncludeKMS controls whether the KMS workload identity is included.
 	// Set to true when KMS encryption is enabled for the cluster.
 	IncludeKMS bool
+
+	// IncludeKarpenter controls whether the Karpenter workload identity is included.
+	// Set to true when AutoNode/Karpenter is enabled for the cluster.
+	IncludeKarpenter bool
 }
 
 // GetWorkloadIdentityDefinitions returns all workload identity definitions for a cluster.
@@ -311,6 +315,20 @@ func GetWorkloadIdentityDefinitions(clusterName string, opts WorkloadIdentityOpt
 		})
 	}
 
+	if opts.IncludeKarpenter {
+		definitions = append(definitions, WorkloadIdentityDefinition{
+			ComponentName:      "karpenter",
+			IdentityNameSuffix: "-karpenter",
+			FederatedCredentials: []FederatedCredentialConfig{
+				{
+					CredentialName: clusterName + "-karpenter-fed-id",
+					Subject:        "system:serviceaccount:kube-system:karpenter",
+					Audience:       "openshift",
+				},
+			},
+		})
+	}
+
 	return definitions
 }
 
@@ -358,10 +376,11 @@ func (i *IdentityManager) createFederatedIdentityCredential(ctx context.Context,
 }
 
 // IAMOutput wraps the workload identities and any additional identity outputs
-// that are not part of AzureWorkloadIdentities (e.g., KMS for self-managed clusters).
+// that are not part of AzureWorkloadIdentities (e.g., KMS and Karpenter for self-managed clusters).
 type IAMOutput struct {
 	hyperv1.AzureWorkloadIdentities
-	KMSClientID string `json:"kmsClientID,omitempty"`
+	KMSClientID       string `json:"kmsClientID,omitempty"`
+	KarpenterClientID string `json:"karpenterClientID,omitempty"`
 }
 
 // CreateWorkloadIdentitiesFromIAMOptions creates all managed identities and federated credentials
@@ -369,7 +388,8 @@ type IAMOutput struct {
 func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Context, l logr.Logger, opts *CreateIAMOptions, resourceGroupName string) (*IAMOutput, error) {
 	output := &IAMOutput{}
 	definitions := GetWorkloadIdentityDefinitions(opts.Name, WorkloadIdentityOptions{
-		IncludeKMS: opts.EnableKMS,
+		IncludeKMS:       opts.EnableKMS,
+		IncludeKarpenter: opts.EnableKarpenter,
 	})
 
 	for _, def := range definitions {
@@ -404,6 +424,8 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 			}
 		case "kms":
 			output.KMSClientID = clientID
+		case "karpenter":
+			output.KarpenterClientID = clientID
 		default:
 			return nil, fmt.Errorf("unknown workload identity component: %s", def.ComponentName)
 		}
@@ -423,9 +445,9 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 // Federated credentials are explicitly deleted first, then the managed identity is deleted.
 // The method continues deleting remaining identities even if some fail, logging errors as it goes.
 func (i *IdentityManager) DestroyWorkloadIdentities(ctx context.Context, l logr.Logger, clusterName string, infraID string, resourceGroupName string) error {
-	// Pass empty topology and IncludeKMS: true to include all optional identities during cleanup;
-	// not-found errors are handled gracefully.
-	definitions := GetWorkloadIdentityDefinitions(clusterName, WorkloadIdentityOptions{IncludeKMS: true})
+	// Pass empty topology with IncludeKMS and IncludeKarpenter so all optional identities
+	// are included during cleanup; not-found errors are handled gracefully.
+	definitions := GetWorkloadIdentityDefinitions(clusterName, WorkloadIdentityOptions{IncludeKMS: true, IncludeKarpenter: true})
 	var errors []error
 
 	for _, def := range definitions {
