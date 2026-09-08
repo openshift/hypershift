@@ -159,3 +159,51 @@ func TestAdaptCredentialsSecretFormat(t *testing.T) {
 
 	g.Expect(credentials).To(Equal(expected))
 }
+
+func TestAdaptCredentialsSecretAzure(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	clientID := "12345678-1234-1234-1234-123456789012"
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					TenantID:       "tenant-id",
+					SubscriptionID: "subscription-id",
+				},
+			},
+			AutoNode: hyperv1.AutoNode{
+				Provisioner: hyperv1.ProvisionerConfig{
+					Karpenter: hyperv1.KarpenterConfig{
+						Platform: hyperv1.AzurePlatform,
+						Azure: hyperv1.KarpenterAzureConfig{
+							ClientID: hyperv1.AzureClientID(clientID),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "karpenter-credentials",
+			Namespace: "test-namespace",
+		},
+	}
+
+	err := adaptCredentialsSecret(controlplanecomponent.WorkloadContext{Context: t.Context(), HCP: hcp}, secret)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(secret.Type).To(Equal(corev1.SecretTypeOpaque))
+	g.Expect(secret.Data).To(HaveKeyWithValue("azure_client_id", []byte(clientID)))
+	g.Expect(secret.Data).To(HaveKeyWithValue("azure_tenant_id", []byte("tenant-id")))
+	g.Expect(secret.Data).To(HaveKeyWithValue("azure_subscription_id", []byte("subscription-id")))
+	g.Expect(secret.Data).To(HaveKeyWithValue("azure_federated_token_file", []byte("/var/run/secrets/openshift/serviceaccount/token")))
+	g.Expect(secret.Data).ToNot(HaveKey("credentials"))
+}

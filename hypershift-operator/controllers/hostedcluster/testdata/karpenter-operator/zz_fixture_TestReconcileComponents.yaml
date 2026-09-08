@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 5743ebeebc7c384a65f3d55f3ad66002924d3708ac14969506654c2ccc870ff2
+    hypershift.openshift.io/desired-state-hash: 9484352646e6db73a0f3c5ae32cc91cbd2ed51f95387a093871c1a690e3a7649
   labels:
     app: karpenter-operator
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -20,7 +20,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,tmp-dir
-        component.hypershift.openshift.io/config-hash: 295d966a
+        component.hypershift.openshift.io/config-hash: bbf4bc56
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: karpenter-operator
