@@ -33,7 +33,7 @@ func RegisterHostedClusterDNSTests(getTestCtx internal.TestContextGetter) {
 
 func EnsureKubeAPIDNSNameCustomCertTest(getTestCtx internal.TestContextGetter) {
 	When("KubeAPIDNSName and custom certificate are configured", func() {
-		PIt("should make KAS reachable via the custom DNS endpoint", func() {
+		PIt("should make KAS reachable via the custom DNS endpoint", Label(internal.BlockingLabel), func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version419)
 			tc.SkipIfPlatform(hyperv1.KubevirtPlatform)

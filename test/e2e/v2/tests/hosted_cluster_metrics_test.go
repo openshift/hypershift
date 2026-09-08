@@ -71,7 +71,7 @@ func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 
 func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 	When("HyperShift operator is running", func() {
-		It("should expose expected metrics at the metrics endpoint", func() {
+		It("should expose expected metrics at the metrics endpoint", Label(internal.BlockingLabel), func() {
 			tc := getTestCtx()
 			tc.SkipIfPlatform(hyperv1.NonePlatform)
 			hostedCluster, err := tc.GetHostedCluster()
@@ -142,8 +142,8 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 }
 
 func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
-	When("metrics forwarding is enabled", Label("Informing"), func() {
-		It("should deploy the metrics pipeline and scrape kube-apiserver metrics end-to-end", func() {
+	When("metrics forwarding is enabled", func() {
+		It("should deploy the metrics pipeline and scrape kube-apiserver metrics end-to-end", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version422)
 			hostedCluster, err := tc.GetHostedCluster()
@@ -224,7 +224,7 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 
 func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContextGetter) {
 	When("cluster has worker nodes", func() {
-		It("should have a functional node-tuning-operator metrics endpoint", func() {
+		It("should have a functional node-tuning-operator metrics endpoint", Label(internal.BlockingLabel), func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version422)
 
@@ -314,7 +314,7 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 
 func EnsureKubeSchedulerMetricsEndpointTest(getTestCtx internal.TestContextGetter) {
 	When("kube-scheduler is running", func() {
-		It("should have functional kube-scheduler metrics endpoints", func() {
+		It("should have functional kube-scheduler metrics endpoints", Label(internal.BlockingLabel), func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version423)
 

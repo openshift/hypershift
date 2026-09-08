@@ -57,7 +57,7 @@ func RegisterHostedClusterAWSTests(getTestCtx internal.TestContextGetter) {
 
 func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AWSSecurityGroups] a day-2 resource tag is added to the HostedCluster spec", func() {
-		It("should apply the tag to the default worker security group via AWS API", Label("AWS"), func() {
+		It("should apply the tag to the default worker security group via AWS API", Label(internal.BlockingLabel), Label("AWS"), func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
@@ -149,7 +149,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 
 func EnsureInfrastructureResourceTagsTest(getTestCtx internal.TestContextGetter) {
 	When("a HostedCluster is created with additional AWS resource tags", func() {
-		It("should propagate those tags to the infrastructure resource in the hosted cluster", Label("AWS"), func() {
+		It("should propagate those tags to the infrastructure resource in the hosted cluster", Label(internal.BlockingLabel), Label("AWS"), func() {
 			tc := getTestCtx()
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 			hc, err := tc.GetHostedCluster()
@@ -218,7 +218,7 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		When("AWSServiceLBNetworkSecurityGroup feature gate is enabled", func() {
-			It("should have NLBSecurityGroupMode=Managed in the aws-cloud-config ConfigMap", func() {
+			It("should have NLBSecurityGroupMode=Managed in the aws-cloud-config ConfigMap", Label(internal.BlockingLabel), func() {
 				tc := getTestCtx()
 
 				Eventually(func(g Gomega) {
@@ -237,7 +237,7 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		When("a LoadBalancer NLB service is created in the hosted cluster", func() {
-			It("should attach managed security groups to the NLB", func() {
+			It("should attach managed security groups to the NLB", Label(internal.BlockingLabel), func() {
 				tc := getTestCtx()
 				hc, err := tc.GetHostedCluster()
 				Expect(err).NotTo(HaveOccurred())
@@ -346,7 +346,7 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 
 func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AWSResourceTagOverrides] HostedCluster tags have mixed override policies", func() {
-		It("should block or allow NodePool tag overrides based on overridePolicy and reflect conflicts in the NodePool condition", Label("AWS"), func() {
+		It("should block or allow NodePool tag overrides based on overridePolicy and reflect conflicts in the NodePool condition", Label(internal.BlockingLabel), Label("AWS"), func() {
 			tc := getTestCtx()
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 
@@ -480,7 +480,7 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 
 func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AWSSecurityGroups] a day-2 resource tag with spaces is added to the HostedCluster spec", func() {
-		It("should apply the tag with spaces to the default worker security group via AWS API", Label("AWS"), func() {
+		It("should apply the tag with spaces to the default worker security group via AWS API", Label(internal.BlockingLabel), Label("AWS"), func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
@@ -593,7 +593,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 
 func NodePoolDay2TagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AWSResourceTags] a day-2 NodePool tag with spaces is added", func() {
-		It("should propagate the tag with spaces to AWSMachine and EC2 instances", Label("AWS"), func() {
+		It("should propagate the tag with spaces to AWSMachine and EC2 instances", Label(internal.BlockingLabel), Label("AWS"), func() {
 			tc := getTestCtx()
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 

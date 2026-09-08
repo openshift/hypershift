@@ -31,7 +31,7 @@ import (
 
 // ControlPlaneUpgradeTest upgrades the hosted cluster from N-1 to the latest release image.
 func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should upgrade the control plane from N-1 to latest", func() {
+	It("should upgrade the control plane from N-1 to latest", Label(internal.BlockingLabel), func() {
 		testCtx := getTestCtx()
 		ctx := testCtx.Context
 		hc, err := testCtx.GetHostedCluster()

@@ -54,7 +54,7 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 				Expect(nodes.Items).NotTo(BeEmpty(), "cluster should have nodes")
 			})
 
-			It("should set providerID on all nodes", func() {
+			It("should set providerID on all nodes", Label(internal.BlockingLabel), func() {
 				testCtx := getTestCtx()
 				hc, err := testCtx.GetHostedCluster()
 				Expect(err).NotTo(HaveOccurred())
@@ -73,7 +73,7 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 				}
 			})
 
-			It("should set zone and region topology labels on all nodes", func() {
+			It("should set zone and region topology labels on all nodes", Label(internal.BlockingLabel), func() {
 				for _, node := range nodes.Items {
 					zone, ok := node.Labels["topology.kubernetes.io/zone"]
 					Expect(ok).To(BeTrue(),
@@ -89,7 +89,7 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 				}
 			})
 
-			It("should remove the uninitialized taint from all nodes", func() {
+			It("should remove the uninitialized taint from all nodes", Label(internal.BlockingLabel), func() {
 				for _, node := range nodes.Items {
 					for _, taint := range node.Spec.Taints {
 						Expect(taint.Key).NotTo(Equal("node.cloudprovider.kubernetes.io/uninitialized"),

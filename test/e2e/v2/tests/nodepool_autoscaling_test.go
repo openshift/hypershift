@@ -43,7 +43,7 @@ import (
 
 // AutoscalingScaleUpDownTest tests autoscaling scale-up and scale-down behavior
 func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
-	It("should scale up when workload increases and scale down when workload decreases", Label("nodepool-autoscaling-scale-up-down"), func() {
+	It("should scale up when workload increases and scale down when workload decreases", Label(internal.BlockingLabel), Label("nodepool-autoscaling-scale-up-down"), func() {
 		testCtx := getTestCtx()
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
@@ -108,7 +108,7 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 // It configures the HostedCluster with the Random expander so the cluster autoscaler
 // distributes scale-up events across NodePools instead of favoring one.
 func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
-	It("should balance pods across multiple autoscaling NodePools", Label("nodepool-autoscaling-balancing"), func() {
+	It("should balance pods across multiple autoscaling NodePools", Label(internal.BlockingLabel), Label("nodepool-autoscaling-balancing"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
