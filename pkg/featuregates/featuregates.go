@@ -87,6 +87,14 @@ func (fsaf FeatureSetAwareFeatures) AddFeature(feature *Feature) {
 	}
 }
 
+// EnabledForFeatureSet reports whether a feature is enabled in the given feature
+// set without constructing or changing a feature gate. Unknown features or feature
+// sets return false.
+func (fsaf FeatureSetAwareFeatures) EnabledForFeatureSet(feature featuregate.Feature, featureSet configv1.FeatureSet) bool {
+	features := fsaf[featureSet]
+	return features != nil && features.Enabled.Has(feature)
+}
+
 // FeatureGatesForFeatureSet returns the featuregate.MutableFeatureGate corresponding to the provided featureSet.
 // If the provided featureSet is unknown, an error will be returned.
 // If the provided featureSet is known, the featuregate.MutableFeatureGate will be returned where

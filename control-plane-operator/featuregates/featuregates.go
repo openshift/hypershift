@@ -45,6 +45,13 @@ func Gate() featuregate.FeatureGate {
 	return globalGate
 }
 
+// EnabledForFeatureSet checks the CPO's feature definitions for the given feature
+// set without changing the process-global gate. Unknown features or feature sets
+// return false.
+func EnabledForFeatureSet(feature featuregate.Feature, featureSet configv1.FeatureSet) bool {
+	return allFeatures.EnabledForFeatureSet(feature, featureSet)
+}
+
 // ConfigureFeatureSet is used to configure the feature gates based on the provided featureSet.
 // The provided featureSet must be a known feature set name.
 // ConfigureFeatureSet should only be called once on startup.

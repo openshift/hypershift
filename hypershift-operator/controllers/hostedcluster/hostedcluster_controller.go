@@ -38,6 +38,7 @@ import (
 	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
 	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
+	cpoFeaturegates "github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
@@ -653,6 +654,27 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	releaseProvider := r.RegistryProvider.GetReleaseProvider()
 	registryClientImageMetadataProvider := r.RegistryProvider.GetMetadataProvider()
 
+	// Resolve the target control plane version before validating its configuration.
+	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
+	var releaseImageVersion semver.Version
+	if err == nil {
+		releaseImageVersion, err = semver.Parse(releaseImage.Version())
+	}
+	if err != nil {
+		err = fmt.Errorf("failed to resolve control plane release version: %w", err)
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidHostedClusterConfiguration),
+			ObservedGeneration: hcluster.Generation,
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.InvalidImageReason,
+			Message:            err.Error(),
+		})
+		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+			return ctrl.Result{}, errors.Join(err, fmt.Errorf("failed to update status: %w", statusErr))
+		}
+		return ctrl.Result{}, err
+	}
+
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -995,7 +1017,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.ValidHostedClusterConfiguration),
 			ObservedGeneration: hcluster.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(ctx, hcluster); err != nil {
+		if err := r.validateConfigAndClusterCapabilities(ctx, hcluster, releaseImageVersion); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
 			condition.Reason = hyperv1.InvalidConfigurationReason
@@ -1215,10 +1237,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	hcluster.Status.PayloadArch = payloadArch
 
-	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-	}
 	// Set Progressing condition
 	{
 		condition := metav1.Condition{
@@ -1778,13 +1796,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 			}
 		}
-	}
-
-	// Get release image version
-	var releaseImageVersion semver.Version
-	releaseImageVersion, err = semver.Parse(releaseImage.Version())
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
 	// Reconcile the HostedControlPlane
@@ -3659,7 +3670,7 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 	return nil
 }
 
-func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hc *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hc *hyperv1.HostedCluster, releaseVersion semver.Version) error {
 	var errs []error
 	for _, svc := range hc.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -3711,7 +3722,7 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
-	if err := r.validateOCPConfigurations(ctx, hc, r.Client); err != nil {
+	if err := r.validateOCPConfigurations(ctx, hc, r.Client, releaseVersion); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -4056,11 +4067,24 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 //
 // TODO: Add validation for other OpenShift components (e.g. OAuth, Ingress, etc.)
 // Jira: https://issues.redhat.com/browse/CNTRLPLANE-382
-func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context, hc *hyperv1.HostedCluster, client client.Client) error {
+func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context, hc *hyperv1.HostedCluster, client client.Client, releaseVersion semver.Version) error {
 	var errs field.ErrorList
 	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
 
 	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Authentication != nil {
+		// Feature support follows the minor release, including its prereleases.
+		release := semver.Version{Major: releaseVersion.Major, Minor: releaseVersion.Minor}
+		for i, provider := range hc.Spec.Configuration.Authentication.OIDCProviders {
+			if len(provider.ExternalClaimsSources) == 0 {
+				continue
+			}
+			if release.LT(semver.Version{Major: 5, Minor: 1}) || !cpoFeaturegates.EnabledForFeatureSet(cpoFeaturegates.ExternalOIDCExternalClaimsSourcing, r.FeatureSet) {
+				errs = append(errs, field.Forbidden(
+					field.NewPath("spec", "configuration", "authentication", "oidcProviders").Index(i).Child("externalClaimsSources"),
+					fmt.Sprintf("requires control plane version 5.1 or later and feature gate %s enabled in the CPO feature set (target version: %s, feature set: %q)", cpoFeaturegates.ExternalOIDCExternalClaimsSourcing, releaseVersion, r.FeatureSet),
+				))
+			}
+		}
 		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, []string{hc.Spec.IssuerURL})
 		if err != nil {
 			fieldErr := &field.Error{

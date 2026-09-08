@@ -3,6 +3,8 @@ package featuregates_test
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/openshift/hypershift/pkg/featuregates"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -86,10 +88,23 @@ func TestCreatingFeatureGates(t *testing.T) {
 
 				for feat, expectedEnabledState := range expectedFeatureState {
 					assert.Equal(t, fg.Enabled(feat), expectedEnabledState, "actual featuregate enabled state does not match expected", "featureset", fs, "featuregate", feat)
+					NewWithT(t).Expect(features.EnabledForFeatureSet(feat, fs)).To(Equal(expectedEnabledState))
 				}
 			}
 		})
 	}
+}
+
+func TestEnabledForFeatureSetUnknownInputs(t *testing.T) {
+	features := featuregates.NewFeatureSetAwareFeatures()
+	features.AddFeature(featuregates.NewFeature("Foo", featuregates.WithEnableForFeatureSets(configv1.Default)))
+
+	t.Run("When the feature is unknown it should return false", func(t *testing.T) {
+		NewWithT(t).Expect(features.EnabledForFeatureSet("Unknown", configv1.Default)).To(BeFalse())
+	})
+	t.Run("When the feature set is unknown it should return false", func(t *testing.T) {
+		NewWithT(t).Expect(features.EnabledForFeatureSet("Foo", "Unknown")).To(BeFalse())
+	})
 }
 
 func TestConfiguringUnknownFeatureSetErrors(t *testing.T) {

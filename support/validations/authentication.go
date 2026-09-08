@@ -9,6 +9,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apiserver/pkg/apis/apiserver/validation"
 	"k8s.io/apiserver/pkg/authentication/cel"
@@ -41,6 +42,13 @@ func ValidateAuthenticationSpecForTypeOIDC(ctx context.Context, client crclient.
 	if authn == nil {
 		// nothing to validate
 		return nil
+	}
+	var externalClaimsErrors field.ErrorList
+	for i, provider := range authn.OIDCProviders {
+		externalClaimsErrors = append(externalClaimsErrors, validateExternalClaimsSources(provider.ExternalClaimsSources, field.NewPath("oidcProviders").Index(i).Child("externalClaimsSources"))...)
+	}
+	if err := externalClaimsErrors.ToAggregate(); err != nil {
+		return err
 	}
 
 	authConfig, err := kas.GenerateAuthConfig(ctx, authn, client, namespace)

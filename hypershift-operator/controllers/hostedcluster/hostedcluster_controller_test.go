@@ -2320,7 +2320,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(r.Client, tc.infraKubeVirtVersion, tc.infraK8sVersion)
 
 			ctx := t.Context()
-			actual := r.validateConfigAndClusterCapabilities(ctx, tc.hostedCluster)
+			actual := r.validateConfigAndClusterCapabilities(ctx, tc.hostedCluster, semver.MustParse("5.1.0"))
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
 			}
