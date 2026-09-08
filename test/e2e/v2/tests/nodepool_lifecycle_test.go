@@ -86,7 +86,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] N
 // creates a verification DaemonSet in the hosted cluster, and waits for config update
 // complete and DaemonSet rollout.
 func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
-	It("should roll out a MachineConfig change via Replace upgrade strategy", func() {
+	It("should roll out a MachineConfig change via Replace upgrade strategy", Label("nodepool-machineconfig-rollout"), func() {
 		testCtx := getTestCtx()
 		// https://issues.redhat.com/browse/CNV-38196
 		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform)
@@ -186,7 +186,7 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 // patches the NodePool's TuningConfig, creates a verification DaemonSet,
 // and waits for rollout via Replace upgrade strategy.
 func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
-	It("should roll out an NTO Tuned config change via Replace upgrade strategy", func() {
+	It("should roll out an NTO Tuned config change via Replace upgrade strategy", Label("nodepool-nto-replace-rollout"), func() {
 		testCtx := getTestCtx()
 
 		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
@@ -256,7 +256,7 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 
 // NodePoolNTOInPlaceTest applies an NTO Tuned config with InPlace upgrade type.
 func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
-	It("should roll out an NTO Tuned config change via InPlace upgrade strategy", func() {
+	It("should roll out an NTO Tuned config change via InPlace upgrade strategy", Label("nodepool-nto-inplace-rollout"), func() {
 		testCtx := getTestCtx()
 
 		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
@@ -321,7 +321,7 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 // NodePoolReplaceUpgradeTest creates a NodePool at previous release image, waits for nodes,
 // upgrades to latest image, and waits for version to update via Replace upgrade strategy.
 func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should upgrade a NodePool from previous to latest release via Replace strategy", func() {
+	It("should upgrade a NodePool from previous to latest release via Replace strategy", Label("nodepool-replace-version-upgrade"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -409,7 +409,7 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 // NodePoolInPlaceUpgradeTest creates a NodePool at previous release image, waits for nodes,
 // upgrades to latest image via InPlace upgrade strategy.
 func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should upgrade a NodePool from previous to latest release via InPlace strategy", func() {
+	It("should upgrade a NodePool from previous to latest release via InPlace strategy", Label("nodepool-inplace-version-upgrade"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -491,7 +491,7 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 // (AWS) or VM size (Azure) to trigger a rolling upgrade, and verifies the machine specs
 // after upgrade. Only runs on AWS and Azure platforms.
 func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should perform a rolling upgrade when instance type or VM size changes", func() {
+	It("should perform a rolling upgrade when instance type or VM size changes", Label("nodepool-vm-size-rollout"), func() {
 		testCtx := getTestCtx()
 
 		testCtx.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
@@ -587,7 +587,7 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 // NodePoolPrevReleaseN1Test creates a NodePool at N-1 release image and waits for nodes ready.
 func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
-	It("should create a NodePool at N-1 release and have ready nodes", func() {
+	It("should create a NodePool at N-1 release and have ready nodes", Label("nodepool-n1-release"), func() {
 		testCtx := getTestCtx()
 
 		n1Image := internal.GetEnvVarValue("E2E_N1_RELEASE_IMAGE")
@@ -626,7 +626,7 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 
 // NodePoolPrevReleaseN2Test creates a NodePool at N-2 release image and waits for nodes ready.
 func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
-	It("should create a NodePool at N-2 release and have ready nodes", func() {
+	It("should create a NodePool at N-2 release and have ready nodes", Label("nodepool-n2-release"), func() {
 		testCtx := getTestCtx()
 
 		n2Image := internal.GetEnvVarValue("E2E_N2_RELEASE_IMAGE")
@@ -667,7 +667,7 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 // verifies the KubeletConfig gets mirrored to the hosted cluster's openshift-config-managed
 // namespace, then removes the config and verifies cleanup. Only for 4.18+.
 func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
-	It("should mirror KubeletConfig to the hosted cluster and clean up on removal", func() {
+	It("should mirror KubeletConfig to the hosted cluster and clean up on removal", Label("nodepool-mirror-config"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -801,7 +801,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 // exists in the hosted cluster, removes the trust bundle, verifies CPO deployment no longer
 // mounts it, waits for another update cycle, and verifies user-ca-bundle is deleted (4.22+).
 func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
-	It("should propagate and remove additional trust bundle to/from the hosted cluster", func() {
+	It("should propagate and remove additional trust bundle to/from the hosted cluster", Label("nodepool-trust-bundle"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -1011,7 +1011,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 // patches the NodePool's TuningConfig, verifies the PerformanceProfile ConfigMap and
 // status ConfigMap are created in the control plane namespace, and verifies cleanup.
 func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
-	It("should create and manage NTO PerformanceProfile via NodePool TuningConfig", func() {
+	It("should create and manage NTO PerformanceProfile via NodePool TuningConfig", Label("nodepool-performance-profile"), func() {
 		testCtx := getTestCtx()
 
 		// https://issues.redhat.com/browse/OSASINFRA-3566
@@ -1176,7 +1176,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 // NodePoolAutoRepairTest is a skeleton for platform-specific auto-repair tests.
 // The full implementation requires cloud SDK dependencies for instance termination.
 func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
-	It("should auto-repair a NodePool when a node is terminated", func() {
+	It("should auto-repair a NodePool when a node is terminated", Label("nodepool-auto-repair"), func() {
 		Skip("auto-repair instance termination not yet implemented for v2 framework")
 
 		testCtx := getTestCtx()
@@ -1221,7 +1221,7 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 
 // NodePoolDiskEncryptionTest is a skeleton for Azure disk encryption tests.
 func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
-	It("should create a NodePool with Azure DiskEncryptionSet and verify it is applied", func() {
+	It("should create a NodePool with Azure DiskEncryptionSet and verify it is applied", Label("nodepool-disk-encryption"), func() {
 		testCtx := getTestCtx()
 
 		testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
