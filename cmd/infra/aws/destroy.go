@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -376,73 +377,11 @@ func emptyBucket(ctx context.Context, client awsapi.S3API, name string) error {
 }
 
 func (o *DestroyInfraOptions) DestroyV1ELBs(ctx context.Context, client awsapi.ELBAPI, vpcID string) []error {
-	var errs []error
-	paginator := elb.NewDescribeLoadBalancersPaginator(client, &elb.DescribeLoadBalancersInput{})
-	for paginator.HasMorePages() {
-		out, err := paginator.NextPage(ctx)
-		if err != nil {
-			errs = append(errs, err)
-			break
-		}
-		for _, lb := range out.LoadBalancerDescriptions {
-			if aws.ToString(lb.VPCId) != vpcID {
-				continue
-			}
-			if _, err := client.DeleteLoadBalancer(ctx, &elb.DeleteLoadBalancerInput{
-				LoadBalancerName: lb.LoadBalancerName,
-			}); err != nil {
-				errs = append(errs, err)
-			} else {
-				o.Log.Info("Deleted ELB", "name", aws.ToString(lb.LoadBalancerName))
-			}
-		}
-	}
-	return errs
+	return supportawsutil.DeleteLoadBalancers(ctx, supportawsutil.LoadBalancerClients{ELB: client}, supportawsutil.LoadBalancerSelector{VPCID: vpcID}, o.Log)
 }
 
 func (o *DestroyInfraOptions) DestroyV2ELBs(ctx context.Context, client awsapi.ELBV2API, vpcID string) []error {
-	var errs []error
-	lbPaginator := elbv2.NewDescribeLoadBalancersPaginator(client, &elbv2.DescribeLoadBalancersInput{})
-	for lbPaginator.HasMorePages() {
-		out, err := lbPaginator.NextPage(ctx)
-		if err != nil {
-			errs = append(errs, err)
-			break
-		}
-		for _, lb := range out.LoadBalancers {
-			if aws.ToString(lb.VpcId) != vpcID {
-				continue
-			}
-			if _, err := client.DeleteLoadBalancer(ctx, &elbv2.DeleteLoadBalancerInput{
-				LoadBalancerArn: lb.LoadBalancerArn,
-			}); err != nil {
-				errs = append(errs, err)
-			} else {
-				o.Log.Info("Deleted ELBV2 load balancer", "name", aws.ToString(lb.LoadBalancerName))
-			}
-		}
-	}
-	tgPaginator := elbv2.NewDescribeTargetGroupsPaginator(client, &elbv2.DescribeTargetGroupsInput{})
-	for tgPaginator.HasMorePages() {
-		out, err := tgPaginator.NextPage(ctx)
-		if err != nil {
-			errs = append(errs, err)
-			break
-		}
-		for _, tg := range out.TargetGroups {
-			if aws.ToString(tg.VpcId) != vpcID {
-				continue
-			}
-			if _, err := client.DeleteTargetGroup(ctx, &elbv2.DeleteTargetGroupInput{
-				TargetGroupArn: tg.TargetGroupArn,
-			}); err != nil {
-				errs = append(errs, err)
-			} else {
-				o.Log.Info("Deleted TargetGroup", "name", aws.ToString(tg.TargetGroupName))
-			}
-		}
-	}
-	return errs
+	return supportawsutil.DeleteLoadBalancers(ctx, supportawsutil.LoadBalancerClients{ELBV2: client}, supportawsutil.LoadBalancerSelector{VPCID: vpcID}, o.Log)
 }
 
 func (o *DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client awsapi.EC2API, vpcID string) []error {
