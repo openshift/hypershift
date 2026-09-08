@@ -2,6 +2,7 @@ package configoperator
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
@@ -43,7 +44,7 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 
 	availabilityProberOpts := hccpAvailabilityProberOpts(caps)
 
-	return component.NewDeploymentComponent(ComponentName, hcco).
+	builder := component.NewDeploymentComponent(ComponentName, hcco).
 		WithAdaptFunction(hcco.adaptDeployment).
 		WithManifestAdapter(
 			"podmonitor.yaml",
@@ -53,8 +54,37 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 			"role.yaml",
 			component.WithAdaptFunction(adaptRole),
 		).
-		InjectAvailabilityProberContainer(availabilityProberOpts).
-		Build()
+		InjectAvailabilityProberContainer(availabilityProberOpts)
+	for _, tokenMinterOpts := range tokenMinterContainerOptions(caps) {
+		builder = builder.InjectTokenMinterContainer(tokenMinterOpts)
+	}
+	return builder.Build()
+}
+
+func tokenMinterContainerOptions(caps *hyperv1.Capabilities) []component.TokenMinterContainerOptions {
+	options := []component.TokenMinterContainerOptions{
+		{
+			TokenType:               component.CloudToken,
+			ServiceAccountName:      "kube-controller-manager",
+			ServiceAccountNameSpace: "kube-system",
+			NamePrefix:              "cloud-controller",
+			TokenMountPath:          awsutil.CloudControllerTokenMountPath,
+			PlatformTypes:           []hyperv1.PlatformType{hyperv1.AWSPlatform},
+			KubeconfingVolumeName:   "kubeconfig",
+		},
+	}
+	if capabilities.IsIngressCapabilityEnabled(caps) {
+		options = append(options, component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountName:      "ingress-operator",
+			ServiceAccountNameSpace: "openshift-ingress-operator",
+			NamePrefix:              "ingress",
+			TokenMountPath:          awsutil.IngressTokenMountPath,
+			PlatformTypes:           []hyperv1.PlatformType{hyperv1.AWSPlatform},
+			KubeconfingVolumeName:   "kubeconfig",
+		})
+	}
+	return options
 }
 
 func hccpAvailabilityProberOpts(caps *hyperv1.Capabilities) podspec.AvailabilityProberOpts {

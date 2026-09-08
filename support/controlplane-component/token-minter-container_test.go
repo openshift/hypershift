@@ -165,6 +165,40 @@ func TestInjectTokenMinterContainer(t *testing.T) {
 		g.Expect(podSpec.Containers).To(HaveLen(1), "should not add token-minter to regular containers")
 	})
 
+	t.Run("When combined token options customize names and paths it should keep each token unique", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		podSpec := &corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "main"}},
+		}
+		cpContext := ControlPlaneContext{
+			HCP: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			ReleaseImageProvider:           fakeImageProvider,
+			NativeSidecarContainersEnabled: true,
+		}
+		customOpts := opts
+		customOpts.NamePrefix = "custom"
+		customOpts.TokenMountPath = "/var/run/custom"
+
+		customOpts.injectTokenMinterContainer(cpContext, podSpec)
+
+		g.Expect(podSpec.InitContainers).To(HaveLen(2))
+		g.Expect(podSpec.InitContainers[0].Name).To(Equal("custom-cloud-token-minter"))
+		g.Expect(podSpec.InitContainers[1].Name).To(Equal("custom-apiserver-token-minter"))
+		g.Expect(podSpec.Volumes).To(ConsistOf(
+			corev1.Volume{Name: "custom-cloud-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}},
+			corev1.Volume{Name: "custom-apiserver-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}},
+		))
+		g.Expect(podSpec.Containers[0].VolumeMounts).To(ConsistOf(
+			corev1.VolumeMount{Name: "custom-cloud-token", MountPath: "/var/run/custom/cloud"},
+			corev1.VolumeMount{Name: "custom-apiserver-token", MountPath: "/var/run/custom/apiserver"},
+		))
+	})
+
 	t.Run("When CloudAndAPIServerToken on AWS without native sidecars it should inject two regular containers", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
@@ -260,6 +294,51 @@ func TestInjectTokenMinterContainer(t *testing.T) {
 		g.Expect(podSpec.InitContainers).To(HaveLen(1))
 		g.Expect(podSpec.InitContainers[0].Name).To(Equal("apiserver-token-minter"))
 		g.Expect(podSpec.Containers).To(HaveLen(1), "cloud token should not be injected for non-cloud platform")
+	})
+
+	t.Run("When multiple cloud tokens are requested it should use independent containers, volumes, and mounts", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		podSpec := &corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "main"}},
+		}
+		cpContext := ControlPlaneContext{
+			HCP: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			ReleaseImageProvider:           fakeImageProvider,
+			NativeSidecarContainersEnabled: true,
+		}
+
+		cloudControllerOpts := TokenMinterContainerOptions{
+			TokenType:               CloudToken,
+			ServiceAccountName:      "kube-controller-manager",
+			ServiceAccountNameSpace: "kube-system",
+			NamePrefix:              "cloud-controller",
+			TokenMountPath:          "/var/run/secrets/openshift/serviceaccount/cloud-controller",
+			PlatformTypes:           []hyperv1.PlatformType{hyperv1.AWSPlatform},
+		}
+		ingressOpts := cloudControllerOpts
+		ingressOpts.ServiceAccountName = "ingress-operator"
+		ingressOpts.ServiceAccountNameSpace = "openshift-ingress-operator"
+		ingressOpts.NamePrefix = "ingress"
+		ingressOpts.TokenMountPath = "/var/run/secrets/openshift/serviceaccount/ingress"
+
+		cloudControllerOpts.injectTokenMinterContainer(cpContext, podSpec)
+		ingressOpts.injectTokenMinterContainer(cpContext, podSpec)
+
+		g.Expect(podSpec.InitContainers).To(HaveLen(2))
+		g.Expect(podSpec.InitContainers[0].Name).To(Equal("cloud-controller-token-minter"))
+		g.Expect(podSpec.InitContainers[1].Name).To(Equal("ingress-token-minter"))
+		g.Expect(podSpec.Volumes).To(HaveLen(2))
+		g.Expect(podSpec.Volumes[0].Name).To(Equal("cloud-controller-token"))
+		g.Expect(podSpec.Volumes[1].Name).To(Equal("ingress-token"))
+		g.Expect(podSpec.Containers[0].VolumeMounts).To(ConsistOf(
+			corev1.VolumeMount{Name: "cloud-controller-token", MountPath: "/var/run/secrets/openshift/serviceaccount/cloud-controller"},
+			corev1.VolumeMount{Name: "ingress-token", MountPath: "/var/run/secrets/openshift/serviceaccount/ingress"},
+		))
 	})
 }
 

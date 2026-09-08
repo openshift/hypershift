@@ -153,8 +153,8 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &podTemplateSpec.Spec)
 	}
 
-	if c.tokenMinterContainerOpts != nil {
-		c.tokenMinterContainerOpts.injectTokenMinterContainer(cpContext, &podTemplateSpec.Spec)
+	for _, tokenMinterContainerOpts := range c.tokenMinterContainerOpts {
+		tokenMinterContainerOpts.injectTokenMinterContainer(cpContext, &podTemplateSpec.Spec)
 	}
 
 	if err := c.applyWatchedResourcesAnnotation(cpContext, podTemplateSpec); err != nil {

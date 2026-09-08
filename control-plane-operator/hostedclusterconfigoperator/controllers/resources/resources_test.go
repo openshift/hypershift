@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	awsapi "github.com/openshift/hypershift/support/awsapi"
+	awsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -32,6 +35,13 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	resourcegroupstaggingapitypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -56,6 +66,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -1043,6 +1054,332 @@ func TestDestroyCloudResources(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDestroyCloudResources_WhenPlatformIsAWS_ItShouldUseDirectLoadBalancerCleanup(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.CloudResourcesDestroyed),
+					Status: metav1.ConditionFalse,
+				},
+			},
+		},
+	}
+
+	lbService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-loadbalancer",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeLoadBalancer,
+		},
+	}
+
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(lbService).Build()
+	kasDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: fakeHCP.Namespace,
+		},
+	}
+	cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP, kasDeployment).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	cleanupCalled := false
+
+	r := &reconciler{
+		client:                 guestClient,
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		cpClient:               cpClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		cleanupTracker:         supportutil.NewCleanupTracker(),
+		awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+			cleanupCalled = true
+			return true, nil
+		},
+	}
+
+	remaining, _, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(remaining.Has("loadbalancers")).To(BeFalse(), "AWS should not track loadbalancers in remaining set")
+	g.Expect(cleanupCalled).To(BeTrue())
+
+	// Verify the LoadBalancer Service was NOT deleted
+	svc := &corev1.Service{}
+	err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(lbService), svc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
+}
+
+type testResourceTaggingClient struct {
+	resourceTypes []string
+	mappings      map[string][]resourcegroupstaggingapitypes.ResourceTagMapping
+	err           error
+}
+
+func (c *testResourceTaggingClient) GetResources(_ context.Context, input *resourcegroupstaggingapi.GetResourcesInput, _ ...func(*resourcegroupstaggingapi.Options)) (*resourcegroupstaggingapi.GetResourcesOutput, error) {
+	c.resourceTypes = append(c.resourceTypes, input.ResourceTypeFilters[0])
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &resourcegroupstaggingapi.GetResourcesOutput{ResourceTagMappingList: c.mappings[input.ResourceTypeFilters[0]]}, nil
+}
+
+func TestNewAWSLoadBalancerClients(t *testing.T) {
+	tests := []struct {
+		name                string
+		platform            *hyperv1.AWSPlatformSpec
+		capabilities        *hyperv1.Capabilities
+		wantError           string
+		wantELBEndpoint     *string
+		wantELBV2Endpoint   *string
+		wantTaggingEndpoint *string
+	}{
+		{
+			name:      "When AWS configuration is missing, it should return an error",
+			wantError: "AWS platform configuration is missing",
+		},
+		{
+			name: "When region is missing, it should return an error",
+			platform: &hyperv1.AWSPlatformSpec{
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+					IngressARN:             "arn:aws:iam::123456789012:role/ingress",
+				},
+			},
+			wantError: "AWS region cannot be empty",
+		},
+		{
+			name: "When cloud controller role is missing, it should return an error",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				RolesRef: hyperv1.AWSRolesRef{
+					IngressARN: "arn:aws:iam::123456789012:role/ingress",
+				},
+			},
+			wantError: "AWS role ARN cannot be empty",
+		},
+		{
+			name: "When Ingress is enabled and the ingress role is missing, it should return an error",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+			wantError: "AWS role ARN cannot be empty",
+		},
+		{
+			name: "When Ingress is disabled and the ingress role is missing, it should use the cloud controller role for tagging",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				ServiceEndpoints: []hyperv1.AWSServiceEndpoint{
+					{Name: "tagging", URL: "https://tagging.example.com"},
+				},
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+			capabilities:        &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability}},
+			wantTaggingEndpoint: ptr.To("https://tagging.example.com"),
+		},
+		{
+			name: "When both roles are configured, it should create clients with default endpoints",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+					IngressARN:             "arn:aws:iam::123456789012:role/ingress",
+				},
+			},
+		},
+		{
+			name: "When AWS service endpoints are configured, it should apply them to the clients",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				ServiceEndpoints: []hyperv1.AWSServiceEndpoint{
+					{Name: awsElasticLoadBalancingServiceName, URL: "https://elb.example.com"},
+					{Name: "tagging", URL: "https://tagging.example.com"},
+				},
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+					IngressARN:             "arn:aws:iam::123456789012:role/ingress",
+				},
+			},
+			wantELBEndpoint:     ptr.To("https://elb.example.com"),
+			wantELBV2Endpoint:   ptr.To("https://elb.example.com"),
+			wantTaggingEndpoint: ptr.To("https://tagging.example.com"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{}
+			if test.platform != nil {
+				hcp.Spec.Platform.AWS = test.platform
+			}
+			hcp.Spec.Capabilities = test.capabilities
+
+			clients, err := newAWSLoadBalancerClients(t.Context(), hcp)
+			if test.wantError != "" {
+				NewGomegaWithT(t).Expect(err).To(MatchError(ContainSubstring(test.wantError)))
+				return
+			}
+
+			g := NewGomegaWithT(t)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(clients.ELB).ToNot(BeNil())
+			g.Expect(clients.ELBV2).ToNot(BeNil())
+			g.Expect(clients.Tagging).ToNot(BeNil())
+			g.Expect(clients.ELB.(*elasticloadbalancing.Client).Options().BaseEndpoint).To(Equal(test.wantELBEndpoint))
+			g.Expect(clients.ELBV2.(*elasticloadbalancingv2.Client).Options().BaseEndpoint).To(Equal(test.wantELBV2Endpoint))
+			g.Expect(clients.Tagging.(*resourcegroupstaggingapi.Client).Options().BaseEndpoint).To(Equal(test.wantTaggingEndpoint))
+		})
+	}
+}
+
+func TestAWSServiceEndpoint(t *testing.T) {
+	tests := []struct {
+		name        string
+		endpoints   []hyperv1.AWSServiceEndpoint
+		serviceName string
+		want        string
+	}{
+		{
+			name:        "When the service is present, it should return its URL",
+			serviceName: "service-a",
+			endpoints: []hyperv1.AWSServiceEndpoint{
+				{Name: "service-a", URL: "https://service-a.example.com"},
+			},
+			want: "https://service-a.example.com",
+		},
+		{
+			name:        "When the service is absent, it should return an empty URL",
+			serviceName: "service-b",
+			endpoints: []hyperv1.AWSServiceEndpoint{
+				{Name: "service-a", URL: "https://service-a.example.com"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(awsServiceEndpoint(test.endpoints, test.serviceName)).To(Equal(test.want))
+		})
+	}
+}
+
+func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "infra-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-id"},
+				},
+			},
+		},
+	}
+
+	t.Run("When clients are not configured, it should return an error", func(t *testing.T) {
+		removed, err := (&reconciler{}).ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS load balancer clients are not configured"))
+	})
+
+	t.Run("When tag discovery fails, it should return an error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		tagging := &testResourceTaggingClient{err: errors.New("tagging unavailable")}
+		r := &reconciler{
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB:     awsapi.NewMockELBAPI(ctrl),
+				ELBV2:   awsapi.NewMockELBV2API(ctrl),
+				Tagging: tagging,
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError(ContainSubstring("failed to find tagged load balancers")))
+	})
+
+	t.Run("When tagged resources are absent, it should report cleanup complete", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		elbClient := awsapi.NewMockELBAPI(ctrl)
+		elbv2Client := awsapi.NewMockELBV2API(ctrl)
+		tagging := &testResourceTaggingClient{}
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DescribeLoadBalancersOutput{}, nil).Times(2)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil).Times(2)
+		elbv2Client.EXPECT().DescribeTargetGroups(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{}, nil).Times(2)
+
+		r := &reconciler{
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB:     elbClient,
+				ELBV2:   elbv2Client,
+				Tagging: tagging,
+			},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(tagging.resourceTypes).To(ConsistOf(
+			"elasticloadbalancing:loadbalancer",
+			"elasticloadbalancing:targetgroup",
+			"elasticloadbalancing:loadbalancer",
+			"elasticloadbalancing:targetgroup",
+		))
+	})
+
+	t.Run("When deletion succeeds but resources remain, it should report cleanup incomplete", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		elbClient := awsapi.NewMockELBAPI(ctrl)
+		elbv2Client := awsapi.NewMockELBV2API(ctrl)
+		const (
+			classicLoadBalancer    = "classic-owned"
+			classicLoadBalancerARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/classic-owned"
+			v2LoadBalancerARN      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/v2-owned/123"
+			targetGroupARN         = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/owned/123"
+		)
+		tagging := &testResourceTaggingClient{mappings: map[string][]resourcegroupstaggingapitypes.ResourceTagMapping{
+			"elasticloadbalancing:loadbalancer": {{ResourceARN: ptr.To(classicLoadBalancerARN)}, {ResourceARN: ptr.To(v2LoadBalancerARN)}},
+			"elasticloadbalancing:targetgroup":  {{ResourceARN: ptr.To(targetGroupARN)}},
+		}}
+		classicOutput := &elasticloadbalancing.DescribeLoadBalancersOutput{LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{{LoadBalancerName: ptr.To(classicLoadBalancer), VPCId: ptr.To("vpc-id")}}}
+		elbv2Output := &elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{LoadBalancerArn: ptr.To(v2LoadBalancerARN), LoadBalancerName: ptr.To("v2-owned"), VpcId: ptr.To("vpc-id")}}}
+		targetGroupsOutput := &elasticloadbalancingv2.DescribeTargetGroupsOutput{TargetGroups: []elbv2types.TargetGroup{{TargetGroupArn: ptr.To(targetGroupARN), TargetGroupName: ptr.To("owned"), VpcId: ptr.To("vpc-id")}}}
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(classicOutput, nil).Times(2)
+		elbClient.EXPECT().DeleteLoadBalancer(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DeleteLoadBalancerOutput{}, nil)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(elbv2Output, nil).Times(2)
+		elbv2Client.EXPECT().DeleteLoadBalancer(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DeleteLoadBalancerOutput{}, nil)
+		elbv2Client.EXPECT().DescribeTargetGroups(gomock.Any(), gomock.Any(), gomock.Any()).Return(targetGroupsOutput, nil).Times(2)
+		elbv2Client.EXPECT().DeleteTargetGroup(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DeleteTargetGroupOutput{}, nil)
+
+		r := &reconciler{
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client, Tagging: tagging},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).ToNot(HaveOccurred())
+	})
 }
 
 func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
