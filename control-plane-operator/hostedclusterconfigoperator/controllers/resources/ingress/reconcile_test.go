@@ -1059,3 +1059,184 @@ func TestReconcileDefaultIngressControllerCertSecret(t *testing.T) {
 		})
 	}
 }
+
+func TestEffectiveEndpointPublishingStrategy(t *testing.T) {
+	hostNetwork := &operatorv1.EndpointPublishingStrategy{Type: operatorv1.HostNetworkStrategyType}
+	nodePort := &operatorv1.EndpointPublishingStrategy{Type: operatorv1.NodePortServiceStrategyType}
+	loadBalancer := &operatorv1.EndpointPublishingStrategy{Type: operatorv1.LoadBalancerServiceStrategyType}
+
+	hcpWith := func(s *operatorv1.EndpointPublishingStrategy) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+			OperatorConfiguration: &hyperv1.OperatorConfiguration{
+				IngressOperator: &hyperv1.IngressOperatorSpec{EndpointPublishingStrategy: s},
+			},
+		}}
+	}
+
+	tests := []struct {
+		name              string
+		ingressController *operatorv1.IngressController
+		hcp               *hyperv1.HostedControlPlane
+		expected          operatorv1.EndpointPublishingStrategyType
+	}{
+		{
+			name:     "When ingress controller and hcp are nil, it should default to NodePortService",
+			expected: operatorv1.NodePortServiceStrategyType,
+		},
+		{
+			name:     "When ingress controller is nil and hcp has no configuration, it should default to NodePortService",
+			hcp:      &hyperv1.HostedControlPlane{},
+			expected: operatorv1.NodePortServiceStrategyType,
+		},
+		{
+			name:     "When ingress controller is nil and hcp has a configuration, it should use the hcp strategy",
+			hcp:      hcpWith(hostNetwork),
+			expected: operatorv1.HostNetworkStrategyType,
+		},
+		{
+			name: "When ingress controller spec and hcp have a strategy, it should prefer the ingress controller spec",
+			ingressController: &operatorv1.IngressController{Spec: operatorv1.IngressControllerSpec{
+				EndpointPublishingStrategy: loadBalancer,
+			}},
+			hcp:      hcpWith(hostNetwork),
+			expected: operatorv1.LoadBalancerServiceStrategyType,
+		},
+		{
+			name: "When ingress controller status and spec have a strategy, it should prefer the status",
+			ingressController: &operatorv1.IngressController{
+				Spec:   operatorv1.IngressControllerSpec{EndpointPublishingStrategy: nodePort},
+				Status: operatorv1.IngressControllerStatus{EndpointPublishingStrategy: hostNetwork},
+			},
+			hcp:      hcpWith(loadBalancer),
+			expected: operatorv1.HostNetworkStrategyType,
+		},
+		{
+			name: "When ingress controller status has a strategy with empty type, it should fall through to the spec",
+			ingressController: &operatorv1.IngressController{
+				Spec:   operatorv1.IngressControllerSpec{EndpointPublishingStrategy: hostNetwork},
+				Status: operatorv1.IngressControllerStatus{EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{}},
+			},
+			hcp:      hcpWith(loadBalancer),
+			expected: operatorv1.HostNetworkStrategyType,
+		},
+		{
+			name: "When ingress controller status and spec have strategies with empty type, it should fall through to the hcp",
+			ingressController: &operatorv1.IngressController{
+				Spec:   operatorv1.IngressControllerSpec{EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{}},
+				Status: operatorv1.IngressControllerStatus{EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{}},
+			},
+			hcp:      hcpWith(hostNetwork),
+			expected: operatorv1.HostNetworkStrategyType,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got := EffectiveEndpointPublishingStrategy(tt.ingressController, tt.hcp)
+			g.Expect(got).ToNot(BeNil())
+			g.Expect(got.Type).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestReconcileDefaultIngressPassthroughService(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters-hc"},
+		Spec:       hyperv1.HostedControlPlaneSpec{InfraID: "hc-infra"},
+	}
+	nodePortService := &corev1.Service{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+		{Name: "http", Port: 80, NodePort: 30080},
+		{Name: "https", Port: 443, NodePort: 30443},
+	}}}
+
+	tests := []struct {
+		name               string
+		strategy           *operatorv1.EndpointPublishingStrategy
+		nodePortService    *corev1.Service
+		expectedTargetPort int32
+		expectedErr        string
+	}{
+		{
+			name:               "When strategy is NodePortService, it should target the https nodePort",
+			strategy:           &operatorv1.EndpointPublishingStrategy{Type: operatorv1.NodePortServiceStrategyType},
+			nodePortService:    nodePortService,
+			expectedTargetPort: 30443,
+		},
+		{
+			name:               "When strategy is nil, it should default to NodePortService and target the https nodePort",
+			nodePortService:    nodePortService,
+			expectedTargetPort: 30443,
+		},
+		{
+			name:            "When strategy is NodePortService and the nodeport service is missing, it should fail",
+			strategy:        &operatorv1.EndpointPublishingStrategy{Type: operatorv1.NodePortServiceStrategyType},
+			nodePortService: nil,
+			expectedErr:     "unable to detect default ingress NodePort https port",
+		},
+		{
+			name:     "When strategy is NodePortService and the https port is missing, it should fail",
+			strategy: &operatorv1.EndpointPublishingStrategy{Type: operatorv1.NodePortServiceStrategyType},
+			nodePortService: &corev1.Service{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+				{Name: "http", Port: 80, NodePort: 30080},
+			}}},
+			expectedErr: "unable to detect default ingress NodePort https port",
+		},
+		{
+			name:     "When strategy is NodePortService and the https port has no nodePort allocated, it should fail",
+			strategy: &operatorv1.EndpointPublishingStrategy{Type: operatorv1.NodePortServiceStrategyType},
+			nodePortService: &corev1.Service{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
+				{Name: "https", Port: 443, NodePort: 0},
+			}}},
+			expectedErr: "unable to detect default ingress NodePort https port",
+		},
+		{
+			name:               "When strategy is HostNetwork without ports, it should target port 443",
+			strategy:           &operatorv1.EndpointPublishingStrategy{Type: operatorv1.HostNetworkStrategyType},
+			expectedTargetPort: 443,
+		},
+		{
+			name: "When strategy is HostNetwork with empty ports, it should target port 443",
+			strategy: &operatorv1.EndpointPublishingStrategy{
+				Type:        operatorv1.HostNetworkStrategyType,
+				HostNetwork: &operatorv1.HostNetworkStrategy{},
+			},
+			expectedTargetPort: 443,
+		},
+		{
+			name: "When strategy is HostNetwork with httpsPort, it should target the configured httpsPort",
+			strategy: &operatorv1.EndpointPublishingStrategy{
+				Type:        operatorv1.HostNetworkStrategyType,
+				HostNetwork: &operatorv1.HostNetworkStrategy{HTTPPort: 80, HTTPSPort: 8443, StatsPort: 1936},
+			},
+			// The nodeport service must be ignored for HostNetwork.
+			nodePortService:    nodePortService,
+			expectedTargetPort: 8443,
+		},
+		{
+			name:        "When strategy is unsupported, it should fail",
+			strategy:    &operatorv1.EndpointPublishingStrategy{Type: operatorv1.LoadBalancerServiceStrategyType},
+			expectedErr: "not supported for endpoint publishing strategy",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			service := manifests.IngressDefaultIngressPassthroughService("clusters-hc")
+			err := ReconcileDefaultIngressPassthroughService(service, tt.nodePortService, tt.strategy, hcp)
+			if tt.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.expectedErr))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(service.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+			g.Expect(service.Spec.Selector).To(BeEmpty())
+			g.Expect(service.Labels).To(HaveKeyWithValue(hyperv1.InfraIDLabel, "hc-infra"))
+			g.Expect(service.Spec.Ports).To(HaveLen(1))
+			g.Expect(service.Spec.Ports[0].Name).To(Equal("https-443"))
+			g.Expect(service.Spec.Ports[0].Port).To(Equal(int32(443)))
+			g.Expect(service.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			g.Expect(service.Spec.Ports[0].TargetPort.IntValue()).To(Equal(int(tt.expectedTargetPort)))
+		})
+	}
+}
