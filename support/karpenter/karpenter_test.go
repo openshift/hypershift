@@ -220,12 +220,12 @@ func TestIsKarpenterEnabled(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "When AutoNode is empty it should return false",
+			name:     "When AutoNode is empty, it should return false",
 			autoNode: hyperv1.AutoNode{},
 			expected: false,
 		},
 		{
-			name: "When provisioner is Karpenter on AWS it should return true",
+			name: "When provisioner is Karpenter on AWS, it should return true",
 			autoNode: hyperv1.AutoNode{
 				Provisioner: hyperv1.ProvisionerConfig{
 					Name: hyperv1.ProvisionerKarpenter,
@@ -237,7 +237,7 @@ func TestIsKarpenterEnabled(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When provisioner is Karpenter on Azure it should return true",
+			name: "When provisioner is Karpenter on Azure, it should return true",
 			autoNode: hyperv1.AutoNode{
 				Provisioner: hyperv1.ProvisionerConfig{
 					Name: hyperv1.ProvisionerKarpenter,
@@ -249,7 +249,7 @@ func TestIsKarpenterEnabled(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When provisioner is Karpenter on an unsupported platform it should return false",
+			name: "When provisioner is Karpenter on an unsupported platform, it should return false",
 			autoNode: hyperv1.AutoNode{
 				Provisioner: hyperv1.ProvisionerConfig{
 					Name: hyperv1.ProvisionerKarpenter,
