@@ -1574,21 +1574,36 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to re-enable AutoNode")
 
-			// Expect progressing (enable in flight — components being created/rolled out).
-			GinkgoWriter.Println("Waiting for AutoNodeEnabled=False/AutoNodeProgressing (enable in progress)")
-			e2eutil.EventuallyObject(t, ctx, "HostedCluster to have AutoNodeEnabled=False/AutoNodeProgressing",
+			// The progressing state can be shorter than the polling interval, so accept either
+			// the transient state or the final state here. The final state is checked below.
+			autoNodeProgressingOrReady := func(obj *hyperv1.HostedCluster) (bool, string, error) {
+				conditions, err := e2eutil.Conditions(obj)
+				if err != nil {
+					return false, "", err
+				}
+				for _, condition := range conditions {
+					if condition.Type != string(hyperv1.AutoNodeEnabled) {
+						continue
+					}
+					if condition.Status == metav1.ConditionFalse && condition.Reason == hyperv1.AutoNodeProgressingReason {
+						return true, "AutoNode is progressing", nil
+					}
+					if condition.Status == metav1.ConditionTrue && condition.Reason == hyperv1.AsExpectedReason {
+						return true, "AutoNode is ready", nil
+					}
+					return false, fmt.Sprintf("unexpected AutoNodeEnabled condition: %s", condition.String()), nil
+				}
+				return false, "AutoNodeEnabled condition is missing", nil
+			}
+
+			GinkgoWriter.Println("Waiting for AutoNodeEnabled to become progressing or ready")
+			e2eutil.EventuallyObject(t, ctx, "HostedCluster AutoNodeEnabled to become progressing or ready",
 				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 					obj := &hyperv1.HostedCluster{}
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
 					return obj, err
 				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
-					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
-						Type:   string(hyperv1.AutoNodeEnabled),
-						Status: metav1.ConditionFalse,
-						Reason: hyperv1.AutoNodeProgressingReason,
-					}),
-				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{autoNodeProgressingOrReady},
 				e2eutil.WithTimeout(2*time.Minute),
 			)
 
