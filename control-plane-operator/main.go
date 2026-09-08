@@ -323,20 +323,21 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	var (
-		namespace                        string
-		deploymentName                   string
-		metricsAddr                      string
-		healthProbeAddr                  string
-		cpoImage                         string
-		hostedClusterConfigOperatorImage string
-		socks5ProxyImage                 string
-		availabilityProberImage          string
-		tokenMinterImage                 string
-		inCluster                        bool
-		enableCIDebugOutput              bool
-		registryOverrides                map[string]string
-		imageOverridesStr                string
-		featureSet                       string
+		namespace                         string
+		deploymentName                    string
+		metricsAddr                       string
+		healthProbeAddr                   string
+		cpoImage                          string
+		hostedClusterConfigOperatorImage  string
+		socks5ProxyImage                  string
+		availabilityProberImage           string
+		tokenMinterImage                  string
+		inCluster                         bool
+		enableCIDebugOutput               bool
+		registryOverrides                 map[string]string
+		imageOverridesStr                 string
+		featureSet                        string
+		privateConnectivityCleanupTimeout time.Duration
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
@@ -352,6 +353,7 @@ func NewStartCommand() *cobra.Command {
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().DurationVar(&privateConnectivityCleanupTimeout, "private-connectivity-cleanup-timeout", hostedcontrolplane.DefaultPrivateConnectivityCleanupTimeout, "How long to wait for platform private connectivity cleanup during HostedControlPlane deletion")
 	cmd.Flags().StringVar(&imageOverridesStr, "image-overrides", "",
 		"List of images that should be used for a hosted cluster control plane instead of images from OpenShift release specified in HostedCluster. "+
 			"Format is: name1=image1,name2=image2. \"nameX\" is name of an image in OpenShift release (e.g. \"cluster-network-operator\"). "+
@@ -361,6 +363,10 @@ func NewStartCommand() *cobra.Command {
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		setupLog.Info("Starting hypershift-controlplane-manager", "version", supportedversion.String())
 		ctx := ctrl.SetupSignalHandler()
+		if privateConnectivityCleanupTimeout <= 0 {
+			setupLog.Error(fmt.Errorf("timeout must be greater than zero"), "invalid private connectivity cleanup timeout", "timeout", privateConnectivityCleanupTimeout)
+			os.Exit(1)
+		}
 
 		restConfig := ctrl.GetConfigOrDie()
 		restConfig.UserAgent = "hypershift-controlplane-manager"
@@ -522,6 +528,7 @@ func NewStartCommand() *cobra.Command {
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
+			PrivateConnectivityCleanupTimeout:       privateConnectivityCleanupTimeout,
 			GVKAccessChecker:                        component.NewGVKAccessCache(mgr.GetAPIReader()),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
 			ReleaseProvider:                         cpReleaseProvider,

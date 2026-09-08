@@ -4642,7 +4642,7 @@ func TestReconcileDeletion(t *testing.T) {
 				ec2Client: mockEC2,
 			}
 
-			_, err := r.reconcileDeletion(ctx, hcp, hcp)
+			_, err := r.reconcileDeletion(ctx, hcp)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -5242,6 +5242,8 @@ func TestWaitForPrivateConnectivityCleanup(t *testing.T) {
 	tests := []struct {
 		name            string
 		hcp             *hyperv1.HostedControlPlane
+		objects         []client.Object
+		cleanupTimeout  time.Duration
 		wantDone        bool
 		wantErr         bool
 		interceptorFunc *interceptor.Funcs
@@ -5307,6 +5309,80 @@ func TestWaitForPrivateConnectivityCleanup(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "When private AWS HCP has no endpoint CRs, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: &now,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
+					},
+				},
+			},
+			wantDone: true,
+			wantErr:  false,
+			verifyCondition: func(g Gomega, hcp *hyperv1.HostedControlPlane) {
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Reason).To(Equal(hyperv1.PrivateConnectivityCleanupCompleteReason))
+			},
+		},
+		{
+			name: "When private Azure HCP has no endpoint CRs, it should return done",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: &now,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{Topology: hyperv1.AzureTopologyPrivate},
+					},
+				},
+			},
+			wantDone: true,
+			wantErr:  false,
+			verifyCondition: func(g Gomega, hcp *hyperv1.HostedControlPlane) {
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(cond.Reason).To(Equal(hyperv1.PrivateConnectivityCleanupCompleteReason))
+			},
+		},
+		{
+			name: "When private AWS HCP has an endpoint CR, it should continue waiting",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: &now,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
+					},
+				},
+			},
+			objects: []client.Object{
+				&hyperv1.AWSEndpointService{
+					ObjectMeta: metav1.ObjectMeta{Name: "private-router", Namespace: "test-ns"},
+				},
+			},
+			wantDone: false,
+			wantErr:  false,
+		},
+		{
 			name: "When timeout has elapsed, it should set timed out condition and return done",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -5323,6 +5399,27 @@ func TestWaitForPrivateConnectivityCleanup(t *testing.T) {
 				g.Expect(cond).ToNot(BeNil())
 				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 				g.Expect(cond.Reason).To(Equal(hyperv1.PrivateConnectivityCleanupTimedOutReason))
+			},
+		},
+		{
+			name:           "When configured timeout has elapsed, it should use the configured value",
+			cleanupTimeout: 2 * time.Minute,
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         "test-ns",
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: ptr.To(metav1.NewTime(time.Now().Add(-3 * time.Minute))),
+				},
+			},
+			wantDone: true,
+			wantErr:  false,
+			verifyCondition: func(g Gomega, hcp *hyperv1.HostedControlPlane) {
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Reason).To(Equal(hyperv1.PrivateConnectivityCleanupTimedOutReason))
+				g.Expect(cond.Message).To(ContainSubstring("within 2m0s"))
 			},
 		},
 		{
@@ -5362,9 +5459,10 @@ func TestWaitForPrivateConnectivityCleanup(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
+			objects := append([]client.Object{tt.hcp}, tt.objects...)
 			builder := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				WithObjects(tt.hcp).
+				WithObjects(objects...).
 				WithStatusSubresource(&hyperv1.HostedControlPlane{})
 			if tt.interceptorFunc != nil {
 				builder = builder.WithInterceptorFuncs(*tt.interceptorFunc)
@@ -5377,9 +5475,10 @@ func TestWaitForPrivateConnectivityCleanup(t *testing.T) {
 			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(tt.hcp), tt.hcp)).To(Succeed())
 
 			r := &HostedControlPlaneReconciler{
-				Client: fakeClient,
-				Log:    ctrl.Log.WithName("test"),
-				clock:  clock.RealClock{},
+				Client:                            fakeClient,
+				Log:                               ctrl.Log.WithName("test"),
+				clock:                             clock.RealClock{},
+				PrivateConnectivityCleanupTimeout: tt.cleanupTimeout,
 			}
 
 			done, err := r.waitForPrivateConnectivityCleanup(ctx, tt.hcp)
