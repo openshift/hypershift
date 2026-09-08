@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	"github.com/openshift/hypershift/support/conditions"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -85,16 +85,16 @@ func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 		It("should have component finalizers on all CAPI deployments", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version422)
-			Expect(hcc.CAPIComponents).NotTo(BeEmpty(),
+			Expect(cpconst.CAPIComponents).NotTo(BeEmpty(),
 				"expected CAPI components to be defined in HostedControlPlaneConfiguration")
-			for _, name := range hcc.CAPIComponents {
+			for _, name := range cpconst.CAPIComponents {
 				deployment := &appsv1.Deployment{}
 				Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 					Name:      name,
 					Namespace: tc.ControlPlaneNamespace,
 				}, deployment)).To(Succeed(), "failed to get CAPI deployment %s", name)
-				Expect(controllerutil.ContainsFinalizer(deployment, hcc.ControlPlaneComponentFinalizer)).To(BeTrue(),
-					"CAPI deployment %s should have finalizer %s", name, hcc.ControlPlaneComponentFinalizer)
+				Expect(controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer)).To(BeTrue(),
+					"CAPI deployment %s should have finalizer %s", name, cpconst.ControlPlaneComponentFinalizer)
 			}
 		})
 	})

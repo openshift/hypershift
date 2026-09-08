@@ -28,7 +28,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
+	kasconst "github.com/openshift/hypershift/pkg/kas"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -130,14 +130,14 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(vapList.Items).NotTo(BeEmpty(), "expected ValidatingAdmissionPolicies to be present")
 
 				requiredVAPs := []string{
-					hccokasvap.AdmissionPolicyNameConfig,
-					hccokasvap.AdmissionPolicyNameMirror,
-					hccokasvap.AdmissionPolicyNameICSP,
-					hccokasvap.AdmissionPolicyNameInfra,
-					hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+					kasconst.AdmissionPolicyNameConfig,
+					kasconst.AdmissionPolicyNameMirror,
+					kasconst.AdmissionPolicyNameICSP,
+					kasconst.AdmissionPolicyNameInfra,
+					kasconst.AdmissionPolicyNameNTOMirroredConfigs,
 				}
 				if tc.VersionAtLeast(e2eutil.Version51) {
-					requiredVAPs = append(requiredVAPs, hccokasvap.AdmissionPolicyNameRBAC)
+					requiredVAPs = append(requiredVAPs, kasconst.AdmissionPolicyNameRBAC)
 				}
 				vapNames := make([]string, 0, len(vapList.Items))
 				for _, vap := range vapList.Items {

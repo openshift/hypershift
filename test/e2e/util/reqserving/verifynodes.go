@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	scheduleraws "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
+	scheduler "github.com/openshift/hypershift/pkg/scheduler"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -89,7 +89,7 @@ func VerifyRequestServingNodeAllocation(ctx context.Context, hc *hyperv1.HostedC
 				errs = append(errs, fmt.Errorf("node %s missing cluster-size label", node.Name))
 			}
 
-			if pairLabel, exists := node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]; exists {
+			if pairLabel, exists := node.Labels[scheduler.OSDFleetManagerPairedNodesLabel]; exists {
 				pairLabels[pairLabel] = true
 			} else {
 				errs = append(errs, fmt.Errorf("node %s missing paired-nodes label", node.Name))
@@ -104,7 +104,7 @@ func VerifyRequestServingNodeAllocation(ctx context.Context, hc *hyperv1.HostedC
 			hasRequestServingTaint := false
 			hasHostedClusterTaint := false
 			for _, taint := range node.Spec.Taints {
-				if taint.Key == scheduleraws.ControlPlaneServingComponentTaint && taint.Value == "true" && taint.Effect == corev1.TaintEffectNoSchedule {
+				if taint.Key == scheduler.ControlPlaneServingComponentTaint && taint.Value == "true" && taint.Effect == corev1.TaintEffectNoSchedule {
 					hasRequestServingTaint = true
 				}
 				if taint.Key == hyperv1.HostedClusterLabel && taint.Value == expectedClusterIdentifier && taint.Effect == corev1.TaintEffectNoSchedule {

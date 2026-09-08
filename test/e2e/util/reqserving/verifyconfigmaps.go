@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	scheduleraws "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
+	scheduler "github.com/openshift/hypershift/pkg/scheduler"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -92,7 +92,7 @@ func VerifyRequestServingPlaceholderConfigMaps(ctx context.Context, hc *hyperv1.
 		}
 		expectedPairLabel := ""
 		for _, node := range requestServingNodes.Items {
-			if pairLabel, exists := node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]; exists {
+			if pairLabel, exists := node.Labels[scheduler.OSDFleetManagerPairedNodesLabel]; exists {
 				expectedPairLabel = pairLabel
 				break
 			}

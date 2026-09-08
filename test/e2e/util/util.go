@@ -26,12 +26,12 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
+	kasconst "github.com/openshift/hypershift/pkg/kas"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -1138,7 +1138,7 @@ func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Cli
 		AtLeast(t, Version422)
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
-		for _, name := range hcc.CAPIComponents {
+		for _, name := range cpconst.CAPIComponents {
 			deployment := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
@@ -1150,8 +1150,8 @@ func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Cli
 				t.Fatalf("failed to get CAPI deployment: %v", err)
 			}
 
-			if !controllerutil.ContainsFinalizer(deployment, hcc.ControlPlaneComponentFinalizer) {
-				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, hcc.ControlPlaneComponentFinalizer)
+			if !controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer) {
+				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, cpconst.ControlPlaneComponentFinalizer)
 			}
 		}
 	})
@@ -2778,14 +2778,14 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 			t.Errorf("No ValidatingAdmissionPolicies found")
 		}
 		requiredVAPs := []string{
-			hccokasvap.AdmissionPolicyNameConfig,
-			hccokasvap.AdmissionPolicyNameMirror,
-			hccokasvap.AdmissionPolicyNameICSP,
-			hccokasvap.AdmissionPolicyNameInfra,
-			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+			kasconst.AdmissionPolicyNameConfig,
+			kasconst.AdmissionPolicyNameMirror,
+			kasconst.AdmissionPolicyNameICSP,
+			kasconst.AdmissionPolicyNameInfra,
+			kasconst.AdmissionPolicyNameNTOMirroredConfigs,
 		}
 		if IsGreaterThanOrEqualTo(Version51) {
-			requiredVAPs = append(requiredVAPs, hccokasvap.AdmissionPolicyNameRBAC)
+			requiredVAPs = append(requiredVAPs, kasconst.AdmissionPolicyNameRBAC)
 		}
 		presentVAPs := []string{}
 		for _, vap := range validatingAdmissionPolicies.Items {
