@@ -30,8 +30,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
+	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	azureutil "github.com/openshift/hypershift/support/azureutil"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
