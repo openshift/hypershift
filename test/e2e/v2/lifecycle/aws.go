@@ -113,7 +113,6 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
 		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
 		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
-		"--feature-set=TechPreviewNoUpgrade",
 	}
 	for _, tag := range a.additionalTags {
 		args = append(args, "--additional-tags="+tag)
