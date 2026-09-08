@@ -38,6 +38,11 @@ const (
 	clusterNodeSchedulingAffinityWeight = 100
 	// Generic control plane workload weight for soft affinity rule to node.
 	controlPlaneNodeSchedulingAffinityWeight = clusterNodeSchedulingAffinityWeight / 2
+	// overflowNodeSchedulingAffinityWeight is the weight of the soft node-affinity that
+	// steers "float" components onto overflow node pools in Preferred placement mode. It
+	// is set higher than the cluster/control-plane colocation weights so that overflow
+	// placement is preferred over packing with zone-critical pods on the zonal pools.
+	overflowNodeSchedulingAffinityWeight = 100
 
 	// ManagedByLabel can be used to filter deployments.
 	ManagedByLabel = "hypershift.openshift.io/managed-by"
@@ -103,10 +108,40 @@ var (
 		"packageserver",
 	)
 
+	// zoneCriticalComponents are non-request-serving, non-etcd components that are
+	// nonetheless kept spread across availability zones under the Minimal
+	// availability-zone scheduling policy because they sit on the guest API path.
+	// Request-serving components and etcd are classified separately, see
+	// zoneSpreadCritical.
+	zoneCriticalComponents = sets.New(
+		"openshift-apiserver",
+		"openshift-oauth-apiserver",
+	)
+
 	configMapsToExcludeFromHash = []string{
 		"client-ca",
 	}
 )
+
+// minimalZonalScheduling reports whether the hosted control plane has opted into the
+// Minimal availability-zone scheduling policy.
+func minimalZonalScheduling(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp.Spec.ControlPlaneAvailabilityZoneScheduling.Policy == hyperv1.ControlPlaneAvailabilityZoneSchedulingMinimal
+}
+
+// nonZonalPlacementRequired reports whether "float" components must (hard) rather than
+// merely prefer (soft) to run on overflow capacity under the Minimal policy.
+func nonZonalPlacementRequired(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp.Spec.ControlPlaneAvailabilityZoneScheduling.NonZonalPlacement == hyperv1.NonZonalPlacementRequired
+}
+
+// zoneSpreadCritical reports whether this component must be spread across availability
+// zones under the Minimal policy: etcd (quorum), request-serving components, and the
+// API-critical overrides. All other components are "float" and are steered onto overflow
+// capacity.
+func (c *controlPlaneWorkload[T]) zoneSpreadCritical() bool {
+	return isEtcdComponent(c.Name()) || c.IsRequestServing() || zoneCriticalComponents.Has(c.Name())
+}
 
 func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContext, workloadObj T, existingResources map[string]corev1.ResourceRequirements) error {
 	hcp := cpContext.HCP
@@ -224,7 +259,14 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	c.setControlPlaneIsolation(podTemplateSpec, hcp)
 	c.setColocation(podTemplateSpec, hcp)
 	c.applyRequestsOverrides(podTemplateSpec, hcp)
-	if replicas > 1 && c.MultiZoneSpread() {
+	if minimalZonalScheduling(hcp) {
+		// Under the Minimal policy, node placement (zonal vs overflow) is applied to
+		// every component by setControlPlaneIsolation above. Zone/host spreading via
+		// topologySpreadConstraints only applies to multi-replica workloads.
+		if replicas > 1 {
+			c.setMinimalZonalSpread(podTemplateSpec)
+		}
+	} else if replicas > 1 && c.MultiZoneSpread() {
 		c.setMultizoneSpread(podTemplateSpec, hcp)
 	}
 
@@ -266,8 +308,20 @@ func (c *controlPlaneWorkload[T]) setLabels(podTemplate *corev1.PodTemplateSpec,
 	if c.IsRequestServing() {
 		podTemplate.Labels[hyperv1.RequestServingComponentLabel] = "true"
 	}
+	if minimalZonalScheduling(hcp) {
+		podTemplate.Labels[hyperv1.ControlPlaneSchedulingTierLabel] = c.zoneSchedulingTier()
+	}
 	// set additional Labels
 	maps.Copy(podTemplate.Labels, hcp.Spec.Labels)
+}
+
+// zoneSchedulingTier returns the scheduling tier label value for this component under
+// the Minimal availability-zone scheduling policy.
+func (c *controlPlaneWorkload[T]) zoneSchedulingTier() string {
+	if c.zoneSpreadCritical() {
+		return hyperv1.ControlPlaneNodeRoleZonal
+	}
+	return hyperv1.ControlPlaneNodeRoleOverflow
 }
 
 // setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.
@@ -396,6 +450,78 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 			},
 		}
 	}
+
+	if minimalZonalScheduling(hcp) {
+		c.setMinimalZonalNodePlacement(podTemplate, hcp)
+	}
+}
+
+// setMinimalZonalNodePlacement steers this component onto the correct management-cluster
+// node pool under the Minimal availability-zone scheduling policy: zone-critical components
+// onto the zonal (balanced) pools, and float components onto the overflow (non-zonal) pools.
+// Zone-critical components additionally tolerate the zonal NoSchedule taint that is applied
+// in hard (Required) placement mode, and float components are placed on overflow capacity
+// either as a hard requirement (Required) or a strong preference (Preferred).
+func (c *controlPlaneWorkload[T]) setMinimalZonalNodePlacement(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
+	if podTemplate.Spec.Affinity == nil {
+		podTemplate.Spec.Affinity = &corev1.Affinity{}
+	}
+	if podTemplate.Spec.Affinity.NodeAffinity == nil {
+		podTemplate.Spec.Affinity.NodeAffinity = &corev1.NodeAffinity{}
+	}
+
+	role := c.zoneSchedulingTier() // "zonal" or "overflow"
+	roleRequirement := corev1.NodeSelectorRequirement{
+		Key:      hyperv1.ControlPlaneNodeRoleLabel,
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{role},
+	}
+
+	if c.zoneSpreadCritical() {
+		// Zone-critical components are required onto the zonal pools and tolerate the
+		// zonal taint (present only in hard placement mode).
+		podTemplate.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = requireNodeSelector(
+			podTemplate.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution, roleRequirement)
+		podTemplate.Spec.Tolerations = append(podTemplate.Spec.Tolerations, corev1.Toleration{
+			Key:      hyperv1.ControlPlaneNodeRoleLabel,
+			Operator: corev1.TolerationOpEqual,
+			Value:    hyperv1.ControlPlaneNodeRoleZonal,
+			Effect:   corev1.TaintEffectNoSchedule,
+		})
+		return
+	}
+
+	// Float components target the overflow pools, either as a hard requirement or a
+	// strong preference.
+	if nonZonalPlacementRequired(hcp) {
+		podTemplate.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = requireNodeSelector(
+			podTemplate.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution, roleRequirement)
+		return
+	}
+	podTemplate.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
+		podTemplate.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+		corev1.PreferredSchedulingTerm{
+			Weight:     overflowNodeSchedulingAffinityWeight,
+			Preference: corev1.NodeSelectorTerm{MatchExpressions: []corev1.NodeSelectorRequirement{roleRequirement}},
+		})
+}
+
+// requireNodeSelector adds requirement as a required node-affinity match, ANDing it into
+// every existing NodeSelectorTerm (or creating one if none exist). Required
+// NodeSelectorTerms are ORed together, so appending the requirement to each term ANDs it
+// with all pre-existing constraints.
+func requireNodeSelector(existing *corev1.NodeSelector, requirement corev1.NodeSelectorRequirement) *corev1.NodeSelector {
+	if existing == nil || len(existing.NodeSelectorTerms) == 0 {
+		return &corev1.NodeSelector{
+			NodeSelectorTerms: []corev1.NodeSelectorTerm{
+				{MatchExpressions: []corev1.NodeSelectorRequirement{requirement}},
+			},
+		}
+	}
+	for i := range existing.NodeSelectorTerms {
+		existing.NodeSelectorTerms[i].MatchExpressions = append(existing.NodeSelectorTerms[i].MatchExpressions, requirement)
+	}
+	return existing
 }
 
 // setColocation sets labels and PodAffinity rules for this deployment so that pods
@@ -412,14 +538,21 @@ func (c *controlPlaneWorkload[T]) setColocation(podTemplate *corev1.PodTemplateS
 	if podTemplate.Spec.Affinity.PodAffinity == nil {
 		podTemplate.Spec.Affinity.PodAffinity = &corev1.PodAffinity{}
 	}
+	colocationSelector := map[string]string{
+		colocationLabelKey: clusterKey(hcp),
+	}
+	// Under the Minimal policy, scope colocation per scheduling tier so that float pods
+	// are not pulled onto the zonal pools by the desire to pack with zone-critical pods
+	// (which matters in soft/Preferred placement mode).
+	if minimalZonalScheduling(hcp) {
+		colocationSelector[hyperv1.ControlPlaneSchedulingTierLabel] = c.zoneSchedulingTier()
+	}
 	podTemplate.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.WeightedPodAffinityTerm{
 		{
 			Weight: 100,
 			PodAffinityTerm: corev1.PodAffinityTerm{
 				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						colocationLabelKey: clusterKey(hcp),
-					},
+					MatchLabels: colocationSelector,
 				},
 				TopologyKey: corev1.LabelHostname,
 			},
@@ -479,6 +612,68 @@ func (c *controlPlaneWorkload[T]) setMultizoneSpread(podTemplate *corev1.PodTemp
 			},
 		},
 	)
+}
+
+// setMinimalZonalSpread applies topologySpreadConstraints (in place of the podAntiAffinity
+// used by setMultizoneSpread) for a multi-replica workload under the Minimal
+// availability-zone scheduling policy.
+//
+// Zone-critical components are spread one-per-zone (hard) and one-per-host (hard). etcd,
+// a StatefulSet, uses minDomains=3 so it fails closed if fewer than three zones are
+// available; the Deployment-backed components use matchLabelKeys=[pod-template-hash] so a
+// new rollout revision is spread independently (allowing a surge pod into the spare zone).
+//
+// Float components are spread one-per-host (hard) and best-effort across zones
+// (ScheduleAnyway): they spread across overflow zones when the overflow pool spans more than
+// one zone, but scheduling is never blocked when it does not.
+func (c *controlPlaneWorkload[T]) setMinimalZonalSpread(podTemplate *corev1.PodTemplateSpec) {
+	selector := &metav1.LabelSelector{MatchLabels: podTemplate.ObjectMeta.Labels}
+	isEtcd := isEtcdComponent(c.Name())
+
+	// matchLabelKeys scopes spreading to a single rollout revision. It only applies to
+	// Deployment/ReplicaSet-backed workloads (pod-template-hash); etcd is a StatefulSet.
+	var matchLabelKeys []string
+	if !isEtcd {
+		matchLabelKeys = []string{"pod-template-hash"}
+	}
+
+	// Hard per-host spread for every multi-replica workload.
+	constraints := []corev1.TopologySpreadConstraint{
+		{
+			MaxSkew:           1,
+			TopologyKey:       corev1.LabelHostname,
+			WhenUnsatisfiable: corev1.DoNotSchedule,
+			LabelSelector:     selector,
+			MatchLabelKeys:    matchLabelKeys,
+		},
+	}
+
+	if c.zoneSpreadCritical() {
+		zoneConstraint := corev1.TopologySpreadConstraint{
+			MaxSkew:           1,
+			TopologyKey:       corev1.LabelTopologyZone,
+			WhenUnsatisfiable: corev1.DoNotSchedule,
+			LabelSelector:     selector,
+			MatchLabelKeys:    matchLabelKeys,
+		}
+		if isEtcd {
+			// Fail closed for quorum: never co-locate members; require three zones.
+			zoneConstraint.MinDomains = ptr.To[int32](3)
+		}
+		constraints = append(constraints, zoneConstraint)
+	} else {
+		// Float: best-effort zone spread so overflow AZs are used when available, but
+		// scheduling is never blocked when overflow spans a single zone.
+		constraints = append(constraints, corev1.TopologySpreadConstraint{
+			MaxSkew:           1,
+			TopologyKey:       corev1.LabelTopologyZone,
+			WhenUnsatisfiable: corev1.ScheduleAnyway,
+			LabelSelector:     selector,
+			MatchLabelKeys:    matchLabelKeys,
+		})
+	}
+
+	podTemplate.Spec.TopologySpreadConstraints = append(podTemplate.Spec.TopologySpreadConstraints, constraints...)
 }
 
 func (c *controlPlaneWorkload[T]) applyRequestsOverrides(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
@@ -753,7 +948,16 @@ func DefaultReplicas(hcp *hyperv1.HostedControlPlane, options ComponentOptions, 
 	if options.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
 		return 2
 	}
-	if isEtcdComponent(name) || apiCriticalComponents.Has(name) {
+	// etcd always runs with three replicas for quorum. Under the Minimal
+	// availability-zone scheduling policy, non-quorum API-critical components run as
+	// two-replica pairs instead of three-replica triplets (etcd remains at three).
+	if isEtcdComponent(name) {
+		return 3
+	}
+	if apiCriticalComponents.Has(name) {
+		if minimalZonalScheduling(hcp) {
+			return 2
+		}
 		return 3
 	}
 	return 2

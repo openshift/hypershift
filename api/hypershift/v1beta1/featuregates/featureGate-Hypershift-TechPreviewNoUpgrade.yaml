@@ -57,6 +57,9 @@
                     },
                     {
                         "name": "HCPUserFacingOperatorLogs"
+                    },
+                    {
+                        "name": "ControlPlaneAvailabilityZoneScheduling"
                     }
                 ],
                 "version": ""

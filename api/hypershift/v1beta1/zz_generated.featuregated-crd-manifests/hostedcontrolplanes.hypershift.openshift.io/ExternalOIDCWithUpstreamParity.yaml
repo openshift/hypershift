@@ -445,12 +445,12 @@ spec:
                       rule: self == oldSelf
                 type: object
                 x-kubernetes-validations:
-                - message: Capabilities is immutable. Changes might result in unpredictable
-                    and disruptive behavior.
-                  rule: self == oldSelf
                 - message: Capabilities can not be both enabled and disabled at once.
                   rule: 'has(self.enabled) && has(self.disabled) ? self.enabled.all(e,
                     !(e in self.disabled)) : true'
+                - message: Capabilities is immutable. Changes might result in unpredictable
+                    and disruptive behavior.
+                  rule: self == oldSelf
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default
@@ -889,15 +889,15 @@ spec:
                                       type: string
                                   type: object
                                   x-kubernetes-validations:
+                                  - message: expression must not be set if claim is
+                                      specified and is not an empty string
+                                    rule: '(size(self.?claim.orValue("")) > 0) ? !has(self.expression)
+                                      : true'
                                   - message: prefix must not be set to a non-empty
                                       value when expression is set
                                     rule: 'has(self.expression) && size(self.expression)
                                       > 0 ? (!has(self.prefix) || size(self.prefix)
                                       == 0) : true'
-                                  - message: expression must not be set if claim is
-                                      specified and is not an empty string
-                                    rule: '(size(self.?claim.orValue("")) > 0) ? !has(self.expression)
-                                      : true'
                                 username:
                                   description: username is a required field that configures
                                     how the username of a cluster identity should
@@ -5917,11 +5917,11 @@ spec:
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
-                                - message: natSubnetID is immutable once set
-                                  rule: self == oldSelf
                                 - message: must be a valid Azure subnet resource ID
                                     (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})
                                   rule: self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')
+                                - message: natSubnetID is immutable once set
+                                  rule: self == oldSelf
                             type: object
                           swift:
                             description: |-

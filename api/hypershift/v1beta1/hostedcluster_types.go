@@ -244,6 +244,29 @@ const (
 	// RequestServingComponentLabel is used as a label on pods and nodes for dedicated serving components.
 	RequestServingComponentLabel = "hypershift.openshift.io/request-serving-component"
 
+	// ControlPlaneNodeRoleLabel is a well-known label applied by the management-cluster
+	// infrastructure to control plane node pools to identify their scheduling role for
+	// the Minimal control plane availability-zone scheduling policy. Valid values are
+	// ControlPlaneNodeRoleZonal and ControlPlaneNodeRoleOverflow. It is also used as the
+	// key of the NoSchedule taint applied to zonal pools in hard (Required) placement mode.
+	ControlPlaneNodeRoleLabel = "hypershift.openshift.io/control-plane-node-role"
+
+	// ControlPlaneNodeRoleZonal is the ControlPlaneNodeRoleLabel value for the balanced,
+	// availability-zone-spread node pools (the "zonal triplet").
+	ControlPlaneNodeRoleZonal = "zonal"
+
+	// ControlPlaneNodeRoleOverflow is the ControlPlaneNodeRoleLabel value for non-zonal
+	// ("overflow") node pools that host control plane components which do not need to be
+	// spread across availability zones.
+	ControlPlaneNodeRoleOverflow = "overflow"
+
+	// ControlPlaneSchedulingTierLabel is applied to control plane pods under the Minimal
+	// availability-zone scheduling policy to record their scheduling tier, so that
+	// colocation affinity is scoped per tier (zone-critical pods colocate with
+	// zone-critical pods, and overflow pods with overflow pods). Its values are
+	// ControlPlaneNodeRoleZonal and ControlPlaneNodeRoleOverflow.
+	ControlPlaneSchedulingTierLabel = "hypershift.openshift.io/control-plane-scheduling-tier"
+
 	// TopologyAnnotation indicates the type of topology that should take effect for the
 	// hosted cluster's control plane workloads. Currently the only value supported is "dedicated-request-serving-components".
 	// We implicitly support shared and dedicated.
@@ -527,6 +550,52 @@ type Capabilities struct {
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
+// ControlPlaneAvailabilityZoneSchedulingPolicy is the strategy used to distribute
+// highly-available control plane components across management-cluster availability zones.
+// +kubebuilder:validation:Enum=Minimal
+type ControlPlaneAvailabilityZoneSchedulingPolicy string
+
+const (
+	// ControlPlaneAvailabilityZoneSchedulingMinimal spreads only quorum (etcd),
+	// request-serving, and blocking-webhook components across availability zones. etcd
+	// runs with three replicas; the other zone-critical components run as two-replica
+	// pairs. All remaining components are placed on non-zonal (overflow) capacity.
+	ControlPlaneAvailabilityZoneSchedulingMinimal ControlPlaneAvailabilityZoneSchedulingPolicy = "Minimal"
+)
+
+// NonZonalPlacementPolicy controls how strictly non-zone-critical ("float") control
+// plane components are kept off the zonal node pools.
+// +kubebuilder:validation:Enum=Preferred;Required
+type NonZonalPlacementPolicy string
+
+const (
+	// NonZonalPlacementPreferred means float components prefer overflow capacity but may
+	// spill onto zonal nodes when overflow capacity is unavailable.
+	NonZonalPlacementPreferred NonZonalPlacementPolicy = "Preferred"
+	// NonZonalPlacementRequired means float components must run on overflow capacity; if
+	// none is available they remain Pending.
+	NonZonalPlacementRequired NonZonalPlacementPolicy = "Required"
+)
+
+// ControlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+// components are distributed across management-cluster availability zones.
+type ControlPlaneAvailabilityZoneScheduling struct {
+	// policy selects the availability-zone spreading strategy for control plane components.
+	// The only supported value is "Minimal", which spreads only quorum, request-serving,
+	// and blocking-webhook components across availability zones and places the remainder on
+	// non-zonal (overflow) capacity.
+	// +required
+	Policy ControlPlaneAvailabilityZoneSchedulingPolicy `json:"policy,omitempty"`
+
+	// nonZonalPlacement controls how strictly non-zone-critical ("float") components are
+	// kept off the zonal node pools. "Preferred" (the default) allows spillover onto zonal
+	// nodes when overflow capacity is unavailable; "Required" does not. This field has no
+	// effect unless policy is set.
+	// +optional
+	// +default="Preferred"
+	NonZonalPlacement NonZonalPlacementPolicy `json:"nonZonalPlacement,omitempty"`
+}
+
 // +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route")`,message="Azure managed platform (ARO HCP) requires OAuthServer to use Route"
@@ -538,6 +607,8 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=ControlPlaneAvailabilityZoneScheduling,rule="!has(self.controlPlaneAvailabilityZoneScheduling) || self.controllerAvailabilityPolicy == 'HighlyAvailable'",message="controlPlaneAvailabilityZoneScheduling can only be set when controllerAvailabilityPolicy is HighlyAvailable"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=ControlPlaneAvailabilityZoneScheduling,rule="!has(self.controlPlaneAvailabilityZoneScheduling) || self.platform.type == 'Azure'",message="controlPlaneAvailabilityZoneScheduling is only supported on the Azure platform"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -633,6 +704,15 @@ type HostedClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:="SingleReplica"
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
+
+	// controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+	// components are distributed across management-cluster availability zones. It is only valid
+	// when controllerAvailabilityPolicy is HighlyAvailable and the platform is Azure. When
+	// unset, all highly-available components are spread across availability zones and the
+	// API-critical components run with three replicas (the historical behavior).
+	// +optional
+	// +openshift:enable:FeatureGate=ControlPlaneAvailabilityZoneScheduling
+	ControlPlaneAvailabilityZoneScheduling ControlPlaneAvailabilityZoneScheduling `json:"controlPlaneAvailabilityZoneScheduling,omitzero"`
 
 	// dns specifies the DNS configuration for the hosted cluster ingress.
 	// +optional

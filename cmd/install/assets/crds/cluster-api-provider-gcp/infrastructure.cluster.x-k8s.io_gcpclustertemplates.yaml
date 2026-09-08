@@ -334,13 +334,6 @@ spec:
                                           or CIDR/Prefix
                                         rule: self.all(i, isIP(i) || isCIDR(i))
                                     direction:
-                                      allOf:
-                                      - enum:
-                                        - Ingress
-                                        - Egress
-                                      - enum:
-                                        - Ingress
-                                        - Egress
                                       default: Ingress
                                       description: |-
                                         Direction is the direction of traffic to which this firewall applies, either
@@ -350,6 +343,9 @@ spec:
                                         Possible values:
                                           "Egress" - Indicates that firewall should apply to outgoing traffic.
                                           "Ingress" - Indicates that firewall should apply to incoming traffic.
+                                      enum:
+                                      - Ingress
+                                      - Egress
                                       type: string
                                     name:
                                       description: |-

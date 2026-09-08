@@ -163,6 +163,18 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			InitialNodePoolReplicas: &oneInitialReplica,
 			ExtraArgs:               extraArgs,
 		},
+		{
+			// minimal-zonal exercises the Minimal control plane availability-zone
+			// scheduling policy. It requires a management cluster with at least three
+			// availability zones (labeled by PreCreate). Preferred placement is used so
+			// float components can spill onto zonal capacity and never wedge on overflow.
+			Variant: "minimal-zonal",
+			ExtraArgs: append([]string{
+				"--control-plane-availability-policy=HighlyAvailable",
+				"--control-plane-availability-zone-scheduling-policy=Minimal",
+				"--control-plane-non-zonal-placement=Preferred",
+			}, extraArgs...),
+		},
 	}
 }
 
@@ -200,6 +212,22 @@ func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWat
 	}
 	a.keycloakConfig = kcConfig
 	log.Printf("Keycloak deployed: issuer=%s", kcConfig.IssuerURL)
+
+	// Establish the node contract for the minimal-zonal variant by labeling existing
+	// management-cluster nodes (no new node pools). The minimal-zonal variant is a fixed
+	// member of the test matrix (ClusterSpecs is consumed before PreCreate runs, so it
+	// cannot be skipped dynamically here), and it requires at least three availability
+	// zones. If the contract cannot be established, fail loudly rather than let the
+	// minimal-zonal cluster silently fail to become available. The labels are additive and
+	// namespaced under hypershift.openshift.io, so they do not affect the other variants.
+	//
+	// The returned cleanup is intentionally not retained: the lifecycle framework exposes
+	// no teardown hook, and the management-cluster node labels are additive/namespaced and
+	// harmless on the ephemeral CI cluster.
+	if _, err := LabelManagementNodesForZonalScheduling(ctx, cl); err != nil {
+		return fmt.Errorf("labeling management nodes for the minimal-zonal variant: %w", err)
+	}
+	log.Printf("labeled management nodes for the Minimal availability-zone scheduling policy")
 	return nil
 }
 
@@ -378,6 +406,11 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 				Name:        "external-oidc",
 				Variant:     "external-oidc",
 				LabelFilter: "external-oidc || global-pull-secret",
+			},
+			{
+				Name:        "minimal-zonal",
+				Variant:     "minimal-zonal",
+				LabelFilter: "minimal-zonal-scheduling || control-plane-workloads || hosted-cluster-health",
 			},
 		},
 		Sequential: []SequentialGroup{

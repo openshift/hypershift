@@ -328,7 +328,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
-replace sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
+replace sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20260120141914-b0865777b142
 
 // pin these versions to match the main module even if golangci-lint v2 wants newer versions
 replace (

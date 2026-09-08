@@ -40419,6 +40419,24 @@ Possible values are HighlyAvailable and SingleReplica. The default value is Sing
 </tr>
 <tr>
 <td>
+<code>controlPlaneAvailabilityZoneScheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">
+ControlPlaneAvailabilityZoneScheduling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones. It is only valid
+when controllerAvailabilityPolicy is HighlyAvailable and the platform is Azure. When
+unset, all highly-available components are spread across availability zones and the
+API-critical components run with three replicas (the historical behavior).</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>dns</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.DNSSpec">
@@ -46183,6 +46201,14 @@ CRDs, RBAC, and connectivity checks).
 A failure here often means a software bug, a non-stable cluster, or
 connectivity issues between the control plane and the hosted cluster.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneAvailabilityZoneSchedulingAvailable&#34;</p></td>
+<td><p>ControlPlaneAvailabilityZoneSchedulingAvailable indicates whether the Minimal
+control plane availability-zone scheduling policy (spec.controlPlaneAvailabilityZoneScheduling)
+is being applied. <strong>True</strong> means the policy is in effect. <strong>False</strong> means it is
+not being applied, either because the management cluster does not satisfy the
+node contract (labeled zonal/overflow pools), or because the hosted cluster also
+requests the dedicated request-serving topology, which takes precedence.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.</p>
 </td>
@@ -46459,6 +46485,83 @@ OIDC client status, and other authentication-related configurations.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###ControlPlaneAvailabilityZoneScheduling { #hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>ControlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>policy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneSchedulingPolicy">
+ControlPlaneAvailabilityZoneSchedulingPolicy
+</a>
+</em>
+</td>
+<td>
+<p>policy selects the availability-zone spreading strategy for control plane components.
+The only supported value is &ldquo;Minimal&rdquo;, which spreads only quorum, request-serving,
+and blocking-webhook components across availability zones and places the remainder on
+non-zonal (overflow) capacity.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nonZonalPlacement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NonZonalPlacementPolicy">
+NonZonalPlacementPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nonZonalPlacement controls how strictly non-zone-critical (&ldquo;float&rdquo;) components are
+kept off the zonal node pools. &ldquo;Preferred&rdquo; (the default) allows spillover onto zonal
+nodes when overflow capacity is unavailable; &ldquo;Required&rdquo; does not. This field has no
+effect unless policy is set.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneAvailabilityZoneSchedulingPolicy { #hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneSchedulingPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">ControlPlaneAvailabilityZoneScheduling</a>)
+</p>
+<p>
+<p>ControlPlaneAvailabilityZoneSchedulingPolicy is the strategy used to distribute
+highly-available control plane components across management-cluster availability zones.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Minimal&#34;</p></td>
+<td><p>ControlPlaneAvailabilityZoneSchedulingMinimal spreads only quorum (etcd),
+request-serving, and blocking-webhook components across availability zones. etcd
+runs with three replicas; the other zone-critical components run as two-replica
+pairs. All remaining components are placed on non-zonal (overflow) capacity.</p>
+</td>
+</tr></tbody>
 </table>
 ###ControlPlaneComponent { #hypershift.openshift.io/v1beta1.ControlPlaneComponent }
 <p>
@@ -49612,6 +49715,24 @@ Possible values are HighlyAvailable and SingleReplica. The default value is Sing
 </tr>
 <tr>
 <td>
+<code>controlPlaneAvailabilityZoneScheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">
+ControlPlaneAvailabilityZoneScheduling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones. It is only valid
+when controllerAvailabilityPolicy is HighlyAvailable and the platform is Azure. When
+unset, all highly-available components are spread across availability zones and the
+API-critical components run with three replicas (the historical behavior).</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>dns</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.DNSSpec">
@@ -50473,6 +50594,23 @@ AvailabilityPolicy
 <p>infrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
 SingleReplica.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneAvailabilityZoneScheduling,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">
+ControlPlaneAvailabilityZoneScheduling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneAvailabilityZoneScheduling configures how highly-available control plane
+components are distributed across management-cluster availability zones. It is copied
+from the HostedCluster of the same name by the hypershift-operator and is only honored
+when controllerAvailabilityPolicy is HighlyAvailable.</p>
 </td>
 </tr>
 <tr>
@@ -54861,6 +54999,32 @@ progress and detecting stuck nodes.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###NonZonalPlacementPolicy { #hypershift.openshift.io/v1beta1.NonZonalPlacementPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneAvailabilityZoneScheduling">ControlPlaneAvailabilityZoneScheduling</a>)
+</p>
+<p>
+<p>NonZonalPlacementPolicy controls how strictly non-zone-critical (&ldquo;float&rdquo;) control
+plane components are kept off the zonal node pools.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Preferred&#34;</p></td>
+<td><p>NonZonalPlacementPreferred means float components prefer overflow capacity but may
+spill onto zonal nodes when overflow capacity is unavailable.</p>
+</td>
+</tr><tr><td><p>&#34;Required&#34;</p></td>
+<td><p>NonZonalPlacementRequired means float components must run on overflow capacity; if
+none is available they remain Pending.</p>
+</td>
+</tr></tbody>
 </table>
 ###OAuthServerOperatorSpec { #hypershift.openshift.io/v1beta1.OAuthServerOperatorSpec }
 <p>

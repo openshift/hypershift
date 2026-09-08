@@ -206,6 +206,7 @@ hostedclusters.hypershift.openshift.io:
   FeatureGates:
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
+  - ControlPlaneAvailabilityZoneScheduling
   - EtcdSharding
   - ExternalOIDC
   - ExternalOIDCExternalClaimsSourcing
@@ -285,6 +286,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   FeatureGates:
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
+  - ControlPlaneAvailabilityZoneScheduling
   - EtcdSharding
   - ExternalOIDC
   - ExternalOIDCExternalClaimsSourcing

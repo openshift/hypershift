@@ -76,6 +76,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	flags.StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 	flags.StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
+	flags.StringVar(&opts.ControlPlaneAvailabilityZoneSchedulingPolicy, "control-plane-availability-zone-scheduling-policy", opts.ControlPlaneAvailabilityZoneSchedulingPolicy, "Control plane availability-zone scheduling policy (feature-gated, Azure + HighlyAvailable only). Supported options: Minimal. When unset, the historical behavior applies.")
+	flags.StringVar(&opts.ControlPlaneNonZonalPlacement, "control-plane-non-zonal-placement", opts.ControlPlaneNonZonalPlacement, "How strictly non-zone-critical components are kept off the zonal node pools when a scheduling policy is set. Supported options: Preferred, Required.")
 	flags.BoolVar(&opts.Render, "render", opts.Render, "Render output as YAML to stdout instead of applying. Note: secrets are not rendered by default, additionally use the --render-sensitive flag to render secrets")
 	flags.StringVar(&opts.RenderInto, "render-into", opts.RenderInto, "Render output as YAML into this file instead of applying. If unset, YAML will be output to stdout.")
 	flags.BoolVar(&opts.RenderSensitive, "render-sensitive", opts.RenderSensitive, "When used along --render it enables rendering of secrets in the output")
@@ -129,11 +131,18 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	AdditionalTrustBundle            string
-	Annotations                      []string
-	Labels                           []string
-	AutoRepair                       bool
-	ControlPlaneAvailabilityPolicy   string
+	AdditionalTrustBundle          string
+	Annotations                    []string
+	Labels                         []string
+	AutoRepair                     bool
+	ControlPlaneAvailabilityPolicy string
+	// ControlPlaneAvailabilityZoneSchedulingPolicy, when set to "Minimal", opts the
+	// HostedCluster into the Minimal control plane availability-zone scheduling policy.
+	ControlPlaneAvailabilityZoneSchedulingPolicy string
+	// ControlPlaneNonZonalPlacement selects Preferred (soft) or Required (hard) placement
+	// of non-zone-critical components onto overflow capacity. Only meaningful when
+	// ControlPlaneAvailabilityZoneSchedulingPolicy is set.
+	ControlPlaneNonZonalPlacement    string
 	ControlPlaneOperatorImage        string
 	EtcdStorageClass                 string
 	EtcdStorageSize                  string
@@ -328,6 +337,15 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	}
 
 	applyClusterCapabilities(prototype.Cluster, opts)
+	if opts.ControlPlaneAvailabilityZoneSchedulingPolicy != "" {
+		azScheduling := hyperv1.ControlPlaneAvailabilityZoneScheduling{
+			Policy: hyperv1.ControlPlaneAvailabilityZoneSchedulingPolicy(opts.ControlPlaneAvailabilityZoneSchedulingPolicy),
+		}
+		if opts.ControlPlaneNonZonalPlacement != "" {
+			azScheduling.NonZonalPlacement = hyperv1.NonZonalPlacementPolicy(opts.ControlPlaneNonZonalPlacement)
+		}
+		prototype.Cluster.Spec.ControlPlaneAvailabilityZoneScheduling = azScheduling
+	}
 	if err := applyEtcdConfig(prototype.Cluster, opts); err != nil {
 		return nil, err
 	}
