@@ -31,6 +31,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/capabilities"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
@@ -136,6 +137,78 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 }
 
 func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx internal.TestContextGetter) {
+	When("the ingress capability is disabled", func() {
+		It("should not copy a configured default ingress certificate to the control plane or hosted cluster", Label(internal.InformingLabel), func() {
+			tc := getTestCtx()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+			if capabilities.IsIngressCapabilityEnabled(hc.Spec.Capabilities) {
+				Skip("Ingress capability must be disabled on the HostedCluster")
+			}
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
+
+			By("Creating a valid source certificate while ingress is disabled")
+			certPEM, keyPEM, err := v2util.GenerateCustomCertificate(
+				[]string{fmt.Sprintf("*.%s", ingressDomainForHostedCluster(hc))}, 24*time.Hour)
+			Expect(err).NotTo(HaveOccurred(), "failed to generate custom ingress certificate")
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{GenerateName: "e2e-disabled-ingress-cert-", Namespace: tc.ClusterNamespace},
+				Type:       corev1.SecretTypeTLS,
+				Data:       map[string][]byte{corev1.TLSCertKey: certPEM, corev1.TLSPrivateKeyKey: keyPEM},
+			}
+			Expect(tc.MgmtClient.Create(tc.Context, secret)).To(Succeed())
+			DeferCleanup(func() {
+				if err := tc.MgmtClient.Delete(tc.Context, secret); !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete source certificate")
+				}
+			})
+
+			originalOperatorConfig := hc.Spec.OperatorConfiguration.DeepCopy()
+			DeferCleanup(func() {
+				Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+					obj.Spec.OperatorConfiguration = originalOperatorConfig
+				})).To(Succeed(), "cleanup: failed to restore operator configuration")
+			})
+			By("Referencing the source certificate on the HostedCluster")
+			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				if obj.Spec.OperatorConfiguration == nil {
+					obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+				}
+				if obj.Spec.OperatorConfiguration.IngressOperator == nil {
+					obj.Spec.OperatorConfiguration.IngressOperator = &hyperv1.IngressOperatorSpec{}
+				}
+				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: secret.Name}
+			})).To(Succeed())
+
+			By("Waiting for the certificate reference to reach the HostedControlPlane")
+			Eventually(func(g Gomega) {
+				hcp := &hyperv1.HostedControlPlane{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, types.NamespacedName{Namespace: tc.ControlPlaneNamespace, Name: hc.Name}, hcp)).To(Succeed())
+				g.Expect(capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities)).To(BeFalse())
+				g.Expect(hcp.Spec.OperatorConfiguration).NotTo(BeNil())
+				g.Expect(hcp.Spec.OperatorConfiguration.IngressOperator).NotTo(BeNil())
+				g.Expect(hcp.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name).To(Equal(secret.Name))
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("Verifying neither controller copies the certificate or reports it synced")
+			Consistently(func(g Gomega) {
+				controlPlaneSecret := cpomanifests.ServiceProviderDefaultIngressServingCert(tc.ControlPlaneNamespace)
+				err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(controlPlaneSecret), controlPlaneSecret)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "control plane certificate secret %s must remain absent, got: %v", crclient.ObjectKeyFromObject(controlPlaneSecret), err)
+
+				hostedClusterSecret := manifests.IngressDefaultIngressControllerCert()
+				err = hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedClusterSecret), hostedClusterSecret)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "hosted cluster certificate secret %s must remain absent, got: %v", crclient.ObjectKeyFromObject(hostedClusterSecret), err)
+
+				currentHC, err := tc.GetHostedCluster()
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(meta.FindStatusCondition(currentHC.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))).To(BeNil(),
+					"IngressDefaultCertificateSynced condition must remain absent while ingress is disabled")
+			}, 1*time.Minute, 10*time.Second).Should(Succeed())
+		})
+	})
+
 	When("a custom default ingress certificate is configured", Ordered, func() {
 		const certSecretName = "e2e-custom-ingress-cert"
 
@@ -146,10 +219,14 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 		var originalDefaultCert hyperv1.IngressDefaultCertificateReference
 
 		BeforeAll(func() {
-			tc = getTestCtx()
+			candidateTC := getTestCtx()
 
-			hc, err := tc.GetHostedCluster()
+			hc, err := candidateTC.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+			if !capabilities.IsIngressCapabilityEnabled(hc.Spec.Capabilities) {
+				Skip("Ingress capability is disabled on the HostedCluster")
+			}
 
 			// TODO: Remove this skip once the default ingress endpoint is reachable
 			// from the build farm during testing. The certificate propagation checks
@@ -158,6 +235,9 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
 				Skip("skipped on Azure until the default ingress endpoint is reachable from the build farm during testing")
 			}
+
+			// Enable cleanup only after the capability and platform guards pass.
+			tc = candidateTC
 
 			// Capture the original defaultCertificate so AfterAll can restore it
 			// rather than unconditionally clearing a value the cluster arrived with.
