@@ -16,10 +16,17 @@ func adaptCredentialsSecret(cpContext component.WorkloadContext, secret *corev1.
 	secret.Type = corev1.SecretTypeOpaque
 
 	switch hcp.Spec.AutoNode.Provisioner.Karpenter.Platform {
+	case hyperv1.AWSPlatform:
+		awsCredentialsTemplate := `[default]
+		role_arn = %s
+		web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+		sts_regional_endpoints = regional
+	`
+		arn := hcp.Spec.AutoNode.Provisioner.Karpenter.AWS.RoleARN
+		credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
+		secret.Data = map[string][]byte{"credentials": []byte(credentials)}
+		return nil
 	case hyperv1.AzurePlatform:
-		if hcp.Spec.Platform.Azure == nil {
-			return fmt.Errorf("azure platform spec is required for Karpenter credentials")
-		}
 		clientID := string(hcp.Spec.AutoNode.Provisioner.Karpenter.Azure.ClientID)
 		if clientID == "" {
 			return fmt.Errorf("AutoNode Karpenter Azure clientID is required")
@@ -32,14 +39,6 @@ func adaptCredentialsSecret(cpContext component.WorkloadContext, secret *corev1.
 		}
 		return nil
 	default:
-		awsCredentialsTemplate := `[default]
-	role_arn = %s
-	web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-	sts_regional_endpoints = regional
-`
-		arn := hcp.Spec.AutoNode.Provisioner.Karpenter.AWS.RoleARN
-		credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
-		secret.Data = map[string][]byte{"credentials": []byte(credentials)}
-		return nil
+		return fmt.Errorf("unsupported platform: %s", hcp.Spec.AutoNode.Provisioner.Karpenter.Platform)
 	}
 }
