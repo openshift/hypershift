@@ -32,6 +32,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/reencryption"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/spotremediation"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/usercabundle"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/webhookvalidation"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -75,6 +76,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	hcpstatus.ControllerName:         hcpstatus.Setup,
 	spotremediation.ControllerName:   spotremediation.Setup,
 	reencryption.ControllerName:      reencryption.Setup,
+	usercabundle.ControllerName:      usercabundle.Setup,
 	webhookvalidation.ControllerName: webhookvalidation.Setup,
 }
 
