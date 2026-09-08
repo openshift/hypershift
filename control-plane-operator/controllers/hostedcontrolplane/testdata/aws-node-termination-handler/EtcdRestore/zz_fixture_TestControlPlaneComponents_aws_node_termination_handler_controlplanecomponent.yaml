@@ -1,0 +1,24 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  name: aws-node-termination-handler
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: aws-node-termination-handler Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment aws-node-termination-handler rollout to finish:
+      0 out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: Secret
+    name: aws-node-termination-handler-creds
