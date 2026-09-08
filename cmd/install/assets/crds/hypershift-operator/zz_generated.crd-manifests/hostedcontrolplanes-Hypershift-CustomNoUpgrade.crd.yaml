@@ -96,8 +96,9 @@ spec:
                           Karpenter provisioner.
                         properties:
                           aws:
-                            description: aws specifies the AWS-specific configuration
-                              for Karpenter.
+                            description: |-
+                              aws specifies the AWS-specific configuration for Karpenter.
+                              Required when platform is "AWS", and forbidden otherwise.
                             properties:
                               roleARN:
                                 description: "roleARN specifies the ARN of the IAM
@@ -188,11 +189,42 @@ spec:
                             required:
                             - roleARN
                             type: object
+                          azure:
+                            description: |-
+                              azure specifies the Azure-specific configuration for Karpenter.
+                              Required when platform is "Azure", and forbidden otherwise.
+                            properties:
+                              clientID:
+                                description: |-
+                                  clientID is the client ID of the user-assigned managed identity Karpenter uses
+                                  to provision and manage Azure VMs in the hosted cluster's subscription.
+
+                                  The identity must have a federated credential that trusts the hosted cluster
+                                  OIDC issuer for subject system:serviceaccount:kube-system:karpenter.
+
+                                  The identity must be granted Virtual Machine Contributor, Network Contributor,
+                                  and Managed Identity Operator on the cluster resource group (and Network Contributor
+                                  on the VNet resource group when it differs).
+
+                                  The client ID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                                maxLength: 36
+                                minLength: 36
+                                pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                            required:
+                            - clientID
+                            type: object
                           platform:
                             description: platform specifies the infrastructure platform
                               that Karpenter should provision nodes on.
                             enum:
                             - AWS
+                            - Azure
                             maxLength: 100
                             type: string
                         required:
@@ -202,6 +234,9 @@ spec:
                         - message: aws is required when platform is AWS, and forbidden
                             otherwise
                           rule: 'self.platform == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                        - message: azure is required when platform is Azure, and forbidden
+                            otherwise
+                          rule: 'self.platform == ''Azure'' ? has(self.azure) : !has(self.azure)'
                       name:
                         description: name specifies the name of the provisioner to
                           use for automatic node management.

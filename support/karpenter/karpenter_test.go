@@ -213,6 +213,63 @@ func TestKarpenterTaintConfigManifest(t *testing.T) {
 	})
 }
 
+func TestIsKarpenterEnabled(t *testing.T) {
+	testCases := []struct {
+		name     string
+		autoNode hyperv1.AutoNode
+		expected bool
+	}{
+		{
+			name:     "When AutoNode is empty it should return false",
+			autoNode: hyperv1.AutoNode{},
+			expected: false,
+		},
+		{
+			name: "When provisioner is Karpenter on AWS it should return true",
+			autoNode: hyperv1.AutoNode{
+				Provisioner: hyperv1.ProvisionerConfig{
+					Name: hyperv1.ProvisionerKarpenter,
+					Karpenter: hyperv1.KarpenterConfig{
+						Platform: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When provisioner is Karpenter on Azure it should return true",
+			autoNode: hyperv1.AutoNode{
+				Provisioner: hyperv1.ProvisionerConfig{
+					Name: hyperv1.ProvisionerKarpenter,
+					Karpenter: hyperv1.KarpenterConfig{
+						Platform: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When provisioner is Karpenter on an unsupported platform it should return false",
+			autoNode: hyperv1.AutoNode{
+				Provisioner: hyperv1.ProvisionerConfig{
+					Name: hyperv1.ProvisionerKarpenter,
+					Karpenter: hyperv1.KarpenterConfig{
+						Platform: hyperv1.NonePlatform,
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(IsKarpenterEnabled(tc.autoNode)).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestIsStandaloneKarpenterOperatorEnabled(t *testing.T) {
 	testCases := []struct {
 		name       string

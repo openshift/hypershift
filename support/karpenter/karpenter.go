@@ -98,10 +98,16 @@ func SupportedArchitectures(platform hyperv1.PlatformType) ([]string, error) {
 }
 
 // IsKarpenterEnabled checks if Karpenter is enabled for the given AutoNode configuration.
-// Note that we may eventually support other platforms, but for now we only support AWS.
 func IsKarpenterEnabled(autoNode hyperv1.AutoNode) bool {
-	return autoNode.Provisioner.Name == hyperv1.ProvisionerKarpenter &&
-		autoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform
+	if autoNode.Provisioner.Name != hyperv1.ProvisionerKarpenter {
+		return false
+	}
+	switch autoNode.Provisioner.Karpenter.Platform {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
+		return true
+	default:
+		return false
+	}
 }
 
 // GetHCP retrieves the HostedControlPlane from the given namespace.
@@ -138,6 +144,7 @@ const EnableStandaloneKarpenterOperatorEnvVar = "ENABLE_STANDALONE_KARPENTER_OPE
 // Requires both:
 // - the KarpenterOperator feature gate is on (via TechPreviewNoUpgrade), and
 // - the ENABLE_STANDALONE_KARPENTER_OPERATOR env var is set to "1" (via --enable-standalone-karpenter-operator install flag).
+// Note that this function only works in the context of the hypershift-operator since it checks that an env var is set.
 func IsStandaloneKarpenterOperatorEnabled() bool {
 	return featuregate.Gate().Enabled(featuregate.KarpenterOperator) &&
 		os.Getenv(EnableStandaloneKarpenterOperatorEnvVar) == "1"
