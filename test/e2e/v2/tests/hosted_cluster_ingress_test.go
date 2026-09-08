@@ -18,6 +18,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -27,11 +28,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -40,9 +41,86 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func updateIngressTestObject[T crclient.Object](ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
+	return wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*1, true, func(ctx context.Context) (done bool, err error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(original), original); err != nil {
+			fmt.Fprintf(GinkgoWriter, "failed to retrieve object %s, will retry: %v", original.GetName(), err)
+			return false, nil
+		}
+
+		obj := original.DeepCopyObject().(T)
+		mutate(obj)
+
+		if err := client.Patch(ctx, obj, crclient.MergeFrom(original)); err != nil {
+			fmt.Fprintf(GinkgoWriter, "failed to patch object %s, will retry: %v", original.GetName(), err)
+			if apierrors.IsConflict(err) {
+				return false, nil
+			}
+			return false, err
+		}
+
+		return true, nil
+	})
+}
+
+// getIngressTestHostedCluster fetches current state for certificate lifecycle assertions.
+func getIngressTestHostedCluster(tc *internal.TestContext) (*hyperv1.HostedCluster, error) {
+	hc := &hyperv1.HostedCluster{}
+	if err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}, hc); err != nil {
+		return nil, err
+	}
+	return hc, nil
+}
+
+func getIngressTestHostedClusterRESTConfig(tc *internal.TestContext, hc *hyperv1.HostedCluster) (*rest.Config, error) {
+	if hc.Status.KubeConfig == nil {
+		return nil, fmt.Errorf("kubeconfig status not yet available for HostedCluster %s/%s", hc.Namespace, hc.Name)
+	}
+	var kubeconfigSecret corev1.Secret
+	err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+		Namespace: hc.Namespace,
+		Name:      hc.Status.KubeConfig.Name,
+	}, &kubeconfigSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get kubeconfig secret %s/%s: %w", hc.Namespace, hc.Status.KubeConfig.Name, err)
+	}
+
+	kubeconfigData, ok := kubeconfigSecret.Data["kubeconfig"]
+	if !ok || len(kubeconfigData) == 0 {
+		return nil, fmt.Errorf("kubeconfig key not found or empty in secret %s/%s", hc.Namespace, hc.Status.KubeConfig.Name)
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create REST config from kubeconfig: %w", err)
+	}
+	restConfig.QPS = 200
+	restConfig.Burst = 300
+
+	return restConfig, nil
+}
+
+func getIngressTestHostedClusterClient(tc *internal.TestContext, hc *hyperv1.HostedCluster) (crclient.Client, error) {
+	restConfig, err := getIngressTestHostedClusterRESTConfig(tc, hc)
+	if err != nil {
+		return nil, err
+	}
+	if restConfig == nil {
+		return nil, fmt.Errorf("expected a REST config for hostedcluster")
+	}
+	client, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create hosted cluster client: %w", err)
+	}
+	return client, nil
+}
 
 // canaryURL returns the health-check URL for the openshift-ingress canary route
 // on the given ingress domain.
@@ -90,52 +168,82 @@ func ingressDomainForHostedCluster(hc *hyperv1.HostedCluster) string {
 }
 
 func RegisterHostedClusterIngressTests(getTestCtx internal.TestContextGetter) {
-	ValidateIngressOperatorConfigurationTest(getTestCtx)
 	ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx)
 }
 
-func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGetter) {
-	When("hosted cluster has IngressOperator EndpointPublishingStrategy configured", func() {
-		It("should reflect the custom strategy in the hosted cluster IngressController", func() {
+func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx internal.TestContextGetter) {
+	When("the ingress capability is disabled", func() {
+		It("should not copy a configured default ingress certificate to the control plane or hosted cluster", Label("Informing"), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version421)
-			hc, err := tc.GetHostedCluster()
-			Expect(err).NotTo(HaveOccurred())
-
-			if hc.Spec.OperatorConfiguration == nil ||
-				hc.Spec.OperatorConfiguration.IngressOperator == nil ||
-				hc.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy == nil {
-				Skip("HostedCluster does not have IngressOperator EndpointPublishingStrategy configured")
+			hc, err := getIngressTestHostedCluster(tc)
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+			if capabilities.IsIngressCapabilityEnabled(hc.Spec.Capabilities) {
+				Skip("Ingress capability must be disabled on the HostedCluster")
 			}
+			hcClient, err := getIngressTestHostedClusterClient(tc, hc)
+			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
-			expectedStrategy := hc.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy
-
-			hcClient, err := tc.GetHostedClusterClient(hc)
-			Expect(err).NotTo(HaveOccurred())
-
-			Eventually(func(g Gomega) {
-				ic := &operatorv1.IngressController{}
-				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{
-					Namespace: "openshift-ingress-operator",
-					Name:      "default",
-				}, ic)).To(Succeed(), "failed to get IngressController default in hosted cluster")
-
-				g.Expect(ic.Spec.EndpointPublishingStrategy).NotTo(BeNil(),
-					"IngressController EndpointPublishingStrategy should be set")
-				g.Expect(ic.Spec.EndpointPublishingStrategy.Type).To(Equal(expectedStrategy.Type),
-					fmt.Sprintf("expected EndpointPublishingStrategy type %s, got %s", expectedStrategy.Type, ic.Spec.EndpointPublishingStrategy.Type))
-				if expectedStrategy.LoadBalancer != nil {
-					g.Expect(ic.Spec.EndpointPublishingStrategy.LoadBalancer).NotTo(BeNil(),
-						"IngressController LoadBalancer configuration should be set")
-					g.Expect(ic.Spec.EndpointPublishingStrategy.LoadBalancer.Scope).To(Equal(expectedStrategy.LoadBalancer.Scope),
-						fmt.Sprintf("expected LoadBalancer scope %s, got %s", expectedStrategy.LoadBalancer.Scope, ic.Spec.EndpointPublishingStrategy.LoadBalancer.Scope))
+			By("Creating a valid source certificate while ingress is disabled")
+			certPEM, keyPEM, err := v2util.GenerateCustomCertificate(
+				[]string{fmt.Sprintf("*.%s", ingressDomainForHostedCluster(hc))}, 24*time.Hour)
+			Expect(err).NotTo(HaveOccurred(), "failed to generate custom ingress certificate")
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{GenerateName: "e2e-disabled-ingress-cert-", Namespace: tc.ClusterNamespace},
+				Type:       corev1.SecretTypeTLS,
+				Data:       map[string][]byte{corev1.TLSCertKey: certPEM, corev1.TLSPrivateKeyKey: keyPEM},
+			}
+			Expect(tc.MgmtClient.Create(tc.Context, secret)).To(Succeed())
+			DeferCleanup(func() {
+				if err := tc.MgmtClient.Delete(tc.Context, secret); !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete source certificate")
 				}
+			})
+
+			originalOperatorConfig := hc.Spec.OperatorConfiguration.DeepCopy()
+			DeferCleanup(func() {
+				Expect(updateIngressTestObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+					obj.Spec.OperatorConfiguration = originalOperatorConfig
+				})).To(Succeed(), "cleanup: failed to restore operator configuration")
+			})
+			By("Referencing the source certificate on the HostedCluster")
+			Expect(updateIngressTestObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				if obj.Spec.OperatorConfiguration == nil {
+					obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+				}
+				if obj.Spec.OperatorConfiguration.IngressOperator == nil {
+					obj.Spec.OperatorConfiguration.IngressOperator = &hyperv1.IngressOperatorSpec{}
+				}
+				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: secret.Name}
+			})).To(Succeed())
+
+			By("Waiting for the certificate reference to reach the HostedControlPlane")
+			Eventually(func(g Gomega) {
+				hcp := &hyperv1.HostedControlPlane{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, types.NamespacedName{Namespace: tc.ControlPlaneNamespace, Name: hc.Name}, hcp)).To(Succeed())
+				g.Expect(capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities)).To(BeFalse())
+				g.Expect(hcp.Spec.OperatorConfiguration).NotTo(BeNil())
+				g.Expect(hcp.Spec.OperatorConfiguration.IngressOperator).NotTo(BeNil())
+				g.Expect(hcp.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name).To(Equal(secret.Name))
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("Verifying neither controller copies the certificate or reports it synced")
+			Consistently(func(g Gomega) {
+				controlPlaneSecret := cpomanifests.ServiceProviderDefaultIngressServingCert(tc.ControlPlaneNamespace)
+				err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(controlPlaneSecret), controlPlaneSecret)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "control plane certificate secret %s must remain absent, got: %v", crclient.ObjectKeyFromObject(controlPlaneSecret), err)
+
+				hostedClusterSecret := manifests.IngressDefaultIngressControllerCert()
+				err = hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedClusterSecret), hostedClusterSecret)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "hosted cluster certificate secret %s must remain absent, got: %v", crclient.ObjectKeyFromObject(hostedClusterSecret), err)
+
+				currentHC, err := getIngressTestHostedCluster(tc)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(meta.FindStatusCondition(currentHC.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))).To(BeNil(),
+					"IngressDefaultCertificateSynced condition must remain absent while ingress is disabled")
+			}, 1*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
-}
 
-func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx internal.TestContextGetter) {
 	When("a custom default ingress certificate is configured", Ordered, func() {
 		const certSecretName = "e2e-custom-ingress-cert"
 
@@ -146,10 +254,14 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 		var originalDefaultCert hyperv1.IngressDefaultCertificateReference
 
 		BeforeAll(func() {
-			tc = getTestCtx()
+			candidateTC := getTestCtx()
 
-			hc, err := tc.GetHostedCluster()
+			hc, err := getIngressTestHostedCluster(candidateTC)
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+			if !capabilities.IsIngressCapabilityEnabled(hc.Spec.Capabilities) {
+				Skip("Ingress capability is disabled on the HostedCluster")
+			}
 
 			// TODO: Remove this skip once the default ingress endpoint is reachable
 			// from the build farm during testing. The certificate propagation checks
@@ -159,13 +271,16 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 				Skip("skipped on Azure until the default ingress endpoint is reachable from the build farm during testing")
 			}
 
+			// Enable cleanup only after the capability and platform guards pass.
+			tc = candidateTC
+
 			// Capture the original defaultCertificate so AfterAll can restore it
 			// rather than unconditionally clearing a value the cluster arrived with.
 			if hc.Spec.OperatorConfiguration != nil && hc.Spec.OperatorConfiguration.IngressOperator != nil {
 				originalDefaultCert = hc.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate
 			}
 
-			hcClient, err = tc.GetHostedClusterClient(hc)
+			hcClient, err = getIngressTestHostedClusterClient(tc, hc)
 			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
 			ingressDomain = ingressDomainForHostedCluster(hc)
@@ -182,11 +297,11 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 				return
 			}
 			By("Restoring the original defaultCertificate on the HostedCluster")
-			hc, err := tc.GetHostedCluster()
+			hc, err := getIngressTestHostedCluster(tc)
 			if err != nil {
 				GinkgoWriter.Printf("WARNING: failed to get HostedCluster for cleanup: %v\n", err)
 			} else {
-				err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err = updateIngressTestObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					if originalDefaultCert.Name != "" {
 						if obj.Spec.OperatorConfiguration == nil {
 							obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
@@ -217,7 +332,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}
 		})
 
-		It("should create the cert secret and set defaultCertificate on the HostedCluster", Label(internal.InformingLabel), func() {
+		It("should create the cert secret and set defaultCertificate on the HostedCluster", Label("Informing"), func() {
 			By("Creating the TLS secret in the HostedCluster namespace")
 			certSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -242,9 +357,9 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}
 
 			By("Setting defaultCertificate on the HostedCluster")
-			hc, err := tc.GetHostedCluster()
+			hc, err := getIngressTestHostedCluster(tc)
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(updateIngressTestObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				if obj.Spec.OperatorConfiguration == nil {
 					obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
 				}
@@ -257,7 +372,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			})).To(Succeed(), "failed to set defaultCertificate on HostedCluster")
 		})
 
-		It("should propagate the custom cert data to the hosted cluster's default-ingress-cert secret", Label(internal.InformingLabel), func() {
+		It("should propagate the custom cert data to the hosted cluster's default-ingress-cert secret", Label("Informing"), func() {
 			Eventually(func(g Gomega) {
 				hostedClusterSecret := &corev1.Secret{}
 				ref := manifests.IngressDefaultIngressControllerCert()
@@ -273,9 +388,9 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should report the IngressDefaultCertificateSynced condition as True on the HostedCluster", Label(internal.InformingLabel), func() {
+		It("should report the IngressDefaultCertificateSynced condition as True on the HostedCluster", Label("Informing"), func() {
 			Eventually(func(g Gomega) {
-				hc, err := tc.GetHostedCluster()
+				hc, err := getIngressTestHostedCluster(tc)
 				g.Expect(err).NotTo(HaveOccurred())
 				cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
 				g.Expect(cond).NotTo(BeNil(), "IngressDefaultCertificateSynced condition should be set")
@@ -285,7 +400,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should populate the observed-default-ingress-cert ConfigMap in the control plane namespace with the custom cert's CA", Label(internal.InformingLabel), func() {
+		It("should populate the observed-default-ingress-cert ConfigMap in the control plane namespace with the custom cert's CA", Label("Informing"), func() {
 			Eventually(func(g Gomega) {
 				cm := cpomanifests.IngressObservedDefaultIngressCertCA(tc.ControlPlaneNamespace)
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(cm), cm)).To(Succeed(), "observed-default-ingress-cert ConfigMap should exist in control plane namespace")
@@ -300,7 +415,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 		})
 
-		It("should serve a route with the custom cert verifiable by the CA from the management cluster", Label(internal.InformingLabel), func() {
+		It("should serve a route with the custom cert verifiable by the CA from the management cluster", Label("Informing"), func() {
 			By("Reading the observed CA from the management cluster")
 			var caBundle []byte
 			Eventually(func(g Gomega) {
@@ -326,7 +441,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should propagate rotated certificate data when the source secret is updated", Label(internal.InformingLabel), func() {
+		It("should propagate rotated certificate data when the source secret is updated", Label("Informing"), func() {
 			By("Generating a new certificate for rotation")
 			newCertPEM, newKeyPEM, err := v2util.GenerateCustomCertificate(
 				[]string{fmt.Sprintf("*.%s", ingressDomain)},
@@ -336,7 +451,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			Expect(newCertPEM).NotTo(Equal(certPEM), "rotated cert should differ from original")
 
 			By("Updating the source secret in the HostedCluster namespace")
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, &corev1.Secret{
+			Expect(updateIngressTestObject(tc.Context, tc.MgmtClient, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      certSecretName,
 					Namespace: tc.ClusterNamespace,
@@ -393,7 +508,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should report InvalidCertificateSecret and preserve the served certificate when the source secret is missing tls.key", Label(internal.InformingLabel), func() {
+		It("should report InvalidCertificateSecret and preserve the served certificate when the source secret is missing tls.key", Label("Informing"), func() {
 			const badSecretName = "e2e-custom-ingress-cert-invalid"
 			ref := manifests.IngressDefaultIngressControllerCert()
 
@@ -420,15 +535,15 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			})
 
 			By("Pointing defaultCertificate at the malformed secret")
-			hc, err := tc.GetHostedCluster()
+			hc, err := getIngressTestHostedCluster(tc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(updateIngressTestObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: badSecretName}
 			})).To(Succeed())
 
 			By("Verifying the HostedCluster reports IngressDefaultCertificateSynced=False with reason InvalidCertificateSecret")
 			Eventually(func(g Gomega) {
-				hc, err := tc.GetHostedCluster()
+				hc, err := getIngressTestHostedCluster(tc)
 				g.Expect(err).NotTo(HaveOccurred())
 				cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
 				g.Expect(cond).NotTo(BeNil(), "IngressDefaultCertificateSynced condition should be set")
@@ -446,14 +561,14 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 1*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Restoring defaultCertificate to the valid source secret")
-			hc, err = tc.GetHostedCluster()
+			hc, err = getIngressTestHostedCluster(tc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(updateIngressTestObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: certSecretName}
 			})).To(Succeed())
 		})
 
-		It("should preserve the last synced certificate and report SecretNotFound when the source secret is deleted", Label(internal.InformingLabel), func() {
+		It("should preserve the last synced certificate and report SecretNotFound when the source secret is deleted", Label("Informing"), func() {
 			ref := manifests.IngressDefaultIngressControllerCert()
 
 			By("Capturing the certificate currently served in the hosted cluster")
@@ -472,7 +587,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 
 			By("Verifying the HostedCluster reports IngressDefaultCertificateSynced=False with reason SecretNotFound")
 			Eventually(func(g Gomega) {
-				hc, err := tc.GetHostedCluster()
+				hc, err := getIngressTestHostedCluster(tc)
 				g.Expect(err).NotTo(HaveOccurred())
 				cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
 				g.Expect(cond).NotTo(BeNil(), "IngressDefaultCertificateSynced condition should be set")
@@ -490,7 +605,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 1*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should revert to the generated wildcard certificate when defaultCertificate is cleared", Label(internal.InformingLabel), func() {
+		It("should revert to the generated wildcard certificate when defaultCertificate is cleared", Label("Informing"), func() {
 			ref := manifests.IngressDefaultIngressControllerCert()
 
 			By("Capturing the custom certificate currently served")
@@ -503,9 +618,9 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Clearing defaultCertificate on the HostedCluster")
-			hc, err := tc.GetHostedCluster()
+			hc, err := getIngressTestHostedCluster(tc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(updateIngressTestObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				if obj.Spec.OperatorConfiguration != nil && obj.Spec.OperatorConfiguration.IngressOperator != nil {
 					obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{}
 				}
@@ -523,7 +638,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 
 			By("Verifying the IngressDefaultCertificateSynced condition is cleared")
 			Eventually(func(g Gomega) {
-				hc, err := tc.GetHostedCluster()
+				hc, err := getIngressTestHostedCluster(tc)
 				g.Expect(err).NotTo(HaveOccurred())
 				cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
 				g.Expect(cond).To(BeNil(), "IngressDefaultCertificateSynced condition should be removed once defaultCertificate is cleared")
