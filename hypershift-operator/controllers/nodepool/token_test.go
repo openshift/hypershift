@@ -1359,3 +1359,70 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileUserDataSecret(t *testing.T) {
+	testCases := []struct {
+		name           string
+		token          *Token
+		userDataSecret *corev1.Secret
+		expectedError  string
+	}{
+		{
+			name: "when platform is Azure and NodePool is managed by Karpenter, it should return an error",
+			token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: &hyperv1.HostedCluster{
+						Spec: hyperv1.HostedClusterSpec{
+							Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+							AutoNode: hyperv1.AutoNode{
+								Provisioner: hyperv1.ProvisionerConfig{
+									Name: hyperv1.ProvisionerKarpenter,
+									Karpenter: hyperv1.KarpenterConfig{
+										Platform: hyperv1.AzurePlatform,
+										Azure: hyperv1.KarpenterAzureConfig{
+											ClientID: "12345678-1234-1234-1234-123456789012",
+										},
+									},
+								},
+							},
+						},
+					},
+					nodePool: &hyperv1.NodePool{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-nodepool",
+							Labels: map[string]string{
+								karpenterutil.ManagedByKarpenterLabel: "true",
+							},
+						},
+					},
+					rolloutConfig: &rolloutConfig{},
+				},
+				userData: &userData{},
+			},
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ManagedByKarpenterLabel: "true",
+					},
+				},
+			},
+			expectedError: "karpenter userData reconciliation is currently not supported for platform: Azure",
+		},
+	}
+
+	log := testr.New(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := tc.token.reconcileUserDataSecret(log, tc.userDataSecret, "test-token")
+			if tc.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
