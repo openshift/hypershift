@@ -898,24 +898,48 @@ func TestDeleteSecurityGroup(t *testing.T) {
 	}
 }
 
-// TestReconcileDeletionSharedVPC documents the remaining SharedVPC leak scenario.
-//
-// In SharedVPC clusters, the clientBuilder needs role ARNs from the HostedControlPlane
-// (hcp.Spec.Platform.AWS.SharedVPC.RolesRef) to assume cross-account roles for EC2
-// and Route53 operations. These ARNs are only stored in-memory in the clientBuilder
-// after initializeWithHCP is called.
-//
-// The deletion path now attempts best-effort initialization by listing HCPs in the
-// namespace. However, when the operator restarts during deletion and the HCP has
-// already been deleted:
-//   - The best-effort List finds no HCP, so initializeWithHCP is not called
-//   - getClients fails with "clients not initialized"
-//   - The fix preserves the finalizer, but retries will never succeed
-//   - After 10 minutes, the hypershift-operator force-removes the CPO finalizer,
-//     orphaning the security group, VPC endpoint, and DNS records
-//
-// A proper fix requires persisting the SharedVPC role ARNs in the AWSEndpointService
-// status so the deletion path can authenticate independently of the HCP.
+func TestPersistSharedVPCRoleARNs(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+
+	awsEndpointService := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{Name: "private-router", Namespace: "clusters-sharedvpc"},
+	}
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "clusters-sharedvpc"},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					SharedVPC: &hyperv1.AWSSharedVPC{
+						RolesRef: hyperv1.AWSSharedVPCRolesRef{
+							ControlPlaneARN: "arn:aws:iam::123456789012:role/shared-vpc-endpoint-role",
+							IngressARN:      "arn:aws:iam::123456789012:role/shared-vpc-route53-role",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(awsEndpointService, hcp).
+		WithStatusSubresource(awsEndpointService).
+		Build()
+
+	r := &AWSEndpointServiceReconciler{Client: fakeClient}
+	err := r.persistSharedVPCRoleARNs(t.Context(), awsEndpointService, hcp)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	updated := &hyperv1.AWSEndpointService{}
+	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(awsEndpointService), updated)).To(Succeed())
+	g.Expect(updated.Status.SharedVPCEndpointRoleARN).To(Equal("arn:aws:iam::123456789012:role/shared-vpc-endpoint-role"))
+	g.Expect(updated.Status.SharedVPCRoute53RoleARN).To(Equal("arn:aws:iam::123456789012:role/shared-vpc-route53-role"))
+}
+
 func TestHasAWSConfig(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1632,6 +1656,7 @@ func TestReconcileDeletionSharedVPC(t *testing.T) {
 	testCases := []struct {
 		name                string
 		hasHCP              bool
+		persistedRoleARNs   bool
 		setupMocks          func(ctrl *gomock.Controller) *MockawsClientProvider
 		expectError         bool
 		expectErrorContains string
@@ -1653,6 +1678,23 @@ func TestReconcileDeletionSharedVPC(t *testing.T) {
 			},
 			expectError:         true,
 			expectErrorContains: "clients not initialized",
+			expectFinalizer:     true,
+		},
+		{
+			name:              "When HCP is gone but SharedVPC role ARNs are persisted, it should initialize clients from status",
+			hasHCP:            false,
+			persistedRoleARNs: true,
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockBuilder.EXPECT().initializeWithSharedVPCRoleARNs(
+					"arn:aws:iam::123456789012:role/shared-vpc-endpoint-role",
+					"arn:aws:iam::123456789012:role/shared-vpc-route53-role",
+				)
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(nil, nil, fmt.Errorf("clients unavailable for test"))
+				return mockBuilder
+			},
+			expectError:         true,
+			expectErrorContains: "clients unavailable for test",
 			expectFinalizer:     true,
 		},
 		{
@@ -1702,6 +1744,10 @@ func TestReconcileDeletionSharedVPC(t *testing.T) {
 					DNSNames:        []string{"api.example.com"},
 					DNSZoneID:       "Z1234567890",
 				},
+			}
+			if tc.persistedRoleARNs {
+				awsEndpointService.Status.SharedVPCEndpointRoleARN = "arn:aws:iam::123456789012:role/shared-vpc-endpoint-role"
+				awsEndpointService.Status.SharedVPCRoute53RoleARN = "arn:aws:iam::123456789012:role/shared-vpc-route53-role"
 			}
 
 			objects := []crclient.Object{awsEndpointService}
@@ -2553,7 +2599,7 @@ func TestReconcileHCPDeletion_WhenOtherCRsStillHaveFinalizers_ItShouldNotSetCond
 	result, err := r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, ctrl.Log.WithName("test"))
 
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(result).To(Equal(ctrl.Result{}))
+	g.Expect(result.RequeueAfter).To(Equal(endpointServiceDeletionRequeueDuration))
 
 	// Verify CR finalizer was removed from this CR
 	updatedAES := &hyperv1.AWSEndpointService{}

@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
@@ -27,11 +28,13 @@ import (
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
@@ -170,11 +173,20 @@ type AzurePrivateLinkServiceReconciler struct {
 	RecordSets          RecordSetsAPI
 }
 
+// legacyHCPFinalizerReconciler removes the legacy Azure Private Link finalizer
+// when an HCP is deleted without any AzurePrivateLinkService resources. The
+// primary reconciler cannot handle this case because it is keyed by
+// AzurePrivateLinkService objects.
+type legacyHCPFinalizerReconciler struct {
+	client.Client
+	apiReader client.Reader
+}
+
 // SetupWithManager sets up the controller with the Manager.
 // It watches AzurePrivateLinkService CRs as the primary resource, and also watches
 // HostedControlPlane objects so that deletion of the HCP triggers reconciliation of
-// the associated AzurePrivateLinkService CR. This enables the HCP finalizer to block
-// HCP deletion until Azure resource cleanup is complete.
+// the associated AzurePrivateLinkService CR. A separate HCP deletion reconciler handles
+// legacy HCP finalizers when no AzurePrivateLinkService CRs remain.
 func (r *AzurePrivateLinkServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AzurePrivateLinkService{}).
@@ -190,7 +202,72 @@ func (r *AzurePrivateLinkServiceReconciler) SetupWithManager(mgr ctrl.Manager) e
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
 	}
 
+	_, err = ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedControlPlane{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			hcp, ok := obj.(*hyperv1.HostedControlPlane)
+			return ok && !hcp.DeletionTimestamp.IsZero() && controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName)
+		}))).
+		WithOptions(controller.Options{
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
+			MaxConcurrentReconciles: 1,
+		}).
+		Build(&legacyHCPFinalizerReconciler{
+			Client:    mgr.GetClient(),
+			apiReader: mgr.GetAPIReader(),
+		})
+	if err != nil {
+		return fmt.Errorf("failed setting up the HCP deletion controller: %w", err)
+	}
+
 	return nil
+}
+
+func (r *legacyHCPFinalizerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	reader := r.apiReader
+	if reader == nil {
+		reader = r.Client
+	}
+
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := reader.Get(ctx, req.NamespacedName, hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to get HostedControlPlane: %w", err)
+	}
+
+	if hcp.DeletionTimestamp.IsZero() || !controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName) {
+		return ctrl.Result{}, nil
+	}
+
+	var azPLSList hyperv1.AzurePrivateLinkServiceList
+	if err := reader.List(ctx, &azPLSList, client.InNamespace(hcp.Namespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list AzurePrivateLinkService resources: %w", err)
+	}
+	if len(azPLSList.Items) > 0 {
+		return ctrl.Result{}, nil
+	}
+
+	if err := conditions.PatchPrivateConnectivityCleanupCondition(ctx, r.Client, hcp, metav1.ConditionTrue, hyperv1.PrivateConnectivityCleanupCompleteReason, "All Azure Private Link Service resources have been cleaned up"); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to set PrivateConnectivityCleanedUp condition: %w", err)
+	}
+
+	originalHCP := hcp.DeepCopy()
+	controllerutil.RemoveFinalizer(hcp, hcpAzurePLSFinalizerName)
+	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to remove legacy HCP finalizer: %w", err)
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // mapHCPToAzurePLS maps HostedControlPlane events to the AzurePrivateLinkService CRs
@@ -405,6 +482,14 @@ func (r *AzurePrivateLinkServiceReconciler) getHCPOrCleanupOrphan(ctx context.Co
 //  4. Remove legacy HCP finalizer if present (replaced by PrivateConnectivityCleanedUp condition).
 //  5. Set PrivateConnectivityCleanedUp condition on HCP.
 func (r *AzurePrivateLinkServiceReconciler) reconcileHCPDeletion(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
+	cleanupCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+	if cleanupCondition != nil &&
+		cleanupCondition.Status == metav1.ConditionTrue &&
+		!controllerutil.ContainsFinalizer(hcp, hcpAzurePLSFinalizerName) {
+		log.Info("Private connectivity cleanup already completed, skipping Azure cleanup")
+		return ctrl.Result{}, nil
+	}
+
 	log.Info("HCP is being deleted, cleaning up Azure resources before setting cleanup condition")
 
 	var allPLS hyperv1.AzurePrivateLinkServiceList
@@ -437,17 +522,7 @@ func (r *AzurePrivateLinkServiceReconciler) reconcileHCPDeletion(ctx context.Con
 		log.Info("Removed legacy HCP finalizer during deletion")
 	}
 
-	originalHCP := hcp.DeepCopy()
-	meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
-		Type:    string(hyperv1.PrivateConnectivityCleanedUp),
-		Status:  metav1.ConditionTrue,
-		Reason:  hyperv1.PrivateConnectivityCleanupCompleteReason,
-		Message: "All Azure Private Link Service resources have been cleaned up",
-	})
-	if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-		if apierrors.IsConflict(err) {
-			return ctrl.Result{RequeueAfter: time.Second}, nil
-		}
+	if err := conditions.PatchPrivateConnectivityCleanupCondition(ctx, r.Client, hcp, metav1.ConditionTrue, hyperv1.PrivateConnectivityCleanupCompleteReason, "All Azure Private Link Service resources have been cleaned up"); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}

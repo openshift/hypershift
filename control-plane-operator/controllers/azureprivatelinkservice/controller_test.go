@@ -1105,6 +1105,44 @@ func TestReconcile_WhenPLSAliasIsAvailable_ItShouldRemoveLegacyHCPFinalizer(t *t
 	g.Expect(updatedHCP.Finalizers).ToNot(ContainElement(hcpAzurePLSFinalizerName), "legacy HCP finalizer should be removed during reconciliation")
 }
 
+func TestLegacyHCPFinalizerReconcile_WhenHCPIsDeletedWithoutAzurePLSCR_ItShouldRemoveFinalizer(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+	scheme := newTestScheme(t, g)
+
+	now := metav1.Now()
+	hcp := newTestHCP(t, "test-hcp", "test-ns", "api.test.example.com")
+	hcp.DeletionTimestamp = &now
+	hcp.Finalizers = []string{hcpAzurePLSFinalizerName, "some-finalizer-to-keep"}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(hcp).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+
+	r := &legacyHCPFinalizerReconciler{
+		Client:    fakeClient,
+		apiReader: fakeClient,
+	}
+
+	result, err := r.Reconcile(t.Context(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"},
+	})
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(updatedHCP.Finalizers).ToNot(ContainElement(hcpAzurePLSFinalizerName))
+	g.Expect(updatedHCP.Finalizers).To(ContainElement("some-finalizer-to-keep"))
+
+	condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+	g.Expect(condition).ToNot(BeNil())
+	g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+}
+
 func TestReconcileHCPDeletion_WhenHCPIsBeingDeleted_ItShouldCleanUpAndRemoveCRFinalizer(t *testing.T) {
 	t.Parallel()
 	g := NewGomegaWithT(t)
@@ -1169,6 +1207,22 @@ func TestReconcileHCPDeletion_WhenHCPIsBeingDeleted_ItShouldCleanUpAndRemoveCRFi
 	g.Expect(condition).ToNot(BeNil(), "PrivateConnectivityCleanedUp condition should be set")
 	g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
 	g.Expect(condition.Reason).To(Equal("CleanupComplete"))
+
+	// A subsequent HCP event must not repeat the full batch cleanup or Azure API calls.
+	updatedAzPLS = &hyperv1.AzurePrivateLinkService{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-pls", Namespace: "test-ns"}, updatedAzPLS)
+	g.Expect(err).ToNot(HaveOccurred())
+	updatedHCP = &hyperv1.HostedControlPlane{}
+	err = fakeClient.Get(t.Context(), types.NamespacedName{Name: "test-hcp", Namespace: "test-ns"}, updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	result, err = r.reconcileHCPDeletion(t.Context(), updatedAzPLS, updatedHCP, testr.New(t))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result.IsZero()).To(BeTrue())
+	g.Expect(mockRecords.deleteCallCount).To(Equal(2), "repeated reconciliation should not delete A records again")
+	g.Expect(mockLinks.deleteCalled).To(BeTrue())
+	g.Expect(mockDNS.deleteCalled).To(BeTrue())
+	g.Expect(mockPE.deleteCalled).To(BeTrue())
 }
 
 func TestReconcileHCPDeletion_WhenCRHasNoFinalizer_ItShouldStillRunCleanupAndSetCondition(t *testing.T) {

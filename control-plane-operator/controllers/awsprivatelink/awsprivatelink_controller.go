@@ -13,8 +13,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/awsapi"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -242,6 +244,7 @@ type AWSEndpointServiceReconciler struct {
 type awsClientProvider interface {
 	getClients(ctx context.Context) (awsapi.EC2API, awsapi.ROUTE53API, error)
 	initializeWithHCP(log logr.Logger, hcp *hyperv1.HostedControlPlane)
+	initializeWithSharedVPCRoleARNs(endpointRoleARN, route53RoleARN string)
 	getLocalHostedZoneID() string
 	setLocalHostedZoneID(zoneID string)
 }
@@ -332,6 +335,15 @@ func (b *clientBuilder) initializeWithHCP(log logr.Logger, hcp *hyperv1.HostedCo
 		b.warnOnDifferentValues(log, hcp)
 		b.setFromHCP(hcp)
 	}
+}
+
+func (b *clientBuilder) initializeWithSharedVPCRoleARNs(endpointRoleARN, route53RoleARN string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.assumeSharedVPCEndpointRoleARN = endpointRoleARN
+	b.assumeSharedVPCRoute53RoleARN = route53RoleARN
+	b.initialized = true
 }
 
 func (b *clientBuilder) warnOnDifferentValues(log logr.Logger, hcp *hyperv1.HostedControlPlane) {
@@ -459,46 +471,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !awsEndpointService.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
-			// If we previously removed our finalizer, don't delete again and return early
-			return ctrl.Result{}, nil
-		}
-
-		// Best-effort initialization for deletion reconciles: after a controller restart
-		// the clientBuilder is uninitialized because initializeWithHCP is only called in
-		// the non-deletion path. If the HCP still exists, initialize from it so that
-		// getClients can succeed and deletion can proceed.
-		//
-		// Known issue (SharedVPC): when the HCP is already deleted, the SharedVPC role
-		// ARNs (needed for cross-account EC2/Route53 access) are lost. Initialization
-		// cannot happen, getClients will fail, and the finalizer will be preserved until
-		// the hypershift-operator force-removes it after the grace period — orphaning
-		// AWS resources in the shared VPC account. A proper fix requires persisting the
-		// SharedVPC role ARNs in the AWSEndpointService status. See
-		// TestReconcileDeletionSharedVPC for details.
-		hcpList := &hyperv1.HostedControlPlaneList{}
-		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err == nil && len(hcpList.Items) == 1 {
-			r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
-		}
-
-		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
-		}
-		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
-		}
-		if !completed {
-			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
-		}
-		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
-			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
-			if err := r.Update(ctx, awsEndpointService); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
-			}
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileEndpointServiceDeletion(ctx, awsEndpointService, log)
 	}
 
 	// Check if HCP is being deleted — handle cleanup before adding CR finalizer
@@ -508,6 +481,11 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	if hcp != nil && !hcp.DeletionTimestamp.IsZero() {
 		return r.reconcileHCPDeletion(ctx, awsEndpointService, hcp, log)
+	}
+	if hcp != nil {
+		if err := r.persistSharedVPCRoleARNs(ctx, awsEndpointService, hcp); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to persist SharedVPC role ARNs: %w", err)
+		}
 	}
 
 	// Ensure the awsEndpointService has a finalizer for cleanup
@@ -582,6 +560,47 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
+func (r *AWSEndpointServiceReconciler) reconcileEndpointServiceDeletion(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, log logr.Logger) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		// If we previously removed our finalizer, don't delete again and return early
+		return ctrl.Result{}, nil
+	}
+
+	// Best-effort initialization for deletion reconciles: after a controller restart
+	// the clientBuilder is uninitialized because initializeWithHCP is only called in
+	// the non-deletion path. If the HCP still exists, initialize from it so that
+	// getClients can succeed and deletion can proceed. If the HCP is already gone,
+	// use the role ARNs persisted on the AWSEndpointService status.
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: awsEndpointService.Namespace}); err == nil && len(hcpList.Items) == 1 {
+		r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
+	} else if awsEndpointService.Status.SharedVPCEndpointRoleARN != "" || awsEndpointService.Status.SharedVPCRoute53RoleARN != "" {
+		r.awsClientBuilder.initializeWithSharedVPCRoleARNs(
+			awsEndpointService.Status.SharedVPCEndpointRoleARN,
+			awsEndpointService.Status.SharedVPCRoute53RoleARN,
+		)
+	}
+
+	ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
+	}
+	completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
+	}
+	if !completed {
+		return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+	}
+	if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
+		controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
+		if err := r.Update(ctx, awsEndpointService); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
 func (r *AWSEndpointServiceReconciler) getHostedControlPlane(ctx context.Context, namespace string) (*hyperv1.HostedControlPlane, error) {
 	hcpList := &hyperv1.HostedControlPlaneList{}
 	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: namespace}); err != nil {
@@ -594,6 +613,22 @@ func (r *AWSEndpointServiceReconciler) getHostedControlPlane(ctx context.Context
 		return nil, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
 	}
 	return &hcpList.Items[0], nil
+}
+
+func (r *AWSEndpointServiceReconciler) persistSharedVPCRoleARNs(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane) error {
+	endpointRoleARN, route53RoleARN := sharedVPCRoleARNs(hcp)
+	return statuspatching.PatchStatus(ctx, r.Client, awsEndpointService, func() error {
+		awsEndpointService.Status.SharedVPCEndpointRoleARN = endpointRoleARN
+		awsEndpointService.Status.SharedVPCRoute53RoleARN = route53RoleARN
+		return nil
+	})
+}
+
+func sharedVPCRoleARNs(hcp *hyperv1.HostedControlPlane) (string, string) {
+	if hcp == nil || hcp.Spec.Platform.AWS == nil || hcp.Spec.Platform.AWS.SharedVPC == nil {
+		return "", ""
+	}
+	return hcp.Spec.Platform.AWS.SharedVPC.RolesRef.ControlPlaneARN, hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN
 }
 
 func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
@@ -624,25 +659,17 @@ func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context,
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if allCleanedUp {
-		originalHCP := hcp.DeepCopy()
-		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
-			Type:    string(hyperv1.PrivateConnectivityCleanedUp),
-			Status:  metav1.ConditionTrue,
-			Reason:  hyperv1.PrivateConnectivityCleanupCompleteReason,
-			Message: "All AWS PrivateLink resources have been cleaned up",
-		})
-		if err := r.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-			if apierrors.IsConflict(err) {
-				return ctrl.Result{RequeueAfter: time.Second}, nil
-			}
-			if apierrors.IsNotFound(err) {
-				return ctrl.Result{}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to set PrivateConnectivityCleanedUp condition: %w", err)
-		}
-		log.Info("Set PrivateConnectivityCleanedUp condition on HCP")
+	if !allCleanedUp {
+		return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
 	}
+
+	if err := conditions.PatchPrivateConnectivityCleanupCondition(ctx, r.Client, hcp, metav1.ConditionTrue, hyperv1.PrivateConnectivityCleanupCompleteReason, "All AWS PrivateLink resources have been cleaned up"); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to set PrivateConnectivityCleanedUp condition: %w", err)
+	}
+	log.Info("Set PrivateConnectivityCleanedUp condition on HCP")
 
 	return ctrl.Result{}, nil
 }
