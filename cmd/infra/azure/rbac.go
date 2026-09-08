@@ -130,6 +130,35 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 	return r.assignRolesForComponents(ctx, opts, components, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName)
 }
 
+// AssignKarpenterRoles grants Karpenter the built-in Azure roles needed to provision VMs.
+// Virtual Machine Contributor, Network Contributor, and Managed Identity Operator are assigned
+// on the cluster resource group. Network Contributor is also assigned on the VNet resource group
+// when it differs from the cluster resource group.
+func (r *RBACManager) AssignKarpenterRoles(ctx context.Context, opts *CreateInfraOptions, clientID, resourceGroupName, vnetResourceGroupName string) error {
+	token, err := r.getAzureToken()
+	if err != nil {
+		return err
+	}
+
+	objectID, err := r.getObjectIDFromClientID(ctx, clientID, token)
+	if err != nil {
+		return err
+	}
+
+	raClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create role assignments client: %w", err)
+	}
+
+	for _, assignment := range r.karpenterRoleAssignments(resourceGroupName, vnetResourceGroupName) {
+		if err := r.assignRole(ctx, raClient, opts.InfraID, assignment.component, objectID, assignment.role, assignment.scope); err != nil {
+			return fmt.Errorf("failed to assign Karpenter role %s: %w", assignment.component, err)
+		}
+	}
+
+	return nil
+}
+
 // assignRolesForComponents resolves object IDs and assigns scoped roles for each component.
 func (r *RBACManager) assignRolesForComponents(ctx context.Context, opts *CreateInfraOptions, components map[string]hyperv1.AzureClientID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
 	token, err := r.getAzureToken()
@@ -358,12 +387,47 @@ func (r *RBACManager) cleanupRoleAssignments(ctx context.Context, l logr.Logger,
 		}
 	}
 
+	// Cleanup Karpenter role assignments (cluster RG; Network Contributor also on VNet RG when it differs)
+	for _, assignment := range r.karpenterRoleAssignments(resourceGroupName, vnetResourceGroupName) {
+		name := util.GenerateRoleAssignmentName(infraID, assignment.component, assignment.scope)
+		if err := r.deleteRoleAssignmentByName(ctx, l, client, assignment.scope, name, assignment.component); err != nil {
+			deleteErrors = append(deleteErrors, err)
+		}
+	}
+
 	if len(deleteErrors) > 0 {
 		return fmt.Errorf("failed to delete %d role assignments during cleanup: %w", len(deleteErrors), errors.Join(deleteErrors...))
 	}
 
 	l.Info("Successfully cleaned up all role assignments", "infraID", infraID)
 	return nil
+}
+
+type karpenterRoleAssignment struct {
+	component string
+	role      string
+	scope     string
+}
+
+// karpenterRoleAssignments returns the Karpenter role assignments to create or delete.
+// Network Contributor is assigned on the cluster resource group and, when it differs,
+// again on the VNet resource group.
+func (r *RBACManager) karpenterRoleAssignments(resourceGroupName, vnetResourceGroupName string) []karpenterRoleAssignment {
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, resourceGroupName)
+	assignments := []karpenterRoleAssignment{
+		{config.KarpenterVM, config.VirtualMachineContributorRoleDefinitionID, managedRG},
+		{config.KarpenterNetwork, config.NetworkContributorRoleDefinitionID, managedRG},
+		{config.KarpenterMI, config.ManagedIdentityOperatorRoleDefinitionID, managedRG},
+	}
+	if vnetResourceGroupName != "" && !strings.EqualFold(vnetResourceGroupName, resourceGroupName) {
+		vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, vnetResourceGroupName)
+		assignments = append(assignments, karpenterRoleAssignment{
+			component: config.KarpenterNetwork,
+			role:      config.NetworkContributorRoleDefinitionID,
+			scope:     vnetRG,
+		})
+	}
+	return assignments
 }
 
 func (r *RBACManager) deleteRoleAssignmentByName(ctx context.Context, l logr.Logger, client roleAssignmentClient, scope, name, component string) error {

@@ -44,6 +44,7 @@ type CreateInfraOutput struct {
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities      `json:"dataPlaneIdentities"`
 	WorkloadIdentities  *hyperv1.AzureWorkloadIdentities        `json:"workloadIdentities"`
 	KMSClientID         string                                  `json:"kmsClientID,omitempty"`
+	KarpenterClientID   string                                  `json:"karpenterClientID,omitempty"`
 }
 
 // CreateIAMOptions holds options for creating Azure IAM resources (managed identities and federated credentials)
@@ -58,6 +59,7 @@ type CreateIAMOptions struct {
 	OutputFile        string
 	Cloud             string
 	EnableKMS         bool
+	EnableKarpenter   bool
 }
 
 // DestroyIAMOptions holds options for destroying Azure IAM resources
