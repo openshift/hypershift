@@ -397,11 +397,17 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		npLabels := t.nodePool.GetLabels()
 		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
-			err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type, t.resolvedRHELStreamForBootImage)
-			if err != nil {
-				return err
+			// TODO(maxcao13): Add support for userData reconciliation for Azure.
+			// tracked in https://redhat.atlassian.net/browse/AUTOSCALE-970
+			if t.hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+				err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type, t.resolvedRHELStreamForBootImage)
+				if err != nil {
+					return err
+				}
+				userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
+			} else {
+				return fmt.Errorf("karpenter userData reconciliation is currently not supported for platform: %s", t.hostedCluster.Spec.Platform.Type)
 			}
-			userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
 		}
 	}
 

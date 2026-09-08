@@ -44,6 +44,7 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 		WithAdaptFunction(options.adaptDeployment).
 		WithManifestAdapter("karpenter-credentials.yaml",
 			component.WithAdaptFunction(adaptCredentialsSecret),
+			component.WithPredicate(karpenterCredentialsSecretEnabled),
 		).
 		WithManifestAdapter("podmonitor.yaml",
 			component.WithAdaptFunction(adaptPodMonitor),
@@ -51,8 +52,8 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 		WithPredicate(predicate).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
-			ServiceAccountName:      "karpenter",
-			ServiceAccountNameSpace: "kube-system",
+			ServiceAccountName:      karpenterutil.KarpenterCloudServiceAccountName,
+			ServiceAccountNameSpace: karpenterutil.KarpenterCloudServiceAccountNamespace,
 			KubeconfigSecretName:    "service-network-admin-kubeconfig",
 		}).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
@@ -78,4 +79,10 @@ func predicate(cpContext component.WorkloadContext) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// karpenterCredentialsSecretEnabled is true when the operator pod uses IRSA credentials from karpenter-credentials (AWS only).
+// Azure workload identity is configured via container env vars and the cloud token minter.
+func karpenterCredentialsSecretEnabled(cpContext component.WorkloadContext) bool {
+	return cpContext.HCP.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform
 }

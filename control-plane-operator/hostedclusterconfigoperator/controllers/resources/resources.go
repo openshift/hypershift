@@ -3670,6 +3670,14 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 							Operator: corev1.TolerationOpExists,
 							Effect:   corev1.TaintEffectNoExecute,
 						},
+						// TODO(maxcao13): remove this when we fix this in karpenter-operator which will set the providerId instead
+						// https://redhat.atlassian.net/browse/AUTOSCALE-1036
+						// Karpenter nodes register with karpenter.sh/unregistered taint until providerID is set.
+						{
+							Key:      "karpenter.sh/unregistered",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoExecute,
+						},
 					},
 					Containers: []corev1.Container{
 						{
