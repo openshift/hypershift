@@ -23,11 +23,10 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
-	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -136,12 +135,12 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			karpenterNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
 			err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-				kmf, err := e2eutil.GetMetricsFromPod(ctx, tc.MgmtClient, karpentercpov2.ComponentName, karpentercpov2.ComponentName, karpenterNamespace, "8080")
+				kmf, err := e2eutil.GetMetricsFromPod(ctx, tc.MgmtClient, cpconst.KarpenterComponentName, cpconst.KarpenterComponentName, karpenterNamespace, "8080")
 				if err != nil {
 					GinkgoWriter.Printf("unable to get karpenter metrics: %v", err)
 					return false, nil
 				}
-				komf, err := e2eutil.GetMetricsFromPod(ctx, tc.MgmtClient, karpenteroperatorcpov2.ComponentName, karpenteroperatorcpov2.ComponentName, karpenterNamespace, "8080")
+				komf, err := e2eutil.GetMetricsFromPod(ctx, tc.MgmtClient, cpconst.KarpenterOperatorComponentName, cpconst.KarpenterOperatorComponentName, karpenterNamespace, "8080")
 				if err != nil {
 					GinkgoWriter.Printf("unable to get karpenter metrics: %v", err)
 					return false, nil
