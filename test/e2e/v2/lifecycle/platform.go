@@ -212,8 +212,9 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 		return NewAzurePlatformConfig(sharedDir), nil
 	case "aws":
 		return NewAWSPlatformConfig(AWSPlatformOptions{
-			Region: envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
-			Zones:  envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+			Region:    envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
+			Zones:     envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+			ProwJobId: envOrDefault("PROW_JOB_ID", ""),
 		}, sharedDir), nil
 	default:
 		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
