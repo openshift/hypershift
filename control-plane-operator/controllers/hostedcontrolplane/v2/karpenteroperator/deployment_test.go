@@ -9,6 +9,7 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
@@ -276,8 +277,8 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			awsRegion:    "us-west-2",
 			infraID:      "test-infra-123",
 			images: map[string]string{
-				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
-				"token-minter":               "quay.io/openshift/token-minter:latest",
+				karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+				"token-minter": "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -319,8 +320,8 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			azureLocation: "eastus",
 			infraID:       "test-azure-456",
 			images: map[string]string{
-				"azure-karpenter-provider-azure": "quay.io/openshift/karpenter-azure:latest",
-				"token-minter":                   "quay.io/openshift/token-minter:latest",
+				karpenterutil.KarpenterProviderAzureImageName: "quay.io/openshift/karpenter-azure:latest",
+				"token-minter": "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -355,8 +356,8 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			infraID:      "test-rhobs",
 			rhobsEnabled: true,
 			images: map[string]string{
-				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
-				"token-minter":               "quay.io/openshift/token-minter:latest",
+				karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+				"token-minter": "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -380,8 +381,8 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			infraID:      "test-no-rhobs",
 			rhobsEnabled: false,
 			images: map[string]string{
-				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
-				"token-minter":               "quay.io/openshift/token-minter:latest",
+				karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+				"token-minter": "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -405,9 +406,9 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 				hyperkarpenterv1.KarpenterOperatorImage: "quay.io/custom/karpenter-operator:test",
 			},
 			images: map[string]string{
-				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
-				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
-				"token-minter":               "quay.io/openshift/token-minter:latest",
+				karpenterutil.KarpenterOperatorImageName:    "quay.io/openshift/karpenter-operator:latest",
+				karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+				"token-minter": "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -428,9 +429,9 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 			awsRegion:    "us-west-2",
 			infraID:      "test-infra-default",
 			images: map[string]string{
-				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
-				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
-				"token-minter":               "quay.io/openshift/token-minter:latest",
+				karpenterutil.KarpenterOperatorImageName:    "quay.io/openshift/karpenter-operator:latest",
+				karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+				"token-minter": "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
@@ -454,9 +455,9 @@ func TestAdaptStandaloneDeployment(t *testing.T) {
 				hyperkarpenterv1.KarpenterOperatorImage: "",
 			},
 			images: map[string]string{
-				"karpenter-operator":         "quay.io/openshift/karpenter-operator:latest",
-				"aws-karpenter-provider-aws": "quay.io/openshift/karpenter-aws:latest",
-				"token-minter":               "quay.io/openshift/token-minter:latest",
+				karpenterutil.KarpenterOperatorImageName:    "quay.io/openshift/karpenter-operator:latest",
+				karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+				"token-minter": "quay.io/openshift/token-minter:latest",
 			},
 			validateFunc: func(t *testing.T, g Gomega, cpContext controlplanecomponent.WorkloadContext) {
 				t.Helper()
