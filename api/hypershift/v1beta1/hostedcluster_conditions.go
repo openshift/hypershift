@@ -344,7 +344,8 @@ const (
 	InvalidAzureCredentialsReason = "InvalidAzureCredentials"
 	AzureErrorReason              = "AzureError"
 
-	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
+	ExternalDNSHostNotReachableReason   = "ExternalDNSHostNotReachable"
+	ExternalDNSManagementDisabledReason = "ExternalDNSManagementDisabled"
 
 	KASLoadBalancerNotReachableReason = "KASLoadBalancerNotReachable"
 
