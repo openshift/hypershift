@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Glossary</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="outcomes.html">Outcomes</a></li>
+        <li><a href="failures.html">Failure Analysis</a></li>
+        <li><a href="reviews.html">Review Quality</a></li>
+        <li><a href="internals.html">Internals</a></li>
+        <li><a href="glossary.html">Glossary</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Glossary</h2>
+      </div>
+
+      <div class="glossary">
+
+        <h3>Pipeline</h3>
+        <dl>
+          <dt>JIRA Agent</dt>
+          <dd>An automated system that picks up Jira issues, generates code fixes with Claude Code, opens pull requests on GitHub, and responds to reviewer feedback. Runs as Prow CI jobs on the HyperShift repository.</dd>
+
+          <dt>Pipeline Phases</dt>
+          <dd>Each agent run progresses through ordered phases: <strong>solve</strong> (write the fix), <strong>review</strong> (self-review the diff), <strong>fix</strong> (address review feedback), and <strong>pr-creation</strong> (open or update the PR). A single issue may have multiple sessions, each executing some or all phases.</dd>
+
+          <dt>Session</dt>
+          <dd>One Claude Code invocation within a pipeline phase. Each session has its own token usage, cost, duration, and tool call metrics. A single Jira issue can span multiple sessions across multiple phases.</dd>
+
+          <dt>Scraper</dt>
+          <dd>Background jobs that populate the dashboard database. <strong>Prow Scrape</strong> imports job runs, issues, and phase metrics from CI build logs. <strong>GitHub Sync</strong> refreshes PR state, diff stats, and review comments. <strong>Classification</strong> assigns severity and topic labels to review comments using Claude.</dd>
+        </dl>
+
+        <h3>Issue Lifecycle</h3>
+        <dl>
+          <dt>Issue</dt>
+          <dd>A Jira ticket the agent attempted to solve. Each issue is linked to one or more CI job runs and (if successful) a GitHub pull request.</dd>
+
+          <dt>PR State</dt>
+          <dd>The outcome of the agent's pull request: <strong>merged</strong> (accepted by reviewers), <strong>open</strong> (still under review), or <strong>closed</strong> (rejected or superseded without merging).</dd>
+
+          <dt>Merge Duration</dt>
+          <dd>Wall-clock time from PR creation to merge or close. Includes time waiting for reviewers, CI, and any fix cycles.</dd>
+
+          <dt>Review Cycles</dt>
+          <dd>The number of review-then-fix loops on a PR. Each time the agent runs a "fix" phase in response to reviewer feedback counts as one cycle. Lower is better — means the agent addresses feedback efficiently.</dd>
+
+          <dt>First-Pass Rate</dt>
+          <dd>Percentage of merged PRs that had zero "required change" review comments. A high first-pass rate means the agent is producing code that reviewers accept without requesting changes.</dd>
+        </dl>
+
+        <h3>Quality &amp; Cost</h3>
+        <dl>
+          <dt>Quality Score</dt>
+          <dd>A 0-100 composite score for each issue, calculated from four components:
+            <ul>
+              <li><strong>Outcome (40 pts)</strong> — merged = 40, open = 20, closed = 0</li>
+              <li><strong>Comment severity (35 pts)</strong> — starts at 35, penalized by required_change (8pts each), question (4pts), suggestion (2pts), nitpick (1pt)</li>
+              <li><strong>Review density (15 pts)</strong> — ratio of comments to lines changed; fewer comments per line = higher score</li>
+              <li><strong>Topic penalties (10 pts)</strong> — starts at 10, penalized by security (5pts), logic_bug (5pts), test_gap (3pts), architecture_design (2pts), style (1pt)</li>
+            </ul>
+          </dd>
+
+          <dt>Merge Rate</dt>
+          <dd>Percentage of agent-created PRs that were merged (accepted by reviewers) out of all PRs in the selected time range.</dd>
+
+          <dt>Total Cost</dt>
+          <dd>Claude API cost in USD summed across all pipeline phases for an issue. Includes input tokens, output tokens, and cache creation tokens.</dd>
+
+          <dt>Wasted Cost</dt>
+          <dd>Total cost spent on PRs that were closed without merging — money spent on work that wasn't accepted.</dd>
+
+          <dt>Avg Cost per Merged PR</dt>
+          <dd>Total cost of merged PRs divided by the number of merged PRs. Tracks the typical investment needed for a successful outcome.</dd>
+        </dl>
+
+        <h3>Review Comments</h3>
+        <dl>
+          <dt>Comment Classification</dt>
+          <dd>Each human review comment is classified by an LLM into a severity and topic. Classifications can be manually overridden by dashboard users.</dd>
+
+          <dt>Severity</dt>
+          <dd>How critical a review comment is:
+            <ul>
+              <li><strong>required_change</strong> — must be fixed before merge</li>
+              <li><strong>suggestion</strong> — recommended improvement, not blocking</li>
+              <li><strong>question</strong> — reviewer asking for clarification</li>
+              <li><strong>nitpick</strong> — minor style or formatting preference</li>
+            </ul>
+          </dd>
+
+          <dt>Topic</dt>
+          <dd>What area a review comment addresses:
+            <ul>
+              <li><strong>security</strong> — security vulnerabilities or concerns</li>
+              <li><strong>logic_bug</strong> — incorrect behavior or logic errors</li>
+              <li><strong>test_gap</strong> — missing or insufficient test coverage</li>
+              <li><strong>architecture_design</strong> — structural or design issues</li>
+              <li><strong>error_handling</strong> — missing or incorrect error handling</li>
+              <li><strong>naming_readability</strong> — unclear names or hard-to-read code</li>
+              <li><strong>style</strong> — code formatting or convention preferences</li>
+              <li><strong>documentation</strong> — missing or incorrect docs/comments</li>
+              <li><strong>performance</strong> — efficiency or resource usage concerns</li>
+            </ul>
+          </dd>
+
+          <dt>Topic Merge Rate</dt>
+          <dd>For each comment topic, the percentage of comments with that topic that appeared on PRs which ultimately merged. Low merge rate for a topic means that type of feedback correlates with PR rejection.</dd>
+        </dl>
+
+        <h3>Complexity</h3>
+        <dl>
+          <dt>Lines Added / Deleted</dt>
+          <dd>Number of lines added or removed in the PR diff, as reported by GitHub.</dd>
+
+          <dt>Files Changed</dt>
+          <dd>Number of files modified in the PR.</dd>
+
+          <dt>Complexity Delta</dt>
+          <dd>Change in cyclomatic complexity introduced by the PR, measured with gocyclo. Positive means the code got more complex; negative means it was simplified.</dd>
+        </dl>
+
+        <h3>Telemetry (Internals)</h3>
+        <dl>
+          <dt>Input / Output Tokens</dt>
+          <dd>Number of tokens sent to (input) and received from (output) the Claude model in a session.</dd>
+
+          <dt>Cache Hit Rate</dt>
+          <dd>Percentage of input tokens served from Claude's prompt cache rather than reprocessed. Higher rates reduce cost and latency.</dd>
+
+          <dt>Tool Calls</dt>
+          <dd>Number of tool invocations (Read, Edit, Bash, Grep, etc.) the agent made during a session.</dd>
+
+          <dt>Turns</dt>
+          <dd>Number of conversation turns (model response cycles) in a session.</dd>
+
+          <dt>Subagents</dt>
+          <dd>Number of sub-agent processes spawned by the main agent during a session (e.g., for parallel research or code review).</dd>
+
+          <dt>TTFT (Time to First Token)</dt>
+          <dd>Latency from sending a request to receiving the first token back from the model. Affected by prompt size and cache hit rate.</dd>
+
+          <dt>Phase Success Rate</dt>
+          <dd>Percentage of sessions in a pipeline phase that completed without error. Shows which phase is most likely to fail.</dd>
+        </dl>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
