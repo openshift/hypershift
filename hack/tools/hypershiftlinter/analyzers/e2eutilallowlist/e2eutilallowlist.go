@@ -75,6 +75,7 @@ var allowlist = map[string]map[string]bool{
 
 		// Validation helpers
 		"ValidateAzureWorkloadIdentityWebhookMutation":     true,
+		"ValidateGCPWorkloadIdentityWebhookMutation":       true,
 		"ValidateIngressOperatorConfiguration":             true,
 		"ValidateKubeAPIServerAllowedCIDRs":                true,
 		"ValidateOAuthIdentityProviderFlow":                true,
