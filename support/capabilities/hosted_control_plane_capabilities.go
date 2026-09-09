@@ -37,6 +37,19 @@ func IsIngressCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 	return true
 }
 
+// IsConsoleCapabilityEnabled returns true if the Console capability is enabled, or false if disabled.
+func IsConsoleCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return true
+	}
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.ConsoleCapability {
+			return false
+		}
+	}
+	return true
+}
+
 // HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
 func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
 	if capabilities == nil {

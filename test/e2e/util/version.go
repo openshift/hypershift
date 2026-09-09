@@ -16,6 +16,7 @@ var (
 	// y-stream versions supported by e2e in main
 	Version51  = semver.MustParse("5.1.0")
 	Version50  = semver.MustParse("5.0.0")
+	Version424 = semver.MustParse("4.24.0")
 	Version423 = semver.MustParse("4.23.0")
 	Version422 = semver.MustParse("4.22.0")
 	Version421 = semver.MustParse("4.21.0")
@@ -36,6 +37,7 @@ func init() {
 	// semver versions.
 	_ = Version51
 	_ = Version50
+	_ = Version424
 	_ = Version423
 	_ = Version422
 	_ = Version421

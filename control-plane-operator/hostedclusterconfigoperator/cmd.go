@@ -242,6 +242,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	mgr := operator.Mgr(ctx, cfg, cpConfig, o.Namespace, o.HostedControlPlaneName)
+	hcpCapabilities, err := operator.GetHCPCapabilities(ctx, cpConfig, o.Namespace, o.HostedControlPlaneName)
+	if err != nil {
+		return fmt.Errorf("failed to get HCP capabilities: %w", err)
+	}
 	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", supportedversion.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
@@ -343,6 +347,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		EnableCIDebugOutput:           o.enableCIDebugOutput,
 		ImageMetaDataProvider:         imageMetaDataProvider,
 		ManagementClusterCapabilities: mgmtClusterCaps,
+		HCPCapabilities:               hcpCapabilities,
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)
