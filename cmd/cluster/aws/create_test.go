@@ -55,7 +55,6 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 		credentials          awsutil.AWSCredentialsOptions
 		credentialSecretName string
 		pullSecretFile       string
-		kubeconfigPath       string
 		expectError          bool
 	}{
 		"When CredentialSecretName and aws-creds are blank, it should return an error": {
@@ -73,9 +72,8 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "asdf"},
 			expectError:          false,
 		},
-		"When CredentialSecretName is set with invalid kubeconfig, it should fail": {
+		"When CredentialSecretName is set without a client, it should fail": {
 			credentialSecretName: "my-secret",
-			kubeconfigPath:       "/nonexistent/kubeconfig",
 			credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "/some/creds"},
 			pullSecretFile:       "asdf",
 			expectError:          true,
@@ -84,7 +82,7 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ValidateCreateCredentialInfo(test.credentials, test.credentialSecretName, "", test.pullSecretFile, test.kubeconfigPath)
+			err := ValidateCreateCredentialInfo(test.credentials, test.credentialSecretName, "", test.pullSecretFile, nil)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -99,7 +97,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	rawCreds, err := json.Marshal(&awsutil.STSCreds{
 		Credentials: awsutil.Credentials{
@@ -255,7 +252,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, awsOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, awsOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 

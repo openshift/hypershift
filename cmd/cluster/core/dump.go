@@ -147,11 +147,47 @@ type DumpOptions struct {
 	ImpersonateAs string
 
 	Log logr.Logger
+
+	Client         client.Client
+	ClientProvider *util.ClientProvider
+}
+
+func (opts *DumpOptions) managementClient() (client.Client, error) {
+	if opts.Client != nil {
+		return opts.Client, nil
+	}
+	if opts.ClientProvider == nil {
+		return nil, fmt.Errorf("management-cluster client provider is not configured")
+	}
+	var (
+		c   client.Client
+		err error
+	)
+	if opts.ImpersonateAs != "" {
+		c, err = opts.ClientProvider.ImpersonatedClientFor(opts.ImpersonateAs)
+	} else {
+		c, err = opts.ClientProvider.ControllerRuntimeClientFor("")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return nil, fmt.Errorf("management-cluster client provider returned a nil client")
+	}
+	opts.Client = c
+	return c, nil
+}
+
+func (opts *DumpOptions) managementConfig() (*restclient.Config, error) {
+	if opts == nil || opts.ClientProvider == nil {
+		return nil, fmt.Errorf("REST config provider is not configured")
+	}
+	return opts.ClientProvider.ConfigFor("")
 }
 
 type DumpCallback func(ctx context.Context, opts *DumpOptions) error
 
-func NewDumpCommand(dumpCallback DumpCallback) *cobra.Command {
+func NewDumpCommand(dumpCallback DumpCallback, clientProviders ...*util.ClientProvider) *cobra.Command {
 	const defaultDumpGuestClusterPolicy = "default-policy" // Not a real policy, placeholder to allow --dump-guest-cluster to be specified without a value
 	var dumpGuestClusterFlag string
 	var dumpGuestClusterThroughKubeService bool
@@ -171,6 +207,7 @@ func NewDumpCommand(dumpCallback DumpCallback) *cobra.Command {
 		DumpGuestClusterPolicies: map[DumpGuestClusterPolicy]struct{}{},
 		Log:                      log.Log,
 	}
+	opts.ClientProvider = util.ResolveClientProvider(clientProviders...)
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
@@ -248,14 +285,7 @@ func DumpClusterWithRetry(ctx context.Context, opts *DumpOptions) error {
 
 func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	start := time.Now()
-	var c client.Client
-	var err error
-
-	if len(opts.ImpersonateAs) > 0 {
-		c, err = util.GetImpersonatedClient(opts.ImpersonateAs)
-	} else {
-		c, err = util.GetClient()
-	}
+	c, err := opts.managementClient()
 
 	if err != nil {
 		return err
@@ -278,7 +308,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 			return fmt.Errorf("failed to get running kube-apiserver pod for guest cluster: %w", err)
 		}
 
-		restConfig, err := util.GetConfig()
+		restConfig, err := opts.managementConfig()
 		if err != nil {
 			return fmt.Errorf("failed to get a config for management cluster: %w", err)
 		}
@@ -390,14 +420,15 @@ func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace str
 }
 
 func DumpCluster(ctx context.Context, opts *DumpOptions) error {
-	var c client.Client
-	var err error
-
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
 	}
-	cfg, err := util.GetConfig()
+	c, err := opts.managementClient()
+	if err != nil {
+		return err
+	}
+	cfg, err := opts.managementConfig()
 	if err != nil {
 		return err
 	}
@@ -405,16 +436,6 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if len(opts.ImpersonateAs) > 0 {
 		cfg.Impersonate = restclient.ImpersonationConfig{
 			UserName: opts.ImpersonateAs,
-		}
-
-		c, err = util.GetImpersonatedClient(opts.ImpersonateAs)
-		if err != nil {
-			return err
-		}
-	} else {
-		c, err = util.GetClient()
-		if err != nil {
-			return err
 		}
 	}
 	allNodePools := &hyperv1.NodePoolList{}

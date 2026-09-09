@@ -12,7 +12,8 @@ import (
 
 // NewVersionCommand creates a new cobra command for printing information about the HyperShift CLI version, server
 // version, and supported OCP versions.
-func NewVersionCommand() *cobra.Command {
+func NewVersionCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	var commitOnly, clientOnly bool
 	namespace := "hypershift"
 	cmd := &cobra.Command{
@@ -30,7 +31,7 @@ func NewVersionCommand() *cobra.Command {
 				return
 			}
 
-			client, err := util.GetClient()
+			client, err := clientProvider.ControllerRuntimeClientFor("")
 			if err != nil {
 				fmt.Fprintf(out, "failed to connect to server: %v", err)
 				return

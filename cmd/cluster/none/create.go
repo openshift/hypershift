@@ -48,7 +48,11 @@ type CreateOptions struct {
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
 	if o.APIServerAddress == "" && !o.ExposeThroughLoadBalancer {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig)
+		client, clientErr := opts.Client()
+		if clientErr != nil {
+			return nil, clientErr
+		}
+		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, client)
 	}
 	return &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{
@@ -95,7 +99,8 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.ExposeThroughLoadBalancer, "expose-through-load-balancer", opts.ExposeThroughLoadBalancer, "If the services should be exposed through LoadBalancer. If not set, nodeports will be used instead")
 }
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "none",
 		Short:        "Creates basic functional HostedCluster resources on None",
@@ -114,7 +119,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, noneOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, noneOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}

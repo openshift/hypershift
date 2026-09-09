@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	"github.com/openshift/hypershift/cmd/nodepool/openstack"
 	"github.com/openshift/hypershift/cmd/nodepool/powervs"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +20,8 @@ var _ core.PlatformOptions = &kubevirt.CompletedKubevirtPlatformCreateOptions{}
 var _ core.PlatformOptions = &agent.AgentPlatformCreateOptions{}
 var _ core.PlatformOptions = &openstack.CompletedOpenStackPlatformCreateOptions{}
 
-func NewCreateCommand() *cobra.Command {
+func NewCreateCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "nodepool",
 		Short:        "Create a HyperShift NodePool",
@@ -50,12 +52,12 @@ func NewCreateCommand() *cobra.Command {
 	cmd.PersistentFlags().Int32Var(&opts.Replicas, "node-count", opts.Replicas, "The number of nodes to create in the NodePool (DEPRECATED, use '--replicas' instead)")
 	_ = cmd.PersistentFlags().MarkDeprecated("node-count", "please use '--replicas' instead")
 
-	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
-	cmd.AddCommand(aws.NewCreateCommand(opts))
-	cmd.AddCommand(agent.NewCreateCommand(opts))
-	cmd.AddCommand(azure.NewCreateCommand(opts))
-	cmd.AddCommand(powervs.NewCreateCommand(opts))
-	cmd.AddCommand(openstack.NewCreateCommand(opts))
+	cmd.AddCommand(kubevirt.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(aws.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(agent.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(azure.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(powervs.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(openstack.NewCreateCommand(opts, clientProvider))
 
 	return cmd
 }

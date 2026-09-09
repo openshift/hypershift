@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+	"github.com/openshift/hypershift/cmd/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -26,9 +27,10 @@ func NewAgentPlatformCreateOptions(_ *cobra.Command) *AgentPlatformCreateOptions
 	return platformOpts
 }
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions, clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd, platformOpts := newCreateCommandWithOpts()
-	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
+	cmd.RunE = coreOpts.CreateRunFunc(platformOpts, clientProvider)
 	return cmd
 }
 

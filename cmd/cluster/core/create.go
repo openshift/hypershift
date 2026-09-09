@@ -43,6 +43,57 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// ClientProvider is an alias for the management-cluster dependencies used by
+// cluster create commands.
+type ClientProvider = util.ClientProvider
+
+// ResolveClientProvider returns the injected provider or the production
+// provider when no dependency was supplied.
+func ResolveClientProvider(clientProviders ...*ClientProvider) *ClientProvider {
+	return util.ResolveClientProvider(clientProviders...)
+}
+
+type cachedClientProvider struct {
+	provider      *ClientProvider
+	kubeconfig    string
+	client        crclient.Client
+	clientErr     error
+	kubeClient    kubeclient.Interface
+	kubeClientErr error
+}
+
+func newCachedClientProvider(provider *ClientProvider, kubeconfig string) *ClientProvider {
+	cached := &cachedClientProvider{provider: provider, kubeconfig: kubeconfig}
+	return &ClientProvider{
+		ControllerRuntimeClient: cached.controllerRuntimeClient,
+		KubernetesClientSet:     cached.kubernetesClientSet,
+	}
+}
+
+func (p *cachedClientProvider) controllerRuntimeClient(_ string) (crclient.Client, error) {
+	if p.client != nil || p.clientErr != nil {
+		return p.client, p.clientErr
+	}
+	if p.provider == nil || p.provider.ControllerRuntimeClient == nil {
+		p.clientErr = errors.New("controller-runtime client provider is not configured")
+		return nil, p.clientErr
+	}
+	p.client, p.clientErr = p.provider.ControllerRuntimeClientFor(p.kubeconfig)
+	return p.client, p.clientErr
+}
+
+func (p *cachedClientProvider) kubernetesClientSet(_ string) (kubeclient.Interface, error) {
+	if p.kubeClient != nil || p.kubeClientErr != nil {
+		return p.kubeClient, p.kubeClientErr
+	}
+	if p.provider == nil || p.provider.KubernetesClientSet == nil {
+		p.kubeClientErr = errors.New("typed Kubernetes client provider is not configured")
+		return nil, p.kubeClientErr
+	}
+	p.kubeClient, p.kubeClientErr = p.provider.KubernetesClientSetFor(p.kubeconfig)
+	return p.kubeClient, p.kubeClientErr
+}
+
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
 		Namespace:                      "clusters",
@@ -362,7 +413,7 @@ func resolveReleaseImage(ctx context.Context, opts *CreateOptions) error {
 	if len(opts.ReleaseImage) != 0 || len(opts.ReleaseStream) == 0 {
 		return nil
 	}
-	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
+	client, err := opts.Client()
 	if err != nil {
 		return fmt.Errorf("failed to get client: %w", err)
 	}
@@ -620,11 +671,7 @@ func applyFeatureSet(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	}
 }
 
-func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, kubeconfigPath string, mutate func(crclient.Object)) error {
-	client, err := util.GetClientWithKubeconfig(kubeconfigPath)
-	if err != nil {
-		return err
-	}
+func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, client crclient.Client, mutate func(crclient.Object)) error {
 	if mutate != nil {
 		for _, object := range objects {
 			mutate(object)
@@ -672,24 +719,19 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 	return nil
 }
 
-func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger, kubeconfigPath string) (string, error) {
+func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger, client crclient.Client) (string, error) {
 	// Fetch a single node and determine possible DNS or IP entries to use
 	// for external node-port communication.
 	// Possible values are considered with the following priority based on the address type:
 	// - NodeExternalDNS
 	// - NodeExternalIP
 	// - NodeInternalIP
+	if client == nil {
+		return "", errors.New("management-cluster client is required")
+	}
 	apiServerAddress := ""
-	config, err := util.GetConfigWithKubeconfig(kubeconfigPath)
-	if err != nil {
-		return "", err
-	}
-	kubeClient, err := kubeclient.NewForConfig(config)
-	if err != nil {
-		return "", err
-	}
-	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1})
-	if err != nil {
+	nodes := &corev1.NodeList{}
+	if err := client.List(ctx, nodes, crclient.Limit(1)); err != nil {
 		return "", fmt.Errorf("unable to fetch node objects: %w", err)
 	}
 	if len(nodes.Items) < 1 {
@@ -720,16 +762,18 @@ type validatedCreateOptions struct {
 type ValidatedCreateOptions struct {
 	// Embed a private pointer that cannot be instantiated outside of this package.
 	*validatedCreateOptions
+
+	clientProvider *ClientProvider
 }
 
-func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOptions, error) {
+func (opts *RawCreateOptions) Validate(ctx context.Context, clientProvider *ClientProvider) (*ValidatedCreateOptions, error) {
 	if opts.Name == "" {
 		return nil, errors.New("--name is required")
 	}
 	if opts.PullSecretFile == "" {
 		return nil, errors.New("--pull-secret is required")
 	}
-	if err := opts.validateVersionAndWait(ctx); err != nil {
+	if err := opts.validateVersionAndWait(ctx, clientProvider); err != nil {
 		return nil, err
 	}
 
@@ -741,7 +785,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	}
 
 	// Validate HostedCluster with this name doesn't exist in the namespace
-	if err := opts.validateClusterExistence(ctx); err != nil {
+	if err := opts.validateClusterExistence(ctx, clientProvider); err != nil {
 		return nil, err
 	}
 	// Validate multi-arch aspects
@@ -759,13 +803,17 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: opts,
 		},
+		clientProvider: clientProvider,
 	}, nil
 }
 
-func (opts *RawCreateOptions) validateVersionAndWait(ctx context.Context) error {
+func (opts *RawCreateOptions) validateVersionAndWait(ctx context.Context, clientProvider *ClientProvider) error {
 	if opts.VersionCheck {
 		versionCLI := supportedversion.GetRevision()
-		client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
+		if clientProvider == nil {
+			return errors.New("controller-runtime client provider is not configured")
+		}
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
 		if err != nil {
 			return fmt.Errorf("failed to get client: %w", err)
 		}
@@ -779,11 +827,14 @@ func (opts *RawCreateOptions) validateVersionAndWait(ctx context.Context) error 
 	return nil
 }
 
-func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) error {
+func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context, clientProvider *ClientProvider) error {
 	if opts.Render {
 		return nil
 	}
-	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
+	if clientProvider == nil {
+		return errors.New("controller-runtime client provider is not configured")
+	}
+	client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
 	if err != nil {
 		return err
 	}
@@ -792,7 +843,7 @@ func (opts *RawCreateOptions) validateClusterExistence(ctx context.Context) erro
 		return err
 	}
 
-	kc, err := hyperutil.GetKubeClientSetWithKubeconfig(opts.Kubeconfig)
+	kc, err := clientProvider.KubernetesClientSetFor(opts.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("could not retrieve kube clientset: %w", err)
 	}
@@ -915,6 +966,17 @@ type completedCreateOptions struct {
 type CreateOptions struct {
 	// Embed a private pointer that cannot be instantiated outside of this package.
 	*completedCreateOptions
+
+	clientProvider *ClientProvider
+}
+
+// Client returns the injected management-cluster client, creating it lazily
+// when a command phase needs API access.
+func (opts *CreateOptions) Client() (crclient.Client, error) {
+	if opts == nil || opts.clientProvider == nil {
+		return nil, errors.New("controller-runtime client provider is not configured")
+	}
+	return opts.clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
 }
 
 func (opts *ValidatedCreateOptions) Complete() (*CreateOptions, error) {
@@ -930,6 +992,7 @@ func (opts *ValidatedCreateOptions) Complete() (*CreateOptions, error) {
 		completedCreateOptions: &completedCreateOptions{
 			ValidatedCreateOptions: opts,
 		},
+		clientProvider: opts.clientProvider,
 	}, nil
 }
 
@@ -966,8 +1029,12 @@ type Platform interface {
 	GenerateResources() ([]crclient.Object, error)
 }
 
-func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform PlatformValidator) error {
-	validatedOpts, err := rawOpts.Validate(ctx)
+func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform PlatformValidator, clientProvider *ClientProvider) error {
+	if rawOpts.RenderInto != "" {
+		rawOpts.Render = true
+	}
+	clientProvider = newCachedClientProvider(clientProvider, rawOpts.Kubeconfig)
+	validatedOpts, err := rawOpts.Validate(ctx, clientProvider)
 	if err != nil {
 		return err
 	}
@@ -976,6 +1043,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	if err != nil {
 		return err
 	}
+	opts.clientProvider = clientProvider
 
 	completer, err := rawPlatform.Validate(ctx, opts)
 	if err != nil {
@@ -1048,7 +1116,11 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	}
 
 	// Otherwise, apply the objects
-	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.Kubeconfig, opts.BeforeApply)
+	client, err := opts.Client()
+	if err != nil {
+		return fmt.Errorf("failed to get client: %w", err)
+	}
+	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, client, opts.BeforeApply)
 }
 
 type DefaultNodePoolConstructor func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool

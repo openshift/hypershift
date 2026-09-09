@@ -48,7 +48,8 @@ type options struct {
 
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
 // resources.
-func NewCreateCommand() *cobra.Command {
+func NewCreateCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "kubeconfig",
 		Short:        "Renders kubeconfigs for HostedCluster resources",
@@ -65,7 +66,11 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.portForward, "port-forward", false, "For private clusters, rewrite the kubeconfig server URL for use with kubectl port-forward.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := Render(cmd.Context(), opts.namespace, opts.name, opts.portForward); err != nil {
+		client, err := clientProvider.ControllerRuntimeClientFor("")
+		if err != nil {
+			return err
+		}
+		if err := Render(cmd.Context(), opts.namespace, opts.name, opts.portForward, client); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			return err
 		}
@@ -76,7 +81,7 @@ func NewCreateCommand() *cobra.Command {
 }
 
 // Render builds the kubeconfig and prints it to stdout.
-func Render(ctx context.Context, namespace string, name string, portForward bool) error {
+func Render(ctx context.Context, namespace string, name string, portForward bool, c client.Client) error {
 	scheme := runtime.NewScheme()
 	if err := clientcmdapiv1.AddToScheme(scheme); err != nil {
 		return fmt.Errorf("failed to set up scheme: %w", err)
@@ -85,11 +90,10 @@ func Render(ctx context.Context, namespace string, name string, portForward bool
 		kubejson.DefaultMetaFactory, scheme, scheme,
 		kubejson.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
 	)
-	c, err := util.GetClient()
-	if err != nil {
-		return err
+	if c == nil {
+		return fmt.Errorf("management-cluster client is required")
 	}
-
+	var err error
 	var kubeConfig *clientcmdapiv1.Config
 	switch {
 	case len(name) == 0:

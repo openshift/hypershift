@@ -51,7 +51,7 @@ func TestCreateOperatorRolesValidate(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := test.opts.Validate(context.Background())
+			err := test.opts.Validate(context.Background(), nil)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {

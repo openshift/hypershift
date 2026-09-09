@@ -6,6 +6,15 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	hyperapi "github.com/openshift/hypershift/support/api"
+
+	"k8s.io/client-go/kubernetes"
+	fakekubeclient "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func writeTestKubeconfig(t *testing.T) string {
@@ -48,14 +57,68 @@ func TestGetConfig(t *testing.T) {
 	})
 }
 
-func TestGetClient(t *testing.T) {
-	t.Run("When FAKE_CLIENT is true, it should return a fake client", func(t *testing.T) {
-		g := NewWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
-		client, err := GetClient()
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(client).ToNot(BeNil())
-	})
+func TestControllerRuntimeClientFor(t *testing.T) {
+	g := NewWithT(t)
+	controllerClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	provider := &ClientProvider{
+		ControllerRuntimeClient: func(_ string) (client.Client, error) {
+			return controllerClient, nil
+		},
+	}
+
+	got, err := provider.ControllerRuntimeClientFor("")
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(got).To(Equal(controllerClient))
+}
+
+func TestKubernetesClientSetFor(t *testing.T) {
+	g := NewWithT(t)
+	typedClient := fakekubeclient.NewClientset()
+	provider := &ClientProvider{
+		KubernetesClientSet: func(_ string) (kubernetes.Interface, error) {
+			return typedClient, nil
+		},
+	}
+
+	got, err := provider.KubernetesClientSetFor("")
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(got).To(Equal(typedClient))
+}
+
+func TestConfigFor(t *testing.T) {
+	g := NewWithT(t)
+	config := &rest.Config{Host: "https://example.com"}
+	provider := &ClientProvider{
+		Config: func(_ string) (*rest.Config, error) {
+			return config, nil
+		},
+	}
+
+	got, err := provider.ConfigFor("")
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(got).To(Equal(config))
+}
+
+func TestImpersonatedClientFor(t *testing.T) {
+	g := NewWithT(t)
+	controllerClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	provider := &ClientProvider{
+		ImpersonatedClient: func(_ string) (client.Client, error) {
+			return controllerClient, nil
+		},
+	}
+
+	got, err := provider.ImpersonatedClientFor("test-user")
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(got).To(Equal(controllerClient))
+}
+
+func TestResolveClientProvider(t *testing.T) {
+	g := NewWithT(t)
+	injected := &ClientProvider{}
+
+	g.Expect(ResolveClientProvider(injected)).To(BeIdenticalTo(injected))
+	g.Expect(ResolveClientProvider(nil)).NotTo(BeNil())
 }
 
 func TestGetConfigWithKubeconfig(t *testing.T) {
@@ -119,15 +182,9 @@ func TestGetClientWithKubeconfig(t *testing.T) {
 		name           string
 		kubeconfigPath string
 		useHelper      bool
-		fakeClient     bool
 		expectError    bool
 		errorContains  string
 	}{
-		{
-			name:        "When FAKE_CLIENT is true, it should return a fake client regardless of kubeconfig",
-			fakeClient:  true,
-			expectError: false,
-		},
 		{
 			name:           "When kubeconfig file does not exist, it should return an error",
 			kubeconfigPath: "/nonexistent/path/kubeconfig",
@@ -144,12 +201,6 @@ func TestGetClientWithKubeconfig(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			if tc.fakeClient {
-				t.Setenv("FAKE_CLIENT", "true")
-			} else {
-				t.Setenv("FAKE_CLIENT", "")
-			}
 
 			kubeconfigPath := tc.kubeconfigPath
 			if tc.useHelper {
@@ -168,4 +219,11 @@ func TestGetClientWithKubeconfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetKubernetesClientSetWithKubeconfig(t *testing.T) {
+	g := NewWithT(t)
+	client, err := GetKubernetesClientSetWithKubeconfig(writeTestKubeconfig(t))
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(client).NotTo(BeNil())
 }

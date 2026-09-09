@@ -3,6 +3,8 @@ package oadp
 import (
 	"time"
 
+	"github.com/openshift/hypershift/cmd/util"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
@@ -56,6 +58,8 @@ type CreateOptions struct {
 	// Client context (common)
 	Log    logr.Logger
 	Client client.Client
+	// ClientProvider supplies a management client when the command is executed.
+	ClientProvider *util.ClientProvider
 }
 
 var (

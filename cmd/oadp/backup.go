@@ -22,9 +22,11 @@ import (
 
 // Note: All variable declarations are now in types.go
 
-func NewCreateBackupCommand() *cobra.Command {
+func NewCreateBackupCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	opts := &CreateOptions{
-		Log: log.Log,
+		Log:            log.Log,
+		ClientProvider: clientProvider,
 	}
 
 	cmd := &cobra.Command{
@@ -90,25 +92,31 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 
 	// Client is needed for validations and actual creation
 	if o.Client == nil {
-		var err error
-		o.Client, err = util.GetClient()
-		if err != nil {
-			if o.Render {
-				// In render mode, if we can't connect to cluster, we'll still render but skip validations
-				o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
-				// Step: Generate backup object with default platform (AWS)
-				backup, resourcePolicyCM, err := o.GenerateBackupObject("AWS")
-				if err != nil {
-					return fmt.Errorf("backup generation failed: %w", err)
-				}
-				if resourcePolicyCM != nil {
-					if err := renderYAMLObject(resourcePolicyCM); err != nil {
-						return err
-					}
-				}
-				return renderYAMLObject(backup)
+		if o.ClientProvider == nil || o.ClientProvider.ControllerRuntimeClient == nil {
+			if !o.Render {
+				return fmt.Errorf("failed to create kubernetes client: client provider is not configured")
 			}
-			return fmt.Errorf("failed to create kubernetes client: %w", err)
+		} else {
+			var err error
+			o.Client, err = o.ClientProvider.ControllerRuntimeClientFor("")
+			if err != nil {
+				if o.Render {
+					// In render mode, if we can't connect to cluster, we'll still render but skip validations
+					o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
+					// Step: Generate backup object with default platform (AWS)
+					backup, resourcePolicyCM, err := o.GenerateBackupObject("AWS")
+					if err != nil {
+						return fmt.Errorf("backup generation failed: %w", err)
+					}
+					if resourcePolicyCM != nil {
+						if err := renderYAMLObject(resourcePolicyCM); err != nil {
+							return err
+						}
+					}
+					return renderYAMLObject(backup)
+				}
+				return fmt.Errorf("failed to create kubernetes client: %w", err)
+			}
 		}
 	}
 
