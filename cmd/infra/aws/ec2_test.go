@@ -260,6 +260,42 @@ func TestCreatePublicRouteTable(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "When CreateRoute for internet gateway fails with non-retriable InvalidParameterValue error it should not retry",
+			setupMock: func(m *awsapi.MockEC2API) {
+				newRT := &ec2types.RouteTable{
+					RouteTableId: aws.String("rtb-new"),
+					Routes:       []ec2types.Route{},
+				}
+				mainRT := &ec2types.RouteTable{
+					RouteTableId: aws.String("rtb-main"),
+					Associations: []ec2types.RouteTableAssociation{
+						{
+							Main:                    aws.Bool(true),
+							RouteTableAssociationId: aws.String("rtbassoc-main"),
+						},
+					},
+				}
+				nonRetriableError := &smithy.GenericAPIError{
+					Code:    "InvalidParameterValue",
+					Message: "Invalid parameter",
+				}
+				gomock.InOrder(
+					m.EXPECT().DescribeRouteTables(gomock.Any(), gomock.Any()).
+						Return(&ec2.DescribeRouteTablesOutput{}, nil),
+					m.EXPECT().CreateRouteTable(gomock.Any(), gomock.Any()).
+						Return(&ec2.CreateRouteTableOutput{RouteTable: newRT}, nil),
+					m.EXPECT().DescribeRouteTables(gomock.Any(), gomock.Any()).
+						Return(&ec2.DescribeRouteTablesOutput{RouteTables: []ec2types.RouteTable{*mainRT}}, nil),
+					m.EXPECT().ReplaceRouteTableAssociation(gomock.Any(), gomock.Any()).
+						Return(&ec2.ReplaceRouteTableAssociationOutput{}, nil),
+					m.EXPECT().CreateRoute(gomock.Any(), gomock.Any()).
+						Return(nil, nonRetriableError).Times(1),
+				)
+			},
+			expectError:   true,
+			errorContains: "cannot create route to internet gateway",
+		},
 	}
 
 	for _, tc := range tests {
