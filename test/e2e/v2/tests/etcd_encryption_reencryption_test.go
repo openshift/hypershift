@@ -204,7 +204,7 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should re-encrypt all etcd data after active key rotation", func() {
+		It("should re-encrypt all etcd data after active key rotation", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			hcKey := crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}
@@ -297,7 +297,7 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should re-encrypt all etcd data after key version rotation", func() {
+		It("should re-encrypt all etcd data after key version rotation", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			hcKey := crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}
@@ -391,7 +391,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should complete two consecutive key rotations successfully", func() {
+		It("should complete two consecutive key rotations successfully", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			hcKey := crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}
