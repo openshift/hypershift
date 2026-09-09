@@ -1912,6 +1912,7 @@ func TestCAPIReconcile(t *testing.T) {
 
 				// Check MachineDeployment annotations labels.
 				g.Expect(md.Spec.Template.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "test-namespace/test-nodepool"))
+				g.Expect(md.Spec.Template.Annotations).ToNot(HaveKey(hyperv1.NodePoolReleaseVersionAnnotation))
 
 				// Check MachineDeployment template spec
 				g.Expect(md.Spec.Template.Spec.ClusterName).To(Equal(capiClusterName))
@@ -3086,6 +3087,7 @@ func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
 		machines         []capiv1.Machine
 		expectLabels     map[string]string
 		expectTaintsJSON string
+		expectVersions   map[string]string
 	}{
 		{
 			name: "When NodePool has labels and taints on AWS platform, it should propagate them to owned machines with globalPS label",
@@ -3122,6 +3124,32 @@ func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
 				"managed.hypershift.openshift.io.hypershift.openshift.io/nodepool-globalps-enabled": "true",
 			},
 			expectTaintsJSON: `[{"key":"key1","value":"val1","effect":"NoSchedule"}]`,
+		},
+		{
+			name:     "When Replace Machines span a downgrade, it should reconcile each release annotation from its Machine version",
+			nodePool: &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "test-np", Namespace: "test-ns"}},
+			machines: []capiv1.Machine{
+				replaceMachineWithVersions("old-machine", "4.22.0", "4.21.10"),
+				replaceMachineWithVersions("replacement-machine", "4.21.10", ""),
+				replaceMachineWithVersions("machine-without-version", "", "4.20.0"),
+			},
+			expectVersions: map[string]string{
+				"old-machine":             "4.22.0",
+				"replacement-machine":     "4.21.10",
+				"machine-without-version": "",
+			},
+		},
+		{
+			name:     "When Replace Machines span a forward upgrade, it should reconcile each release annotation from its Machine version",
+			nodePool: &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "test-np", Namespace: "test-ns"}},
+			machines: []capiv1.Machine{
+				replaceMachineWithVersions("old-machine", "4.21.10", "4.22.0"),
+				replaceMachineWithVersions("replacement-machine", "4.22.0", ""),
+			},
+			expectVersions: map[string]string{
+				"old-machine":         "4.21.10",
+				"replacement-machine": "4.22.0",
+			},
 		},
 		{
 			name: "When NodePool is on KubeVirt platform, it should propagate labels but not globalPS label",
@@ -3176,11 +3204,14 @@ func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
 						Name:      "other-machine",
 						Namespace: "cp-ns",
 						Annotations: map[string]string{
-							nodePoolAnnotation: "other-ns/other-np",
+							nodePoolAnnotation:                       "other-ns/other-np",
+							hyperv1.NodePoolReleaseVersionAnnotation: "4.20.0",
 						},
 					},
+					Spec: capiv1.MachineSpec{Version: ptr.To("4.22.0")},
 				},
 			},
+			expectVersions: map[string]string{"other-machine": "4.20.0"},
 		},
 	}
 
@@ -3219,6 +3250,14 @@ func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
 
 			npKey := client.ObjectKeyFromObject(tc.nodePool).String()
 			for _, m := range machineList.Items {
+				if expectedVersion, ok := tc.expectVersions[m.Name]; ok {
+					if expectedVersion == "" {
+						g.Expect(m.Annotations).ToNot(HaveKey(hyperv1.NodePoolReleaseVersionAnnotation))
+					} else {
+						g.Expect(m.Annotations).To(HaveKeyWithValue(hyperv1.NodePoolReleaseVersionAnnotation, expectedVersion))
+					}
+				}
+
 				if m.Annotations[nodePoolAnnotation] != npKey {
 					// Machine doesn't belong to this NodePool - should have no managed labels.
 					for k := range m.Labels {
@@ -3237,6 +3276,27 @@ func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
 			}
 		})
 	}
+}
+
+func replaceMachineWithVersions(name, specVersion, annotatedVersion string) capiv1.Machine {
+	annotations := map[string]string{
+		nodePoolAnnotation: "test-ns/test-np",
+	}
+	if annotatedVersion != "" {
+		annotations[hyperv1.NodePoolReleaseVersionAnnotation] = annotatedVersion
+	}
+
+	machine := capiv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   "cp-ns",
+			Annotations: annotations,
+		},
+	}
+	if specVersion != "" {
+		machine.Spec.Version = ptr.To(specVersion)
+	}
+	return machine
 }
 
 // TestPauseUnpauseCycle is a regression test for the interaction between pausing

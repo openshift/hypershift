@@ -26,8 +26,9 @@ const (
 	// removed from the cluster.
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
 
-	// NodePoolReleaseVersionAnnotation is set on userdata Secrets (Replace strategy) and on Machines (InPlace strategy)
-	// to track the OCP release version associated with each machine.
+	// NodePoolReleaseVersionAnnotation tracks the OCP release version associated with a Machine.
+	// For Replace NodePools it mirrors Machine.spec.version. For InPlace NodePools the upgrader
+	// sets it after each node completes its upgrade.
 	NodePoolReleaseVersionAnnotation = "hypershift.openshift.io/release-version"
 )
 
