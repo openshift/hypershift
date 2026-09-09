@@ -61,6 +61,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 			Variant: "public",
 			ExtraArgs: append(extraArgs, []string{
 				"--public-only",
+				"--feature-set=TechPreviewNoUpgrade",
 			}...),
 		},
 		{
@@ -87,6 +88,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 				"--auto-node",
 				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
 				"--endpoint-access=PublicAndPrivate",
+				"--feature-set=TechPreviewNoUpgrade",
 			}...),
 		},
 		{
