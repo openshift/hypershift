@@ -1,18 +1,16 @@
 package hcpstatus
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/statuspatching"
 
 	configv1 "github.com/openshift/api/config/v1"
 
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,84 +64,17 @@ type hcpStatusReconciler struct {
 }
 
 func (h *hcpStatusReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
 	hcp := &hyperv1.HostedControlPlane{}
 	if err := h.mgtClusterClient.Get(ctx, req.NamespacedName, hcp); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to get hcp %s: %w", req, err)
 	}
-	originalHCP := hcp.DeepCopy()
-	if err := h.reconcile(ctx, hcp); err != nil {
-		return reconcile.Result{}, err
-	}
-
-	if equality.Semantic.DeepEqual(hcp.Status, originalHCP.Status) {
-		return reconcile.Result{}, nil
-	}
-
-	// Use JSON Patch (RFC 6902) instead of JSON Merge Patch (RFC 7386).
-	// Merge patch interprets null as "delete field" (RFC 7386 §7), which corrupts
-	// +required +nullable fields in configv1.ClusterVersionStatus that have no
-	// omitempty and serialize nil as JSON null:
-	//   - AvailableUpdates []configv1.Release `json:"availableUpdates"` — nil slice → null
-	//   - CompletionTime *metav1.Time `json:"completionTime"` (in UpdateHistory) — nil pointer → null
-	// JSON Patch "replace"/"add" ops carry null as a literal value, preserving it correctly.
-	patch, err := buildStatusPatch(originalHCP, hcp)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to build status patch: %w", err)
-	}
-
-	log.Info("Patching HCP status with new configuration and version status")
-	if err := h.mgtClusterClient.Status().Patch(ctx, hcp,
-		crclient.RawPatch(types.JSONPatchType, patch)); err != nil {
+	if err := statuspatching.PatchStatusWithJSONPatch(ctx, h.mgtClusterClient, hcp, func() error {
+		return h.reconcile(ctx, hcp)
+	}); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to patch hcp status: %w", err)
 	}
-	log.Info("Successfully patched HCP status")
 
 	return reconcile.Result{}, nil
-}
-
-type jsonPatchOp struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
-}
-
-func buildStatusPatch(original, modified *hyperv1.HostedControlPlane) ([]byte, error) {
-	origJSON, err := json.Marshal(original.Status)
-	if err != nil {
-		return nil, err
-	}
-	modJSON, err := json.Marshal(modified.Status)
-	if err != nil {
-		return nil, err
-	}
-
-	var origMap, modMap map[string]json.RawMessage
-	if err := json.Unmarshal(origJSON, &origMap); err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(modJSON, &modMap); err != nil {
-		return nil, err
-	}
-
-	// Optimistic lock: fail if the object was modified since our read.
-	ops := []jsonPatchOp{{Op: "test", Path: "/metadata/resourceVersion", Value: original.ResourceVersion}}
-
-	for key, modVal := range modMap {
-		origVal, exists := origMap[key]
-		if !exists {
-			ops = append(ops, jsonPatchOp{Op: "add", Path: "/status/" + key, Value: modVal})
-		} else if !bytes.Equal(origVal, modVal) {
-			ops = append(ops, jsonPatchOp{Op: "replace", Path: "/status/" + key, Value: modVal})
-		}
-	}
-	for key := range origMap {
-		if _, exists := modMap[key]; !exists {
-			ops = append(ops, jsonPatchOp{Op: "remove", Path: "/status/" + key})
-		}
-	}
-
-	return json.Marshal(ops)
 }
 
 // findClusterOperatorStatusCondition is identical to meta.FindStatusCondition except that it works on config1.ClusterOperatorStatusCondition instead of
