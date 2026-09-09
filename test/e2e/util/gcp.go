@@ -25,7 +25,9 @@ func ValidateGCPWorkloadIdentityWebhookMutation(t testing.TB, ctx context.Contex
 	testNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
 	g.Expect(hostedClusterClient.Create(ctx, testNamespace)).To(Succeed(), "failed to create test namespace")
 	defer func() {
-		_ = hostedClusterClient.Delete(context.Background(), testNamespace)
+		if err := hostedClusterClient.Delete(context.Background(), testNamespace); err != nil && !apierrors.IsNotFound(err) {
+			t.Logf("failed to delete test namespace %s: %v", testNamespace.Name, err)
+		}
 	}()
 
 	serviceAccount := &corev1.ServiceAccount{
@@ -93,10 +95,10 @@ func ValidateGCPWorkloadIdentityWebhookMutation(t testing.TB, ctx context.Contex
 		g.Expect(hostedClusterClient.Create(ctx, fresh)).To(Succeed(), "failed to create pod for webhook mutation test")
 
 		mutated := &corev1.Pod{}
-		g.Expect(hostedClusterClient.Get(ctx, types.NamespacedName{Name: fresh.Name, Namespace: fresh.Namespace}, mutated)).To(Succeed())
+		g.Expect(hostedClusterClient.Get(ctx, types.NamespacedName{Name: fresh.Name, Namespace: fresh.Namespace}, mutated)).To(Succeed(), "failed to get pod after webhook mutation")
 		g.Expect(hasGCPProjectedTokenVolume(mutated.Spec.Volumes)).To(BeTrue(), "expected projected service account token volume to be injected")
 		g.Expect(hasGCPCredentialEnv(mutated.Spec.Containers)).To(BeTrue(), "expected GOOGLE_APPLICATION_CREDENTIALS env var in pod containers")
-	}).WithContext(ctx).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	}).WithContext(ctx).WithTimeout(3*time.Minute).WithPolling(10*time.Second).Should(Succeed(), "pod should be mutated with GCP workload identity credentials")
 }
 
 func hasGCPProjectedTokenVolume(volumes []corev1.Volume) bool {

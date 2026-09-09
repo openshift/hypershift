@@ -36,10 +36,10 @@ func GCPWorkloadIdentityTest(getTestCtx internal.TestContextGetter) {
 		It("should mutate pods with workload identity federated credentials", func() {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
 			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
 			e2eutil.ValidateGCPWorkloadIdentityWebhookMutation(GinkgoTB(), testCtx.Context, hostedClusterClient)
 		})

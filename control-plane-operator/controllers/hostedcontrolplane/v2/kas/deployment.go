@@ -130,25 +130,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, portieris)
 	}
 
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		if err := applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
-			return fmt.Errorf("failed to apply AWS pod identity webhook container: %w", err)
-		}
-	case hyperv1.AzurePlatform:
-		if hcp.Spec.Platform.Azure == nil {
-			return fmt.Errorf("azure platform type requires spec.platform.azure")
-		}
-		if err := applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
-			return fmt.Errorf("failed to create azure workload identity webhook container: %w", err)
-		}
-	case hyperv1.GCPPlatform:
-		if hcp.Spec.Platform.GCP == nil {
-			return fmt.Errorf("gcp platform type requires spec.platform.gcp")
-		}
-		if err := applyGCPWorkloadIdentityFederationWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
-			return fmt.Errorf("failed to create gcp workload identity federation webhook container: %w", err)
-		}
+	if err := applyPlatformSpecificIdentityWebhookContainers(&deployment.Spec.Template.Spec, hcp); err != nil {
+		return err
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -208,6 +191,27 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		)
 	}
 
+	return nil
+}
+
+func applyPlatformSpecificIdentityWebhookContainers(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if err := applyAWSPodIdentityWebhookContainer(podSpec, hcp); err != nil {
+			return fmt.Errorf("failed to apply AWS pod identity webhook container: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		if hcp.Spec.Platform.Azure == nil {
+			return fmt.Errorf("azure platform type requires spec.platform.azure")
+		}
+		if err := applyAzureWorkloadIdentityWebhookContainer(podSpec, hcp); err != nil {
+			return fmt.Errorf("failed to create azure workload identity webhook container: %w", err)
+		}
+	case hyperv1.GCPPlatform:
+		if err := applyGCPWorkloadIdentityFederationWebhookContainer(podSpec, hcp); err != nil {
+			return fmt.Errorf("failed to create gcp workload identity federation webhook container: %w", err)
+		}
+	}
 	return nil
 }
 
