@@ -177,3 +177,12 @@ func TestReconcile(t *testing.T) {
 		g.Expect(cm.Data).To(HaveKeyWithValue("feature-gate.yaml", string(newContent)))
 	})
 }
+
+func TestRun(t *testing.T) {
+	opts := &syncFGConfigMapOptions{File: "/nonexistent/feature-gate.yaml"}
+
+	err := opts.run(t.Context())
+	if err == nil {
+		t.Fatal("expected a missing input file to stop reconciliation")
+	}
+}
