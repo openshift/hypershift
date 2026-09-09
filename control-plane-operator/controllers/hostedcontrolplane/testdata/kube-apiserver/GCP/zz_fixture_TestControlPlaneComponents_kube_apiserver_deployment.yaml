@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d9c9b9b3964708562e08f409e8ebf8bf51224c993d292e51e7a751d759aa826a
+    hypershift.openshift.io/desired-state-hash: 600f77c26294d0059ad16a1d78a72d131d3c3c8a8b8503a6d1d349e2e200ee00
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -343,7 +343,7 @@ spec:
         - --health-probe-bind-address=:8081
         - --kubeconfig=/var/run/app/kubeconfig/kubeconfig
         - --metrics-bind-address=127.0.0.1:8080
-        - --token-audience=sts.googleapis.com
+        - --token-audience=openshift
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         image: gcp-workload-identity-federation-webhook
