@@ -580,9 +580,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expectedValidationError: "host device count must be greater than or equal to 1. received: -7",
 		},
 		{
-			// amd64 nodepool on a multi-arch cluster: verifies all three code changes
-			// together — Architecture, Machine.Type and auto-injected NodeSelector.
-			name: "When arch is amd64, it should set Architecture=amd64, Machine.Type=q35 and inject kubernetes.io/arch=amd64 NodeSelector",
+			name: "When arch is amd64, it should set Architecture=amd64 and inject kubernetes.io/arch=amd64 NodeSelector",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
@@ -625,8 +623,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			// s390x nodepool: Architecture and NodeSelector must resolve to s390x
-			// values. Machine.Type is resolved automatically by the KubeVirt webhook.
 			name: "When arch is s390x, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
@@ -670,8 +666,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			// A user-supplied kubernetes.io/arch in kvPlatform.NodeSelector must
-			// take precedence over the automatically injected value.
 			name: "When user supplies kubernetes.io/arch in NodeSelector, it should not be overwritten by the auto-injected arch value",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1531,28 +1525,18 @@ func annotationsTmpltOpt(annotations map[string]string) nodeTemplateOption {
 	}
 }
 
-// archTmpltOpt sets the VMI Architecture field — verifies Change 1.
 func archTmpltOpt(arch string) nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.Spec.Architecture = arch
 	}
 }
 
-// machineTypeTmpltOpt sets the QEMU Machine.Type field — verifies Change 2.
-func machineTypeTmpltOpt(machineType string) nodeTemplateOption {
-	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
-		template.Spec.Template.Spec.Domain.Machine = &kubevirtv1.Machine{Type: machineType}
-	}
-}
-
-// nodeSelectorTmpltOpt sets the NodeSelector on the VMI template — verifies Change 3.
 func nodeSelectorTmpltOpt(nodeSelector map[string]string) nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.Spec.NodeSelector = nodeSelector
 	}
 }
 
-// nodeSelectorNPOption sets a user-supplied NodeSelector on the KubevirtNodePoolPlatform.
 func nodeSelectorNPOption(nodeSelector map[string]string) nodePoolOption {
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		kvNodePool.NodeSelector = nodeSelector

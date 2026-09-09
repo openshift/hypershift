@@ -189,7 +189,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	// explicitly provided, the KubeVirt admission webhook automatically resolves
 	// the correct machine type from the cluster's ArchitectureConfiguration
 	// (e.g. amd64 → pc-q35-rhel9.x.x, s390x → s390-ccw-virtio-rhel9.x.x).
-	// Hardcoding Machine.Type would bypass the cluster admin's configuration.
 	if nodePool.Spec.Arch != "" {
 		vmiSpec.Architecture = nodePool.Spec.Arch
 	}
