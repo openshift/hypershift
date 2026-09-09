@@ -41,6 +41,9 @@ const (
 
 	azureWorkloadIdentityWebhookServingCertVolumeName = "azure-wi-webhook-serving-certs"
 	azureWorkloadIdentityWebhookKubeconfigVolumeName  = "azure-wi-webhook-kubeconfig"
+
+	gcpWorkloadIdentityFederationWebhookServingCertVolumeName = "gcp-wif-webhook-serving-certs"
+	gcpWorkloadIdentityFederationWebhookKubeconfigVolumeName  = "gcp-wif-webhook-kubeconfig"
 )
 
 var azureWorkloadIdentityWebhookWaitForKASVersionTemplate = template.Must(template.New("azure-workload-identity-webhook").Parse(`set -u
@@ -138,6 +141,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		}
 		if err := applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
 			return fmt.Errorf("failed to create azure workload identity webhook container: %w", err)
+		}
+	case hyperv1.GCPPlatform:
+		if hcp.Spec.Platform.GCP == nil {
+			return fmt.Errorf("gcp platform type requires spec.platform.gcp")
+		}
+		if err := applyGCPWorkloadIdentityFederationWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
+			return fmt.Errorf("failed to create gcp workload identity federation webhook container: %w", err)
 		}
 	}
 
@@ -500,6 +510,96 @@ func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hy
 			Name: azureWorkloadIdentityWebhookKubeconfigVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AzureWorkloadIdentityWebhookKubeconfig("").Name},
+			},
+		},
+	)
+	return nil
+}
+
+func applyGCPWorkloadIdentityFederationWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.Platform.GCP == nil {
+		return fmt.Errorf("gcp platform type requires spec.platform.gcp")
+	}
+
+	command := []string{
+		"/usr/bin/gcp-workload-identity-federation-webhook",
+		"--annotation-prefix=cloud.google.com",
+		fmt.Sprintf("--gcp-default-region=%s", hcp.Spec.Platform.GCP.Region),
+		"--health-probe-bind-address=:8081",
+		"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
+		"--metrics-bind-address=127.0.0.1:8080",
+		"--token-audience=sts.googleapis.com",
+	}
+
+	tlsArgs, err := getTLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+	command = append(command, tlsArgs...)
+	for i, arg := range command {
+		command[i] = strings.Replace(arg, "--cipher-suites=", "--tls-cipher-suites=", 1)
+	}
+
+	podSpec.Containers = append(podSpec.Containers, corev1.Container{
+		Name:            "gcp-workload-identity-federation-webhook",
+		Image:           "gcp-workload-identity-federation-webhook",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         command,
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("25Mi"),
+			},
+		},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(8081),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds:    10,
+			FailureThreshold: 30,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(8081),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds: 20,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/readyz",
+					Port:   intstr.FromInt(8081),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       10,
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: gcpWorkloadIdentityFederationWebhookServingCertVolumeName, MountPath: "/tmp/k8s-webhook-server/serving-certs"},
+			{Name: gcpWorkloadIdentityFederationWebhookKubeconfigVolumeName, MountPath: "/var/run/app/kubeconfig"},
+		},
+	})
+
+	podSpec.Volumes = append(podSpec.Volumes,
+		corev1.Volume{
+			Name: gcpWorkloadIdentityFederationWebhookServingCertVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.GCPWorkloadIdentityFederationWebhookServingCert("").Name},
+			},
+		},
+		corev1.Volume{
+			Name: gcpWorkloadIdentityFederationWebhookKubeconfigVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.GCPWorkloadIdentityFederationWebhookKubeconfig("").Name},
 			},
 		},
 	)
