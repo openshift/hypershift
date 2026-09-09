@@ -15,6 +15,8 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
 
 func TestGetImageRegistryCABundle(t *testing.T) {
@@ -166,5 +168,14 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunInit(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
+
+	err := runInit(t.Context(), logr.Discard())
+	if err == nil {
+		t.Fatal("expected invalid kubeconfig to stop initialization")
 	}
 }
