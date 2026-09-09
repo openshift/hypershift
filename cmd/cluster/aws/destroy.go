@@ -51,7 +51,7 @@ func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.Clien
 				return err
 			}
 		}
-		err = ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, client)
+		err = ValidateCredentialInfo(cmd.Context(), opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, client)
 		if err != nil {
 			return err
 		}
@@ -86,7 +86,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions, clien
 	var err error
 	var secretData *util.CredentialsSecretData
 	if len(o.AWSPlatform.Credentials.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
-		secretData, err = util.ExtractOptionsFromSecret(client, o.CredentialSecretName, o.Namespace, "")
+		secretData, err = util.ExtractOptionsFromSecret(ctx, client, o.CredentialSecretName, o.Namespace, "")
 		if err != nil {
 			return err
 		}
@@ -169,17 +169,17 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient
 
 // ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds or sts-creds mutually exclusive and are not empty; validates if
 // the credentials secret is not empty, that it can be retrieved.
-func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client) error {
-	return validateCredentialInfo(opts, credentialSecretName, namespace, client, opts.Validate)
+func ValidateCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client) error {
+	return validateCredentialInfo(ctx, opts, credentialSecretName, namespace, client, opts.Validate)
 }
 
 // ValidateProductCredentialInfo is like ValidateCredentialInfo but requires explicit --sts-creds and --role-arn
 // flags rather than allowing SDK default chain fallback.
-func ValidateProductCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client) error {
-	return validateCredentialInfo(opts, credentialSecretName, namespace, client, opts.ValidateProduct)
+func ValidateProductCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client) error {
+	return validateCredentialInfo(ctx, opts, credentialSecretName, namespace, client, opts.ValidateProduct)
 }
 
-func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client, validate func() error) error {
+func validateCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client, validate func() error) error {
 	if len(credentialSecretName) == 0 {
 		if err := validate(); err != nil {
 			return err
@@ -196,7 +196,7 @@ func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecret
 	if client == nil {
 		return fmt.Errorf("a management-cluster client is required when --secret-creds is set")
 	}
-	if _, err := util.GetSecretWithClient(client, credentialSecretName, namespace); err != nil {
+	if _, err := util.GetSecretWithClient(ctx, client, credentialSecretName, namespace); err != nil {
 		return err
 	}
 

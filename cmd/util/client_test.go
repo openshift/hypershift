@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -69,6 +70,42 @@ func TestControllerRuntimeClientFor(t *testing.T) {
 	got, err := provider.ControllerRuntimeClientFor("")
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(got).To(Equal(controllerClient))
+}
+
+func TestClientProviderErrors(t *testing.T) {
+	t.Run("When controller-runtime client provider is missing, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{}).ControllerRuntimeClientFor("")
+		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
+	t.Run("When controller-runtime client factory returns an error, it should propagate it", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			ControllerRuntimeClient: func(string) (client.Client, error) {
+				return nil, errors.New("client factory failed")
+			},
+		}).ControllerRuntimeClientFor("")
+		NewWithT(t).Expect(err).To(MatchError("client factory failed"))
+	})
+	t.Run("When controller-runtime client factory returns nil, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			ControllerRuntimeClient: func(string) (client.Client, error) {
+				return nil, nil
+			},
+		}).ControllerRuntimeClientFor("")
+		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
+
+	t.Run("When typed client provider is missing, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{}).KubernetesClientSetFor("")
+		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
+	t.Run("When REST config provider is missing, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{}).ConfigFor("")
+		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
+	t.Run("When impersonated client provider is missing, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{}).ImpersonatedClientFor("test-user")
+		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
 }
 
 func TestKubernetesClientSetFor(t *testing.T) {

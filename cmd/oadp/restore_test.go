@@ -2,17 +2,126 @@ package oadp
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
+	cmdutil "github.com/openshift/hypershift/cmd/util"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
+
+func TestRunRestore(t *testing.T) {
+	tests := map[string]struct {
+		options   *CreateOptions
+		expectErr bool
+	}{
+		"When render mode has no client provider, it should render the restore object": {
+			options: &CreateOptions{
+				HCName:                 "test-cluster",
+				HCNamespace:            "clusters",
+				BackupName:             "test-backup",
+				ExistingResourcePolicy: "update",
+				Render:                 true,
+				Log:                    logr.Discard(),
+			},
+		},
+		"When no backup or schedule is provided, it should return a validation error": {
+			options:   &CreateOptions{ExistingResourcePolicy: "update"},
+			expectErr: true,
+		},
+		"When the existing resource policy is invalid, it should return a validation error": {
+			options: &CreateOptions{
+				BackupName:             "test-backup",
+				ExistingResourcePolicy: "invalid",
+			},
+			expectErr: true,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tt.options.RunRestore(t.Context())
+			if tt.expectErr {
+				NewWithT(t).Expect(err).To(HaveOccurred())
+				return
+			}
+			NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestPrepareClient(t *testing.T) {
+	controllerClient := fake.NewClientBuilder().Build()
+	tests := map[string]struct {
+		options        *CreateOptions
+		expectRendered bool
+		expectErr      bool
+	}{
+		"When a client is already set, it should reuse the client": {
+			options: &CreateOptions{Client: controllerClient},
+		},
+		"When render mode has no provider, it should continue without a client": {
+			options: &CreateOptions{Render: true},
+		},
+		"When normal mode has no provider, it should return an error": {
+			options:   &CreateOptions{},
+			expectErr: true,
+		},
+		"When client creation fails in normal mode, it should return the provider error": {
+			options: &CreateOptions{ClientProvider: &cmdutil.ClientProvider{
+				ControllerRuntimeClient: func(string) (crclient.Client, error) {
+					return nil, errors.New("client unavailable")
+				},
+			}},
+			expectErr: true,
+		},
+		"When client creation fails in render mode, it should render without a client": {
+			options: &CreateOptions{
+				HCName:      "test-cluster",
+				HCNamespace: "clusters",
+				BackupName:  "test-backup",
+				Render:      true,
+				Log:         logr.Discard(),
+				ClientProvider: &cmdutil.ClientProvider{
+					ControllerRuntimeClient: func(string) (crclient.Client, error) {
+						return nil, errors.New("client unavailable")
+					},
+				},
+			},
+			expectRendered: true,
+		},
+		"When client creation succeeds, it should store the client": {
+			options: &CreateOptions{ClientProvider: &cmdutil.ClientProvider{
+				ControllerRuntimeClient: func(string) (crclient.Client, error) {
+					return controllerClient, nil
+				},
+			}},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			rendered, err := tt.options.prepareClient()
+			g := NewWithT(t)
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(rendered).To(Equal(tt.expectRendered))
+		})
+	}
+}
 
 func TestGenerateRestoreObjectBasic(t *testing.T) {
 	type testCase struct {
