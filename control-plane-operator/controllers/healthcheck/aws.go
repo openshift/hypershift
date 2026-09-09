@@ -52,7 +52,7 @@ func awsHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 		if errors.As(err, &apiErr) {
 			// When apiErr.ErrorCode() is WebIdentityErr it's likely to be an external issue, e.g. the idp resource was deleted.
 			// We don't set apiErr.ErrorMessage() in the condition as it might contain aws requests IDs that would make the condition be updated in loop.
-			if apiErr.ErrorCode() == "WebIdentityErr" {
+			if apiErr.ErrorCode() == "WebIdentityErr" || apiErr.ErrorCode() == "InvalidIdentityToken" {
 				condition := metav1.Condition{
 					Type:               string(hyperv1.ValidAWSIdentityProvider),
 					ObservedGeneration: hcp.Generation,
