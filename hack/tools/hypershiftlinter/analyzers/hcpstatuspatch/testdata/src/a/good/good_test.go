@@ -10,3 +10,12 @@ import (
 func seedFixtureStatus(c client.Client, hcp *hyperv1.HostedControlPlane) error {
 	return c.Status().Update(nil, hcp)
 }
+
+func seedHostedCluster(c client.Client, hc *hyperv1.HostedCluster) error {
+	return c.Status().Update(nil, hc)
+}
+
+func patchFixtureStatus(c client.Client, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	_ = c.Status().Patch(nil, hc, client.MergeFrom(hc))
+	_ = c.Status().Patch(nil, hcp, client.MergeFromWithOptions(hcp))
+}

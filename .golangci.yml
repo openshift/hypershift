@@ -25,14 +25,11 @@ linters:
     custom:
       hypershiftlinter:
         path: hack/tools/bin/hypershiftlinter.so
-        description: "Enforces HyperShift test conventions from TESTING.md and test/e2e/v2/AGENTS.md"
+        description: "Enforces HyperShift test conventions and HC/HCP status-writing rules"
         settings:
           analyzers:
-            # hcpstatuspatch is intentionally excluded here: enabling it now would fail
-            # on the last couple of HostedControlPlane status-patch call sites still being
-            # migrated to support/statuspatching in-flight PRs. Add it to this list once
-            # those land. See hack/tools/hypershiftlinter/README.md's staged rollout section.
             enable:
+              - hcpstatuspatch
               - testcasename
               - testfuncname
               - e2eteststate
@@ -64,6 +61,57 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # Temporary HC/HCP status-writing migration exceptions, not approved patterns.
+      # Match the exact file, analyzer/operation/resource diagnostic, and source line.
+      # Identical new source lines in the same file also match; review additions carefully.
+      # updateHostedClusterBackupURL.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/etcdbackup/reconciler\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*return\s+r\.Status\(\)\.Update\(ctx,\s+hc\)\s*$'
+      # setEtcdRecoveryCondition.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/hostedcluster/etcd_recovery\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*if\s+err\s+:=\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\);\s+err\s+!=\s+nil\s+\{\s*$'
+      # Reconcile.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/hostedcluster/hostedcluster_controller\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*return\s+res,\s+utilerrors\.NewAggregate\(\[\]error\{err,\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\)\}\)\s*$'
+      # reconcile, reconcileOIDCDocumentsWithStatus, reconcileRestoredFromBackupWithStatus.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/hostedcluster/hostedcluster_controller\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*if\s+err\s+:=\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\);\s+err\s+!=\s+nil\s+\{\s*$'
+      # reconcileOIDCDocumentsWithStatus, reconcilePlatformCredentialsWithStatus.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/hostedcluster/hostedcluster_controller\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*if\s+statusErr\s+:=\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\);\s+statusErr\s+!=\s+nil\s+\{\s*$'
+      # reconcilePublicEndpointExposedCondition.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/hostedcluster/hostedcluster_controller\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*if\s+err\s+:=\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hc\);\s+err\s+!=\s+nil\s+\{\s*$'
+      # reconcileLegacy.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/hostedcluster/reconcile_legacy\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*if\s+err\s+:=\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\);\s+err\s+!=\s+nil\s+\{\s*$'
+      # reconcileLegacy.
+      # Remove when the last matching call migrates to support/statuspatching.
+      - linters: [hypershiftlinter]
+        path: '^hypershift-operator/controllers/hostedcluster/reconcile_legacy\.go$'
+        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
+        source: '^\s*if\s+statusErr\s+:=\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\);\s+statusErr\s+!=\s+nil\s+\{\s*$'
       - linters:
           - unparam
         path: '_test\.go$'
