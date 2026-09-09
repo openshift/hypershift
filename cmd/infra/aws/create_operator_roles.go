@@ -52,7 +52,8 @@ type CreateOperatorRolesOutput struct {
 	ExternalDNSRoleARN    string `json:"externalDNSRoleARN"`
 }
 
-func NewCreateOperatorRolesCommand() *cobra.Command {
+func NewCreateOperatorRolesCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "aws",
 		Short:        "Creates AWS IAM roles for the HyperShift operator and external-dns",
@@ -80,7 +81,15 @@ func NewCreateOperatorRolesCommand() *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := opts.Validate(cmd.Context()); err != nil {
+		var client crclient.Client
+		if opts.OIDCIssuerURL == "" && opts.InstanceRoleARN == "" {
+			var err error
+			client, err = clientProvider.ControllerRuntimeClientFor("")
+			if err != nil {
+				return err
+			}
+		}
+		if err := opts.Validate(cmd.Context(), client); err != nil {
 			return err
 		}
 		return opts.Run(cmd.Context(), logger)
@@ -89,15 +98,14 @@ func NewCreateOperatorRolesCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *CreateOperatorRolesOptions) Validate(ctx context.Context) error {
+func (o *CreateOperatorRolesOptions) Validate(ctx context.Context, client crclient.Client) error {
 	if o.OIDCIssuerURL != "" && o.InstanceRoleARN != "" {
 		return fmt.Errorf("--oidc-issuer-url and --instance-role-arn are mutually exclusive")
 	}
 	if o.OIDCIssuerURL == "" && o.InstanceRoleARN == "" {
 		// Auto-discover OIDC issuer from management cluster
-		client, err := util.GetClient()
-		if err != nil {
-			return fmt.Errorf("no --oidc-issuer-url or --instance-role-arn specified, and failed to connect to cluster for auto-discovery: %w", err)
+		if client == nil {
+			return fmt.Errorf("no --oidc-issuer-url or --instance-role-arn specified, and failed to connect to cluster for auto-discovery")
 		}
 		issuer, err := discoverOIDCIssuerURL(ctx, client)
 		if err != nil {

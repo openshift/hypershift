@@ -67,7 +67,8 @@ type CreateIAMOutput struct {
 	KarpenterRoleARN string `json:"karpenterRoleARN,omitempty"`
 }
 
-func NewCreateIAMCommand() *cobra.Command {
+func NewCreateIAMCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "aws",
 		Short:        "Creates AWS instance profile for workers",
@@ -111,7 +112,7 @@ func NewCreateIAMCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		client, err := util.GetClient()
+		client, err := clientProvider.ControllerRuntimeClientFor("")
 		if err != nil {
 			logger.Error(err, "failed to create client")
 			return err
