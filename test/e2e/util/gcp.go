@@ -25,7 +25,9 @@ func ValidateGCPWorkloadIdentityWebhookMutation(t testing.TB, ctx context.Contex
 	testNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
 	g.Expect(hostedClusterClient.Create(ctx, testNamespace)).To(Succeed(), "failed to create test namespace")
 	defer func() {
-		if err := hostedClusterClient.Delete(context.Background(), testNamespace); err != nil && !apierrors.IsNotFound(err) {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := hostedClusterClient.Delete(cleanupCtx, testNamespace); err != nil && !apierrors.IsNotFound(err) {
 			t.Logf("failed to delete test namespace %s: %v", testNamespace.Name, err)
 		}
 	}()
