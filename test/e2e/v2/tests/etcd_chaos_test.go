@@ -66,7 +66,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdResilience] Etcd
 // EtcdSingleMemberRecoveryTest deletes one random etcd pod and its PVC simultaneously,
 // then verifies the pod is replaced (different UID) and the StatefulSet converges.
 func EtcdSingleMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
-	It("should recover after a single member loses its data", func() {
+	It("should recover after a single member loses its data", Label(internal.BlockingLabel), func() {
 		testCtx := getTestCtx()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
@@ -120,7 +120,7 @@ func EtcdSingleMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 // deletes random etcd pods every 5 seconds for 30 seconds, then verifies
 // StatefulSet convergence and that the marker data survived.
 func EtcdKillRandomMembersTest(getTestCtx internal.TestContextGetter) {
-	It("should preserve data when random members are repeatedly killed", func() {
+	It("should preserve data when random members are repeatedly killed", Label(internal.BlockingLabel), func() {
 		testCtx := getTestCtx()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
@@ -170,7 +170,7 @@ func EtcdKillRandomMembersTest(getTestCtx internal.TestContextGetter) {
 // EtcdKillAllMembersTest creates a marker ConfigMap, deletes ALL etcd pods simultaneously
 // via goroutines, then verifies convergence and marker survival.
 func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
-	It("should preserve data when all members are killed simultaneously", func() {
+	It("should preserve data when all members are killed simultaneously", Label(internal.BlockingLabel), func() {
 		testCtx := getTestCtx()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
@@ -250,7 +250,7 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 // RunCommandInPod, then waits for etcd to crash in-place so the recovery
 // controller detects the failing member and creates a recovery job.
 func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
-	It("should recover after a single member's data is corrupted", func() {
+	It("should recover after a single member's data is corrupted", Label(internal.BlockingLabel), func() {
 		testCtx := getTestCtx()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace
@@ -298,7 +298,7 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 // etcdctl member remove, deletes the pod, verifies the recovery job,
 // and waits for StatefulSet convergence.
 func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
-	It("should recover after a member is removed from the etcd cluster", func() {
+	It("should recover after a member is removed from the etcd cluster", Label(internal.BlockingLabel), func() {
 		testCtx := getTestCtx()
 		ctx := testCtx.Context
 		cpNamespace := testCtx.ControlPlaneNamespace

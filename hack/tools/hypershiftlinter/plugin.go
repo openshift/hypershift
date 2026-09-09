@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/contextbackground"
+	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/e2eteststate"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/e2eutilallowlist"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/guestcluster"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/hcpstatuspatch"
@@ -62,6 +63,7 @@ func allAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
 		testcasename.Analyzer,
 		testfuncname.Analyzer,
+		e2eteststate.Analyzer,
 		sippyannotation.Analyzer,
 		guestcluster.Analyzer,
 		contextbackground.Analyzer,

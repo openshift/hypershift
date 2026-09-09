@@ -37,7 +37,7 @@ func GCPPrivateServiceConnectTest(getTestCtx internal.TestContextGetter) {
 		// GCP enforces that the NAT subnet and the forwarding rule must belong to the same VPC
 		// when creating a Service Attachment. A True GCPServiceAttachmentAvailable condition
 		// is therefore proof that the controller selected a subnet from the correct VPC.
-		It("should have GCPServiceAttachmentAvailable condition set to True", func() {
+		It("should have GCPServiceAttachmentAvailable condition set to True", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 
 			// Find the GCPPrivateServiceConnect CR in the control plane namespace.

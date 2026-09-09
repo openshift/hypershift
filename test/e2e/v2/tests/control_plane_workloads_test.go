@@ -216,7 +216,7 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 			}
 
 			Context(workload.Name, func() {
-				It("should not indicate rapid rollouts", func() {
+				It("should not indicate rapid rollouts", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -271,7 +271,7 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 		}
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should exist for pods with emptyDir or hostPath volumes", func() {
+				It("should exist for pods with emptyDir or hostPath volumes", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -368,7 +368,7 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have read-only root filesystem for containers", func() {
+				It("should have read-only root filesystem for containers", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -443,7 +443,7 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have /tmp mounted for containers", func() {
+				It("should have /tmp mounted for containers", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -487,7 +487,7 @@ func ContainerImagePullPolicyTest(getTestCtx internal.TestContextGetter) {
 		// EnsureAllContainersHavePullPolicyIfNotPresent
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have IfNotPresent pull policy for containers", func() {
+				It("should have IfNotPresent pull policy for containers", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -539,7 +539,7 @@ func ContainerTerminationMessagePolicyTest(getTestCtx internal.TestContextGetter
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have FallbackToLogsOnError termination message policy for containers", func() {
+				It("should have FallbackToLogsOnError termination message policy for containers", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -583,7 +583,7 @@ func ContainerResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 		// EnsureHCPContainersHaveResourceRequests
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have resource requests for containers", func() {
+				It("should have resource requests for containers", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -622,7 +622,7 @@ func PodPriorityTest(getTestCtx internal.TestContextGetter) {
 		const maxAllowedPriority = 100002000
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should not have too high priority for pods", func() {
+				It("should not have too high priority for pods", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -699,7 +699,7 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should not mount service account token unless necessary for pods", func() {
+				It("should not mount service account token unless necessary for pods", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -743,7 +743,7 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have correct affinities and tolerations for pods", func() {
+				It("should have correct affinities and tolerations for pods", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -866,7 +866,7 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 // WorkloadRegistryValidationTest registers tests for workload registry validation
 func WorkloadRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("Workload registry validation", func() {
-		It("should not contain any unrecognized pods", func() {
+		It("should not contain any unrecognized pods", Label(internal.BlockingLabel), func() {
 			testCtx := getTestCtx()
 			podList := &corev1.PodList{}
 			err := testCtx.MgmtClient.List(testCtx.Context, podList, &crclient.ListOptions{
@@ -945,7 +945,7 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have expected RunAsUser UID for pods", func() {
+				It("should have expected RunAsUser UID for pods", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -990,7 +990,7 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 	Context("No crashing pods", func() {
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should have no crashing pods", func() {
+				It("should have no crashing pods", Label(internal.BlockingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -1041,7 +1041,7 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 
 // CustomLabelsTest registers per-workload tests for custom label propagation
 func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
-	Context("Custom labels", Label("Informing"), func() {
+	Context("Custom labels", func() {
 		BeforeEach(func() {
 			getTestCtx().SkipIfVersionBelow(e2eutil.Version419)
 		})
@@ -1053,7 +1053,7 @@ func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should propagate custom labels to pods", func() {
+				It("should propagate custom labels to pods", Label(internal.InformingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -1082,7 +1082,7 @@ func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
 
 // CustomTolerationsTest registers per-workload tests for custom toleration propagation
 func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
-	Context("Custom tolerations", Label("Informing"), func() {
+	Context("Custom tolerations", func() {
 		BeforeEach(func() {
 			getTestCtx().SkipIfVersionBelow(e2eutil.Version419)
 		})
@@ -1094,7 +1094,7 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
-				It("should propagate custom tolerations to pods", func() {
+				It("should propagate custom tolerations to pods", Label(internal.InformingLabel), func() {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
@@ -1131,7 +1131,7 @@ func DesiredStateHashAnnotationTest(getTestCtx internal.TestContextGetter) {
 		for _, w := range workloads {
 			workload := w
 			Context(workload.Name, func() {
-				It("should carry desired-state-hash annotation if managed by control-plane-operator", func() {
+				It("should carry desired-state-hash annotation if managed by control-plane-operator", Label(internal.BlockingLabel), func() {
 					tc := getTestCtx()
 
 					deploy := &appsv1.Deployment{}

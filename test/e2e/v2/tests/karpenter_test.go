@@ -85,7 +85,7 @@ func RegisterKarpenterTests(getTestCtx internal.TestContextGetter) {
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
-	Label("lifecycle", "karpenter", internal.InformingLabel), Ordered, func() {
+	Label("lifecycle", "karpenter"), Ordered, func() {
 		var testCtx *internal.TestContext
 
 		BeforeEach(func() {
@@ -122,7 +122,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should expose Karpenter metrics", func() {
+		It("should expose Karpenter metrics", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -165,14 +165,14 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "failed to validate Karpenter metrics")
 		})
 
-		It("should report AutoNode vCPUs status as 0 when no Karpenter nodes are provisioned", func() {
+		It("should report AutoNode vCPUs status as 0 when no Karpenter nodes are provisioned", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			waitForAutoNodeStatusVCPUs(tc.Context, tc.MgmtClient, hc, 0)
 		})
 
-		It("should have Karpenter CRDs installed in the hosted cluster", func() {
+		It("should have Karpenter CRDs installed in the hosted cluster", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -200,7 +200,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should have default OpenshiftEC2NodeClass with correct subnet and security group selectors", func() {
+		It("should have default OpenshiftEC2NodeClass with correct subnet and security group selectors", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -246,7 +246,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should have default EC2NodeClass with immutable service-owned fields", func() {
+		It("should have default EC2NodeClass with immutable service-owned fields", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -288,7 +288,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should block direct deletion of EC2NodeClass", func() {
+		It("should block direct deletion of EC2NodeClass", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -300,7 +300,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			Expect(hcClient.Delete(tc.Context, ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 		})
 
-		It("should block direct mutation of EC2NodeClass", func() {
+		It("should block direct mutation of EC2NodeClass", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -314,7 +314,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			Expect(hcClient.Update(tc.Context, ec2NodeClassCopy)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 		})
 
-		It("should have AutoNodeEnabled condition set to True", func() {
+		It("should have AutoNodeEnabled condition set to True", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -355,7 +355,7 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should provision and deprovision ARM64 nodes", func() {
+		It("should provision and deprovision ARM64 nodes", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -435,7 +435,7 @@ func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should propagate instance profile annotation to EC2NodeClass and EC2 instances", func() {
+		It("should propagate instance profile annotation to EC2NodeClass and EC2 instances", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -558,7 +558,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should resolve version, propagate MetadataOptions, and provision node with correct kubelet version", func() {
+		It("should resolve version, propagate MetadataOptions, and provision node with correct kubelet version", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -885,7 +885,7 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should provision a node into a capacity reservation", func() {
+		It("should provision a node into a capacity reservation", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -1039,7 +1039,7 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should propagate a custom subnet through the VPC endpoint and provision a node in it", func() {
+		It("should propagate a custom subnet through the VPC endpoint and provision a node in it", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -1312,7 +1312,7 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should propagate kubelet config to provisioned nodes", func() {
+		It("should propagate kubelet config to provisioned nodes", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -1530,7 +1530,7 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should disable and re-enable AutoNode with correct condition transitions", func() {
+		It("should disable and re-enable AutoNode with correct condition transitions", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()
@@ -1626,7 +1626,7 @@ func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should track vCPU billing metrics and consolidate nodes when workload scales down", func() {
+		It("should track vCPU billing metrics and consolidate nodes when workload scales down", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()

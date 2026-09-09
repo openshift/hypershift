@@ -40,7 +40,7 @@ func RegisterHostedClusterComplianceTests(getTestCtx internal.TestContextGetter)
 
 func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 	When("routes are created in the control plane namespace", func() {
-		It("should label all routes for the per-HCP router", Label("routes"), func() {
+		It("should label all routes for the per-HCP router", Label(internal.BlockingLabel), Label("routes"), func() {
 			tc := getTestCtx()
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -83,7 +83,7 @@ func EnsureAllRoutesUseHCPRouterTest(getTestCtx internal.TestContextGetter) {
 // after Azure endpoint access transition tests cycle the topology.
 func EnsureKASConnectionCheckerSpecTest(getTestCtx internal.TestContextGetter) {
 	When("kas-connection-checker deployment is reconciled", func() {
-		It("should have safe-to-evict annotation, no tolerations, and topology spread constraint", func() {
+		It("should have safe-to-evict annotation, no tolerations, and topology spread constraint", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 
 			if !tc.VersionAtLeast(e2eutil.Version423) {

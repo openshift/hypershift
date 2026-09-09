@@ -35,7 +35,7 @@ func RegisterNodeCommunicationTests(getTestCtx internal.TestContextGetter) {
 
 func EnsureNodeCommunicationTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has konnectivity tunnel configured", func() {
-		It("should have konnectivity-agent pods with retrievable logs", func() {
+		It("should have konnectivity-agent pods with retrievable logs", Label(internal.BlockingLabel), func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
