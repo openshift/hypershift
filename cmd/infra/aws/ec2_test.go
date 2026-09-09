@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"testing"
 
-	. "github.com/onsi/gomega"
-	"github.com/openshift/hypershift/support/awsapi"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
 	"github.com/go-logr/logr"
+	. "github.com/onsi/gomega"
+	"github.com/openshift/hypershift/support/awsapi"
 	"go.uber.org/mock/gomock"
 )
 
@@ -92,7 +91,7 @@ func TestCreatePrivateRouteTable(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name: "When route table exists and routes are already configured it should return the table ID without creating routes",
+			name: "When route table exists and routes are already configured, it should return the table ID without creating routes",
 			setupMock: func(m *awsapi.MockEC2API) {
 				existingRT := &ec2types.RouteTable{
 					RouteTableId: aws.String("rtb-existing"),
@@ -111,7 +110,7 @@ func TestCreatePrivateRouteTable(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When CreateRoute fails with InvalidRouteTableId.NotFound it should retry until success",
+			name: "When CreateRoute fails with InvalidRouteTableId.NotFound, it should retry until success",
 			setupMock: func(m *awsapi.MockEC2API) {
 				newRT := &ec2types.RouteTable{
 					RouteTableId: aws.String("rtb-new"),
@@ -133,7 +132,7 @@ func TestCreatePrivateRouteTable(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When CreateRoute fails with InvalidNatGatewayID.NotFound it should retry until success",
+			name: "When CreateRoute fails with InvalidNatGatewayID.NotFound, it should retry until success",
 			setupMock: func(m *awsapi.MockEC2API) {
 				newRT := &ec2types.RouteTable{
 					RouteTableId: aws.String("rtb-new"),
@@ -158,7 +157,7 @@ func TestCreatePrivateRouteTable(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When CreateRoute fails with non-retriable error it should not retry",
+			name: "When CreateRoute fails with non-retriable error, it should not retry",
 			setupMock: func(m *awsapi.MockEC2API) {
 				newRT := &ec2types.RouteTable{
 					RouteTableId: aws.String("rtb-new"),
@@ -226,7 +225,7 @@ func TestCreatePublicRouteTable(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name: "When CreateRoute for internet gateway fails with InvalidRouteTableId.NotFound it should retry until success",
+			name: "When CreateRoute for internet gateway fails with InvalidRouteTableId.NotFound, it should retry until success",
 			setupMock: func(m *awsapi.MockEC2API) {
 				newRT := &ec2types.RouteTable{
 					RouteTableId: aws.String("rtb-new"),
@@ -261,7 +260,7 @@ func TestCreatePublicRouteTable(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "When CreateRoute for internet gateway fails with non-retriable InvalidParameterValue error it should not retry",
+			name: "When CreateRoute for internet gateway fails with non-retriable InvalidParameterValue error, it should not retry",
 			setupMock: func(m *awsapi.MockEC2API) {
 				newRT := &ec2types.RouteTable{
 					RouteTableId: aws.String("rtb-new"),
