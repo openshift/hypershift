@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -229,7 +230,7 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			Expect(hostedClusterClient.Create(ctx, testSecret)).To(Succeed())
 			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(context.Background(), testSecret); err != nil && !apierrors.IsNotFound(err) {
+				if err := hostedClusterClient.Delete(tc.Context, testSecret); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
 				}
 			})
@@ -244,11 +245,11 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				hcRestore := &hyperv1.HostedCluster{
 					ObjectMeta: metav1.ObjectMeta{Name: tc.ClusterName, Namespace: tc.ClusterNamespace},
 				}
-				if err := tc.MgmtClient.Patch(context.Background(), hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
+				if err := tc.MgmtClient.Patch(tc.Context, hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
 					GinkgoWriter.Printf("WARNING: failed to restore original KMS key ARN: %v\n", err)
 					return
 				}
-				waitForReEncryptionComplete(context.Background(), tc.MgmtClient, hcKey, 25*time.Minute)
+				waitForReEncryptionComplete(tc.Context, tc.MgmtClient, hcKey, 25*time.Minute)
 			})
 
 			waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, priorHistoryLen, 5*time.Minute)
@@ -322,7 +323,7 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			Expect(hostedClusterClient.Create(ctx, testSecret)).To(Succeed())
 			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(context.Background(), testSecret); err != nil && !apierrors.IsNotFound(err) {
+				if err := hostedClusterClient.Delete(tc.Context, testSecret); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
 				}
 			})
@@ -337,11 +338,11 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				hcRestore := &hyperv1.HostedCluster{
 					ObjectMeta: metav1.ObjectMeta{Name: tc.ClusterName, Namespace: tc.ClusterNamespace},
 				}
-				if err := tc.MgmtClient.Patch(context.Background(), hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
+				if err := tc.MgmtClient.Patch(tc.Context, hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
 					GinkgoWriter.Printf("WARNING: failed to restore original Azure key version: %v\n", err)
 					return
 				}
-				waitForReEncryptionComplete(context.Background(), tc.MgmtClient, hcKey, 25*time.Minute)
+				waitForReEncryptionComplete(tc.Context, tc.MgmtClient, hcKey, 25*time.Minute)
 			})
 
 			waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, priorHistoryLen, 5*time.Minute)
@@ -416,7 +417,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			Expect(hostedClusterClient.Create(ctx, testSecret)).To(Succeed())
 			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(context.Background(), testSecret); err != nil && !apierrors.IsNotFound(err) {
+				if err := hostedClusterClient.Delete(tc.Context, testSecret); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
 				}
 			})
@@ -426,11 +427,11 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				hcRestore := &hyperv1.HostedCluster{
 					ObjectMeta: metav1.ObjectMeta{Name: tc.ClusterName, Namespace: tc.ClusterNamespace},
 				}
-				if err := tc.MgmtClient.Patch(context.Background(), hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
+				if err := tc.MgmtClient.Patch(tc.Context, hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
 					GinkgoWriter.Printf("WARNING: failed to restore original Azure key version: %v\n", err)
 					return
 				}
-				waitForReEncryptionComplete(context.Background(), tc.MgmtClient, hcKey, 25*time.Minute)
+				waitForReEncryptionComplete(tc.Context, tc.MgmtClient, hcKey, 25*time.Minute)
 			})
 
 			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
@@ -520,7 +521,7 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			Expect(hostedClusterClient.Create(ctx, testSecret)).To(Succeed())
 			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(context.Background(), testSecret); err != nil && !apierrors.IsNotFound(err) {
+				if err := hostedClusterClient.Delete(tc.Context, testSecret); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
 				}
 			})
@@ -541,7 +542,7 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			Expect(tc.MgmtClient.Create(ctx, newKeySecret)).To(Succeed())
 			DeferCleanup(func() {
-				if err := tc.MgmtClient.Delete(context.Background(), newKeySecret); err != nil && !apierrors.IsNotFound(err) {
+				if err := tc.MgmtClient.Delete(tc.Context, newKeySecret); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoWriter.Printf("WARNING: failed to cleanup AESCBC key secret: %v\n", err)
 				}
 			})
@@ -555,11 +556,11 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				hcRestore := &hyperv1.HostedCluster{
 					ObjectMeta: metav1.ObjectMeta{Name: tc.ClusterName, Namespace: tc.ClusterNamespace},
 				}
-				if err := tc.MgmtClient.Patch(context.Background(), hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
+				if err := tc.MgmtClient.Patch(tc.Context, hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
 					GinkgoWriter.Printf("WARNING: failed to restore original AESCBC key: %v\n", err)
 					return
 				}
-				waitForReEncryptionComplete(context.Background(), tc.MgmtClient, hcKey, 25*time.Minute)
+				waitForReEncryptionComplete(tc.Context, tc.MgmtClient, hcKey, 25*time.Minute)
 			})
 
 			waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, priorHistoryLen, 5*time.Minute)
@@ -643,4 +644,3 @@ func ConditionBubbleUpTest(getTestCtx internal.TestContextGetter) {
 		})
 	})
 }
-
