@@ -532,6 +532,18 @@ func TestGetAvailableCandidates(t *testing.T) {
 			capacity:      0,
 			selectedNodes: nil,
 		},
+		{
+			name: "When capacity exceeds available candidates, it should return all eligible candidates without panicking",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				completedNode,
+			},
+			targetConfig: desiredConfigHash,
+			capacity:     3,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
