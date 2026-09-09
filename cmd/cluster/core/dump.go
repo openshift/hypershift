@@ -132,6 +132,7 @@ var (
 type DumpOptions struct {
 	Namespace   string
 	Name        string
+	Kubeconfig  string
 	ArtifactDir string
 	ArchiveDump bool
 	// LogCheckers is a list of functions that will
@@ -153,7 +154,7 @@ type DumpOptions struct {
 }
 
 func (opts *DumpOptions) managementClient() (client.Client, error) {
-	if opts.Client != nil {
+	if opts.ImpersonateAs == "" && opts.Client != nil {
 		return opts.Client, nil
 	}
 	if opts.ClientProvider == nil {
@@ -182,7 +183,7 @@ func (opts *DumpOptions) managementConfig() (*restclient.Config, error) {
 	if opts == nil || opts.ClientProvider == nil {
 		return nil, fmt.Errorf("REST config provider is not configured")
 	}
-	return opts.ClientProvider.ConfigFor("")
+	return opts.ClientProvider.ConfigFor(opts.Kubeconfig)
 }
 
 type DumpCallback func(ctx context.Context, opts *DumpOptions) error

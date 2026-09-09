@@ -18,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -62,7 +61,8 @@ func createClusterOpts(_ context.Context, _ crclient.Client, hc *hyperv1.HostedC
 // createCluster calls the correct cluster create CLI function based on the
 // cluster platform.
 func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, outputDir string) error {
-	validCoreOpts, err := opts.RawCreateOptions.Validate(ctx)
+	clientProvider := core.ResolveClientProvider()
+	validCoreOpts, err := opts.RawCreateOptions.Validate(ctx, clientProvider)
 	if err != nil {
 		return fmt.Errorf("failed to validate core options: %w", err)
 	}
@@ -125,7 +125,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 			return fmt.Errorf("failed to write infra: %w", err)
 		}
 
-		client, err := util.GetClient()
+		client, err := coreOpts.Client()
 		if err != nil {
 			return err
 		}
@@ -142,11 +142,11 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 
 		opts.InfrastructureJSON = infraFile
 		opts.AWSPlatform.IAMJSON = iamFile
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AWSPlatform, manifestsFile, renderLogFile, createLogFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AWSPlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
 	case hyperv1.NonePlatform:
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.NonePlatform, manifestsFile, renderLogFile, createLogFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.NonePlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
 	case hyperv1.KubevirtPlatform:
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.KubevirtPlatform, manifestsFile, renderLogFile, createLogFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.KubevirtPlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
 	case hyperv1.AzurePlatform:
 		completer, err := opts.AzurePlatform.Validate(ctx, coreOpts)
 		if err != nil {
@@ -169,7 +169,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		opts.AzurePlatform.AssignCustomHCPRoles = false
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile, renderLogFile, createLogFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
 	case hyperv1.PowerVSPlatform:
 		completer, err := opts.PowerVSPlatform.Validate(ctx, coreOpts)
 		if err != nil {
@@ -185,18 +185,18 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		infraOpts.Output(infra, zapr.NewLogger(infraLogger))
 
 		opts.InfrastructureJSON = infraFile
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile, renderLogFile, createLogFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
 	case hyperv1.OpenStackPlatform:
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.OpenStackPlatform, manifestsFile, renderLogFile, createLogFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.OpenStackPlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
 	case hyperv1.GCPPlatform:
-		return renderCreate(ctx, &opts.RawCreateOptions, &opts.GCPPlatform, manifestsFile, renderLogFile, createLogFile)
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.GCPPlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
 
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
 }
 
-func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts core.PlatformValidator, outputFile string, renderLogFile string, createLogFile string) error {
+func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts core.PlatformValidator, outputFile string, renderLogFile string, createLogFile string, clientProvider *core.ClientProvider) error {
 	renderLog, err := os.Create(renderLogFile)
 	if err != nil {
 		return fmt.Errorf("failed to render log: %w", err)
@@ -211,7 +211,7 @@ func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts
 	opts.Render = true
 	opts.RenderInto = outputFile
 	opts.Log = zapr.NewLogger(renderLogger)
-	if err := core.CreateCluster(ctx, opts, platformOpts); err != nil {
+	if err := core.CreateCluster(ctx, opts, platformOpts, clientProvider); err != nil {
 		return fmt.Errorf("failed to render cluster manifests: %w", err)
 	}
 
@@ -229,7 +229,7 @@ func renderCreate(ctx context.Context, opts *core.RawCreateOptions, platformOpts
 	opts.Render = false
 	opts.RenderInto = ""
 	opts.Log = zapr.NewLogger(createLogger)
-	return core.CreateCluster(ctx, opts, platformOpts)
+	return core.CreateCluster(ctx, opts, platformOpts, clientProvider)
 }
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
@@ -255,6 +255,11 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 		Log:                zapr.NewLogger(destroyLogger),
 		RedactBaseDomain:   createOpts.RedactBaseDomain,
 	}
+	clientProvider := core.ResolveClientProvider()
+	client, err := clientProvider.ControllerRuntimeClientFor(createOpts.Kubeconfig)
+	if err != nil {
+		return err
+	}
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		opts.AWSPlatform = core.AWSPlatformDestroyOptions{
@@ -264,15 +269,15 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			Region:           createOpts.AWSPlatform.Region,
 			PostDeleteAction: validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.Credentials.AWSCredentialsFile, createOpts.AWSPlatform.Region),
 		}
-		return aws.DestroyCluster(ctx, opts)
+		return aws.DestroyCluster(ctx, opts, client)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
-		return none.DestroyCluster(ctx, opts)
+		return none.DestroyCluster(ctx, opts, client)
 	case hyperv1.AzurePlatform:
 		opts.AzurePlatform = core.AzurePlatformDestroyOptions{
 			CredentialsFile: createOpts.AzurePlatform.CredentialsFile,
 			Location:        createOpts.AzurePlatform.Location,
 		}
-		return azure.DestroyCluster(ctx, opts)
+		return azure.DestroyCluster(ctx, opts, client)
 	case hyperv1.PowerVSPlatform:
 		opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
 			BaseDomain:             createOpts.BaseDomain,
@@ -285,11 +290,11 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			TransitGatewayLocation: createOpts.PowerVSPlatform.TransitGatewayLocation,
 			TransitGateway:         createOpts.PowerVSPlatform.TransitGateway,
 		}
-		return powervs.DestroyCluster(ctx, opts)
+		return powervs.DestroyCluster(ctx, opts, client)
 	case hyperv1.OpenStackPlatform:
-		return openstack.DestroyCluster(ctx, opts)
+		return openstack.DestroyCluster(ctx, opts, client)
 	case hyperv1.GCPPlatform:
-		return gcp.DestroyCluster(ctx, opts)
+		return gcp.DestroyCluster(ctx, opts, client)
 
 	default:
 		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)
@@ -414,11 +419,11 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
 			var dumpErrors []error
-			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.Credentials, artifactDir)
+			err := dump.DumpMachineConsoleLogs(ctx, hc, opts.AWSPlatform.Credentials, artifactDir, opts.Kubeconfig)
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir)
+			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -428,7 +433,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:
-			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir)
+			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}

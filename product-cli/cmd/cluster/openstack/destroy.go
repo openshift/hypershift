@@ -22,8 +22,8 @@ func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.Clien
 	}
 
 	logger := log.Log
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
 
 		sigs := make(chan os.Signal, 1)
@@ -36,13 +36,14 @@ func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.Clien
 		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
 		if err != nil {
 			logger.Error(err, "Failed to create management cluster client")
-			os.Exit(1)
+			return err
 		}
 
 		if err := openstack.DestroyCluster(ctx, opts, client); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd

@@ -35,7 +35,7 @@ func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.Clie
 				return err
 			}
 		}
-		if err := hypershiftaws.ValidateProductCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, client); err != nil {
+		if err := hypershiftaws.ValidateProductCredentialInfo(cmd.Context(), awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, client); err != nil {
 			return err
 		}
 		if client != nil {

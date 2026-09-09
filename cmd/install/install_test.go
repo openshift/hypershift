@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,6 +25,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/metrics"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -2143,6 +2145,42 @@ func TestSetupExternalDNS(t *testing.T) {
 		objects, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, nil)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(objects).NotTo(BeEmpty())
+	})
+}
+
+func TestSetupExternalDNSErrors(t *testing.T) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+
+	t.Run("When proxy lookup returns a non-NotFound error, it should return the error", func(t *testing.T) {
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return errors.New("proxy lookup failed")
+			},
+		}).Build()
+		_, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).To(MatchError("proxy lookup failed"))
+	})
+
+	t.Run("When client acquisition fails during rendering, it should continue without a proxy", func(t *testing.T) {
+		opts := Options{
+			ExternalDNSProvider: "aws",
+			ClientProvider: &cmdutil.ClientProvider{
+				ControllerRuntimeClient: func(string) (crclient.Client, error) {
+					return nil, errors.New("client acquisition failed")
+				},
+			},
+		}
+		objects, err := setupExternalDNS(context.Background(), opts, ns, nil)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
+	})
+
+	t.Run("When the proxy exists, it should continue generating external DNS resources", func(t *testing.T) {
+		proxy := &configv1.Proxy{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(proxy).Build()
+		objects, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
 	})
 }
 

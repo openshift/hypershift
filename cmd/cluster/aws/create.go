@@ -151,6 +151,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		}
 		// The opts.BaseDomain value is returned as-is if the input value len(opts.BaseDomain) > 0
 		secretData, err = util.ExtractOptionsFromSecret(
+			ctx,
 			managementClient,
 			o.CredentialSecretName,
 			opts.Namespace,
@@ -204,7 +205,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	// TODO: drop support for this flag, it's really muddying the waters for the CLI
 	if len(o.CredentialSecretName) > 0 {
 		var secret *corev1.Secret
-		secret, err = util.GetSecretWithClient(managementClient, o.CredentialSecretName, opts.Namespace)
+		secret, err = util.GetSecretWithClient(ctx, managementClient, o.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -605,8 +606,8 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 
 // ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
-func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile string, client client.Client) error {
-	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace, client); err != nil {
+func ValidateCreateCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile string, client client.Client) error {
+	if err := ValidateCredentialInfo(ctx, opts, credentialSecretName, namespace, client); err != nil {
 		return err
 	}
 
@@ -619,7 +620,7 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 }
 
 // validateAWSOptions validates different AWS flag parameters
-func validateAWSOptions(_ context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
+func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
 	var managementClient client.Client
 	var err error
 	if awsOpts.CredentialSecretName != "" {
@@ -628,7 +629,7 @@ func validateAWSOptions(_ context.Context, opts *core.CreateOptions, awsOpts *Ra
 			return err
 		}
 	}
-	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile, managementClient); err != nil {
+	if err := ValidateCreateCredentialInfo(ctx, awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile, managementClient); err != nil {
 		return err
 	}
 
