@@ -526,7 +526,7 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			keyData := make([]byte, 32)
-			_, err := rand.Read(keyData)
+			_, err = rand.Read(keyData)
 			Expect(err).NotTo(HaveOccurred(), "failed to generate random key data")
 
 			newKeySecret := &corev1.Secret{
