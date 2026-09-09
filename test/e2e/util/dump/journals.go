@@ -92,7 +92,7 @@ func setupSSHKey(ctx context.Context, hc *hyperv1.HostedCluster) (string, error)
 	sshKeySecret := &corev1.Secret{}
 	sshKeySecret.Name = secretName
 	sshKeySecret.Namespace = hc.Namespace
-	kubeClient, err := cmdutil.GetClient()
+	kubeClient, err := cmdutil.GetClientWithKubeconfig("")
 	if err != nil {
 		return "", err
 	}
@@ -159,6 +159,10 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	if prowJobID := os.Getenv("PROW_JOB_ID"); prowJobID != "" {
 		additionalTags = append(additionalTags, supportawsutil.HypershiftProwJobIDTagKey+"="+prowJobID)
 	}
+	managementClient, err := cmdutil.GetClientWithKubeconfig("")
+	if err != nil {
+		return "", err
+	}
 
 	createBastion := bastionaws.CreateBastionOpts{
 		Namespace:          hc.Namespace,
@@ -167,7 +171,7 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		Wait:               true,
 		AdditionalTags:     additionalTags,
 	}
-	_, bastionIP, err := createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger))
+	_, bastionIP, err := createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger), managementClient)
 	if err != nil {
 		return "", err
 	}
@@ -181,7 +185,7 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 			Region:             region,
 			AWSCredentialsFile: awsCreds,
 		}
-		if err := destroyBastion.Run(destroyCtx, zapr.NewLoggerWithOptions(destroyLogger)); err != nil {
+		if err := destroyBastion.Run(destroyCtx, zapr.NewLoggerWithOptions(destroyLogger), managementClient); err != nil {
 			t.Logf("error destroying bastion: %v", err)
 		}
 	})

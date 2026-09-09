@@ -41,7 +41,7 @@ func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.Clien
 				return err
 			}
 		}
-		err = hypershiftaws.ValidateProductCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, client)
+		err = hypershiftaws.ValidateProductCredentialInfo(cmd.Context(), opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, client)
 		if err != nil {
 			return err
 		}

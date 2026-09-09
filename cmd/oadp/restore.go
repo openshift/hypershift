@@ -107,125 +107,117 @@ func GenerateRestoreName(hcName, hcNamespace string) string {
 }
 
 func (o *CreateOptions) RunRestore(ctx context.Context) error {
-	// Validate that exactly one of backup or schedule is specified
 	if err := o.validateBackupOrSchedule(); err != nil {
 		return err
 	}
-
-	// Validate restore name if provided
 	if err := o.ValidateRestoreName(); err != nil {
 		return err
 	}
-
-	// Validate existing resource policy
 	if err := o.validateExistingResourcePolicy(); err != nil {
 		return err
 	}
 
-	// Client is needed for validations and actual creation
-	if o.Client == nil {
-		if o.ClientProvider == nil || o.ClientProvider.ControllerRuntimeClient == nil {
-			if !o.Render {
-				return fmt.Errorf("failed to create kubernetes client: client provider is not configured")
-			}
-		} else {
-			var err error
-			o.Client, err = o.ClientProvider.ControllerRuntimeClientFor("")
-			if err != nil {
-				if o.Render {
-					// In render mode, if we can't connect to cluster, we'll still render but skip validations
-					o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
-					restore, _, err := o.GenerateRestoreObject()
-					if err != nil {
-						return fmt.Errorf("restore generation failed: %w", err)
-					}
-					err = renderYAMLObject(restore)
-					if err != nil {
-						return err
-					}
-					return nil
-				}
-				return fmt.Errorf("failed to create kubernetes client: %w", err)
-			}
-		}
+	if rendered, err := o.prepareClient(); err != nil {
+		return err
+	} else if rendered {
+		return nil
 	}
 
-	if o.Client != nil && !o.Render {
-		// Step 1: Validate backup or schedule exists
-		if o.BackupName != "" {
-			o.Log.Info("Validating backup exists...")
-			if err := o.validateBackupExists(ctx, false); err != nil {
+	if err := o.validateCluster(ctx); err != nil {
+		return err
+	}
+	return o.createRestore(ctx)
+}
+
+func (o *CreateOptions) prepareClient() (bool, error) {
+	if o.Client != nil {
+		return false, nil
+	}
+	if o.ClientProvider == nil || o.ClientProvider.ControllerRuntimeClient == nil {
+		if o.Render {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to create kubernetes client: client provider is not configured")
+	}
+
+	client, err := o.ClientProvider.ControllerRuntimeClientFor("")
+	if err == nil {
+		o.Client = client
+		return false, nil
+	}
+	if !o.Render {
+		return false, fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+
+	o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
+	restore, _, err := o.GenerateRestoreObject()
+	if err != nil {
+		return false, fmt.Errorf("restore generation failed: %w", err)
+	}
+	return true, renderYAMLObject(restore)
+}
+
+func (o *CreateOptions) validateCluster(ctx context.Context) error {
+	if o.Client == nil {
+		return nil
+	}
+
+	if o.BackupName != "" {
+		o.Log.Info("Validating backup exists...")
+		if err := o.validateBackupExists(ctx, o.Render); err != nil {
+			if !o.Render {
 				return fmt.Errorf("backup validation failed: %w", err)
 			}
-		} else if o.ScheduleName != "" {
-			o.Log.Info("Validating schedule exists...")
-			if err := o.validateScheduleExists(ctx); err != nil {
+			o.Log.Info("Warning: Backup validation failed, but continuing with render", "error", err.Error())
+		}
+	} else if o.ScheduleName != "" {
+		o.Log.Info("Validating schedule exists...")
+		if err := o.validateScheduleExists(ctx); err != nil {
+			if !o.Render {
 				return fmt.Errorf("schedule validation failed: %w", err)
 			}
-		}
-
-		// Step 2: Validate OADP installation
-		o.Log.Info("Validating OADP installation...")
-		if err := oadp.ValidateOADPComponents(ctx, o.Client, o.OADPNamespace); err != nil {
-			return fmt.Errorf("OADP validation failed: %w", err)
-		}
-
-		// Step 3: Verify DPA CR exists
-		o.Log.Info("Verifying DataProtectionApplication resource...")
-		if err := oadp.VerifyDPAStatus(ctx, o.Client, o.OADPNamespace); err != nil {
-			return fmt.Errorf("DPA verification failed: %w", err)
-		}
-	} else if o.Client != nil && o.Render {
-		// In render mode, run optional validations
-		if o.BackupName != "" {
-			o.Log.Info("Validating backup exists...")
-			if err := o.validateBackupExists(ctx, true); err != nil {
-				o.Log.Info("Warning: Backup validation failed, but continuing with render", "error", err.Error())
-			}
-		} else if o.ScheduleName != "" {
-			o.Log.Info("Validating schedule exists...")
-			if err := o.validateScheduleExists(ctx); err != nil {
-				o.Log.Info("Warning: Schedule validation failed, but continuing with render", "error", err.Error())
-			}
-		}
-
-		o.Log.Info("Validating OADP installation...")
-		if err := oadp.ValidateOADPComponents(ctx, o.Client, o.OADPNamespace); err != nil {
-			o.Log.Info("Warning: OADP validation failed, but continuing with render", "error", err.Error())
-		} else {
-			o.Log.Info("Verifying DataProtectionApplication resource...")
-			if err := oadp.VerifyDPAStatus(ctx, o.Client, o.OADPNamespace); err != nil {
-				o.Log.Info("Warning: DPA verification failed, but continuing with render", "error", err.Error())
-			}
+			o.Log.Info("Warning: Schedule validation failed, but continuing with render", "error", err.Error())
 		}
 	}
 
-	// Step 3: Generate restore object
+	o.Log.Info("Validating OADP installation...")
+	if err := oadp.ValidateOADPComponents(ctx, o.Client, o.OADPNamespace); err != nil {
+		if !o.Render {
+			return fmt.Errorf("OADP validation failed: %w", err)
+		}
+		o.Log.Info("Warning: OADP validation failed, but continuing with render", "error", err.Error())
+		return nil
+	}
+
+	o.Log.Info("Verifying DataProtectionApplication resource...")
+	if err := oadp.VerifyDPAStatus(ctx, o.Client, o.OADPNamespace); err != nil {
+		if !o.Render {
+			return fmt.Errorf("DPA verification failed: %w", err)
+		}
+		o.Log.Info("Warning: DPA verification failed, but continuing with render", "error", err.Error())
+	}
+	return nil
+}
+
+func (o *CreateOptions) createRestore(ctx context.Context) error {
 	restore, restoreName, err := o.GenerateRestoreObject()
 	if err != nil {
 		return fmt.Errorf("restore generation failed: %w", err)
 	}
 
 	if o.Render {
-		// Render mode: output YAML to STDOUT
-		err := renderYAMLObject(restore)
-		if err != nil {
-			return err
-		}
-		return nil
-	} else {
-		// Normal mode: create the restore
-		o.Log.Info("Creating restore...")
-		if err := o.Client.Create(ctx, restore); err != nil {
-			return fmt.Errorf("failed to create restore resource: %w", err)
-		}
-		if o.BackupName != "" {
-			o.Log.Info("Restore created successfully", "name", restoreName, "namespace", o.OADPNamespace, "backup", o.BackupName)
-		} else {
-			o.Log.Info("Restore created successfully", "name", restoreName, "namespace", o.OADPNamespace, "schedule", o.ScheduleName)
-		}
+		return renderYAMLObject(restore)
 	}
 
+	o.Log.Info("Creating restore...")
+	if err := o.Client.Create(ctx, restore); err != nil {
+		return fmt.Errorf("failed to create restore resource: %w", err)
+	}
+	if o.BackupName != "" {
+		o.Log.Info("Restore created successfully", "name", restoreName, "namespace", o.OADPNamespace, "backup", o.BackupName)
+	} else {
+		o.Log.Info("Restore created successfully", "name", restoreName, "namespace", o.OADPNamespace, "schedule", o.ScheduleName)
+	}
 	return nil
 }
 
