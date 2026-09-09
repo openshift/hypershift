@@ -6,9 +6,14 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	clientgotesting "k8s.io/client-go/testing"
+
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
 )
@@ -95,6 +100,157 @@ func TestIsResourceRegistered(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsResourceRegistered_PlatformGating(t *testing.T) {
+	// Simulate an AWS-only management cluster where --limit-crd-install=AWS
+	// was used. Only AWS CAPI CRDs are registered; Azure, OpenStack, Agent,
+	// and KubeVirt CRDs are absent. The bulk inspect resource list must only
+	// include types whose CRDs are actually registered.
+	awsOnlyDiscovery := &fakediscovery.FakeDiscovery{
+		Fake: &clientgotesting.Fake{
+			Resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+					APIResources: []metav1.APIResource{
+						{Kind: "AWSMachine"},
+						{Kind: "AWSMachineTemplate"},
+						{Kind: "AWSCluster"},
+					},
+				},
+				{
+					GroupVersion: "hypershift.openshift.io/v1beta1",
+					APIResources: []metav1.APIResource{
+						{Kind: "AWSEndpointService"},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		gvk      schema.GroupVersionKind
+		expected bool
+	}{
+		{
+			name:     "When AWS CRD is registered, it should return true for AWSCluster",
+			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta2", Kind: "AWSCluster"},
+			expected: true,
+		},
+		{
+			name:     "When Azure CRD is not installed, it should return false for AzureCluster",
+			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "AzureCluster"},
+			expected: false,
+		},
+		{
+			name:     "When OpenStack CRD is not installed, it should return false for OpenStackCluster",
+			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "OpenStackCluster"},
+			expected: false,
+		},
+		{
+			name:     "When Agent CRD is not installed, it should return false for AgentCluster",
+			gvk:      schema.GroupVersionKind{Group: "capi-provider.agent-install.openshift.io", Version: "v1beta1", Kind: "AgentCluster"},
+			expected: false,
+		},
+		{
+			name:     "When KubeVirt CRD is not installed, it should return false for KubevirtCluster",
+			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1alpha1", Kind: "KubevirtCluster"},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := isResourceRegistered(awsOnlyDiscovery, test.gvk)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result != test.expected {
+				t.Errorf("expected %v for %s, got %v", test.expected, test.gvk.Kind, result)
+			}
+		})
+	}
+}
+
+func TestFilterRegisteredResources(t *testing.T) {
+	scheme := runtime.NewScheme()
+	// Register the actual CAPI types used by dump.go
+	if err := capiaws.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add AWS scheme: %v", err)
+	}
+	if err := capiazure.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add Azure scheme: %v", err)
+	}
+
+	// Only AWS is registered on the API server
+	awsOnlyDiscovery := &fakediscovery.FakeDiscovery{
+		Fake: &clientgotesting.Fake{
+			Resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+					APIResources: []metav1.APIResource{
+						{Kind: "AWSCluster"},
+					},
+				},
+			},
+		},
+	}
+
+	candidates := []client.Object{&capiaws.AWSCluster{}, &capiazure.AzureCluster{}}
+
+	t.Run("When filtering with an AWS-only MC, it should return only AWS resources", func(t *testing.T) {
+		result, err := filterRegisteredResources(scheme, awsOnlyDiscovery, candidates)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 1 {
+			t.Fatalf("expected 1 registered resource, got %d", len(result))
+		}
+		gvks, _, err := scheme.ObjectKinds(result[0])
+		if err != nil {
+			t.Fatalf("unexpected error resolving GVK: %v", err)
+		}
+		if gvks[0].Kind != "AWSCluster" {
+			t.Errorf("expected AWSCluster, got %s", gvks[0].Kind)
+		}
+	})
+
+	t.Run("When no resources are registered, it should return an empty list", func(t *testing.T) {
+		emptyDiscovery := &fakediscovery.FakeDiscovery{
+			Fake: &clientgotesting.Fake{},
+		}
+		result, err := filterRegisteredResources(scheme, emptyDiscovery, candidates)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 0 {
+			t.Fatalf("expected 0 registered resources, got %d", len(result))
+		}
+	})
+
+	t.Run("When scheme cannot resolve GVK, it should return an error", func(t *testing.T) {
+		// Use a scheme that does NOT have CAPI types registered
+		emptyScheme := runtime.NewScheme()
+		_, err := filterRegisteredResources(emptyScheme, awsOnlyDiscovery, candidates)
+		if err == nil {
+			t.Fatal("expected an error for unregistered types, got nil")
+		}
+	})
+
+	t.Run("When discovery returns an unexpected error, it should propagate it", func(t *testing.T) {
+		// FakeDiscovery with a reactor that returns an error for ServerResourcesForGroupVersion
+		errorDiscovery := &fakediscovery.FakeDiscovery{
+			Fake: &clientgotesting.Fake{},
+		}
+		errorDiscovery.Fake.AddReactor("*", "*", func(action clientgotesting.Action) (bool, runtime.Object, error) {
+			return true, nil, fmt.Errorf("simulated discovery failure")
+		})
+		_, err := filterRegisteredResources(scheme, errorDiscovery, candidates)
+		if err == nil {
+			t.Fatal("expected a discovery error, got nil")
+		}
+	})
 }
 
 func TestNewDumpCommand(t *testing.T) {
