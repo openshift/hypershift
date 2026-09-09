@@ -2,13 +2,11 @@ package powervs
 
 import (
 	"context"
-	"os"
-	"os/signal"
-	"syscall"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -24,7 +22,8 @@ type PowerVSPlatformCreateOptions struct {
 	Memory     int32
 }
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions, clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "powervs",
 		Short:        "Creates an PowerVS nodepool",
@@ -42,19 +41,16 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.Processors, "processors", opts.Processors, "Number of processors allocated. Default is 0.5")
 	cmd.Flags().Int32Var(&opts.Memory, "memory", opts.Memory, "Amount of memory allocated (in GB). Default is 32")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := coreOpts.CreateNodePool(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create nodepool")
-			os.Exit(1)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		client, err := clientProvider.ControllerRuntimeClientFor("")
+		if err != nil {
+			return err
 		}
+		if err := coreOpts.CreateNodePool(cmd.Context(), opts, client); err != nil {
+			log.Log.Error(err, "Failed to create nodepool")
+			return err
+		}
+		return nil
 	}
 
 	return cmd

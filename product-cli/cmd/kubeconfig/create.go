@@ -5,6 +5,7 @@ import (
 	"os"
 
 	hypershiftkubeconfig "github.com/openshift/hypershift/cmd/kubeconfig"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
@@ -17,7 +18,8 @@ type options struct {
 
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
 // resources.
-func NewCreateCommand() *cobra.Command {
+func NewCreateCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "kubeconfig",
 		Short:        "Renders kubeconfigs for HostedCluster resources",
@@ -34,7 +36,11 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.portForward, "port-forward", false, "For private clusters, rewrite the kubeconfig server URL for use with kubectl port-forward.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := hypershiftkubeconfig.Render(cmd.Context(), opts.namespace, opts.name, opts.portForward); err != nil {
+		client, err := clientProvider.ControllerRuntimeClientFor("")
+		if err != nil {
+			return err
+		}
+		if err := hypershiftkubeconfig.Render(cmd.Context(), opts.namespace, opts.name, opts.portForward, client); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			return err
 		}

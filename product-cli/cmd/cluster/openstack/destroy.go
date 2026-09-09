@@ -13,7 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "openstack",
 		Short:        "Destroys a HostedCluster and its associated infrastructure on OpenStack platform",
@@ -32,7 +33,13 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 			cancel()
 		}()
 
-		if err := openstack.DestroyCluster(ctx, opts); err != nil {
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			logger.Error(err, "Failed to create management cluster client")
+			os.Exit(1)
+		}
+
+		if err := openstack.DestroyCluster(ctx, opts, client); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
 			os.Exit(1)
 		}
