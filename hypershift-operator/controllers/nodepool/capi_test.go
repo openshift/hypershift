@@ -2807,14 +2807,15 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 
 func TestPropagateVersionAndTemplate(t *testing.T) {
 	testCases := []struct {
-		name                 string
-		currentBootstrapName string
-		currentVersion       string
-		templateName         string
-		currentInfraRefName  string
-		useDifferentUserData bool
-		expectedUpdating     bool
-		expectedInfraRefName string
+		name                    string
+		currentBootstrapName    string
+		currentVersion          string
+		templateName            string
+		currentInfraRefName     string
+		useDifferentUserData    bool
+		rolloutConfigAnnotation string
+		expectedUpdating        bool
+		expectedInfraRefName    string
 	}{
 		{
 			name:                 "When user data secret name differs from current bootstrap, it should propagate version and return true",
@@ -2854,16 +2855,118 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 			expectedUpdating:     false,
 			expectedInfraRefName: "same-template",
 		},
+		{
+			name:                    "When rollout hash differs and MachineDeployment has old values, it should propagate and return true",
+			currentBootstrapName:    "old-userdata",
+			currentVersion:          "4.17.0",
+			templateName:            "same-template",
+			currentInfraRefName:     "same-template",
+			rolloutConfigAnnotation: "stale-hash",
+			expectedUpdating:        true,
+			expectedInfraRefName:    "same-template",
+		},
+		{
+			name:                    "When rollout hash differs but MachineDeployment already has correct values, it should return false",
+			currentBootstrapName:    "", // will be set to match computed name
+			currentVersion:          "4.17.0",
+			templateName:            "same-template",
+			currentInfraRefName:     "same-template",
+			rolloutConfigAnnotation: "stale-hash",
+			expectedUpdating:        false,
+			expectedInfraRefName:    "same-template",
+		},
 	}
+
+	// This test case requires a separate setup because it needs management-side
+	// fields (haproxyRawConfig) that change the full Hash() without changing the
+	// rollout hash. The table-driven cases above use an empty rolloutConfig.
+	t.Run("When only management-side content changes, it should not update bootstrap secret", func(t *testing.T) {
+		g := NewWithT(t)
+
+		rc := &rolloutConfig{
+			rolloutMcoRawConfig:       "user-config",
+			pullSecretName:            "pull",
+			additionalTrustBundleName: "trust",
+			rolloutGlobalConfig:       "global",
+			mcoRawConfig:              "old-haproxy\n---\nuser-config",
+			haproxyRawConfig:          "old-haproxy",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+				},
+			},
+		}
+		cg := &ConfigGenerator{rolloutConfig: rc, controlplaneNamespace: "cp-ns"}
+
+		// Seed the rollout annotation with the current rollout hash.
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentRolloutConfig: cg.RolloutHashWithoutVersion(),
+				},
+			},
+		}
+		cg.nodePool = nodePool
+
+		// Record the old secret name (with the old haproxy content in the full hash).
+		oldSecretName := (&Token{ConfigGenerator: cg}).UserDataSecret().Name
+
+		// Now simulate a management-side change: update haproxyRawConfig and mcoRawConfig.
+		rc.haproxyRawConfig = "new-haproxy-image-digest"
+		rc.mcoRawConfig = "new-haproxy-image-digest\n---\nuser-config"
+
+		// The full Hash() changed, so the computed UserDataSecret name differs.
+		newSecretName := (&Token{ConfigGenerator: cg}).UserDataSecret().Name
+		g.Expect(newSecretName).NotTo(Equal(oldSecretName),
+			"management-side change should produce a different full Hash and secret name")
+
+		// But the rollout hash should NOT have changed.
+		g.Expect(cg.RolloutHashWithoutVersion()).To(Equal(nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]),
+			"rollout hash should be unchanged by management-side content")
+
+		capi := &CAPI{Token: &Token{ConfigGenerator: cg}}
+
+		md := &capiv1.MachineDeployment{
+			Spec: capiv1.MachineDeploymentSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{
+							DataSecretName: ptr.To(oldSecretName),
+						},
+						InfrastructureRef: corev1.ObjectReference{Name: "same-template"},
+						Version:           ptr.To("4.17.0"),
+					},
+				},
+			},
+		}
+
+		templateCR := &capiaws.AWSMachineTemplate{
+			ObjectMeta: metav1.ObjectMeta{Name: "same-template"},
+		}
+
+		result := capi.propagateVersionAndTemplate(logr.Discard(), md, templateCR)
+		g.Expect(result).To(BeFalse(),
+			"management-side-only change should not trigger a spec update")
+		g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(oldSecretName),
+			"bootstrap secret should still reference the old secret, not the new computed name")
+	})
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
+			annotations := map[string]string{}
+			if tc.rolloutConfigAnnotation != "" {
+				annotations[nodePoolAnnotationCurrentRolloutConfig] = tc.rolloutConfigAnnotation
+			}
+
 			nodePool := &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-np",
-					Namespace: "test-ns",
+					Name:        "test-np",
+					Namespace:   "test-ns",
+					Annotations: annotations,
 				},
 			}
 
@@ -2924,6 +3027,370 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 				// When updating, bootstrap should be set to the computed user data name.
 				g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(computedUserDataName))
 				g.Expect(*md.Spec.Template.Spec.Version).To(Equal("4.17.0"))
+			}
+		})
+	}
+}
+
+func TestPropagateVersionAndTemplateToMachineSet(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		currentBootstrapName     string
+		currentVersion           string
+		templateName             string
+		currentInfraRefName      string
+		useDifferentUserData     bool
+		rolloutConfigAnnotation  string
+		machineSetAnnotations    map[string]string
+		expectedUpdating         bool
+		expectedInfraRefName     string
+		expectInPlaceAnnotations bool
+	}{
+		{
+			name:                 "When version differs, it should propagate version and bootstrap secret and set in-place annotations",
+			currentBootstrapName: "old-userdata",
+			currentVersion:       "4.16.0",
+			templateName:         "template-1",
+			currentInfraRefName:  "template-1",
+			useDifferentUserData: true,
+			machineSetAnnotations: map[string]string{
+				nodePoolAnnotationCurrentConfigVersion: "old-hash",
+			},
+			expectedUpdating:         true,
+			expectedInfraRefName:     "template-1",
+			expectInPlaceAnnotations: true,
+		},
+		{
+			name:                 "When machine template name differs from infra ref, it should propagate template but not set in-place annotations",
+			currentBootstrapName: "",
+			currentVersion:       "4.17.0",
+			templateName:         "new-template",
+			currentInfraRefName:  "old-template",
+			machineSetAnnotations: map[string]string{
+				nodePoolAnnotationCurrentConfigVersion: "existing-hash",
+			},
+			expectedUpdating:         true,
+			expectedInfraRefName:     "new-template",
+			expectInPlaceAnnotations: false,
+		},
+		{
+			name:                 "When both version and template differ, it should propagate both and set in-place annotations",
+			currentBootstrapName: "old-userdata",
+			currentVersion:       "4.16.0",
+			templateName:         "new-template",
+			currentInfraRefName:  "old-template",
+			useDifferentUserData: true,
+			machineSetAnnotations: map[string]string{
+				nodePoolAnnotationCurrentConfigVersion: "old-hash",
+			},
+			expectedUpdating:         true,
+			expectedInfraRefName:     "new-template",
+			expectInPlaceAnnotations: true,
+		},
+		{
+			name:                 "When nothing differs, it should not update and return false",
+			currentBootstrapName: "",
+			currentVersion:       "4.17.0",
+			templateName:         "same-template",
+			currentInfraRefName:  "same-template",
+			machineSetAnnotations: map[string]string{
+				nodePoolAnnotationCurrentConfigVersion: "existing-hash",
+			},
+			expectedUpdating:         false,
+			expectedInfraRefName:     "same-template",
+			expectInPlaceAnnotations: false,
+		},
+		{
+			name:                    "When rollout hash differs and MachineSet has old values, it should propagate and set in-place annotations",
+			currentBootstrapName:    "old-userdata",
+			currentVersion:          "4.17.0",
+			templateName:            "same-template",
+			currentInfraRefName:     "same-template",
+			rolloutConfigAnnotation: "stale-hash",
+			machineSetAnnotations: map[string]string{
+				nodePoolAnnotationCurrentConfigVersion: "old-hash",
+			},
+			expectedUpdating:         true,
+			expectedInfraRefName:     "same-template",
+			expectInPlaceAnnotations: true,
+		},
+	}
+
+	t.Run("When only management-side content changes, it should not update bootstrap secret or set in-place annotations", func(t *testing.T) {
+		g := NewWithT(t)
+
+		rc := &rolloutConfig{
+			rolloutMcoRawConfig:       "user-config",
+			pullSecretName:            "pull",
+			additionalTrustBundleName: "trust",
+			rolloutGlobalConfig:       "global",
+			mcoRawConfig:              "old-haproxy\n---\nuser-config",
+			haproxyRawConfig:          "old-haproxy",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+				},
+			},
+		}
+		cg := &ConfigGenerator{rolloutConfig: rc, controlplaneNamespace: "cp-ns"}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentRolloutConfig: cg.RolloutHashWithoutVersion(),
+				},
+			},
+		}
+		cg.nodePool = nodePool
+
+		oldSecretName := (&Token{ConfigGenerator: cg}).UserDataSecret().Name
+
+		rc.haproxyRawConfig = "new-haproxy-image-digest"
+		rc.mcoRawConfig = "new-haproxy-image-digest\n---\nuser-config"
+
+		newSecretName := (&Token{ConfigGenerator: cg}).UserDataSecret().Name
+		g.Expect(newSecretName).NotTo(Equal(oldSecretName),
+			"management-side change should produce a different full Hash and secret name")
+		g.Expect(cg.RolloutHashWithoutVersion()).To(Equal(nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]),
+			"rollout hash should be unchanged by management-side content")
+
+		capi := &CAPI{Token: &Token{ConfigGenerator: cg}}
+
+		ms := &capiv1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentConfigVersion: "existing-hash",
+				},
+			},
+			Spec: capiv1.MachineSetSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{
+							DataSecretName: ptr.To(oldSecretName),
+						},
+						InfrastructureRef: corev1.ObjectReference{Name: "same-template"},
+						Version:           ptr.To("4.17.0"),
+					},
+				},
+			},
+		}
+
+		templateCR := &capiaws.AWSMachineTemplate{
+			ObjectMeta: metav1.ObjectMeta{Name: "same-template"},
+		}
+
+		result := capi.propagateVersionAndTemplateToMachineSet(logr.Discard(), ms, templateCR)
+		g.Expect(result).To(BeFalse(),
+			"management-side-only change should not trigger a spec update")
+		g.Expect(*ms.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(oldSecretName),
+			"bootstrap secret should still reference the old secret")
+		g.Expect(ms.Annotations).NotTo(HaveKey(nodePoolAnnotationTargetConfigVersion),
+			"in-place annotations should not be set for management-side-only changes")
+	})
+
+	t.Run("When MachineSet is brand new, it should initialize currentConfigVersion annotation", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: "test-ns",
+			},
+		}
+
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					nodePool:              nodePool,
+					controlplaneNamespace: "cp-ns",
+					rolloutConfig: &rolloutConfig{
+						releaseImage: &releaseinfo.ReleaseImage{
+							ImageStream: &imageapi.ImageStream{
+								ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		ms := &capiv1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{},
+			},
+			Spec: capiv1.MachineSetSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{
+							DataSecretName: ptr.To("old-userdata"),
+						},
+						InfrastructureRef: corev1.ObjectReference{Name: "same-template"},
+						Version:           ptr.To("4.16.0"),
+					},
+				},
+			},
+		}
+
+		templateCR := &capiaws.AWSMachineTemplate{
+			ObjectMeta: metav1.ObjectMeta{Name: "same-template"},
+		}
+
+		result := capi.propagateVersionAndTemplateToMachineSet(logr.Discard(), ms, templateCR)
+		g.Expect(result).To(BeTrue())
+
+		targetHash := capi.Hash()
+		g.Expect(ms.Annotations[nodePoolAnnotationTargetConfigVersion]).To(Equal(targetHash))
+		g.Expect(ms.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(targetHash),
+			"brand-new MachineSet should have currentConfigVersion initialized to target")
+	})
+
+	t.Run("When MachineSet already has currentConfigVersion, it should not overwrite it", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: "test-ns",
+			},
+		}
+
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					nodePool:              nodePool,
+					controlplaneNamespace: "cp-ns",
+					rolloutConfig: &rolloutConfig{
+						releaseImage: &releaseinfo.ReleaseImage{
+							ImageStream: &imageapi.ImageStream{
+								ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		existingCurrentHash := "in-progress-hash"
+		ms := &capiv1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentConfigVersion: existingCurrentHash,
+				},
+			},
+			Spec: capiv1.MachineSetSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{
+							DataSecretName: ptr.To("old-userdata"),
+						},
+						InfrastructureRef: corev1.ObjectReference{Name: "same-template"},
+						Version:           ptr.To("4.16.0"),
+					},
+				},
+			},
+		}
+
+		templateCR := &capiaws.AWSMachineTemplate{
+			ObjectMeta: metav1.ObjectMeta{Name: "same-template"},
+		}
+
+		result := capi.propagateVersionAndTemplateToMachineSet(logr.Discard(), ms, templateCR)
+		g.Expect(result).To(BeTrue())
+
+		targetHash := capi.Hash()
+		g.Expect(ms.Annotations[nodePoolAnnotationTargetConfigVersion]).To(Equal(targetHash))
+		g.Expect(ms.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(existingCurrentHash),
+			"existing currentConfigVersion should not be overwritten")
+	})
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			annotations := map[string]string{}
+			if tc.rolloutConfigAnnotation != "" {
+				annotations[nodePoolAnnotationCurrentRolloutConfig] = tc.rolloutConfigAnnotation
+			}
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-np",
+					Namespace:   "test-ns",
+					Annotations: annotations,
+				},
+			}
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						nodePool:              nodePool,
+						controlplaneNamespace: "cp-ns",
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "4.17.0",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			computedUserDataName := capi.UserDataSecret().Name
+
+			bootstrapName := tc.currentBootstrapName
+			if !tc.useDifferentUserData && bootstrapName == "" {
+				bootstrapName = computedUserDataName
+			}
+
+			msAnnotations := map[string]string{}
+			for k, v := range tc.machineSetAnnotations {
+				msAnnotations[k] = v
+			}
+
+			ms := &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: msAnnotations,
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							Bootstrap: capiv1.Bootstrap{
+								DataSecretName: ptr.To(bootstrapName),
+							},
+							InfrastructureRef: corev1.ObjectReference{
+								Name: tc.currentInfraRefName,
+							},
+							Version: ptr.To(tc.currentVersion),
+						},
+					},
+				},
+			}
+
+			templateCR := &capiaws.AWSMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.templateName,
+				},
+			}
+
+			result := capi.propagateVersionAndTemplateToMachineSet(logr.Discard(), ms, templateCR)
+			g.Expect(result).To(Equal(tc.expectedUpdating))
+			g.Expect(ms.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(tc.expectedInfraRefName))
+
+			if tc.expectInPlaceAnnotations {
+				g.Expect(ms.Annotations).To(HaveKey(nodePoolAnnotationTargetConfigVersion))
+				g.Expect(ms.Annotations[nodePoolAnnotationTargetConfigVersion]).To(Equal(capi.Hash()))
+			} else {
+				g.Expect(ms.Annotations).NotTo(HaveKey(nodePoolAnnotationTargetConfigVersion))
+			}
+
+			if tc.expectedUpdating && tc.useDifferentUserData {
+				g.Expect(*ms.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(computedUserDataName))
+				g.Expect(*ms.Spec.Template.Spec.Version).To(Equal("4.17.0"))
 			}
 		})
 	}
@@ -3077,6 +3544,198 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileMachineSetStatus(t *testing.T) {
+	testCases := []struct {
+		name                              string
+		nodePoolVersion                   string
+		nodePoolAnnotations               map[string]string
+		templateName                      string
+		expectedVersion                   string
+		expectedRolloutConfigUpdated      bool
+		expectedConfigAnnotationUpdated   bool
+		expectedTemplateAnnotationUpdated bool
+	}{
+		{
+			name:            "When version and rollout config both change, it should update all annotations",
+			nodePoolVersion: "4.16.0",
+			nodePoolAnnotations: map[string]string{
+				nodePoolAnnotationCurrentRolloutConfig: "old-rollout-hash",
+			},
+			templateName:                      "new-template",
+			expectedVersion:                   "4.17.0",
+			expectedRolloutConfigUpdated:      true,
+			expectedConfigAnnotationUpdated:   true,
+			expectedTemplateAnnotationUpdated: true,
+		},
+		{
+			name:            "When only rollout config changes, it should update config annotations but not version",
+			nodePoolVersion: "4.17.0",
+			nodePoolAnnotations: map[string]string{
+				nodePoolAnnotationCurrentRolloutConfig: "old-rollout-hash",
+			},
+			templateName:                      "same-template",
+			expectedVersion:                   "4.17.0",
+			expectedRolloutConfigUpdated:      true,
+			expectedConfigAnnotationUpdated:   true,
+			expectedTemplateAnnotationUpdated: false,
+		},
+		{
+			name:            "When only machine template changes, it should update template annotation but not config annotations",
+			nodePoolVersion: "4.17.0",
+			nodePoolAnnotations: map[string]string{
+				nodePoolAnnotationPlatformMachineTemplate: "old-template",
+				nodePoolAnnotationCurrentRolloutConfig:    "SEED_ROLLOUT_HASH",
+			},
+			templateName:                      "new-template",
+			expectedVersion:                   "4.17.0",
+			expectedRolloutConfigUpdated:      false,
+			expectedConfigAnnotationUpdated:   false,
+			expectedTemplateAnnotationUpdated: true,
+		},
+		{
+			name:            "When nothing changes, it should not update any annotations",
+			nodePoolVersion: "4.17.0",
+			nodePoolAnnotations: map[string]string{
+				nodePoolAnnotationPlatformMachineTemplate: "same-template",
+				nodePoolAnnotationCurrentRolloutConfig:    "SEED_ROLLOUT_HASH",
+			},
+			templateName:                      "same-template",
+			expectedVersion:                   "4.17.0",
+			expectedRolloutConfigUpdated:      false,
+			expectedConfigAnnotationUpdated:   false,
+			expectedTemplateAnnotationUpdated: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-np",
+					Namespace:   "test-ns",
+					Annotations: tc.nodePoolAnnotations,
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: tc.nodePoolVersion,
+				},
+			}
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						nodePool:              nodePool,
+						controlplaneNamespace: "cp-ns",
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{
+								ImageStream: &imageapi.ImageStream{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "4.17.0",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// Replace sentinel with the actual computed rollout hash.
+			if nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] == "SEED_ROLLOUT_HASH" {
+				nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = capi.RolloutHashWithoutVersion()
+			}
+
+			templateCR := &capiaws.AWSMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: tc.templateName,
+				},
+			}
+
+			// Capture pre-call state for config annotations.
+			oldConfigAnnotation := nodePool.Annotations[nodePoolAnnotationCurrentConfig]
+			oldConfigVersionAnnotation := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+
+			capi.reconcileMachineSetStatus(logr.Discard(), templateCR)
+
+			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion))
+
+			if tc.expectedRolloutConfigUpdated {
+				g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]).To(Equal(capi.RolloutHashWithoutVersion()))
+			}
+
+			if tc.expectedConfigAnnotationUpdated {
+				g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(Equal(capi.HashWithoutVersion()))
+				g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(capi.Hash()))
+			} else {
+				g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(Equal(oldConfigAnnotation),
+					"currentConfig annotation should not be updated when neither version nor rollout config changed")
+				g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(oldConfigVersionAnnotation),
+					"currentConfigVersion annotation should not be updated when neither version nor rollout config changed")
+			}
+
+			if tc.expectedTemplateAnnotationUpdated {
+				g.Expect(nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate]).To(Equal(tc.templateName))
+			}
+		})
+	}
+
+	t.Run("When management-side content changes but rollout config is current, it should not update config annotations", func(t *testing.T) {
+		g := NewWithT(t)
+
+		rc := &rolloutConfig{
+			rolloutMcoRawConfig:       "user-config",
+			pullSecretName:            "pull",
+			additionalTrustBundleName: "trust",
+			rolloutGlobalConfig:       "global",
+			mcoRawConfig:              "old-haproxy\n---\nuser-config",
+			haproxyRawConfig:          "old-haproxy",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+				},
+			},
+		}
+		cg := &ConfigGenerator{rolloutConfig: rc, controlplaneNamespace: "cp-ns"}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: "test-ns",
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentRolloutConfig:    cg.RolloutHashWithoutVersion(),
+					nodePoolAnnotationCurrentConfig:           "old-config-hash",
+					nodePoolAnnotationCurrentConfigVersion:    "old-config-version-hash",
+					nodePoolAnnotationPlatformMachineTemplate: "same-template",
+				},
+			},
+			Status: hyperv1.NodePoolStatus{
+				Version: "4.17.0",
+			},
+		}
+		cg.nodePool = nodePool
+
+		// Simulate management-side change.
+		rc.haproxyRawConfig = "new-haproxy-image-digest"
+		rc.mcoRawConfig = "new-haproxy-image-digest\n---\nuser-config"
+
+		g.Expect(cg.RolloutHashWithoutVersion()).To(Equal(nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]),
+			"rollout hash should be unchanged by management-side content")
+
+		capi := &CAPI{Token: &Token{ConfigGenerator: cg}}
+
+		templateCR := &capiaws.AWSMachineTemplate{
+			ObjectMeta: metav1.ObjectMeta{Name: "same-template"},
+		}
+
+		capi.reconcileMachineSetStatus(logr.Discard(), templateCR)
+
+		g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(Equal("old-config-hash"),
+			"currentConfig should not be updated for management-side-only changes")
+		g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal("old-config-version-hash"),
+			"currentConfigVersion should not be updated for management-side-only changes")
+	})
 }
 
 func TestPropagateLabelsAndTaintsToMachines(t *testing.T) {
@@ -3944,6 +4603,7 @@ func TestMHCRemediationAllowedBubbledUpToReady(t *testing.T) {
 							InfrastructureRef: corev1.ObjectReference{
 								Name: awsMachineTemplateName,
 							},
+							Version: ptr.To(capi.Version()),
 						},
 					},
 				},

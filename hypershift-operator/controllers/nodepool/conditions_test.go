@@ -358,13 +358,18 @@ func TestUpdatingConfigCondition(t *testing.T) {
 				pullSecret.ObjectMeta.Name = "new-pull"
 			}
 
+			annotations := map[string]string{
+				nodePoolAnnotationCurrentConfig: "08e4f890",
+			}
+			if tc.isUpdatingConfig {
+				annotations[nodePoolAnnotationCurrentRolloutConfig] = "stale-rollout-hash"
+			}
+
 			nodePool := &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "nodepool-name",
-					Namespace: "myns",
-					Annotations: map[string]string{
-						nodePoolAnnotationCurrentConfig: "08e4f890",
-					},
+					Name:        "nodepool-name",
+					Namespace:   "myns",
+					Annotations: annotations,
 				},
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: hostedCluster.Name,
@@ -734,4 +739,132 @@ func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hos
 		}
 	}
 	return machineSet
+}
+
+func TestConfigUpdatePendingCondition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	tests := []struct {
+		name           string
+		isUpdatingSpec bool
+		hasDrift       bool
+		expectedStatus corev1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "When there is no drift and no update in progress, it should report condition as false",
+			isUpdatingSpec: false,
+			hasDrift:       false,
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When management drift is detected and no spec update is in progress, it should report condition as true",
+			isUpdatingSpec: false,
+			hasDrift:       true,
+			expectedStatus: corev1.ConditionTrue,
+			expectedReason: hyperv1.ManagementConfigDriftReason,
+		},
+		{
+			name:           "When both drift and spec update are in progress, it should report condition as false because UpdatingConfig takes precedence",
+			isUpdatingSpec: true,
+			hasDrift:       true,
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+
+			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+					InfraID:    "fake-infra-id",
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: "https://ignition.cluster-name.myns.devcluster.openshift.com",
+				},
+			}
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "nodepool-name",
+					Namespace: "myns",
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfig: "some-full-hash",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: hostedCluster.Name,
+					Release: hyperv1.Release{
+						Image: "fake-release-image",
+					},
+					Config: []corev1.LocalObjectReference{
+						{Name: "machineconfig-1"},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: semver.MustParse("4.18.0").String(),
+				},
+			}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				nodePool,
+				hostedCluster,
+				pullSecret,
+				ignitionServerCACert,
+				machineConfig,
+				ignitionConfig,
+				ignitionConfig2,
+				ignitionConfig3,
+			).Build()
+
+			r := &NodePoolReconciler{
+				Client:          client,
+				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result: &dockerv1client.DockerImageConfig{
+						Config: &docker10.DockerConfig{
+							Labels: map[string]string{},
+						},
+					},
+				},
+			}
+
+			// First, compute the actual token to get hashes
+			token, err := r.token(ctx, hostedCluster, nodePool)
+			g.Expect(err).To(BeNil())
+
+			rolloutHash := token.RolloutHashWithoutVersion()
+			fullHash := token.Hash()
+
+			// Set the current rollout config to match (no spec change)
+			nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = rolloutHash
+
+			if tc.isUpdatingSpec {
+				// Simulate a spec-driven rollout in progress by making the rollout hash differ
+				nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = "stale-rollout-hash"
+			}
+
+			if tc.hasDrift {
+				// Simulate management-side drift: full hash differs from current but rollout hash matches
+				nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = "old-full-hash-differs-from-" + fullHash
+			} else {
+				nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = fullHash
+			}
+
+			_, err = r.configUpdatePendingCondition(ctx, nodePool, hostedCluster)
+			g.Expect(err).To(BeNil())
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolConfigUpdatePendingConditionType)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+		})
+	}
 }
