@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -82,7 +83,7 @@ func TestValidateCredentialInfoWithoutClient(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			options := test.inputOptions
-			err := ValidateCredentialInfo(options.AWSPlatform.Credentials, options.CredentialSecretName, options.Namespace, nil)
+			err := ValidateCredentialInfo(context.Background(), options.AWSPlatform.Credentials, options.CredentialSecretName, options.Namespace, nil)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -99,6 +100,7 @@ func TestValidateCredentialInfo(t *testing.T) {
 	}).Build()
 
 	err := ValidateCredentialInfo(
+		context.Background(),
 		awsutil.AWSCredentialsOptions{AWSCredentialsFile: "/some/creds"},
 		"my-secret", "clusters", c,
 	)
