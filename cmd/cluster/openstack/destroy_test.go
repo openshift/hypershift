@@ -225,7 +225,7 @@ func TestDestroyCluster(t *testing.T) {
 		// A non-nil hook is what makes core.DestroyCluster take the finalizer
 		// path rather than waiting for the HostedCluster to disappear.
 		g.Expect(gotPlatformSpecifics).ToNot(BeNil())
-		g.Expect(gotPlatformSpecifics(context.Background(), opts)).To(Succeed())
+		g.Expect(gotPlatformSpecifics(context.Background(), opts, nil)).To(Succeed())
 	})
 }
 
@@ -245,7 +245,7 @@ func TestDestroyPlatformSpecifics(t *testing.T) {
 			Log:       log.Log,
 		}
 		before := *opts
-		err := destroyPlatformSpecifics(context.Background(), opts)
+		err := destroyPlatformSpecifics(context.Background(), opts, nil)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(*opts).To(Equal(before), "destroyPlatformSpecifics should not mutate the options")
 	})

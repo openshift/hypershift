@@ -10,10 +10,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "none",
 		Short:        "Destroys a HostedCluster and its associated infrastructure on None",
@@ -22,7 +25,11 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := DestroyCluster(cmd.Context(), opts); err != nil {
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			return err
+		}
+		if err := DestroyCluster(cmd.Context(), opts, client); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
 			return err
 		}
@@ -32,8 +39,14 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	return cmd
 }
 
-func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-	return destroyCluster(ctx, o, core.GetCluster, core.DestroyCluster)
+func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
+	getCluster := func(ctx context.Context, o *core.DestroyOptions) (*hyperv1.HostedCluster, error) {
+		return core.GetCluster(ctx, client, o)
+	}
+	coreDestroy := func(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *core.DestroyOptions, destroyPlatformSpecifics core.DestroyPlatformSpecifics) error {
+		return core.DestroyCluster(ctx, client, hostedCluster, o, destroyPlatformSpecifics)
+	}
+	return destroyCluster(ctx, o, getCluster, coreDestroy)
 }
 
 // getClusterFunc resolves the HostedCluster to destroy. It is a parameter of

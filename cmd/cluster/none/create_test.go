@@ -56,7 +56,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, noneOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, noneOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 

@@ -47,7 +47,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 	t.Setenv("OS_CLOUD", "")
 
 	cloudsYAML := map[string]interface{}{
@@ -123,7 +122,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, openstackOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, openstackOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 

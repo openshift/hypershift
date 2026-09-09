@@ -3,11 +3,13 @@ package kubevirt
 import (
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions, clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	platformOpts := kubevirtnodepool.DefaultOptions()
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
@@ -26,7 +28,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return coreOpts.CreateRunFunc(opts)(cmd, args)
+		return coreOpts.CreateRunFunc(opts, clientProvider)(cmd, args)
 	}
 
 	return cmd
