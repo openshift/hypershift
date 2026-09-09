@@ -60,7 +60,7 @@ func NewInitCommand() *cobra.Command {
 
 func runInit(ctx context.Context, log logr.Logger) error {
 	log.Info("Initializing environment for Hypershift Operator")
-	client, err := util.GetClient()
+	client, err := util.GetClientWithKubeconfig("")
 	if err != nil {
 		return err
 	}
