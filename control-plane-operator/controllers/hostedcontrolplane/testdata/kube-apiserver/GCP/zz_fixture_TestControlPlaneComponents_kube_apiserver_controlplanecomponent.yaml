@@ -42,6 +42,9 @@ status:
     name: admin-kubeconfig
   - group: ""
     kind: Secret
+    name: gcp-workload-identity-federation-webhook-kubeconfig
+  - group: ""
+    kind: Secret
     name: hcco-kubeconfig
   - group: ""
     kind: Secret
