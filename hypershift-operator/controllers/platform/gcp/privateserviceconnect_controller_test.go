@@ -2,8 +2,12 @@ package gcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,26 +26,30 @@ import (
 	"github.com/go-logr/logr/testr"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 )
 
 // fakeComputeClient implements ComputeClient for unit tests.
 // Each field holds the canned return values for the corresponding method.
 // capturedSubnetFilter records the filter string passed to ListSubnetworks so
 // tests can assert that the VPC-scoped filter reaches the API call site.
+// listServiceAttachmentsCallCount tracks how many times ListServiceAttachments
+// is called, used to verify subnet availability is checked via a single API call.
 type fakeComputeClient struct {
-	forwardingRules         []*compute.ForwardingRule
-	forwardingRulesErr      error
-	subnetworks             []*compute.Subnetwork
-	subnetworksErr          error
-	capturedSubnetFilter    string
-	serviceAttachments      []*compute.ServiceAttachment
-	serviceAttachmentsErr   error
-	getServiceAttachment    *compute.ServiceAttachment
-	getServiceAttachmentErr error
-	insertOperation         *compute.Operation
-	insertErr               error
-	deleteOperation         *compute.Operation
-	deleteErr               error
+	forwardingRules                 []*compute.ForwardingRule
+	forwardingRulesErr              error
+	subnetworks                     []*compute.Subnetwork
+	subnetworksErr                  error
+	capturedSubnetFilter            string
+	serviceAttachments              []*compute.ServiceAttachment
+	serviceAttachmentsErr           error
+	listServiceAttachmentsCallCount int
+	getServiceAttachment            *compute.ServiceAttachment
+	getServiceAttachmentErr         error
+	insertOperation                 *compute.Operation
+	insertErr                       error
+	deleteOperation                 *compute.Operation
+	deleteErr                       error
 }
 
 func (f *fakeComputeClient) ListForwardingRules(_ context.Context, _, _, _ string) ([]*compute.ForwardingRule, error) {
@@ -54,6 +62,7 @@ func (f *fakeComputeClient) ListSubnetworks(_ context.Context, _, _, filter stri
 }
 
 func (f *fakeComputeClient) ListServiceAttachments(_ context.Context, _, _ string) ([]*compute.ServiceAttachment, error) {
+	f.listServiceAttachmentsCallCount++
 	return f.serviceAttachments, f.serviceAttachmentsErr
 }
 
@@ -596,5 +605,262 @@ func TestDiscoverNATSubnetAllSubnetsInUse(t *testing.T) {
 	wantFilter := buildNATSubnetFilter(networkURL)
 	if fc.capturedSubnetFilter != wantFilter {
 		t.Errorf("ListSubnetworks filter = %q, want %q", fc.capturedSubnetFilter, wantFilter)
+	}
+}
+
+func TestDiscoverNATSubnetServiceAttachmentsError(t *testing.T) {
+	networkURL := "https://example.com/network"
+	fc := &fakeComputeClient{
+		subnetworks:           []*compute.Subnetwork{{Name: "subnet-1"}},
+		serviceAttachmentsErr: errors.New("GCP API error"),
+	}
+	r := newReconciler(t, fc)
+	_, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
+	if err == nil {
+		t.Error("expected error when ListServiceAttachments fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to list service attachments") {
+		t.Errorf("expected 'failed to list service attachments' error, got: %v", err)
+	}
+}
+
+// TestDiscoverNATSubnetSingleAPICall verifies that ListServiceAttachments
+// is called only once regardless of how many subnets exist.
+func TestDiscoverNATSubnetSingleAPICall(t *testing.T) {
+	networkURL := "https://example.com/network"
+	fc := &fakeComputeClient{
+		subnetworks: []*compute.Subnetwork{
+			{Name: "subnet-1"},
+			{Name: "subnet-2"},
+			{Name: "subnet-3-available"},
+		},
+		serviceAttachments: []*compute.ServiceAttachment{
+			{NatSubnets: []string{"projects/p/regions/r/subnetworks/subnet-1"}},
+			{NatSubnets: []string{"projects/p/regions/r/subnetworks/subnet-2"}},
+		},
+	}
+
+	r := newReconciler(t, fc)
+	result, err := r.discoverNATSubnet(context.Background(), newGCPPSC("", ""), networkURL)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if result != "subnet-3-available" {
+		t.Errorf("got %q, want 'subnet-3-available'", result)
+	}
+
+	// ListServiceAttachments must be called exactly once, not once per subnet.
+	if fc.listServiceAttachmentsCallCount != 1 {
+		t.Errorf("ListServiceAttachments called %d times, want 1", fc.listServiceAttachmentsCallCount)
+	}
+}
+
+// TestComputeServiceAdapterListServiceAttachmentsPagination verifies that
+// computeServiceAdapter.ListServiceAttachments correctly handles paginated
+// responses from the GCP API by following next-page tokens and returning
+// items from all pages.
+func TestComputeServiceAdapterListServiceAttachmentsPagination(t *testing.T) {
+	ctx := context.Background()
+
+	// Track which pages were requested to verify pagination logic
+	requestedPages := make(map[string]bool)
+
+	// Create a mock HTTP server that simulates GCP API pagination
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only handle service attachment list requests
+		if !strings.Contains(r.URL.Path, "/serviceAttachments") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		pageToken := r.URL.Query().Get("pageToken")
+		requestedPages[pageToken] = true
+
+		var response compute.ServiceAttachmentList
+
+		switch pageToken {
+		case "":
+			// First page: return 2 items + next page token
+			response = compute.ServiceAttachmentList{
+				Items: []*compute.ServiceAttachment{
+					{Name: "sa-page1-item1", NatSubnets: []string{"subnet-1"}},
+					{Name: "sa-page1-item2", NatSubnets: []string{"subnet-2"}},
+				},
+				NextPageToken: "page2-token",
+			}
+		case "page2-token":
+			// Second page: return 2 more items, no next page token (end of results)
+			response = compute.ServiceAttachmentList{
+				Items: []*compute.ServiceAttachment{
+					{Name: "sa-page2-item1", NatSubnets: []string{"subnet-3"}},
+					{Name: "sa-page2-item2", NatSubnets: []string{"subnet-4"}},
+				},
+				NextPageToken: "", // Last page
+			}
+		default:
+			http.Error(w, "invalid page token", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	// Create a real compute service pointing to our mock server
+	svc, err := compute.NewService(ctx, option.WithoutAuthentication(), option.WithEndpoint(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create compute service: %v", err)
+	}
+
+	adapter := &computeServiceAdapter{svc: svc}
+
+	// Call ListServiceAttachments - it should automatically handle pagination
+	result, err := adapter.ListServiceAttachments(ctx, "test-project", "test-region")
+	if err != nil {
+		t.Fatalf("ListServiceAttachments failed: %v", err)
+	}
+
+	// Verify that both pages were requested
+	if !requestedPages[""] {
+		t.Error("first page (empty token) was not requested")
+	}
+	if !requestedPages["page2-token"] {
+		t.Error("second page (page2-token) was not requested")
+	}
+	if len(requestedPages) != 2 {
+		t.Errorf("expected exactly 2 page requests, got %d", len(requestedPages))
+	}
+
+	// Verify all items from both pages are returned
+	if len(result) != 4 {
+		t.Errorf("got %d service attachments, want 4", len(result))
+	}
+
+	expectedNames := map[string]bool{
+		"sa-page1-item1": false,
+		"sa-page1-item2": false,
+		"sa-page2-item1": false,
+		"sa-page2-item2": false,
+	}
+
+	for _, sa := range result {
+		if _, ok := expectedNames[sa.Name]; !ok {
+			t.Errorf("unexpected service attachment: %s", sa.Name)
+		}
+		expectedNames[sa.Name] = true
+	}
+
+	for name, found := range expectedNames {
+		if !found {
+			t.Errorf("missing service attachment: %s", name)
+		}
+	}
+}
+
+// TestComputeServiceAdapterListSubnetworksPagination verifies that
+// computeServiceAdapter.ListSubnetworks correctly handles paginated
+// responses from the GCP API by following next-page tokens and returning
+// items from all pages.
+func TestComputeServiceAdapterListSubnetworksPagination(t *testing.T) {
+	ctx := context.Background()
+
+	// Track which pages were requested to verify pagination logic
+	requestedPages := make(map[string]bool)
+
+	// Create a mock HTTP server that simulates GCP API pagination
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only handle subnetwork list requests
+		if !strings.Contains(r.URL.Path, "/subnetworks") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		pageToken := r.URL.Query().Get("pageToken")
+		requestedPages[pageToken] = true
+
+		var response compute.SubnetworkList
+
+		switch pageToken {
+		case "":
+			// First page: return 2 items + next page token
+			response = compute.SubnetworkList{
+				Items: []*compute.Subnetwork{
+					{Name: "subnet-page1-item1", Purpose: "PRIVATE_SERVICE_CONNECT"},
+					{Name: "subnet-page1-item2", Purpose: "PRIVATE_SERVICE_CONNECT"},
+				},
+				NextPageToken: "page2-token",
+			}
+		case "page2-token":
+			// Second page: return 2 more items, no next page token (end of results)
+			response = compute.SubnetworkList{
+				Items: []*compute.Subnetwork{
+					{Name: "subnet-page2-item1", Purpose: "PRIVATE_SERVICE_CONNECT"},
+					{Name: "subnet-page2-item2", Purpose: "PRIVATE_SERVICE_CONNECT"},
+				},
+				NextPageToken: "", // Last page
+			}
+		default:
+			http.Error(w, "invalid page token", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	// Create a real compute service pointing to our mock server
+	svc, err := compute.NewService(ctx, option.WithoutAuthentication(), option.WithEndpoint(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create compute service: %v", err)
+	}
+
+	adapter := &computeServiceAdapter{svc: svc}
+
+	// Call ListSubnetworks - it should automatically handle pagination
+	result, err := adapter.ListSubnetworks(ctx, "test-project", "test-region", `purpose="PRIVATE_SERVICE_CONNECT"`)
+	if err != nil {
+		t.Fatalf("ListSubnetworks failed: %v", err)
+	}
+
+	// Verify that both pages were requested
+	if !requestedPages[""] {
+		t.Error("first page (empty token) was not requested")
+	}
+	if !requestedPages["page2-token"] {
+		t.Error("second page (page2-token) was not requested")
+	}
+	if len(requestedPages) != 2 {
+		t.Errorf("expected exactly 2 page requests, got %d", len(requestedPages))
+	}
+
+	// Verify all items from both pages are returned
+	if len(result) != 4 {
+		t.Errorf("got %d subnetworks, want 4", len(result))
+	}
+
+	expectedNames := map[string]bool{
+		"subnet-page1-item1": false,
+		"subnet-page1-item2": false,
+		"subnet-page2-item1": false,
+		"subnet-page2-item2": false,
+	}
+
+	for _, subnet := range result {
+		if _, ok := expectedNames[subnet.Name]; !ok {
+			t.Errorf("unexpected subnetwork: %s", subnet.Name)
+		}
+		expectedNames[subnet.Name] = true
+	}
+
+	for name, found := range expectedNames {
+		if !found {
+			t.Errorf("missing subnetwork: %s", name)
+		}
 	}
 }
