@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/pkg/manifests"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
