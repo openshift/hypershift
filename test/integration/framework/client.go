@@ -15,7 +15,7 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	homanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	homanifests "github.com/openshift/hypershift/support/manifests"
 
 	v1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

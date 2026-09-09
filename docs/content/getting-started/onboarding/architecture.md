@@ -64,7 +64,7 @@ graph LR
     NS2 -->|HC controller creates| NS4
 ```
 
-The namespace naming convention is implemented in `hypershift-operator/controllers/manifests/manifests.go`:
+The namespace naming convention is implemented in `support/manifests/manifests.go`:
 ```go
 func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) string {
     return fmt.Sprintf("%s-%s", hostedClusterNamespace, strings.ReplaceAll(hostedClusterName, ".", "-"))
@@ -72,7 +72,7 @@ func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName strin
 ```
 
 !!! tip "Explore yourself"
-    Read `hypershift-operator/controllers/manifests/manifests.go` to see all the naming helpers used across the codebase.
+    Read `support/manifests/manifests.go` to see all the naming helpers used across the codebase.
 
 ---
 

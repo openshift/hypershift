@@ -9,8 +9,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	controlplaneautoscalermanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneautoscaler"
+	"github.com/openshift/hypershift/support/manifests"
+	controlplaneautoscalermanifests "github.com/openshift/hypershift/support/manifests/controlplaneautoscaler"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	corev1 "k8s.io/api/core/v1"

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	supportutil "github.com/openshift/hypershift/support/util"

@@ -6,8 +6,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	controlplaneautoscalermanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneautoscaler"
+	"github.com/openshift/hypershift/support/manifests"
+	controlplaneautoscalermanifests "github.com/openshift/hypershift/support/manifests/controlplaneautoscaler"
 	"github.com/openshift/hypershift/support/k8sutil"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"

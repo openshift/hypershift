@@ -9,8 +9,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/monitoring"
+	"github.com/openshift/hypershift/support/manifests"
+	"github.com/openshift/hypershift/support/manifests/monitoring"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/upsert"
 
