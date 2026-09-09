@@ -1,0 +1,53 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  creationTimestamp: "2026-09-11T14:50:33Z"
+  generation: 3
+  name: create-cluster-km2vj
+  namespace: e2e-clusters-f92vm
+spec:
+  platform:
+    type: AWS
+    aws:
+      region: us-east-1
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64
+status:
+  conditions:
+  - lastTransitionTime: "2026-09-11T14:51:33Z"
+    observedGeneration: 3
+    reason: AsExpected
+    status: "True"
+    type: InfrastructureReady
+  - lastTransitionTime: "2026-09-11T14:51:50Z"
+    observedGeneration: 3
+    reason: AsExpected
+    status: "True"
+    type: EtcdAvailable
+  - lastTransitionTime: "2026-09-11T14:52:13Z"
+    observedGeneration: 3
+    reason: AsExpected
+    status: "True"
+    type: KubeAPIServerAvailable
+  - lastTransitionTime: "2026-09-11T15:22:24Z"
+    observedGeneration: 3
+    reason: AsExpected
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-09-11T15:22:24Z"
+    observedGeneration: 3
+    reason: AsExpected
+    status: "False"
+    type: Degraded
+  version:
+    desired:
+      image: quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64
+      version: 4.21.10
+    history:
+    - completionTime: "2026-09-11T15:20:57Z"
+      image: quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64
+      startedTime: "2026-09-11T14:52:33Z"
+      state: Completed
+      verified: false
+      version: 4.21.10
+    observedGeneration: 3
