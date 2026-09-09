@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/images"
@@ -455,41 +456,41 @@ func (p GCP) DeleteCredentials(ctx context.Context, c client.Client, hcluster *h
 }
 
 // GetCredentialStatus returns the GCP credential status (valid/invalid/unknown).
+// Only runtime authentication failures from a supported control plane version
+// classify credentials as invalid and authorize orphan machine cleanup.
 func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
-	var wifStatus metav1.ConditionStatus
+	if supported, _ := conditions.SupportsGCPRuntimeCredentialValidation(hc.Status.ControlPlaneVersion.Desired.Version); !supported {
+		return CredentialStatusUnknown
+	}
 	validWIF := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
-	if validWIF == nil {
-		wifStatus = metav1.ConditionUnknown
-	} else {
-		wifStatus = validWIF.Status
-	}
-
-	var credsStatus metav1.ConditionStatus
 	validCredentials := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
-	if validCredentials == nil {
-		credsStatus = metav1.ConditionUnknown
-	} else {
-		credsStatus = validCredentials.Status
+	for _, condition := range []*metav1.Condition{validWIF, validCredentials} {
+		if condition != nil && condition.Status == metav1.ConditionFalse && condition.Reason == hyperv1.InvalidIdentityProvider {
+			return CredentialStatusInvalid
+		}
 	}
-
-	if wifStatus == metav1.ConditionFalse || credsStatus == metav1.ConditionFalse {
-		return CredentialStatusInvalid
-	}
-	if wifStatus == metav1.ConditionTrue && credsStatus == metav1.ConditionTrue {
+	if validWIF != nil && validWIF.Status == metav1.ConditionTrue && validCredentials != nil && validCredentials.Status == metav1.ConditionTrue {
 		return CredentialStatusValid
 	}
 	return CredentialStatusUnknown
 }
 
 // ComputeGCPCredentialConditions bubbles up ValidGCPWorkloadIdentity and
-// ValidGCPCredentials from the HostedControlPlane to the HostedCluster.
+// ValidGCPCredentials from a supported HostedControlPlane to the HostedCluster.
+// Unsupported or undetermined versions report Unknown, replacing legacy results.
 // Returns whether any condition changed.
 //
-// Invalid is latched: if the HC already has a False condition and the HCP now
+// For supported versions, runtime authentication failure is latched: if the HC
+// already has a False condition with reason InvalidIdentityProvider and the HCP now
 // reports Unknown (e.g. because KAS is gone during teardown), the existing
 // False is kept so that DeleteOrphanedMachines continues to fire and teardown
 // does not get stuck again.
 func ComputeGCPCredentialConditions(hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) bool {
+	version := hc.Status.ControlPlaneVersion.Desired.Version
+	if hcp != nil {
+		version = hcp.Status.ControlPlaneVersion.Desired.Version
+	}
+	supported, known := conditions.SupportsGCPRuntimeCredentialValidation(version)
 	var changed bool
 	for _, condType := range []hyperv1.ConditionType{
 		hyperv1.ValidGCPWorkloadIdentity,
@@ -501,13 +502,25 @@ func ComputeGCPCredentialConditions(hc *hyperv1.HostedCluster, hcp *hyperv1.Host
 		}
 
 		var fresh metav1.Condition
-		if hcpCond == nil || hcpCond.Status == metav1.ConditionUnknown {
-			// Latch: keep an existing False on the HC rather than downgrading to
-			// Unknown. This prevents a KAS-unavailable signal during teardown from
-			// clobbering a previously confirmed Invalid state and silently stopping
-			// orphan machine cleanup.
+		if !supported {
+			fresh = metav1.Condition{
+				Type:               string(condType),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				Message:            "The control plane version cannot be determined; runtime GCP credential validation availability is unknown",
+				ObservedGeneration: hc.Generation,
+			}
+			if known {
+				fresh.Reason = "UnsupportedControlPlaneVersion"
+				fresh.Message = "Runtime GCP credential validation requires control plane version 5.1 or later"
+			}
+		} else if hcpCond == nil || hcpCond.Status == metav1.ConditionUnknown {
+			// Latch: keep an existing False with reason InvalidIdentityProvider on
+			// the HC rather than downgrading to Unknown. This prevents a KAS-unavailable
+			// signal during teardown from clobbering a previously confirmed Invalid
+			// state and silently stopping orphan machine cleanup.
 			existing := meta.FindStatusCondition(hc.Status.Conditions, string(condType))
-			if existing != nil && existing.Status == metav1.ConditionFalse {
+			if existing != nil && existing.Status == metav1.ConditionFalse && existing.Reason == hyperv1.InvalidIdentityProvider {
 				continue // keep the latched Invalid; nothing to update
 			}
 			fresh = metav1.Condition{

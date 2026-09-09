@@ -3192,58 +3192,9 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 }
 
 // ValidateHostedClusterConditions checks that a HostedCluster's conditions and status fields
-// match expected values. Pass nil for uc when calling outside of an upgrade test context.
+// match expected values. Pass nil for upgradeContext when calling outside of an upgrade test context.
 func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration, upgradeContext *UpgradeContext) {
-	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
-	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
-	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
-	if !hasWorkerNodes {
-		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
-		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
-	}
-	if IsLessThan(Version415) {
-		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-	}
-	if IsLessThan(Version421) {
-		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
-	}
-
-	if IsLessThan(Version422) {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-	}
-
-	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
-	// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if upgradeContext != nil {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-	}
-
-	if IsLessThan(Version423) {
-		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-	}
-
-	// TODO: TEMPORARY - Remove this once ConfigOperatorReconciliationSucceeded condition is merged and stable.
-	// Exclude ConfigOperatorReconciliationSucceeded during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if upgradeContext != nil {
-		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-	}
-
-	var predicates []Predicate[*hyperv1.HostedCluster]
-	for conditionType, conditionStatus := range expectedConditions {
-		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{
-			Type:   string(conditionType),
-			Status: conditionStatus,
-		}))
-	}
+	predicates := []Predicate[*hyperv1.HostedCluster]{hostedClusterConditionsPredicate(hasWorkerNodes, upgradeContext)}
 
 	if IsGreaterThanOrEqualTo(Version422) {
 		cpvFieldPath := "status.controlPlaneVersion"
@@ -3265,6 +3216,68 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 			return hc, err
 		}, predicates, WithTimeout(timeout), WithoutConditionDump(),
 	)
+}
+
+// hostedClusterConditionsPredicate evaluates expectations against each freshly fetched cluster.
+func hostedClusterConditionsPredicate(hasWorkerNodes bool, upgradeContext *UpgradeContext) Predicate[*hyperv1.HostedCluster] {
+	return func(hc *hyperv1.HostedCluster) (bool, string, error) {
+		expectedConditions := conditions.ExpectedHCConditions(hc)
+		// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
+		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
+		if !hasWorkerNodes {
+			expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+			expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+			expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
+			expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
+			expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
+		}
+		if IsLessThan(Version415) {
+			// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+		}
+		if IsLessThan(Version421) {
+			delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
+		}
+
+		if IsLessThan(Version422) {
+			delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
+		}
+
+		// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
+		// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
+		// may not be present in all builds during the upgrade window.
+		if upgradeContext != nil {
+			delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+		}
+
+		if IsLessThan(Version423) {
+			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+		}
+
+		// TODO: TEMPORARY - Remove this once ConfigOperatorReconciliationSucceeded condition is merged and stable.
+		// Exclude ConfigOperatorReconciliationSucceeded during upgrade tests as the condition
+		// may not be present in all builds during the upgrade window.
+		if upgradeContext != nil {
+			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+		}
+		var reasons []string
+		for conditionType, conditionStatus := range expectedConditions {
+			done, reason, err := ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(conditionType),
+				Status: conditionStatus,
+			})(hc)
+			if err != nil {
+				return false, reason, err
+			}
+			if !done {
+				reasons = append(reasons, reason)
+			}
+		}
+		return len(reasons) == 0, strings.Join(reasons, "; "), nil
+	}
 }
 
 func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {

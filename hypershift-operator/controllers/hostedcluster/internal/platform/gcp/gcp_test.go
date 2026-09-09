@@ -557,14 +557,40 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		}
 	}
 
+	for _, version := range []string{"4.23.0", "5.0.0", "", "invalid", "5.1.0"} {
+		for _, reason := range []string{hyperv1.InvalidIdentityProvider, hyperv1.InvalidConfigurationReason, hyperv1.ReconciliationErrorReason} {
+			if version == "5.1.0" && reason == hyperv1.InvalidIdentityProvider {
+				continue
+			}
+			t.Run("When version is "+version+" and failure reason is "+reason+", it should preserve finalizers without runtime evidence", func(t *testing.T) {
+				g := NewWithT(t)
+				hc := validHostedCluster()
+				hc.Status.ControlPlaneVersion.Desired.Version = version
+				hc.Status.Conditions = []metav1.Condition{
+					{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: reason},
+					{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: reason},
+				}
+				c := fake.NewClientBuilder().WithScheme(buildScheme(g)).WithObjects(gcpMachines()...).Build()
+				g.Expect((GCP{}).DeleteOrphanedMachines(t.Context(), c, hc, "test-control-plane-namespace")).To(Succeed())
+				machines := &capigcp.GCPMachineList{}
+				g.Expect(c.List(t.Context(), machines)).To(Succeed())
+				g.Expect(machines.Items).To(HaveLen(2))
+				for _, machine := range machines.Items {
+					g.Expect(machine.Finalizers).To(Equal([]string{capigcp.MachineFinalizer, "other-controller-finalizer"}))
+				}
+			})
+		}
+	}
+
 	t.Run("When credentials are invalid, it should strip the CAPG finalizer from deleting machines", func(t *testing.T) {
 		g := NewWithT(t)
 		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 		hc := validHostedCluster()
+		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		hc.Status.Conditions = []metav1.Condition{
-			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
-			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
 		}
 
 		fakeClient := fake.NewClientBuilder().
@@ -593,6 +619,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 		hc := validHostedCluster()
+		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		hc.Status.Conditions = []metav1.Condition{
 			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue},
 			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue},
@@ -619,6 +646,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 		hc := validHostedCluster()
+		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		// No conditions set — GetCredentialStatus returns Unknown
 
 		fakeClient := fake.NewClientBuilder().
@@ -642,9 +670,10 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 		hc := validHostedCluster()
+		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		hc.Status.Conditions = []metav1.Condition{
-			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
-			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
 		}
 
 		listErr := fmt.Errorf("list failed")
@@ -666,9 +695,10 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 		hc := validHostedCluster()
+		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		hc.Status.Conditions = []metav1.Condition{
-			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
-			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
 		}
 
 		// Two deleted machines; Update fails for both.
@@ -712,9 +742,10 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 		platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 		hc := validHostedCluster()
+		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		hc.Status.Conditions = []metav1.Condition{
-			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse},
-			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse},
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
 		}
 
 		// Deleted machine, but without the CAPG finalizer (already removed by another path).
