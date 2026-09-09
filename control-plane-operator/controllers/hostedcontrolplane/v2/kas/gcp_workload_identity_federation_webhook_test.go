@@ -33,7 +33,7 @@ func TestApplyGCPWorkloadIdentityFederationWebhookContainer(t *testing.T) {
 				g.Expect(webhookContainer.Command).To(ContainElement("--annotation-prefix=cloud.google.com"))
 				g.Expect(webhookContainer.Command).To(ContainElement("--gcp-default-region=us-central1"))
 				g.Expect(webhookContainer.Command).To(ContainElement("--kubeconfig=/var/run/app/kubeconfig/kubeconfig"))
-				g.Expect(webhookContainer.Command).To(ContainElement("--token-audience=sts.googleapis.com"))
+				g.Expect(webhookContainer.Command).To(ContainElement("--token-audience=openshift"))
 			},
 		},
 		{

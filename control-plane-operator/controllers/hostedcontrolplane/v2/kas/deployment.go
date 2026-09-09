@@ -532,7 +532,7 @@ func applyGCPWorkloadIdentityFederationWebhookContainer(podSpec *corev1.PodSpec,
 		"--health-probe-bind-address=:8081",
 		"--kubeconfig=/var/run/app/kubeconfig/kubeconfig",
 		"--metrics-bind-address=127.0.0.1:8080",
-		"--token-audience=sts.googleapis.com",
+		"--token-audience=openshift",
 	}
 
 	tlsArgs, err := getTLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
