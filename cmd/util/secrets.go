@@ -10,21 +10,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func GetSecret(name string, namespace string) (*corev1.Secret, error) {
-	return GetSecretWithClient(nil, name, namespace)
-}
-
 func GetSecretWithClient(client client.Client, name string, namespace string) (*corev1.Secret, error) {
-	var err error
 	if client == nil {
-		client, err = GetClient()
-		if err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("management-cluster client is required")
 	}
 
 	secret := &corev1.Secret{}
-	err = client.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, secret)
+	err := client.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, secret)
 	return secret, err
 }
 

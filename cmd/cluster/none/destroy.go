@@ -9,10 +9,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "none",
 		Short:        "Destroys a HostedCluster and its associated infrastructure on None",
@@ -21,7 +24,11 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := DestroyCluster(cmd.Context(), opts); err != nil {
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			return err
+		}
+		if err := DestroyCluster(cmd.Context(), opts, client); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
 			return err
 		}
@@ -31,8 +38,8 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	return cmd
 }
 
-func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-	hostedCluster, err := core.GetCluster(ctx, o)
+func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
+	hostedCluster, err := core.GetCluster(ctx, client, o)
 	if err != nil {
 		return err
 	}
@@ -46,5 +53,5 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	if err := errors.NewAggregate(inputErrors); err != nil {
 		return fmt.Errorf("required inputs are missing: %w", err)
 	}
-	return core.DestroyCluster(ctx, hostedCluster, o, nil)
+	return core.DestroyCluster(ctx, client, hostedCluster, o, nil)
 }

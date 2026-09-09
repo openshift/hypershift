@@ -21,6 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +33,8 @@ type ConsoleLogOpts struct {
 	OutputDir          string
 }
 
-func NewCommand() *cobra.Command {
+func NewCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 
 	opts := &ConsoleLogOpts{
 		Namespace: "clusters",
@@ -58,7 +61,11 @@ func NewCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if err := opts.Run(cmd.Context()); err != nil {
+		client, err := clientProvider.ControllerRuntimeClientFor("")
+		if err != nil {
+			return err
+		}
+		if err := opts.Run(cmd.Context(), client); err != nil {
 			logger.Error(err, "Failed to get console logs")
 			return err
 		}
@@ -69,14 +76,12 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func (o *ConsoleLogOpts) Run(ctx context.Context) error {
-	c, err := util.GetClient()
-	if err != nil {
-		return err
+func (o *ConsoleLogOpts) Run(ctx context.Context, client crclient.Client) error {
+	if client == nil {
+		return fmt.Errorf("management-cluster client is required")
 	}
-
 	var hostedCluster hyperv1.HostedCluster
-	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
+	if err := client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 		return fmt.Errorf("failed to get hostedcluster: %w", err)
 	}
 	infraID := hostedCluster.Spec.InfraID
