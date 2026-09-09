@@ -1448,19 +1448,25 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *corev1.Namespace, client crclient.Client) ([]crclient.Object, error) {
 	var objects []crclient.Object
 
-	// Setting the proxy for external-dns is best-effort, ignore errors
+	// Proxy lookup is best-effort only when no management client is available for offline rendering.
 	if client == nil && opts.ClientProvider != nil {
-		client, _ = opts.ClientProvider.ControllerRuntimeClientFor("")
+		var err error
+		client, err = opts.ClientProvider.ControllerRuntimeClientFor("")
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: unable to acquire management-cluster client while rendering ExternalDNS resources: %v\n", err)
+			client = nil
+		}
 	}
 	var proxy *configv1.Proxy
 	if client != nil {
-		proxy, _ = func() (*configv1.Proxy, error) {
-			proxy := &configv1.Proxy{}
-			if err := client.Get(ctx, crclient.ObjectKey{Name: "cluster"}, proxy); err != nil {
+		candidate := &configv1.Proxy{}
+		if err := client.Get(ctx, crclient.ObjectKey{Name: "cluster"}, candidate); err != nil {
+			if !apierrors.IsNotFound(err) {
 				return nil, err
 			}
-			return proxy, nil
-		}()
+		} else {
+			proxy = candidate
+		}
 	}
 
 	externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
