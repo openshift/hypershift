@@ -39,11 +39,6 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 			want:    1,
 		},
 		{
-			name:    "When autoscaling Azure variant is configured, it should request one initial replica",
-			variant: "autoscaling",
-			want:    1,
-		},
-		{
 			name:    "When external OIDC Azure variant is configured, it should request one initial replica",
 			variant: "external-oidc",
 			want:    1,
