@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	dto "github.com/prometheus/client_model/go"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -125,7 +126,6 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 		It("should expose Karpenter metrics", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -154,7 +154,8 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 					maps.Copy(combined, komf)
 				}
 				for _, metricName := range karpenterMetrics {
-					if !e2eutil.ValidateMetricPresence(t, combined, metricName, "", "", metricName, true) {
+					if err := v2util.ValidateMetricPresence(combined, metricName, "", "", metricName, true); err != nil {
+						GinkgoWriter.Printf("metric validation pending: %v", err)
 						return false, nil
 					}
 				}
@@ -175,7 +176,6 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 		It("should have Karpenter CRDs installed in the hosted cluster", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -188,22 +188,21 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 				"nodeclaims.karpenter.sh",
 			}
 			for _, crdName := range expectedCRDs {
-				e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("CRD %s to exist in the hosted cluster", crdName),
+				Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("CRD %s to exist in the hosted cluster", crdName),
 					func(ctx context.Context) (*apiextensionsv1.CustomResourceDefinition, error) {
 						crd := &apiextensionsv1.CustomResourceDefinition{}
 						err := hcClient.Get(ctx, crclient.ObjectKey{Name: crdName}, crd)
 						return crd, err
 					},
 					nil,
-					e2eutil.WithTimeout(2*time.Minute),
-				)
+					v2util.WithTimeout(2*time.Minute),
+				)).To(Succeed())
 			}
 		})
 
 		It("should have default OpenshiftEC2NodeClass with correct subnet and security group selectors", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -211,7 +210,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 
 			GinkgoWriter.Println("Validating default OpenshiftEC2NodeClass exists with expected values")
 			infraID := hc.Spec.InfraID
-			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have expected spec",
+			Expect(v2util.EventuallyObject(ctx, "default OpenshiftEC2NodeClass to have expected spec",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
@@ -242,14 +241,13 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 						return true, "default OpenshiftEC2NodeClass has expected fields set", nil
 					},
 				},
-				e2eutil.WithTimeout(1*time.Minute),
-			)
+				v2util.WithTimeout(1*time.Minute),
+			)).To(Succeed())
 		})
 
 		It("should have default EC2NodeClass with immutable service-owned fields", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -259,7 +257,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			Expect(expectedTags).NotTo(BeEmpty(), "HostedCluster has no non-restricted resource tags; cluster setup must include at least one propagatable tag for this test to be meaningful")
 
 			GinkgoWriter.Println("Validating corresponding default EC2NodeClass has immutable service-owned fields set")
-			e2eutil.EventuallyObject(t, ctx, "EC2NodeClass to have service-owned fields populated",
+			Expect(v2util.EventuallyObject(ctx, "EC2NodeClass to have service-owned fields populated",
 				func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
 					nc := &awskarpenterv1.EC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
@@ -284,8 +282,8 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 						return true, "default EC2NodeClass has expected fields set", nil
 					},
 				},
-				e2eutil.WithTimeout(1*time.Minute),
-			)
+				v2util.WithTimeout(1*time.Minute),
+			)).To(Succeed())
 		})
 
 		It("should block direct deletion of EC2NodeClass", func() {
@@ -317,11 +315,10 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 		It("should have AutoNodeEnabled condition set to True", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
-			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled condition", hc.Namespace, hc.Name),
+			Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled condition", hc.Namespace, hc.Name),
 				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 					obj := &hyperv1.HostedCluster{}
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
@@ -334,8 +331,8 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 						Reason: hyperv1.AsExpectedReason,
 					}),
 				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
+				v2util.WithTimeout(2*time.Minute),
+			)).To(Succeed())
 		})
 	})
 }
@@ -358,7 +355,6 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 		It("should provision and deprovision ARM64 nodes", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -406,7 +402,8 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 					}
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", armNodePool.Name)
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, armNodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, armNodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for ARM64 Karpenter nodes to terminate")
 			})
 
 			Expect(hcClient.Create(ctx, armWorkLoads)).To(Succeed())
@@ -417,7 +414,8 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			})
 			GinkgoWriter.Println("Created ARM64 workloads")
 
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, armNodeLabels)
+			nodes, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 1, armNodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 			waitForReadyKarpenterPods(ctx, hcClient, nodes, 1, map[string]string{"app": "arm-app"})
 		})
 	})
@@ -438,7 +436,6 @@ func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
 		It("should propagate instance profile annotation to EC2NodeClass and EC2 instances", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -449,7 +446,7 @@ func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
 			workerInstanceProfile := hc.Spec.InfraID + "-worker"
 
 			var origInstanceProfile string
-			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				if obj.Annotations == nil {
 					obj.Annotations = make(map[string]string)
 				}
@@ -466,7 +463,7 @@ func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
 				current := &hyperv1.HostedCluster{}
 				Expect(tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), current)).To(Succeed(),
 					"cleanup: failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
-				Expect(e2eutil.UpdateObject(t, ctx, tc.MgmtClient, current, func(obj *hyperv1.HostedCluster) {
+				Expect(v2util.UpdateObject(ctx, tc.MgmtClient, current, func(obj *hyperv1.HostedCluster) {
 					if len(origInstanceProfile) > 0 {
 						if obj.Annotations == nil {
 							obj.Annotations = make(map[string]string)
@@ -519,10 +516,12 @@ func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
 					}
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", testNodePool.Name)
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for instance-profile Karpenter nodes to terminate")
 			})
 
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			nodes, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 
 			// Verify EC2 instances have the correct instance profile
 			ec2client := newEC2Client(awsCredsFile, awsRegion)
@@ -561,7 +560,6 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 		It("should resolve version, propagate MetadataOptions, and provision node with correct kubelet version", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -579,7 +577,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 
 			// Verify default OpenshiftEC2NodeClass uses control plane release image
 			GinkgoWriter.Printf("Verifying default OpenshiftEC2NodeClass uses control plane release image")
-			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
+			Expect(v2util.EventuallyObject(ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
@@ -606,8 +604,8 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 						return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
 					},
 				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
+				v2util.WithTimeout(2*time.Minute),
+			)).To(Succeed())
 
 			// Use a previous minor version (n-2) to test a genuinely different version.
 			prevMajor, prevMinor, err := supportedversion.PreviousMinorVersion(cpVersion, 2)
@@ -644,7 +642,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			// Wait for version resolution and get the resolved release image
 			var resolvedReleaseImage string
 			GinkgoWriter.Printf("Waiting for OpenshiftEC2NodeClass version resolution")
-			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-test to resolve version",
+			Expect(v2util.EventuallyObject(ctx, "OpenshiftEC2NodeClass version-test to resolve version",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
@@ -669,12 +667,12 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 						return true, fmt.Sprintf("status.releaseImage resolved to: %s", nc.Status.ReleaseImage), nil
 					},
 				},
-				e2eutil.WithTimeout(5*time.Minute),
-			)
+				v2util.WithTimeout(5*time.Minute),
+			)).To(Succeed())
 
 			// Verify MetadataOptions propagated to downstream EC2NodeClass
 			GinkgoWriter.Printf("Verifying MetadataOptions propagated to EC2NodeClass")
-			e2eutil.EventuallyObject(t, ctx, "EC2NodeClass to have MetadataOptions propagated",
+			Expect(v2util.EventuallyObject(ctx, "EC2NodeClass to have MetadataOptions propagated",
 				func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
 					ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, ec2NodeClass)
@@ -700,8 +698,8 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 						return true, "MetadataOptions propagated correctly", nil
 					},
 				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
+				v2util.WithTimeout(2*time.Minute),
+			)).To(Succeed())
 
 			// Look up expected kubelet version from the resolved release image
 			pullSecret, err := os.ReadFile(pullSecretFile)
@@ -734,7 +732,8 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 					}
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", testNodePool.Name)
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for version-test Karpenter nodes to terminate")
 			})
 
 			Expect(hcClient.Create(ctx, testWorkLoads)).To(Succeed())
@@ -768,11 +767,11 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			}
 
 			// Wait for node to be provisioned and verify it has the correct kubelet version
-			nodes := e2eutil.WaitForNReadyNodesWithOptions(t, ctx, hcClient, 1, hyperv1.AWSPlatform, "",
-				e2eutil.WithClientOptions(
+			nodes, err := v2util.WaitForNReadyNodesWithOptions(ctx, hcClient, 1, hyperv1.AWSPlatform, "",
+				v2util.WithClientOptions(
 					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
 				),
-				e2eutil.WithPredicates(
+				v2util.WithPredicates(
 					func(node *corev1.Node) (bool, string, error) {
 						kubeletVersion := node.Status.NodeInfo.KubeletVersion
 						if !strings.Contains(kubeletVersion, expectedKubeletVersion) {
@@ -782,6 +781,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 					},
 				),
 			)
+			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Printf("Node provisioned with correct kubelet version (v%s) for NodeClass version %s", expectedKubeletVersion, nodeClassVersion)
 
 			// Verify MetadataOptions on EC2 instance
@@ -803,7 +803,8 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			// NodeClaims don't leak vCPUs into subsequent sequential tests.
 			Expect(hcClient.Delete(ctx, testWorkLoads)).To(Succeed())
 			Expect(hcClient.Delete(ctx, testNodePool)).To(Succeed())
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+			_, err = v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+			Expect(err).NotTo(HaveOccurred(), "failed waiting for version-test Karpenter nodes to terminate")
 
 			// Verify n-4 version skew produces SupportedVersionSkew=False
 			skewMajor, skewMinor, err := supportedversion.PreviousMinorVersion(cpVersion, 4)
@@ -837,7 +838,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			GinkgoWriter.Printf("Waiting for VersionResolved=True and SupportedVersionSkew=False")
-			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-skew-test to have SupportedVersionSkew=False",
+			Expect(v2util.EventuallyObject(ctx, "OpenshiftEC2NodeClass version-skew-test to have SupportedVersionSkew=False",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: skewNC.Name}, result)
@@ -866,8 +867,8 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 						return false, "SupportedVersionSkew=False condition not found", nil
 					},
 				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
+				v2util.WithTimeout(2*time.Minute),
+			)).To(Succeed())
 			GinkgoWriter.Printf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)", skewNC.Name, skewVersion, cpVersion)
 		})
 	})
@@ -888,7 +889,6 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 		It("should provision a node into a capacity reservation", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -939,7 +939,7 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Created OpenshiftEC2NodeClass capacity-reservation-test with CapacityReservationSelectorTerms ID=%s", crID)
 
 			// Verify the downstream EC2NodeClass has the CapacityReservationSelectorTerms propagated.
-			e2eutil.EventuallyObject(t, ctx, "EC2NodeClass capacity-reservation-test to have CapacityReservationSelectorTerms set",
+			Expect(v2util.EventuallyObject(ctx, "EC2NodeClass capacity-reservation-test to have CapacityReservationSelectorTerms set",
 				func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
 					ec2nc := &awskarpenterv1.EC2NodeClass{}
 					return ec2nc, hcClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, ec2nc)
@@ -954,11 +954,11 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 							crID, ec2nc.Spec.CapacityReservationSelectorTerms), nil
 					},
 				},
-				e2eutil.WithTimeout(2*time.Minute), e2eutil.WithInterval(5*time.Second),
-			)
+				v2util.WithTimeout(2*time.Minute), v2util.WithInterval(5*time.Second),
+			)).To(Succeed())
 
 			// Verify karpenter resolves the capacity reservation and reflects it in the OpenshiftEC2NodeClass status.
-			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass capacity-reservation-test to have capacity reservation %s in status", crID),
+			Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("OpenshiftEC2NodeClass capacity-reservation-test to have capacity reservation %s in status", crID),
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					return updated, hcClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, updated)
@@ -971,8 +971,8 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 						return false, fmt.Sprintf("expected capacity reservation %s in status, got %+v", crID, updated.Status.CapacityReservations), nil
 					},
 				},
-				e2eutil.WithTimeout(5*time.Minute), e2eutil.WithInterval(10*time.Second),
-			)
+				v2util.WithTimeout(5*time.Minute), v2util.WithInterval(10*time.Second),
+			)).To(Succeed())
 
 			// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
 			// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
@@ -992,7 +992,8 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 					}
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", crNodePool.Name)
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, crNodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, crNodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for capacity-reservation Karpenter nodes to terminate")
 			})
 			GinkgoWriter.Printf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
 
@@ -1005,7 +1006,8 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Created workload capacity-reservation-web-app to trigger node provisioning")
 
 			// Wait for the node to be ready.
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, crNodeLabels)
+			nodes, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 1, crNodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(nodes).To(HaveLen(1))
 
 			// Verify the EC2 instance was launched into the capacity reservation.
@@ -1022,7 +1024,8 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 			// so stale NodeClaims don't leak vCPUs into subsequent sequential tests.
 			Expect(hcClient.Delete(ctx, crWorkload)).To(Succeed())
 			Expect(hcClient.Delete(ctx, crNodePool)).To(Succeed())
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, crNodeLabels)
+			_, err = v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, crNodeLabels)
+			Expect(err).NotTo(HaveOccurred(), "failed waiting for capacity-reservation Karpenter nodes to terminate")
 		})
 	})
 }
@@ -1042,7 +1045,6 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 		It("should propagate a custom subnet through the VPC endpoint and provision a node in it", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -1106,7 +1108,8 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Selected AZ %s for test subnet (supported by endpoint service, not in VPC)", az)
 
 			// Create a small test subnet in the VPC.
-			subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hc.Spec.InfraID, hc.Name, e2eutil.E2ETagsFromEnvironment())
+			subnetID, cleanupSubnet, err := v2util.CreateTestSubnet(ctx, ec2client, vpcID, az, hc.Spec.InfraID, hc.Name, v2util.E2ETagsFromEnvironment())
+			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() {
 				cleanupSubnet()
 			})
@@ -1270,7 +1273,8 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 					}
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", testNodePool.Name)
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for arbitrary-subnet Karpenter nodes to terminate")
 			})
 
 			Expect(hcClient.Create(ctx, testWorkLoads)).To(Succeed())
@@ -1281,7 +1285,8 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 				}
 			})
 
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			nodes, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Printf("Node launched in arbitrary subnet, verifying it used subnet %s", subnetID)
 
 			// Verify the launched node's EC2 instance is in the expected subnet.
@@ -1315,7 +1320,6 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 		It("should propagate kubelet config to provisioned nodes", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -1363,7 +1367,7 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 
 			// Wait for the per-nodeclass KubeletConfig ConfigMap to appear in the HCP namespace.
 			kubeletCMName := karpenterutil.KarpenterNodeClassKubeletConfigName(nc.Name)
-			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("KubeletConfig ConfigMap %s/%s to appear", hcpNamespace, kubeletCMName),
+			Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("KubeletConfig ConfigMap %s/%s to appear", hcpNamespace, kubeletCMName),
 				func(ctx context.Context) (*corev1.ConfigMap, error) {
 					cm := &corev1.ConfigMap{}
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKey{Name: kubeletCMName, Namespace: hcpNamespace}, cm)
@@ -1386,14 +1390,14 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 						return true, "all required fields present in config", nil
 					},
 				},
-				e2eutil.WithTimeout(2*time.Minute), e2eutil.WithInterval(5*time.Second),
-			)
+				v2util.WithTimeout(2*time.Minute), v2util.WithInterval(5*time.Second),
+			)).To(Succeed())
 			GinkgoWriter.Printf("KubeletConfig ConfigMap %s is present and correct", kubeletCMName)
 
 			// Wait for the karpenterignition controller to issue the ignition token with kubelet config.
 			// The annotation is set after token.Reconcile() succeeds, guaranteeing Karpenter will use
 			// the token (with kubelet config) when provisioning new nodes.
-			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass %q to have ignition token annotation", nc.Name),
+			Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("OpenshiftEC2NodeClass %q to have ignition token annotation", nc.Name),
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, updated)
@@ -1408,8 +1412,8 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 						return true, fmt.Sprintf("annotation set to %q", v), nil
 					},
 				},
-				e2eutil.WithTimeout(2*time.Minute), e2eutil.WithInterval(5*time.Second),
-			)
+				v2util.WithTimeout(2*time.Minute), v2util.WithInterval(5*time.Second),
+			)).To(Succeed())
 			GinkgoWriter.Printf("Ignition token annotation set on %q", nc.Name)
 
 			// Wait for the OpenshiftEC2NodeClass to be fully Ready before creating the NodePool.
@@ -1417,7 +1421,7 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 			// annotation above is set before AWS resource discovery (SecurityGroups, Subnets) completes,
 			// so we must wait for the Ready condition explicitly to avoid provisioning delays.
 			GinkgoWriter.Printf("Make sure OpenshiftEC2NodeClass %q is Ready before nodepool creation", nc.Name)
-			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("OpenshiftEC2NodeClass %q to be Ready", nc.Name),
+			Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("OpenshiftEC2NodeClass %q to be Ready", nc.Name),
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, updated)
@@ -1429,8 +1433,8 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 						Status: metav1.ConditionTrue,
 					}),
 				},
-				e2eutil.WithTimeout(5*time.Minute),
-			)
+				v2util.WithTimeout(5*time.Minute),
+			)).To(Succeed())
 			GinkgoWriter.Printf("OpenshiftEC2NodeClass %q is Ready", nc.Name)
 
 			// Create Karpenter NodePool pointing at the custom nodeclass and workloads to provision nodes.
@@ -1449,7 +1453,8 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 					}
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", testNodePool.Name)
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for kubelet-config Karpenter nodes to terminate")
 			})
 
 			Expect(hcClient.Create(ctx, testWorkLoads)).To(Succeed())
@@ -1461,10 +1466,12 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			// Wait for nodes to be provisioned
-			e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			_, err = v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 
 			// Build a clientset for the hosted cluster (needed for pod log fetching)
-			guestConfig := e2eutil.WaitForGuestRestConfig(t, ctx, tc.MgmtClient, hc)
+			guestConfig, err := tc.WaitForHostedClusterRESTConfig(hc)
+			Expect(err).NotTo(HaveOccurred())
 			guestClientset, err := kubeclient.NewForConfig(guestConfig)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -1513,7 +1520,8 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 			// Cleanup workloads and NodePool
 			Expect(hcClient.Delete(ctx, testWorkLoads)).To(Succeed())
 			Expect(hcClient.Delete(ctx, testNodePool)).To(Succeed())
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+			_, err = v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+			Expect(err).NotTo(HaveOccurred(), "failed waiting for kubelet-config Karpenter nodes to terminate")
 		})
 	})
 }
@@ -1533,7 +1541,6 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 		It("should disable and re-enable AutoNode with correct condition transitions", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -1542,7 +1549,7 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 
 			// Disable Karpenter.
 			GinkgoWriter.Printf("Disabling AutoNode (Karpenter) on HostedCluster")
-			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.AutoNode = hyperv1.AutoNode{}
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to disable AutoNode")
@@ -1552,7 +1559,7 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 			// the transient Progressing state unreliably catchable. Go straight to the final state.
 
 			// Expect fully disabled (components removed).
-			e2eutil.EventuallyObject(t, ctx, "HostedCluster to have AutoNodeEnabled=False/AutoNodeNotConfigured",
+			Expect(v2util.EventuallyObject(ctx, "HostedCluster to have AutoNodeEnabled=False/AutoNodeNotConfigured",
 				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 					obj := &hyperv1.HostedCluster{}
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
@@ -1565,19 +1572,19 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 						Reason: hyperv1.AutoNodeNotConfiguredReason,
 					}),
 				},
-				e2eutil.WithTimeout(5*time.Minute),
-			)
+				v2util.WithTimeout(5*time.Minute),
+			)).To(Succeed())
 
 			// Re-enable Karpenter.
 			GinkgoWriter.Println("Re-enabling AutoNode (Karpenter) on HostedCluster")
-			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.AutoNode = savedAutoNode
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to re-enable AutoNode")
 
 			// Expect progressing (enable in flight — components being created/rolled out).
 			GinkgoWriter.Println("Waiting for AutoNodeEnabled=False/AutoNodeProgressing (enable in progress)")
-			e2eutil.EventuallyObject(t, ctx, "HostedCluster to have AutoNodeEnabled=False/AutoNodeProgressing",
+			Expect(v2util.EventuallyObject(ctx, "HostedCluster to have AutoNodeEnabled=False/AutoNodeProgressing",
 				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 					obj := &hyperv1.HostedCluster{}
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
@@ -1590,12 +1597,12 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 						Reason: hyperv1.AutoNodeProgressingReason,
 					}),
 				},
-				e2eutil.WithTimeout(2*time.Minute),
-			)
+				v2util.WithTimeout(2*time.Minute),
+			)).To(Succeed())
 
 			// Expect fully enabled (both components rolled out).
 			GinkgoWriter.Println("Waiting for AutoNodeEnabled=True/AsExpected (enable complete)")
-			e2eutil.EventuallyObject(t, ctx, "HostedCluster to have AutoNodeEnabled=True/AsExpected",
+			Expect(v2util.EventuallyObject(ctx, "HostedCluster to have AutoNodeEnabled=True/AsExpected",
 				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 					obj := &hyperv1.HostedCluster{}
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
@@ -1608,8 +1615,8 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 						Reason: hyperv1.AsExpectedReason,
 					}),
 				},
-				e2eutil.WithTimeout(5*time.Minute),
-			)
+				v2util.WithTimeout(5*time.Minute),
+			)).To(Succeed())
 		})
 	})
 }
@@ -1655,7 +1662,8 @@ func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hcClient.Create(ctx, workLoads)).To(Succeed())
 			GinkgoWriter.Println("Created workloads with 2 replicas")
 
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 2, nodeLabels)
+			_, err = v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 2, nodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Println("Both nodes ready, validating billing vCPUs")
 
 			// t3.xlarge = 4 vCPUs; 2 nodes = 8 Karpenter vCPUs on top of baseline
@@ -1664,12 +1672,13 @@ func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
 			waitForBillingMetricVCPUs(ctx, tc.MgmtClient, hc, baseline+8)
 
 			GinkgoWriter.Println("Scaling workload to 1 replica to verify deprovisioning and consolidation")
-			err = e2eutil.UpdateObject(t, ctx, hcClient, workLoads, func(obj *appsv1.Deployment) {
+			err = v2util.UpdateObject(ctx, hcClient, workLoads, func(obj *appsv1.Deployment) {
 				obj.Spec.Replicas = ptr.To(int32(1))
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, nodeLabels)
+			_, err = v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 1, nodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 			GinkgoWriter.Println("Karpenter consolidated the extra node")
 
 			// t3.xlarge = 4 vCPUs; 1 node = 4 Karpenter vCPUs on top of baseline
@@ -1831,9 +1840,10 @@ func describeEC2Instance(ctx context.Context, ec2client *ec2.Client, node corev1
 }
 
 func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string) {
-	t := GinkgoTB()
+	GinkgoHelper()
+
 	pods := &corev1.PodList{}
-	e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled on provisioned Karpenter nodes",
+	Expect(v2util.EventuallyObjects(ctx, "Pods to be scheduled on provisioned Karpenter nodes",
 		func(ctx context.Context) ([]*corev1.Pod, error) {
 			err := client.List(ctx, pods, crclient.InNamespace("default"), crclient.MatchingLabels(podLabels))
 			items := make([]*corev1.Pod, len(pods.Items))
@@ -1866,18 +1876,18 @@ func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, node
 				return pod.Status.Phase == corev1.PodRunning, fmt.Sprintf("pod %s is not running", pod.Name), nil
 			},
 		},
-		e2eutil.WithTimeout(20*time.Minute),
-	)
+		v2util.WithTimeout(20*time.Minute),
+	)).To(Succeed())
 }
 
 // waitForAutoNodeStatusVCPUs polls until HostedCluster.Status.AutoNode.VCPUs
 // converges to the expected value. This checks only the status field (Karpenter-only vCPUs),
 // not the billing metric.
 func waitForAutoNodeStatusVCPUs(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, expected int32) {
-	t := GinkgoTB()
+	GinkgoHelper()
 
 	GinkgoWriter.Printf("Validating AutoNode.VCPUs converges to %d", expected)
-	e2eutil.EventuallyObject(t, ctx,
+	Expect(v2util.EventuallyObject(ctx,
 		fmt.Sprintf("HostedCluster %s/%s AutoNode.VCPUs=%d", hostedCluster.Namespace, hostedCluster.Name, expected),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
@@ -1896,8 +1906,8 @@ func waitForAutoNodeStatusVCPUs(ctx context.Context, mgtClient crclient.Client, 
 				return true, fmt.Sprintf("AutoNode.VCPUs=%d", actual), nil
 			},
 		},
-		e2eutil.WithTimeout(1*time.Minute),
-	)
+		v2util.WithTimeout(1*time.Minute),
+	)).To(Succeed())
 }
 
 func waitForAutoNodeStatusVCPUsStable(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, expected int32, duration time.Duration) {
