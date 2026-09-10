@@ -1,0 +1,25 @@
+diff --git a/vendor/github.com/openshift/library-go/pkg/controller/controllercmd/builder.go b/vendor/github.com/openshift/library-go/pkg/controller/controllercmd/builder.go
+index b71ceea189..f560868fd0 100644
+--- a/vendor/github.com/openshift/library-go/pkg/controller/controllercmd/builder.go
++++ b/vendor/github.com/openshift/library-go/pkg/controller/controllercmd/builder.go
+@@ -25,0 +26 @@ import (
++	"k8s.io/apiserver/pkg/authorization/authorizer"
+@@ -327 +328,2 @@ func (b *ControllerBuilder) Run(ctx context.Context, config *unstructured.Unstru
+-		serverConfig.Authorization.Authorizer = union.New(
++		metricsAuthorizer := hardcodedauthorizer.NewHardCodedMetricsAuthorizer()
++		serverConfig.Authorization.Authorizer, err = union.New(
+@@ -330,2 +332,8 @@ func (b *ControllerBuilder) Run(ctx context.Context, config *unstructured.Unstru
+-			hardcodedauthorizer.NewHardCodedMetricsAuthorizer(),
+-			serverConfig.Authorization.Authorizer,
++			union.NamedAuthorizer{
++				AuthorizerName: "metrics",
++				Authorizer:     authorizer.AuthorizerFunc(metricsAuthorizer.Authorize),
++			},
++			union.NamedAuthorizer{
++				AuthorizerName: "delegated",
++				Authorizer:     serverConfig.Authorization.Authorizer,
++			},
+@@ -332,0 +341,3 @@ func (b *ControllerBuilder) Run(ctx context.Context, config *unstructured.Unstru
++		if err != nil {
++			return err
++		}

@@ -1,0 +1,16 @@
+diff --git a/vendor/github.com/openshift/library-go/pkg/manifestclient/read_roundtripper.go b/vendor/github.com/openshift/library-go/pkg/manifestclient/read_roundtripper.go
+index 8f88473a14..f593bb82fa 100644
+--- a/vendor/github.com/openshift/library-go/pkg/manifestclient/read_roundtripper.go
++++ b/vendor/github.com/openshift/library-go/pkg/manifestclient/read_roundtripper.go
+@@ -15 +14,0 @@ import (
+-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+@@ -18 +16,0 @@ import (
+-	"k8s.io/apiserver/pkg/features"
+@@ -20 +17,0 @@ import (
+-	utilfeature "k8s.io/apiserver/pkg/util/feature"
+@@ -23,5 +19,0 @@ import (
+-func init() {
+-	// This feature gate is needed to set requestInfo.LabelSelector
+-	utilruntime.Must(utilfeature.DefaultMutableFeatureGate.Set(fmt.Sprintf("%s=true", features.AuthorizeWithSelectors)))
+-}
+-
