@@ -33,7 +33,7 @@ func GCPWorkloadIdentityTest(getTestCtx internal.TestContextGetter) {
 			testCtx.SkipIfNotPlatform(hyperv1.GCPPlatform)
 		})
 
-		It("[Skipped:Disconnected] should mutate pods with workload identity federated credentials", func() {
+		It("[Skipped:Disconnected] should mutate pods with workload identity federated credentials", Label(internal.InformingLabel), func() {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
