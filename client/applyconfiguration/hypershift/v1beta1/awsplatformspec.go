@@ -34,6 +34,7 @@ type AWSPlatformSpecApplyConfiguration struct {
 	MultiArch                   *bool                                     `json:"multiArch,omitempty"`
 	SharedVPC                   *AWSSharedVPCApplyConfiguration           `json:"sharedVPC,omitempty"`
 	TerminationHandlerQueueURL  *string                                   `json:"terminationHandlerQueueURL,omitempty"`
+	ManagedDNS                  *AWSManagedDNSSpecApplyConfiguration      `json:"managedDNS,omitempty"`
 }
 
 // AWSPlatformSpecApplyConfiguration constructs a declarative configuration of the AWSPlatformSpec type for use with
@@ -131,5 +132,13 @@ func (b *AWSPlatformSpecApplyConfiguration) WithSharedVPC(value *AWSSharedVPCApp
 // If called multiple times, the TerminationHandlerQueueURL field is set to the value of the last call.
 func (b *AWSPlatformSpecApplyConfiguration) WithTerminationHandlerQueueURL(value string) *AWSPlatformSpecApplyConfiguration {
 	b.TerminationHandlerQueueURL = &value
+	return b
+}
+
+// WithManagedDNS sets the ManagedDNS field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ManagedDNS field is set to the value of the last call.
+func (b *AWSPlatformSpecApplyConfiguration) WithManagedDNS(value *AWSManagedDNSSpecApplyConfiguration) *AWSPlatformSpecApplyConfiguration {
+	b.ManagedDNS = value
 	return b
 }
