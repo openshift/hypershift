@@ -31,15 +31,22 @@ jobs:
           # token: ${{ steps.app-token.outputs.token }}
       - name: Install yq
         run: |
-          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64" -o /usr/local/bin/yq
+          YQ_VERSION="v4.44.6"
+          YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598"
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /usr/local/bin/yq
+          echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c -
           chmod +x /usr/local/bin/yq
       - name: Configure git
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          # When using a GitHub App token, replace github.token above:
-          # git remote set-url origin "https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          # When using a GitHub App token, replace GH_TOKEN above:
+          # git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${REPO}.git"
       - name: Reconcile tags
         run: |
           set -euo pipefail

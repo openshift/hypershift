@@ -18,7 +18,10 @@ jobs:
           persist-credentials: false
       - name: Install yq
         run: |
-          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64" -o /usr/local/bin/yq
+          YQ_VERSION="v4.44.6"
+          YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598"
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /usr/local/bin/yq
+          echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c -
           chmod +x /usr/local/bin/yq
       - name: Validate new tag entries
         run: |
@@ -46,6 +49,13 @@ jobs:
             echo "## Validate Tag Request" >> "$GITHUB_STEP_SUMMARY"
             echo "No tags defined in \`releases/tags.yaml\`." >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+
+          # Check for duplicate tag names within the manifest.
+          dup_count=$(yq '.tags[].name' releases/tags.yaml | sort | uniq -d | wc -l)
+          if [ "$dup_count" -gt 0 ]; then
+            dups=$(yq '.tags[].name' releases/tags.yaml | sort | uniq -d)
+            errors+=("Duplicate tag names found in manifest: $dups")
           fi
 
           # Parse the base branch tags.yaml to find which entries are new.
