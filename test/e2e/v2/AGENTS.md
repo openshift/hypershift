@@ -92,16 +92,7 @@ DeferCleanup(func() {
 
 ### 10. Labels
 
-Apply labels to `Describe` and `It` blocks for test filtering. Only apply labels to `Context` blocks when you have explicit filtering intent (e.g., a platform label). The `Informing` label causes the custom fail handler to skip rather than fail.
-
-Every Ginkgo subject node (`It`, `Specify`, and their focused or pending
-variants) must also declare exactly one test state directly on the leaf:
-
-- New tests use `Label(internal.InformingLabel)` and remain non-blocking during
-  their externally defined observational period.
-- After promotion, replace it with `Label(internal.BlockingLabel)` so failures
-  block the suite.
-- To demote a test, replace `BlockingLabel` with `InformingLabel`.
+Apply labels to `Describe` and `It` blocks for test filtering. Only apply labels to `Context` blocks when you have explicit filtering intent (e.g., `Label("Informing")` to mark non-blocking tests). The `Informing` label causes the custom fail handler to skip rather than fail.
 
 ### 11. Pointer Safety
 

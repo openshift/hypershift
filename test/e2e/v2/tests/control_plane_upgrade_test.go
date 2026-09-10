@@ -127,7 +127,7 @@ func ensureMachineDeploymentGeneration(
 
 // ControlPlaneUpgradeTest upgrades the hosted cluster from N-1 to the latest release image.
 func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should upgrade the control plane from N-1 to latest", Label(internal.BlockingLabel), func() {
+	It("should upgrade the control plane from N-1 to latest", func() {
 		testCtx := getTestCtx()
 		testCtx.SkipIfVersionBelow(e2eutil.Version422)
 

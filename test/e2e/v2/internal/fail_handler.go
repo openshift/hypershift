@@ -10,14 +10,8 @@ import (
 	"github.com/onsi/ginkgo/v2/types"
 )
 
-const (
-	// InformingLabel marks a test as non-blocking while it completes its
-	// observational period.
-	InformingLabel = "Informing"
-	// BlockingLabel marks a test that has completed its observational period and
-	// whose failures block the suite.
-	BlockingLabel = "Blocking"
-)
+// InformingLabel is the Ginkgo label that marks a test as informing.
+const InformingLabel = "Informing"
 
 const informingSkipPrefix = "informing test failure: "
 

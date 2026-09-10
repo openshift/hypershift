@@ -36,7 +36,7 @@ func RegisterHostedClusterIngressTests(getTestCtx internal.TestContextGetter) {
 
 func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has IngressOperator EndpointPublishingStrategy configured", func() {
-		It("should reflect the custom strategy in the hosted cluster IngressController", Label(internal.BlockingLabel), func() {
+		It("should reflect the custom strategy in the hosted cluster IngressController", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version421)
 			hc, err := tc.GetHostedCluster()

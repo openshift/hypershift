@@ -44,7 +44,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolArm64] NodeP
 // NodePoolArm64CreateTest creates an ARM64 NodePool, waits for the node to be ready,
 // and validates that an actual ARM64 node comes up with the correct architecture label.
 func NodePoolArm64CreateTest(getTestCtx internal.TestContextGetter) {
-	It("When creating an ARM64 NodePool, it should provision a node with ARM64 architecture", Label(internal.BlockingLabel), func() {
+	It("When creating an ARM64 NodePool, it should provision a node with ARM64 architecture", func() {
 		testCtx := getTestCtx()
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())

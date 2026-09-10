@@ -63,7 +63,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should have a healthy image-registry ClusterOperator", Label(internal.BlockingLabel), func() {
+		It("should have a healthy image-registry ClusterOperator", func() {
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
@@ -95,7 +95,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 			}).WithTimeout(10 * time.Minute).WithPolling(30 * time.Second).Should(Succeed())
 		})
 
-		It("should have installer-cloud-credentials in the hosted cluster", Label(internal.BlockingLabel), func() {
+		It("should have installer-cloud-credentials in the hosted cluster", func() {
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
@@ -110,7 +110,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				"installer-cloud-credentials secret should have data")
 		})
 
-		It("should have storage configured in the registry config", Label(internal.BlockingLabel), func() {
+		It("should have storage configured in the registry config", func() {
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
@@ -132,7 +132,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				"image registry Config should have at least one storage backend configured")
 		})
 
-		It("should have a ready cluster-image-registry-operator deployment", Label(internal.BlockingLabel), func() {
+		It("should have a ready cluster-image-registry-operator deployment", func() {
 			deployment := &appsv1.Deployment{}
 			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 				Namespace: tc.ControlPlaneNamespace,
@@ -159,7 +159,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 					hc.Namespace, hc.Name)
 			})
 
-			It("should use GCS storage with a bucket name", Label(internal.BlockingLabel), func() {
+			It("should use GCS storage with a bucket name", func() {
 				hc, err := tc.GetHostedCluster()
 				Expect(err).NotTo(HaveOccurred())
 				hostedClusterClient, err := tc.GetHostedClusterClient(hc)
@@ -173,7 +173,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 					"GCS storage bucket name should not be empty")
 			})
 
-			It("should have valid WIF credentials in installer-cloud-credentials", Label(internal.BlockingLabel), func() {
+			It("should have valid WIF credentials in installer-cloud-credentials", func() {
 				hc, err := tc.GetHostedCluster()
 				Expect(err).NotTo(HaveOccurred())
 				hostedClusterClient, err := tc.GetHostedClusterClient(hc)
@@ -227,7 +227,7 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should not have the image-registry ClusterOperator", Label(internal.BlockingLabel), func() {
+		It("should not have the image-registry ClusterOperator", func() {
 			co := &configv1.ClusterOperator{}
 			err := hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "image-registry"}, co)
 			if err != nil && !apierrors.IsNotFound(err) {
@@ -237,7 +237,7 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 				"image-registry ClusterOperator should not exist when ImageRegistry capability is disabled")
 		})
 
-		It("should not have the openshift-image-registry namespace", Label(internal.BlockingLabel), func() {
+		It("should not have the openshift-image-registry namespace", func() {
 			ns := &corev1.Namespace{}
 			err := hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "openshift-image-registry"}, ns)
 			if err != nil && !apierrors.IsNotFound(err) {
@@ -247,7 +247,7 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 				"openshift-image-registry namespace should not exist when ImageRegistry capability is disabled")
 		})
 
-		It("should not add ImagePullSecrets to default service accounts", Label(internal.BlockingLabel), func() {
+		It("should not add ImagePullSecrets to default service accounts", func() {
 			sa := &corev1.ServiceAccount{}
 			Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{
 				Namespace: "default",
@@ -257,7 +257,7 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 				"default service account in default namespace should not have ImagePullSecrets when ImageRegistry capability is disabled")
 		})
 
-		It("should not inject ImagePullSecrets into newly created service accounts", Label(internal.BlockingLabel), func() {
+		It("should not inject ImagePullSecrets into newly created service accounts", func() {
 			ns := &corev1.Namespace{}
 			ns.Name = "image-registry-test-namespace"
 			Expect(hostedClusterClient.Create(tc.Context, ns)).To(Succeed())

@@ -49,7 +49,7 @@ func RegisterHostedClusterHealthTests(getTestCtx internal.TestContextGetter) {
 
 func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster is operational", func() {
-		It("should have all expected conditions with correct status", Label(internal.BlockingLabel), func() {
+		It("should have all expected conditions with correct status", func() {
 			tc := getTestCtx()
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -79,7 +79,7 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 
 func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 	When("CAPI components are deployed", func() {
-		It("should have component finalizers on all CAPI deployments", Label(internal.BlockingLabel), func() {
+		It("should have component finalizers on all CAPI deployments", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version422)
 			Expect(hcc.CAPIComponents).NotTo(BeEmpty(),
@@ -99,7 +99,7 @@ func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 
 func EnsureFeatureGateStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster version is completed", func() {
-		It("should have feature gate status matching cluster version", Label(internal.BlockingLabel), func() {
+		It("should have feature gate status matching cluster version", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version419)
 			hc, err := tc.GetHostedCluster()
@@ -134,7 +134,7 @@ func EnsureFeatureGateStatusTest(getTestCtx internal.TestContextGetter) {
 
 func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has a release image", func() {
-		It("should set payload arch status correctly", Label(internal.BlockingLabel), func() {
+		It("should set payload arch status correctly", func() {
 			tc := getTestCtx()
 			hostedCluster, err := getTestCtx().GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -154,7 +154,7 @@ func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 
 func ValidateConfigurationStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster authentication is configured", func() {
-		It("should propagate configuration status consistently", Label(internal.BlockingLabel), func() {
+		It("should propagate configuration status consistently", func() {
 			tc := getTestCtx()
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
