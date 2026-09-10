@@ -2809,6 +2809,8 @@ func (r *reconciler) reconcileGCPIdentityWebhook(ctx context.Context) []error {
 
 	ignoreFailurePolicy := admissionregistrationv1.Ignore
 	sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+	matchEquivalent := admissionregistrationv1.Equivalent
+	reinvocationIfNeeded := admissionregistrationv1.IfNeededReinvocationPolicy
 	webhook := manifests.GCPWorkloadIdentityFederationWebhook()
 	if _, err := r.CreateOrUpdate(ctx, r.client, webhook, func() error {
 		webhook.Webhooks = []admissionregistrationv1.MutatingWebhook{{
@@ -2818,7 +2820,9 @@ func (r *reconciler) reconcileGCPIdentityWebhook(ctx context.Context) []error {
 				CABundle: []byte(r.rootCA),
 				URL:      ptr.To("https://127.0.0.1:9443/mutate-v1-pod"),
 			},
-			FailurePolicy: &ignoreFailurePolicy,
+			FailurePolicy:      &ignoreFailurePolicy,
+			MatchPolicy:        &matchEquivalent,
+			ReinvocationPolicy: &reinvocationIfNeeded,
 			Rules: []admissionregistrationv1.RuleWithOperations{{
 				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
 				Rule: admissionregistrationv1.Rule{
