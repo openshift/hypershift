@@ -84,6 +84,7 @@ func TestAdaptDeployment(t *testing.T) {
 				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
 				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
 				g.Expect(container.Image).To(Equal("quay.io/hypershift/operator:latest"))
+				g.Expect(podspec.FindContainer("karpenter-adapter", deploymentObj.Spec.Template.Spec.Containers)).To(BeNil())
 
 				// Verify AWS environment variables
 				g.Expect(container.Env).To(ContainElements(
@@ -210,6 +211,46 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(container.Args).To(ContainElements(
 					"--hypershift-operator-image=quay.io/hypershift/operator:latest",
 					"--ignition-endpoint=https://ignition.example.com",
+				))
+			},
+		},
+		{
+			name:                      "When standalone mode is enabled, it should add the HyperShift adapter",
+			platformType:              hyperv1.AWSPlatform,
+			awsRegion:                 "us-west-2",
+			hyperShiftOperatorImage:   "quay.io/hypershift/operator:latest",
+			controlPlaneOperatorImage: "quay.io/hypershift/cpo:latest",
+			ignitionEndpoint:          "https://ignition.example.com",
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				opts.StandaloneKarpenterOperatorEnabled = true
+				cpContext.ReleaseImageProvider = &fakeReleaseImageProvider{images: map[string]string{
+					karpenterutil.KarpenterOperatorImageName:    "quay.io/openshift/karpenter-operator:latest",
+					karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+					"token-minter": "quay.io/openshift/token-minter:latest",
+				}}
+				err = opts.adaptDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				adapter := podspec.FindContainer("karpenter-adapter", deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(adapter).ToNot(BeNil())
+				g.Expect(adapter.Image).To(Equal("quay.io/hypershift/operator:latest"))
+				g.Expect(adapter.Command).To(Equal([]string{"/usr/bin/karpenter-operator"}))
+				g.Expect(adapter.Ports).To(BeEmpty())
+				g.Expect(adapter.Args).To(ContainElements(
+					"--enable-standalone-karpenter-operator",
+					"--control-plane-operator-image=quay.io/hypershift/cpo:latest",
+					"--hypershift-operator-image=quay.io/hypershift/operator:latest",
+					"--ignition-endpoint=https://ignition.example.com",
+				))
+				g.Expect(adapter.VolumeMounts).To(ContainElement(
+					corev1.VolumeMount{Name: "target-kubeconfig", MountPath: "/mnt/kubeconfig"},
+				))
+				g.Expect(adapter.VolumeMounts).ToNot(ContainElement(
+					corev1.VolumeMount{Name: "provider-creds", MountPath: "/etc/provider"},
 				))
 			},
 		},

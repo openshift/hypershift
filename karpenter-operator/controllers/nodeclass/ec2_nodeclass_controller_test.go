@@ -21,6 +21,7 @@ import (
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +34,24 @@ import (
 )
 
 const testInfraID = "test-infra"
+
+func TestReconcileCRDsStandaloneAdapterOnlyInstallsHyperShiftCRD(t *testing.T) {
+	g := NewWithT(t)
+	guestClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	r := &EC2NodeClassReconciler{
+		guestClient:            guestClient,
+		CreateOrUpdateProvider: upsert.New(false),
+		SkipUpstreamCRD:        true,
+	}
+
+	err := r.reconcileCRDs(t.Context(), true)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
+	g.Expect(guestClient.List(t.Context(), crdList)).To(Succeed())
+	g.Expect(crdList.Items).To(HaveLen(1))
+	g.Expect(crdList.Items[0].Name).To(Equal(crdOpenshiftEC2NodeClass.Name))
+}
 
 func TestReconcileEC2NodeClass(t *testing.T) {
 	userDataSecret := &corev1.Secret{
