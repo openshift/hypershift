@@ -18,11 +18,8 @@ package tests
 
 import (
 	"context"
-	"encoding/xml"
+	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -32,6 +29,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
+
+var junitReportPath string
+
+func init() {
+	flag.StringVar(&junitReportPath, "e2e.junit-report", "", "path to the v2 E2E JUnit XML report")
+}
 
 // TestShowEnvHelp is a convenience test that prints environment variable help.
 // Run with: go test -v ./test/e2e/v2/tests -run TestShowEnvHelp
@@ -46,6 +49,10 @@ func TestE2EV2(t *testing.T) {
 		internal.PrintEnvVarHelp()
 		return
 	}
+	_, reporterConfig := GinkgoConfiguration()
+	if reporterConfig.JUnitReport != "" {
+		t.Fatal("--ginkgo.junit-report bypasses the v2 E2E JUnit contract; use --e2e.junit-report instead")
+	}
 
 	// Register fail handler with gomega
 	RegisterFailHandler(internal.InformingAwareFailHandler)
@@ -54,36 +61,20 @@ func TestE2EV2(t *testing.T) {
 	RunSpecs(t, "hypershift-e2e")
 }
 
-// ReportAfterSuite writes a supplemental JUnit file containing only informing
-// tests with lifecycle="informing" on each <testcase>. This is picked up by
-// ci-to-bigquery and loaded into the ci_analysis_us.junit BigQuery table,
-// making informing test failures visible to Component Readiness.
+// ReportAfterSuite writes the unified v2 E2E JUnit report. Informing tests have
+// lifecycle="informing", and their assertion failures are reported as failures
+// without causing the suite itself to fail. This is picked up by ci-to-bigquery
+// and loaded into the ci_analysis_us.junit BigQuery table, making informing test
+// failures visible to Component Readiness.
 //
 // TODO(CNTRLPLANE-3863): Replace this with OTE's built-in lifecycle JUnit
 // emission once the test framework is ported to OTE.
-var _ = ReportAfterSuite("Write lifecycle-aware JUnit", func(report Report) {
-	suites := internal.BuildInformingTestsLifecycleReport(report.SuiteDescription, report.SpecReports)
-	if len(suites.Suites) == 0 || len(suites.Suites[0].TestCases) == 0 {
+var _ = ReportAfterSuite("Write unified JUnit", func(report Report) {
+	if junitReportPath == "" {
 		return
 	}
-
-	// The filename here is arbitrary; the CI system ingests all JUnit files written
-	// to the artifact location, so the only constraint to satisfy is that this name
-	// shouldn't conflict with the reports the main Ginkgo report writer produces.
-	// Auto-detect the configured JUnit file path (assumed to be unique) and add
-	// a suffix to indicate it's for the informing output.
-	_, reporterConfig := GinkgoConfiguration()
-	if reporterConfig.JUnitReport == "" {
-		return
-	}
-	path := strings.TrimSuffix(reporterConfig.JUnitReport, filepath.Ext(reporterConfig.JUnitReport)) + "_informing.xml"
-
-	data, err := xml.MarshalIndent(suites, "", "    ")
-	if err != nil {
-		Fail(fmt.Sprintf("failed to marshal lifecycle JUnit: %v", err))
-	}
-	if err := os.WriteFile(path, append([]byte(xml.Header), data...), 0644); err != nil {
-		Fail(fmt.Sprintf("failed to write lifecycle JUnit to %s: %v", path, err))
+	if err := internal.GenerateJUnitReport(report, junitReportPath); err != nil {
+		Fail(fmt.Sprintf("failed to write JUnit report to %s: %v", junitReportPath, err))
 	}
 })
 
