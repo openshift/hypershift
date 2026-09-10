@@ -1,0 +1,77 @@
+name: Create Release (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: arc-runner-set
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tag name
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if ! echo "$TAG_NAME" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Tag '$TAG_NAME' does not match semver format"
+            exit 1
+          fi
+      - name: Install git-cliff
+        env:
+          GIT_CLIFF_VERSION: "2.7.0"
+          GIT_CLIFF_SHA256: "d9705c9f43bd74e2d10ca7df10b624bbe6f15bd4774f6c1e012db5be276f91f7"
+        run: |
+          curl -fsSL "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            -o /tmp/git-cliff.tar.gz
+          echo "${GIT_CLIFF_SHA256}  /tmp/git-cliff.tar.gz" | sha256sum -c -
+          tar xzf /tmp/git-cliff.tar.gz -C /tmp
+          mv "/tmp/git-cliff-${GIT_CLIFF_VERSION}/git-cliff" /usr/local/bin/git-cliff
+          chmod +x /usr/local/bin/git-cliff
+      - name: Generate release notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          prev_tag=$(git tag --sort=-v:refname --merged "${TAG_NAME}^" | head -1)
+
+          if [ -n "$prev_tag" ]; then
+            git cliff "${prev_tag}..${TAG_NAME}" --tag "$TAG_NAME" -o /tmp/release-notes.md
+          else
+            echo "Initial release ${TAG_NAME}" > /tmp/release-notes.md
+          fi
+
+          echo "--- Release notes ---"
+          cat /tmp/release-notes.md
+      - name: Build source tarball
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          git archive --format=tar.gz --prefix="hypershift-${TAG_NAME}/" \
+            -o "hypershift-${TAG_NAME}-source.tar.gz" "$TAG_NAME"
+          sha256sum "hypershift-${TAG_NAME}-source.tar.gz" \
+            > "hypershift-${TAG_NAME}-source.tar.gz.sha256"
+      - name: Create draft GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" \
+            --draft \
+            --title "$TAG_NAME" \
+            --notes-file /tmp/release-notes.md \
+            --verify-tag \
+            "hypershift-${TAG_NAME}-source.tar.gz" \
+            "hypershift-${TAG_NAME}-source.tar.gz.sha256"
+
+          echo "## Create Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Draft release **${TAG_NAME}** created." >> "$GITHUB_STEP_SUMMARY"
