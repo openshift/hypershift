@@ -47,7 +47,7 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 				}
 			})
 
-			It("should have ActiveKey fields populated", Label(internal.BlockingLabel), func() {
+			It("should have ActiveKey fields populated", func() {
 				hc, err := getTestCtx().GetHostedCluster()
 				Expect(err).NotTo(HaveOccurred())
 				azureKMS := hc.Spec.SecretEncryption.KMS.Azure
@@ -60,7 +60,7 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 					"ActiveKey.KeyVersion must be set")
 			})
 
-			It("should have KMS authentication configured", Label(internal.BlockingLabel), func() {
+			It("should have KMS authentication configured", func() {
 				hc, err := getTestCtx().GetHostedCluster()
 				Expect(err).NotTo(HaveOccurred())
 				azureKMS := hc.Spec.SecretEncryption.KMS.Azure
@@ -90,7 +90,7 @@ func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 // via etcdctl, and asserts the k8s:enc:kms:v2 prefix. Cleans up via DeferCleanup.
 func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("KMS Functional Validation", func() {
-		It("should encrypt secrets in etcd using KMSv2", Label(internal.BlockingLabel), func() {
+		It("should encrypt secrets in etcd using KMSv2", func() {
 			testCtx := getTestCtx()
 			ctx := testCtx.Context
 

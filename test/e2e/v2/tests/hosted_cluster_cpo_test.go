@@ -37,7 +37,7 @@ func RegisterHostedClusterCPOTests(getTestCtx internal.TestContextGetter) {
 
 func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 	When("a CPO override image is configured for the platform and version", func() {
-		It("should run the control-plane-operator pod with the expected override image", Label(internal.BlockingLabel), func() {
+		It("should run the control-plane-operator pod with the expected override image", func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())

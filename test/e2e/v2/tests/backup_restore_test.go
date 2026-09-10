@@ -150,14 +150,14 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	})
 
 	Context(ContextPreBackupControlPlane, func() {
-		It("should have control plane healthy before backup", Label(internal.BlockingLabel), func() {
+		It("should have control plane healthy before backup", func() {
 			expectedConditions = validatePreBackupControlPlane(testCtx, platformCfg.excludeWorkloads)
 		})
 	})
 
 	// Setup the continual operations
 	Context(ContextSetupContinual, func() {
-		It("should setup continual operations successfully", Label(internal.BlockingLabel), func() {
+		It("should setup continual operations successfully", func() {
 			verifyReconciliationActiveFunction := func() error {
 				hostedCluster := &hyperv1.HostedCluster{}
 				err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
@@ -182,7 +182,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	})
 
 	Context(ContextBackup, func() {
-		It("should create backup and schedule successfully", Label(internal.BlockingLabel), func() {
+		It("should create backup and schedule successfully", func() {
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			if hc.Spec.Platform.Type == hyperv1.AgentPlatform {
@@ -253,7 +253,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 
 	// Verify the continual operations
 	Context(ContextVerifyContinual, func() {
-		It("should verify continual operations completed successfully", Label(internal.BlockingLabel), func() {
+		It("should verify continual operations completed successfully", func() {
 			if prober == nil {
 				Skip("prober not initialized")
 			}
@@ -263,7 +263,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	})
 
 	Context(ContextPostBackupControlPlane, func() {
-		It("should have control plane healthy after backup", Label(internal.BlockingLabel), func() {
+		It("should have control plane healthy after backup", func() {
 			err := internal.WaitForControlPlaneDeploymentsReadiness(testCtx, 5*time.Minute, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
 			err = internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, 5*time.Minute, platformCfg.excludeWorkloads)
@@ -272,14 +272,14 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	})
 
 	Context(ContextBreakControlPlane, func() {
-		It("should break hosted cluster", Label(internal.BlockingLabel), func() {
+		It("should break hosted cluster", func() {
 			err := backuprestore.BreakHostedClusterPreservingMachines(testCtx, GinkgoLogr.WithName("cleanup"))
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	Context(ContextRestore, func() {
-		It("should restore from backup successfully", Label(internal.BlockingLabel), func() {
+		It("should restore from backup successfully", func() {
 			By("Creating Restore")
 			restoreName := oadp.GenerateRestoreName(testCtx.ClusterName, testCtx.ClusterNamespace)
 			restoreOpts := &backuprestore.OADPRestoreOptions{
@@ -294,7 +294,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	})
 
 	Context(ContextPostRestoreControlPlane, func() {
-		It("should have control plane healthy after restore", Label(internal.BlockingLabel), func() {
+		It("should have control plane healthy after restore", func() {
 			// TODO(mgencur): Remove this condition once https://redhat.atlassian.net/browse/MGMT-23509 is fixed
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -504,13 +504,13 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 	})
 
 	Context(ContextPreBackupControlPlane, func() {
-		It("should have control plane healthy before backup", Label(internal.BlockingLabel), func() {
+		It("should have control plane healthy before backup", func() {
 			expectedConditions = validatePreBackupControlPlane(testCtx, platformCfg.excludeWorkloads)
 		})
 	})
 
 	Context(ContextBackup, func() {
-		It("should create backup with etcd snapshot method", Label(internal.BlockingLabel), func() {
+		It("should create backup with etcd snapshot method", func() {
 			By("Waiting for BackupStorageLocation to be Available")
 			err := backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
 			Expect(err).NotTo(HaveOccurred())
@@ -537,13 +537,13 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 	})
 
 	Context("VerifyEtcdSnapshotBackup", func() {
-		It("should have HCPEtcdBackup with BackupCompleted=True", Label(internal.BlockingLabel), func() {
+		It("should have HCPEtcdBackup with BackupCompleted=True", func() {
 			By("Waiting for HCPEtcdBackup BackupCompleted condition to be True")
 			err := backuprestore.WaitForHCPEtcdBackupCondition(testCtx, backupName, metav1.ConditionTrue)
 			Expect(err).NotTo(HaveOccurred(), "HCPEtcdBackup %s should have BackupCompleted=True", backupName)
 		})
 
-		It("should have HCPEtcdBackup with snapshotURL matching the backup created in this run", Label(internal.BlockingLabel), func() {
+		It("should have HCPEtcdBackup with snapshotURL matching the backup created in this run", func() {
 			By("Waiting for HCPEtcdBackup to have a snapshotURL")
 			Eventually(func(g Gomega) {
 				hcpEtcdBackupList := &hyperv1.HCPEtcdBackupList{}
@@ -564,7 +564,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.BackupTimeout).Should(Succeed())
 		})
 
-		It("should have lastSuccessfulEtcdBackupURL on HostedCluster status matching the snapshot", Label(internal.BlockingLabel), func() {
+		It("should have lastSuccessfulEtcdBackupURL on HostedCluster status matching the snapshot", func() {
 			if snapshotURL == "" {
 				Skip("snapshotURL was not captured; the snapshotURL verification spec may have failed")
 			}
@@ -584,14 +584,14 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 	})
 
 	Context(ContextBreakControlPlane, func() {
-		It("should break hosted cluster", Label(internal.BlockingLabel), func() {
+		It("should break hosted cluster", func() {
 			err := backuprestore.BreakHostedClusterPreservingMachines(testCtx, GinkgoLogr.WithName("cleanup"))
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	Context(ContextRestore, func() {
-		It("should restore from backup successfully", Label(internal.BlockingLabel), func() {
+		It("should restore from backup successfully", func() {
 			By("Creating Restore with etcd snapshot options")
 			restoreName := oadp.GenerateRestoreName(testCtx.ClusterName, testCtx.ClusterNamespace)
 			restoreOpts := &backuprestore.OADPRestoreOptions{
@@ -610,7 +610,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 		// CPO clears restoreSnapshotURL which triggers a second StatefulSet rollout
 		// that replaces the pod without the etcd-init container. The poll-based
 		// function captures logs before that window closes.
-		It("should have etcd-init container logs showing successful snapshot restore", Label(internal.BlockingLabel), func() {
+		It("should have etcd-init container logs showing successful snapshot restore", func() {
 			By("Polling for etcd-init container completion and verifying restore logs")
 			restConfig, err := util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "failed to get REST config for pod log access")
@@ -621,11 +621,11 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 			Expect(err).NotTo(HaveOccurred(), "etcd-init container logs should confirm snapshot restore")
 		})
 
-		It("should have control plane healthy after restore", Label(internal.BlockingLabel), func() {
+		It("should have control plane healthy after restore", func() {
 			validatePostRestoreControlPlane(testCtx, platformCfg.excludeWorkloads, expectedConditions, false)
 		})
 
-		It("should have restoreSnapshotURL set on HostedCluster after restore", Label(internal.BlockingLabel), func() {
+		It("should have restoreSnapshotURL set on HostedCluster after restore", func() {
 			// RestoreSnapshotURL contains a presigned URL, which differs from the
 			// original S3 URL stored in HCPEtcdBackup.Status.SnapshotURL. We verify
 			// the field is populated rather than comparing exact values.

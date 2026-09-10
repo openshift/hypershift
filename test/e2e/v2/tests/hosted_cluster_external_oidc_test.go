@@ -92,7 +92,7 @@ func ExternalOIDCClusterConfigTest(getTestCtx internal.TestContextGetter) {
 			skipIfNotOIDC(hc)
 		})
 
-		It("should have authentication type OIDC on the hosted cluster", Label(internal.BlockingLabel), func() {
+		It("should have authentication type OIDC on the hosted cluster", func() {
 			hc, err := getTestCtx().GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(hc.Spec.Configuration).NotTo(BeNil(),
@@ -105,7 +105,7 @@ func ExternalOIDCClusterConfigTest(getTestCtx internal.TestContextGetter) {
 				"hosted cluster %s/%s should have at least one OIDC provider", hc.Namespace, hc.Name)
 		})
 
-		It("should have the hosted cluster Available", Label(internal.BlockingLabel), func() {
+		It("should have the hosted cluster Available", func() {
 			hc, err := getTestCtx().GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			found := false
@@ -134,7 +134,7 @@ func ExternalOIDCOAuthNotDeployedTest(getTestCtx internal.TestContextGetter) {
 			skipIfNotOIDC(hc)
 		})
 
-		It("should not have oauth-openshift deployment in the control plane namespace", Label(internal.BlockingLabel), func() {
+		It("should not have oauth-openshift deployment in the control plane namespace", func() {
 			tc := getTestCtx()
 			deployment := &appsv1.Deployment{}
 			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
@@ -146,7 +146,7 @@ func ExternalOIDCOAuthNotDeployedTest(getTestCtx internal.TestContextGetter) {
 				tc.ControlPlaneNamespace)
 		})
 
-		It("should not have openshift-oauth-apiserver deployment in the control plane namespace", Label(internal.BlockingLabel), func() {
+		It("should not have openshift-oauth-apiserver deployment in the control plane namespace", func() {
 			tc := getTestCtx()
 			deployment := &appsv1.Deployment{}
 			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
@@ -171,7 +171,7 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 			skipIfNotOIDC(hc)
 		})
 
-		It("should have auth-config ConfigMap with JWT authenticator matching the OIDC provider", Label(internal.BlockingLabel), func() {
+		It("should have auth-config ConfigMap with JWT authenticator matching the OIDC provider", func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -211,7 +211,7 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
-		It("should have correct audiences in JWT config", Label(internal.BlockingLabel), func() {
+		It("should have correct audiences in JWT config", func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -249,7 +249,7 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
-		It("should not have OAuth webhook authentication config", Label(internal.BlockingLabel), func() {
+		It("should not have OAuth webhook authentication config", func() {
 			tc := getTestCtx()
 			cm := &corev1.ConfigMap{}
 			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
@@ -344,25 +344,25 @@ func ExternalOIDCKeycloakAuthTest(getTestCtx internal.TestContextGetter) {
 			}).WithTimeout(5 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
 		})
 
-		It("should authenticate to KAS with a Keycloak-issued token", Label(internal.BlockingLabel), func() {
+		It("should authenticate to KAS with a Keycloak-issued token", func() {
 			Expect(selfSubjectReview).NotTo(BeNil(), "SelfSubjectReview should have been created in BeforeAll")
 			Expect(selfSubjectReview.Status.UserInfo.Username).NotTo(BeEmpty(),
 				"SelfSubjectReview should return a non-empty username")
 		})
 
-		It("should map username claim correctly", Label(internal.BlockingLabel), func() {
+		It("should map username claim correctly", func() {
 			Expect(selfSubjectReview.Status.UserInfo.Username).To(ContainSubstring(extOIDCConfig.UserPrefix),
 				"username should contain the configured prefix %q", extOIDCConfig.UserPrefix)
 		})
 
-		It("should map groups claim with prefix", Label(internal.BlockingLabel), func() {
+		It("should map groups claim with prefix", func() {
 			groups := selfSubjectReview.Status.UserInfo.Groups
 			Expect(groups).NotTo(BeEmpty(), "SelfSubjectReview should return groups")
 			Expect(groups).To(ContainElement(ContainSubstring(extOIDCConfig.GroupPrefix)),
 				"at least one group should contain the configured prefix %q", extOIDCConfig.GroupPrefix)
 		})
 
-		It("should map UID claim correctly", Label(internal.BlockingLabel), func() {
+		It("should map UID claim correctly", func() {
 			Expect(selfSubjectReview.Status.UserInfo.UID).NotTo(BeEmpty(),
 				"SelfSubjectReview should return a non-empty UID")
 		})

@@ -94,7 +94,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:OSStreams] NodePool 
 // This test only applies to OCP >= 5.0 because on < 5.0 rhel-10 is rejected for
 // version reasons before the runc check is reached.
 func NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx internal.TestContextGetter) {
-	It("When osImageStream is set to rhel-10 with runc ContainerRuntimeConfig, it should set ValidMachineConfig to False", Label(internal.BlockingLabel), func() {
+	It("When osImageStream is set to rhel-10 with runc ContainerRuntimeConfig, it should set ValidMachineConfig to False", func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -176,7 +176,7 @@ spec:
 // (no osImageStream set) reports a recognized RHEL stream in status.osImageStream.
 // This is a non-lifecycle test: it reads existing state without mutation.
 func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGetter) {
-	It("When no osImageStream is set, it should report a recognized RHEL stream in status", Label(internal.BlockingLabel), func() {
+	It("When no osImageStream is set, it should report a recognized RHEL stream in status", func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -334,7 +334,7 @@ func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePo
 // NodePool created with the alternate stream. This is a lifecycle test because it
 // creates additional NodePools.
 func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContextGetter) {
-	It("When NodePools have different osImageStream values, nodes should run the matching OS version", Label(internal.InformingLabel), func() {
+	It("When NodePools have different osImageStream values, nodes should run the matching OS version", Label("Informing"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -494,7 +494,7 @@ func conditionMessageContains(condType string, substring string) e2eutil.Predica
 // This is a lifecycle test: it mutates spec.osImageStream on the default NodePool
 // and restores it on cleanup.
 func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestContextGetter) {
-	It("When osImageStream is set to the version-derived default, it should not trigger a rollout", Label(internal.BlockingLabel), func() {
+	It("When osImageStream is set to the version-derived default, it should not trigger a rollout", func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -585,7 +585,7 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 // reports the version-derived stream after upgrade. The RHEL version follows the
 // release version: upgrading to OCP 5.0+ results in rhel-10.
 func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContextGetter) {
-	It("When a NodePool is upgraded, it should report the correct osImageStream in status", Label(internal.BlockingLabel), Label("nodepool-osimagestream-upgrade"), func() {
+	It("When a NodePool is upgraded, it should report the correct osImageStream in status", Label("nodepool-osimagestream-upgrade"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -688,7 +688,7 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 // verifies that the default osImageStream switches from rhel-9 to rhel-10 and
 // that nodes run RHCOS 10 with crun-only runtime handlers post-upgrade.
 func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("When a NodePool at OCP 4.23 is upgraded to 5.0+, it should switch to rhel-10 by default", Label(internal.BlockingLabel), func() {
+	It("When a NodePool at OCP 4.23 is upgraded to 5.0+, it should switch to rhel-10 by default", func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -813,7 +813,7 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 // verifies that the pin overrides the default change — nodes remain on RHEL-9
 // with runc+crun runtime handlers post-upgrade.
 func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("When a NodePool pinned to rhel-9 is upgraded from 4.23 to 5.0+, it should remain on RHEL-9", Label(internal.BlockingLabel), func() {
+	It("When a NodePool pinned to rhel-9 is upgraded from 4.23 to 5.0+, it should remain on RHEL-9", func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
