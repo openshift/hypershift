@@ -44,7 +44,6 @@ func TestAzureTestMatrix(t *testing.T) {
 		"private":          {"parallel:private"},
 		"oauth-lb-private": {"parallel:oauth-lb-private"},
 		"public":           {"sequential:public"},
-		"autoscaling":      {"sequential:autoscaling"},
 		"oauth-lb":         {"sequential:oauth-lb"},
 		"external-oidc":    {"sequential:external-oidc"},
 		"upgrade":          {"sequential:upgrade-and-chaos"},
