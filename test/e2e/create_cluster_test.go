@@ -80,6 +80,20 @@ func TestCreateCluster(t *testing.T) {
 			"hypershift-e2e-test-label": "test",
 		}
 	}
+	if e2eutil.IsLessThan(e2eutil.Version417) {
+		// nodeVolumeDetachTimeout was added to the NodePool API in 4.17.
+		// Do not send it to older release-branch CRDs, even though the main
+		// test binary includes the field in its NodePool type.
+		originalBeforeApply := clusterOpts.BeforeApply
+		clusterOpts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
+			if nodePool, ok := o.(*hyperv1.NodePool); ok {
+				nodePool.Spec.NodeVolumeDetachTimeout = nil
+			}
+		}
+	}
 	clusterOpts.Tolerations = []string{"key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule"}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
