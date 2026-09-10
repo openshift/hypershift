@@ -40449,6 +40449,20 @@ This field is immutable.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneComponentConfiguration,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentConfiguration">
+ControlPlaneComponentConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneComponentConfiguration specifies configuration overrides for selected control plane components.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infrastructureAvailabilityPolicy</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AvailabilityPolicy">
@@ -46582,6 +46596,39 @@ ControlPlaneComponentStatus
 </tr>
 </tbody>
 </table>
+###ControlPlaneComponentConfiguration { #hypershift.openshift.io/v1beta1.ControlPlaneComponentConfiguration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>ControlPlaneComponentConfiguration specifies configuration overrides for selected control plane components.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>router,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneWorkloadConfiguration">
+ControlPlaneWorkloadConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>router specifies configuration overrides for the dedicated HCP router.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ControlPlaneComponentSpec { #hypershift.openshift.io/v1beta1.ControlPlaneComponentSpec }
 <p>
 (<em>Appears on:</em>
@@ -46951,6 +46998,37 @@ int64
 <td>
 <em>(Optional)</em>
 <p>observedGeneration reports which generation of the HostedControlPlane spec is being synced.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneWorkloadConfiguration { #hypershift.openshift.io/v1beta1.ControlPlaneWorkloadConfiguration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentConfiguration">ControlPlaneComponentConfiguration</a>)
+</p>
+<p>
+<p>ControlPlaneWorkloadConfiguration specifies configuration overrides for a control plane workload.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>replicas</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>replicas specifies the desired number of replicas for the workload.
+SingleReplica clusters always use one replica.</p>
 </td>
 </tr>
 </tbody>
@@ -49657,6 +49735,20 @@ This field is immutable.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneComponentConfiguration,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentConfiguration">
+ControlPlaneComponentConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneComponentConfiguration specifies configuration overrides for selected control plane components.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infrastructureAvailabilityPolicy</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AvailabilityPolicy">
@@ -50552,6 +50644,20 @@ AvailabilityPolicy
 <em>(Optional)</em>
 <p>controllerAvailabilityPolicy specifies the availability policy applied to
 critical control plane components. The default value is SingleReplica.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneComponentConfiguration,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentConfiguration">
+ControlPlaneComponentConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneComponentConfiguration specifies configuration overrides for selected control plane components.</p>
 </td>
 </tr>
 <tr>
