@@ -15,6 +15,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -67,7 +68,6 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 		It("should upgrade the control plane and drift Karpenter nodes to the new version", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -108,7 +108,8 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 					continue
 				}
 				if np.Spec.Replicas != nil && *np.Spec.Replicas > 0 {
-					e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, np, hc.Spec.Platform.Type)
+					_, err = v2util.WaitForReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
+					Expect(err).NotTo(HaveOccurred(), "failed waiting for NodePool %s/%s nodes", np.Namespace, np.Name)
 				}
 			}
 
@@ -133,7 +134,8 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 						Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", karpenterNodePool.Name)
 					}
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, nodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, nodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for Karpenter nodes to terminate")
 			})
 
 			By("Waiting for Karpenter NodePool to be ready")
@@ -165,7 +167,8 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Println("Created workloads")
 
 			By("Waiting for Karpenter nodes and pods to be ready")
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, int32(replicas), nodeLabels)
+			nodes, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, int32(replicas), nodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 			nodeClaims := waitForReadyNodeClaims(ctx, hcClient, len(nodes), nil, true)
 			waitForReadyKarpenterPods(ctx, hcClient, nodes, nil, replicas, map[string]string{"app": "web-app"})
 
@@ -173,7 +176,7 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Pre-upgrade node: %s\n", preUpgradeNode.Name)
 
 			By(fmt.Sprintf("Updating cluster release image to %s", latestImage))
-			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Release.Image = latestImage
 				if obj.Annotations == nil {
 					obj.Annotations = make(map[string]string)
