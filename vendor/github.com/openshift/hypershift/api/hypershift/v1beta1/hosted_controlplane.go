@@ -128,6 +128,10 @@ type HostedControlPlaneSpec struct {
 	// +kubebuilder:default:="HighlyAvailable"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
+	// controlPlaneComponentConfiguration specifies configuration overrides for selected control plane components.
+	// +optional
+	ControlPlaneComponentConfiguration ControlPlaneComponentConfiguration `json:"controlPlaneComponentConfiguration,omitzero,omitempty"`
+
 	// infrastructureAvailabilityPolicy specifies the availability policy applied
 	// to infrastructure services which run on cluster nodes. The default value is
 	// SingleReplica.
@@ -276,6 +280,24 @@ type HostedControlPlaneSpec struct {
 // availabilityPolicy specifies a high level availability policy for components.
 // +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
 type AvailabilityPolicy string
+
+// ControlPlaneComponentConfiguration specifies configuration overrides for selected control plane components.
+// +kubebuilder:validation:MinProperties=1
+type ControlPlaneComponentConfiguration struct {
+	// router specifies configuration overrides for the dedicated HCP router.
+	// +optional
+	Router ControlPlaneWorkloadConfiguration `json:"router,omitzero,omitempty"`
+}
+
+// ControlPlaneWorkloadConfiguration specifies configuration overrides for a control plane workload.
+// +kubebuilder:validation:MinProperties=1
+type ControlPlaneWorkloadConfiguration struct {
+	// replicas specifies the desired number of replicas for the workload.
+	// SingleReplica clusters always use one replica.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Replicas int32 `json:"replicas,omitempty"`
+}
 
 const (
 	// HighlyAvailable means components should be resilient to problems across
