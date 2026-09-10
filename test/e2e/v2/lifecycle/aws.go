@@ -61,6 +61,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 			Variant: "public",
 			ExtraArgs: append(extraArgs, []string{
 				"--public-only",
+				"--feature-set=TechPreviewNoUpgrade",
 			}...),
 		},
 		{
@@ -87,6 +88,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 				"--auto-node",
 				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
 				"--endpoint-access=PublicAndPrivate",
+				"--feature-set=TechPreviewNoUpgrade",
 			}...),
 		},
 		{
@@ -113,7 +115,6 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
 		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
 		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
-		"--feature-set=TechPreviewNoUpgrade",
 	}
 	for _, tag := range a.additionalTags {
 		args = append(args, "--additional-tags="+tag)
