@@ -12,7 +12,8 @@ import (
 )
 
 const (
-	ComponentName = "karpenter-operator"
+	AdapterContainerName = "karpenter-adapter"
+	ComponentName        = "karpenter-operator"
 )
 
 var _ component.ComponentOptions = &KarpenterOperatorOptions{}
