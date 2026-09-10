@@ -49,6 +49,7 @@ The plugin ships 9 analyzers, scoped so each rule only fires where it applies.
 | `ipv6url`           | Detects `fmt.Sprintf` URL patterns that break with IPv6; use `net.JoinHostPort` instead.          |
 | `sippyannotation`   | Requires the correct Sippy/Jira `[Feature:X]` annotations on Ginkgo `Describe` blocks.            |
 | `e2eutilallowlist`  | Restricts `test/e2e/v2` to an allowlist of approved symbols from `test/e2e/util`.                 |
+| `e2eutiltestingtb`  | Forbids `test/e2e/v2` from referencing `test/e2e/util` symbols whose function signatures accept `testing.TB`. |
 
 ### HostedControlPlane status patching (repo-wide, see [CNTRLPLANE-3532](https://redhat.atlassian.net/browse/CNTRLPLANE-3532))
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/contextbackground"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/e2eutilallowlist"
+	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/e2eutiltestingtb"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/guestcluster"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/hcpstatuspatch"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/ipv6url"
@@ -68,6 +69,7 @@ func allAnalyzers() []*analysis.Analyzer {
 		vacuouspass.Analyzer,
 		ipv6url.Analyzer,
 		e2eutilallowlist.Analyzer,
+		e2eutiltestingtb.Analyzer,
 		// TODO(CNTRLPLANE-3532): add the reflect.DeepEqual rule.
 		// CNTRLPLANE-3532 also asks to warn on reflect.DeepEqual for Kubernetes
 		// API objects (use equality.Semantic.DeepEqual). That is a separate
