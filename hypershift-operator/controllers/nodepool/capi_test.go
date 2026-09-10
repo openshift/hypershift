@@ -2956,7 +2956,7 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 			}
 			if tc.skipUserDataPropagation {
 				g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(bootstrapName))
-				g.Expect(*md.Spec.Template.Spec.Version).To(Equal(tc.currentVersion))
+				g.Expect(md.Spec.Template.Spec.Version).To(Equal(tc.currentVersion))
 			}
 		})
 	}
@@ -3008,7 +3008,7 @@ func TestPropagateMachineSetSkipsUserDataSecretPropagation(t *testing.T) {
 					Bootstrap: capiv1.Bootstrap{
 						DataSecretName: ptr.To(oldBootstrap),
 					},
-					Version: ptr.To(targetVersion),
+					Version: targetVersion,
 				},
 			},
 		},
@@ -3018,12 +3018,12 @@ func TestPropagateMachineSetSkipsUserDataSecretPropagation(t *testing.T) {
 	g.Expect(userDataSecret.Name).NotTo(Equal(oldBootstrap))
 
 	isUpdating := false
-	currentTemplateVersion := ptr.Deref(machineSet.Spec.Template.Spec.Version, "")
+	currentTemplateVersion := machineSet.Spec.Template.Spec.Version
 	if userDataSecret.Name != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		if capi.skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion) {
 			// Mirrors reconcileMachineSet skip branch.
 		} else {
-			machineSet.Spec.Template.Spec.Version = &targetVersion
+			machineSet.Spec.Template.Spec.Version = targetVersion
 			machineSet.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
 			isUpdating = true
 		}
@@ -3031,7 +3031,7 @@ func TestPropagateMachineSetSkipsUserDataSecretPropagation(t *testing.T) {
 
 	g.Expect(isUpdating).To(BeFalse())
 	g.Expect(*machineSet.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(oldBootstrap))
-	g.Expect(*machineSet.Spec.Template.Spec.Version).To(Equal(targetVersion))
+	g.Expect(machineSet.Spec.Template.Spec.Version).To(Equal(targetVersion))
 }
 
 func TestReconcileMachineDeploymentStatus(t *testing.T) {

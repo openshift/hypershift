@@ -622,7 +622,7 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	isUpdating := false
 
 	if userDataSecret.Name != ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
-		currentTemplateVersion := ptr.Deref(machineDeployment.Spec.Template.Spec.Version, "")
+		currentTemplateVersion := machineDeployment.Spec.Template.Spec.Version
 		if c.skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion) {
 			// Config/version targets already match the NodePool baseline (e.g. after a hash-formula
 			// version migration). Keep Machines on the existing user-data Secret.
@@ -1061,7 +1061,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	isUpdating := false
 	// Propagate version and userData Secret to the MachineSet.
 	if userDataSecret.Name != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
-		currentTemplateVersion := ptr.Deref(machineSet.Spec.Template.Spec.Version, "")
+		currentTemplateVersion := machineSet.Spec.Template.Spec.Version
 		if c.skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion) {
 			log.Info("Skipping user-data Secret propagation; config and version unchanged",
 				"current", machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
