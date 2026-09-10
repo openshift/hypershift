@@ -31,7 +31,7 @@ func RegisterKarpenterControlPlaneUpgradeTests(getTestCtx internal.TestContextGe
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
-	Label("lifecycle", "karpenter-upgrade"), Ordered, func() {
+	Label("lifecycle", "karpenter-upgrade", internal.InformingLabel), Ordered, func() {
 		var testCtx *internal.TestContext
 
 		BeforeEach(func() {
@@ -64,7 +64,7 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should upgrade the control plane and drift Karpenter nodes to the new version", Label(internal.InformingLabel), func() {
+		It("should upgrade the control plane and drift Karpenter nodes to the new version", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
 			t := GinkgoTB()

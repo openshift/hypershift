@@ -43,8 +43,8 @@ func RegisterGlobalPullSecretTests(getTestCtx internal.TestContextGetter) {
 }
 
 func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
-	When("an additional pull secret is created in the hosted cluster", func() {
-		It("should propagate it through the global pull secret pipeline and clean up on deletion", Label(internal.InformingLabel), func() {
+	When("an additional pull secret is created in the hosted cluster", Label("Informing"), func() {
+		It("should propagate it through the global pull secret pipeline and clean up on deletion", func() {
 			tc := getTestCtx()
 			tc.SkipIfVersionBelow(e2eutil.Version419)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)

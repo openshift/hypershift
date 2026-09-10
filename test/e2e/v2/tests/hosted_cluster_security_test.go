@@ -55,7 +55,7 @@ func RegisterHostedClusterSecurityTests(getTestCtx internal.TestContextGetter) {
 
 func EnsureHostedClusterWebhooksValidatedTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:WebhookValidation] a webhook targeting a control plane service is created in the hosted cluster", func() {
-		It("should be automatically deleted", Label(internal.BlockingLabel), func() {
+		It("should be automatically deleted", func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -119,7 +119,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should find all required ValidatingAdmissionPolicies", Label(internal.BlockingLabel), func() {
+		It("should find all required ValidatingAdmissionPolicies", func() {
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -150,7 +150,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should deny unauthorized config changes via VAPs", Label(internal.BlockingLabel), func() {
+		It("should deny unauthorized config changes via VAPs", func() {
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -171,7 +171,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 			}, time.Minute, 5*time.Second).Should(Succeed())
 		})
 
-		It("should deny unauthorized deletion of kas-bootstrap RBAC bindings via VAPs", Label(internal.BlockingLabel), func() {
+		It("should deny unauthorized deletion of kas-bootstrap RBAC bindings via VAPs", func() {
 			tc.SkipIfVersionBelow(e2eutil.Version51)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -201,7 +201,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should allow status modifications via VAPs", Label(internal.BlockingLabel), func() {
+		It("should allow status modifications via VAPs", func() {
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -228,7 +228,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 			}, time.Minute, 5*time.Second).Should(Succeed())
 		})
 
-		It("should allow OperatorHub config changes with guest OLM placement", Label(internal.BlockingLabel), func() {
+		It("should allow OperatorHub config changes with guest OLM placement", func() {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
@@ -267,7 +267,7 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		})
 
-		It("should find management KAS access labels on expected components", Label(internal.BlockingLabel), func() {
+		It("should find management KAS access labels on expected components", func() {
 			tc := getTestCtx()
 
 			podList := &corev1.PodList{}
@@ -280,7 +280,7 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 				suppconfig.NeedManagementKASAccessLabel, tc.ControlPlaneNamespace)
 		})
 
-		It("should block egress traffic from non-privileged pods to the management KAS", Label(internal.BlockingLabel), func() {
+		It("should block egress traffic from non-privileged pods to the management KAS", func() {
 			tc := getTestCtx()
 
 			mgmtRestConfig, err := e2eutil.GetConfig()

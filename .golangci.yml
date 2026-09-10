@@ -35,7 +35,6 @@ linters:
             enable:
               - testcasename
               - testfuncname
-              - e2eteststate
               - sippyannotation
               - guestcluster
               - contextbackground
