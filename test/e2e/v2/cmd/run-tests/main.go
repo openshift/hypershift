@@ -163,7 +163,7 @@ func runTestBinary(testBinary, clusterName, namespace, labelFilter, skip, junitP
 
 	args := []string{
 		fmt.Sprintf("--ginkgo.label-filter=%s", labelFilter),
-		fmt.Sprintf("--ginkgo.junit-report=%s", junitPath),
+		fmt.Sprintf("--e2e.junit-report=%s", junitPath),
 		fmt.Sprintf("--ginkgo.timeout=%s", ginkgoTimeout),
 		"--ginkgo.v",
 	}

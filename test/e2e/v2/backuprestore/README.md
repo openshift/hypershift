@@ -311,7 +311,7 @@ make backuprestore-e2e
 # Run tests
 ./bin/test-backuprestore \
     --ginkgo.v \
-    --ginkgo.junit-report="/tmp/junit.xml" \
+    --e2e.junit-report="/tmp/junit.xml" \
     --ginkgo.label-filter="backup-restore" \
     --ginkgo.fail-fast=true \
     --ginkgo.timeout=2h
@@ -323,10 +323,10 @@ make backuprestore-e2e
 go run github.com/onsi/ginkgo/v2/ginkgo \
     --vv --tags=e2ev2,backuprestore \
     --label-filter="backup-restore" \
-    --junit-report="/tmp/junit.xml" \
     --fail-fast=true \
     --timeout=2h \
-    ./test/e2e/v2/tests
+    ./test/e2e/v2/tests \
+    -- --e2e.junit-report="/tmp/junit.xml"
 ```
 
 ### Required Environment Variables
