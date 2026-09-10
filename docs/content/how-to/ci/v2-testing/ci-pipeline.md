@@ -91,7 +91,7 @@ All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and 
 
 Creates hosted clusters in parallel using a five-phase flow:
 
-1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` in the platform's test matrix. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
+1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` in the platform's test matrix. The default Azure self-managed matrix creates five variants: `private`, `public`, `oauth-lb`, `external-oidc`, and `upgrade`. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
 
 2. **Post-create hooks**: Runs platform-specific `PostCreate()` hooks. For example, Azure patches the `OperatorConfiguration` CRD to enable lifecycle tests
 
@@ -135,6 +135,11 @@ type TestMatrix struct {
 **`Parallel`** groups run concurrently across multiple clusters. This maximizes throughput and is the common case.
 
 **`Sequential`** groups run their `Steps` one after another on the same cluster. If any step fails, remaining steps in that group are skipped. Use sequential groups for ordered workflows like upgrade → validate → downgrade.
+
+Matrix validation rejects a variant assigned to multiple top-level lanes because
+those lanes run concurrently. Reusing a variant within one sequential group's
+steps is allowed and is how configuration-specific tests run before autoscaling
+tests on the Azure `oauth-lb` and `external-oidc` clusters.
 
 See [Labels](writing-tests.md#labels-two-layer-model) for how to control which tests run in each group.
 
