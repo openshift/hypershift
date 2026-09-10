@@ -569,6 +569,7 @@ func TestReportInvalidGcpCreds(t *testing.T) {
 	}
 
 	testCases := []struct {
+		version                            *string
 		name                               string
 		ValidGCPWorkloadIdentityCondStatus metav1.ConditionStatus
 		ValidGCPCredentialsCondStatus      metav1.ConditionStatus
@@ -616,6 +617,9 @@ func TestReportInvalidGcpCreds(t *testing.T) {
 			ValidGCPCredentialsCondStatus:      metav1.ConditionUnknown,
 			expected:                           wrapExpectedValueAsMetric(2),
 		},
+		{name: "When control plane is 5.0 with stale failures, it should report unknown", version: ptr.To("5.0.0"), ValidGCPWorkloadIdentityCondStatus: metav1.ConditionFalse, ValidGCPCredentialsCondStatus: metav1.ConditionFalse, expected: wrapExpectedValueAsMetric(2)},
+		{name: "When control plane version is empty, it should report unknown", version: ptr.To(""), ValidGCPWorkloadIdentityCondStatus: metav1.ConditionTrue, ValidGCPCredentialsCondStatus: metav1.ConditionTrue, expected: wrapExpectedValueAsMetric(2)},
+		{name: "When control plane version is malformed, it should report unknown", version: ptr.To("invalid"), ValidGCPWorkloadIdentityCondStatus: metav1.ConditionFalse, ValidGCPCredentialsCondStatus: metav1.ConditionFalse, expected: wrapExpectedValueAsMetric(2)},
 	}
 
 	for _, tc := range testCases {
@@ -630,13 +634,20 @@ func TestReportInvalidGcpCreds(t *testing.T) {
 				},
 			}
 
+			hcluster.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
+			if tc.version != nil {
+				hcluster.Status.ControlPlaneVersion.Desired.Version = *tc.version
+			}
+
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 				Type:   string(hyperv1.ValidGCPWorkloadIdentity),
 				Status: tc.ValidGCPWorkloadIdentityCondStatus,
+				Reason: hyperv1.InvalidIdentityProvider,
 			})
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 				Type:   string(hyperv1.ValidGCPCredentials),
 				Status: tc.ValidGCPCredentialsCondStatus,
+				Reason: hyperv1.InvalidIdentityProvider,
 			})
 
 			checkMetric(t,
@@ -1774,4 +1785,39 @@ func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) 
 		Bytes: caBytes,
 	})
 	return ca, caPEM.String(), nil
+}
+
+func TestCollectFailureConditionCounts(t *testing.T) {
+	for _, tc := range []struct {
+		name, version string
+		status        metav1.ConditionStatus
+		expected      int
+	}{
+		{"When 5.0 reports unknown credentials, it should count no failures", "5.0.0", metav1.ConditionUnknown, 0},
+		{"When 5.1 reports unknown credentials, it should count failures", "5.1.0", metav1.ConditionUnknown, 1},
+		{"When 5.1 reports invalid credentials, it should count failures", "5.1.0", metav1.ConditionFalse, 1},
+		{"When 5.1 reports valid credentials, it should count no failures", "5.1.0", metav1.ConditionTrue, 0},
+		{"When version is missing and credentials are unknown, it should count failures", "", metav1.ConditionUnknown, 1},
+		{"When version is malformed and credentials are unknown, it should count failures", "invalid", metav1.ConditionUnknown, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{}
+			hc.Spec.Platform.Type = hyperv1.GCPPlatform
+			hc.Status.ControlPlaneVersion.Desired.Version = tc.version
+			hc.Status.Conditions = []metav1.Condition{
+				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: tc.status},
+				{Type: string(hyperv1.ValidGCPCredentials), Status: tc.status},
+			}
+			counts := initPlatformFailureConditionCounts()
+			collectFailureConditionCounts(hc, hyperv1.GCPPlatform, counts)
+			for _, conditionType := range []hyperv1.ConditionType{hyperv1.ValidGCPWorkloadIdentity, hyperv1.ValidGCPCredentials} {
+				if got := (*counts[hyperv1.GCPPlatform])["not_"+string(conditionType)]; got != tc.expected {
+					t.Errorf("condition %s failure count = %d, want %d", conditionType, got, tc.expected)
+				}
+				if got := (*counts[hyperv1.GCPPlatform])[string(conditionType)]; got != 0 {
+					t.Errorf("unexpected condition %s failure count: %d", conditionType, got)
+				}
+			}
+		})
+	}
 }

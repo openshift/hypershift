@@ -67,15 +67,12 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 				delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
 			}
 
-			Eventually(func(g Gomega) {
-				hc := &hyperv1.HostedCluster{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed())
-				for condType, expectedStatus := range expectedConditions {
-					condition := meta.FindStatusCondition(hc.Status.Conditions, string(condType))
-					g.Expect(condition).NotTo(BeNil(), "condition %s should be present", condType)
-					g.Expect(condition.Status).To(Equal(expectedStatus), "condition %s should have status %s", condType, expectedStatus)
-				}
-			}, 10*time.Minute, 10*time.Second).Should(Succeed())
+			Expect(expectedConditions).NotTo(BeEmpty(), "expected conditions for hosted cluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
+			for condType, expectedStatus := range expectedConditions {
+				condition := meta.FindStatusCondition(hostedCluster.Status.Conditions, string(condType))
+				Expect(condition).NotTo(BeNil(), "condition %s should be present on hosted cluster %s/%s", condType, hostedCluster.Namespace, hostedCluster.Name)
+				Expect(condition.Status).To(Equal(expectedStatus), "condition %s should have status %s on hosted cluster %s/%s", condType, expectedStatus, hostedCluster.Namespace, hostedCluster.Name)
+			}
 		})
 	})
 }

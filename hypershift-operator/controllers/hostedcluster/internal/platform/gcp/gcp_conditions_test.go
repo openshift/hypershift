@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"reflect"
 	"regexp"
 	"testing"
 
@@ -42,6 +43,7 @@ func TestGetCredentialStatus(t *testing.T) {
 				{
 					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
 					Status: metav1.ConditionFalse,
+					Reason: hyperv1.InvalidIdentityProvider,
 				},
 				{
 					Type:   string(hyperv1.ValidGCPCredentials),
@@ -60,6 +62,7 @@ func TestGetCredentialStatus(t *testing.T) {
 				{
 					Type:   string(hyperv1.ValidGCPCredentials),
 					Status: metav1.ConditionFalse,
+					Reason: hyperv1.InvalidIdentityProvider,
 				},
 			},
 			expected: CredentialStatusInvalid,
@@ -70,10 +73,12 @@ func TestGetCredentialStatus(t *testing.T) {
 				{
 					Type:   string(hyperv1.ValidGCPWorkloadIdentity),
 					Status: metav1.ConditionFalse,
+					Reason: hyperv1.InvalidIdentityProvider,
 				},
 				{
 					Type:   string(hyperv1.ValidGCPCredentials),
 					Status: metav1.ConditionFalse,
+					Reason: hyperv1.InvalidIdentityProvider,
 				},
 			},
 			expected: CredentialStatusInvalid,
@@ -135,18 +140,35 @@ func TestGetCredentialStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			hc := &hyperv1.HostedCluster{
-				Status: hyperv1.HostedClusterStatus{
-					Conditions: tt.conditions,
-				},
+			for _, version := range []string{"4.23.0", "5.0.0", "5.1.0", "5.1.0-0.ci-20260909", "6.0.0", "", "invalid"} {
+				t.Run("When control plane version is "+version+", it should enforce validation support", func(t *testing.T) {
+					hc := &hyperv1.HostedCluster{Status: hyperv1.HostedClusterStatus{Conditions: tt.conditions}}
+					hc.Status.ControlPlaneVersion.Desired.Version = version
+					expected := tt.expected
+					if version != "5.1.0" && version != "5.1.0-0.ci-20260909" && version != "6.0.0" {
+						expected = CredentialStatusUnknown
+					}
+					NewWithT(t).Expect(GetCredentialStatus(hc)).To(Equal(expected))
+				})
 			}
-
-			result := GetCredentialStatus(hc)
-			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
+
+	for _, version := range []string{"4.23.0", "5.0.0", "", "invalid", "5.1.0-0.ci-20260909", "6.0.0"} {
+		for _, reason := range []string{hyperv1.InvalidIdentityProvider, hyperv1.InvalidConfigurationReason, hyperv1.ReconciliationErrorReason, ""} {
+			t.Run("When version is "+version+" and failure reason is "+reason+", it should classify only supported runtime failures as invalid", func(t *testing.T) {
+				hc := &hyperv1.HostedCluster{}
+				hc.Status.ControlPlaneVersion.Desired.Version = version
+				hc.Status.Conditions = []metav1.Condition{{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: reason}}
+				expected := CredentialStatusUnknown
+				if (version == "5.1.0-0.ci-20260909" || version == "6.0.0") && reason == hyperv1.InvalidIdentityProvider {
+					expected = CredentialStatusInvalid
+				}
+				NewWithT(t).Expect(GetCredentialStatus(hc)).To(Equal(expected))
+			})
+		}
+	}
+
 }
 
 // TestWorkloadIdentityValidationScenarios tests additional edge cases for WIF validation.
@@ -292,138 +314,215 @@ func TestNetworkConfigAccessSafety(t *testing.T) {
 }
 
 func TestComputeGCPCredentialConditions(t *testing.T) {
-	tests := []struct {
-		name               string
-		hcConditions       []metav1.Condition
-		hcp                *hyperv1.HostedControlPlane
-		expectedChanged    bool
-		expectedWIFStatus  metav1.ConditionStatus
-		expectedWIFReason  string
-		expectedCredStatus metav1.ConditionStatus
+	const unsupportedMessage = "Runtime GCP credential validation requires control plane version 5.1 or later"
+	const unknownMessage = "The control plane version cannot be determined; runtime GCP credential validation availability is unknown"
+	for _, tc := range []struct {
+		name, hcVersion, hcpVersion                     string
+		missingHCP                                      bool
+		previousStatus, runtimeStatus, expectedStatus   metav1.ConditionStatus
+		previousReason, expectedReason, expectedMessage string
 	}{
 		{
-			name: "When HCP has True conditions, it should bubble them up to HC",
-			hcp: &hyperv1.HostedControlPlane{
-				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []metav1.Condition{
-						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
-						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
-					},
-				},
-			},
-			expectedChanged:    true,
-			expectedWIFStatus:  metav1.ConditionTrue,
-			expectedWIFReason:  hyperv1.AsExpectedReason,
-			expectedCredStatus: metav1.ConditionTrue,
+			name:            "When HCP is 4.23, it should replace legacy success",
+			hcpVersion:      "4.23.0",
+			previousStatus:  metav1.ConditionTrue,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  "UnsupportedControlPlaneVersion",
+			expectedMessage: unsupportedMessage,
 		},
 		{
-			name:               "When HCP is nil, it should set conditions to Unknown",
-			hcp:                nil,
-			expectedChanged:    true,
-			expectedWIFStatus:  metav1.ConditionUnknown,
-			expectedWIFReason:  hyperv1.StatusUnknownReason,
-			expectedCredStatus: metav1.ConditionUnknown,
+			name:            "When HCP is 5.0, it should replace even latched authentication failures",
+			hcpVersion:      "5.0.0",
+			previousStatus:  metav1.ConditionFalse,
+			previousReason:  hyperv1.InvalidIdentityProvider,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  "UnsupportedControlPlaneVersion",
+			expectedMessage: unsupportedMessage,
 		},
 		{
-			name: "When HCP has no conditions, it should set conditions to Unknown",
-			hcp: &hyperv1.HostedControlPlane{
-				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []metav1.Condition{},
-				},
-			},
-			expectedChanged:    true,
-			expectedWIFStatus:  metav1.ConditionUnknown,
-			expectedWIFReason:  hyperv1.StatusUnknownReason,
-			expectedCredStatus: metav1.ConditionUnknown,
+			name:            "When HCP is 5.0 and HC is stale 5.1, it should use HCP version",
+			hcVersion:       "5.1.0",
+			hcpVersion:      "5.0.0",
+			runtimeStatus:   metav1.ConditionTrue,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  "UnsupportedControlPlaneVersion",
+			expectedMessage: unsupportedMessage,
 		},
 		{
-			name: "When HCP has False conditions, it should propagate them to HC",
-			hcp: &hyperv1.HostedControlPlane{
-				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []metav1.Condition{
-						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
-						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
-					},
-				},
-			},
-			expectedChanged:    true,
-			expectedWIFStatus:  metav1.ConditionFalse,
-			expectedWIFReason:  hyperv1.InvalidIdentityProvider,
-			expectedCredStatus: metav1.ConditionFalse,
+			name:            "When HCP version is empty and HC is 5.1, it should report undetermined",
+			hcVersion:       "5.1.0",
+			previousStatus:  metav1.ConditionFalse,
+			previousReason:  hyperv1.InvalidIdentityProvider,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  hyperv1.StatusUnknownReason,
+			expectedMessage: unknownMessage,
 		},
 		{
-			name: "When HC already has the same conditions, it should not report a change",
-			hcConditions: []metav1.Condition{
-				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: 3},
-				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: 3},
-			},
-			hcp: &hyperv1.HostedControlPlane{
-				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []metav1.Condition{
-						{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
-						{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
-					},
-				},
-			},
-			expectedChanged:    false,
-			expectedWIFStatus:  metav1.ConditionTrue,
-			expectedWIFReason:  hyperv1.AsExpectedReason,
-			expectedCredStatus: metav1.ConditionTrue,
+			name:            "When HCP version is malformed, it should replace legacy success",
+			hcpVersion:      "invalid",
+			previousStatus:  metav1.ConditionTrue,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  hyperv1.StatusUnknownReason,
+			expectedMessage: unknownMessage,
 		},
 		{
-			// Latch: during teardown KAS goes away, HCP sends Unknown. An existing
-			// False on the HC must not be clobbered so DeleteOrphanedMachines keeps firing.
-			name: "When HC has False conditions and HCP sends Unknown, it should latch False and not update",
-			hcConditions: []metav1.Condition{
-				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider, ObservedGeneration: 3},
-				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider, ObservedGeneration: 3},
-			},
-			hcp:                nil,
-			expectedChanged:    false,
-			expectedWIFStatus:  metav1.ConditionFalse,
-			expectedWIFReason:  hyperv1.InvalidIdentityProvider,
-			expectedCredStatus: metav1.ConditionFalse,
+			name:            "When HCP disappears with HC at 5.0, it should disable validation",
+			missingHCP:      true,
+			hcVersion:       "5.0.0",
+			previousStatus:  metav1.ConditionFalse,
+			previousReason:  hyperv1.InvalidIdentityProvider,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  "UnsupportedControlPlaneVersion",
+			expectedMessage: unsupportedMessage,
 		},
 		{
-			// Partial latch: WIF is False (latched), Credentials was Unknown — HCP now
-			// sends Unknown for both. WIF stays False; Credentials stays Unknown (no change).
-			name: "When HC has False WIF and Unknown Credentials and HCP sends Unknown, it should latch False WIF only",
-			hcConditions: []metav1.Condition{
-				{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider, ObservedGeneration: 3},
-				{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionUnknown, Reason: hyperv1.StatusUnknownReason, ObservedGeneration: 3},
-			},
-			hcp:                nil,
-			expectedChanged:    false,
-			expectedWIFStatus:  metav1.ConditionFalse,
-			expectedWIFReason:  hyperv1.InvalidIdentityProvider,
-			expectedCredStatus: metav1.ConditionUnknown,
+			name:            "When HCP disappears with no persisted version, it should report undetermined",
+			missingHCP:      true,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  hyperv1.StatusUnknownReason,
+			expectedMessage: unknownMessage,
 		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		{
+			name:            "When HCP is a 5.1 prerelease and HC is 5.0, it should propagate success",
+			hcVersion:       "5.0.0",
+			hcpVersion:      "5.1.0-0.ci-20260909",
+			runtimeStatus:   metav1.ConditionTrue,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "runtime result",
+		},
+		{
+			name:            "When supported HCP reports authentication failure, it should propagate failure",
+			hcpVersion:      "5.1.0",
+			runtimeStatus:   metav1.ConditionFalse,
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidIdentityProvider,
+			expectedMessage: "runtime result",
+		},
+		{
+			name:           "When supported HCP has no result, it should await validation",
+			hcpVersion:     "5.1.0",
+			expectedStatus: metav1.ConditionUnknown,
+			expectedReason: hyperv1.StatusUnknownReason,
+		},
+		{
+			name:            "When supported HCP reports Unknown, it should preserve runtime authentication failure",
+			hcpVersion:      "5.1.0",
+			previousStatus:  metav1.ConditionFalse,
+			previousReason:  hyperv1.InvalidIdentityProvider,
+			runtimeStatus:   metav1.ConditionUnknown,
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidIdentityProvider,
+			expectedMessage: "previous result",
+		},
+		{
+			name:            "When supported HCP disappears, it should preserve runtime authentication failure using HC version",
+			missingHCP:      true,
+			hcVersion:       "5.1.0",
+			previousStatus:  metav1.ConditionFalse,
+			previousReason:  hyperv1.InvalidIdentityProvider,
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidIdentityProvider,
+			expectedMessage: "previous result",
+		},
+		{
+			name:           "When supported HCP has no result after configuration failure, it should discard legacy failure",
+			hcpVersion:     "5.1.0",
+			previousStatus: metav1.ConditionFalse,
+			previousReason: hyperv1.InvalidConfigurationReason,
+			expectedStatus: metav1.ConditionUnknown,
+			expectedReason: hyperv1.StatusUnknownReason,
+		},
+		{
+			name:           "When supported HCP reports Unknown after Secret reconciliation failure, it should discard legacy failure",
+			hcpVersion:     "5.1.0",
+			previousStatus: metav1.ConditionFalse,
+			previousReason: hyperv1.ReconciliationErrorReason,
+			runtimeStatus:  metav1.ConditionUnknown,
+			expectedStatus: metav1.ConditionUnknown,
+			expectedReason: hyperv1.StatusUnknownReason,
+		},
+		{
+			name:            "When runtime validation recovers, it should replace latched failure",
+			hcpVersion:      "5.1.0",
+			previousStatus:  metav1.ConditionFalse,
+			previousReason:  hyperv1.InvalidIdentityProvider,
+			runtimeStatus:   metav1.ConditionTrue,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "runtime result",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			hc := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Generation: 3},
-				Status: hyperv1.HostedClusterStatus{
-					Conditions: tt.hcConditions,
-				},
+			hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+			hc.Status.ControlPlaneVersion.Desired.Version = tc.hcVersion
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Status.ControlPlaneVersion.Desired.Version = tc.hcpVersion
+			hcp.Status.VersionStatus = &hyperv1.ClusterVersionStatus{}
+			hcp.Status.VersionStatus.Desired.Version = "5.0.0" // Data plane version must not gate management-side validation.
+			for _, conditionType := range []hyperv1.ConditionType{hyperv1.ValidGCPWorkloadIdentity, hyperv1.ValidGCPCredentials} {
+				if tc.previousStatus != "" {
+					meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{Type: string(conditionType), Status: tc.previousStatus, Reason: tc.previousReason, Message: "previous result", ObservedGeneration: 3})
+				}
+				if tc.runtimeStatus != "" {
+					reason := hyperv1.AsExpectedReason
+					if tc.runtimeStatus == metav1.ConditionFalse {
+						reason = hyperv1.InvalidIdentityProvider
+					}
+					meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{Type: string(conditionType), Status: tc.runtimeStatus, Reason: reason, Message: "runtime result", ObservedGeneration: 99})
+				}
 			}
-
-			changed := ComputeGCPCredentialConditions(hc, tt.hcp)
-			g.Expect(changed).To(Equal(tt.expectedChanged), "changed flag mismatch")
-
-			wifCond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity))
-			g.Expect(wifCond).ToNot(BeNil(), "ValidGCPWorkloadIdentity condition must be set")
-			g.Expect(wifCond.Status).To(Equal(tt.expectedWIFStatus), "ValidGCPWorkloadIdentity status mismatch")
-			g.Expect(wifCond.Reason).To(Equal(tt.expectedWIFReason), "ValidGCPWorkloadIdentity reason mismatch")
-
-			credCond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
-			g.Expect(credCond).ToNot(BeNil(), "ValidGCPCredentials condition must be set")
-			g.Expect(credCond.Status).To(Equal(tt.expectedCredStatus), "ValidGCPCredentials status mismatch")
+			if tc.missingHCP {
+				hcp = nil
+			}
+			before := hc.DeepCopy()
+			changed := ComputeGCPCredentialConditions(hc, hcp)
+			g.Expect(changed).To(Equal(!reflect.DeepEqual(before.Status.Conditions, hc.Status.Conditions)))
+			for _, conditionType := range []hyperv1.ConditionType{hyperv1.ValidGCPWorkloadIdentity, hyperv1.ValidGCPCredentials} {
+				condition := meta.FindStatusCondition(hc.Status.Conditions, string(conditionType))
+				g.Expect(condition).NotTo(BeNil())
+				g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+				g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+				g.Expect(condition.Message).To(Equal(tc.expectedMessage))
+				g.Expect(condition.ObservedGeneration).To(Equal(int64(3)))
+			}
+			before = hc.DeepCopy()
+			g.Expect(ComputeGCPCredentialConditions(hc, hcp)).To(BeFalse())
+			g.Expect(hc.Status).To(Equal(before.Status))
 		})
 	}
+	t.Run("When only WIF has a runtime failure, it should latch that failure and await credentials", func(t *testing.T) {
+		g := NewWithT(t)
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Generation: 3}}
+		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
+		hc.Status.Conditions = []metav1.Condition{
+			{Type: string(hyperv1.ValidGCPWorkloadIdentity), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider, ObservedGeneration: 3},
+			{Type: string(hyperv1.ValidGCPCredentials), Status: metav1.ConditionFalse, Reason: hyperv1.ReconciliationErrorReason, ObservedGeneration: 2},
+		}
+		g.Expect(ComputeGCPCredentialConditions(hc, nil)).To(BeTrue())
+		g.Expect(meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPWorkloadIdentity)).Status).To(Equal(metav1.ConditionFalse))
+		credentials := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidGCPCredentials))
+		g.Expect(credentials.Status).To(Equal(metav1.ConditionUnknown))
+		g.Expect(credentials.ObservedGeneration).To(Equal(int64(3)))
+		g.Expect(GetCredentialStatus(hc)).To(Equal(CredentialStatusInvalid))
+		g.Expect(ComputeGCPCredentialConditions(hc, nil)).To(BeFalse())
+	})
+
+	t.Run("When control plane upgrades from 5.0 to 5.1, it should accept fresh runtime results", func(t *testing.T) {
+		g := NewWithT(t)
+		hc := &hyperv1.HostedCluster{}
+		hcp := &hyperv1.HostedControlPlane{}
+		hcp.Status.ControlPlaneVersion.Desired.Version = "5.0.0"
+		g.Expect(ComputeGCPCredentialConditions(hc, hcp)).To(BeTrue())
+		hcp.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
+		for _, conditionType := range []hyperv1.ConditionType{hyperv1.ValidGCPWorkloadIdentity, hyperv1.ValidGCPCredentials} {
+			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{Type: string(conditionType), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason})
+		}
+		g.Expect(ComputeGCPCredentialConditions(hc, hcp)).To(BeTrue())
+		hc.Status.ControlPlaneVersion = hcp.Status.ControlPlaneVersion
+		g.Expect(GetCredentialStatus(hc)).To(Equal(CredentialStatusValid))
+	})
 }
 
 // TestServiceAccountEmailValidation tests that the regex pattern validation for service account emails is working correctly.

@@ -40,7 +40,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
-	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
@@ -492,10 +491,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// We set these conditions even if the HC is being deleted so that
 	// DeleteOrphanedMachines has a fresh signal for credential validity.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
-		if changed := platformgcp.ComputeGCPCredentialConditions(hcluster, hcp); changed {
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-			}
+		if err := r.reconcileGCPCredentialConditions(ctx, hcluster, hcp); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
