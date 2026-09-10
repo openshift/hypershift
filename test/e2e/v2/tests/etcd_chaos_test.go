@@ -32,6 +32,7 @@ import (
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -99,7 +100,7 @@ func EtcdSingleMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 		wg.Wait()
 
 		// Verify pod is replaced with a new UID
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, "deleted etcd pod is replaced",
+		Expect(v2util.EventuallyObject(ctx, "deleted etcd pod is replaced",
 			func(ctx context.Context) (*corev1.Pod, error) {
 				pod := &corev1.Pod{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&randomPod), pod)
@@ -108,9 +109,9 @@ func EtcdSingleMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 			[]e2eutil.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (bool, string, error) {
 				return originalUID != pod.UID, fmt.Sprintf("pod UID %s", pod.UID), nil
 			}},
-			e2eutil.WithInterval(5*time.Second),
-			e2eutil.WithTimeout(30*time.Minute),
-		)
+			v2util.WithInterval(5*time.Second),
+			v2util.WithTimeout(30*time.Minute),
+		)).To(Succeed())
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))
 	})
@@ -214,7 +215,7 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 		wg.Wait()
 
 		// Verify all etcd pods are replaced with new UIDs
-		e2eutil.EventuallyObjects(GinkgoTB(), ctx, "etcd pods to be replaced",
+		Expect(v2util.EventuallyObjects(ctx, "etcd pods to be replaced",
 			func(ctx context.Context) ([]*corev1.Pod, error) {
 				pods := &corev1.PodList{}
 				err := testCtx.MgmtClient.List(ctx, pods, &crclient.ListOptions{
@@ -236,9 +237,9 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 				}
 				return false, "pod not found in previous list", nil
 			}},
-			e2eutil.WithInterval(5*time.Second),
-			e2eutil.WithTimeout(30*time.Minute),
-		)
+			v2util.WithInterval(5*time.Second),
+			v2util.WithTimeout(30*time.Minute),
+		)).To(Succeed())
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))
 
@@ -276,7 +277,7 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 
 		// Etcd recovery job should be created.
 		// We don't check if the job completed because it will be deleted after completion.
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, "etcd recovery job to be active",
+		Expect(v2util.EventuallyObject(ctx, "etcd recovery job to be active",
 			func(ctx context.Context) (*batchv1.Job, error) {
 				recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(cpNamespace)
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(recoveryJob), recoveryJob)
@@ -286,9 +287,9 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 				got := job.Status.Active
 				return got == 1, fmt.Sprintf("wanted status active to be 1, got %d", got), nil
 			}},
-			e2eutil.WithInterval(5*time.Second),
-			e2eutil.WithTimeout(15*time.Minute),
-		)
+			v2util.WithInterval(5*time.Second),
+			v2util.WithTimeout(15*time.Minute),
+		)).To(Succeed())
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))
 	})
@@ -343,7 +344,7 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 
 		// Etcd recovery job should be created.
 		// We don't check if the job completed because it will be deleted after completion.
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, "etcd recovery job to be active",
+		Expect(v2util.EventuallyObject(ctx, "etcd recovery job to be active",
 			func(ctx context.Context) (*batchv1.Job, error) {
 				recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(cpNamespace)
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(recoveryJob), recoveryJob)
@@ -353,9 +354,9 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 				got := job.Status.Active
 				return got == 1, fmt.Sprintf("wanted status active to be 1, got %d", got), nil
 			}},
-			e2eutil.WithInterval(5*time.Second),
-			e2eutil.WithTimeout(15*time.Minute),
-		)
+			v2util.WithInterval(5*time.Second),
+			v2util.WithTimeout(15*time.Minute),
+		)).To(Succeed())
 
 		waitForEtcdConvergence(ctx, testCtx.MgmtClient, cpNamespace, ptr.Deref(etcdSts.Spec.Replicas, 0))
 	})
@@ -383,7 +384,7 @@ func getEtcdStsAndPods(ctx context.Context, client crclient.Client, cpNamespace 
 func waitForEtcdConvergence(ctx context.Context, client crclient.Client, cpNamespace string, expectedReplicas int32) {
 	GinkgoHelper()
 
-	e2eutil.EventuallyObject(GinkgoTB(), ctx, "etcd StatefulSet replicas to converge",
+	Expect(v2util.EventuallyObject(ctx, "etcd StatefulSet replicas to converge",
 		func(ctx context.Context) (*appsv1.StatefulSet, error) {
 			sts := cpomanifests.EtcdStatefulSet(cpNamespace)
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(sts), sts)
@@ -393,9 +394,9 @@ func waitForEtcdConvergence(ctx context.Context, client crclient.Client, cpNames
 			got := sts.Status.ReadyReplicas
 			return expectedReplicas != 0 && expectedReplicas == got, fmt.Sprintf("wanted %d ready replicas, got %d", expectedReplicas, got), nil
 		}},
-		e2eutil.WithInterval(5*time.Second),
-		e2eutil.WithTimeout(30*time.Minute),
-	)
+		v2util.WithInterval(5*time.Second),
+		v2util.WithTimeout(30*time.Minute),
+	)).To(Succeed())
 }
 
 // randomEtcdPods selects count random pods from the provided slice.
@@ -422,12 +423,12 @@ func createMarkerConfigMap(ctx context.Context, client crclient.Client) *corev1.
 		},
 		Data: map[string]string{"value": string(value)},
 	}
-	e2eutil.EventuallyObject(GinkgoTB(), ctx, "create marker ConfigMap",
+	Expect(v2util.EventuallyObject(ctx, "create marker ConfigMap",
 		func(ctx context.Context) (*corev1.ConfigMap, error) {
 			err := client.Create(ctx, cm)
 			return cm, err
 		}, nil,
-	)
+	)).To(Succeed())
 	GinkgoWriter.Printf("Created marker ConfigMap %s/%s\n", cm.Namespace, cm.Name)
 	return cm
 }
@@ -437,7 +438,7 @@ func createMarkerConfigMap(ctx context.Context, client crclient.Client) *corev1.
 func verifyMarkerSurvived(ctx context.Context, client crclient.Client, expected *corev1.ConfigMap) {
 	GinkgoHelper()
 
-	e2eutil.EventuallyObject(GinkgoTB(), ctx, "verify marker data survived disruption",
+	Expect(v2util.EventuallyObject(ctx, "verify marker data survived disruption",
 		func(ctx context.Context) (*corev1.ConfigMap, error) {
 			actual := &corev1.ConfigMap{}
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(expected), actual)
@@ -447,7 +448,7 @@ func verifyMarkerSurvived(ctx context.Context, client crclient.Client, expected 
 			diff := cmp.Diff(expected.Data, configMap.Data)
 			return diff == "", fmt.Sprintf("incorrect data: %v", diff), nil
 		}},
-		e2eutil.WithInterval(5*time.Second),
-		e2eutil.WithTimeout(30*time.Minute),
-	)
+		v2util.WithInterval(5*time.Second),
+		v2util.WithTimeout(30*time.Minute),
+	)).To(Succeed())
 }

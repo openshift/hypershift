@@ -28,6 +28,7 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -106,7 +107,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 
 			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
 
-			err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 					Key:   day2TagKey,
 					Value: day2TagValue,
@@ -114,7 +115,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with day-2 tag")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err := v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
@@ -359,7 +360,7 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 			ctx := tc.Context
 
 			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
-			err = e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags,
 					hyperv1.AWSClusterResourceTag{
 						Key:            "e2e-tag-deny",
@@ -375,7 +376,7 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with override policy tags")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err := v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
@@ -402,7 +403,8 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 				cleanupNodePool(ctx, tc.MgmtClient, np)
 			})
 
-			e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+			_, err = v2util.WaitForReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
+			Expect(err).NotTo(HaveOccurred(), "failed waiting for nodes after NodePool tag update")
 
 			Eventually(func(g Gomega) {
 				fresh := &hyperv1.NodePool{}
@@ -529,7 +531,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 
 			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
 
-			err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 					Key:   day2TagKey,
 					Value: day2TagValue,
@@ -537,7 +539,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with day-2 tag containing spaces")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err := v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
@@ -621,7 +623,7 @@ func NodePoolDay2TagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
 			day2TagValue := "e2e np space value"
 
 			originalTags := append([]hyperv1.AWSNodePoolResourceTag(nil), defaultNP.Spec.Platform.AWS.ResourceTags...)
-			err = e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSNodePoolResourceTag{
 					Key:   day2TagKey,
 					Value: day2TagValue,
@@ -629,7 +631,7 @@ func NodePoolDay2TagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update NodePool with day-2 tag containing spaces")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
+				err := v2util.UpdateObject(ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSNodePoolResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
