@@ -15240,7 +15240,7 @@ sequenceDiagram
     par Test lanes (each lane is a goroutine; steps within each lane are sequential)
         RT->>T: private-{hash} (private topology + compliance)
         RT->>T: public-{hash} (platform, feature, then NodePool rollout tests)
-        RT->>T: oauth-lb-{hash} (OAuth/configuration, MachineConfig rollout, then autoscaling balancing)
+        RT->>T: oauth-lb-{hash} (OAuth/configuration, NodePool config including MachineConfig rollout, then autoscaling balancing)
         RT->>T: external-oidc-{hash} (OIDC/pull-secret, then autoscaling scale-up/down)
     end
     Note right of RT: Each subprocess receives the cluster name via env vars,<br/>plus its label filter via --ginkgo.label-filter
@@ -15250,8 +15250,16 @@ sequenceDiagram
         Note over T: Process 6a (upgrade)
         T-->>RT: exit 0 (upgrade passed)
 
+        RT->>T: upgrade-{hash} (post-upgrade-health)
+        Note over T: Process 6b (post-upgrade-health)
+        T-->>RT: exit 0 (post-upgrade-health passed)
+
+        RT->>T: upgrade-{hash} (control-plane-tls)
+        Note over T: Process 6c (control-plane-tls)
+        T-->>RT: exit 0 (control-plane-tls passed)
+
         RT->>T: upgrade-{hash} (etcd-chaos, same cluster)
-        Note over T: Process 6b (etcd-chaos)
+        Note over T: Process 6d (etcd-chaos)
         T-->>RT: exit 0 or error
     end
 
@@ -15381,11 +15389,12 @@ flowchart TD
 
         subgraph Sequential["Sequential lane: upgrade cluster"]
             direction TB
-            S1["public<br/>platform/features → NodePool rollout shard"]
-            S2["autoscaling<br/>MachineConfig → balancing"]
-            S3["oauth-lb<br/>configuration tests → NodePool config shard"]
-            S4["external-oidc<br/>configuration → scale-up/down → trust bundle"]
-            S5["upgrade<br/>upgrade → post-upgrade health → TLS → etcd chaos"]
+            S1["Step 1: upgrade tests<br/>label: control-plane-upgrade"]
+            S2["Step 2: post-upgrade-health tests<br/>label: hosted-cluster-health"]
+            S3["Step 3: control-plane-tls tests<br/>label: control-plane-pki-operator"]
+            S4["Step 4: etcd-chaos tests<br/>label: etcd-chaos"]
+            S1 -->|"pass → continue"| S2 -->|"pass → continue"| S3 -->|"pass → continue"| S4
+            S1 -.->|"fail → skip remaining"| SKIP["Steps skipped"]
         end
     end
 
