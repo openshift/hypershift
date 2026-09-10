@@ -1,0 +1,77 @@
+name: Create Release (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: arc-runner-set
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        env:
+          HOME: /tmp
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Determine previous tag
+        id: prev-tag
+        run: |
+          if git describe --tags --abbrev=0 "${{ github.ref_name }}^" >/dev/null 2>&1; then
+            prev=$(git describe --tags --abbrev=0 "${{ github.ref_name }}^")
+            echo "tag=$prev" >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Generate release notes
+        id: notes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.prev-tag.outputs.found }}" = "true" ]; then
+            notes=$(go run ./hack/tools/release/notes.go \
+              --from="${{ steps.prev-tag.outputs.tag }}" \
+              --to="${{ github.ref_name }}" \
+              --token="$GITHUB_TOKEN")
+          else
+            notes="Initial release ${{ github.ref_name }}"
+          fi
+
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$notes"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build source tarball
+        run: |
+          git archive --format=tar.gz --prefix="hypershift-${{ github.ref_name }}/" \
+            -o "hypershift-${{ github.ref_name }}-source.tar.gz" "${{ github.ref_name }}"
+          sha256sum "hypershift-${{ github.ref_name }}-source.tar.gz" \
+            > "hypershift-${{ github.ref_name }}-source.tar.gz.sha256"
+      - name: Create draft GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --draft \
+            --title "${{ github.ref_name }}" \
+            --notes "${{ steps.notes.outputs.body }}" \
+            "hypershift-${{ github.ref_name }}-source.tar.gz" \
+            "hypershift-${{ github.ref_name }}-source.tar.gz.sha256"
+
+          echo "## Create Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Draft release **${{ github.ref_name }}** created." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Note:** CLI binaries will be attached by Konflux asynchronously." >> "$GITHUB_STEP_SUMMARY"
