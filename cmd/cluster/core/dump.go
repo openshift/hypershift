@@ -55,11 +55,14 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
+	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
@@ -131,8 +134,21 @@ var (
 		&hyperv1.AWSEndpointService{},
 		// Azure
 		&capiazure.AzureCluster{},
+		&capiazure.AzureClusterIdentity{},
 		&capiazure.AzureMachine{},
 		&capiazure.AzureMachineTemplate{},
+		// GCP
+		&capigcp.GCPCluster{},
+		&capigcp.GCPMachine{},
+		&capigcp.GCPMachineTemplate{},
+		// IBM Cloud VPC
+		&capiibm.IBMVPCCluster{},
+		&capiibm.IBMVPCMachine{},
+		&capiibm.IBMVPCMachineTemplate{},
+		// IBM PowerVS
+		&capiibm.IBMPowerVSCluster{},
+		&capiibm.IBMPowerVSMachine{},
+		&capiibm.IBMPowerVSMachineTemplate{},
 		// OpenStack
 		&capiopenstackv1alpha1.OpenStackServer{},
 		&capiopenstackv1beta1.OpenStackCluster{},
@@ -517,7 +533,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	optionalResources = append(optionalResources, ocpResources...)
 	optionalResources = append(optionalResources, monitoringResources...)
 	optionalResources = append(optionalResources, controlPlaneAutoscalingResources...)
-	registered, err := filterRegisteredResources(c.Scheme(), kubeDiscoveryClient, optionalResources)
+	registered, err := filterRegisteredResources(opts.Log, c.Scheme(), kubeDiscoveryClient, optionalResources)
 	if err != nil {
 		return err
 	}
@@ -634,20 +650,11 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 	// TODO(maxcao13): move this to the management cluster dump once we do Karpenter API namespacing work.
 	// https://issues.redhat.com/browse/AUTOSCALE-268
 	// Dump Karpenter resources if they exist in the guest cluster.
-	for _, resource := range karpenterResources {
-		gvks, _, err := hyperapi.Scheme.ObjectKinds(resource)
-		if err != nil || len(gvks) == 0 {
-			return fmt.Errorf("failed to resolve GVK for %T: %w", resource, err)
-		}
-		gvk := gvks[0]
-		resourceRegistered, err := isResourceRegistered(kubeDiscoveryClient, gvk)
-		if err != nil {
-			return err
-		}
-		if resourceRegistered {
-			resources = append(resources, resource)
-		}
+	registeredKarpenterResources, err := filterRegisteredResources(log, hyperapi.Scheme, kubeDiscoveryClient, karpenterResources)
+	if err != nil {
+		return err
 	}
+	resources = append(resources, registeredKarpenterResources...)
 
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.Run(ctx, resourceList)
@@ -986,20 +993,22 @@ func shouldDumpKubevirt(nodePools []*hyperv1.NodePool) ([]kubevirtExtCluster, bo
 // filterRegisteredResources returns only the resources whose GVKs are actually
 // registered on the API server. This prevents oc adm inspect from failing when
 // platform CRDs are absent (e.g. --limit-crd-install).
-func filterRegisteredResources(scheme *runtime.Scheme, discoveryClient discovery.DiscoveryInterface, candidates []client.Object) ([]client.Object, error) {
+func filterRegisteredResources(log logr.Logger, scheme *runtime.Scheme, discoveryClient discovery.DiscoveryInterface, candidates []client.Object) ([]client.Object, error) {
 	var registered []client.Object
 	for _, resource := range candidates {
-		gvks, _, err := scheme.ObjectKinds(resource)
+		gvk, err := apiutil.GVKForObject(resource, scheme)
 		if err != nil {
 			return nil, err
 		}
-		found, err := isResourceRegistered(discoveryClient, gvks[0])
+		found, err := isResourceRegistered(discoveryClient, gvk)
 		if err != nil {
 			return nil, err
 		}
 		if found {
 			registered = append(registered, resource)
+			continue
 		}
+		log.V(4).Info("skipping resource not registered on API server", "gvk", gvk)
 	}
 	return registered, nil
 }

@@ -158,6 +158,16 @@ func TestIsResourceRegistered_PlatformGating(t *testing.T) {
 			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1alpha1", Kind: "KubevirtCluster"},
 			expected: false,
 		},
+		{
+			name:     "When GCP CRD is not installed, it should return false for GCPCluster",
+			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "GCPCluster"},
+			expected: false,
+		},
+		{
+			name:     "When IBM VPC CRD is not installed, it should return false for IBMVPCCluster",
+			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta2", Kind: "IBMVPCCluster"},
+			expected: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -200,7 +210,7 @@ func TestFilterRegisteredResources(t *testing.T) {
 	candidates := []client.Object{&capiaws.AWSCluster{}, &capiazure.AzureCluster{}}
 
 	t.Run("When filtering with an AWS-only MC, it should return only AWS resources", func(t *testing.T) {
-		result, err := filterRegisteredResources(scheme, awsOnlyDiscovery, candidates)
+		result, err := filterRegisteredResources(logr.Discard(), scheme, awsOnlyDiscovery, candidates)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -220,7 +230,7 @@ func TestFilterRegisteredResources(t *testing.T) {
 		emptyDiscovery := &fakediscovery.FakeDiscovery{
 			Fake: &clientgotesting.Fake{},
 		}
-		result, err := filterRegisteredResources(scheme, emptyDiscovery, candidates)
+		result, err := filterRegisteredResources(logr.Discard(), scheme, emptyDiscovery, candidates)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -232,7 +242,7 @@ func TestFilterRegisteredResources(t *testing.T) {
 	t.Run("When scheme cannot resolve GVK, it should return an error", func(t *testing.T) {
 		// Use a scheme that does NOT have CAPI types registered
 		emptyScheme := runtime.NewScheme()
-		_, err := filterRegisteredResources(emptyScheme, awsOnlyDiscovery, candidates)
+		_, err := filterRegisteredResources(logr.Discard(), emptyScheme, awsOnlyDiscovery, candidates)
 		if err == nil {
 			t.Fatal("expected an error for unregistered types, got nil")
 		}
@@ -246,7 +256,7 @@ func TestFilterRegisteredResources(t *testing.T) {
 		errorDiscovery.Fake.AddReactor("*", "*", func(action clientgotesting.Action) (bool, runtime.Object, error) {
 			return true, nil, fmt.Errorf("simulated discovery failure")
 		})
-		_, err := filterRegisteredResources(scheme, errorDiscovery, candidates)
+		_, err := filterRegisteredResources(logr.Discard(), scheme, errorDiscovery, candidates)
 		if err == nil {
 			t.Fatal("expected a discovery error, got nil")
 		}
