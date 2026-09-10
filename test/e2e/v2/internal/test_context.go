@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +35,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -50,6 +52,11 @@ type TestContext struct {
 	ControlPlaneNamespace string
 	ArtifactDir           string
 }
+
+const (
+	hostedClusterKubeConfigPollInterval = 3 * time.Second
+	hostedClusterKubeConfigTimeout      = 10 * time.Minute
+)
 
 // GetHostedCluster fetches the HostedCluster from the management cluster.
 // Returns an error if no cluster name/namespace is configured or if the API
@@ -90,6 +97,77 @@ func (tc *TestContext) GetHostedClusterVersion() (semver.Version, error) {
 	return semver.Version{}, nil
 }
 
+// WaitForHostedClusterKubeConfig waits for the HostedCluster to publish a
+// kubeconfig reference and for the referenced Secret to contain kubeconfig
+// data. The passed HostedCluster is refreshed with the object observed during
+// the wait. It returns an error if the kubeconfig is not published before the
+// test context is canceled or the wait timeout expires.
+func (tc *TestContext) WaitForHostedClusterKubeConfig(hc *hyperv1.HostedCluster) ([]byte, error) {
+	if hc == nil {
+		return nil, fmt.Errorf("cannot wait for kubeconfig for a nil HostedCluster")
+	}
+
+	var kubeconfigSecretKey crclient.ObjectKey
+	var lastErr error
+	err := wait.PollUntilContextTimeout(tc.Context, hostedClusterKubeConfigPollInterval, hostedClusterKubeConfigTimeout, true, func(ctx context.Context) (bool, error) {
+		currentHC := &hyperv1.HostedCluster{}
+		if err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {
+			lastErr = fmt.Errorf("failed to get HostedCluster %s/%s: %w", hc.Namespace, hc.Name, err)
+			return false, nil
+		}
+		if currentHC.Status.KubeConfig == nil || currentHC.Status.KubeConfig.Name == "" {
+			lastErr = fmt.Errorf("HostedCluster %s/%s has not published a kubeconfig reference", hc.Namespace, hc.Name)
+			return false, nil
+		}
+		*hc = *currentHC
+		kubeconfigSecretKey = crclient.ObjectKey{Namespace: currentHC.Namespace, Name: currentHC.Status.KubeConfig.Name}
+		return true, nil
+	})
+	if err != nil {
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to wait for kubeconfig reference for HostedCluster %s/%s: %w (last observed error: %w)", hc.Namespace, hc.Name, err, lastErr)
+		}
+		return nil, fmt.Errorf("failed to wait for kubeconfig reference for HostedCluster %s/%s: %w", hc.Namespace, hc.Name, err)
+	}
+
+	var kubeconfigData []byte
+	lastErr = nil
+	err = wait.PollUntilContextTimeout(tc.Context, hostedClusterKubeConfigPollInterval, hostedClusterKubeConfigTimeout, true, func(ctx context.Context) (bool, error) {
+		kubeconfigSecret := &corev1.Secret{}
+		if err := tc.MgmtClient.Get(ctx, kubeconfigSecretKey, kubeconfigSecret); err != nil {
+			lastErr = fmt.Errorf("failed to get kubeconfig Secret %s/%s: %w", kubeconfigSecretKey.Namespace, kubeconfigSecretKey.Name, err)
+			return false, nil
+		}
+
+		data, ok := kubeconfigSecret.Data["kubeconfig"]
+		if !ok || len(data) == 0 {
+			lastErr = fmt.Errorf("kubeconfig Secret %s/%s does not contain kubeconfig data", kubeconfigSecretKey.Namespace, kubeconfigSecretKey.Name)
+			return false, nil
+		}
+
+		kubeconfigData = append([]byte(nil), data...)
+		return true, nil
+	})
+	if err != nil {
+		if lastErr != nil {
+			return nil, fmt.Errorf("failed to wait for kubeconfig Secret %s/%s: %w (last observed error: %w)", kubeconfigSecretKey.Namespace, kubeconfigSecretKey.Name, err, lastErr)
+		}
+		return nil, fmt.Errorf("failed to wait for kubeconfig Secret %s/%s: %w", kubeconfigSecretKey.Namespace, kubeconfigSecretKey.Name, err)
+	}
+
+	return kubeconfigData, nil
+}
+
+// WaitForHostedClusterRESTConfig waits for the HostedCluster kubeconfig to be
+// published and returns a REST config using the v2 client settings.
+func (tc *TestContext) WaitForHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*rest.Config, error) {
+	kubeconfigData, err := tc.WaitForHostedClusterKubeConfig(hc)
+	if err != nil {
+		return nil, err
+	}
+	return hostedClusterRESTConfigFromKubeConfig(kubeconfigData)
+}
+
 // GetHostedClusterRESTConfig returns the REST config for the hosted cluster.
 // Returns an error if the kubeconfig secret cannot be fetched or parsed.
 func (tc *TestContext) GetHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*rest.Config, error) {
@@ -110,6 +188,15 @@ func (tc *TestContext) GetHostedClusterRESTConfig(hc *hyperv1.HostedCluster) (*r
 		return nil, fmt.Errorf("kubeconfig key not found or empty in secret %s/%s", hc.Namespace, hc.Status.KubeConfig.Name)
 	}
 
+	restConfig, err := hostedClusterRESTConfigFromKubeConfig(kubeconfigData)
+	if err != nil {
+		return nil, err
+	}
+
+	return restConfig, nil
+}
+
+func hostedClusterRESTConfigFromKubeConfig(kubeconfigData []byte) (*rest.Config, error) {
 	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create REST config from kubeconfig: %w", err)
