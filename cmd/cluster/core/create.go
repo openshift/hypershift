@@ -323,7 +323,6 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 			ControllerAvailabilityPolicy:     hyperv1.AvailabilityPolicy(opts.ControlPlaneAvailabilityPolicy),
 			InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
 			Configuration:                    &hyperv1.ClusterConfiguration{},
-			Capabilities:                     &hyperv1.Capabilities{},
 		},
 	}
 
@@ -402,6 +401,12 @@ func resolvePullSecret(opts *CreateOptions) ([]byte, error) {
 }
 
 func applyClusterCapabilities(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
+	if len(opts.EnableClusterCapabilities) == 0 && len(opts.DisableClusterCapabilities) == 0 {
+		return
+	}
+	if cluster.Spec.Capabilities == nil {
+		cluster.Spec.Capabilities = &hyperv1.Capabilities{}
+	}
 	if len(opts.EnableClusterCapabilities) > 0 {
 		caps := make([]hyperv1.OptionalCapability, len(opts.EnableClusterCapabilities))
 		for i, c := range opts.EnableClusterCapabilities {
