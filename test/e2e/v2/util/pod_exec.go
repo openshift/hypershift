@@ -83,3 +83,37 @@ func GetMetricsFromPod(ctx context.Context, clientset kubernetes.Interface, rest
 	}
 	return families, nil
 }
+
+// ValidateMetricPresence verifies whether a metric family contains a matching
+// label. It returns an error when the observed presence does not match the
+// expected state so callers can decide whether to retry or fail immediately.
+func ValidateMetricPresence(metricFamilies map[string]*dto.MetricFamily, query, labelKey, labelValue, metricName string, metricsExpectedToBePresent bool) error {
+	labelPairs := extractMetricLabels(metricFamilies, query, labelKey, labelValue)
+	if metricsExpectedToBePresent && len(labelPairs) == 0 {
+		return fmt.Errorf("expected results for metric %q, found none", metricName)
+	}
+	if !metricsExpectedToBePresent && len(labelPairs) > 0 {
+		return fmt.Errorf("expected 0 results for metric %q, found %d", metricName, len(labelPairs))
+	}
+	return nil
+}
+
+func extractMetricLabels(metricFamilies map[string]*dto.MetricFamily, metric, labelKey, labelValue string) []*dto.LabelPair {
+	family, ok := metricFamilies[metric]
+	if !ok {
+		return nil
+	}
+
+	var labelPairs []*dto.LabelPair
+	for _, metric := range family.Metric {
+		for _, label := range metric.GetLabel() {
+			if label == nil {
+				continue
+			}
+			if labelKey == "" || (label.GetName() == labelKey && label.GetValue() == labelValue) {
+				labelPairs = append(labelPairs, label)
+			}
+		}
+	}
+	return labelPairs
+}
