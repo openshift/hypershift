@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -21,8 +23,9 @@ type AWSPlatformConfig struct {
 }
 
 type AWSPlatformOptions struct {
-	Region string
-	Zones  string
+	Region    string
+	Zones     string
+	ProwJobId string
 }
 
 func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatformConfig {
@@ -32,6 +35,10 @@ func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatfor
 	// and should probably be handled another way. That test assumes there is at least one pre-existing
 	// non-kubernetes-namespaced tag on the infra.
 	tags := []string{fmt.Sprintf("expirationDate=%s", time.Now().Add(4*time.Hour).UTC().Format(time.RFC3339))}
+
+	if opts.ProwJobId != "" {
+		tags = append(tags, supportawsutil.HypershiftProwJobIDTagKey+"="+opts.ProwJobId)
+	}
 
 	cfg := &AWSPlatformConfig{
 		region:         opts.Region,
