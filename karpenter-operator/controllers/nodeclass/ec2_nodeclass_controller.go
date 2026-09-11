@@ -56,9 +56,7 @@ const (
 	DefaultRootVolumeSize = "120Gi"
 )
 
-var (
-	errKarpenterUserDataSecretNotFound = errors.New("failed to find user data secret for OpenshiftEC2NodeClass")
-)
+var errKarpenterUserDataSecretNotFound = errors.New("failed to find user data secret for OpenshiftEC2NodeClass")
 
 var (
 	crdEC2NodeClass = supportassets.MustCRD(assets.ReadFile, "karpenter.k8s.aws_ec2nodeclasses.yaml")
@@ -68,6 +66,8 @@ var (
 
 type EC2NodeClassReconciler struct {
 	Namespace string
+	// SkipUpstreamCRD leaves the upstream CRD ownership to the standalone operator.
+	SkipUpstreamCRD bool
 
 	managementClient client.Client
 	guestClient      client.Client
@@ -225,10 +225,13 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	errs := []error{}
 	var op controllerutil.OperationResult
 	var err error
-	for _, desired := range []*apiextensionsv1.CustomResourceDefinition{
-		crdEC2NodeClass,
+	desiredCRDs := []*apiextensionsv1.CustomResourceDefinition{
 		crdOpenshiftEC2NodeClass,
-	} {
+	}
+	if !r.SkipUpstreamCRD {
+		desiredCRDs = append([]*apiextensionsv1.CustomResourceDefinition{crdEC2NodeClass}, desiredCRDs...)
+	}
+	for _, desired := range desiredCRDs {
 		// We need to deep copy because Create/CreateOrUpdate mutates the object
 		crd := desired.DeepCopy()
 		if onlyCreate {
@@ -522,7 +525,6 @@ func (r *EC2NodeClassReconciler) reconcileKarpenterSubnetsConfigMap(ctx context.
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to reconcile karpenter subnets configmap: %w", err)
 	}
