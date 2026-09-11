@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/ntotuning"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -79,6 +80,13 @@ func (r *KarpenterIgnitionReconciler) SetupWithManager(mgr ctrl.Manager, managem
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{},
 			handler.EnqueueRequestsFromMapFunc(r.mapToOpenshiftEC2NodeClasses),
 			r.hcpPredicate())).
+		// Watch mirrored tuning ConfigMaps in the management cluster so changes
+		// to tuning configs trigger re-reconciliation of the tuned-* output ConfigMap.
+		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(r.mapToOpenshiftEC2NodeClasses),
+			predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return obj.GetLabels()[mirroredTuningConfigLabel] == "true"
+			}))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -175,6 +183,10 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile kubelet config configmap: %w", err)
 	}
 
+	if err := r.reconcileTuningConfigs(ctx, hcp, openshiftEC2NodeClass); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile tuning configs: %w", err)
+	}
+
 	// The reconcile will have deleted the configmap if we make it here, so we can
 	// remove the finalizer
 	if openshiftEC2NodeClass.Spec.Kubelet.IsZero() && controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
@@ -240,6 +252,12 @@ func (r *KarpenterIgnitionReconciler) reconcileDeletedNodeClass(
 		return ctrl.Result{}, fmt.Errorf("failed to delete kubelet config configmap %s: %w", configMapName, err)
 	}
 	log.Info("Deleted kubelet config ConfigMap", "name", configMapName)
+
+	nodePoolName := karpenterutil.KarpenterNodePoolName(openshiftEC2NodeClass)
+	if err := ntotuning.DeleteTuningOutputs(ctx, r.ManagementClient, hcp.Namespace, nodePoolName); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to delete mirrored tuning configs: %w", err)
+	}
+	log.Info("Deleted mirrored tuning ConfigMaps", "nodePool", nodePoolName)
 
 	// Remove the finalizer to allow NodeClass deletion to proceed
 	original := openshiftEC2NodeClass.DeepCopy()

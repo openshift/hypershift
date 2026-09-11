@@ -607,6 +607,31 @@ spec:
                   rule: self.all(k, k !='karpenter.sh/nodeclaim')
                 - message: tag contains a restricted tag matching karpenter.k8s.aws/ec2nodeclass
                   rule: self.all(k, k !='karpenter.k8s.aws/ec2nodeclass')
+              tuningConfig:
+                description: |-
+                  tuningConfig lists Node Tuning Operator configurations to apply to nodes provisioned by this NodeClass.
+                  Each entry is the name of a tuning config already created for the cluster.
+                  The same tuning config may be used by more than one NodeClass.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                maxItems: 10
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
               version:
                 description: |-
                   version is an OpenShift version (e.g., "4.20.1") specifying the release version
