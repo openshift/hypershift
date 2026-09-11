@@ -104,6 +104,16 @@ filters:
   "^kubernetes-default-proxy/.*":
     labels:
     - area/control-plane-operator
+  "^product-cli/.*":
+    labels:
+    - area/cli
+    reviewers:
+    - acm-hypershift-reviewers
+  "^product-cli/cmd/fromhub/.*":
+    approvers:
+    - acm-hypershift-approvers
+    reviewers:
+    - acm-hypershift-reviewers
   "^support/.*":
     labels:
     - area/control-plane-operator
