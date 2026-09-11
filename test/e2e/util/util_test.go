@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	"k8s.io/utils/ptr"
 )
@@ -164,7 +165,7 @@ func TestGenerateCustomCertificate(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			certPEM, keyPEM, err := GenerateCustomCertificate(tc.dnsNames, tc.duration)
+			certPEM, keyPEM, err := v2util.GenerateCustomCertificate(tc.dnsNames, tc.duration)
 
 			if tc.wantErr {
 				g.Expect(err).To(HaveOccurred())

@@ -349,4 +349,46 @@ type IngressOperatorSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Type=object
 	EndpointPublishingStrategy *operatorv1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
+
+	// defaultCertificate is a reference to a secret in the HostedCluster namespace
+	// that contains the default certificate served by the default ingress controller.
+	// When Routes don't specify their own certificate, defaultCertificate is used.
+	//
+	// The secret must contain the following keys and data:
+	//   tls.crt: certificate file contents
+	//   tls.key: key file contents
+	//
+	// When set, this certificate replaces the auto-generated wildcard certificate
+	// that is normally created by the control plane operator. The secret is synced
+	// from the HostedCluster namespace to the control plane, and then propagated
+	// to the hosted cluster's openshift-ingress namespace.
+	//
+	// When the referenced secret is updated, the new certificate data is
+	// automatically propagated to the hosted cluster.
+	//
+	// When not set, the control plane operator generates a wildcard certificate
+	// signed by the cluster's root CA.
+	//
+	// Note: a cluster-admin in the hosted cluster can override the default ingress
+	// controller's certificate directly. That override takes precedence and the
+	// certificate referenced here is no longer served.
+	//
+	// +optional
+	DefaultCertificate IngressDefaultCertificateReference `json:"defaultCertificate,omitzero"`
+}
+
+// IngressDefaultCertificateReference contains a reference to a TLS Secret
+// in the HostedCluster namespace used as the default serving certificate
+// for the ingress controller.
+type IngressDefaultCertificateReference struct {
+	// name is the name of the Secret containing tls.crt and tls.key.
+	// The Secret must exist in the same namespace as the HostedCluster.
+	// name must be a valid DNS subdomain name (RFC 1123): it must contain only
+	// lowercase alphanumeric characters, '-' or '.', and start and end with an
+	// alphanumeric character.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')",message="name must be a valid DNS subdomain name: contain no more than 253 characters, contain only lowercase alphanumeric characters, '-' or '.', and start and end with an alphanumeric character"
+	Name string `json:"name,omitempty"`
 }
