@@ -1,0 +1,16 @@
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-5.1
+
+# Install Azure CLI from Microsoft's official RHEL 9 repository
+RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
+    dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm && \
+    mkdir -p /etc/yum.repos.art/ci && \
+    mv /etc/yum.repos.d/microsoft-prod.repo /etc/yum.repos.art/ci/ && \
+    sed -i 's/repo_gpgcheck=1/repo_gpgcheck=0/' /etc/yum.repos.art/ci/microsoft-prod.repo && \
+    dnf install -y azure-cli && \
+    dnf clean all
+
+# Verify Azure CLI installation (az is the correct binary name)
+RUN az --version
+
+# Ensure root user (preserve e2e test behavior - e2e entrypoint and tests may need root access)
+USER root
