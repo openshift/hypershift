@@ -3,12 +3,14 @@ package karpenteroperator
 import (
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -48,7 +50,9 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 		WithManifestAdapter("podmonitor.yaml",
 			component.WithAdaptFunction(adaptPodMonitor),
 		).
-		WithPredicate(predicate).
+		WithPredicate(func(cpContext component.WorkloadContext) (bool, error) {
+			return predicate(cpContext, options)
+		}).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
 			ServiceAccountName:      "karpenter",
@@ -59,10 +63,16 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 		Build()
 }
 
-func predicate(cpContext component.WorkloadContext) (bool, error) {
+func predicate(cpContext component.WorkloadContext, opts *KarpenterOperatorOptions) (bool, error) {
 	hcp := cpContext.HCP
 
 	if !karpenterutil.IsKarpenterEnabled(hcp.Spec.AutoNode) {
+		return false, nil
+	}
+	// Karpenter on Azure is only supported with the standalone karpenter-operator.
+	// In the future, the standalone-karpenter-operator env var will be removed, the refactor will be defaulted, and this check will be removed.
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && !opts.StandaloneKarpenterOperatorEnabled {
+		log.FromContext(cpContext.Context).Info("Karpenter on Azure is only supported with the standalone karpenter-operator")
 		return false, nil
 	}
 
