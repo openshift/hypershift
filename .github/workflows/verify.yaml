@@ -1,4 +1,4 @@
-name: Verify
+name: Source Freshness
 
 on:
   pull_request:
@@ -7,7 +7,8 @@ on:
       - release-4.22
 
 jobs:
-  verify:
+  call-main-verify:
+    name: Call main verify workflow
     uses: openshift/hypershift/.github/workflows/verify-reusable.yaml@main
     permissions:
       contents: read
