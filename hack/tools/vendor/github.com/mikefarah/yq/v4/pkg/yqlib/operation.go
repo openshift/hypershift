@@ -25,7 +25,7 @@ var valueToStringFunc = func(p *Operation) string {
 }
 
 func createValueOperation(value interface{}, stringValue string) *Operation {
-	log.Debug("creating value op for string %v", stringValue)
+	log.Debugf("creating value op for string %v", stringValue)
 	var node = createScalarNode(value, stringValue)
 
 	return &Operation{
@@ -128,6 +128,7 @@ var getKindOpType = &operationType{Type: "GET_KIND", NumArgs: 0, Precedence: 50,
 var getKeyOpType = &operationType{Type: "GET_KEY", NumArgs: 0, Precedence: 50, Handler: getKeyOperator}
 var isKeyOpType = &operationType{Type: "IS_KEY", NumArgs: 0, Precedence: 50, Handler: isKeyOperator}
 var getParentOpType = &operationType{Type: "GET_PARENT", NumArgs: 0, Precedence: 50, Handler: getParentOperator}
+var getParentsOpType = &operationType{Type: "GET_PARENTS", NumArgs: 0, Precedence: 50, Handler: getParentsOperator}
 
 var getCommentOpType = &operationType{Type: "GET_COMMENT", NumArgs: 0, Precedence: 50, Handler: getCommentsOperator}
 var getAnchorOpType = &operationType{Type: "GET_ANCHOR", NumArgs: 0, Precedence: 50, Handler: getAnchorOperator}
@@ -142,6 +143,7 @@ var delPathsOpType = &operationType{Type: "DEL_PATHS", NumArgs: 1, Precedence: 5
 
 var explodeOpType = &operationType{Type: "EXPLODE", NumArgs: 1, Precedence: 52, Handler: explodeOperator, CheckForPostTraverse: true}
 var sortByOpType = &operationType{Type: "SORT_BY", NumArgs: 1, Precedence: 52, Handler: sortByOperator, CheckForPostTraverse: true}
+var firstOpType = &operationType{Type: "FIRST", NumArgs: 1, Precedence: 52, Handler: firstOperator, CheckForPostTraverse: true}
 var reverseOpType = &operationType{Type: "REVERSE", NumArgs: 0, Precedence: 52, Handler: reverseOperator, CheckForPostTraverse: true}
 var sortOpType = &operationType{Type: "SORT", NumArgs: 0, Precedence: 52, Handler: sortOperator, CheckForPostTraverse: true}
 var shuffleOpType = &operationType{Type: "SHUFFLE", NumArgs: 0, Precedence: 52, Handler: shuffleOperator, CheckForPostTraverse: true}
@@ -161,6 +163,8 @@ var stringInterpolationOpType = &operationType{Type: "STRING_INT", NumArgs: 0, P
 
 var loadOpType = &operationType{Type: "LOAD", NumArgs: 1, Precedence: 52, Handler: loadOperator, CheckForPostTraverse: true}
 var loadStringOpType = &operationType{Type: "LOAD_STRING", NumArgs: 1, Precedence: 52, Handler: loadStringOperator}
+
+var systemOpType = &operationType{Type: "SYSTEM", NumArgs: 1, Precedence: 50, Handler: systemOperator}
 
 var keysOpType = &operationType{Type: "KEYS", NumArgs: 0, Precedence: 52, Handler: keysOperator, CheckForPostTraverse: true}
 

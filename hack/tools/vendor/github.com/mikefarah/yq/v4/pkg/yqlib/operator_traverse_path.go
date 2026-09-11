@@ -3,6 +3,7 @@ package yqlib
 import (
 	"container/list"
 	"fmt"
+	"slices"
 
 	"github.com/elliotchance/orderedmap"
 )
@@ -13,6 +14,7 @@ type traversePreferences struct {
 	DontAutoCreate       bool // by default, we automatically create entries on the fly.
 	DontIncludeMapValues bool
 	OptionalTraverse     bool // e.g. .adf?
+	ExactKeyMatch        bool // by default we let wild/glob patterns. Don't do that for merge though.
 }
 
 func splat(context Context, prefs traversePreferences) (Context, error) {
@@ -34,8 +36,32 @@ func traversePathOperator(_ *dataTreeNavigator, context Context, expressionNode 
 	return context.ChildContext(matches), nil
 }
 
+// resolveAliasChain follows an alias chain iteratively, returning the
+// first non-alias node. Returns an error if a cycle is detected.
+func resolveAliasChain(node *CandidateNode) (*CandidateNode, error) {
+	if node.Kind != AliasNode {
+		return node, nil
+	}
+	visited := map[*CandidateNode]bool{}
+	for node.Kind == AliasNode {
+		if visited[node] {
+			return nil, fmt.Errorf("alias cycle detected")
+		}
+		visited[node] = true
+		log.Debug("its an alias!")
+		node = node.Alias
+	}
+	return node, nil
+}
+
 func traverse(context Context, matchingNode *CandidateNode, operation *Operation) (*list.List, error) {
-	log.Debug("Traversing %v", NodeToString(matchingNode))
+	log.Debugf("Traversing %v", NodeToString(matchingNode))
+
+	var err error
+	matchingNode, err = resolveAliasChain(matchingNode)
+	if err != nil {
+		return nil, err
+	}
 
 	if matchingNode.Tag == "!!null" && operation.Value != "[]" && !context.DontAutoCreate {
 		log.Debugf("Guessing kind")
@@ -53,17 +79,13 @@ func traverse(context Context, matchingNode *CandidateNode, operation *Operation
 
 	switch matchingNode.Kind {
 	case MappingNode:
-		log.Debug("its a map with %v entries", len(matchingNode.Content)/2)
+		log.Debugf("its a map with %v entries", len(matchingNode.Content)/2)
 		return traverseMap(context, matchingNode, createStringScalarNode(operation.StringValue), operation.Preferences.(traversePreferences), false)
 
 	case SequenceNode:
-		log.Debug("its a sequence of %v things!", len(matchingNode.Content))
+		log.Debugf("its a sequence of %v things!", len(matchingNode.Content))
 		return traverseArray(matchingNode, operation, operation.Preferences.(traversePreferences))
 
-	case AliasNode:
-		log.Debug("its an alias!")
-		matchingNode = matchingNode.Alias
-		return traverse(context, matchingNode, operation)
 	default:
 		return list.New(), nil
 	}
@@ -77,7 +99,11 @@ func traverseArrayOperator(d *dataTreeNavigator, context Context, expressionNode
 	log.Debugf("--traverseArrayOperator")
 
 	if expressionNode.RHS != nil && expressionNode.RHS.RHS != nil && expressionNode.RHS.RHS.Operation.OperationType == createMapOpType {
-		return sliceArrayOperator(d, context, expressionNode.RHS.RHS)
+		lhsContext, err := d.GetMatchingNodes(context, expressionNode.LHS)
+		if err != nil {
+			return Context{}, err
+		}
+		return sliceArrayOperator(d, lhsContext, expressionNode.RHS.RHS)
 	}
 
 	lhs, err := d.GetMatchingNodes(context, expressionNode.LHS)
@@ -123,7 +149,13 @@ func traverseNodesWithArrayIndices(context Context, indicesToTraverse []*Candida
 	return context.ChildContext(matchingNodeMap), nil
 }
 
-func traverseArrayIndices(context Context, matchingNode *CandidateNode, indicesToTraverse []*CandidateNode, prefs traversePreferences) (*list.List, error) { // call this if doc / alias like the other traverse
+func traverseArrayIndices(context Context, matchingNode *CandidateNode, indicesToTraverse []*CandidateNode, prefs traversePreferences) (*list.List, error) {
+	var err error
+	matchingNode, err = resolveAliasChain(matchingNode)
+	if err != nil {
+		return nil, err
+	}
+
 	if matchingNode.Tag == "!!null" {
 		log.Debugf("OperatorArrayTraverse got a null - turning it into an empty array")
 		// auto vivification
@@ -135,12 +167,10 @@ func traverseArrayIndices(context Context, matchingNode *CandidateNode, indicesT
 		}
 	}
 
-	if matchingNode.Kind == AliasNode {
-		matchingNode = matchingNode.Alias
-		return traverseArrayIndices(context, matchingNode, indicesToTraverse, prefs)
-	} else if matchingNode.Kind == SequenceNode {
+	switch matchingNode.Kind {
+	case SequenceNode:
 		return traverseArrayWithIndices(matchingNode, indicesToTraverse, prefs)
-	} else if matchingNode.Kind == MappingNode {
+	case MappingNode:
 		return traverseMapWithIndices(context, matchingNode, indicesToTraverse, prefs)
 	}
 	log.Debugf("OperatorArrayTraverse skipping %v as its a %v", matchingNode, matchingNode.Tag)
@@ -155,7 +185,7 @@ func traverseMapWithIndices(context Context, candidate *CandidateNode, indices [
 	var matchingNodeMap = list.New()
 
 	for _, indexNode := range indices {
-		log.Debug("traverseMapWithIndices: %v", indexNode.Value)
+		log.Debugf("traverseMapWithIndices: %v", indexNode.Value)
 		newNodes, err := traverseMap(context, candidate, indexNode, prefs, false)
 		if err != nil {
 			return nil, err
@@ -180,7 +210,7 @@ func traverseArrayWithIndices(node *CandidateNode, indices []*CandidateNode, pre
 	}
 
 	for _, indexNode := range indices {
-		log.Debug("traverseArrayWithIndices: '%v'", indexNode.Value)
+		log.Debugf("traverseArrayWithIndices: '%v'", indexNode.Value)
 		index, err := parseInt(indexNode.Value)
 		if err != nil && prefs.OptionalTraverse {
 			continue
@@ -214,7 +244,11 @@ func traverseArrayWithIndices(node *CandidateNode, indices []*CandidateNode, pre
 	return newMatches, nil
 }
 
-func keyMatches(key *CandidateNode, wantedKey string) bool {
+func keyMatches(key *CandidateNode, wantedKey string, exactKeyMatch bool) bool {
+	if exactKeyMatch {
+		// this is used for merge
+		return key.Value == wantedKey
+	}
 	return matchKey(key.Value, wantedKey)
 }
 
@@ -264,26 +298,58 @@ func doTraverseMap(newMatches *orderedmap.OrderedMap, node *CandidateNode, wante
 	// if we don't find a match directly on this node first.
 
 	var contents = node.Content
-	for index := 0; index < len(contents); index = index + 2 {
+
+	if !prefs.DontFollowAlias {
+		if ConfiguredYamlPreferences.FixMergeAnchorToSpec {
+			// First evaluate merge keys to make explicit keys take precedence, following spec
+			// We also iterate in reverse to make earlier merge keys take precedence,
+			// although normally there's just one '<<'
+			for index := len(node.Content) - 2; index >= 0; index -= 2 {
+				keyNode := node.Content[index]
+				valueNode := node.Content[index+1]
+				if keyNode.Tag == "!!merge" {
+					log.Debug("Merge anchor")
+					err := traverseMergeAnchor(newMatches, valueNode, wantedKey, prefs, splat)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	for index := 0; index+1 < len(contents); index = index + 2 {
 		key := contents[index]
 		value := contents[index+1]
 
 		//skip the 'merge' tag, find a direct match first
-		if key.Tag == "!!merge" && !prefs.DontFollowAlias && wantedKey != "<<" {
-			log.Debug("Merge anchor")
-			err := traverseMergeAnchor(newMatches, value, wantedKey, prefs, splat)
-			if err != nil {
-				return err
+		if key.Tag == "!!merge" && !prefs.DontFollowAlias && wantedKey != key.Value {
+			if !ConfiguredYamlPreferences.FixMergeAnchorToSpec {
+				log.Debug("Merge anchor")
+				if showMergeAnchorToSpecWarning {
+					log.Warning("--yaml-fix-merge-anchor-to-spec is false; causing merge anchors to override the existing values which isn't to the yaml spec. This flag will default to true in late 2025. See https://mikefarah.gitbook.io/yq/operators/traverse-read for more details.")
+					showMergeAnchorToSpecWarning = false
+				}
+				err := traverseMergeAnchor(newMatches, value, wantedKey, prefs, splat)
+				if err != nil {
+					return err
+				}
 			}
-		} else if splat || keyMatches(key, wantedKey) {
+		} else if splat || keyMatches(key, wantedKey, prefs.ExactKeyMatch) {
 			log.Debug("MATCHED")
 			if prefs.IncludeMapKeys {
 				log.Debug("including key")
-				newMatches.Set(key.GetKey(), key)
+				keyName := key.GetKey()
+				if !newMatches.Set(keyName, key) {
+					log.Debug("overwriting existing key")
+				}
 			}
 			if !prefs.DontIncludeMapValues {
 				log.Debug("including value")
-				newMatches.Set(value.GetKey(), value)
+				valueName := value.GetKey()
+				if !newMatches.Set(valueName, value) {
+					log.Debug("overwriting existing value")
+				}
 			}
 		}
 	}
@@ -291,26 +357,43 @@ func doTraverseMap(newMatches *orderedmap.OrderedMap, node *CandidateNode, wante
 	return nil
 }
 
-func traverseMergeAnchor(newMatches *orderedmap.OrderedMap, value *CandidateNode, wantedKey string, prefs traversePreferences, splat bool) error {
-	switch value.Kind {
-	case AliasNode:
-		if value.Alias.Kind != MappingNode {
-			return fmt.Errorf("can only use merge anchors with maps (!!map), but got %v", value.Alias.Tag)
-		}
-		return doTraverseMap(newMatches, value.Alias, wantedKey, prefs, splat)
+func traverseMergeAnchor(newMatches *orderedmap.OrderedMap, merge *CandidateNode, wantedKey string, prefs traversePreferences, splat bool) error {
+	if merge.Kind == AliasNode {
+		merge = merge.Alias
+	}
+	switch merge.Kind {
+	case MappingNode:
+		return doTraverseMap(newMatches, merge, wantedKey, prefs, splat)
 	case SequenceNode:
-		for _, childValue := range value.Content {
-			err := traverseMergeAnchor(newMatches, childValue, wantedKey, prefs, splat)
+		content := slices.All(merge.Content)
+		if ConfiguredYamlPreferences.FixMergeAnchorToSpec {
+			// Reverse to make earlier values take precedence, following spec
+			content = slices.Backward(merge.Content)
+		}
+		for _, childValue := range content {
+			if childValue.Kind == AliasNode {
+				childValue = childValue.Alias
+			}
+			if childValue.Kind != MappingNode {
+				log.Debugf(
+					"can only use merge anchors with maps (!!map) or sequences (!!seq) of maps, but got sequence containing %v",
+					childValue.Tag)
+				return nil
+			}
+			err := doTraverseMap(newMatches, childValue, wantedKey, prefs, splat)
 			if err != nil {
 				return err
 			}
 		}
+		return nil
+	default:
+		log.Debugf("can only use merge anchors with maps (!!map) or sequences (!!seq) of maps, but got %v", merge.Tag)
+		return nil
 	}
-	return nil
 }
 
 func traverseArray(candidate *CandidateNode, operation *Operation, prefs traversePreferences) (*list.List, error) {
-	log.Debug("operation Value %v", operation.Value)
+	log.Debugf("operation Value %v", operation.Value)
 	indices := []*CandidateNode{{Value: operation.StringValue}}
 	return traverseArrayWithIndices(candidate, indices, prefs)
 }
