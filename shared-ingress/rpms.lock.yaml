@@ -4,13 +4,13 @@ lockfileVendor: redhat
 arches:
 - arch: aarch64
   packages:
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/aarch64/appstream/os/Packages/h/haproxy-3.0.5-4.el10_1.1.aarch64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/aarch64/appstream/os/Packages/h/haproxy-3.0.5-6.el10_2.2.aarch64.rpm
     repoid: ubi-10-appstream-rpms
-    size: 2737587
-    checksum: sha256:d134409b5c20f96ee49c3a09638c40079711db12bec86e5d11dca8032e2c880e
+    size: 2745310
+    checksum: sha256:b9030f012edac0262fbac4f092f067c82514ef59824dd6f9a76624aa607aaf25
     name: haproxy
-    evr: 3.0.5-4.el10_1.1
-    sourcerpm: haproxy-3.0.5-4.el10_1.1.src.rpm
+    evr: 3.0.5-6.el10_2.2
+    sourcerpm: haproxy-3.0.5-6.el10_2.2.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/aarch64/appstream/os/Packages/s/socat-1.7.4.4-8.el10.aarch64.rpm
     repoid: ubi-10-appstream-rpms
     size: 309604
@@ -22,13 +22,13 @@ arches:
   module_metadata: []
 - arch: x86_64
   packages:
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/x86_64/appstream/os/Packages/h/haproxy-3.0.5-4.el10_1.1.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/x86_64/appstream/os/Packages/h/haproxy-3.0.5-6.el10_2.2.x86_64.rpm
     repoid: ubi-10-appstream-rpms
-    size: 2744446
-    checksum: sha256:ab597cc91bbd2be22853054d104ba161a4f93336b9d3369000aa830fd8c1aec8
+    size: 2751346
+    checksum: sha256:c0f8ea02a50e64e925c6d1dee057be2af75a9e2731afde8907f19d0ae6fbecfa
     name: haproxy
-    evr: 3.0.5-4.el10_1.1
-    sourcerpm: haproxy-3.0.5-4.el10_1.1.src.rpm
+    evr: 3.0.5-6.el10_2.2
+    sourcerpm: haproxy-3.0.5-6.el10_2.2.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/x86_64/appstream/os/Packages/s/socat-1.7.4.4-8.el10.x86_64.rpm
     repoid: ubi-10-appstream-rpms
     size: 312918
