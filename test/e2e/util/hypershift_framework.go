@@ -181,6 +181,63 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	}
 }
 
+// ExecuteWithoutEnsureValidation runs the test without the standard EnsureHostedCluster validation.
+// This is useful for tests that validate non-standard cluster configurations (e.g., zero workers)
+// where the standard after() validation expectations don't apply.
+// The test function should provide its own comprehensive validation.
+//
+//nolint:unusedparams
+func (h *hypershiftTest) ExecuteWithoutEnsureValidation(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir, name string, serviceAccountSigningKey []byte) {
+	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
+
+	// create a hypershift cluster for the test
+	hostedCluster := h.createHostedCluster(opts, platform, serviceAccountSigningKey, name, artifactDir)
+
+	// if cluster creation failed, immediately try and clean up.
+	if h.Failed() {
+		h.teardown(hostedCluster, opts, artifactDir, false)
+		return
+	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			// on a panic, print error and mark test as failed so postTeardown() is skipped
+			// panics from subtests can't be caught by this.
+			h.Errorf("%s", string(debug.Stack()))
+		}
+
+		h.teardown(hostedCluster, opts, artifactDir, false)
+		h.postTeardown(hostedCluster, opts, platform)
+	}()
+
+	// fail safe to guarantee teardown() is always executed.
+	// defer funcs will be skipped if any subtest panics
+	h.Cleanup(func() { h.teardown(hostedCluster, opts, artifactDir, true) })
+
+	// validate cluster is operational
+	// This correctly handles zero-worker clusters by using opts.ExpectedNodeCount()
+	h.before(hostedCluster, opts, platform)
+
+	// Run the custom test validation
+	if h.test != nil && !h.Failed() {
+		h.Run("Main", func(t *testing.T) {
+			h.test(t, NewWithT(t), h.client, hostedCluster)
+		})
+	}
+
+	// Skip the standard after() validation which runs EnsureHostedCluster
+	// The after() method has a bug where it defaults hasWorkerNodes=true for private clusters,
+	// causing ValidateHostedClusterConditions to expect worker-dependent conditions
+	// that cannot be satisfied in zero-worker clusters.
+	// Tests using this method must provide their own comprehensive validation.
+
+	if h.Failed() {
+		numNodes := opts.ExpectedNodeCount()
+		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
+		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second, h.upgradeContext)
+	}
+}
+
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
