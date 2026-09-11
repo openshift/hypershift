@@ -583,6 +583,7 @@ func setupMetricsSet(mgr ctrl.Manager, opts *StartOptions, log logr.Logger) (met
 func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *StartOptions, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, operatorImage string, createOrUpdate upsert.CreateOrUpdateProvider, metricsSet metrics.MetricsSet, sreConfigHash string, registryProvider globalconfig.CommonRegistryProvider, log logr.Logger) error {
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
+	enablePlatformMonitoring := os.Getenv(config.EnablePlatformMonitoringEnvVar) == "1"
 	enableEtcdRecovery := os.Getenv(config.EnableEtcdRecoveryEnvVar) == "1"
 	reconcileLegacy := os.Getenv(config.ReconcileLegacyEnvVar) == "1"
 
@@ -598,6 +599,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		RegistryOverrides:                       opts.RegistryOverrides,
 		RegistryProvider:                        registryProvider,
 		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
+		EnablePlatformMonitoring:                enablePlatformMonitoring,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
 		MetricsSet:                              metricsSet,
 		OperatorNamespace:                       opts.Namespace,

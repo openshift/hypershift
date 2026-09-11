@@ -183,6 +183,8 @@ type HostedClusterReconciler struct {
 
 	EnableOCPClusterMonitoring bool
 
+	EnablePlatformMonitoring bool
+
 	createOrUpdate func(reconcile.Request) upsert.CreateOrUpdateFN
 
 	EnableCIDebugOutput bool
@@ -271,7 +273,6 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 	managedResources := []client.Object{
 		&hyperv1.HostedControlPlane{},
 		&appsv1.Deployment{},
-		&prometheusoperatorv1.PodMonitor{},
 		&networkingv1.NetworkPolicy{},
 		&rbacv1.ClusterRole{},
 		&rbacv1.ClusterRoleBinding{},
@@ -304,6 +305,11 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 	// reconcile HostedClusters since some CRs are only installed in the managed Azure use case.
 	if azureutil.IsAroHCP() {
 		managedResources = append(managedResources, k8sutil.ManagedAzure...)
+	}
+
+	// Only watch PodMonitor if platform monitoring is enabled
+	if r.EnablePlatformMonitoring {
+		managedResources = append(managedResources, &prometheusoperatorv1.PodMonitor{})
 	}
 
 	// Watch if etcd recovery is enabled
@@ -3101,6 +3107,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		OpenShiftRegistryOverrides:  hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		DefaultIngressDomain:        defaultIngressDomain,
 		FeatureSet:                  r.FeatureSet,
+		EnablePlatformMonitoring:    r.EnablePlatformMonitoring,
 	})
 
 	if err := cpo.Reconcile(cpContext); err != nil {

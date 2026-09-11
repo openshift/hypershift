@@ -1292,21 +1292,25 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 	}.Build()
 	objects = append(objects, prometheusRoleBinding)
 
-	serviceMonitor := assets.HyperShiftServiceMonitor{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, serviceMonitor)
-
-	recordingRule := assets.HypershiftRecordingRule{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, recordingRule)
-
-	if opts.SLOsAlerts {
-		alertingRule := assets.HypershiftAlertingRule{
-			Namespace: &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-monitoring"}},
+	// ServiceMonitor/PrometheusRule require the monitoring.coreos.com CRDs,
+	// absent when platform monitoring is disabled
+	if opts.PlatformMonitoring.IsEnabled() {
+		serviceMonitor := assets.HyperShiftServiceMonitor{
+			Namespace: operatorNamespace,
 		}.Build()
-		objects = append(objects, alertingRule)
+		objects = append(objects, serviceMonitor)
+
+		recordingRule := assets.HypershiftRecordingRule{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, recordingRule)
+
+		if opts.SLOsAlerts {
+			alertingRule := assets.HypershiftAlertingRule{
+				Namespace: &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-monitoring"}},
+			}.Build()
+			objects = append(objects, alertingRule)
+		}
 	}
 
 	if opts.MonitoringDashboards {
@@ -1379,6 +1383,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ServiceAccount:                          operatorServiceAccount,
 		Replicas:                                opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:              opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
+		EnablePlatformMonitoring:                opts.PlatformMonitoring.IsEnabled(),
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
 		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || !opts.DisableCAPIConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
 		EnableValidatingWebhook:                 opts.EnableValidatingWebhook,
@@ -1531,10 +1536,12 @@ func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *core
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 
-	podMonitor := assets.ExternalDNSPodMonitor{
-		Namespace: operatorNamespace,
-	}.Build()
-	objects = append(objects, podMonitor)
+	if opts.PlatformMonitoring.IsEnabled() {
+		podMonitor := assets.ExternalDNSPodMonitor{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, podMonitor)
+	}
 
 	return objects, nil
 }

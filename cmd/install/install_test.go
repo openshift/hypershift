@@ -1931,6 +1931,22 @@ func TestSetupMonitoring(t *testing.T) {
 			expectDashboards: true,
 			minResourceCount: 5,
 		},
+		{
+			name: "When platform monitoring is None, it should not include ServiceMonitor or PrometheusRule resources",
+			opts: Options{
+				PlatformMonitoring: metrics.PlatformMonitoringNone,
+			},
+			minResourceCount: 2,
+		},
+		{
+			name: "When platform monitoring is None and SLOs alerts are enabled, it should not include the alerting rule",
+			opts: Options{
+				PlatformMonitoring: metrics.PlatformMonitoringNone,
+				SLOsAlerts:         true,
+			},
+			expectSLOAlerts:  false,
+			minResourceCount: 2,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1941,13 +1957,28 @@ func TestSetupMonitoring(t *testing.T) {
 
 			g.Expect(len(objects)).To(BeNumerically(">=", tc.minResourceCount))
 
-			// Check SLO alerts
+			// Check ServiceMonitor and recording/alerting PrometheusRule resources are only
+			// rendered when platform monitoring is enabled
+			foundServiceMonitor := false
+			foundPrometheusRule := false
 			foundAlertingRule := false
 			for _, obj := range objects {
-				if rule, ok := obj.(*prometheusoperatorv1.PrometheusRule); ok && rule.Namespace == "openshift-monitoring" {
-					foundAlertingRule = true
-					break
+				if _, ok := obj.(*prometheusoperatorv1.ServiceMonitor); ok {
+					foundServiceMonitor = true
 				}
+				if rule, ok := obj.(*prometheusoperatorv1.PrometheusRule); ok {
+					foundPrometheusRule = true
+					if rule.Namespace == "openshift-monitoring" {
+						foundAlertingRule = true
+					}
+				}
+			}
+			if tc.opts.PlatformMonitoring == metrics.PlatformMonitoringNone {
+				g.Expect(foundServiceMonitor).To(BeFalse(), "expected no ServiceMonitor when platform monitoring is None")
+				g.Expect(foundPrometheusRule).To(BeFalse(), "expected no PrometheusRule when platform monitoring is None")
+			} else {
+				g.Expect(foundServiceMonitor).To(BeTrue(), "expected ServiceMonitor when platform monitoring is enabled")
+				g.Expect(foundPrometheusRule).To(BeTrue(), "expected recording rule PrometheusRule when platform monitoring is enabled")
 			}
 			if tc.expectSLOAlerts {
 				g.Expect(foundAlertingRule).To(BeTrue(), "expected SLO alerting rule to be present when SLOsAlerts is enabled")
@@ -2081,6 +2112,16 @@ func TestSetupExternalDNS(t *testing.T) {
 			},
 			minResourceCount: 5,
 		},
+		{
+			name: "When platform monitoring is None, it should not include a PodMonitor",
+			opts: Options{
+				ExternalDNSProvider:          "aws",
+				ExternalDNSDomainFilter:      "example.com",
+				ExternalDNSCredentialsSecret: "my-dns-secret",
+				PlatformMonitoring:           metrics.PlatformMonitoringNone,
+			},
+			minResourceCount: 4,
+		},
 	}
 
 	for _, tc := range tests {
@@ -2105,6 +2146,18 @@ func TestSetupExternalDNS(t *testing.T) {
 						g.Expect(foundDNSEndpoints).To(BeTrue(), "expected dnsendpoints rule for google provider")
 					}
 				}
+			}
+
+			foundPodMonitor := false
+			for _, obj := range objects {
+				if _, ok := obj.(*prometheusoperatorv1.PodMonitor); ok {
+					foundPodMonitor = true
+				}
+			}
+			if tc.opts.PlatformMonitoring == metrics.PlatformMonitoringNone {
+				g.Expect(foundPodMonitor).To(BeFalse(), "expected no PodMonitor when platform monitoring is None")
+			} else {
+				g.Expect(foundPodMonitor).To(BeTrue(), "expected a PodMonitor when platform monitoring is enabled")
 			}
 		})
 	}

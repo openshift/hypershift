@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
-    hypershift.openshift.io/desired-state-hash: 844c6d9543448ed692ef0d3fc38f47e052accf6a174e7ea196c269be7eb6b8f5
+    hypershift.openshift.io/desired-state-hash: a9b5fb9b4137b0db31646651c29ed9880ec6ff5cae36dd22a7be103b53aea02e
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: control-plane-operator
@@ -104,6 +104,8 @@ spec:
         - name: DEFAULT_SECURITY_CONTEXT_UID
           value: "0"
         - name: METRICS_SET
+        - name: ENABLE_PLATFORM_MONITORING
+          value: "0"
         - name: AWS_SHARED_CREDENTIALS_FILE
           value: /etc/provider/credentials
         - name: AWS_REGION
