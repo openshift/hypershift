@@ -169,6 +169,8 @@ type KubevirtNodePoolPlatform struct {
 	// additionalNetworks specify the extra networks attached to the nodes
 	//
 	// +optional
+	// +listType=map
+	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=20
 	AdditionalNetworks []KubevirtNetwork `json:"additionalNetworks,omitempty"`
 
@@ -198,8 +200,14 @@ type KubevirtNodePoolPlatform struct {
 type KubevirtNetwork struct {
 	// name specify the network attached to the nodes
 	// it is a value with the format "[namespace]/[name]" to reference the
-	// multus network attachment definition
-	// +kubebuilder:validation:MaxLength=255
+	// multus network attachment definition, where namespace and name consist
+	// only of lowercase alphanumeric characters and hyphens, and start and
+	// end with alphanumeric characters
+	// +kubebuilder:validation:MaxLength=55
+	// MaxLength=55: KubeVirt requires Interface.Name to be a DNS label (max 63 chars).
+	// The generated name is "iface{N}_{namespace}-{name}" where N≤20 (MaxItems),
+	// giving a max prefix of "iface20_" (8 chars), leaving 55 chars for namespace/name.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9]([a-z0-9-]*[a-z0-9])?$')",message="name must be in the format <namespace>/<name> where namespace and name consist only of lowercase alphanumeric characters and hyphens, and start and end with alphanumeric characters"
 	// +required
 	Name string `json:"name"`
 }
