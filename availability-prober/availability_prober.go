@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -103,21 +104,29 @@ func NewStartCommand() *cobra.Command {
 			}
 		}
 
-		check(cmd.Context(), log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForClusterRolebinding, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
+		client := &http.Client{
+			Timeout: time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
+		defer client.CloseIdleConnections()
+		check(cmd.Context(), log, url, client, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForClusterRolebinding, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
 	}
 
 	return cmd
 }
 
-func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForClusterRolebinding, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
+func check(ctx context.Context, log logr.Logger, target *url.URL, client *http.Client, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForClusterRolebinding, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
 	log = log.WithValues("sleepTime", sleepTime.String())
-	client := &http.Client{
-		Timeout: requestTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-	for ; ; time.Sleep(sleepTime) {
+	for first := true; ctx.Err() == nil; first = false {
+		if !first {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(sleepTime):
+			}
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 		if err != nil {
 			log.Error(err, "Failed to create request, retrying...")
@@ -128,7 +137,10 @@ func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout
 			log.Error(err, "Request failed, retrying...")
 			continue
 		}
-		defer response.Body.Close()
+		// Reuse connections for small health responses, but never retain bodies
+		// across retries (including retries while waiting for a required API).
+		_, _ = io.CopyN(io.Discard, response.Body, 4<<10)
+		_ = response.Body.Close()
 		if response.StatusCode < 200 || response.StatusCode > 299 {
 			log.WithValues("statuscode", response.StatusCode).Info("Request didn't return a 2XX status code, retrying...")
 			continue
@@ -156,7 +168,7 @@ func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout
 
 		if waitForInfrastructureResource {
 			var clusterInfrastructure configv1.Infrastructure
-			err := kubeClient.Get(context.Background(), types.NamespacedName{Name: "cluster"}, &clusterInfrastructure)
+			err := kubeClient.Get(ctx, types.NamespacedName{Name: "cluster"}, &clusterInfrastructure)
 			if err != nil {
 				log.Info("cluster infrastructure resource not yet available", "err", err)
 				continue
@@ -176,7 +188,7 @@ func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout
 				log.Error(err, fmt.Sprintf("invalid label selectors %s", labelSelectors))
 				continue
 			}
-			err = kubeClient.List(context.Background(), pods, &crclient.ListOptions{
+			err = kubeClient.List(ctx, pods, &crclient.ListOptions{
 				Namespace:     namespace,
 				LabelSelector: labels.SelectorFromValidatedSet(labelSet),
 			})
@@ -201,7 +213,7 @@ func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout
 
 		if len(waitForClusterRolebinding) > 0 {
 			clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
-			err := kubeClient.Get(context.Background(), types.NamespacedName{Name: waitForClusterRolebinding}, clusterRoleBinding)
+			err := kubeClient.Get(ctx, types.NamespacedName{Name: waitForClusterRolebinding}, clusterRoleBinding)
 			if err != nil {
 				log.Info("failed to get cluster rolebinding, retrying...", "ClusterRoleBinding", waitForClusterRolebinding, "err", err)
 				continue
