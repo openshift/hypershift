@@ -174,13 +174,13 @@ A hosted cluster failed to come up. To find out why:
 
 Common causes:
 
-| Phase | What failed | Typical cause |
+| Stage | What failed | Typical cause |
 |-------|-------------|---------------|
-| Phase 1 | `hypershift create cluster` | Invalid flags or missing credentials |
-| Phase 2 | Platform post-create hooks | Platform-specific setup failure |
-| Phase 3 | Wait for Available | Control plane startup failure |
-| Phase 4 | Platform post-available hooks | Day-2 config transition failure |
-| Phase 5 | Version rollout | Cluster came up but couldn't roll out target version |
+| Cluster creation | `hypershift create cluster` | Invalid flags or missing credentials |
+| Platform hooks | Pre-create, post-create, or post-available setup | Platform-specific configuration or API failure |
+| Wait for Available | HostedCluster availability | Control plane startup failure |
+| Version rollout | HostedCluster or NodePool rollout | Cluster came up but could not complete the target version rollout |
+| Post-rollout hooks | Day-2 configuration after rollout | Platform-specific configuration transition failure |
 
 After identifying the error, [check the job history](#checking-prow-job-history) to determine if this is specific to your PR.
 

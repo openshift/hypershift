@@ -89,17 +89,12 @@ All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and 
 **Source:** `test/e2e/v2/cmd/create-guests/`  
 **Shipped as:** `/hypershift/bin/create-guests`
 
-Creates hosted clusters in parallel using a five-phase flow:
-
-1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` selected by the resolved `TestPlan`. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
-
-2. **Post-create hooks**: Runs platform-specific `PostCreate()` hooks. For example, Azure patches the `OperatorConfiguration` CRD to enable lifecycle tests
-
-3. **Wait for available**: Watches each cluster's `HostedClusterAvailable` condition with timeout
-
-4. **Wait for rollout**: Watches for version rollout completion on each cluster. If rollout fails, emits JUnit XML marking the cluster creation as failed
-
-5. **Write cluster names**: Writes cluster names to `SHARED_DIR` files for consumption by `run-tests`
+Creates the hosted clusters selected by the resolved `TestPlan` in parallel, runs
+platform-specific hooks, waits for availability and version rollout, and writes
+the cluster manifest and platform configuration to `SHARED_DIR` for downstream
+steps. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing:
+`{variant}-{sha256(prowJobID)[:10]}`. Rollout failures emit JUnit XML and fail
+the step.
 
 If any cluster fails to create or roll out, the binary exits non-zero and the job fails fast.
 
@@ -132,7 +127,9 @@ type TestMatrix struct {
 }
 ```
 
-**`Parallel`** groups run concurrently across multiple clusters. This maximizes throughput and is the common case.
+**`Parallel`** groups run concurrently. The default Azure plan assigns these
+groups to different clusters; custom plans must not assign one variant to
+multiple concurrent lanes.
 
 **`Sequential`** groups run their `Steps` one after another on the same cluster. If any step fails, remaining steps in that group are skipped. Use sequential groups for ordered workflows like upgrade → validate → downgrade.
 

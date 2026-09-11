@@ -26,7 +26,11 @@ For example, the Azure self-managed job produces:
 When a group has informing test failures, the suite also emits a supplemental
 `junit_<TestGroup.Name>_informing.xml` file for lifecycle-aware reporting.
 
-Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each cluster that reaches Phase 4 (version rollout wait), recording either success or failure. On failure, the JUnit file contains the `HostedCluster` and `NodePool` conditions at the time of failure. On success, it records a passing test case confirming the rollout completed.
+Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` during
+version-rollout handling, recording either success or failure. On failure, the
+JUnit file contains the `HostedCluster` and `NodePool` conditions at the time
+of failure. On success, it records a passing test case confirming the rollout
+completed.
 
 ## Mapping Failures to Clusters
 
@@ -75,18 +79,18 @@ Use this information to locate the failing test in the codebase and understand w
 
 ## create-guests Failures
 
-The most common failure point in v2 jobs is Phase 4 (version rollout wait) in `create-guests`. When this happens:
+The most common failure point in v2 jobs is version rollout in `create-guests`. When this happens:
 
 1. **Check for JUnit XML**: Look for `junit_hosted_cluster_*.xml` in artifacts
 2. **Read conditions**: The JUnit file contains `HostedCluster` and `NodePool` conditions at the time of failure
-3. **No JUnit file?**: If no JUnit file exists, the failure happened before Phase 4 — check the `create-guests` step log for earlier phases
+3. **No JUnit file?**: If no JUnit file exists, the failure happened before version rollout — check the `create-guests` step log for earlier stages
 
-Common pre-Phase 4 failures:
+Common failures before version rollout:
 
-- **Phase 1 (cluster creation)**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
-- **Phase 2 (post-create hooks)**: Platform-specific hook failure — check for API errors when patching resources
-- **Phase 3 (wait Available)**: Timeout waiting for `HostedClusterAvailable` condition — indicates control plane startup failure
-- **Phase 5 (write cluster names)**: Failure writing cluster names to `SHARED_DIR` — rare, typically caused by filesystem or permissions errors
+- **Cluster creation**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
+- **Platform hooks**: Platform-specific setup failure — check for API errors when patching resources or applying day-2 configuration
+- **Wait for Available**: Timeout waiting for the `HostedClusterAvailable` condition — indicates control plane startup failure
+- **Shared state**: Failure writing the cluster manifest or platform configuration to `SHARED_DIR` — typically caused by filesystem or permissions errors
 
 ## dump-guests Artifacts
 
