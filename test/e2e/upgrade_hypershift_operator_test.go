@@ -9,13 +9,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"sigs.k8s.io/cluster-api/api/v1beta1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -39,7 +44,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	var hostedCluster *hyperv1.HostedCluster
 	var hcpNameSpace string
 	var nodePoolsMap map[string]*hyperv1.NodePool
-	var machineDeploymentMap map[string]*v1beta1.MachineDeployment
+	var machineDeploymentMap map[string]int64
 
 	hyperShiftOperatorLatestImage := globalOpts.HyperShiftOperatorLatestImage
 
@@ -79,6 +84,29 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	operatorImage, err := e2eutil.GetHyperShiftOperatorImage(ctx, client, globalOpts.HOInstallationOptions)
 	g.Expect(err).ToNot(gomega.HaveOccurred(), "Getting HyperShiftOperator image shouldn't return errors")
 	t.Logf("Observed pre-upgrade HyperShift Operator image %q", operatorImage)
+	useCAPIv1Beta1, err := managementClusterUsesCAPIv1Beta1(ctx, client)
+	g.Expect(err).ToNot(gomega.HaveOccurred(), "determining management cluster CAPI API version")
+
+	// Shared role credential reconciliation only landed on 4.21+.
+	// Check the pre-upgrade HO's advertised version, not the release image version.
+	// The supported-versions ConfigMap is reconciled asynchronously by the HO after
+	// its deployment becomes Available, so poll until the overall test times out.
+	var preUpgradeHOVersion semver.Version
+	err = wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
+		v, err := supportedversion.GetLatestSupportedOCPVersion(ctx, client)
+		if err != nil {
+			t.Logf("Waiting for supported-versions ConfigMap: %v", err)
+			return false, nil
+		}
+		preUpgradeHOVersion = v
+		return true, nil
+	})
+	g.Expect(err).ToNot(gomega.HaveOccurred(), "reading pre-upgrade HO version from supported-versions ConfigMap")
+	t.Logf("Pre-upgrade HO latest supported version: %s", preUpgradeHOVersion)
+	if preUpgradeHOVersion.LT(e2eutil.Version421) {
+		t.Log("Pre-upgrade HO < 4.21, disabling shared role")
+		clusterOpts.AWSPlatform.SharedRole = false
+	}
 
 	t.Log("Executing upgrade test")
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g gomega.Gomega, mc crclient.Client, hc *hyperv1.HostedCluster) {
@@ -110,26 +138,12 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				nodePoolsMap[nodepools.Items[i].Name] = &nodepools.Items[i]
 			}
 
-			// Get the MachineDeployments
-			machineDeployments := &v1beta1.MachineDeploymentList{}
 			hcpNameSpace = manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-
-			err = mgmtClient.List(ctx, machineDeployments, crclient.InNamespace(hcpNameSpace))
-
-			g.Expect(err).ToNot(gomega.HaveOccurred(),
-				"Listing MachineDeployments in namespace %s shouldn't return errors", hcpNameSpace)
-			g.Expect(machineDeployments.Items).ToNot(gomega.BeEmpty(),
-				"Should find MachineDeployments in namespace %s", hcpNameSpace)
-			g.Expect(len(machineDeployments.Items)).To(gomega.BeEquivalentTo(len(nodepools.Items)),
+			machineDeploymentMap, err = listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
+			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(len(machineDeploymentMap)).To(gomega.BeEquivalentTo(len(nodepools.Items)),
 				"Number of MachineDeployments and NodePools should match")
-
-			machineDeploymentMap = make(map[string]*v1beta1.MachineDeployment)
-			t.Logf("Found %d MachineDeployments", len(machineDeployments.Items))
-			for i := range machineDeployments.Items {
-				t.Logf("Found MachineDeployment %s", machineDeployments.Items[i].Name)
-				machineDeploymentMap[machineDeployments.Items[i].Name] = &machineDeployments.Items[i]
-			}
-
+			t.Logf("Found %d MachineDeployments", len(machineDeploymentMap))
 		})).To(gomega.BeTrue(), "Calculating HyperShift Operator upgrade invariants should succeed")
 
 		g.Expect(t.Run("Upgrade HyperShift Operator", func(t *testing.T) {
@@ -184,10 +198,12 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 						"Pre-upgrade and post-upgrade NodePool generations should match")
 					g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(
 						gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfig]),
-						"Pre-upgrade and post-upgrade NodePool current config should match")
+						"Pre-upgrade and post-upgrade NodePool current config should match",
+					)
 					g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(
 						gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]),
-						"Pre-upgrade and post-upgrade NodePool current config version should match")
+						"Pre-upgrade and post-upgrade NodePool current config version should match",
+					)
 
 					conditions, err := e2eutil.Conditions(&nodePool)
 					if err != nil {
@@ -203,32 +219,79 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 					}
 				}
 
-				postUpgradeMachineDeployments := &v1beta1.MachineDeploymentList{}
-				err = mgmtClient.List(ctx, postUpgradeMachineDeployments, crclient.InNamespace(hcpNameSpace))
+				postUpgradeMachineDeployments, err := listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
 				if err != nil {
 					gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
 				}
 
-				if len(postUpgradeMachineDeployments.Items) != len(machineDeploymentMap) {
-					gomega.StopTrying(fmt.Sprintf("Number of MachineDeployments changed from %d to %d", len(machineDeploymentMap), len(postUpgradeMachineDeployments.Items))).Now()
+				if len(postUpgradeMachineDeployments) != len(machineDeploymentMap) {
+					gomega.StopTrying(fmt.Sprintf("Number of MachineDeployments changed from %d to %d", len(machineDeploymentMap), len(postUpgradeMachineDeployments))).Now()
 				}
-				for _, machineDeployment := range postUpgradeMachineDeployments.Items {
-					t.Logf("Verifying MachineDeployment %s", machineDeployment.Name)
-					var preUpgradeMachineDeployment *v1beta1.MachineDeployment
+				for name, generation := range postUpgradeMachineDeployments {
+					t.Logf("Verifying MachineDeployment %s", name)
 					var ok bool
-					if preUpgradeMachineDeployment, ok = machineDeploymentMap[machineDeployment.Name]; !ok {
-						gomega.StopTrying(fmt.Sprintf("MachineDeployment %s not found", machineDeployment.Name)).Now()
+					var preUpgradeGeneration int64
+					if preUpgradeGeneration, ok = machineDeploymentMap[name]; !ok {
+						gomega.StopTrying(fmt.Sprintf("MachineDeployment %s not found", name)).Now()
 					}
 
-					t.Logf("Generation: Got %d", machineDeployment.Generation)
+					t.Logf("Generation: Got %d", generation)
 
 					// Check if the machine deployment has been updated
-					g.Expect(machineDeployment.Generation).To(gomega.Equal(preUpgradeMachineDeployment.Generation),
+					g.Expect(generation).To(gomega.Equal(preUpgradeGeneration),
 						"Pre-upgrade and post-upgrade MachineDeployment generations should match")
 				}
 				return true
 			}, "5m", "1s").Should(gomega.BeTrue(), "Verification should consistently succeed for 5 minutes")
 		})).To(gomega.BeTrue(), "Verify upgrade invariants should succeed")
-		e2eutil.ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
+	}).WithHOUpgrade().Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
+}
+
+func listMachineDeploymentGenerations(ctx context.Context, client crclient.Client, namespace string, useV1Beta1 bool) (map[string]int64, error) {
+	generations := make(map[string]int64)
+	if useV1Beta1 {
+		machineDeployments := &capiv1beta1.MachineDeploymentList{}
+		if err := client.List(ctx, machineDeployments, crclient.InNamespace(namespace)); err != nil {
+			return nil, fmt.Errorf("listing MachineDeployments at cluster.x-k8s.io/v1beta1 in namespace %s: %w", namespace, err)
+		}
+		for i := range machineDeployments.Items {
+			generations[machineDeployments.Items[i].Name] = machineDeployments.Items[i].Generation
+		}
+	} else {
+		machineDeployments := &capiv1beta2.MachineDeploymentList{}
+		if err := client.List(ctx, machineDeployments, crclient.InNamespace(namespace)); err != nil {
+			return nil, fmt.Errorf("listing MachineDeployments at cluster.x-k8s.io/v1beta2 in namespace %s: %w", namespace, err)
+		}
+		for i := range machineDeployments.Items {
+			generations[machineDeployments.Items[i].Name] = machineDeployments.Items[i].Generation
+		}
+	}
+	if len(generations) == 0 {
+		return nil, fmt.Errorf("no MachineDeployments found in namespace %s", namespace)
+	}
+	return generations, nil
+}
+
+func managementClusterUsesCAPIv1Beta1(ctx context.Context, client crclient.Client) (bool, error) {
+	var version semver.Version
+	err := wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
+		clusterVersion := &configv1.ClusterVersion{}
+		if err := client.Get(ctx, crclient.ObjectKey{Name: "version"}, clusterVersion); err != nil {
+			return false, err
+		}
+		if len(clusterVersion.Status.History) == 0 || clusterVersion.Status.History[0].State != configv1.CompletedUpdate {
+			return false, nil
+		}
+
+		parsedVersion, err := semver.Parse(clusterVersion.Status.History[0].Version)
+		if err != nil {
+			return false, fmt.Errorf("parsing management cluster version %q: %w", clusterVersion.Status.History[0].Version, err)
+		}
+		version = parsedVersion
+		return true, nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("waiting for a completed management cluster version update: %w", err)
+	}
+	return version.LT(e2eutil.Version423), nil
 }
