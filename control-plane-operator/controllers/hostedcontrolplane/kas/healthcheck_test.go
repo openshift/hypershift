@@ -8,8 +8,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/netutil"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -139,7 +139,7 @@ func TestGetHealthcheckEndpoint(t *testing.T) {
 			},
 			useSharedIngress: true,
 			expectedEndpoint: "route.example.com",
-			expectedPort:     sharedingress.ExternalDNSLBPort,
+			expectedPort:     netutil.ExternalDNSLBPort,
 		},
 		{
 			name: "When using shared ingress with CIDR blocks, it should return KAS service",
