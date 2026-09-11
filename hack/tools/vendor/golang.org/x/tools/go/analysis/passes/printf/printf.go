@@ -416,7 +416,7 @@ func match(info *types.Info, arg ast.Expr, param *types.Var) bool {
 }
 
 // propagate propagates changes in wrapper (non-None) kind information backwards
-// through through the wrapper.callers graph of well-formed forwarding calls.
+// through the wrapper.callers graph of well-formed forwarding calls.
 func propagate(pass *analysis.Pass, w *wrapper, call *ast.CallExpr, kind Kind, res *Result) {
 	// Check correct call forwarding.
 	//
@@ -1061,7 +1061,10 @@ func recursiveStringer(pass *analysis.Pass, e ast.Expr) (string, bool) {
 		e = u.X // strip off & from &r
 	}
 	if id, ok := e.(*ast.Ident); ok {
-		if pass.TypesInfo.Uses[id] == sig.Recv() {
+		// Uses refers to the receiver Var for the declared method, but looking up the String
+		// method on the instantiated receiver type may return an instantiated Signature with
+		// distinct parameter variables. Therefore we must compare against the Origin.
+		if pass.TypesInfo.Uses[id] == sig.Recv().Origin() {
 			return method.FullName(), true
 		}
 	}
@@ -1178,15 +1181,6 @@ func checkPrint(pass *analysis.Pass, call *ast.CallExpr, name string) {
 				}
 				pass.ReportRangef(call, "%s call has possible Printf formatting directive %s", name, m)
 				break // report only the first one
-			}
-		}
-	}
-	if strings.HasSuffix(name, "ln") {
-		// The last item, if a string, should not have a newline.
-		arg = args[len(args)-1]
-		if s, ok := stringConstantExpr(pass, arg); ok {
-			if strings.HasSuffix(s, "\n") {
-				pass.ReportRangef(call, "%s arg list ends with redundant newline", name)
 			}
 		}
 	}

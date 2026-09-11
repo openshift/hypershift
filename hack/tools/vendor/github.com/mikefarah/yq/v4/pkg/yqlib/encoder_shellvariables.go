@@ -1,3 +1,5 @@
+//go:build !yq_noshell
+
 package yqlib
 
 import (
@@ -10,10 +12,13 @@ import (
 )
 
 type shellVariablesEncoder struct {
+	prefs ShellVariablesPreferences
 }
 
 func NewShellVariablesEncoder() Encoder {
-	return &shellVariablesEncoder{}
+	return &shellVariablesEncoder{
+		prefs: ConfiguredShellVariablesPreferences,
+	}
 }
 
 func (pe *shellVariablesEncoder) CanHandleAliases() bool {
@@ -52,11 +57,17 @@ func (pe *shellVariablesEncoder) doEncode(w *io.Writer, node *CandidateNode, pat
 			// let's just pick a fallback key to use if we are encoding a single scalar
 			nonemptyPath = "value"
 		}
-		_, err := io.WriteString(*w, nonemptyPath+"="+quoteValue(node.Value)+"\n")
+		var valueString string
+		if pe.prefs.UnwrapScalar {
+			valueString = node.Value
+		} else {
+			valueString = quoteValue(node.Value)
+		}
+		_, err := io.WriteString(*w, nonemptyPath+"="+valueString+"\n")
 		return err
 	case SequenceNode:
 		for index, child := range node.Content {
-			err := pe.doEncode(w, child, appendPath(path, index))
+			err := pe.doEncode(w, child, pe.appendPath(path, index))
 			if err != nil {
 				return err
 			}
@@ -66,7 +77,7 @@ func (pe *shellVariablesEncoder) doEncode(w *io.Writer, node *CandidateNode, pat
 		for index := 0; index < len(node.Content); index = index + 2 {
 			key := node.Content[index]
 			value := node.Content[index+1]
-			err := pe.doEncode(w, value, appendPath(path, key.Value))
+			err := pe.doEncode(w, value, pe.appendPath(path, key.Value))
 			if err != nil {
 				return err
 			}
@@ -75,11 +86,11 @@ func (pe *shellVariablesEncoder) doEncode(w *io.Writer, node *CandidateNode, pat
 	case AliasNode:
 		return pe.doEncode(w, node.Alias, path)
 	default:
-		return fmt.Errorf("Unsupported node %v", node.Tag)
+		return fmt.Errorf("unsupported node %v", node.Tag)
 	}
 }
 
-func appendPath(cookedPath string, rawKey interface{}) string {
+func (pe *shellVariablesEncoder) appendPath(cookedPath string, rawKey interface{}) string {
 
 	// Shell variable names must match
 	//    [a-zA-Z_]+[a-zA-Z0-9_]*
@@ -124,7 +135,7 @@ func appendPath(cookedPath string, rawKey interface{}) string {
 		}
 		return key
 	}
-	return cookedPath + "_" + key
+	return cookedPath + pe.prefs.KeySeparator + key
 }
 
 func quoteValue(value string) string {
