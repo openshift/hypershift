@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
@@ -28,8 +29,11 @@ type ProviderWithOpenShiftImageRegistryOverridesDecorator struct {
 }
 
 func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error) {
+	start := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	lockWaitDuration.Observe(time.Since(start).Seconds())
+	defer func() { lookupDuration.Observe(time.Since(start).Seconds()) }()
 
 	repoSetup := p.repoSetupFn
 	if repoSetup == nil {
@@ -49,19 +53,23 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx contex
 					// Verify mirror image availability.
 					if _, _, err = repoSetup(ctx, replacedImage, pullSecret); err == nil {
 						p.mirroredReleaseImage = replacedImage
+						mirrorLookupTotal.WithLabelValues(mirrorResultHit).Inc()
 						return releaseImage, nil
 					}
-					logger.Info("WARNING: The current mirrors image is unavailable, continue Scanning multiple mirrors", "error", err.Error(), "mirror image", image)
+					logger.Info("WARNING: The current mirror image is unavailable, continue scanning multiple mirrors", "error", err.Error(), "mirror image", image)
+					mirrorLookupTotal.WithLabelValues(mirrorResultUnavailable).Inc()
 					continue
 				}
 
 				logger.Error(err, "Failed to look up release image using registry mirror", "registry mirror", registryReplacement)
+				mirrorLookupTotal.WithLabelValues(mirrorResultError).Inc()
 			}
 		}
 	}
 
 	// Reset mirrored release image when falling back to original
 	p.mirroredReleaseImage = ""
+	mirrorLookupTotal.WithLabelValues(mirrorResultFallback).Inc()
 	return p.Delegate.Lookup(ctx, image, pullSecret)
 }
 

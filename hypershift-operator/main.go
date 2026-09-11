@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -263,6 +264,8 @@ func NewStartCommand() *cobra.Command {
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
+	// Sample 1-in-5 mutex contention events for pprof; nearly zero overhead.
+	runtime.SetMutexProfileFraction(5)
 
 	tracingShutdown, err := tracing.InitProvider(ctx, "hypershift-operator", tracing.Config{
 		Endpoint:         opts.OTELEndpoint,
