@@ -237,4 +237,16 @@ func init() {
 		"Enable multi-arch cluster tests on AWS",
 		false,
 	)
+	RegisterEnvVarWithDefault(
+		"E2E_TEST_APP_IMAGE",
+		"Container image used by Agent NodePool tests for workload verification. Override for disconnected or mirrored environments.",
+		false,
+		"registry.k8s.io/e2e-test-images/agnhost:2.53",
+	)
+	RegisterEnvVarWithDefault(
+		"E2E_AGENT_BM_NODE_COUNT",
+		"Number of bare metal Agent nodes available in the Agent BM test environment. Used by NodePool Agent tests that exhaust or over-scale finite hardware.",
+		false,
+		"6",
+	)
 }
