@@ -260,6 +260,8 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 			"azure-disk-csi-driver-controller",
 			"azure-file-csi-driver-operator",
 			"azure-file-csi-driver-controller",
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 			"openstack-cinder-csi-driver-operator",
 			"openstack-cinder-csi-driver-controller",
 			"openstack-manila-csi-driver-operator",
@@ -344,6 +346,8 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 			"azure-file-csi-driver-operator",
 			"aws-ebs-csi-driver-controller",
 			"aws-ebs-csi-driver-operator",
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 			"openstack-cinder-csi-driver-controller",
 			"openstack-manila-csi-controller",
 			"csi-snapshot-controller",
@@ -420,6 +424,8 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 			"azure-file-csi-driver-operator",
 			"aws-ebs-csi-driver-controller",
 			"aws-ebs-csi-driver-operator",
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 			"openstack-cinder-csi-driver-controller",
 			"openstack-manila-csi",
 			"csi-snapshot-controller",
@@ -678,6 +684,10 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 			// AWS-specific exemptions
 			"aws-ebs-csi-driver-controller",
 			"aws-ebs-csi-driver-operator",
+
+			// GCP-specific exemptions
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 
 			// Azure-specific exemptions
 			"azure-cloud-controller-manager",

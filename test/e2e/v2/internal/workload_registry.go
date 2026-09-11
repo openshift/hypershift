@@ -73,6 +73,22 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			},
 		},
 		{
+			Type:     "Deployment",
+			Name:     "gcp-pd-csi-driver-controller",
+			Platform: &gcpPlatform,
+			PodSelector: map[string]string{
+				"app": "gcp-pd-csi-driver-controller",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "gcp-pd-csi-driver-operator",
+			Platform: &gcpPlatform,
+			PodSelector: map[string]string{
+				"name": "gcp-pd-csi-driver-operator",
+			},
+		},
+		{
 			Type: "Deployment",
 			Name: "capi-provider",
 			PodSelector: map[string]string{
