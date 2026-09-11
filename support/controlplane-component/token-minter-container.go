@@ -36,6 +36,12 @@ type TokenMinterContainerOptions struct {
 	ServiceAccountName string
 	// ServiceAccountNameSpace is the namespace of the service account for which to mint a token.
 	ServiceAccountNameSpace string
+	// NamePrefix makes the generated container and volume names unique when a workload needs multiple cloud tokens.
+	NamePrefix string
+	// TokenMountPath is the path where the main container reads the minted token.
+	TokenMountPath string
+	// PlatformTypes limits cloud-token injection to the listed platforms. An empty list preserves the default behavior.
+	PlatformTypes []hyperv1.PlatformType
 
 	// KubeconfingVolumeName is the volume name which contains the kubeconfig used to mint the token in the target cluster.
 	// defaults to 'kubeconfig'
@@ -56,22 +62,55 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 	image := cpContext.ReleaseImageProvider.GetImage("token-minter")
 
 	// We mint cloud tokens for AWS, self-managed Azure, and GCP.
-	if (opts.TokenType == CloudToken || opts.TokenType == CloudAndAPIServerToken) &&
-		(cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform || azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) || cpContext.HCP.Spec.Platform.Type == hyperv1.GCPPlatform) {
-		tokenVolume := opts.buildVolume(string(CloudToken))
+	if (opts.TokenType == CloudToken || opts.TokenType == CloudAndAPIServerToken) && opts.supportsCloudTokenPlatform(cpContext.HCP.Spec.Platform.Type) {
+		tokenVolume := opts.buildVolume(opts.namePrefix(CloudToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
 		container := opts.buildContainer(cpContext.HCP, CloudToken, image, tokenVolume)
-		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, config.CloudTokenMountPath, tokenVolume.Name)
+		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, opts.tokenMountPath(CloudToken, config.CloudTokenMountPath), tokenVolume.Name)
 	}
 
 	if opts.TokenType == KubeAPIServerToken || opts.TokenType == CloudAndAPIServerToken {
-		tokenVolume := opts.buildVolume(string(KubeAPIServerToken))
+		tokenVolume := opts.buildVolume(opts.namePrefix(KubeAPIServerToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
 		container := opts.buildContainer(cpContext.HCP, KubeAPIServerToken, image, tokenVolume)
-		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, kubeAPITokenFileMountPath, tokenVolume.Name)
+		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, opts.tokenMountPath(KubeAPIServerToken, kubeAPITokenFileMountPath), tokenVolume.Name)
 	}
+}
+
+func (opts TokenMinterContainerOptions) supportsCloudTokenPlatform(platformType hyperv1.PlatformType) bool {
+	if len(opts.PlatformTypes) > 0 {
+		for _, supportedPlatform := range opts.PlatformTypes {
+			if supportedPlatform == platformType {
+				return true
+			}
+		}
+		return false
+	}
+
+	return platformType == hyperv1.AWSPlatform || azureutil.IsSelfManagedAzure(platformType) || platformType == hyperv1.GCPPlatform
+}
+
+func (opts TokenMinterContainerOptions) namePrefix(tokenType TokenType) string {
+	if opts.NamePrefix != "" {
+		if opts.TokenType == CloudAndAPIServerToken {
+			// Combined tokens share options for both injectors, so suffix each value to keep pod fields unique.
+			return fmt.Sprintf("%s-%s", opts.NamePrefix, tokenType)
+		}
+		return opts.NamePrefix
+	}
+	return string(tokenType)
+}
+
+func (opts TokenMinterContainerOptions) tokenMountPath(tokenType TokenType, defaultPath string) string {
+	if opts.TokenMountPath != "" {
+		if opts.TokenType == CloudAndAPIServerToken {
+			return path.Join(opts.TokenMountPath, string(tokenType))
+		}
+		return opts.TokenMountPath
+	}
+	return defaultPath
 }
 
 // injectContainer adds the token-minter container to the pod spec.
@@ -132,7 +171,7 @@ func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedContro
 	}
 
 	container := corev1.Container{
-		Name:            fmt.Sprintf("%s-token-minter", tokenType),
+		Name:            fmt.Sprintf("%s-token-minter", opts.namePrefix(tokenType)),
 		Image:           image,
 		Command:         []string{"/usr/bin/control-plane-operator", "token-minter"},
 		Args:            args,

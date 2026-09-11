@@ -221,6 +221,7 @@ var (
         "elasticloadbalancing:RegisterTargets",
         "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
         "elasticloadbalancing:SetSecurityGroups",
+        "tag:GetResources",
         "iam:CreateServiceLinkedRole",
         "kms:DescribeKey"
       ],
@@ -949,7 +950,8 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 		ccmPolicyStatement := `{
 				"Effect": "Allow",
 				"Action": [
-					"elasticloadbalancing:SetSecurityGroups"
+					"elasticloadbalancing:SetSecurityGroups",
+					"tag:GetResources"
 				],
 				"Resource": "*"
 			}`

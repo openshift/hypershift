@@ -47,6 +47,7 @@ import (
 	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	awsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -64,6 +65,14 @@ import (
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
+
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -158,6 +167,8 @@ type reconciler struct {
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
 	cleanupTracker            *util.CleanupTracker
+	awsLoadBalancerClients    awsutil.LoadBalancerClients
+	awsLoadBalancerCleanup    func(context.Context, *hyperv1.HostedControlPlane) (bool, error)
 
 	// exposed for unit test since GetLogs looks hard to be mocked
 	GetPodLogs func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
@@ -212,7 +223,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to initialize kubeClient from config: %w", err)
 	}
 
-	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
+	resourceReconciler := &reconciler{
 		client:                    opts.Manager.GetClient(),
 		uncachedClient:            uncachedClient,
 		clientSet:                 clientset,
@@ -234,7 +245,8 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
 		cleanupTracker:            util.NewCleanupTracker(),
 		GetPodLogs:                getPodLogs,
-	}})
+	}
+	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: resourceReconciler})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
@@ -246,6 +258,14 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	hcp := manifests.HostedControlPlane(opts.Namespace, opts.HCPName)
 	if err = ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 		return fmt.Errorf("failed to get HCP: %w", err)
+	}
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		awsLoadBalancerClients, clientErr := newAWSLoadBalancerClients(ctx, hcp)
+		if clientErr != nil {
+			ctrl.LoggerFrom(ctx).Error(clientErr, "Failed to configure AWS load balancer cleanup")
+		} else {
+			resourceReconciler.awsLoadBalancerClients = awsLoadBalancerClients
+		}
 	}
 
 	resourcesToWatch := []client.Object{
@@ -334,6 +354,78 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	}
 
 	return nil
+}
+
+func newAWSLoadBalancerClients(ctx context.Context, hcp *hyperv1.HostedControlPlane) (awsutil.LoadBalancerClients, error) {
+	if hcp.Spec.Platform.AWS == nil {
+		return awsutil.LoadBalancerClients{}, fmt.Errorf("AWS platform configuration is missing")
+	}
+
+	serviceEndpoints := hcp.Spec.Platform.AWS.ServiceEndpoints
+	cloudControllerConfig, err := awsConfigForRole(ctx, hcp.Spec.Platform.AWS.Region, hcp.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN, awsutil.CloudControllerTokenMountPath+"/token", awsServiceEndpoint(serviceEndpoints, awsElasticLoadBalancingServiceName))
+	if err != nil {
+		return awsutil.LoadBalancerClients{}, fmt.Errorf("failed to configure cloud controller credentials: %w", err)
+	}
+	var taggingConfig awssdk.Config
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		ingressConfig, err := awsConfigForRole(ctx, hcp.Spec.Platform.AWS.Region, hcp.Spec.Platform.AWS.RolesRef.IngressARN, awsutil.IngressTokenMountPath+"/token", awsServiceEndpoint(serviceEndpoints, awsTaggingServiceName))
+		if err != nil {
+			return awsutil.LoadBalancerClients{}, fmt.Errorf("failed to configure ingress credentials: %w", err)
+		}
+		taggingConfig = ingressConfig
+	} else {
+		// The ingress service account is absent when the Ingress capability is disabled.
+		taggingConfig, err = awsConfigForRole(ctx, hcp.Spec.Platform.AWS.Region, hcp.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN, awsutil.CloudControllerTokenMountPath+"/token", awsServiceEndpoint(serviceEndpoints, awsTaggingServiceName))
+		if err != nil {
+			return awsutil.LoadBalancerClients{}, fmt.Errorf("failed to configure cloud controller tagging credentials: %w", err)
+		}
+	}
+
+	return awsutil.LoadBalancerClients{
+		ELB:     elasticloadbalancing.NewFromConfig(cloudControllerConfig),
+		ELBV2:   elasticloadbalancingv2.NewFromConfig(cloudControllerConfig),
+		Tagging: resourcegroupstaggingapi.NewFromConfig(taggingConfig),
+	}, nil
+}
+
+const (
+	awsElasticLoadBalancingServiceName = "elasticloadbalancing"
+	awsTaggingServiceName              = "tagging"
+)
+
+func awsServiceEndpoint(endpoints []hyperv1.AWSServiceEndpoint, serviceName string) string {
+	for _, endpoint := range endpoints {
+		if endpoint.Name == serviceName {
+			return endpoint.URL
+		}
+	}
+	return ""
+}
+
+func awsConfigForRole(ctx context.Context, region, roleARN, tokenFile, endpoint string) (awssdk.Config, error) {
+	if region == "" {
+		return awssdk.Config{}, fmt.Errorf("AWS region cannot be empty")
+	}
+	if roleARN == "" {
+		return awssdk.Config{}, fmt.Errorf("AWS role ARN cannot be empty")
+	}
+
+	config, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
+	if err != nil {
+		return awssdk.Config{}, err
+	}
+	// Keep web-identity exchange on the SDK-resolved AWS STS endpoint; service endpoint overrides must not receive the projected JWT.
+	stsConfig := config
+	config.Credentials = awssdk.NewCredentialsCache(stscreds.NewWebIdentityRoleProvider(
+		sts.NewFromConfig(stsConfig),
+		roleARN,
+		stscreds.IdentityTokenFile(tokenFile),
+	))
+	// Keep the role-assumption client on its own endpoint while applying the service endpoint to clients built from this config.
+	if endpoint != "" {
+		config.BaseEndpoint = awssdk.String(endpoint)
+	}
+	return config, nil
 }
 
 func namespacedNamePredicateFunc(namespace, name string) func(client.Object) bool {
@@ -2917,19 +3009,37 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		}
 	}
 
-	log.Info("Ensuring load balancers are removed")
-	removed, err := r.ensureServiceLoadBalancersRemoved(ctx)
-	if err != nil {
-		if isConnectionError(err) {
-			hasConnectionError = true
-			log.Info("Connection error while removing load balancers", "error", err.Error())
+	var removed bool
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		log.Info("Ensuring AWS load balancers are removed")
+		removed, err = r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+		if err != nil {
+			if isConnectionError(err) {
+				hasConnectionError = true
+				log.Info("Connection error while removing AWS load balancers")
+			}
+			errs = append(errs, err)
 		}
-		errs = append(errs, err)
-	}
-	if !removed {
-		remaining.Insert("loadbalancers")
+		if !removed {
+			remaining.Insert("loadbalancers")
+		} else {
+			log.Info("AWS load balancers are removed")
+		}
 	} else {
-		log.Info("Load balancers are removed")
+		log.Info("Ensuring load balancers are removed")
+		removed, err = r.ensureServiceLoadBalancersRemoved(ctx)
+		if err != nil {
+			if isConnectionError(err) {
+				hasConnectionError = true
+				log.Info("Connection error while removing load balancers", "error", err.Error())
+			}
+			errs = append(errs, err)
+		}
+		if !removed {
+			remaining.Insert("loadbalancers")
+		} else {
+			log.Info("Load balancers are removed")
+		}
 	}
 
 	log.Info("Ensuring persistent volumes are removed")
@@ -2976,6 +3086,33 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	// Success - reset failure tracking
 	r.cleanupTracker.ResetFailures(hcpKey)
 	return remaining, "", nil
+}
+
+func (r *reconciler) ensureAWSLoadBalancersRemoved(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	if r.awsLoadBalancerCleanup != nil {
+		return r.awsLoadBalancerCleanup(ctx, hcp)
+	}
+	if r.awsLoadBalancerClients.ELB == nil || r.awsLoadBalancerClients.ELBV2 == nil || r.awsLoadBalancerClients.Tagging == nil {
+		return false, fmt.Errorf("AWS load balancer clients are not configured")
+	}
+
+	selector := awsutil.LoadBalancerSelector{
+		TagKey:   awsutil.KubernetesClusterTagKey(hcp.Spec.InfraID),
+		TagValue: awsutil.KubernetesClusterTagValueOwned,
+	}
+	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.CloudProviderConfig != nil {
+		selector.VPCID = hcp.Spec.Platform.AWS.CloudProviderConfig.VPC
+	}
+
+	errList := awsutil.DeleteLoadBalancers(ctx, r.awsLoadBalancerClients, selector, ctrl.LoggerFrom(ctx))
+	if len(errList) > 0 {
+		return false, utilerrors.NewAggregate(errList)
+	}
+	remaining, err := awsutil.CountLoadBalancerResources(ctx, r.awsLoadBalancerClients, selector)
+	if err != nil {
+		errList = append(errList, fmt.Errorf("failed to verify AWS load balancer cleanup: %w", err))
+	}
+	return len(errList) == 0 && remaining == 0, utilerrors.NewAggregate(errList)
 }
 
 func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {

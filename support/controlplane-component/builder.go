@@ -104,10 +104,10 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectAvailabilityProberContainer(opts 
 	return b
 }
 
-// InjectTokenMinterContainer will injecta sidecar container which mints ServiceAccount tokens in the tenant cluster for the given named service account,
+// InjectTokenMinterContainer will inject a sidecar container which mints ServiceAccount tokens in the tenant cluster for the given named service account,
 // and then make it available for the main container with a volume mount.
 func (b *controlPlaneWorkloadBuilder[T]) InjectTokenMinterContainer(opts TokenMinterContainerOptions) *controlPlaneWorkloadBuilder[T] {
-	b.workload.tokenMinterContainerOpts = &opts
+	b.workload.tokenMinterContainerOpts = append(b.workload.tokenMinterContainerOpts, opts)
 	return b
 }
 

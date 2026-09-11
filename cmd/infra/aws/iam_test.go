@@ -607,7 +607,7 @@ func TestCreateOIDCResources(t *testing.T) {
 			}, nil)
 	}
 
-	t.Run("When using ROSA managed policies with separate roles it should create inline policies with SetSecurityGroups", func(t *testing.T) {
+	t.Run("When using ROSA managed policies with separate roles it should create inline policies with load balancer permissions", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -635,15 +635,20 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(output.Roles.IngressARN).NotTo(Equal(output.Roles.KubeCloudControllerARN))
 
 		hasSetSecurityGroups := false
+		hasGetResources := false
 		for _, doc := range policyDocuments {
 			if strings.Contains(doc, "elasticloadbalancing:SetSecurityGroups") {
 				hasSetSecurityGroups = true
 			}
+			if strings.Contains(doc, "tag:GetResources") {
+				hasGetResources = true
+			}
 		}
 		g.Expect(hasSetSecurityGroups).To(BeTrue())
+		g.Expect(hasGetResources).To(BeTrue())
 	})
 
-	t.Run("When using ROSA managed policies with shared role it should create merged inline policy with SetSecurityGroups", func(t *testing.T) {
+	t.Run("When using ROSA managed policies with shared role it should create merged inline policy with load balancer permissions", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -678,6 +683,7 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(output).NotTo(BeNil())
 		g.Expect(output.Roles.IngressARN).To(Equal(output.Roles.KubeCloudControllerARN))
 		g.Expect(policyDocument).To(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
+		g.Expect(policyDocument).To(ContainSubstring("tag:GetResources"))
 		g.Expect(policyDocument).To(ContainSubstring("route53:ChangeResourceRecordSets"))
 	})
 }

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d19c238f09d6e3b9a486100719aa9e4c9b6f73d7070a200caa982990fe96ef7b
+    hypershift.openshift.io/desired-state-hash: c524c533a89d0aab39da3323c549abb367bc912d8aa38f44f58ce8cd46df4742
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: hosted-cluster-config-operator
@@ -26,7 +26,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-controller-token,ingress-token,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
@@ -143,6 +143,10 @@ spec:
         - mountPath: /etc/pki/ca-trust/extracted/pem
           name: openshift-config-managed-trusted-ca-bundle
           readOnly: true
+        - mountPath: /var/run/secrets/openshift/serviceaccount/cloud-controller
+          name: cloud-controller-token
+        - mountPath: /var/run/secrets/openshift/serviceaccount/ingress
+          name: ingress-token
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
@@ -179,6 +183,68 @@ spec:
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=kube-system
+        - --service-account-name=kube-controller-manager
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-controller-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /var/run/secrets/openshift/serviceaccount/token
+          failureThreshold: 30
+          periodSeconds: 1
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-controller-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=openshift-ingress-operator
+        - --service-account-name=ingress-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: ingress-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /var/run/secrets/openshift/serviceaccount/token
+          failureThreshold: 30
+          periodSeconds: 1
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: ingress-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
       priorityClassName: hypershift-control-plane
       schedulerName: default-scheduler
       serviceAccount: hosted-cluster-config-operator
@@ -213,6 +279,12 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - emptyDir:
+          medium: Memory
+        name: cloud-controller-token
+      - emptyDir:
+          medium: Memory
+        name: ingress-token
       - emptyDir: {}
         name: tmp-dir
 status: {}
