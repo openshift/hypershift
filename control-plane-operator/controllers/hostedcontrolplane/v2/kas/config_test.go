@@ -1,7 +1,11 @@
 package kas
 
 import (
+	"errors"
 	"testing"
+
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/testutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
@@ -18,9 +22,10 @@ import (
 
 func TestGenerateConfig(t *testing.T) {
 	type testcase struct {
-		name     string
-		params   KubeAPIServerConfigParams
-		expected *kcpv1.KubeAPIServerConfig
+		name          string
+		params        KubeAPIServerConfigParams
+		expected      *kcpv1.KubeAPIServerConfig
+		expectedError string
 	}
 
 	testcases := []testcase{
@@ -516,6 +521,71 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
+			name: "When DRADeviceTaintRules is enabled on Kubernetes 1.36, it should enable the v1beta2 API",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"DRADeviceTaintRules=true",
+				},
+				KubernetesVersion: "1.36.3",
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["runtime-config"] = append(kcpv1.Arguments{"resource.k8s.io/v1beta2=true"}, kasc.APIServerArguments["runtime-config"]...)
+					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"DRADeviceTaintRules=true"}, kasc.APIServerArguments["feature-gates"]...)
+				},
+			),
+		},
+		{
+			name: "When DRADeviceTaintRules is enabled on Kubernetes 1.35, it should not enable the v1beta2 API",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"DRADeviceTaintRules=true",
+				},
+				KubernetesVersion: "1.35.0",
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"DRADeviceTaintRules=true"}, kasc.APIServerArguments["feature-gates"]...)
+				},
+			),
+		},
+		{
+			name: "When DRADeviceTaintRules is enabled on Kubernetes 1.37, it should not enable the v1beta2 API",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"DRADeviceTaintRules=true",
+				},
+				KubernetesVersion: "1.37.0",
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"DRADeviceTaintRules=true"}, kasc.APIServerArguments["feature-gates"]...)
+				},
+			),
+		},
+		{
+			name: "When DRADeviceTaintRules is disabled, it should not enable the v1beta2 API",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"DRADeviceTaintRules=false",
+				},
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"DRADeviceTaintRules=false"}, kasc.APIServerArguments["feature-gates"]...)
+				},
+			),
+		},
+		{
+			name: "When DRADeviceTaintRules is enabled without a Kubernetes version, it should return an error",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"DRADeviceTaintRules=true",
+				},
+			},
+			expectedError: `failed to parse Kubernetes version "" for DRADeviceTaintRules`,
+		},
+		{
 			name: "When ValidatingAdmissionPolicy feature gate is explicitly enabled, it should return default config",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
@@ -584,12 +654,80 @@ func TestGenerateConfig(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			kasConfig, _ := generateConfig(tc.params)
+			kasConfig, err := generateConfig(tc.params)
+			if tc.expectedError != "" {
+				require.ErrorContains(t, err, tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
 
 			diff := cmp.Diff(tc.expected, kasConfig)
 			require.Empty(t, diff, "expected KAS config does not match actual")
 		})
 	}
+}
+
+func TestKubernetesVersionForFeatureGates(t *testing.T) {
+	testCases := []struct {
+		name             string
+		featureGates     []string
+		componentVersion map[string]string
+		componentError   error
+		expectedVersion  string
+		expectedError    string
+	}{
+		{
+			name:           "When DRADeviceTaintRules is not enabled, it should not request component versions",
+			componentError: errors.New("component versions should not be requested"),
+		},
+		{
+			name:         "When DRADeviceTaintRules is enabled, it should return the Kubernetes component version",
+			featureGates: []string{"DRADeviceTaintRules=true"},
+			componentVersion: map[string]string{
+				"kubernetes": "1.36.3",
+			},
+			expectedVersion: "1.36.3",
+		},
+		{
+			name:           "When component version lookup fails, it should return an error",
+			featureGates:   []string{"DRADeviceTaintRules=true"},
+			componentError: errors.New("lookup failed"),
+			expectedError:  "failed to get control plane component versions: lookup failed",
+		},
+		{
+			name:             "When the Kubernetes component version is missing, it should return an error",
+			featureGates:     []string{"DRADeviceTaintRules=true"},
+			componentVersion: map[string]string{},
+			expectedError:    "control plane Kubernetes component version is missing",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			releaseImageProvider := &componentVersionReleaseImageProvider{
+				ReleaseImageProvider: testutil.FakeImageProvider(),
+				componentVersions:    tc.componentVersion,
+				componentError:       tc.componentError,
+			}
+			version, err := kubernetesVersionForFeatureGates(tc.featureGates, releaseImageProvider)
+			if tc.expectedError != "" {
+				require.ErrorContains(t, err, tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedVersion, version)
+		})
+	}
+}
+
+type componentVersionReleaseImageProvider struct {
+	imageprovider.ReleaseImageProvider
+	componentVersions map[string]string
+	componentError    error
+}
+
+func (p *componentVersionReleaseImageProvider) ComponentVersions() (map[string]string, error) {
+	return p.componentVersions, p.componentError
 }
 
 func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
