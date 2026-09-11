@@ -29,7 +29,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	hcpmanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/netutil"
