@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 func TestOauthServiceReconcile(t *testing.T) {
@@ -32,7 +33,7 @@ func TestOauthServiceReconcile(t *testing.T) {
 		{
 			name:     "When IBM Cloud platform uses NodePort strategy with a port, it should populate the NodePort from the strategy",
 			platform: v1beta1.IBMCloudPlatform,
-			strategy: v1beta1.ServicePublishingStrategy{Type: v1beta1.NodePort, NodePort: &v1beta1.NodePortPublishingStrategy{Port: 1125}},
+			strategy: v1beta1.ServicePublishingStrategy{Type: v1beta1.NodePort, NodePort: &v1beta1.NodePortPublishingStrategy{Port: ptr.To(int32(1125))}},
 			svc_in: corev1.Service{Spec: corev1.ServiceSpec{
 				Type: corev1.ServiceTypeNodePort,
 			}},

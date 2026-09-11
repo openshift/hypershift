@@ -19,8 +19,8 @@ func adaptService(cpContext component.WorkloadContext, svc *corev1.Service) erro
 	switch strategy.Type {
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if strategy.NodePort != nil {
-			svc.Spec.Ports[0].NodePort = strategy.NodePort.Port
+		if strategy.NodePort != nil && strategy.NodePort.Port != nil {
+			svc.Spec.Ports[0].NodePort = *strategy.NodePort.Port
 		}
 	case hyperv1.Route:
 		svc.Spec.Type = corev1.ServiceTypeClusterIP
