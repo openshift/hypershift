@@ -32,12 +32,20 @@ import (
 )
 
 const (
-	// Annotation keys for scale-from-zero workaround
+	// Legacy annotation keys (Machine API provider, --cloud-provider=openshift)
 	cpuKey    = "machine.openshift.io/vCPU"
 	memoryKey = "machine.openshift.io/memoryMb"
 	gpuKey    = "machine.openshift.io/GPU"
-	labelsKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
-	taintsKey = "capacity.cluster-autoscaler.kubernetes.io/taints"
+
+	// CAPI autoscaler annotation keys (--cloud-provider=clusterapi)
+	capiCPUKey      = "capacity.cluster-autoscaler.kubernetes.io/cpu"
+	capiMemoryKey   = "capacity.cluster-autoscaler.kubernetes.io/memory"
+	capiGPUCountKey = "capacity.cluster-autoscaler.kubernetes.io/gpu-count"
+	capiGPUTypeKey  = "capacity.cluster-autoscaler.kubernetes.io/gpu-type"
+	labelsKey       = "capacity.cluster-autoscaler.kubernetes.io/labels"
+	taintsKey       = "capacity.cluster-autoscaler.kubernetes.io/taints"
+
+	defaultGPUResourceName = "nvidia.com/gpu"
 
 	archLabelKey = "kubernetes.io/arch"
 )
@@ -91,7 +99,7 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 	// 2. Check if Status.Capacity is already provided (prefer native support)
 	if len(statusCapacity) > 0 {
 		// Clean up workaround annotations (if they exist)
-		annotationKeys := []string{cpuKey, memoryKey, gpuKey, labelsKey, taintsKey}
+		annotationKeys := []string{cpuKey, memoryKey, gpuKey, capiCPUKey, capiMemoryKey, capiGPUCountKey, capiGPUTypeKey, labelsKey, taintsKey}
 		for _, key := range annotationKeys {
 			delete(annotations, key)
 		}
@@ -120,15 +128,21 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 	}
 
 	// 5. Set workaround annotations
-	annotations[cpuKey] = strconv.FormatInt(int64(instanceInfo.VCPU), 10)
+	cpuStr := strconv.FormatInt(int64(instanceInfo.VCPU), 10)
+	annotations[cpuKey] = cpuStr
+	annotations[capiCPUKey] = cpuStr
 	annotations[memoryKey] = strconv.FormatInt(instanceInfo.MemoryMb, 10)
+	annotations[capiMemoryKey] = fmt.Sprintf("%dMi", instanceInfo.MemoryMb)
 
-	// Set GPU annotation only if GPU > 0 (consistent with taints handling)
 	if instanceInfo.GPU > 0 {
-		annotations[gpuKey] = strconv.FormatInt(int64(instanceInfo.GPU), 10)
+		gpuStr := strconv.FormatInt(int64(instanceInfo.GPU), 10)
+		annotations[gpuKey] = gpuStr
+		annotations[capiGPUCountKey] = gpuStr
+		annotations[capiGPUTypeKey] = defaultGPUResourceName
 	} else {
-		// Remove GPU annotation if there are no GPUs
 		delete(annotations, gpuKey)
+		delete(annotations, capiGPUCountKey)
+		delete(annotations, capiGPUTypeKey)
 	}
 
 	// 6. Set labels (including architecture and NodePool.Spec.NodeLabels)
