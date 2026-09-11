@@ -12,10 +12,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "aws",
 		Short:        "Destroys a HostedCluster and its associated infrastructure on AWS",
@@ -40,12 +43,26 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		err := ValidateCredentialInfo(opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, opts.Kubeconfig)
+		var client crclient.Client
+		var err error
+		if opts.CredentialSecretName != "" {
+			client, err = clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+			if err != nil {
+				return err
+			}
+		}
+		err = ValidateCredentialInfo(cmd.Context(), opts.AWSPlatform.Credentials, opts.CredentialSecretName, opts.Namespace, client)
 		if err != nil {
 			return err
 		}
+		if client == nil {
+			client, err = clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+			if err != nil {
+				return err
+			}
+		}
 
-		if err = DestroyCluster(cmd.Context(), opts); err != nil {
+		if err = DestroyCluster(cmd.Context(), opts, client); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
 			return err
 		}
@@ -56,7 +73,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	return cmd
 }
 
-func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
+func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
 	if o.AWSPlatform.PostDeleteAction != nil {
 		o.AWSPlatform.PostDeleteAction()
 	}
@@ -69,11 +86,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	var err error
 	var secretData *util.CredentialsSecretData
 	if len(o.AWSPlatform.Credentials.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
-		c, clientErr := util.GetClientWithKubeconfig(o.Kubeconfig)
-		if clientErr != nil {
-			return clientErr
-		}
-		secretData, err = util.ExtractOptionsFromSecret(c, o.CredentialSecretName, o.Namespace, "")
+		secretData, err = util.ExtractOptionsFromSecret(ctx, client, o.CredentialSecretName, o.Namespace, "")
 		if err != nil {
 			return err
 		}
@@ -118,8 +131,8 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	return errors.NewAggregate(errs)
 }
 
-func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-	hostedCluster, err := core.GetCluster(ctx, o)
+func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
+	hostedCluster, err := core.GetCluster(ctx, client, o)
 	if err != nil {
 		return err
 	}
@@ -151,22 +164,22 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		return fmt.Errorf("required inputs are missing: %w", err)
 	}
 
-	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
+	return core.DestroyCluster(ctx, client, hostedCluster, o, destroyPlatformSpecifics)
 }
 
 // ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds or sts-creds mutually exclusive and are not empty; validates if
 // the credentials secret is not empty, that it can be retrieved.
-func ValidateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string) error {
-	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.Validate)
+func ValidateCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client) error {
+	return validateCredentialInfo(ctx, opts, credentialSecretName, namespace, client, opts.Validate)
 }
 
 // ValidateProductCredentialInfo is like ValidateCredentialInfo but requires explicit --sts-creds and --role-arn
 // flags rather than allowing SDK default chain fallback.
-func ValidateProductCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string) error {
-	return validateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath, opts.ValidateProduct)
+func ValidateProductCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client) error {
+	return validateCredentialInfo(ctx, opts, credentialSecretName, namespace, client, opts.ValidateProduct)
 }
 
-func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, kubeconfigPath string, validate func() error) error {
+func validateCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace string, client crclient.Client, validate func() error) error {
 	if len(credentialSecretName) == 0 {
 		if err := validate(); err != nil {
 			return err
@@ -180,11 +193,10 @@ func validateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecret
 		}
 	}
 	// Check the secret exists now, otherwise stop
-	client, err := util.GetClientWithKubeconfig(kubeconfigPath)
-	if err != nil {
-		return err
+	if client == nil {
+		return fmt.Errorf("a management-cluster client is required when --secret-creds is set")
 	}
-	if _, err := util.GetSecretWithClient(client, credentialSecretName, namespace); err != nil {
+	if _, err := util.GetSecretWithClient(ctx, client, credentialSecretName, namespace); err != nil {
 		return err
 	}
 

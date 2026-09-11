@@ -169,6 +169,7 @@ type Options struct {
 	HCPEgressBlockCIDRs                       []string
 	InstallScope                              string
 	DisableCAPIMigration                      bool
+	ClientProvider                            *util.ClientProvider
 }
 
 func (o *Options) Complete() error {
@@ -432,7 +433,8 @@ func (o *Options) ApplyDefaults() {
 	}
 }
 
-func NewCommand() *cobra.Command {
+func NewCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "install",
 		Short:        "Installs the HyperShift operator",
@@ -440,6 +442,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	opts := NewInstallOptionsWithDefaults()
+	opts.ClientProvider = clientProvider
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", opts.HyperShiftImage, "The HyperShift image to deploy")
@@ -542,7 +545,10 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		return err
 	}
 
-	client, err := util.GetClient()
+	if opts.ClientProvider == nil || opts.ClientProvider.ControllerRuntimeClient == nil {
+		return fmt.Errorf("controller-runtime client provider is not configured")
+	}
+	client, err := opts.ClientProvider.ControllerRuntimeClientFor("")
 	if err != nil {
 		return err
 	}
@@ -557,14 +563,14 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 
 	if len(crdsToApply) > 0 {
 		// Validate all CRDs via dry-run before applying
-		if err := dryRunValidateCRDs(ctx, out, crdsToApply); err != nil {
+		if err := dryRunValidateCRDs(ctx, out, crdsToApply, client); err != nil {
 			return err
 		}
 
 		// Coordinate with Cluster CAPI Operator if the ClusterAPI API is available.
 		// This is done after dry-run so the ClusterAPI config is not mutated if CRDs
 		// cannot be applied.
-		config, err := util.GetConfig()
+		config, err := opts.ClientProvider.ConfigFor("")
 		if err != nil {
 			return fmt.Errorf("failed to get kubernetes config: %w", err)
 		}
@@ -589,26 +595,26 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 			}
 		}
 
-		err = apply(ctx, out, crdsToApply)
+		err = apply(ctx, out, crdsToApply, client)
 		if err != nil {
 			return err
 		}
 
 		if opts.WaitUntilAvailable || opts.WaitUntilEstablished {
-			if err := waitUntilEstablished(ctx, crdsToApply); err != nil {
+			if err := waitUntilEstablished(ctx, crdsToApply, client); err != nil {
 				return err
 			}
 		}
 	}
 
 	if len(objectsToApply) > 0 {
-		err = apply(ctx, out, objectsToApply)
+		err = apply(ctx, out, objectsToApply, client)
 		if err != nil {
 			return err
 		}
 
 		if opts.WaitUntilAvailable {
-			if _, err := WaitUntilAvailable(ctx, opts); err != nil {
+			if _, err := WaitUntilAvailable(ctx, opts, client); err != nil {
 				return err
 			}
 		}
@@ -652,16 +658,15 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.ImagePullPolicy = "IfNotPresent"
 	opts.AdditionalOperatorEnvVars = map[string]string{}
 	opts.InstallScope = string(OutputAll)
+	opts.ClientProvider = util.DefaultClientProvider()
 
 	return opts
 }
 
-func apply(ctx context.Context, out io.Writer, objects []crclient.Object) error {
-	client, err := util.GetClient()
-	if err != nil {
-		return err
+func apply(ctx context.Context, out io.Writer, objects []crclient.Object, client crclient.Client) error {
+	if client == nil {
+		return fmt.Errorf("management-cluster client is required")
 	}
-
 	var errs []error
 	for _, object := range objects {
 		var objectBytes bytes.Buffer
@@ -691,10 +696,9 @@ func apply(ctx context.Context, out io.Writer, objects []crclient.Object) error 
 	return errors.NewAggregate(errs)
 }
 
-func waitUntilEstablished(ctx context.Context, crds []crclient.Object) error {
-	client, err := util.GetClient()
-	if err != nil {
-		return err
+func waitUntilEstablished(ctx context.Context, crds []crclient.Object, client crclient.Client) error {
+	if client == nil {
+		return fmt.Errorf("management-cluster client is required")
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -721,11 +725,11 @@ func waitUntilEstablished(ctx context.Context, crds []crclient.Object) error {
 	return eg.Wait()
 }
 
-func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, error) {
-	client, err := util.GetClient()
-	if err != nil {
-		return nil, err
+func WaitUntilAvailable(ctx context.Context, opts Options, client crclient.Client) (*appsv1.Deployment, error) {
+	if client == nil {
+		return nil, fmt.Errorf("management-cluster client is required")
 	}
+	var err error
 	// 10 minutes to accommodate GKE Autopilot clusters that need to scale
 	// up nodes before the operator pods can be scheduled.
 	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -892,7 +896,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 
 	// Setup ExternalDNS resources
 	if len(opts.ExternalDNSProvider) > 0 {
-		extDNSObjs, err := setupExternalDNS(ctx, opts, operatorNamespace)
+		extDNSObjs, err := setupExternalDNS(ctx, opts, operatorNamespace, client)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1240,12 +1244,10 @@ func waitForCAPIOperatorSync(ctx context.Context, out io.Writer, c crclient.Clie
 // dryRunValidateCRDs validates all CRDs through the API server's admission webhooks
 // using server-side dry-run. This catches malformed CRDs, webhook rejections, and
 // schema conflicts before any CRDs are persisted.
-func dryRunValidateCRDs(ctx context.Context, out io.Writer, crds []crclient.Object) error {
-	client, err := util.GetClient()
-	if err != nil {
-		return err
+func dryRunValidateCRDs(ctx context.Context, out io.Writer, crds []crclient.Object, client crclient.Client) error {
+	if client == nil {
+		return fmt.Errorf("management-cluster client is required")
 	}
-
 	var errs []error
 	for _, crd := range crds {
 		var objectBytes bytes.Buffer
@@ -1443,21 +1445,29 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 // - Secret for external-dns credentials
 // - Deployment for external-dns
 // - PodMonitor for external-dns
-func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *corev1.Namespace) ([]crclient.Object, error) {
+func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *corev1.Namespace, client crclient.Client) ([]crclient.Object, error) {
 	var objects []crclient.Object
 
-	// Setting the proxy for external-dns is best-effort, ignore errors
-	proxy, _ := func() (*configv1.Proxy, error) {
-		proxy := &configv1.Proxy{}
-		client, err := util.GetClient()
+	// Proxy lookup is best-effort only when no management client is available for offline rendering.
+	if client == nil && opts.ClientProvider != nil {
+		var err error
+		client, err = opts.ClientProvider.ControllerRuntimeClientFor("")
 		if err != nil {
-			return nil, err
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: unable to acquire management-cluster client while rendering ExternalDNS resources: %v\n", err)
+			client = nil
 		}
-		if err := client.Get(ctx, crclient.ObjectKey{Name: "cluster"}, proxy); err != nil {
-			return nil, err
+	}
+	var proxy *configv1.Proxy
+	if client != nil {
+		candidate := &configv1.Proxy{}
+		if err := client.Get(ctx, crclient.ObjectKey{Name: "cluster"}, candidate); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return nil, err
+			}
+		} else {
+			proxy = candidate
 		}
-		return proxy, nil
-	}()
+	}
 
 	externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
 		Namespace: operatorNamespace,

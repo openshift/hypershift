@@ -2,17 +2,16 @@ package util
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
 
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -22,6 +21,111 @@ const (
 
 	KubeconfigFlagHelp = "Path to a kubeconfig file for the management cluster. If not specified, the default kubeconfig resolution is used (KUBECONFIG env var, then in-cluster config, then ~/.kube/config)."
 )
+
+// ClientFactory creates a controller-runtime client for the requested kubeconfig.
+type ClientFactory func(kubeconfigPath string) (crclient.Client, error)
+
+// KubeClientSetFactory creates a typed Kubernetes clientset for the requested kubeconfig.
+type KubeClientSetFactory func(kubeconfigPath string) (kubernetes.Interface, error)
+
+// ConfigFactory creates a REST config for the requested kubeconfig.
+type ConfigFactory func(kubeconfigPath string) (*rest.Config, error)
+
+// ImpersonatedClientFactory creates a controller-runtime client for an impersonated user.
+type ImpersonatedClientFactory func(userName string) (crclient.Client, error)
+
+// ClientProvider groups the management-cluster dependencies used by CLI commands.
+// Tests can replace individual factories with fake clients without changing the
+// command implementation.
+type ClientProvider struct {
+	ControllerRuntimeClient ClientFactory
+	KubernetesClientSet     KubeClientSetFactory
+	Config                  ConfigFactory
+	ImpersonatedClient      ImpersonatedClientFactory
+}
+
+// DefaultClientProvider returns the production client factories used by the CLI.
+func DefaultClientProvider() *ClientProvider {
+	return &ClientProvider{
+		ControllerRuntimeClient: GetClientWithKubeconfig,
+		KubernetesClientSet:     GetKubernetesClientSetWithKubeconfig,
+		Config:                  GetConfigWithKubeconfig,
+		ImpersonatedClient:      GetImpersonatedClient,
+	}
+}
+
+// ResolveClientProvider returns the supplied provider or the production
+// provider when no dependency was injected.
+func ResolveClientProvider(clientProviders ...*ClientProvider) *ClientProvider {
+	if len(clientProviders) > 0 && clientProviders[0] != nil {
+		return clientProviders[0]
+	}
+	return DefaultClientProvider()
+}
+
+// ControllerRuntimeClientFor returns a controller-runtime client from the
+// provider and rejects missing or nil dependencies.
+func (p *ClientProvider) ControllerRuntimeClientFor(kubeconfigPath string) (crclient.Client, error) {
+	if p == nil || p.ControllerRuntimeClient == nil {
+		return nil, fmt.Errorf("controller-runtime client provider is not configured")
+	}
+	client, err := p.ControllerRuntimeClient(kubeconfigPath)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("controller-runtime client provider returned a nil client")
+	}
+	return client, nil
+}
+
+// KubernetesClientSetFor returns a typed Kubernetes clientset from the
+// provider and rejects missing or nil dependencies.
+func (p *ClientProvider) KubernetesClientSetFor(kubeconfigPath string) (kubernetes.Interface, error) {
+	if p == nil || p.KubernetesClientSet == nil {
+		return nil, fmt.Errorf("typed Kubernetes client provider is not configured")
+	}
+	client, err := p.KubernetesClientSet(kubeconfigPath)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("typed Kubernetes client provider returned a nil client")
+	}
+	return client, nil
+}
+
+// ConfigFor returns a REST config from the provider and rejects missing or
+// nil dependencies.
+func (p *ClientProvider) ConfigFor(kubeconfigPath string) (*rest.Config, error) {
+	if p == nil || p.Config == nil {
+		return nil, fmt.Errorf("REST config provider is not configured")
+	}
+	config, err := p.Config(kubeconfigPath)
+	if err != nil {
+		return nil, err
+	}
+	if config == nil {
+		return nil, fmt.Errorf("REST config provider returned a nil config")
+	}
+	return config, nil
+}
+
+// ImpersonatedClientFor returns an impersonated client from the provider and
+// rejects missing or nil dependencies.
+func (p *ClientProvider) ImpersonatedClientFor(userName string) (crclient.Client, error) {
+	if p == nil || p.ImpersonatedClient == nil {
+		return nil, fmt.Errorf("impersonated client provider is not configured")
+	}
+	client, err := p.ImpersonatedClient(userName)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("impersonated client provider returned a nil client")
+	}
+	return client, nil
+}
 
 // GetConfig creates a REST config from current context
 func GetConfig() (*rest.Config, error) {
@@ -49,19 +153,9 @@ func GetConfigWithKubeconfig(kubeconfigPath string) (*rest.Config, error) {
 	return cfg, nil
 }
 
-// GetClient creates a controller-runtime client for Kubernetes
-func GetClient() (crclient.Client, error) {
-	return GetClientWithKubeconfig("")
-}
-
-// GetClientWithKubeconfig creates a controller-runtime client for Kubernetes using
-// the specified kubeconfig file path. If kubeconfigPath is empty, it falls back to
-// the default kubeconfig resolution.
+// GetClientWithKubeconfig creates a controller-runtime client for Kubernetes
+// using the specified kubeconfig path, or the default resolution when empty.
 func GetClientWithKubeconfig(kubeconfigPath string) (crclient.Client, error) {
-	if os.Getenv("FAKE_CLIENT") == "true" {
-		return fake.NewFakeClient(), nil
-	}
-
 	config, err := GetConfigWithKubeconfig(kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
@@ -72,6 +166,20 @@ func GetClientWithKubeconfig(kubeconfigPath string) (crclient.Client, error) {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
 	}
 
+	return client, nil
+}
+
+// GetKubernetesClientSetWithKubeconfig creates a typed Kubernetes clientset
+// using the specified kubeconfig file path.
+func GetKubernetesClientSetWithKubeconfig(kubeconfigPath string) (kubernetes.Interface, error) {
+	config, err := GetConfigWithKubeconfig(kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes clientset: %w", err)
+	}
 	return client, nil
 }
 

@@ -226,7 +226,8 @@ func DefaultOptions() *RawCreateOptions {
 }
 
 // NewCreateCommand creates a new cobra command for creating GCP clusters
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "gcp",
 		Short:        "Creates basic functional HostedCluster resources on GCP",
@@ -244,7 +245,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, gcpOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, gcpOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}

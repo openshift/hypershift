@@ -57,7 +57,11 @@ type CreateOptions struct {
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
 	if o.APIServerAddress == "" {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig)
+		client, clientErr := opts.Client()
+		if clientErr != nil {
+			return nil, clientErr
+		}
+		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, client)
 	}
 	if opts.DefaultDual {
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
@@ -117,7 +121,8 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.AgentLabelSelector, "agentLabelSelector", opts.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
 }
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "agent",
 		Short:        "Creates basic functional HostedCluster resources on Agent",
@@ -137,7 +142,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, agentOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, agentOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}

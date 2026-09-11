@@ -2,16 +2,87 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+
+	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/cmd/util"
+	hyperapi "github.com/openshift/hypershift/support/api"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	"k8s.io/client-go/rest"
 	clientgotesting "k8s.io/client-go/testing"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/go-logr/logr"
 )
+
+func TestDumpOptionsManagementClient(t *testing.T) {
+	defaultClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	impersonatedClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+
+	t.Run("When an injected client is provided without impersonation, it should reuse the client", func(t *testing.T) {
+		opts := &DumpOptions{Client: defaultClient}
+		got, err := opts.managementClient()
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(got).To(BeIdenticalTo(defaultClient))
+	})
+	t.Run("When impersonation is requested, it should use the impersonated client", func(t *testing.T) {
+		opts := &DumpOptions{
+			Client:        defaultClient,
+			ImpersonateAs: "test-user",
+			ClientProvider: &util.ClientProvider{ImpersonatedClient: func(user string) (client.Client, error) {
+				if user != "test-user" {
+					return nil, errors.New("unexpected user")
+				}
+				return impersonatedClient, nil
+			}},
+		}
+		got, err := opts.managementClient()
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(got).To(BeIdenticalTo(impersonatedClient))
+	})
+	t.Run("When no client provider is configured, it should return an error", func(t *testing.T) {
+		_, err := (&DumpOptions{}).managementClient()
+		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
+	t.Run("When the provider returns an error, it should propagate the error", func(t *testing.T) {
+		_, err := (&DumpOptions{ClientProvider: &util.ClientProvider{
+			ControllerRuntimeClient: func(string) (client.Client, error) {
+				return nil, errors.New("client unavailable")
+			},
+		}}).managementClient()
+		NewWithT(t).Expect(err).To(MatchError("client unavailable"))
+	})
+}
+
+func TestDumpOptionsManagementConfig(t *testing.T) {
+	expectedConfig := &rest.Config{Host: "https://management.example"}
+	t.Run("When a provider is configured, it should request the configured kubeconfig", func(t *testing.T) {
+		opts := &DumpOptions{
+			Kubeconfig: "/tmp/management-kubeconfig",
+			ClientProvider: &util.ClientProvider{Config: func(path string) (*rest.Config, error) {
+				if path != "/tmp/management-kubeconfig" {
+					return nil, errors.New("unexpected kubeconfig path")
+				}
+				return expectedConfig, nil
+			}},
+		}
+		got, err := opts.managementConfig()
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(got).To(BeIdenticalTo(expectedConfig))
+	})
+	t.Run("When no client provider is configured, it should return an error", func(t *testing.T) {
+		_, err := (&DumpOptions{}).managementConfig()
+		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
+}
 
 func TestDumpClusterWithRetry(t *testing.T) {
 	t.Run("When context is already canceled, it should return an error without retrying", func(t *testing.T) {

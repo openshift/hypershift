@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -24,14 +25,39 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	kubeclient "k8s.io/client-go/kubernetes"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/pflag"
 )
+
+type fakePlatform struct{}
+
+func (fakePlatform) Validate(context.Context, *CreateOptions) (PlatformCompleter, error) {
+	return fakePlatform{}, nil
+}
+
+func (fakePlatform) Complete(context.Context, *CreateOptions) (Platform, error) {
+	return fakePlatform{}, nil
+}
+
+func (fakePlatform) ApplyPlatformSpecifics(*hyperv1.HostedCluster) error {
+	return nil
+}
+
+func (fakePlatform) GenerateNodePools(DefaultNodePoolConstructor) []*hyperv1.NodePool {
+	return nil
+}
+
+func (fakePlatform) GenerateResources() ([]crclient.Object, error) {
+	return nil, nil
+}
 
 func TestBindOptions(t *testing.T) {
 	t.Run("When flags are parsed it should populate the options struct", func(t *testing.T) {
@@ -65,6 +91,177 @@ func TestBindOptions(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(opts.BaseDomain).To(BeEmpty())
 	})
+}
+
+func TestGetAPIServerAddressByNode(t *testing.T) {
+	t.Run("When a node has an external DNS address, it should prefer that address", func(t *testing.T) {
+		g := NewWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "worker-0"},
+			Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{
+				{Type: corev1.NodeInternalIP, Address: "192.0.2.10"},
+				{Type: corev1.NodeExternalIP, Address: "198.51.100.10"},
+				{Type: corev1.NodeExternalDNS, Address: "worker.example.com"},
+			}},
+		}).Build()
+
+		address, err := GetAPIServerAddressByNode(t.Context(), logr.Discard(), c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(address).To(Equal("worker.example.com"))
+	})
+
+	t.Run("When no nodes exist, it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+
+		_, err := GetAPIServerAddressByNode(t.Context(), logr.Discard(), c)
+		g.Expect(err).To(MatchError("no node objects found"))
+	})
+	t.Run("When no management client is provided, it should return an error", func(t *testing.T) {
+		_, err := GetAPIServerAddressByNode(t.Context(), logr.Discard(), nil)
+		NewWithT(t).Expect(err).To(MatchError("management-cluster client is required"))
+	})
+	t.Run("When a node has no usable address, it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "worker-0"},
+		}).Build()
+
+		_, err := GetAPIServerAddressByNode(t.Context(), logr.Discard(), c)
+		g.Expect(err).To(MatchError(`node "worker-0" does not expose any IP addresses, this should not be possible`))
+	})
+}
+
+func TestCachedClientProvider(t *testing.T) {
+	t.Run("When the controller client factory succeeds, it should reuse the client and kubeconfig", func(t *testing.T) {
+		g := NewWithT(t)
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		var calls int
+		provider := newCachedClientProvider(&ClientProvider{
+			ControllerRuntimeClient: func(kubeconfig string) (crclient.Client, error) {
+				calls++
+				g.Expect(kubeconfig).To(Equal("management.kubeconfig"))
+				return client, nil
+			},
+		}, "management.kubeconfig")
+
+		first, err := provider.ControllerRuntimeClientFor("ignored.kubeconfig")
+		g.Expect(err).NotTo(HaveOccurred())
+		second, err := provider.ControllerRuntimeClientFor("ignored.kubeconfig")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(first).To(BeIdenticalTo(client))
+		g.Expect(second).To(BeIdenticalTo(client))
+		g.Expect(calls).To(Equal(1))
+	})
+
+	t.Run("When the controller client provider is missing, it should cache the error", func(t *testing.T) {
+		provider := newCachedClientProvider(nil, "management.kubeconfig")
+		_, firstErr := provider.ControllerRuntimeClientFor("")
+		_, secondErr := provider.ControllerRuntimeClientFor("")
+		g := NewWithT(t)
+		g.Expect(firstErr).To(MatchError("controller-runtime client provider is not configured"))
+		g.Expect(secondErr).To(MatchError("controller-runtime client provider is not configured"))
+	})
+
+	t.Run("When the typed client provider is missing, it should cache the error", func(t *testing.T) {
+		provider := newCachedClientProvider(&ClientProvider{}, "management.kubeconfig")
+		_, firstErr := provider.KubernetesClientSetFor("")
+		_, secondErr := provider.KubernetesClientSetFor("")
+		g := NewWithT(t)
+		g.Expect(firstErr).To(MatchError("typed Kubernetes client provider is not configured"))
+		g.Expect(secondErr).To(MatchError("typed Kubernetes client provider is not configured"))
+	})
+}
+
+func TestCreateOptionsClient(t *testing.T) {
+	t.Run("When no provider is configured, it should return an error", func(t *testing.T) {
+		var opts *CreateOptions
+		_, err := opts.Client()
+		NewWithT(t).Expect(err).To(MatchError("controller-runtime client provider is not configured"))
+	})
+	t.Run("When a provider is configured, it should request the configured kubeconfig", func(t *testing.T) {
+		g := NewWithT(t)
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		opts := &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{RawCreateOptions: &RawCreateOptions{Kubeconfig: "management.kubeconfig"}},
+				},
+			},
+			clientProvider: &ClientProvider{
+				ControllerRuntimeClient: func(kubeconfig string) (crclient.Client, error) {
+					g.Expect(kubeconfig).To(Equal("management.kubeconfig"))
+					return client, nil
+				},
+			},
+		}
+
+		got, err := opts.Client()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(got).To(BeIdenticalTo(client))
+	})
+}
+
+func TestCreateCluster(t *testing.T) {
+	g := NewWithT(t)
+	pullSecretFile := filepath.Join(t.TempDir(), "pull-secret.json")
+	g.Expect(os.WriteFile(pullSecretFile, []byte(`{"auths":{}}`), 0600)).To(Succeed())
+
+	createdObjects := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+		Patch: func(ctx context.Context, c crclient.WithWatch, object crclient.Object, _ crclient.Patch, _ ...crclient.PatchOption) error {
+			return c.Create(ctx, object)
+		},
+	}).Build()
+	typedClient := fakekubeclient.NewClientset()
+	typedDiscovery := typedClient.Discovery().(*fakediscovery.FakeDiscovery)
+	typedDiscovery.FakedServerVersion = &apiversion.Info{Platform: "linux/amd64"}
+	controllerClientCalls := 0
+	typedClientCalls := 0
+	clientProvider := &ClientProvider{
+		ControllerRuntimeClient: func(_ string) (crclient.Client, error) {
+			controllerClientCalls++
+			return createdObjects, nil
+		},
+		KubernetesClientSet: func(_ string) (kubeclient.Interface, error) {
+			typedClientCalls++
+			return typedClient, nil
+		},
+	}
+
+	opts := DefaultOptions()
+	opts.Name = "injected-client"
+	opts.PullSecretFile = pullSecretFile
+	opts.NodePoolReplicas = -1
+
+	err := CreateCluster(t.Context(), opts, fakePlatform{}, clientProvider)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(controllerClientCalls).To(Equal(1))
+	g.Expect(typedClientCalls).To(Equal(1))
+
+	hostedCluster := &hyperv1.HostedCluster{}
+	g.Expect(createdObjects.Get(t.Context(), crclient.ObjectKey{Namespace: opts.Namespace, Name: opts.Name}, hostedCluster)).To(Succeed())
+}
+
+func TestValidatedCreateOptionsComplete(t *testing.T) {
+	g := NewWithT(t)
+	client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	provider := &ClientProvider{
+		ControllerRuntimeClient: func(_ string) (crclient.Client, error) {
+			return client, nil
+		},
+	}
+	opts := DefaultOptions()
+	opts.Name = "injected-client"
+	opts.PullSecretFile = "unused"
+	opts.Render = true
+
+	validated, err := opts.Validate(t.Context(), provider)
+	g.Expect(err).NotTo(HaveOccurred())
+	completed, err := validated.Complete()
+	g.Expect(err).NotTo(HaveOccurred())
+	got, err := completed.Client()
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(got).To(Equal(client))
 }
 
 func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
@@ -585,7 +782,7 @@ func TestValidate(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			// avoid actual client calls in Validate
 			test.rawOpts.Render = true
-			_, err := test.rawOpts.Validate(ctx)
+			_, err := test.rawOpts.Validate(ctx, nil)
 			if test.expectedErr == "" {
 				g.Expect(err).To(BeNil())
 			} else {

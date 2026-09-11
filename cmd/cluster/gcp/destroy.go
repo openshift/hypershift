@@ -6,11 +6,14 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 )
 
 // NewDestroyCommand creates a new cobra command for destroying GCP clusters
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "gcp",
 		Short:        "Destroys a GCP HostedCluster",
@@ -19,7 +22,11 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := DestroyCluster(cmd.Context(), opts); err != nil {
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			return err
+		}
+		if err := DestroyCluster(cmd.Context(), opts, client); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
 			return err
 		}
@@ -30,8 +37,8 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 }
 
 // DestroyCluster destroys a GCP HostedCluster and its associated infrastructure
-func DestroyCluster(ctx context.Context, destroyOptions *core.DestroyOptions) error {
-	hostedCluster, err := core.GetCluster(ctx, destroyOptions)
+func DestroyCluster(ctx context.Context, destroyOptions *core.DestroyOptions, client crclient.Client) error {
+	hostedCluster, err := core.GetCluster(ctx, client, destroyOptions)
 	if err != nil {
 		return err
 	}
@@ -43,5 +50,5 @@ func DestroyCluster(ctx context.Context, destroyOptions *core.DestroyOptions) er
 
 	// For now, GCP cluster destruction only removes the HostedCluster resource
 	// Additional GCP infrastructure cleanup logic can be added here in the future
-	return core.DestroyCluster(ctx, hostedCluster, destroyOptions, nil)
+	return core.DestroyCluster(ctx, client, hostedCluster, destroyOptions, nil)
 }

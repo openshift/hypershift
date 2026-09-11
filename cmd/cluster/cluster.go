@@ -18,8 +18,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCreateCommands() *cobra.Command {
+func NewCreateCommands(clientProviders ...*core.ClientProvider) *cobra.Command {
 	opts := core.DefaultOptions()
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "cluster",
 		Short:        "Creates basic functional HostedCluster resources",
@@ -31,19 +32,20 @@ func NewCreateCommands() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
 
-	cmd.AddCommand(aws.NewCreateCommand(opts))
-	cmd.AddCommand(none.NewCreateCommand(opts))
-	cmd.AddCommand(agent.NewCreateCommand(opts))
-	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
-	cmd.AddCommand(azure.NewCreateCommand(opts))
-	cmd.AddCommand(powervs.NewCreateCommand(opts))
-	cmd.AddCommand(openstack.NewCreateCommand(opts))
-	cmd.AddCommand(gcp.NewCreateCommand(opts))
+	cmd.AddCommand(aws.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(none.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(agent.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(kubevirt.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(azure.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(powervs.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(openstack.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(gcp.NewCreateCommand(opts, clientProvider))
 
 	return cmd
 }
 
-func NewDestroyCommands() *cobra.Command {
+func NewDestroyCommands(clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 
 	opts := &core.DestroyOptions{
 		Namespace:             "clusters",
@@ -68,14 +70,14 @@ func NewDestroyCommands() *cobra.Command {
 
 	_ = cmd.MarkPersistentFlagRequired("name")
 
-	cmd.AddCommand(aws.NewDestroyCommand(opts))
-	cmd.AddCommand(none.NewDestroyCommand(opts))
-	cmd.AddCommand(agent.NewDestroyCommand(opts))
-	cmd.AddCommand(kubevirt.NewDestroyCommand(opts))
-	cmd.AddCommand(azure.NewDestroyCommand(opts))
-	cmd.AddCommand(powervs.NewDestroyCommand(opts))
-	cmd.AddCommand(openstack.NewDestroyCommand(opts))
-	cmd.AddCommand(gcp.NewDestroyCommand(opts))
+	cmd.AddCommand(aws.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(none.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(agent.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(kubevirt.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(azure.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(powervs.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(openstack.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(gcp.NewDestroyCommand(opts, clientProvider))
 
 	return cmd
 }
