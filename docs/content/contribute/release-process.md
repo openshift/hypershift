@@ -15,7 +15,7 @@ title: Release process
 
 The [hypershift repo]( https://github.com/openshift/hypershift) produces two different artifacts: Hypershift Operator (HO) and Control Plane Operator (CPO).
 
-The CPO release lifecycle is dictated by the [OCP release payload](https://access.redhat.com/support/policy/updates/openshift).
+The CPO release lifecycle is dictated by the [OCP release payload](https://access.redhat.com/support/policy/updates/openshift). Each OCP minor's CPO must stay aligned with its payload; see [Versioning and support: CPO](../reference/versioning-support.md#cpo) for the alignment rule and the in-tree stream mapping.
 
 The HO has an independent release cadence. For consumer products:
 
