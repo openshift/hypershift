@@ -2354,12 +2354,12 @@ func TestAggregateMachineMessages(t *testing.T) {
 		{
 			name:   "When a single message exceeds the limit it should truncate the message preserving the prefix",
 			msgs:   []string{strings.Repeat("a", maxMessageLength+1)},
-			expect: strings.Repeat("a", maxMessageLength-len(endOfMessage)) + endOfMessage,
+			expect: strings.Repeat("a", maxMessageLength-len(endOfGlobalMessage)) + endOfGlobalMessage,
 		},
 		{
 			// Regression test for OCPBUGS-115468: a single Azure Policy denial message
 			// (RequestDisallowedByPolicy) exceeds 1000 chars. The old code dropped it
-			// entirely, returning only the "... too many similar errors" placeholder.
+			// entirely, returning only the "... message truncated" placeholder.
 			// The fix should truncate the message, preserving the actionable prefix
 			// (error code, policy name, denied location).
 			name: "When a single long Azure RequestDisallowedByPolicy error exceeds the limit it should truncate preserving the actionable prefix",
@@ -2410,7 +2410,7 @@ func TestAggregateMachineMessages(t *testing.T) {
 					`"policyDefinitionEffect":"deny","policyAssignmentId":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg/providers/Microsoft.Authorization/policyAssignments/deny-vm-regions-test-assign-mrg",` +
 					`"policyAssignmentName":"deny-vm-regions-test-assign-mrg","policyAssignmentScope":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg",` +
 					`"policyAssignmentParameters":{},"policyExemptionIds":[],"policyEnrollmentIds":[]}}}]}}` + "\n"
-				return msg[:maxMessageLength-len(endOfMessage)] + endOfMessage
+				return msg[:maxMessageLength-len(endOfGlobalMessage)] + endOfGlobalMessage
 			}(),
 		},
 	} {

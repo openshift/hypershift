@@ -1338,8 +1338,10 @@ func aggregateMachineMessages(msgs []string) string {
 			// If nothing has been written yet, truncate the oversized message
 			// rather than dropping it entirely (OCPBUGS-115468).
 			if builder.Len() == 0 {
-				remaining := maxMessageLength - len(endOfMessage)
+				remaining := maxMessageLength - len(endOfGlobalMessage)
 				builder.WriteString(msg[:remaining])
+				builder.WriteString(endOfGlobalMessage)
+				break
 			}
 			builder.WriteString(endOfMessage)
 			break
