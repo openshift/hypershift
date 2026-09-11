@@ -20,6 +20,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -393,6 +394,13 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		nodePool := constructor(hyperv1.AWSPlatform, zone.Name)
 		if nodePool.Spec.Management.UpgradeType == "" {
 			nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+			nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+				RollingUpdate: &hyperv1.RollingUpdate{
+					MaxSurge:       ptr.To(intstr.FromInt(1)),
+					MaxUnavailable: ptr.To(intstr.FromInt(0)),
+				},
+			}
 		}
 		nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
 			InstanceType:    instanceType,

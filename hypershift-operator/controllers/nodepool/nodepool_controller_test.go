@@ -299,6 +299,54 @@ func TestValidateManagement(t *testing.T) {
 	}
 }
 
+func TestDefaultManagement(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	t.Run("it defaults Replace config when upgradeType is Replace and replace is nil", func(t *testing.T) {
+		nodePool := &hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+				},
+			},
+		}
+		defaultManagement(nodePool)
+		g.Expect(nodePool.Spec.Management.Replace).ShouldNot(BeNil())
+		g.Expect(nodePool.Spec.Management.Replace.Strategy).Should(Equal(hyperv1.UpgradeStrategyRollingUpdate))
+		g.Expect(nodePool.Spec.Management.Replace.RollingUpdate).ShouldNot(BeNil())
+		g.Expect(nodePool.Spec.Management.Replace.RollingUpdate.MaxSurge.IntValue()).Should(Equal(1))
+		g.Expect(nodePool.Spec.Management.Replace.RollingUpdate.MaxUnavailable.IntValue()).Should(Equal(0))
+	})
+
+	t.Run("it does not overwrite existing Replace config", func(t *testing.T) {
+		nodePool := &hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+					Replace: &hyperv1.ReplaceUpgrade{
+						Strategy: hyperv1.UpgradeStrategyOnDelete,
+					},
+				},
+			},
+		}
+		defaultManagement(nodePool)
+		g.Expect(nodePool.Spec.Management.Replace.Strategy).Should(Equal(hyperv1.UpgradeStrategyOnDelete))
+	})
+
+	t.Run("it does not set Replace for InPlace upgradeType", func(t *testing.T) {
+		nodePool := &hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeInPlace,
+				},
+			},
+		}
+		defaultManagement(nodePool)
+		g.Expect(nodePool.Spec.Management.Replace).Should(BeNil())
+	})
+}
+
 func TestValidateInfraID(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)

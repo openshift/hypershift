@@ -511,6 +511,7 @@ type InPlaceUpgrade struct {
 // NodePoolManagement specifies behavior for managing nodes in a NodePool, such
 // as upgrade strategies and auto-repair behaviors.
 // +kubebuilder:validation:XValidation:rule="!has(self.inPlace) || self.upgradeType == 'InPlace'", message="The 'inPlace' field can only be set when 'upgradeType' is 'InPlace'"
+// +kubebuilder:validation:XValidation:rule="!has(self.replace) || self.upgradeType == 'Replace'", message="The 'replace' field can only be set when 'upgradeType' is 'Replace'"
 type NodePoolManagement struct {
 	// upgradeType specifies the type of strategy for handling upgrades.
 	// This can be either "Replace" or "InPlace".
@@ -523,9 +524,8 @@ type NodePoolManagement struct {
 	UpgradeType UpgradeType `json:"upgradeType"`
 
 	// replace is the configuration for rolling upgrades.
-	// It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.
+	// When upgradeType is Replace and this field is nil, the controller defaults to RollingUpdate with maxSurge=1 and maxUnavailable=0.
 	//
-	// +kubebuilder:default={strategy: "RollingUpdate", rollingUpdate: {maxSurge: 1, maxUnavailable: 0 }}
 	// +optional
 	Replace *ReplaceUpgrade `json:"replace,omitempty"`
 
