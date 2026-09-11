@@ -16,6 +16,7 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/go-logr/logr"
 )
@@ -530,4 +531,82 @@ func TestValidateRestoreName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateCluster(t *testing.T) {
+	t.Run("When no client is configured, it should skip cluster validation", func(t *testing.T) {
+		opts := &CreateOptions{BackupName: "test-backup"}
+		NewWithT(t).Expect(opts.validateCluster(t.Context())).ToNot(HaveOccurred())
+	})
+
+	t.Run("When the backup is missing in normal mode, it should return a backup validation error", func(t *testing.T) {
+		client := fake.NewClientBuilder().Build()
+		opts := &CreateOptions{
+			BackupName:    "test-backup",
+			OADPNamespace: "openshift-adp",
+			Client:        client,
+			Log:           logr.Discard(),
+		}
+
+		err := opts.validateCluster(t.Context())
+		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("backup validation failed")))
+	})
+
+	t.Run("When the backup is missing in render mode, it should continue rendering", func(t *testing.T) {
+		opts := &CreateOptions{
+			BackupName:    "test-backup",
+			OADPNamespace: "openshift-adp",
+			Client:        fake.NewClientBuilder().Build(),
+			Render:        true,
+			Log:           logr.Discard(),
+		}
+
+		NewWithT(t).Expect(opts.validateCluster(t.Context())).ToNot(HaveOccurred())
+	})
+}
+
+func TestCreateRestore(t *testing.T) {
+	t.Run("When restore creation succeeds, it should persist the generated restore", func(t *testing.T) {
+		g := NewWithT(t)
+		client := fake.NewClientBuilder().Build()
+		opts := &CreateOptions{
+			HCName:                 "test-cluster",
+			HCNamespace:            "clusters",
+			BackupName:             "test-backup",
+			OADPNamespace:          "openshift-adp",
+			ExistingResourcePolicy: "update",
+			Client:                 client,
+			Log:                    logr.Discard(),
+		}
+
+		err := opts.createRestore(t.Context())
+		g.Expect(err).ToNot(HaveOccurred())
+
+		restores := &unstructured.UnstructuredList{}
+		restores.SetAPIVersion("velero.io/v1")
+		restores.SetKind("RestoreList")
+		g.Expect(client.List(t.Context(), restores, crclient.InNamespace(opts.OADPNamespace))).ToNot(HaveOccurred())
+		g.Expect(restores.Items).To(HaveLen(1))
+		g.Expect(restores.Items[0].GetName()).To(HavePrefix("test-cluster-clusters-"))
+	})
+
+	t.Run("When restore creation fails, it should return the client error", func(t *testing.T) {
+		client := fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(context.Context, crclient.WithWatch, crclient.Object, ...crclient.CreateOption) error {
+				return errors.New("restore create failed")
+			},
+		}).Build()
+		opts := &CreateOptions{
+			HCName:                 "test-cluster",
+			HCNamespace:            "clusters",
+			BackupName:             "test-backup",
+			OADPNamespace:          "openshift-adp",
+			ExistingResourcePolicy: "update",
+			Client:                 client,
+			Log:                    logr.Discard(),
+		}
+
+		err := opts.createRestore(t.Context())
+		NewWithT(t).Expect(err).To(MatchError("failed to create restore resource: restore create failed"))
+	})
 }

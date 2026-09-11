@@ -93,6 +93,22 @@ func TestClientProviderErrors(t *testing.T) {
 		}).ControllerRuntimeClientFor("")
 		NewWithT(t).Expect(err).To(HaveOccurred())
 	})
+	t.Run("When typed client factory returns an error, it should propagate it", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			KubernetesClientSet: func(string) (kubernetes.Interface, error) {
+				return nil, errors.New("typed client factory failed")
+			},
+		}).KubernetesClientSetFor("")
+		NewWithT(t).Expect(err).To(MatchError("typed client factory failed"))
+	})
+	t.Run("When typed client factory returns nil, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			KubernetesClientSet: func(string) (kubernetes.Interface, error) {
+				return nil, nil
+			},
+		}).KubernetesClientSetFor("")
+		NewWithT(t).Expect(err).To(MatchError("typed Kubernetes client provider returned a nil client"))
+	})
 
 	t.Run("When typed client provider is missing, it should return an error", func(t *testing.T) {
 		_, err := (&ClientProvider{}).KubernetesClientSetFor("")
@@ -102,9 +118,41 @@ func TestClientProviderErrors(t *testing.T) {
 		_, err := (&ClientProvider{}).ConfigFor("")
 		NewWithT(t).Expect(err).To(HaveOccurred())
 	})
+	t.Run("When REST config factory returns an error, it should propagate it", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			Config: func(string) (*rest.Config, error) {
+				return nil, errors.New("config factory failed")
+			},
+		}).ConfigFor("")
+		NewWithT(t).Expect(err).To(MatchError("config factory failed"))
+	})
+	t.Run("When REST config factory returns nil, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			Config: func(string) (*rest.Config, error) {
+				return nil, nil
+			},
+		}).ConfigFor("")
+		NewWithT(t).Expect(err).To(MatchError("REST config provider returned a nil config"))
+	})
 	t.Run("When impersonated client provider is missing, it should return an error", func(t *testing.T) {
 		_, err := (&ClientProvider{}).ImpersonatedClientFor("test-user")
 		NewWithT(t).Expect(err).To(HaveOccurred())
+	})
+	t.Run("When impersonated client factory returns an error, it should propagate it", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			ImpersonatedClient: func(string) (client.Client, error) {
+				return nil, errors.New("impersonated client factory failed")
+			},
+		}).ImpersonatedClientFor("test-user")
+		NewWithT(t).Expect(err).To(MatchError("impersonated client factory failed"))
+	})
+	t.Run("When impersonated client factory returns nil, it should return an error", func(t *testing.T) {
+		_, err := (&ClientProvider{
+			ImpersonatedClient: func(string) (client.Client, error) {
+				return nil, nil
+			},
+		}).ImpersonatedClientFor("test-user")
+		NewWithT(t).Expect(err).To(MatchError("impersonated client provider returned a nil client"))
 	})
 }
 
