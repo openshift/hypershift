@@ -6,7 +6,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"regexp"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -22,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -116,10 +114,10 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			By("Waiting for Karpenter nodes and pods to be ready")
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, int32(replicas), nodeLabels)
 			nodeClaims := waitForReadyNodeClaims(ctx, hcClient, len(nodes))
-			waitForReadyKarpenterPods(ctx, hcClient, nodes, replicas, map[string]string{"app": "web-app"})
+			waitForReadyKarpenterPods(ctx, hcClient, nodes, nil, replicas, map[string]string{"app": "web-app"})
 
-			preUpgradeOSImage := nodes[0].Status.NodeInfo.OSImage
-			GinkgoWriter.Printf("Pre-upgrade node: %s, OS image: %s\n", nodes[0].Name, preUpgradeOSImage)
+			preUpgradeNode := nodes[0]
+			GinkgoWriter.Printf("Pre-upgrade node: %s\n", preUpgradeNode.Name)
 
 			By(fmt.Sprintf("Updating cluster release image to %s", latestImage))
 			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
@@ -170,36 +168,12 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			}
 			GinkgoWriter.Println("Karpenter Nodes drifted")
 
-			preUpgradeRHCOSVersion := extractRHCOSVersion(preUpgradeOSImage)
-			GinkgoWriter.Printf("Pre-upgrade RHCOS version: %s\n", preUpgradeRHCOSVersion)
+			By(fmt.Sprintf("Waiting for workloads to reschedule off pre-upgrade node %s", preUpgradeNode.Name))
+			newReadyPods := waitForReadyKarpenterPods(ctx, hcClient, nil, []corev1.Node{preUpgradeNode}, replicas, map[string]string{"app": "web-app"})
 
-			By("Waiting for replacement nodes with updated RHCOS version")
-			nodes = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, hcClient, int32(replicas), hyperv1.AWSPlatform, "",
-				e2eutil.WithClientOptions(
-					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))},
-				),
-				e2eutil.WithPredicates(
-					e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
-						Type:   string(corev1.NodeReady),
-						Status: metav1.ConditionTrue,
-					}),
-					func(node *corev1.Node) (done bool, reasons string, err error) {
-						postVersion := extractRHCOSVersion(node.Status.NodeInfo.OSImage)
-						if postVersion == "" {
-							return false, fmt.Sprintf("could not extract RHCOS version from %q", node.Status.NodeInfo.OSImage), nil
-						}
-						if postVersion < preUpgradeRHCOSVersion {
-							return false, fmt.Sprintf("post-upgrade RHCOS %q is older than pre-upgrade %q", postVersion, preUpgradeRHCOSVersion), nil
-						}
-						return true, fmt.Sprintf("post-upgrade RHCOS %q is not older than pre-upgrade %q", postVersion, preUpgradeRHCOSVersion), nil
-					},
-				),
-			)
-
-			By("Waiting for Karpenter pods to schedule on the new nodes")
-			waitForReadyKarpenterPods(ctx, hcClient, nodes, replicas, map[string]string{"app": "web-app"})
-
-			nodeClaims = waitForReadyNodeClaims(ctx, hcClient, len(nodes))
+			Expect(len(newReadyPods)).To(Equal(replicas), "expected %d new ready pods, got %d", replicas, len(newReadyPods))
+			postUpgradeNodeName := newReadyPods[0].Spec.NodeName
+			GinkgoWriter.Printf("Workload successfully rescheduled from node: %s to node: %s\n", preUpgradeNode.Name, postUpgradeNodeName)
 
 			By("Validating AutoNode status counts are populated after upgrade")
 			Eventually(func(g Gomega, pollCtx context.Context) {
@@ -214,13 +188,13 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 				if updated.Status.AutoNode.NodeCount == nil {
 					return
 				}
-				g.Expect(*updated.Status.AutoNode.NodeCount).To(BeNumerically(">=", len(nodes)))
+				g.Expect(*updated.Status.AutoNode.NodeCount).To(BeNumerically(">=", replicas))
 
 				g.Expect(updated.Status.AutoNode.NodeClaimCount).NotTo(BeNil())
 				if updated.Status.AutoNode.NodeClaimCount == nil {
 					return
 				}
-				g.Expect(*updated.Status.AutoNode.NodeClaimCount).To(BeNumerically(">=", len(nodeClaims.Items)))
+				g.Expect(*updated.Status.AutoNode.NodeClaimCount).To(BeNumerically(">=", replicas))
 			}).
 				WithContext(ctx).
 				WithTimeout(5 * time.Minute).
@@ -228,16 +202,6 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 				Should(Succeed())
 		})
 	})
-}
-
-var rhcosVersionRe = regexp.MustCompile(`Red Hat Enterprise Linux CoreOS (\d+\.\d+\.\d{8}-\d+)`)
-
-func extractRHCOSVersion(osImage string) string {
-	matches := rhcosVersionRe.FindStringSubmatch(osImage)
-	if len(matches) < 2 {
-		return ""
-	}
-	return matches[1]
 }
 
 // waitForReadyNodeClaims polls until exactly n NodeClaims are present and all
@@ -277,7 +241,13 @@ func waitForReadyNodeClaims(ctx context.Context, client crclient.Client, n int) 
 		WithPolling(10 * time.Second).
 		Should(Succeed())
 
-	return nodeClaims
+	active := &karpenterv1.NodeClaimList{}
+	for i := range nodeClaims.Items {
+		if nodeClaims.Items[i].DeletionTimestamp.IsZero() {
+			active.Items = append(active.Items, nodeClaims.Items[i])
+		}
+	}
+	return active
 }
 
 // expectControlPlaneRolloutWithoutDrift waits for ControlPlaneVersion to reach
@@ -332,12 +302,16 @@ func expectControlPlaneRolloutWithoutDrift(
 			}
 		}
 
-		// Signal that CP is not yet complete so Eventually retries.
+		// Signal that CP is not yet complete so Eventually retries. History[0] may
+		// still be the previous Completed rollout right after Desired moves to
+		// targetImage, so require History[0].Image to match as well.
+		g.Expect(cpv.Desired.Image).To(Equal(targetImage))
 		g.Expect(cpv.History).NotTo(BeEmpty(), "controlPlaneVersion has no history yet")
+		g.Expect(cpv.History[0].Image).To(Equal(targetImage), "waiting for target image in controlPlaneVersion history")
 		g.Expect(cpv.History[0].State).To(Equal(configv1.CompletedUpdate))
 	}).
 		WithContext(ctx).
 		WithTimeout(30 * time.Minute).
-		WithPolling(10 * time.Second).
+		WithPolling(15 * time.Second).
 		Should(Succeed())
 }

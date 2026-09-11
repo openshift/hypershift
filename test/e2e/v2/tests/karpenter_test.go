@@ -418,7 +418,7 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Println("Created ARM64 workloads")
 
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, armNodeLabels)
-			waitForReadyKarpenterPods(ctx, hcClient, nodes, 1, map[string]string{"app": "arm-app"})
+			waitForReadyKarpenterPods(ctx, hcClient, nodes, nil, 1, map[string]string{"app": "arm-app"})
 		})
 	})
 }
@@ -1830,7 +1830,7 @@ func describeEC2Instance(ctx context.Context, ec2client *ec2.Client, node corev1
 	return result.Reservations[0].Instances[0], instanceID
 }
 
-func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string) {
+func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, includedNodes, excludedNodes []corev1.Node, numPods int, podLabels map[string]string) []corev1.Pod {
 	t := GinkgoTB()
 	pods := &corev1.PodList{}
 	e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled on provisioned Karpenter nodes",
@@ -1844,7 +1844,7 @@ func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, node
 		},
 		[]e2eutil.Predicate[[]*corev1.Pod]{
 			func(pods []*corev1.Pod) (bool, string, error) {
-				want, got := n, len(pods)
+				want, got := numPods, len(pods)
 				return want == got, fmt.Sprintf("expected %d pods, got %d", want, got), nil
 			},
 		},
@@ -1855,12 +1855,23 @@ func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, node
 			}),
 			func(pod *corev1.Pod) (bool, string, error) {
 				nodeName := pod.Spec.NodeName
-				for _, node := range nodes {
+				for _, node := range excludedNodes {
+					if nodeName == node.Name {
+						return false, fmt.Sprintf("pod %s incorrectly scheduled on excluded node %q", pod.Name, nodeName), nil
+					}
+				}
+				for _, node := range includedNodes {
 					if nodeName == node.Name {
 						return true, fmt.Sprintf("pod %s correctly scheduled on node %s", pod.Name, nodeName), nil
 					}
 				}
-				return false, fmt.Sprintf("pod %s scheduled on unexpected node %s", pod.Name, nodeName), nil
+				if len(includedNodes) > 0 {
+					return false, fmt.Sprintf("pod %s scheduled on unexpected node %s", pod.Name, nodeName), nil
+				}
+				if nodeName == "" {
+					return false, fmt.Sprintf("pod %s is not scheduled", pod.Name), nil
+				}
+				return true, fmt.Sprintf("pod %s rescheduled to %s", pod.Name, nodeName), nil
 			},
 			func(pod *corev1.Pod) (bool, string, error) {
 				return pod.Status.Phase == corev1.PodRunning, fmt.Sprintf("pod %s is not running", pod.Name), nil
@@ -1868,6 +1879,7 @@ func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, node
 		},
 		e2eutil.WithTimeout(20*time.Minute),
 	)
+	return pods.Items
 }
 
 // waitForAutoNodeStatusVCPUs polls until HostedCluster.Status.AutoNode.VCPUs
