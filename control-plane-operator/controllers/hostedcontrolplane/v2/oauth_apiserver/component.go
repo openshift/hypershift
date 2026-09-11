@@ -2,6 +2,7 @@ package oapi
 
 import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
+	konnectivityagent "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
@@ -46,7 +47,7 @@ func NewComponent() component.ControlPlaneComponent {
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
 		).
-		WithDependencies(oapiv2.ComponentName).
+		WithDependencies(oapiv2.ComponentName, konnectivityagent.ComponentName).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.Socks5,

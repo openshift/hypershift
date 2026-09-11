@@ -1,4 +1,4 @@
-package packageserver
+package oauth
 
 import (
 	"testing"
