@@ -81,7 +81,6 @@ func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	tempDir := t.TempDir()
 
@@ -155,7 +154,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, azureOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, azureOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 
