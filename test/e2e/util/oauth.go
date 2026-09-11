@@ -12,10 +12,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
-	configmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	hcpmanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+	configmanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 
