@@ -346,7 +346,7 @@ func TestValidate(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "fails when ingress is disabled but console is not disabled",
+			name: "passes when only ingress is disabled",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
@@ -354,7 +354,7 @@ func TestValidate(t *testing.T) {
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"Ingress"},
 			},
-			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+			expectedErr: "",
 		},
 		{
 			name: "passes when both ingress and console are disabled",
@@ -390,7 +390,7 @@ func TestValidate(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "fails when ingress is disabled with other capabilities but console is not disabled",
+			name: "passes when ingress is disabled with other capabilities but console is not disabled",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
@@ -398,7 +398,7 @@ func TestValidate(t *testing.T) {
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"Ingress", "ImageRegistry"},
 			},
-			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+			expectedErr: "",
 		},
 		{
 			name: "passes when disable-multi-network is used with network-type=Other",
