@@ -54,6 +54,12 @@ const (
 	// alpha: v0.1.49
 	// default: OCP 5.0
 	OSStreams featuregate.Feature = "OSStreams"
+
+	// OCIPlatform gates Oracle Cloud Infrastructure (OCI) platform fields on the HostedCluster API.
+	// owner: openshift-hyperfleet
+	// alpha: v0.1.83
+	// beta: x.y.z
+	OCIPlatform featuregate.Feature = "OCIPlatform"
 )
 
 // Initialize new features here
@@ -67,6 +73,7 @@ var (
 	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
+	ociPlatformFeature             = featuregates.NewFeature(OCIPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -78,6 +85,7 @@ func init() {
 	allFeatures.AddFeature(karpenterOperatorFeature)
 	allFeatures.AddFeature(etcdShardingFeature)
 	allFeatures.AddFeature(osStreamsFeature)
+	allFeatures.AddFeature(ociPlatformFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
