@@ -11,12 +11,19 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/image/docker10"
+	imageapi "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,6 +32,7 @@ import (
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/vincent-petithory/dataurl"
+	"go.uber.org/mock/gomock"
 )
 
 func TestAPIServerHAProxyConfig(t *testing.T) {
@@ -539,6 +547,126 @@ kind: Config`
 	}
 }
 
+func testKubeconfig(t *testing.T, server string) []byte {
+	t.Helper()
+	kc := clientcmdapiv1.Config{
+		APIVersion: "v1",
+		Kind:       "Config",
+		Clusters: []clientcmdapiv1.NamedCluster{
+			{
+				Name: "cluster",
+				Cluster: clientcmdapiv1.Cluster{
+					Server: server,
+				},
+			},
+		},
+		Contexts: []clientcmdapiv1.NamedContext{
+			{
+				Name: "cluster",
+				Context: clientcmdapiv1.Context{
+					Cluster:   "cluster",
+					Namespace: "default",
+				},
+			},
+		},
+		CurrentContext: "cluster",
+	}
+	data, err := yaml.Marshal(&kc)
+	if err != nil {
+		t.Fatalf("failed to marshal kubeconfig: %v", err)
+	}
+	return data
+}
+
+func extractProxyPodImage(t *testing.T, rawConfig string) string {
+	t.Helper()
+	g := NewWithT(t)
+
+	mcfg := &mcfgv1.MachineConfig{}
+	g.Expect(yaml.Unmarshal([]byte(rawConfig), mcfg)).To(Succeed())
+
+	ignCfg := &ignitionapi.Config{}
+	g.Expect(yaml.Unmarshal(mcfg.Spec.Config.Raw, ignCfg)).To(Succeed())
+
+	for _, file := range ignCfg.Storage.Files {
+		if file.Path != "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml" {
+			continue
+		}
+		du, err := dataurl.DecodeString(*file.Contents.Source)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		pod := &corev1.Pod{}
+		g.Expect(yaml.Unmarshal(du.Data, pod)).To(Succeed())
+
+		for _, c := range pod.Spec.Containers {
+			if c.Name == "kubernetes-default-proxy" {
+				return c.Image
+			}
+		}
+	}
+	return ""
+}
+
+func TestReconcileHAProxyIgnitionConfigCPOImage(t *testing.T) {
+	testCases := []struct {
+		name                      string
+		controlPlaneOperatorImage string
+	}{
+		{
+			name:                      "When CPO image is from NodePool release, it should embed that image in the proxy pod",
+			controlPlaneOperatorImage: "registry.example.com/np-cpo:4.16",
+		},
+		{
+			name:                      "When CPO image is from HC release, it should embed that image in the proxy pod",
+			controlPlaneOperatorImage: "registry.example.com/hc-cpo:4.17",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							HTTPSProxy: "https://proxy.example.com:3128",
+						},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					KubeConfig: &corev1.LocalObjectReference{Name: "kk"},
+				},
+			}
+
+			r := HAProxy{
+				Client: fake.NewClientBuilder().WithObjects(&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc.Namespace},
+					Data:       map[string][]byte{"kubeconfig": testKubeconfig(t, "https://kubeconfig-host:6443")},
+				}).Build(),
+				HAProxyImage: "haproxy:latest",
+			}
+
+			cfg, err := r.reconcileHAProxyIgnitionConfig(t.Context(), hc, tc.controlPlaneOperatorImage)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			proxyImage := extractProxyPodImage(t, cfg)
+			g.Expect(proxyImage).To(Equal(tc.controlPlaneOperatorImage))
+		})
+	}
+}
+
 func TestJoinDefaultPortIfMissing(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -579,6 +707,119 @@ func TestJoinDefaultPortIfMissing(t *testing.T) {
 			}
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestGenerateHAProxyRawConfigCPOImageSelection(t *testing.T) {
+	const (
+		hcCPOImage = "registry.example.com/hc-cpo:4.17"
+		npCPOImage = "registry.example.com/np-cpo:4.16"
+	)
+
+	hcReleaseImage := &releaseinfo.ReleaseImage{
+		ImageStream: &imageapi.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+			Spec: imageapi.ImageStreamSpec{
+				Tags: []imageapi.TagReference{
+					{
+						Name: "hypershift",
+						From: &corev1.ObjectReference{Name: hcCPOImage},
+					},
+				},
+			},
+		},
+	}
+
+	imageMetadataWithLabel := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+		Result: &dockerv1client.DockerImageConfig{
+			Config: &docker10.DockerConfig{
+				Labels: map[string]string{
+					ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel: "true",
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name             string
+		nodePoolCPOImage string
+		expectedCPOImage string
+	}{
+		{
+			name:             "When NodePoolCPOImage is set, it should use the NodePool CPO image in the proxy pod",
+			nodePoolCPOImage: npCPOImage,
+			expectedCPOImage: npCPOImage,
+		},
+		{
+			name:             "When NodePoolCPOImage is empty, it should fall back to the HC CPO image in the proxy pod",
+			nodePoolCPOImage: "",
+			expectedCPOImage: hcCPOImage,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctrl := gomock.NewController(t)
+
+			mockRelease := NewMockProvider(ctrl)
+			mockRelease.EXPECT().
+				Lookup(gomock.Any(), "quay.io/openshift-release-dev/ocp-release:4.17.0", gomock.Any()).
+				Return(hcReleaseImage, nil)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.17.0"},
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							HTTPSProxy: "https://proxy.example.com:3128",
+						},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithObjects(
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "clusters"},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte("{}")},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "kubeconfig", Namespace: "clusters"},
+					Data:       map[string][]byte{"kubeconfig": testKubeconfig(t, "https://kubeconfig-host:6443")},
+				},
+			).Build()
+
+			r := HAProxy{
+				Client:                  fakeClient,
+				HAProxyImage:            "haproxy:latest",
+				HypershiftOperatorImage: "hypershift-operator:latest",
+				NodePoolCPOImage:        tc.nodePoolCPOImage,
+				ReleaseProvider:         mockRelease,
+				ImageMetadataProvider:   imageMetadataWithLabel,
+			}
+
+			rawConfig, err := r.GenerateHAProxyRawConfig(t.Context(), hc, "clusters-hc")
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(rawConfig).ToNot(BeEmpty())
+
+			proxyImage := extractProxyPodImage(t, rawConfig)
+			g.Expect(proxyImage).To(Equal(tc.expectedCPOImage))
 		})
 	}
 }
