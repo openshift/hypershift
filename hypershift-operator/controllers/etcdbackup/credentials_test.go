@@ -177,6 +177,49 @@ func TestResolveAzureCredentials(t *testing.T) {
 		g.Expect(result.ClientID).To(Equal("client-789"))
 	})
 
+	t.Run("When Secret has cloud key with AZURE_CLIENT_ID and AZURE_CLIENT_SECRET it should detect client-secret mode", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds"},
+			Data: map[string][]byte{
+				"cloud": []byte("AZURE_SUBSCRIPTION_ID=sub-123\nAZURE_TENANT_ID=tenant-456\nAZURE_CLIENT_ID=client-789\nAZURE_CLIENT_SECRET=sp-secret\nAZURE_RESOURCE_GROUP=rg-test\nAZURE_CLOUD_NAME=AzurePublicCloud\n"),
+			},
+		}
+
+		result := resolveAzureCredentials(secret)
+		g.Expect(result.Mode).To(Equal(credentialModeAzureClientSecret))
+		g.Expect(result.SecretName).To(Equal("azure-creds"))
+		g.Expect(result.ClientID).To(BeEmpty())
+	})
+
+	t.Run("When Secret has cloud key with AZURE_CLIENT_SECRET before AZURE_CLIENT_ID it should detect client-secret mode", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds"},
+			Data: map[string][]byte{
+				"cloud": []byte("AZURE_CLIENT_SECRET=sp-secret\nAZURE_CLIENT_ID=client-789\nAZURE_TENANT_ID=tenant-456\n"),
+			},
+		}
+
+		result := resolveAzureCredentials(secret)
+		g.Expect(result.Mode).To(Equal(credentialModeAzureClientSecret))
+		g.Expect(result.SecretName).To(Equal("azure-creds"))
+	})
+
+	t.Run("When Secret has cloud key with AZURE_CLIENT_SECRET but no AZURE_CLIENT_ID it should fall back to managed-identity mode", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "azure-creds"},
+			Data: map[string][]byte{
+				"cloud": []byte("AZURE_SUBSCRIPTION_ID=sub-123\nAZURE_TENANT_ID=tenant-456\nAZURE_CLIENT_SECRET=sp-secret\n"),
+			},
+		}
+
+		result := resolveAzureCredentials(secret)
+		g.Expect(result.Mode).To(Equal(credentialModeAzureManagedIdentity))
+		g.Expect(result.ClientID).To(BeEmpty())
+	})
+
 	t.Run("When Secret has both cloud and credentials keys it should prioritize cloud key", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		secret := &corev1.Secret{
