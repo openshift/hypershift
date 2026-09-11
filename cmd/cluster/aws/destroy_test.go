@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -13,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -105,4 +107,19 @@ func TestValidateCredentialInfo(t *testing.T) {
 		"my-secret", "clusters", c,
 	)
 	g.Expect(err).NotTo(HaveOccurred())
+}
+
+func TestNewDestroyCommandClientProvider(t *testing.T) {
+	t.Run("When credential validation needs a client and the provider fails, it should return the provider error", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := &core.DestroyOptions{CredentialSecretName: "cloud-credentials", Namespace: "clusters"}
+		cmd := NewDestroyCommand(opts, &core.ClientProvider{
+			ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return nil, errors.New("management client unavailable")
+			},
+		})
+
+		err := cmd.Execute()
+		g.Expect(err).To(MatchError("management client unavailable"))
+	})
 }

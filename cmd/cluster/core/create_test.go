@@ -117,6 +117,89 @@ func TestGetAPIServerAddressByNode(t *testing.T) {
 		_, err := GetAPIServerAddressByNode(t.Context(), logr.Discard(), c)
 		g.Expect(err).To(MatchError("no node objects found"))
 	})
+	t.Run("When no management client is provided, it should return an error", func(t *testing.T) {
+		_, err := GetAPIServerAddressByNode(t.Context(), logr.Discard(), nil)
+		NewWithT(t).Expect(err).To(MatchError("management-cluster client is required"))
+	})
+	t.Run("When a node has no usable address, it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "worker-0"},
+		}).Build()
+
+		_, err := GetAPIServerAddressByNode(t.Context(), logr.Discard(), c)
+		g.Expect(err).To(MatchError(`node "worker-0" does not expose any IP addresses, this should not be possible`))
+	})
+}
+
+func TestCachedClientProvider(t *testing.T) {
+	t.Run("When the controller client factory succeeds, it should reuse the client and kubeconfig", func(t *testing.T) {
+		g := NewWithT(t)
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		var calls int
+		provider := newCachedClientProvider(&ClientProvider{
+			ControllerRuntimeClient: func(kubeconfig string) (crclient.Client, error) {
+				calls++
+				g.Expect(kubeconfig).To(Equal("management.kubeconfig"))
+				return client, nil
+			},
+		}, "management.kubeconfig")
+
+		first, err := provider.ControllerRuntimeClientFor("ignored.kubeconfig")
+		g.Expect(err).NotTo(HaveOccurred())
+		second, err := provider.ControllerRuntimeClientFor("ignored.kubeconfig")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(first).To(BeIdenticalTo(client))
+		g.Expect(second).To(BeIdenticalTo(client))
+		g.Expect(calls).To(Equal(1))
+	})
+
+	t.Run("When the controller client provider is missing, it should cache the error", func(t *testing.T) {
+		provider := newCachedClientProvider(nil, "management.kubeconfig")
+		_, firstErr := provider.ControllerRuntimeClientFor("")
+		_, secondErr := provider.ControllerRuntimeClientFor("")
+		g := NewWithT(t)
+		g.Expect(firstErr).To(MatchError("controller-runtime client provider is not configured"))
+		g.Expect(secondErr).To(MatchError("controller-runtime client provider is not configured"))
+	})
+
+	t.Run("When the typed client provider is missing, it should cache the error", func(t *testing.T) {
+		provider := newCachedClientProvider(&ClientProvider{}, "management.kubeconfig")
+		_, firstErr := provider.KubernetesClientSetFor("")
+		_, secondErr := provider.KubernetesClientSetFor("")
+		g := NewWithT(t)
+		g.Expect(firstErr).To(MatchError("typed Kubernetes client provider is not configured"))
+		g.Expect(secondErr).To(MatchError("typed Kubernetes client provider is not configured"))
+	})
+}
+
+func TestCreateOptionsClient(t *testing.T) {
+	t.Run("When no provider is configured, it should return an error", func(t *testing.T) {
+		var opts *CreateOptions
+		_, err := opts.Client()
+		NewWithT(t).Expect(err).To(MatchError("controller-runtime client provider is not configured"))
+	})
+	t.Run("When a provider is configured, it should request the configured kubeconfig", func(t *testing.T) {
+		g := NewWithT(t)
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		opts := &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{RawCreateOptions: &RawCreateOptions{Kubeconfig: "management.kubeconfig"}},
+				},
+			},
+			clientProvider: &ClientProvider{
+				ControllerRuntimeClient: func(kubeconfig string) (crclient.Client, error) {
+					g.Expect(kubeconfig).To(Equal("management.kubeconfig"))
+					return client, nil
+				},
+			},
+		}
+
+		got, err := opts.Client()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(got).To(BeIdenticalTo(client))
+	})
 }
 
 func TestCreateCluster(t *testing.T) {
