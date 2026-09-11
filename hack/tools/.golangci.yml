@@ -1,0 +1,46 @@
+version: "2"
+run:
+  allow-parallel-runners: true
+linters:
+  enable:
+    - dupword
+    - durationcheck
+    - errorlint
+    - fatcontext
+    - gocyclo
+    - misspell
+    - nilerr
+    - noctx
+    - unparam
+    - usestdlibvars
+  settings:
+    gocyclo:
+      min-complexity: 30
+    misspell:
+      locale: US
+  exclusions:
+    warn-unused: true
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - unparam
+        path: '_test\.go$'
+severity:
+  default: error
+formatters:
+  enable:
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+      custom-order: true
+  exclusions:
+    warn-unused: true
+    generated: lax
