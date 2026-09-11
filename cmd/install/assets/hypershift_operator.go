@@ -30,6 +30,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -1128,6 +1129,38 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 					TargetPort: intstr.FromString("manager"),
 				},
 			},
+		},
+	}
+}
+
+type HyperShiftOperatorPodDisruptionBudget struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftOperatorPodDisruptionBudget) Build() *policyv1.PodDisruptionBudget {
+	return &policyv1.PodDisruptionBudget{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodDisruptionBudget",
+			APIVersion: policyv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      HypershiftOperatorName,
+			Labels: map[string]string{
+				"name": HypershiftOperatorName,
+			},
+		},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": HypershiftOperatorName,
+				},
+			},
+			// Require at least one operator pod to remain available during
+			// voluntary disruptions (e.g. node drains). With the default 2
+			// replicas this still permits one pod to be evicted at a time.
+			MinAvailable:               ptr.To(intstr.FromInt32(1)),
+			UnhealthyPodEvictionPolicy: ptr.To(policyv1.AlwaysAllow),
 		},
 	}
 }
