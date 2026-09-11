@@ -314,7 +314,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 		}
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, armNodeLabels)
-		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1, map[string]string{"app": "arm-app"})
+		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1, map[string]string{"app": "arm-app"}, "")
 
 		g.Expect(guestClient.Delete(ctx, armNodePool)).To(Succeed())
 		t.Logf("Deleted ARM64 NodePool")
@@ -1512,7 +1512,7 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 	}
 }
 
-func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string) []corev1.Pod {
+func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string, excludeNodeName string) []corev1.Pod {
 	pods := &corev1.PodList{}
 	waitTimeout := 20 * time.Minute
 	e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled on provisioned Karpenter nodes",
@@ -1536,9 +1536,14 @@ func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclien
 				Type:   string(corev1.PodScheduled),
 				Status: metav1.ConditionTrue,
 			}),
-			// wait for each pod to be scheduled on one of the correct nodes
 			e2eutil.Predicate[*corev1.Pod](func(pod *corev1.Pod) (done bool, reasons string, err error) {
 				nodeName := pod.Spec.NodeName
+				if excludeNodeName != "" {
+					if nodeName == "" || nodeName == excludeNodeName {
+						return false, fmt.Sprintf("pod %s still on pre-upgrade node %q", pod.Name, nodeName), nil
+					}
+					return true, fmt.Sprintf("pod %s rescheduled to %s", pod.Name, nodeName), nil
+				}
 				for _, node := range getNodeNames(nodes) {
 					if nodeName == node {
 						return true, fmt.Sprintf("pod %s correctly scheduled on a specified node %s", pod.Name, nodeName), nil
@@ -1622,7 +1627,7 @@ func expectControlPlaneRolloutWithoutDrift(
 	nodeClaims *karpenterv1.NodeClaimList,
 ) {
 	t.Helper()
-	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, 15*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
 		// Check CP completion first. If the target image already reached Completed,
 		// drift is expected and correct, so return success without inspecting NodeClaims.
 		currentHC := &hyperv1.HostedCluster{}
@@ -1669,40 +1674,27 @@ func expectControlPlaneRolloutWithoutDrift(
 }
 
 func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.Client, nc *karpenterv1.NodeClaim) {
-	waitTimeout := 5 * time.Minute
-	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodeClaim %s to be drifted", nc.Name),
-		func(ctx context.Context) (*karpenterv1.NodeClaim, error) {
-			nodeClaim := &karpenterv1.NodeClaim{}
-			err := client.Get(ctx, crclient.ObjectKeyFromObject(nc), nodeClaim)
-			if apierrors.IsNotFound(err) {
-				t.Logf("WARNING: NodeClaim %s not found; assuming it was deleted after drifting", nc.Name)
-				return nc, nil
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, 3*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		nodeClaim := &karpenterv1.NodeClaim{}
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(nc), nodeClaim)
+		if apierrors.IsNotFound(err) {
+			t.Logf("WARNING: NodeClaim %s not found; assuming it was deleted after drifting", nc.Name)
+			return true, nil
+		}
+		if err != nil {
+			return false, nil
+		}
+		for _, condition := range nodeClaim.Status.Conditions {
+			if condition.Type == karpenterv1.ConditionTypeDrifted && condition.Status == metav1.ConditionTrue {
+				return true, nil
 			}
-			if err != nil {
-				return nil, err
-			}
-			haystack, err := e2eutil.Conditions(nodeClaim)
-			if err != nil {
-				return nil, err
-			}
-			for _, condition := range haystack {
-				if karpenterv1.ConditionTypeDrifted == condition.Type {
-					if condition.Status == metav1.ConditionTrue {
-						return nodeClaim, nil
-					}
-					return nil, fmt.Errorf("condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-				}
-			}
-			return nil, fmt.Errorf("condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-		},
-		[]e2eutil.Predicate[*karpenterv1.NodeClaim]{
-			e2eutil.ConditionPredicate[*karpenterv1.NodeClaim](e2eutil.Condition{
-				Type:   karpenterv1.ConditionTypeDrifted,
-				Status: metav1.ConditionTrue,
-			}),
-		},
-		e2eutil.WithTimeout(waitTimeout),
-	)
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("timed out waiting for NodeClaim %s to be drifted: %v", nc.Name, err)
+	}
 }
 
 // waitForAutoNodeStatusVCPUs polls until HostedCluster.Status.AutoNode.VCPUs
