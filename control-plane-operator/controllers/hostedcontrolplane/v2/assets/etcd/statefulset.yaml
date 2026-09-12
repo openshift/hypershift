@@ -101,10 +101,15 @@ spec:
           periodSeconds: 5
           successThreshold: 1
           timeoutSeconds: 10
+        # Baseline requests for the smallest supported control plane. etcd holds
+        # its entire keyspace in memory, so memory scales with the size of the
+        # guest cluster's object store; size larger control planes via
+        # ClusterSizingConfiguration effects rather than by editing this
+        # manifest. See docs/content/how-to/cluster-sizing-guidance.md.
         resources:
           requests:
             cpu: 300m
-            memory: 600Mi
+            memory: 1Gi
         startupProbe:
           failureThreshold: 18
           httpGet:
