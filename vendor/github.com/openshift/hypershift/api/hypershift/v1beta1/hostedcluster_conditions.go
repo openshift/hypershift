@@ -70,6 +70,8 @@ const (
 	// ClusterVersionRetrievedUpdates bubbles up RetrievedUpdates from the CVO.
 	ClusterVersionRetrievedUpdates ConditionType = "ClusterVersionRetrievedUpdates"
 
+	// HCP-only conditions (not propagated to HostedCluster).
+
 	// UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
 	// healthy.
 	UnmanagedEtcdAvailable ConditionType = "UnmanagedEtcdAvailable"

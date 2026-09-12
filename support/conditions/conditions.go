@@ -1,13 +1,30 @@
 package conditions
 
 import (
+	"context"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/statuspatching"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// PatchPrivateConnectivityCleanupCondition updates the HCP condition that gates
+// private connectivity cleanup during HostedControlPlane deletion.
+func PatchPrivateConnectivityCleanupCondition(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, status metav1.ConditionStatus, reason, message string) error {
+	return statuspatching.PatchStatusCondition(ctx, c, hcp, &hcp.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.PrivateConnectivityCleanedUp),
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: hcp.Generation,
+	})
+}
 
 func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.ConditionType]metav1.ConditionStatus {
 	conditions := map[hyperv1.ConditionType]metav1.ConditionStatus{
