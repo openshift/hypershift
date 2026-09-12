@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func IsDeploymentReady(_ context.Context, deployment *appsv1.Deployment) bool {
@@ -35,6 +39,37 @@ func IsStatefulSetReady(_ context.Context, statefulSet *appsv1.StatefulSet) bool
 	}
 
 	return true
+}
+
+// HasTerminatingPods returns true if any pods matching the given label selector
+// have a non-nil DeletionTimestamp (i.e. are still shutting down).
+// When gracePeriod is non-zero, only pods that have been terminating for less
+// than gracePeriod are counted; pods stuck beyond the grace period are ignored
+// to prevent indefinite rollout stalls from orphaned finalizers or hung preStop hooks.
+// A zero gracePeriod means all terminating pods are counted regardless of age.
+// Returns false with a nil error when the selector is nil.
+func HasTerminatingPods(ctx context.Context, c client.Reader, namespace string, selector *metav1.LabelSelector, gracePeriod time.Duration) (bool, error) {
+	if selector == nil {
+		return false, nil
+	}
+	labelSelector, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse label selector: %w", err)
+	}
+	podList := &corev1.PodList{}
+	if err := c.List(ctx, podList,
+		client.InNamespace(namespace),
+		client.MatchingLabelsSelector{Selector: labelSelector}); err != nil {
+		return false, fmt.Errorf("failed to list pods for termination check: %w", err)
+	}
+	for i := range podList.Items {
+		if podList.Items[i].DeletionTimestamp != nil {
+			if gracePeriod == 0 || time.Since(podList.Items[i].DeletionTimestamp.Time) < gracePeriod {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func DeploymentAddKubevirtInfraCredentials(deployment *appsv1.Deployment) {
