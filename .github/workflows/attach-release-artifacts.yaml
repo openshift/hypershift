@@ -1,0 +1,23 @@
+name: Attach Release Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.47)'
+        required: true
+        type: string
+      cli_image:
+        description: 'Konflux CLI image pullspec (e.g. quay.io/redhat-user-workloads/...)'
+        required: true
+        type: string
+
+jobs:
+  attach:
+    uses: openshift/hypershift/.github/workflows/attach-release-artifacts-reusable.yaml@main
+    permissions:
+      contents: write
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag }}
+      cli_image: ${{ inputs.cli_image }}

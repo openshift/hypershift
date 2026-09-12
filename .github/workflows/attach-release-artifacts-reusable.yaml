@@ -1,0 +1,90 @@
+name: Attach Release Artifacts (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.47)'
+        required: true
+        type: string
+      cli_image:
+        description: 'Konflux CLI image pullspec'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    name: Attach Release Artifacts
+    runs-on: arc-runner-set
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate tag name
+        env:
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          if ! echo "$TAG_NAME" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Tag '$TAG_NAME' does not match semver format"
+            exit 1
+          fi
+      - name: Validate draft release exists
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          if ! gh release view "$TAG_NAME" --json isDraft --jq '.isDraft' >/dev/null 2>&1; then
+            echo "::error::No release found for tag '$TAG_NAME'"
+            exit 1
+          fi
+
+          is_draft=$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" != "true" ]; then
+            echo "::error::Release '$TAG_NAME' is not a draft — refusing to modify a published release"
+            exit 1
+          fi
+      - name: Extract CLI binaries from container image
+        env:
+          CLI_IMAGE: ${{ inputs.cli_image }}
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          echo "Pulling image: $CLI_IMAGE"
+          podman pull "$CLI_IMAGE"
+
+          container_id=$(podman create "$CLI_IMAGE")
+          trap "podman rm $container_id >/dev/null 2>&1" EXIT
+
+          echo "Extracting hypershift binary..."
+          podman cp "${container_id}:/usr/bin/hypershift" "./hypershift-${TAG_NAME}-linux-amd64"
+          sha256sum "./hypershift-${TAG_NAME}-linux-amd64" > "./hypershift-${TAG_NAME}-linux-amd64.sha256"
+
+          echo "Extracted artifacts:"
+          ls -la "./hypershift-${TAG_NAME}-linux-amd64"*
+      - name: Upload binaries to release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          gh release upload "$TAG_NAME" \
+            "./hypershift-${TAG_NAME}-linux-amd64" \
+            "./hypershift-${TAG_NAME}-linux-amd64.sha256"
+      - name: Promote release from draft
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          gh release edit "$TAG_NAME" --draft=false
+
+          echo "## Attach Release Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release **${TAG_NAME}** promoted from draft to published." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Attached artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`hypershift-${TAG_NAME}-linux-amd64\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`hypershift-${TAG_NAME}-linux-amd64.sha256\`" >> "$GITHUB_STEP_SUMMARY"

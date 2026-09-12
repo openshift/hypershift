@@ -13,7 +13,7 @@ title: Release process
 
 ### Bumping release version and generating Release Notes
 
-The [hypershift repo]( https://github.com/openshift/hypershift) produces two different artifacts: Hypershift Operator (HO) and Control Plane Operator (CPO).
+The [hypershift repo](https://github.com/openshift/hypershift) produces two different artifacts: Hypershift Operator (HO) and Control Plane Operator (CPO).
 
 The CPO release lifecycle is dictated by the [OCP release payload](https://access.redhat.com/support/policy/updates/openshift).
 
@@ -21,6 +21,51 @@ The HO has an independent release cadence. For consumer products:
 
 - Our internal image build system builds from our latest commit in main several times a day.
 - To roll out a new build we apply the following process:
+
+#### Automated flow (recommended)
+
+The release process is managed via GitHub Actions workflows triggered by changes to `releases/tags.yaml`.
+
+1. **Request a tag**: Open a PR adding an entry to [`releases/tags.yaml`](https://github.com/openshift/hypershift/blob/main/releases/tags.yaml):
+
+    ```yaml
+    tags:
+      - name: "v0.1.47"
+        commit: "abc123def456789..."  # Full 40-char SHA from main
+        description: "HO release for ROSA 4.17.8 rollout"
+    ```
+
+2. **Validation**: The `validate-tag-request` workflow automatically validates:
+    - Tag name is valid semver (`v<major>.<minor>.<patch>`)
+    - Commit SHA exists and is reachable from `main`
+    - Tag does not already exist
+    - No duplicate tag names in the manifest
+
+3. **Tag creation**: Once the PR is reviewed and merged, the `create-tag` workflow creates an annotated git tag at the specified commit and pushes it.
+
+4. **Draft release**: The tag push triggers `create-release`, which:
+    - Generates release notes using `hack/tools/release/notes.go`
+    - Builds a source tarball with SHA256 checksum
+    - Creates a **draft** GitHub Release
+
+5. **Attach CLI binaries**: After Konflux builds the CLI image, attach the binaries to the draft release and promote it:
+
+    ```bash
+    gh workflow run attach-release-artifacts.yaml \
+      -f tag=v0.1.47 \
+      -f cli_image=quay.io/redhat-user-workloads/...
+    ```
+
+    This extracts the CLI binary from the container image, uploads it to the GitHub Release, and promotes the release from draft to published.
+
+    !!! note
+
+        Automating the `attach-release-artifacts` trigger from Konflux pipelines is tracked in [CNTRLPLANE-4380](https://issues.redhat.com/browse/CNTRLPLANE-4380).
+
+#### Legacy manual flow
+
+For cases where the automated flow is not available:
+
   - Create a git tag for the commit belonging to the image to be rolled out:
     - `git co $commit-sha`
     - `git tag v0.1.1`
@@ -28,6 +73,8 @@ The HO has an independent release cadence. For consumer products:
   - Generate release notes:
     - `FROM=v0.1.0 TO=v0.1.1 make release`
     - Use the output to create the PR for bump the new image in the product gitOps repo. E.g.
+
+### Release notes sample
 
 This is a sample of how the release notes looks like added to the PR:
 
