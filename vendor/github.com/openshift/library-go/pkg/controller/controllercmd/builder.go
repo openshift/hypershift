@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/authorization/union"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/healthz"
@@ -324,12 +325,22 @@ func (b *ControllerBuilder) Run(ctx context.Context, config *unstructured.Unstru
 		if err != nil {
 			return err
 		}
-		serverConfig.Authorization.Authorizer = union.New(
+		metricsAuthorizer := hardcodedauthorizer.NewHardCodedMetricsAuthorizer()
+		serverConfig.Authorization.Authorizer, err = union.New(
 			// prefix the authorizer with the permissions for metrics scraping which are well known.
 			// openshift RBAC policy will always allow this user to read metrics.
-			hardcodedauthorizer.NewHardCodedMetricsAuthorizer(),
-			serverConfig.Authorization.Authorizer,
+			union.NamedAuthorizer{
+				AuthorizerName: "metrics",
+				Authorizer:     authorizer.AuthorizerFunc(metricsAuthorizer.Authorize),
+			},
+			union.NamedAuthorizer{
+				AuthorizerName: "delegated",
+				Authorizer:     serverConfig.Authorization.Authorizer,
+			},
 		)
+		if err != nil {
+			return err
+		}
 		serverConfig.HealthzChecks = append(serverConfig.HealthzChecks, b.healthChecks...)
 
 		server, err = serverConfig.Complete(nil).New(b.componentName, genericapiserver.NewEmptyDelegate())
