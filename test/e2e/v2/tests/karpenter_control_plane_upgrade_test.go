@@ -76,6 +76,9 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
 			Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
 			previousImage := hc.Spec.Release.Image
+			if latestImage == previousImage {
+				Skip("latest release image is identical to the hosted cluster's current image — identical images produce no control-plane upgrade or Karpenter node drift; OCP_IMAGE_N1 is likely not configured for this CI job")
+			}
 			GinkgoWriter.Printf("Starting Karpenter control plane upgrade. FromImage: %s, toImage: %s\n", previousImage, latestImage)
 
 			karpenterNodePool := baseNodePool("on-demand", "default")
