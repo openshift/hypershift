@@ -170,19 +170,35 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		guaranteedResources = kvPlatform.Compute.QosClass != nil && *kvPlatform.Compute.QosClass == hyperv1.QoSClassGuaranteed
 	}
 
+	vmiSpec := kubevirtv1.VirtualMachineInstanceSpec{
+		Domain: kubevirtv1.DomainSpec{
+			Devices: kubevirtv1.Devices{
+				Interfaces: virtualMachineInterfaces(kvPlatform),
+			},
+		},
+		EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
+		Networks:         virtualMachineNetworks(kvPlatform),
+	}
+
+	// Set Architecture from nodePool.Spec.Arch so that VMs are always created
+	// with the correct arch on multi-arch infra clusters. Without this, KubeVirt
+	// inherits the cluster's compiled-in default (e.g. s390x on an s390x cluster)
+	// for every VM regardless of the NodePool arch.
+	//
+	// Machine.Type is intentionally left unset here. When Architecture is
+	// explicitly provided, the KubeVirt admission webhook automatically resolves
+	// the correct machine type from the cluster's ArchitectureConfiguration
+	// (e.g. amd64 → pc-q35-rhel9.x.x, s390x → s390-ccw-virtio-rhel9.x.x).
+	// Hardcoding Machine.Type would bypass the cluster admin's configuration.
+	if nodePool.Spec.Arch != "" {
+		vmiSpec.Architecture = nodePool.Spec.Arch
+	}
+
 	template := &capikubevirt.VirtualMachineTemplateSpec{
 		Spec: kubevirtv1.VirtualMachineSpec{
 			RunStrategy: ptr.To(kubevirtv1.RunStrategyAlways),
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-				Spec: kubevirtv1.VirtualMachineInstanceSpec{
-					Domain: kubevirtv1.DomainSpec{
-						Devices: kubevirtv1.Devices{
-							Interfaces: virtualMachineInterfaces(kvPlatform),
-						},
-					},
-					EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
-					Networks:         virtualMachineNetworks(kvPlatform),
-				},
+				Spec: vmiSpec,
 			},
 		},
 	}
@@ -280,8 +296,22 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = ptr.To(true)
 	}
 
-	if len(kvPlatform.NodeSelector) > 0 {
-		template.Spec.Template.Spec.NodeSelector = kvPlatform.NodeSelector
+	// Build the node selector from any user-supplied entries and always inject
+	// kubernetes.io/arch so the virt-launcher pod is scheduled on an infra
+	// node of the matching architecture. On a multi-arch infra cluster this
+	// prevents an amd64 VM from landing on an s390x node (or vice versa).
+	// A user-supplied kubernetes.io/arch entry in NodeSelector takes precedence.
+	nodeSelector := make(map[string]string, len(kvPlatform.NodeSelector)+1)
+	for k, v := range kvPlatform.NodeSelector {
+		nodeSelector[k] = v
+	}
+	if nodePool.Spec.Arch != "" {
+		if _, alreadySet := nodeSelector["kubernetes.io/arch"]; !alreadySet {
+			nodeSelector["kubernetes.io/arch"] = nodePool.Spec.Arch
+		}
+	}
+	if len(nodeSelector) > 0 {
+		template.Spec.Template.Spec.NodeSelector = nodeSelector
 	}
 
 	if len(kvPlatform.KubevirtHostDevices) > 0 {
