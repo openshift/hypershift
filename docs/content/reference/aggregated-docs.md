@@ -41670,7 +41670,8 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
-The default value is 0, meaning that the node can retry drain without any time limitations.
+When omitted or set to 0s, the node can retry drain without any time limitations.
+Valid values must be a Go duration string with a unit suffix, such as &ldquo;30s&rdquo;, &ldquo;5m&rdquo;, or &ldquo;1h&rdquo;.
 Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
@@ -41686,8 +41687,9 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
-The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+When omitted or set to 0s, the volumes will be detached from the node without any time limitations.
 After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+Valid values must be a Go duration string with a unit suffix, such as &ldquo;30s&rdquo;, &ldquo;5m&rdquo;, or &ldquo;1h&rdquo;.
 Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
@@ -55305,7 +55307,8 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
-The default value is 0, meaning that the node can retry drain without any time limitations.
+When omitted or set to 0s, the node can retry drain without any time limitations.
+Valid values must be a Go duration string with a unit suffix, such as &ldquo;30s&rdquo;, &ldquo;5m&rdquo;, or &ldquo;1h&rdquo;.
 Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
@@ -55321,8 +55324,9 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
-The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+When omitted or set to 0s, the volumes will be detached from the node without any time limitations.
 After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+Valid values must be a Go duration string with a unit suffix, such as &ldquo;30s&rdquo;, &ldquo;5m&rdquo;, or &ldquo;1h&rdquo;.
 Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
