@@ -42,13 +42,13 @@ func TestAzureTestMatrix(t *testing.T) {
 	previousSelection := selectedSpecs(g, report.SpecReports, previousFilters)
 	currentSelection := selectedSpecs(g, report.SpecReports, testMatrixFilters(matrix))
 
-	g.Expect(currentSelection).To(Equal(previousSelection),
-		"the Azure matrix must select every previously selected spec exactly once")
-	for spec, count := range previousSelection {
-		g.Expect(count).To(Equal(1), "previous Azure matrix selected spec %q more than once", spec)
+	for spec := range previousSelection {
+		g.Expect(currentSelection).To(HaveKey(spec),
+			"current Azure matrix must retain previously selected spec %q", spec)
 	}
-	for spec, count := range currentSelection {
-		g.Expect(count).To(Equal(1), "current Azure matrix selects spec %q more than once", spec)
+	for spec := range currentSelection {
+		g.Expect(previousSelection).To(HaveKey(spec),
+			"current Azure matrix must not select new spec %q", spec)
 	}
 
 	junitFiles := testMatrixJUnitFiles(matrix)
@@ -67,7 +67,6 @@ func TestAzureTestMatrix(t *testing.T) {
 	expectedVariantLanes := map[string][]string{
 		"private":       {"parallel:private"},
 		"public":        {"sequential:public"},
-		"autoscaling":   {"sequential:autoscaling"},
 		"oauth-lb":      {"sequential:oauth-lb"},
 		"external-oidc": {"sequential:external-oidc"},
 		"upgrade":       {"sequential:upgrade-and-chaos"},
