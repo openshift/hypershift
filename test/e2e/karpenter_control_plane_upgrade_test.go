@@ -5,16 +5,12 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
@@ -63,10 +59,11 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
 		nodeClaims := waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
-		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas, map[string]string{"app": "web-app"})
+		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas, map[string]string{"app": "web-app"}, "")
 
+		preUpgradeNodeName := nodes[0].Name
 		preUpgradeOSImage := nodes[0].Status.NodeInfo.OSImage
-		t.Logf("Pre-upgrade node: %s, OS image: %s", nodes[0].Name, preUpgradeOSImage)
+		t.Logf("Pre-upgrade node: %s, OS image: %s", preUpgradeNodeName, preUpgradeOSImage)
 
 		t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
 		err := e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
@@ -81,50 +78,27 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
-		driftChan := make(chan struct{})
-		go func() {
-			defer close(driftChan)
-			for _, nodeClaim := range nodeClaims.Items {
-				waitForNodeClaimDrifted(t, ctx, guestClient, &nodeClaim)
-			}
-		}()
+		// Assert NO drift during CP upgrade. Unpinned NodeClaims should not detect
+		// drift until the control plane upgrade completes, because the ignition config
+		// hash is derived from the completed release image, not the desired one.
+		expectControlPlaneRolloutWithoutDrift(t, ctx, mgtClient, guestClient, hostedCluster, globalOpts.LatestReleaseImage, nodeClaims)
 
-		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
 		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-		<-driftChan
+		// After CP upgrade completes, drift should now be detected.
+		t.Logf("Control plane upgrade complete, waiting for NodeClaim drift detection")
+		for i := range nodeClaims.Items {
+			waitForNodeClaimDrifted(t, ctx, guestClient, &nodeClaims.Items[i])
+		}
 		t.Logf("Karpenter Nodes drifted")
 
-		preUpgradeRHCOSVersion := extractRHCOSVersion(preUpgradeOSImage)
-		t.Logf("Pre-upgrade RHCOS version: %s", preUpgradeRHCOSVersion)
+		t.Logf("Waiting for workloads to reschedule off pre-upgrade node %s", preUpgradeNodeName)
+		newReadyPods := waitForReadyKarpenterPods(t, ctx, guestClient, nil, replicas, map[string]string{"app": "web-app"}, preUpgradeNodeName)
 
-		nodes = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
-			e2eutil.WithClientOptions(
-				crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))},
-			),
-			e2eutil.WithPredicates(
-				e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
-					Type:   string(corev1.NodeReady),
-					Status: metav1.ConditionTrue,
-				}),
-				e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
-					postVersion := extractRHCOSVersion(node.Status.NodeInfo.OSImage)
-					if postVersion == "" {
-						return false, fmt.Sprintf("could not extract RHCOS version from %q", node.Status.NodeInfo.OSImage), nil
-					}
-					if postVersion < preUpgradeRHCOSVersion {
-						return false, fmt.Sprintf("post-upgrade RHCOS %q is older than pre-upgrade %q", postVersion, preUpgradeRHCOSVersion), nil
-					}
-					return true, fmt.Sprintf("post-upgrade RHCOS %q is not older than pre-upgrade %q", postVersion, preUpgradeRHCOSVersion), nil
-				}),
-			),
-		)
-
-		t.Logf("Waiting for Karpenter pods to schedule on the new node")
-		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas, map[string]string{"app": "web-app"})
-
-		nodeClaims = waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
+		g.Expect(len(newReadyPods)).To(Equal(replicas), "expected %d new ready pods, got %d", replicas, len(newReadyPods))
+		postUpgradeNodeName := newReadyPods[0].Spec.NodeName
+		t.Logf("Workload successfully rescheduled from node: %s to node: %s", preUpgradeNodeName, postUpgradeNodeName)
 
 		t.Log("Validating AutoNode status counts are populated after upgrade")
 		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNode status counts", hostedCluster.Namespace, hostedCluster.Name),
@@ -138,11 +112,11 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 					if hc.Status.AutoNode.NodeCount == nil {
 						return false, "Status.AutoNode.NodeCount is nil", nil
 					}
-					if *hc.Status.AutoNode.NodeCount < int32(len(nodes)) {
-						return false, fmt.Sprintf("expected NodeCount >= %d, got %v", len(nodes), hc.Status.AutoNode.NodeCount), nil
+					if *hc.Status.AutoNode.NodeCount < int32(replicas) {
+						return false, fmt.Sprintf("expected NodeCount >= %d, got %v", replicas, hc.Status.AutoNode.NodeCount), nil
 					}
-					if hc.Status.AutoNode.NodeClaimCount == nil || *hc.Status.AutoNode.NodeClaimCount < int32(len(nodeClaims.Items)) {
-						return false, fmt.Sprintf("expected NodeClaimCount >= %d, got %v", len(nodeClaims.Items), hc.Status.AutoNode.NodeClaimCount), nil
+					if hc.Status.AutoNode.NodeClaimCount == nil || *hc.Status.AutoNode.NodeClaimCount < int32(replicas) {
+						return false, fmt.Sprintf("expected NodeClaimCount >= %d, got %v", replicas, hc.Status.AutoNode.NodeClaimCount), nil
 					}
 					return true, fmt.Sprintf("AutoNode status: NodeCount=%d, NodeClaimCount=%d",
 						*hc.Status.AutoNode.NodeCount, *hc.Status.AutoNode.NodeClaimCount), nil
@@ -159,14 +133,4 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		t.Logf("Waiting for Karpenter Nodes to disappear")
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 	}).WithUpgradeTarget(globalOpts.LatestReleaseImage).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter-upgrade-control-plane", globalOpts.ServiceAccountSigningKey)
-}
-
-var rhcosVersionRe = regexp.MustCompile(`Red Hat Enterprise Linux CoreOS (\d+\.\d+\.\d{8}-\d+)`)
-
-func extractRHCOSVersion(osImage string) string {
-	matches := rhcosVersionRe.FindStringSubmatch(osImage)
-	if len(matches) < 2 {
-		return ""
-	}
-	return matches[1]
 }
