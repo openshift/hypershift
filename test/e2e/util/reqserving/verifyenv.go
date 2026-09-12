@@ -22,7 +22,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	scheduleraws "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
+	scheduler "github.com/openshift/hypershift/pkg/scheduler"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -77,7 +77,7 @@ func verifyRequestServingNodeTaints(ctx context.Context, client crclient.Client)
 	for _, node := range requestServingNodes.Items {
 		hasRequestServingTaint := false
 		for _, taint := range node.Spec.Taints {
-			if taint.Key == scheduleraws.ControlPlaneServingComponentTaint && taint.Value == "true" && taint.Effect == corev1.TaintEffectNoSchedule {
+			if taint.Key == scheduler.ControlPlaneServingComponentTaint && taint.Value == "true" && taint.Effect == corev1.TaintEffectNoSchedule {
 				hasRequestServingTaint = true
 			}
 		}
@@ -158,7 +158,7 @@ func verifyPlaceholderNodesForSize(ctx context.Context, log logr.Logger, client 
 			if nodeSize := node.Labels[hyperv1.NodeSizeLabel]; nodeSize != size.Name {
 				continue
 			}
-			nodePairs[node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]] = nodePairs[node.Labels[scheduleraws.OSDFleetManagerPairedNodesLabel]] + 1
+			nodePairs[node.Labels[scheduler.OSDFleetManagerPairedNodesLabel]] = nodePairs[node.Labels[scheduler.OSDFleetManagerPairedNodesLabel]] + 1
 		}
 		for pair, count := range nodePairs {
 			if count != 2 {

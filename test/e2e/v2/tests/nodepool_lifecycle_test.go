@@ -27,7 +27,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
@@ -721,8 +721,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
+						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -738,7 +738,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			},
 			[]e2eutil.Predicate[*corev1.ConfigMap]{
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
-					want := netutil.ShortenName(kcConfigMap.Name, np.Name, nodepool.QualifiedNameMaxLength)
+					want := netutil.ShortenName(kcConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength)
 					if want != cm.Name {
 						return false, fmt.Sprintf("expected ConfigMap name %q, got %q", want, cm.Name), nil
 					}
@@ -746,13 +746,13 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				},
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					if diff := cmp.Diff(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: cm.Labels[nodepool.KubeletConfigConfigMapLabel],
-						hyperv1.NodePoolLabel:                cm.Labels[hyperv1.NodePoolLabel],
-						nodepool.NTOMirroredConfigLabel:      cm.Labels[nodepool.NTOMirroredConfigLabel],
+						npconst.KubeletConfigConfigMapLabel: cm.Labels[npconst.KubeletConfigConfigMapLabel],
+						hyperv1.NodePoolLabel:               cm.Labels[hyperv1.NodePoolLabel],
+						npconst.NTOMirroredConfigLabel:      cm.Labels[npconst.NTOMirroredConfigLabel],
 					}, map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
-						nodepool.NTOMirroredConfigLabel:      "true",
+						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
+						npconst.NTOMirroredConfigLabel:      "true",
 					}); diff != "" {
 						return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 					}
@@ -775,8 +775,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
+						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -1067,7 +1067,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: "true",
+						npconst.PerformanceProfileConfigMapLabel: "true",
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -1083,7 +1083,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 			},
 			[]e2eutil.Predicate[*corev1.ConfigMap]{
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
-					want := netutil.ShortenName(ppConfigMap.Name, np.Name, nodepool.QualifiedNameMaxLength)
+					want := netutil.ShortenName(ppConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength)
 					if want != cm.Name {
 						return false, fmt.Sprintf("expected PerformanceProfile ConfigMap name %q, got %q", want, cm.Name), nil
 					}
@@ -1091,11 +1091,11 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				},
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					if diff := cmp.Diff(map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: cm.Labels[nodepool.PerformanceProfileConfigMapLabel],
-						hyperv1.NodePoolLabel:                     cm.Labels[hyperv1.NodePoolLabel],
+						npconst.PerformanceProfileConfigMapLabel: cm.Labels[npconst.PerformanceProfileConfigMapLabel],
+						hyperv1.NodePoolLabel:                    cm.Labels[hyperv1.NodePoolLabel],
 					}, map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                     np.Name,
+						npconst.PerformanceProfileConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:                    np.Name,
 					}); diff != "" {
 						return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 					}
@@ -1113,7 +1113,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					list := &corev1.ConfigMapList{}
 					err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
 						crclient.MatchingLabels(map[string]string{
-							nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+							npconst.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
 						}))
 					configMaps := make([]*corev1.ConfigMap, len(list.Items))
 					for i := range list.Items {
@@ -1129,7 +1129,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				},
 				[]e2eutil.Predicate[*corev1.ConfigMap]{
 					func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
-						want := fmt.Sprintf("status-%s", netutil.ShortenName(ppConfigMap.Name, np.Name, nodepool.QualifiedNameMaxLength))
+						want := fmt.Sprintf("status-%s", netutil.ShortenName(ppConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength))
 						if want != cm.Name {
 							return false, fmt.Sprintf("expected status ConfigMap name %q, got %q", want, cm.Name), nil
 						}
@@ -1153,7 +1153,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: "true",
+						npconst.PerformanceProfileConfigMapLabel: "true",
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {

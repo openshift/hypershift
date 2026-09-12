@@ -14,8 +14,7 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
-	scheduleraws "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
-	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
+	scheduler "github.com/openshift/hypershift/pkg/scheduler"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/k8sutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -311,7 +310,7 @@ func ConfigureControlPlaneMachineSets(ctx context.Context, client crclient.Clien
 			}
 			ms.Spec.Template.Spec.Taints = []corev1.Taint{
 				{
-					Key:    scheduleraws.ControlPlaneTaint,
+					Key:    scheduler.ControlPlaneTaint,
 					Value:  "true",
 					Effect: corev1.TaintEffectNoSchedule,
 				},
@@ -376,20 +375,20 @@ func ConfigureControlPlaneMachineSets(ctx context.Context, client crclient.Clien
 						hyperv1.RequestServingComponentLabel:            "true",
 					}
 					ms.Spec.Template.Spec.ObjectMeta.Labels = map[string]string{
-						ControlPlaneNodeLabel:                        "true",
-						hyperv1.RequestServingComponentLabel:         "true",
-						hyperv1.NodeSizeLabel:                        size,
-						schedulerutil.GoMemLimitLabel:                goMemLimit[size],
-						scheduleraws.OSDFleetManagerPairedNodesLabel: fmt.Sprintf("pair-%d", pairNumber),
+						ControlPlaneNodeLabel:                     "true",
+						hyperv1.RequestServingComponentLabel:      "true",
+						hyperv1.NodeSizeLabel:                     size,
+						scheduler.GoMemLimitLabel:                 goMemLimit[size],
+						scheduler.OSDFleetManagerPairedNodesLabel: fmt.Sprintf("pair-%d", pairNumber),
 					}
 					ms.Spec.Template.Spec.Taints = []corev1.Taint{
 						{
-							Key:    scheduleraws.ControlPlaneTaint,
+							Key:    scheduler.ControlPlaneTaint,
 							Value:  "true",
 							Effect: corev1.TaintEffectNoSchedule,
 						},
 						{
-							Key:    scheduleraws.ControlPlaneServingComponentTaint,
+							Key:    scheduler.ControlPlaneServingComponentTaint,
 							Value:  "true",
 							Effect: corev1.TaintEffectNoSchedule,
 						},
