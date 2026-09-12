@@ -758,16 +758,66 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 	}
 
 	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	var readyHCP *hyperv1.HostedControlPlane
+	waitStart := time.Now()
 	EventuallyObject(t, ctx, fmt.Sprintf("HostedControlPlane %s/%s to be ready", namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
 			hcp := &hyperv1.HostedControlPlane{}
 			err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, hcp)
+			readyHCP = hcp
 			return hcp, err
 		}, predicates, WithTimeout(30*time.Minute),
 	)
+
+	// EventuallyObject fails the test on timeout, so reaching this point means bring-up succeeded
+	// and the elapsed time is a valid data point for the bring-up baseline.
+	recordHostedControlPlaneBringUpTiming(t, hostedCluster, readyHCP, waitStart, image)
+}
+
+// recordHostedControlPlaneBringUpTiming emits a structured timing record for control plane
+// bring-up, broken down into the InfrastructureReady, EtcdAvailable, KubeAPIServerAvailable and
+// Available milestones. Milestone timings are derived from condition transition times relative to
+// HostedControlPlane creation, so they measure the control plane itself rather than when the test
+// happened to start waiting.
+func recordHostedControlPlaneBringUpTiming(t testing.TB, hostedCluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, waitStart time.Time, image string) {
+	t.Helper()
+	if hcp == nil {
+		return
+	}
+
+	creation := hcp.CreationTimestamp.Time
+	if !hostedCluster.CreationTimestamp.IsZero() {
+		// Prefer the HostedCluster creation timestamp: the user visible bring-up time starts when
+		// the HostedCluster is created, not when the operator creates the HostedControlPlane.
+		creation = hostedCluster.CreationTimestamp.Time
+	}
+
+	subPhases := bringUpSubPhases(creation, hcp.Status.Conditions)
+	duration := time.Since(creation).Seconds()
+	if available, ok := subPhases[string(hyperv1.HostedControlPlaneAvailable)]; ok {
+		duration = available
+	}
+
+	metadata := map[string]string{}
+	if image != "" {
+		metadata["releaseImage"] = image
+	}
+
+	RecordPerfTiming(t, PerfTimingRecord{
+		Metric:              MetricHostedControlPlaneBringUp,
+		Platform:            string(hostedCluster.Spec.Platform.Type),
+		Namespace:           hostedCluster.Namespace,
+		Name:                hostedCluster.Name,
+		DurationSeconds:     duration,
+		WaitDurationSeconds: time.Since(waitStart).Seconds(),
+		SubPhases:           subPhases,
+		Metadata:            metadata,
+	})
 }
 
 func WaitForNodePoolDesiredNodes(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	var readyNodePools []*hyperv1.NodePool
+	waitStart := time.Now()
 	EventuallyObjects(t, ctx, fmt.Sprintf("NodePools for HostedCluster %s/%s to have all of their desired nodes", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) ([]*hyperv1.NodePool, error) {
 			list := &hyperv1.NodePoolList{}
@@ -776,6 +826,7 @@ func WaitForNodePoolDesiredNodes(t testing.TB, ctx context.Context, client crcli
 			for i := range list.Items {
 				nodePools[i] = &list.Items[i]
 			}
+			readyNodePools = nodePools
 			return nodePools, err
 		}, nil,
 		[]Predicate[*hyperv1.NodePool]{
@@ -786,6 +837,37 @@ func WaitForNodePoolDesiredNodes(t testing.TB, ctx context.Context, client crcli
 		},
 		WithTimeout(30*time.Minute),
 	)
+
+	// EventuallyObjects fails the test on timeout, so all desired nodes joined by this point.
+	recordNodeJoinTiming(t, hostedCluster, readyNodePools, waitStart)
+}
+
+// recordNodeJoinTiming emits a structured timing record for the time it took every NodePool of the
+// HostedCluster to reach its desired number of nodes. The duration is measured from the earliest
+// NodePool creation so that it is comparable across runs regardless of when the test started
+// waiting; the observed wait is reported alongside it.
+func recordNodeJoinTiming(t testing.TB, hostedCluster *hyperv1.HostedCluster, nodePools []*hyperv1.NodePool, waitStart time.Time) {
+	t.Helper()
+	if len(nodePools) == 0 {
+		return
+	}
+
+	creation := waitStart
+	for _, nodePool := range nodePools {
+		if !nodePool.CreationTimestamp.IsZero() && nodePool.CreationTimestamp.Time.Before(creation) {
+			creation = nodePool.CreationTimestamp.Time
+		}
+	}
+
+	RecordPerfTiming(t, PerfTimingRecord{
+		Metric:              MetricNodePoolNodeJoin,
+		Platform:            string(hostedCluster.Spec.Platform.Type),
+		Namespace:           hostedCluster.Namespace,
+		Name:                hostedCluster.Name,
+		DurationSeconds:     time.Since(creation).Seconds(),
+		WaitDurationSeconds: time.Since(waitStart).Seconds(),
+		Metadata:            nodePoolTimingMetadata(nodePools),
+	})
 }
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
