@@ -1909,6 +1909,13 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 // GCP PD CSI metrics Services unconditionally. On a GKE management cluster there is no
 // service-ca-operator to honor that annotation, so self-sign unconditionally.
 func (r *HostedControlPlaneReconciler) reconcileGCPPlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	gcpWorkloadIdentityFederationWebhookServingCert := manifests.GCPWorkloadIdentityFederationWebhookServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, gcpWorkloadIdentityFederationWebhookServingCert, func() error {
+		return pki.ReconcileGCPWorkloadIdentityFederationWebhookServingCert(gcpWorkloadIdentityFederationWebhookServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %s secret: %w", gcpWorkloadIdentityFederationWebhookServingCert.Name, err)
+	}
+
 	gcpPDCsiDriverOperatorServingCert := manifests.GCPPDCsiDriverOperatorServingCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, gcpPDCsiDriverOperatorServingCert, func() error {
 		return pki.ReconcileGCPPDCsiDriverOperatorMetricsServingCertSecret(gcpPDCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)

@@ -3914,6 +3914,24 @@ func TestReconcilePlatformSpecificResources(t *testing.T) {
 			},
 		},
 		{
+			name:         "When platform is GCP, it should reconcile GCP identity webhook resources",
+			platformType: hyperv1.GCPPlatform,
+			verifyObjects: func(g *WithT, c client.Client) {
+				webhook := manifests.GCPWorkloadIdentityFederationWebhook()
+				err := c.Get(ctx, client.ObjectKeyFromObject(webhook), webhook)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(webhook.Webhooks).To(HaveLen(1))
+
+				clusterRole := manifests.GCPWorkloadIdentityFederationWebhookClusterRole()
+				err = c.Get(ctx, client.ObjectKeyFromObject(clusterRole), clusterRole)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				clusterRoleBinding := manifests.GCPWorkloadIdentityFederationWebhookClusterRoleBinding()
+				err = c.Get(ctx, client.ObjectKeyFromObject(clusterRoleBinding), clusterRoleBinding)
+				g.Expect(err).ToNot(HaveOccurred())
+			},
+		},
+		{
 			name:         "When platform is None, it should not create any platform-specific resources",
 			platformType: hyperv1.NonePlatform,
 			verifyObjects: func(g *WithT, c client.Client) {
