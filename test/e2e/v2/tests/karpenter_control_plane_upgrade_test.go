@@ -16,6 +16,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -67,7 +68,6 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 		It("should upgrade the control plane and drift Karpenter nodes to the new version", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -99,7 +99,8 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 						Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", karpenterNodePool.Name)
 					}
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, nodeLabels)
+				_, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, nodeLabels)
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed waiting for Karpenter nodes to terminate")
 			})
 			GinkgoWriter.Println("Created Karpenter NodePool")
 
@@ -112,7 +113,8 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Println("Created workloads")
 
 			By("Waiting for Karpenter nodes and pods to be ready")
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, int32(replicas), nodeLabels)
+			nodes, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, int32(replicas), nodeLabels)
+			Expect(err).NotTo(HaveOccurred())
 			nodeClaims := waitForReadyNodeClaims(ctx, hcClient, len(nodes))
 			waitForReadyKarpenterPods(ctx, hcClient, nodes, replicas, map[string]string{"app": "web-app"})
 
@@ -120,7 +122,7 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Pre-upgrade node: %s, OS image: %s\n", nodes[0].Name, preUpgradeOSImage)
 
 			By(fmt.Sprintf("Updating cluster release image to %s", latestImage))
-			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Release.Image = latestImage
 				if obj.Annotations == nil {
 					obj.Annotations = make(map[string]string)
@@ -165,11 +167,11 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Pre-upgrade RHCOS version: %s\n", preUpgradeRHCOSVersion)
 
 			By("Waiting for replacement nodes with updated RHCOS version")
-			nodes = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, hcClient, int32(replicas), hyperv1.AWSPlatform, "",
-				e2eutil.WithClientOptions(
+			nodes, err = v2util.WaitForNReadyNodesWithOptions(ctx, hcClient, int32(replicas), hyperv1.AWSPlatform, "",
+				v2util.WithClientOptions(
 					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))},
 				),
-				e2eutil.WithPredicates(
+				v2util.WithPredicates(
 					e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
 						Type:   string(corev1.NodeReady),
 						Status: metav1.ConditionTrue,
@@ -186,6 +188,7 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 					},
 				),
 			)
+			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for Karpenter pods to schedule on the new nodes")
 			waitForReadyKarpenterPods(ctx, hcClient, nodes, replicas, map[string]string{"app": "web-app"})
@@ -234,9 +237,10 @@ func extractRHCOSVersion(osImage string) string {
 // waitForReadyNodeClaims polls until exactly n NodeClaims are present and all
 // have Launched, Registered, and Initialized conditions set to True.
 func waitForReadyNodeClaims(ctx context.Context, client crclient.Client, n int) *karpenterv1.NodeClaimList {
-	t := GinkgoTB()
+	GinkgoHelper()
+
 	nodeClaims := &karpenterv1.NodeClaimList{}
-	e2eutil.EventuallyObjects(t, ctx, "NodeClaims to be ready",
+	Expect(v2util.EventuallyObjects(ctx, "NodeClaims to be ready",
 		func(ctx context.Context) ([]*karpenterv1.NodeClaim, error) {
 			err := client.List(ctx, nodeClaims)
 			if err != nil {
@@ -279,8 +283,8 @@ func waitForReadyNodeClaims(ctx context.Context, client crclient.Client, n int) 
 				return true, "", nil
 			},
 		},
-		e2eutil.WithTimeout(5*time.Minute),
-	)
+		v2util.WithTimeout(5*time.Minute),
+	)).To(Succeed())
 
 	return nodeClaims
 }

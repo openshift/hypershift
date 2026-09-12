@@ -21,7 +21,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -45,7 +44,8 @@ func GCPCloudControllerManagerTest(getTestCtx internal.TestContextGetter) {
 				testCtx := getTestCtx()
 				hc, err := testCtx.GetHostedCluster()
 				Expect(err).NotTo(HaveOccurred())
-				e2eutil.WaitForGuestKubeConfig(GinkgoTB(), testCtx.Context, testCtx.MgmtClient, hc)
+				_, err = testCtx.WaitForHostedClusterKubeConfig(hc)
+				Expect(err).NotTo(HaveOccurred())
 				hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
 				Expect(err).NotTo(HaveOccurred())
 
