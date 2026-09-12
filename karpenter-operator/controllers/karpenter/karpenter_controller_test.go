@@ -405,15 +405,17 @@ func TestReconcileCRDsConcurrentAccess(t *testing.T) {
 		crdEC2NodeClass.Name: *crdEC2NodeClass.Spec.DeepCopy(),
 		crdNodePool.Name:     *crdNodePool.Spec.DeepCopy(),
 		crdNodeClaim.Name:    *crdNodeClaim.Spec.DeepCopy(),
+		crdNodeOverlay.Name:  *crdNodeOverlay.Spec.DeepCopy(),
 	}
 
 	// Pre-create the CRDs in the fake client so that CreateOrUpdate's
 	// internal Get() succeeds and overwrites the passed object with server state.
-	existingCRDs := make([]client.Object, 0, 3)
+	existingCRDs := make([]client.Object, 0, 4)
 	for _, crd := range []*apiextensionsv1.CustomResourceDefinition{
 		crdEC2NodeClass,
 		crdNodePool,
 		crdNodeClaim,
+		crdNodeOverlay,
 	} {
 		serverCopy := crd.DeepCopy()
 		serverCopy.ResourceVersion = "999"
@@ -458,6 +460,7 @@ func TestReconcileCRDsConcurrentAccess(t *testing.T) {
 		crdEC2NodeClass,
 		crdNodePool,
 		crdNodeClaim,
+		crdNodeOverlay,
 	} {
 		g.Expect(equality.Semantic.DeepEqual(crd.Spec, originalSpecs[crd.Name])).To(BeTrue(),
 			"global CRD %q spec was corrupted by concurrent reconcileCRDs calls", crd.Name)
