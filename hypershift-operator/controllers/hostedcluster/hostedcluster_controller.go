@@ -2999,6 +2999,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.DNS = hcluster.Spec.DNS
 	hcp.Spec.Services = hcluster.Spec.Services
 	hcp.Spec.ControllerAvailabilityPolicy = hcluster.Spec.ControllerAvailabilityPolicy
+	hcluster.Spec.ControlPlaneComponentConfiguration.DeepCopyInto(&hcp.Spec.ControlPlaneComponentConfiguration)
 	hcp.Spec.InfrastructureAvailabilityPolicy = hcluster.Spec.InfrastructureAvailabilityPolicy
 	hcp.Spec.Etcd.ManagementType = hcluster.Spec.Etcd.ManagementType
 	if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged && hcluster.Spec.Etcd.Unmanaged != nil {

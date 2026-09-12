@@ -26,41 +26,42 @@ import (
 // HostedControlPlaneSpecApplyConfiguration represents a declarative configuration of the HostedControlPlaneSpec type for use
 // with apply.
 type HostedControlPlaneSpecApplyConfiguration struct {
-	ReleaseImage                     *string                                              `json:"releaseImage,omitempty"`
-	ControlPlaneReleaseImage         *string                                              `json:"controlPlaneReleaseImage,omitempty"`
-	UpdateService                    *v1.URL                                              `json:"updateService,omitempty"`
-	Channel                          *string                                              `json:"channel,omitempty"`
-	PullSecret                       *corev1.LocalObjectReference                         `json:"pullSecret,omitempty"`
-	IssuerURL                        *string                                              `json:"issuerURL,omitempty"`
-	Networking                       *ClusterNetworkingApplyConfiguration                 `json:"networking,omitempty"`
-	SSHKey                           *corev1.LocalObjectReference                         `json:"sshKey,omitempty"`
-	ClusterID                        *string                                              `json:"clusterID,omitempty"`
-	InfraID                          *string                                              `json:"infraID,omitempty"`
-	Platform                         *PlatformSpecApplyConfiguration                      `json:"platform,omitempty"`
-	DNS                              *DNSSpecApplyConfiguration                           `json:"dns,omitempty"`
-	ServiceAccountSigningKey         *corev1.LocalObjectReference                         `json:"serviceAccountSigningKey,omitempty"`
-	ControllerAvailabilityPolicy     *hypershiftv1beta1.AvailabilityPolicy                `json:"controllerAvailabilityPolicy,omitempty"`
-	InfrastructureAvailabilityPolicy *hypershiftv1beta1.AvailabilityPolicy                `json:"infrastructureAvailabilityPolicy,omitempty"`
-	FIPS                             *bool                                                `json:"fips,omitempty"`
-	KubeConfig                       *KubeconfigSecretRefApplyConfiguration               `json:"kubeconfig,omitempty"`
-	KubeAPIServerDNSName             *string                                              `json:"kubeAPIServerDNSName,omitempty"`
-	Services                         []ServicePublishingStrategyMappingApplyConfiguration `json:"services,omitempty"`
-	AuditWebhook                     *corev1.LocalObjectReference                         `json:"auditWebhook,omitempty"`
-	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
-	Configuration                    *ClusterConfigurationApplyConfiguration              `json:"configuration,omitempty"`
-	OperatorConfiguration            *OperatorConfigurationApplyConfiguration             `json:"operatorConfiguration,omitempty"`
-	Monitoring                       *MonitoringSpecApplyConfiguration                    `json:"monitoring,omitempty"`
-	ImageContentSources              []ImageContentSourceApplyConfiguration               `json:"imageContentSources,omitempty"`
-	AdditionalTrustBundle            *corev1.LocalObjectReference                         `json:"additionalTrustBundle,omitempty"`
-	SecretEncryption                 *SecretEncryptionSpecApplyConfiguration              `json:"secretEncryption,omitempty"`
-	PausedUntil                      *string                                              `json:"pausedUntil,omitempty"`
-	OLMCatalogPlacement              *hypershiftv1beta1.OLMCatalogPlacement               `json:"olmCatalogPlacement,omitempty"`
-	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
-	AutoNode                         *AutoNodeApplyConfiguration                          `json:"autoNode,omitempty"`
-	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
-	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
-	Labels                           map[string]string                                    `json:"labels,omitempty"`
-	Capabilities                     *CapabilitiesApplyConfiguration                      `json:"capabilities,omitempty"`
+	ReleaseImage                       *string                                               `json:"releaseImage,omitempty"`
+	ControlPlaneReleaseImage           *string                                               `json:"controlPlaneReleaseImage,omitempty"`
+	UpdateService                      *v1.URL                                               `json:"updateService,omitempty"`
+	Channel                            *string                                               `json:"channel,omitempty"`
+	PullSecret                         *corev1.LocalObjectReference                          `json:"pullSecret,omitempty"`
+	IssuerURL                          *string                                               `json:"issuerURL,omitempty"`
+	Networking                         *ClusterNetworkingApplyConfiguration                  `json:"networking,omitempty"`
+	SSHKey                             *corev1.LocalObjectReference                          `json:"sshKey,omitempty"`
+	ClusterID                          *string                                               `json:"clusterID,omitempty"`
+	InfraID                            *string                                               `json:"infraID,omitempty"`
+	Platform                           *PlatformSpecApplyConfiguration                       `json:"platform,omitempty"`
+	DNS                                *DNSSpecApplyConfiguration                            `json:"dns,omitempty"`
+	ServiceAccountSigningKey           *corev1.LocalObjectReference                          `json:"serviceAccountSigningKey,omitempty"`
+	ControllerAvailabilityPolicy       *hypershiftv1beta1.AvailabilityPolicy                 `json:"controllerAvailabilityPolicy,omitempty"`
+	ControlPlaneComponentConfiguration *ControlPlaneComponentConfigurationApplyConfiguration `json:"controlPlaneComponentConfiguration,omitempty"`
+	InfrastructureAvailabilityPolicy   *hypershiftv1beta1.AvailabilityPolicy                 `json:"infrastructureAvailabilityPolicy,omitempty"`
+	FIPS                               *bool                                                 `json:"fips,omitempty"`
+	KubeConfig                         *KubeconfigSecretRefApplyConfiguration                `json:"kubeconfig,omitempty"`
+	KubeAPIServerDNSName               *string                                               `json:"kubeAPIServerDNSName,omitempty"`
+	Services                           []ServicePublishingStrategyMappingApplyConfiguration  `json:"services,omitempty"`
+	AuditWebhook                       *corev1.LocalObjectReference                          `json:"auditWebhook,omitempty"`
+	Etcd                               *EtcdSpecApplyConfiguration                           `json:"etcd,omitempty"`
+	Configuration                      *ClusterConfigurationApplyConfiguration               `json:"configuration,omitempty"`
+	OperatorConfiguration              *OperatorConfigurationApplyConfiguration              `json:"operatorConfiguration,omitempty"`
+	Monitoring                         *MonitoringSpecApplyConfiguration                     `json:"monitoring,omitempty"`
+	ImageContentSources                []ImageContentSourceApplyConfiguration                `json:"imageContentSources,omitempty"`
+	AdditionalTrustBundle              *corev1.LocalObjectReference                          `json:"additionalTrustBundle,omitempty"`
+	SecretEncryption                   *SecretEncryptionSpecApplyConfiguration               `json:"secretEncryption,omitempty"`
+	PausedUntil                        *string                                               `json:"pausedUntil,omitempty"`
+	OLMCatalogPlacement                *hypershiftv1beta1.OLMCatalogPlacement                `json:"olmCatalogPlacement,omitempty"`
+	Autoscaling                        *ClusterAutoscalingApplyConfiguration                 `json:"autoscaling,omitempty"`
+	AutoNode                           *AutoNodeApplyConfiguration                           `json:"autoNode,omitempty"`
+	NodeSelector                       map[string]string                                     `json:"nodeSelector,omitempty"`
+	Tolerations                        []corev1.Toleration                                   `json:"tolerations,omitempty"`
+	Labels                             map[string]string                                     `json:"labels,omitempty"`
+	Capabilities                       *CapabilitiesApplyConfiguration                       `json:"capabilities,omitempty"`
 }
 
 // HostedControlPlaneSpecApplyConfiguration constructs a declarative configuration of the HostedControlPlaneSpec type for use with
@@ -178,6 +179,14 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithServiceAccountSigningKey(
 // If called multiple times, the ControllerAvailabilityPolicy field is set to the value of the last call.
 func (b *HostedControlPlaneSpecApplyConfiguration) WithControllerAvailabilityPolicy(value hypershiftv1beta1.AvailabilityPolicy) *HostedControlPlaneSpecApplyConfiguration {
 	b.ControllerAvailabilityPolicy = &value
+	return b
+}
+
+// WithControlPlaneComponentConfiguration sets the ControlPlaneComponentConfiguration field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ControlPlaneComponentConfiguration field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithControlPlaneComponentConfiguration(value *ControlPlaneComponentConfigurationApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
+	b.ControlPlaneComponentConfiguration = value
 	return b
 }
 

@@ -628,6 +628,10 @@ type HostedClusterSpec struct {
 	// +kubebuilder:default:="HighlyAvailable"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
+	// controlPlaneComponentConfiguration specifies configuration overrides for selected control plane components.
+	// +optional
+	ControlPlaneComponentConfiguration ControlPlaneComponentConfiguration `json:"controlPlaneComponentConfiguration,omitzero,omitempty"`
+
 	// infrastructureAvailabilityPolicy specifies the availability policy applied to infrastructure services which run on the hosted cluster data plane like the ingress controller and image registry controller.
 	// Possible values are HighlyAvailable and SingleReplica. The default value is SingleReplica.
 	// +optional

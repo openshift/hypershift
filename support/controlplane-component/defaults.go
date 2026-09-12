@@ -748,6 +748,9 @@ func DefaultReplicas(hcp *hyperv1.HostedControlPlane, options ComponentOptions, 
 	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
 		return 1
 	}
+	if name == "router" && hcp.Spec.ControlPlaneComponentConfiguration.Router.Replicas != 0 {
+		return hcp.Spec.ControlPlaneComponentConfiguration.Router.Replicas
+	}
 
 	// HighlyAvailable
 	if options.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {

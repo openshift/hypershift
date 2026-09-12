@@ -2602,6 +2602,25 @@ spec:
                         type: string
                     type: object
                 type: object
+              controlPlaneComponentConfiguration:
+                description: controlPlaneComponentConfiguration specifies configuration
+                  overrides for selected control plane components.
+                minProperties: 1
+                properties:
+                  router:
+                    description: router specifies configuration overrides for the
+                      dedicated HCP router.
+                    minProperties: 1
+                    properties:
+                      replicas:
+                        description: |-
+                          replicas specifies the desired number of replicas for the workload.
+                          SingleReplica clusters always use one replica.
+                        format: int32
+                        minimum: 1
+                        type: integer
+                    type: object
+                type: object
               controlPlaneRelease:
                 description: |-
                   controlPlaneRelease is like spec.release but only for the components running on the management cluster.
