@@ -18,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -1895,8 +1894,8 @@ func TestReconcileKubeletConfig(t *testing.T) {
 						Name:      "orphan-no-np-label",
 						Namespace: hcNamespace,
 						Labels: map[string]string{
-							nodepool.KubeletConfigConfigMapLabel: "true",
-							nodepool.NTOMirroredConfigLabel:      "true",
+							hyperv1.KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
 						},
 					},
 					Data: map[string]string{"config": kubeletConfig1},
@@ -1908,8 +1907,8 @@ func TestReconcileKubeletConfig(t *testing.T) {
 						Name:      "orphan-no-np-label",
 						Namespace: hcNamespace,
 						Labels: map[string]string{
-							nodepool.KubeletConfigConfigMapLabel: "true",
-							nodepool.NTOMirroredConfigLabel:      "true",
+							hyperv1.KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
 						},
 					},
 					Data: map[string]string{"config": kubeletConfig1},
@@ -1983,7 +1982,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 			listOpts := []client.ListOption{
 				client.InNamespace(hcNamespace),
 				client.MatchingLabels{
-					nodepool.KubeletConfigConfigMapLabel: "true",
+					hyperv1.KubeletConfigConfigMapLabel: "true",
 				},
 			}
 			cmList := &corev1.ConfigMapList{}
@@ -2058,7 +2057,7 @@ func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap 
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				nodepool.KubeletConfigConfigMapLabel: "true",
+				hyperv1.KubeletConfigConfigMapLabel: "true",
 			},
 		},
 		Data: map[string]string{
@@ -2073,9 +2072,9 @@ func makeMirroredKubeletConfigConfigMap(name, namespace, nodePoolName, data stri
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				nodepool.KubeletConfigConfigMapLabel: "true",
-				nodepool.NTOMirroredConfigLabel:      "true",
-				hyperv1.NodePoolLabel:                nodePoolName,
+				hyperv1.KubeletConfigConfigMapLabel: "true",
+				hyperv1.NTOMirroredConfigLabel:      "true",
+				hyperv1.NodePoolLabel:               nodePoolName,
 			},
 		},
 		Data: map[string]string{
@@ -2090,7 +2089,7 @@ func makeImmutableKubeletConfigConfigMap(name, namespace, data string) *corev1.C
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				nodepool.KubeletConfigConfigMapLabel: "true",
+				hyperv1.KubeletConfigConfigMapLabel: "true",
 			},
 		},
 		Immutable: ptr.To(true),
