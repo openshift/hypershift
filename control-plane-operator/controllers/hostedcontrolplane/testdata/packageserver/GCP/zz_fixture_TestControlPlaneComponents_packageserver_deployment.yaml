@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d326c84933c46c1010742567fff2973eb53f4a79441253895f4ca1c86d9d4864
+    hypershift.openshift.io/desired-state-hash: 5c550e6fe3ebd8e9be7ee029134a52284f7b113e7ab75b7323c4a13f6c1e5954
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: packageserver
@@ -190,6 +190,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-socks5
         resources:
           requests:
@@ -229,11 +230,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-api-critical
       restartPolicy: Always
       terminationGracePeriodSeconds: 30

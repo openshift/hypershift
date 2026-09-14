@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: b44bff8a7c00c5800d9fce06bef0be299db0d340673c1e98a9da901ae0e0b538
+    hypershift.openshift.io/desired-state-hash: 3314e57bc38d13411475970a51b4ba5179b0371e0cd7932db5e808151517184a
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: dns-operator
@@ -117,11 +117,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       terminationGracePeriodSeconds: 2
       tolerations:
