@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2e422124cec7f3ffb41c4524b33d62d7f91736d290d78aeac5c2db22b14a45be
+    hypershift.openshift.io/desired-state-hash: b37091666bed5141ac761b504279e8c389090d09121e0df509e0ee8604cf8fdc
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: featuregate-generator
@@ -124,12 +124,17 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /output
           name: manifests
         - mountPath: /work
           name: work
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: render-feature-gates
       priorityClassName: hypershift-control-plane
       restartPolicy: Never
       serviceAccountName: control-plane-operator

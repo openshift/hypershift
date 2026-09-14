@@ -1,6 +1,8 @@
 package controlplanecomponent
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
@@ -8,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -285,6 +288,257 @@ func generateResources() (map[string]*corev1.Secret, map[string]*corev1.ConfigMa
 		configMaps[cm.Name] = cm
 	}
 	return secrets, configMaps
+}
+
+func TestEnforceImagePullPolicy(t *testing.T) {
+	tests := []struct {
+		name                 string
+		containers           []corev1.Container
+		expectedPullPolicies []corev1.PullPolicy
+		expectError          bool
+	}{
+		{
+			name: "When containers use non-latest images, it should set IfNotPresent pull policy",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234"},
+			},
+			expectedPullPolicies: []corev1.PullPolicy{corev1.PullIfNotPresent},
+		},
+		{
+			name: "When containers use latest images, it should set Always pull policy",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:latest"},
+			},
+			expectedPullPolicies: []corev1.PullPolicy{corev1.PullAlways},
+		},
+		{
+			name: "When a container has no image, it should return an error",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver"},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			err := enforceImagePullPolicy(test.containers)
+
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			for i := range test.containers {
+				g.Expect(test.containers[i].ImagePullPolicy).To(Equal(test.expectedPullPolicies[i]))
+			}
+		})
+	}
+}
+
+func TestEnforceReadOnlyRootFilesystem(t *testing.T) {
+	t.Run("When containers are defaulted, it should add the tmp-dir volume and enforce a read-only root filesystem", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		existingTmpMount := corev1.VolumeMount{Name: "existing-tmp", MountPath: podspec.PodTmpDirMountPath}
+		podSpec := &corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: "init-bootstrap-render"},
+				{Name: "wait-for-etcd", VolumeMounts: []corev1.VolumeMount{existingTmpMount}},
+			},
+			Containers: []corev1.Container{
+				{Name: "kube-apiserver"},
+			},
+		}
+
+		enforceReadOnlyRootFilesystem(podSpec)
+
+		g.Expect(podSpec.Volumes).To(ContainElement(corev1.Volume{
+			Name: podspec.PodTmpDirMountName,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		}), "the shared tmp-dir emptyDir volume should be added to the pod")
+
+		for _, container := range append(podSpec.InitContainers, podSpec.Containers...) {
+			g.Expect(container.SecurityContext).NotTo(BeNil(), "container %q should have a security context", container.Name)
+			g.Expect(container.SecurityContext.ReadOnlyRootFilesystem).To(HaveValue(BeTrue()), "container %q should have a read-only root filesystem", container.Name)
+			g.Expect(container.VolumeMounts).To(ContainElement(WithTransform(func(vm corev1.VolumeMount) string {
+				return vm.MountPath
+			}, Equal(podspec.PodTmpDirMountPath))), "container %q should mount writable tmpdir", container.Name)
+		}
+
+		g.Expect(podSpec.InitContainers[1].VolumeMounts).To(Equal([]corev1.VolumeMount{existingTmpMount}),
+			"container %q should keep its explicit /tmp mount untouched", podSpec.InitContainers[1].Name)
+	})
+
+	t.Run("When init containers have no explicit /tmp mount, it should inject a tmp-dir mount with a container-specific subPath", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		podSpec := &corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: "init-bootstrap-render"},
+				{Name: "init-auth-bootstrap-render"},
+			},
+		}
+
+		enforceReadOnlyRootFilesystem(podSpec)
+
+		for i := range podSpec.InitContainers {
+			mount := findTmpDirMount(&podSpec.InitContainers[i])
+			g.Expect(mount).NotTo(BeNil(), "init container %q should get an injected tmp-dir mount", podSpec.InitContainers[i].Name)
+			g.Expect(mount.SubPath).To(Equal(podSpec.InitContainers[i].Name),
+				"init container %q should get a container-specific subPath so init containers do not share scratch output", podSpec.InitContainers[i].Name)
+		}
+	})
+
+	t.Run("When regular containers have no explicit /tmp mount, it should inject a shared tmp-dir mount without a subPath", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		podSpec := &corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "kube-apiserver"},
+			},
+		}
+
+		enforceReadOnlyRootFilesystem(podSpec)
+
+		mount := findTmpDirMount(&podSpec.Containers[0])
+		g.Expect(mount).NotTo(BeNil(), "regular container %q should get an injected tmp-dir mount", podSpec.Containers[0].Name)
+		g.Expect(mount.SubPath).To(BeEmpty(), "regular containers should keep sharing the tmp-dir volume without a subPath")
+	})
+
+	t.Run("When a container has an explicit /tmp mount, it should preserve it unchanged including subPath and subPathExpr", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			name  string
+			mount corev1.VolumeMount
+		}{
+			{
+				name:  "When the explicit mount has no subPath, it should preserve the mount",
+				mount: corev1.VolumeMount{Name: "existing-tmp", MountPath: podspec.PodTmpDirMountPath},
+			},
+			{
+				name:  "When the explicit mount has a subPath, it should preserve the subPath",
+				mount: corev1.VolumeMount{Name: "existing-subpath", MountPath: podspec.PodTmpDirMountPath, SubPath: "keep-me"},
+			},
+			{
+				name:  "When the explicit mount has a subPathExpr, it should preserve the subPathExpr",
+				mount: corev1.VolumeMount{Name: "existing-subpathexpr", MountPath: podspec.PodTmpDirMountPath, SubPathExpr: "$(POD_NAME)/tmp"},
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
+				g := NewGomegaWithT(t)
+				podSpec := &corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{Name: "wait-for-etcd", VolumeMounts: []corev1.VolumeMount{*test.mount.DeepCopy()}},
+					},
+					Containers: []corev1.Container{
+						{Name: "kube-apiserver", VolumeMounts: []corev1.VolumeMount{*test.mount.DeepCopy()}},
+					},
+				}
+
+				enforceReadOnlyRootFilesystem(podSpec)
+
+				g.Expect(podSpec.InitContainers[0].VolumeMounts).To(Equal([]corev1.VolumeMount{test.mount}),
+					"explicit /tmp mount of init container %q must be preserved exactly", podSpec.InitContainers[0].Name)
+				g.Expect(podSpec.Containers[0].VolumeMounts).To(Equal([]corev1.VolumeMount{test.mount}),
+					"explicit /tmp mount of container %q must be preserved exactly", podSpec.Containers[0].Name)
+			})
+		}
+	})
+
+	t.Run("When the kube-apiserver bootstrap renderers run sequentially, it should not share scratch output", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		// Model the kube-apiserver deployment with built-in OAuth enabled, where
+		// init-bootstrap-render and init-auth-bootstrap-render both use /tmp for
+		// scratch output (see v2/assets/kube-apiserver/deployment.yaml).
+		podSpec := &corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: "init-bootstrap-render"},
+				{Name: "init-auth-bootstrap-render"},
+			},
+		}
+
+		enforceReadOnlyRootFilesystem(podSpec)
+
+		// volumeRoot models the tmp-dir emptyDir volume root on the node; a
+		// container's /tmp resolves within it according to its mount subPath.
+		volumeRoot := t.TempDir()
+		scratchRoot := func(container *corev1.Container) string {
+			mount := findTmpDirMount(container)
+			g.Expect(mount).NotTo(BeNil(), "init container %q should get an injected tmp-dir mount", container.Name)
+			return filepath.Join(volumeRoot, mount.SubPath)
+		}
+		firstRenderer := scratchRoot(&podSpec.InitContainers[0])
+		secondRenderer := scratchRoot(&podSpec.InitContainers[1])
+
+		// init-bootstrap-render renders assets into /tmp/output/manifests and
+		// /tmp/manifests and does not clean up after itself.
+		for _, dir := range []string{
+			filepath.Join(firstRenderer, "output", "manifests"),
+			filepath.Join(firstRenderer, "manifests"),
+		} {
+			g.Expect(os.MkdirAll(dir, 0755)).To(Succeed(), "failed to create first renderer scratch directory %s", dir)
+		}
+		g.Expect(os.WriteFile(filepath.Join(firstRenderer, "output", "manifests", "manifest.yaml"),
+			[]byte("first renderer output"), 0644)).To(Succeed(), "failed to leave behind first renderer scratch output")
+
+		// init-auth-bootstrap-render creates its scratch directories, renders
+		// assets into /tmp/output, then copies /tmp/output/* non-recursively
+		// into the shared bootstrap-manifests volume. A non-recursive copy
+		// fails when it encounters a directory, which is what happened when
+		// both renderers shared the tmp-dir volume.
+		for _, dir := range []string{
+			filepath.Join(secondRenderer, "input"),
+			filepath.Join(secondRenderer, "output"),
+			filepath.Join(secondRenderer, "manifests"),
+		} {
+			g.Expect(os.MkdirAll(dir, 0755)).To(Succeed(), "failed to create second renderer scratch directory %s", dir)
+		}
+		g.Expect(os.WriteFile(filepath.Join(secondRenderer, "output", "oauth-issuer"),
+			[]byte("second renderer output"), 0644)).To(Succeed(), "failed to write second renderer scratch output")
+
+		workDir := t.TempDir()
+		// Simulate the non-recursive copy using Go filesystem operations; this
+		// does not execute the renderer binaries or their shell scripts.
+		outputEntries, err := os.ReadDir(filepath.Join(secondRenderer, "output"))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to read the second renderer's output directory")
+		g.Expect(outputEntries).NotTo(BeEmpty(), "the second renderer should produce output to copy")
+		for _, entry := range outputEntries {
+			g.Expect(entry.IsDir()).To(BeFalse(),
+				"the second renderer's non-recursive copy of /tmp/output/* must not encounter a directory left behind by the first renderer")
+			data, readErr := os.ReadFile(filepath.Join(secondRenderer, "output", entry.Name()))
+			g.Expect(readErr).NotTo(HaveOccurred(), "failed to read the second renderer's output file %s", entry.Name())
+			g.Expect(os.WriteFile(filepath.Join(workDir, entry.Name()), data, 0644)).To(Succeed(),
+				"the second renderer's copy into the shared bootstrap-manifests volume should succeed")
+		}
+		g.Expect(os.ReadFile(filepath.Join(workDir, "oauth-issuer"))).To(Equal([]byte("second renderer output")),
+			"the shared bootstrap-manifests volume should contain the second renderer's output")
+	})
+}
+
+// findTmpDirMount returns the mount of the tmp-dir volume at /tmp of the given
+// container, or nil when the container has no such mount.
+func findTmpDirMount(container *corev1.Container) *corev1.VolumeMount {
+	for i := range container.VolumeMounts {
+		if container.VolumeMounts[i].Name == podspec.PodTmpDirMountName &&
+			container.VolumeMounts[i].MountPath == podspec.PodTmpDirMountPath {
+			return &container.VolumeMounts[i]
+		}
+	}
+	return nil
 }
 
 func TestSetControlPlaneIsolationNodeFailureTolerations(t *testing.T) {
@@ -837,7 +1091,165 @@ func TestSetDefaultOptions(t *testing.T) {
 	})
 
 	releaseProvider := imageprovider.NewFromImages(map[string]string{
-		"hyperkube": "quay.io/test/hyperkube:latest",
+		"hyperkube":    "quay.io/test/hyperkube:latest",
+		"token-minter": "quay.io/openshift-release-dev/ocp-v4.0-art-dev:latest",
+	})
+
+	t.Run("When init containers are present, it should enforce image pull policy", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						InitContainers: []corev1.Container{
+							{Name: "wait-for-etcd", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234"},
+							{Name: "render-bootstrap", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:latest"},
+						},
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[1].ImagePullPolicy).To(Equal(corev1.PullAlways))
+		g.Expect(deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(corev1.PullIfNotPresent),
+			"manifest containers should keep the image policy set before payload image replacement")
+	})
+
+	t.Run("When an init container has no image, it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						InitContainers: []corev1.Container{
+							{Name: "wait-for-etcd"},
+						},
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil)
+
+		g.Expect(err).To(MatchError("container wait-for-etcd has no image key specified"))
+	})
+
+	t.Run("When native sidecar token minter is injected, it should enforce image pull policy", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+			tokenMinterContainerOpts: &TokenMinterContainerOptions{
+				TokenType:               CloudToken,
+				ServiceAccountName:      "cloud-controller-manager",
+				ServiceAccountNameSpace: "kube-system",
+			},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform},
+				},
+			},
+			Client:                         fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider:           releaseProvider,
+			NativeSidecarContainersEnabled: true,
+		}, deployment, nil)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].Name).To(Equal("cloud-token-minter"))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].ImagePullPolicy).To(Equal(corev1.PullAlways))
+	})
+
+	t.Run("When one-shot token minter is injected, it should enforce image pull policy", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+			tokenMinterContainerOpts: &TokenMinterContainerOptions{
+				TokenType:               CloudToken,
+				ServiceAccountName:      "cloud-controller-manager",
+				ServiceAccountNameSpace: "kube-system",
+				OneShot:                 true,
+			},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform},
+				},
+			},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].Name).To(Equal("cloud-token-minter"))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].ImagePullPolicy).To(Equal(corev1.PullAlways))
 	})
 
 	resourceTests := []struct {

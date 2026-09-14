@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 86999514b8c6a2b846c9bad8ec5868199adc73859ce9336f6674cf1bd9d35e05
+    hypershift.openshift.io/desired-state-hash: 4397a65000f0487f66359c90a12d18de94347b872c7f106d22d78e19fe089b25
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ingress-operator
@@ -134,6 +134,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-https
         resources:
           requests:
@@ -163,10 +164,15 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: availability-prober
       - args:
         - --token-audience=openshift
         - --service-account-namespace=openshift-ingress-operator
@@ -184,6 +190,8 @@ spec:
             cpu: 10m
             memory: 30Mi
         restartPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           exec:
             command:
@@ -198,6 +206,9 @@ spec:
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: admin-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: cloud-token-minter
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

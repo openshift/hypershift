@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a3af38ba6e62d8ab0f6fc66d4ecc0f0bf3e32357021676ad42b77fe04ba29ec0
+    hypershift.openshift.io/desired-state-hash: 6909c39098d8601af706dfa59ee675b4b7e42ab1661b903a98e01f353d315d46
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: machine-approver
@@ -107,7 +107,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: availability-prober
       priorityClassName: hypershift-control-plane
       restartPolicy: Always
       serviceAccount: machine-approver

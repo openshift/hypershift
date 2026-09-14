@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 4f3718e01b7ead01d070ed88ebf177fcb68a88da82cfbd6c760b0fa0e9768668
+    hypershift.openshift.io/desired-state-hash: 3c2602afa56fa45d9dbb13b3c23a052bce9a697374df20152992c4bfd448b6c0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-autoscaler
@@ -140,7 +140,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: availability-prober
       priorityClassName: hypershift-control-plane
       restartPolicy: Always
       schedulerName: default-scheduler
