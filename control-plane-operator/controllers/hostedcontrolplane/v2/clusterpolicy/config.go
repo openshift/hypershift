@@ -33,7 +33,9 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return err
 	}
 
-	adaptConfig(cmConfig, cpContext.HCP.Spec.Configuration, featureGates)
+	if err := adaptConfig(cmConfig, cpContext.HCP.Spec.Configuration, featureGates); err != nil {
+		return err
+	}
 	configStr, err := k8sutil.SerializeResource(cmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift cluster policy controller configuration: %w", err)
@@ -43,8 +45,12 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, fg []string) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, fg []string) error {
 	cfg.FeatureGates = fg
-	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
-	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
+
+	if err := config.ApplyServingInfoFromTLSProfile(&cfg.ServingInfo.ServingInfo, configuration.GetTLSSecurityProfile()); err != nil {
+		return err
+	}
+
+	return nil
 }

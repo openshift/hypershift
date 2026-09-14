@@ -34,11 +34,18 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, buildInfraKubeconfigVolume())
 	}
 
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer(containerName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-name=%s", clusterName),
 		)
-		c.Args = append(c.Args, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
+		}
 
 		if isExternalInfra {
 			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{

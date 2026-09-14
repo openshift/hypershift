@@ -20,5 +20,8 @@ status:
     type: RolloutComplete
   resources:
   - group: ""
+    kind: ConfigMap
+    name: ignition-server-proxy-config
+  - group: ""
     kind: Service
     name: ignition-server-proxy

@@ -96,7 +96,13 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *
 		"--agent-namespace", hcluster.Spec.Platform.Agent.AgentNamespace,
 	}
 	if hcp != nil && p.payloadVersion != nil && (p.payloadVersion.Major >= 5 || (p.payloadVersion.Major == 4 && p.payloadVersion.Minor >= 23)) {
-		args = append(args, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+		tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if err != nil {
+			return nil, err
+		}
+		if len(tlsArgs) > 0 {
+			args = append(args, tlsArgs...)
+		}
 	}
 
 	deploymentSpec := &appsv1.DeploymentSpec{

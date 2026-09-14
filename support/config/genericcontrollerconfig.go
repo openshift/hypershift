@@ -15,13 +15,22 @@ import (
 // with the specified bind address, bind network, and TLS security profile.
 // This is used by various control plane operators to configure their serving info.
 func BuildGenericControllerConfigData(bindAddress, bindNetwork string, profile *configv1.TLSSecurityProfile) (string, error) {
+	cipherSuites, err := CipherSuites(profile)
+	if err != nil {
+		return "", fmt.Errorf("failed to get cipher suites: %w", err)
+	}
+	minTLSVersion, err := MinTLSVersion(profile)
+	if err != nil {
+		return "", fmt.Errorf("failed to get min TLS version: %w", err)
+	}
+
 	controllerConfig := configv1.GenericControllerConfig{
 		ServingInfo: configv1.HTTPServingInfo{
 			ServingInfo: configv1.ServingInfo{
 				BindAddress:   bindAddress,
 				BindNetwork:   bindNetwork,
-				CipherSuites:  CipherSuites(profile),
-				MinTLSVersion: MinTLSVersion(profile),
+				CipherSuites:  cipherSuites,
+				MinTLSVersion: minTLSVersion,
 			},
 		},
 	}

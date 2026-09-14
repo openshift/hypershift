@@ -21,12 +21,19 @@ func (capi *CAPIManagerOptions) adaptDeployment(cpContext component.WorkloadCont
 		return fmt.Errorf("failed to parse version (%s): %w", versionStr, err)
 	}
 
+	tlsArgs, err := config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer("manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if version.GE(config.Version419) {
 			c.Args = append(c.Args, "--feature-gates=MachineSetPreflightChecks=false")
 		}
 		if version.Major >= 5 || (version.Major == 4 && version.Minor >= 23) {
-			c.Args = append(c.Args, config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())...)
+			if len(tlsArgs) > 0 {
+				c.Args = append(c.Args, tlsArgs...)
+			}
 		}
 
 		if len(capi.imageOverride) > 0 {

@@ -59,9 +59,15 @@ func predicate(cpContext component.WorkloadContext) (bool, error) {
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
 
 	podspec.UpdateContainer("cloud-controller-manager", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		c.Args = append(c.Args, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
+		}
 	})
 
 	return nil

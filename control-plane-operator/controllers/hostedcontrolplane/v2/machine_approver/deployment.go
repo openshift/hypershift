@@ -13,10 +13,18 @@ import (
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
-	configuration := hcp.Spec.Configuration
+
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args, fmt.Sprintf("--machine-namespace=%s", hcp.Namespace))
-		c.Args = append(c.Args, config.TLSArgs(configuration.GetTLSSecurityProfile())...)
+
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
+		}
 	})
 
 	return nil
