@@ -2,13 +2,18 @@ package backwardcompat
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sigyaml "sigs.k8s.io/yaml"
+
+	"github.com/blang/semver"
 )
 
 const ImageStreamImportModeField = "imageStreamImportMode"
@@ -30,6 +35,29 @@ func GetBackwardCompatibleConfigHash(config *v1beta1.ClusterConfiguration) (stri
 	// We need to drop the field when it shows up as empty in the marshaled string to keep backward compatibility.
 	// Implementing this at the marshal operation level might result in undesired impact as we might potentially modify other fields and ordering is not deterministic
 	return supportutil.HashStructWithJSONMapper(config, supportutil.NewOmitFieldIfEmptyJSONMapper(ImageStreamImportModeField))
+}
+
+// GetBackwardCompatibleCAPIImage returns a CAPI image pinned to a version that
+// writes status through the v1beta2 API. Payloads at 4.18 or below ship a CAPI
+// controller that writes status via v1beta1; the v1beta1→v1beta2 conversion
+// drops the phase field, leaving it permanently empty.
+// The pinned image is from OCP 4.22 which includes CAPI 1.13.
+func GetBackwardCompatibleCAPIImage(ctx context.Context, pullSecret []byte, releaseProvider releaseinfo.Provider, releaseVersion semver.Version, component string) (string, error) {
+	const (
+		pinnedRelease        = "quay.io/openshift-release-dev/ocp-release@sha256:1dbbdfdde4bb3f3ed4bca965e810a2990a3913990fb4a57072764b771f604554"
+		minUnaffectedVersion = "4.19.0-0"
+	)
+
+	if releaseVersion.LT(semver.MustParse(minUnaffectedVersion)) {
+		imageOverride, err := supportutil.GetPayloadImageFromRelease(ctx, releaseProvider, pinnedRelease, component, pullSecret)
+		if err != nil {
+			return "", fmt.Errorf("error getting backwards compatible image for %s:%s: %w", component, pinnedRelease, err)
+		}
+
+		return imageOverride, nil
+	}
+
+	return "", nil
 }
 
 // NormalizeV1Alpha1ClusterImagePolicy rewrites the apiVersion of ClusterImagePolicy

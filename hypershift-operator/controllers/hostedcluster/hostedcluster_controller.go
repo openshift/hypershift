@@ -54,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -1833,7 +1834,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 		cpoHasUtilities, certRotationScale, releaseImageVersion, releaseProvider); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile control plane operator: %w", err))
 	}
-	if err := r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster); err != nil {
+	if err := r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile CAPI manager: %w", err))
 	}
 	if err := r.reconcileCAPIProvider(cpContext, hcluster, hcp, p); err != nil {
@@ -3077,7 +3078,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 }
 
 // reconcileCAPIManager orchestrates all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, releaseVersion semver.Version) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -3105,6 +3106,18 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 	}
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
+
+	if imageOverride == "" {
+		pullSecret, err := hyperutil.GetPullSecretBytes(cpContext, r.Client, hcluster)
+		if err != nil {
+			return err
+		}
+
+		imageOverride, err = backwardcompat.GetBackwardCompatibleCAPIImage(cpContext, pullSecret, r.RegistryProvider.GetReleaseProvider(), releaseVersion, ImageStreamCAPI)
+		if err != nil {
+			return err
+		}
+	}
 
 	capiManager := capimanagerv2.NewComponent(imageOverride)
 	if err := capiManager.Reconcile(cpContext); err != nil {
