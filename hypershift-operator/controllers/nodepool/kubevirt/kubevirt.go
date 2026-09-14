@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -429,11 +430,22 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		vmTemplate.Spec.Template.ObjectMeta.Labels = map[string]string{}
 	}
 
+	maps.Copy(vmTemplate.ObjectMeta.Labels, hcluster.Spec.Labels)
+	maps.Copy(vmTemplate.Spec.Template.ObjectMeta.Labels, hcluster.Spec.Labels)
+
 	vmTemplate.Spec.Template.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
 	vmTemplate.Spec.Template.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
 
 	vmTemplate.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
 	vmTemplate.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
+
+	for i := range vmTemplate.Spec.DataVolumeTemplates {
+		if vmTemplate.Spec.DataVolumeTemplates[i].Labels == nil {
+			vmTemplate.Spec.DataVolumeTemplates[i].Labels = map[string]string{}
+		}
+		maps.Copy(vmTemplate.Spec.DataVolumeTemplates[i].Labels, hcluster.Spec.Labels)
+		vmTemplate.Spec.DataVolumeTemplates[i].Labels[hyperv1.IsKubeVirtRHCOSVolumeLabelName] = "true"
+	}
 
 	// Adding volumes for safe-eviction by clusterAutoscaler when it comes in action.
 	// The volumes that should be included in the annotation are the emptyDir and hostPath ones
