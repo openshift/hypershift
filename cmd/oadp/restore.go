@@ -3,6 +3,7 @@ package oadp
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openshift/hypershift/cmd/log"
@@ -73,8 +74,8 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	}
 
 	// Required flags
-	cmd.Flags().StringVar(&opts.HCName, "hc-name", "", "Name of the hosted cluster to restore (required)")
-	cmd.Flags().StringVar(&opts.HCNamespace, "hc-namespace", "", "Namespace of the hosted cluster to restore (required)")
+	cmd.Flags().StringVar(&opts.HCName, "hc-name", "", "Name of the hosted cluster as it was backed up (must match the original, required)")
+	cmd.Flags().StringVar(&opts.HCNamespace, "hc-namespace", "", "Namespace of the hosted cluster as it was backed up (must match the original, required)")
 	cmd.Flags().StringVar(&opts.BackupName, "from-backup", "", "Name of the backup to restore from (mutually exclusive with --from-schedule)")
 	cmd.Flags().StringVar(&opts.ScheduleName, "from-schedule", "", "Name of the schedule to restore from (uses latest backup, mutually exclusive with --from-backup)")
 
@@ -285,6 +286,32 @@ func (o *CreateOptions) validateBackupExists(ctx context.Context, renderMode boo
 			o.Log.Info("Warning: Backup is not completed, but proceeding with render", "backup", o.BackupName, "phase", phase)
 		} else {
 			return fmt.Errorf("backup '%s' is not completed, current phase: %s", o.BackupName, phase)
+		}
+	}
+
+	// Verify that the expected HCP namespace exists in the backup's includedNamespaces.
+	// A mismatch means the restore would target a namespace that the backup never captured,
+	// resulting in a silently partial restore.
+	backupNamespaces, nsFound, nsErr := unstructured.NestedStringSlice(backup.Object, "spec", "includedNamespaces")
+	if nsErr != nil {
+		if renderMode {
+			o.Log.Info("Warning: failed to parse backup includedNamespaces, skipping namespace validation",
+				"backup", o.BackupName, "error", nsErr.Error())
+		} else {
+			return fmt.Errorf("failed to parse includedNamespaces from backup '%s': %w", o.BackupName, nsErr)
+		}
+	} else if nsFound && len(backupNamespaces) > 0 {
+		expectedHCPNamespace := fmt.Sprintf("%s-%s", o.HCNamespace, o.HCName)
+		if !slices.Contains(backupNamespaces, expectedHCPNamespace) {
+			if renderMode {
+				o.Log.Info("Warning: backup does not contain the expected control plane namespace",
+					"backup", o.BackupName, "expected", expectedHCPNamespace, "actual", backupNamespaces)
+			} else {
+				return fmt.Errorf("backup '%s' does not contain the expected control plane namespace '%s'. "+
+					"The backup includes namespaces %v. "+
+					"Ensure --hc-name and --hc-namespace match the original backed-up cluster",
+					o.BackupName, expectedHCPNamespace, backupNamespaces)
+			}
 		}
 	}
 
