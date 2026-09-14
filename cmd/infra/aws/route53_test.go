@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -82,6 +83,14 @@ func privateZonePage(id, name string) *route53.ListHostedZonesOutput {
 // emptyZonePage returns a single-page ListHostedZones response with no zones.
 func emptyZonePage() *route53.ListHostedZonesOutput {
 	return &route53.ListHostedZonesOutput{HostedZones: []route53types.HostedZone{}}
+}
+
+func hostedZonesForVPC(ids ...string) *route53.ListHostedZonesByVPCOutput {
+	output := &route53.ListHostedZonesByVPCOutput{}
+	for _, id := range ids {
+		output.HostedZoneSummaries = append(output.HostedZoneSummaries, route53types.HostedZoneSummary{HostedZoneId: aws.String("/hostedzone/" + id)})
+	}
+	return output
 }
 
 func TestLookupPublicZone(t *testing.T) {
@@ -317,6 +326,213 @@ func TestCreatePrivateZone(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When distinct zones are created concurrently, it should use unique caller references", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		var callerReferences []string
+		var callerReferencesLock sync.Mutex
+
+		mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(2).
+			Return(emptyZonePage(), nil)
+		mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(2).
+			DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+				callerReferencesLock.Lock()
+				callerReferences = append(callerReferences, aws.ToString(input.CallerReference))
+				callerReferencesLock.Unlock()
+				return &route53.CreateHostedZoneOutput{
+					HostedZone: &route53types.HostedZone{Id: aws.String("/hostedzone/CREATEDZONE")},
+				}, nil
+			})
+		mockR53.EXPECT().ChangeTagsForResource(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(2).
+			Return(&route53.ChangeTagsForResourceOutput{}, nil)
+		mockR53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(2).
+			DoAndReturn(func(_ context.Context, input *route53.ListResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ListResourceRecordSetsOutput, error) {
+				return soaRecordFor(strings.TrimSuffix(aws.ToString(input.StartRecordName), ".")), nil
+			})
+		mockR53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(2).
+			Return(&route53.ChangeResourceRecordSetsOutput{}, nil)
+
+		o := &CreateInfraOptions{Region: "us-east-1"}
+		errs := make(chan error, 2)
+		for _, zoneName := range []string{"first.internal.example.com", "second.internal.example.com"} {
+			go func() {
+				_, err := o.CreatePrivateZone(t.Context(), logr.Discard(), mockR53, zoneName, testVPCID, false, mockR53, "")
+				errs <- err
+			}()
+		}
+		g.Expect(<-errs).NotTo(HaveOccurred())
+		g.Expect(<-errs).NotTo(HaveOccurred())
+		g.Expect(callerReferences).To(HaveLen(2))
+		g.Expect(callerReferences[0]).NotTo(BeEmpty())
+		g.Expect(callerReferences[1]).NotTo(BeEmpty())
+		g.Expect(callerReferences[0]).NotTo(Equal(callerReferences[1]))
+	})
+
+	t.Run("When hosted zone creation is retried, it should preserve the caller reference", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		var callerReferences []string
+		attempt := 0
+
+		mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(emptyZonePage(), nil)
+		mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+			Times(2).
+			DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+				callerReferences = append(callerReferences, aws.ToString(input.CallerReference))
+				attempt++
+				if attempt == 1 {
+					return nil, errors.New("transient error")
+				}
+				return &route53.CreateHostedZoneOutput{
+					HostedZone: &route53types.HostedZone{Id: aws.String("/hostedzone/RETRIEDZONE")},
+				}, nil
+			})
+		mockR53.EXPECT().ChangeTagsForResource(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.ChangeTagsForResourceOutput{}, nil)
+		mockR53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(soaRecordFor(testZoneName), nil)
+		mockR53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.ChangeResourceRecordSetsOutput{}, nil)
+
+		o := &CreateInfraOptions{Region: "us-east-1"}
+		id, err := o.CreatePrivateZone(t.Context(), logr.Discard(), mockR53, testZoneName, testVPCID, false, mockR53, "")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(id).To(Equal("RETRIEDZONE"))
+		g.Expect(callerReferences).To(HaveLen(2))
+		g.Expect(callerReferences[0]).To(Equal(callerReferences[1]))
+	})
+
+	t.Run("When a cross-account successful response is lost, it should recover only the zone with the same caller reference", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		mockVPCOwner := awsapi.NewMockROUTE53API(ctrl)
+		var callerReference string
+
+		gomock.InOrder(
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(emptyZonePage(), nil),
+			mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+					g.Expect(aws.ToString(input.VPC.VPCId)).To(Equal(testInitialVPC))
+					callerReference = aws.ToString(input.CallerReference)
+					return nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("already created")}
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					page := privateZonePage("UNRELATEDZONE", testZoneName)
+					page.HostedZones[0].CallerReference = aws.String("unrelated-caller-reference")
+					recoveredZone := privateZonePage("RECOVEREDZONE", testZoneName).HostedZones[0]
+					recoveredZone.CallerReference = aws.String(callerReference)
+					page.HostedZones = append(page.HostedZones, recoveredZone)
+					return page, nil
+				}),
+			mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+					g.Expect(aws.ToString(input.VPCId)).To(Equal(testInitialVPC))
+					g.Expect(input.VPCRegion).To(Equal(route53types.VPCRegionUsEast1))
+					return hostedZonesForVPC(), nil
+				}),
+			mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+					g.Expect(aws.ToString(input.CallerReference)).To(Equal(callerReference))
+					return nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("already created")}
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					page := privateZonePage("RECOVEREDZONE", testZoneName)
+					page.HostedZones[0].CallerReference = aws.String(callerReference)
+					return page, nil
+				}),
+			mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+					g.Expect(aws.ToString(input.VPCId)).To(Equal(testInitialVPC))
+					g.Expect(input.VPCRegion).To(Equal(route53types.VPCRegionUsEast1))
+					return hostedZonesForVPC("RECOVEREDZONE"), nil
+				}),
+			mockR53.EXPECT().ChangeTagsForResource(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.ChangeTagsForResourceOutput{}, nil),
+			mockR53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(soaRecordFor(testZoneName), nil),
+			mockR53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.ChangeResourceRecordSetsOutput{}, nil),
+			mockR53.EXPECT().CreateVPCAssociationAuthorization(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.CreateVPCAssociationAuthorizationOutput{}, nil),
+			mockVPCOwner.EXPECT().AssociateVPCWithHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.AssociateVPCWithHostedZoneOutput{}, nil),
+			mockR53.EXPECT().DisassociateVPCFromHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.DisassociateVPCFromHostedZoneOutput{}, nil),
+		)
+
+		o := &CreateInfraOptions{Region: "us-east-1"}
+		id, err := o.CreatePrivateZone(t.Context(), logr.Discard(), mockR53, testZoneName, testVPCID, true, mockVPCOwner, testInitialVPC)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(id).To(Equal("RECOVEREDZONE"))
+	})
+
+	t.Run("When Route53 normalizes a zone name, it should recover the zone for the same caller reference", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		mixedCaseZoneName := "Internal.Example.COM"
+		var callerReference string
+
+		gomock.InOrder(
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(emptyZonePage(), nil),
+			mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+					callerReference = aws.ToString(input.CallerReference)
+					return nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("already created")}
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					page := privateZonePage("RECOVEREDZONE", strings.ToLower(mixedCaseZoneName))
+					page.HostedZones[0].CallerReference = aws.String(callerReference)
+					return page, nil
+				}),
+			mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+					g.Expect(aws.ToString(input.VPCId)).To(Equal(testVPCID))
+					g.Expect(input.VPCRegion).To(Equal(route53types.VPCRegionUsEast1))
+					return hostedZonesForVPC("RECOVEREDZONE"), nil
+				}),
+			mockR53.EXPECT().ChangeTagsForResource(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.ChangeTagsForResourceOutput{}, nil),
+			mockR53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(soaRecordFor(strings.ToLower(mixedCaseZoneName)), nil),
+			mockR53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53.ChangeResourceRecordSetsOutput{}, nil),
+		)
+
+		o := &CreateInfraOptions{Region: "us-east-1"}
+		id, err := o.CreatePrivateZone(t.Context(), logr.Discard(), mockR53, mixedCaseZoneName, testVPCID, false, mockR53, "")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(id).To(Equal("RECOVEREDZONE"))
+	})
+
+	t.Run("When a duplicate response belongs to an unrelated zone, it should return an ownership error", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		var callerReference string
+
+		gomock.InOrder(
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(emptyZonePage(), nil),
+			mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+					callerReference = aws.ToString(input.CallerReference)
+					return nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("already created")}
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					page := privateZonePage("UNRELATEDZONE", testZoneName)
+					page.HostedZones[0].CallerReference = aws.String(callerReference)
+					return page, nil
+				}),
+			mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(hostedZonesForVPC("OTHERZONE"), nil),
+		)
+
+		o := &CreateInfraOptions{Region: "us-east-1"}
+		id, err := o.CreatePrivateZone(cancelledCtx(), logr.Discard(), mockR53, testZoneName, testVPCID, false, mockR53, "")
+		g.Expect(err).To(MatchError(ContainSubstring("cannot yet verify VPC ownership")))
+		g.Expect(id).To(BeEmpty())
+	})
 }
 
 func TestCreatePrivateZoneUsesStableCallerReferenceAcrossRetries(t *testing.T) {
