@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: dbcc42606aaf59e9c0f0d2b2ebed8e1ac624c593817d549735d001a78211c102
+    hypershift.openshift.io/desired-state-hash: 12b8ac6082df3d67a2d391ff9a05526e037ea79d8edb1e95ec0bd4ec5baa95b2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-scheduler
@@ -250,8 +250,12 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

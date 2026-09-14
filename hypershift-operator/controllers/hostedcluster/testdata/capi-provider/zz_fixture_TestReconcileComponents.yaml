@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
-    hypershift.openshift.io/desired-state-hash: 9e38a050997547dd945ae5ccec9c38002cd1b1470dda242dc235284a645cf147
+    hypershift.openshift.io/desired-state-hash: 731464a3e405ac86a17b72051ac1e903ad524a09a3c3637316835a662bda386a
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: capi-provider
@@ -140,7 +140,12 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       serviceAccountName: capi-provider
       terminationGracePeriodSeconds: 10
