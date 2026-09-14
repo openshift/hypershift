@@ -51,6 +51,15 @@ func TestCLIFlow(t *testing.T) {
 				"--provisioning-model=Preemptible",
 			},
 		},
+		{
+			name: "When resource labels are provided in non-alphabetical order, it should sort them",
+			args: []string{
+				"--machine-type=n2-standard-4",
+				"--zone=us-central1-a",
+				"--subnet=test-subnet",
+				"--resource-labels=zebra=1,mango=2,alpha=3",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			ctx := t.Context()

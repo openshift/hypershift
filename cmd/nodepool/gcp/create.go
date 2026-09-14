@@ -128,13 +128,11 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 	machineType := o.MachineType
 	if len(machineType) == 0 {
 		switch nodePool.Spec.Arch {
-		case "amd64":
+		case hyperv1.ArchitectureAMD64:
 			machineType = defaultGCPMachineType
-		case "arm64":
+		case hyperv1.ArchitectureARM64:
 			// Tau T2A family for ARM64 architecture
 			machineType = "t2a-standard-4"
-		default:
-			machineType = defaultGCPMachineType
 		}
 	}
 
