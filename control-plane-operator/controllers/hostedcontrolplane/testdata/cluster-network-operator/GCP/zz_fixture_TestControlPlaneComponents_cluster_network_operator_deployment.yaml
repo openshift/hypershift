@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 186af0aea2bd79a6308085e69de2c461f6f3d3d2169840e6a943a6abb2731ba6
+    hypershift.openshift.io/desired-state-hash: e1994d6ec67c8f481cf36236d4ac707d9cd682b60dd473b67ead4967e2dd3371
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-network-operator
@@ -228,6 +228,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-socks5
         resources:
           requests:
@@ -272,11 +273,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --kubeconfig=/etc/hosted-kubernetes/kubeconfig
         - -n=openshift-network-operator
@@ -298,11 +302,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/hosted-kubernetes
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --service-account-namespace
         - openshift-network-operator
@@ -330,6 +337,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -337,6 +345,8 @@ spec:
           name: client-token
         - mountPath: /etc/kubernetes
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -381,6 +391,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -392,6 +403,8 @@ spec:
           name: client-token
         - mountPath: /etc/certificate/ca
           name: ca-bundle
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       serviceAccount: cluster-network-operator
       serviceAccountName: cluster-network-operator

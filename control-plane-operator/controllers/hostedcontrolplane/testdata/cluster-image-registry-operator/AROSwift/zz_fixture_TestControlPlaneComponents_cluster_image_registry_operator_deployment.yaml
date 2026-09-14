@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 4b4b3a8c6cc83a3322e0614842c2273f6a29684ff03308e306de43f2cc132503
+    hypershift.openshift.io/desired-state-hash: fdaccd6777f205af4353602db9d3847385909c9d5947b4c0634401a8ff7410f2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-image-registry-operator
@@ -161,6 +161,8 @@ spec:
             cpu: 10m
             memory: 30Mi
         restartPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           exec:
             command:
@@ -175,6 +177,8 @@ spec:
           name: apiserver-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

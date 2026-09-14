@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 66fabda298aca6055002379ee4df00599f6fe04f4790bc758bb3641d09f2be30
+    hypershift.openshift.io/desired-state-hash: 77cbb9f593ef13692b094d2acf6177216206913de284010025a37ac7ddeda537
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-image-registry-operator
@@ -168,6 +168,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         startupProbe:
           exec:
@@ -183,6 +184,8 @@ spec:
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --token-audience=https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
         - --service-account-namespace=openshift-image-registry
@@ -205,6 +208,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         startupProbe:
           exec:
@@ -220,6 +224,8 @@ spec:
           name: apiserver-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

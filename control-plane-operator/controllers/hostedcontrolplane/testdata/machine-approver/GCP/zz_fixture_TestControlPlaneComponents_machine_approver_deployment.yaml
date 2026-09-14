@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: e47145abaa892061acd94a69ac15730c522b2c6f82d01d436010fd914279d1a0
+    hypershift.openshift.io/desired-state-hash: 260e2ee43606b025baf8b6b449ab9eba66a8aa39bd0c20be271f73a4b8b2fcb3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: machine-approver
@@ -116,8 +116,12 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       restartPolicy: Always
       serviceAccount: machine-approver
