@@ -26,7 +26,6 @@ import (
 const (
 	ControllerName                     = "globalps"
 	configSeedLabelKey                 = "hypershift.openshift.io/globalps-config-hash"
-	globalPSLabelKey                   = "hypershift.openshift.io/nodepool-globalps-enabled"
 	openshiftUserCriticalPriorityClass = "openshift-user-critical"
 )
 
@@ -197,10 +196,6 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 					DNSPolicy:                    corev1.DNSDefault,
 					PriorityClassName:            openshiftUserCriticalPriorityClass,
 					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
-					// Use nodeSelector to only include nodes that are explicitly enabled for GlobalPullSecret
-					NodeSelector: map[string]string{
-						globalPSLabelKey: "true",
-					},
 					Containers: []corev1.Container{
 						{
 							Name:            manifests.GlobalPullSecretDSName,
@@ -213,13 +208,16 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 								"sync-global-pullsecret",
 							},
 							SecurityContext: &corev1.SecurityContext{
-								// Privileged mode is required for the following operations:
-								// 1. Write access to /var/lib/kubelet/config.json (kubelet configuration file)
-								// 2. DBus connection to systemd for kubelet service management
-								// 3. Restart kubelet.service via systemd (requires root privileges)
-								// These operations cannot be performed with specific capabilities due to
-								// the combination of file system access and systemd service management.
-								Privileged: ptr.To(true),
+								AllowPrivilegeEscalation: ptr.To(false),
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
+								},
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{"ALL"},
+								},
+								SELinuxOptions: &corev1.SELinuxOptions{
+									Type: "spc_t",
+								},
 							},
 							VolumeMounts:             buildGlobalPSVolumeMounts(globalPullSecretName),
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
@@ -335,7 +333,6 @@ func buildGlobalPSVolumeMounts(globalPullSecretName string) []corev1.VolumeMount
 	var volumeMounts []corev1.VolumeMount
 
 	volumeMounts = append(volumeMounts, globalPSVolumeMountKubeletConfig())
-	volumeMounts = append(volumeMounts, globalPSVolumeMountDbus())
 	volumeMounts = append(volumeMounts, globalPSVolumeMountOriginalPullSecret())
 
 	if globalPullSecretName != "" {
@@ -350,7 +347,6 @@ func buildGlobalPSVolumes(globalPullSecretName string, originalPullSecretName st
 	var volumes []corev1.Volume
 
 	volumes = append(volumes, podspec.BuildVolume(globalPSVolumeKubeletConfig(), buildGlobalPSVolumeKubeletConfig))
-	volumes = append(volumes, podspec.BuildVolume(globalPSVolumeDbus(), buildGlobalPSVolumeDbus))
 	volumes = append(volumes, podspec.BuildVolume(globalPSVolumeOriginalPullSecret(), buildGlobalPSVolumeOriginalPullSecret(originalPullSecretName)))
 
 	if globalPullSecretName != "" {

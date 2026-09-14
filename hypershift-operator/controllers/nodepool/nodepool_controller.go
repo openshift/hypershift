@@ -13,6 +13,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	globalpullsecret "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/globalpullsecret"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
@@ -98,6 +99,8 @@ const (
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
+	controlPlaneOperatorManagesGlobalPullSecretAuthD = "io.openshift.hypershift.control-plane-operator-manages.global-pull-secret-auth-d"
+
 	labelManagedPrefix = "managed.hypershift.openshift.io"
 	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
 	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
@@ -122,8 +125,9 @@ type NotReadyError struct {
 }
 
 type CPOCapabilities struct {
-	DecompressAndDecodeConfig     bool
-	CreateDefaultAWSSecurityGroup bool
+	DecompressAndDecodeConfig         bool
+	CreateDefaultAWSSecurityGroup     bool
+	ManagesGlobalPullSecretAuthD      bool
 }
 
 // when using the conditions.SetSummary, with the WithStepCounter or WithStepCounterIf(true) options,
@@ -427,7 +431,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	globalPullSecretRawConfig, err := r.generateGlobalPullSecretRawConfig(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to generate global pull secret raw config: %w", err)
+	}
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, globalPullSecretRawConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -524,13 +532,17 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
+	globalPullSecretRawConfig, err := r.generateGlobalPullSecretRawConfig(ctx, hcluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate global pull secret raw config: %w", err)
+	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	osStreamsEnabled := featuregate.Gate().Enabled(featuregate.OSStreams)
 	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, globalPullSecretRawConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -1138,6 +1150,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	result := &CPOCapabilities{}
 	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
 	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]
+	_, result.ManagesGlobalPullSecretAuthD = imageLabels[controlPlaneOperatorManagesGlobalPullSecretAuthD]
 
 	return result, nil
 }
@@ -1240,6 +1253,16 @@ func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodeP
 	}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	return haProxy.GenerateHAProxyRawConfig(ctx, hcluster, controlPlaneNamespace)
+}
+
+func (r *NodePoolReconciler) generateGlobalPullSecretRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster) (string, error) {
+	gps := globalpullsecret.GlobalPullSecret{
+		Client:                  r.Client,
+		ReleaseProvider:         r.ReleaseProvider,
+		ImageMetadataProvider:   r.ImageMetadataProvider,
+		HypershiftOperatorImage: r.HypershiftOperatorImage,
+	}
+	return gps.GenerateGlobalPullSecretMachineConfig(ctx, hcluster)
 }
 
 // machinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.

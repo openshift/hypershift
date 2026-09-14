@@ -302,9 +302,8 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
-	controllersToRun := map[string]operator.ControllerSetupFunc{}
-	if o.platformType == string(hyperv1.AzurePlatform) || o.platformType == string(hyperv1.AWSPlatform) {
-		controllersToRun[globalps.ControllerName] = globalps.Setup
+	controllersToRun := map[string]operator.ControllerSetupFunc{
+		globalps.ControllerName: globalps.Setup,
 	}
 
 	for _, controllerName := range o.Controllers {
