@@ -3,6 +3,7 @@ package awsutil
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openshift/hypershift/support/awsapi"
 
@@ -245,6 +246,13 @@ func UpdateResourceTags(ctx context.Context, ec2Client awsapi.EC2API, resourceID
 		// Create/Update tags in AWS.
 		if _, err := ec2Client.CreateTags(ctx, input); err != nil {
 			return errors.Wrapf(err, "failed to create tags for resource %q: %+v", resourceID, create)
+		}
+	}
+
+	// Filter out AWS-reserved tag keys (aws:* prefix) that cannot be deleted.
+	for key := range remove {
+		if strings.HasPrefix(key, "aws:") {
+			delete(remove, key)
 		}
 	}
 
