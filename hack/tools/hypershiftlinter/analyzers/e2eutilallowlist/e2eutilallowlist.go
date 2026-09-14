@@ -24,9 +24,6 @@ var allowlist = map[string]map[string]bool{
 		"ConditionPredicate":           true,
 		"Conditions":                   true,
 		"WithPredicates":               true,
-		"EventuallyNotFound":           true,
-		"EventuallyObject":             true,
-		"EventuallyObjects":            true,
 		"Matches":                      true,
 		"MatchesLeaderElectionFailure": true,
 		"OSImageStreamPredicate":       true,
@@ -40,19 +37,8 @@ var allowlist = map[string]map[string]bool{
 		"WithTimeout":                  true,
 
 		// Client helpers
-		"GetClient":    true,
-		"GetConfig":    true,
-		"UpdateObject": true,
-
-		// Wait/rollout helpers
-		"WaitForControlPlaneComponentRollout":             true,
-		"WaitForControlPlaneRollout":                      true,
-		"WaitForDataPlaneRollout":                         true,
-		"WaitForGuestKubeConfig":                          true,
-		"WaitForNReadyNodesWithOptions":                   true,
-		"WaitForNodePoolConfigUpdateCompleteWithPlatform": true,
-		"WaitForReadyNodesByNodePool":                     true,
-		"WaitForReadyNodesByLabels":                       true,
+		"GetClient": true,
+		"GetConfig": true,
 
 		// Cloud provider helpers
 		"GetDefaultSecurityGroup": true,
@@ -64,12 +50,6 @@ var allowlist = map[string]map[string]bool{
 		"HasFieldInCRDSchema":            true,
 		"RunCommandInPod":                true,
 		"SimpleNameGenerator":            true,
-
-		// Validation helpers
-		"ValidateAzureWorkloadIdentityWebhookMutation":     true,
-		"ValidateIngressOperatorConfiguration":             true,
-		"ValidateKubeAPIServerAllowedCIDRs":                true,
-		"ValidateOAuthWithIdentityProviderViaLoadBalancer": true,
 
 		// OIDC helpers
 		"CliClientID":              true,

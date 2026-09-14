@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
@@ -119,7 +120,7 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// Build MachineConfig with a custom file at /etc/custom-config
 		ignitionConfig := ignitionapi.Config{
@@ -172,9 +173,9 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 		ds := buildMachineConfigVerificationDaemonSet(np)
 		Expect(hcClient.Create(ctx, ds)).To(Succeed(), "failed to create verification DaemonSet")
 
-		e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(GinkgoTB(), ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
+		expectNodePoolConfigUpdateComplete(ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
 		waitForDaemonSetRollout(ctx, hcClient, ds, 1, np.Spec.Platform.Type)
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNoCrashingPods, EnsureAllContainersHavePullPolicyIfNotPresent,
 		// EnsureHCPContainersHaveResourceRequests, EnsureNoPodsWithTooHighPriority
@@ -220,7 +221,7 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		tuningCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -244,9 +245,9 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 		ds := buildNTOVerificationDaemonSet(np)
 		Expect(hcClient.Create(ctx, ds)).To(Succeed(), "failed to create NTO verification DaemonSet")
 
-		e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(GinkgoTB(), ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
+		expectNodePoolConfigUpdateComplete(ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
 		waitForDaemonSetRollout(ctx, hcClient, ds, 2, np.Spec.Platform.Type)
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNoCrashingPods, EnsureAllContainersHavePullPolicyIfNotPresent,
 		// EnsureHCPContainersHaveResourceRequests, EnsureNoPodsWithTooHighPriority
@@ -284,7 +285,7 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		tuningCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -308,9 +309,9 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 		ds := buildNTOVerificationDaemonSet(np)
 		Expect(hcClient.Create(ctx, ds)).To(Succeed(), "failed to create NTO verification DaemonSet")
 
-		e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(GinkgoTB(), ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
+		expectNodePoolConfigUpdateComplete(ctx, testCtx.MgmtClient, np, hc.Spec.Platform.Type)
 		waitForDaemonSetRollout(ctx, hcClient, ds, 2, np.Spec.Platform.Type)
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNoCrashingPods, EnsureAllContainersHavePullPolicyIfNotPresent,
 		// EnsureHCPContainersHaveResourceRequests, EnsureNoPodsWithTooHighPriority
@@ -360,16 +361,16 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// Update NodePool to latest release image
 		GinkgoWriter.Printf("Upgrading NodePool %s to latest release %s\n", np.Name, latestImage)
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
+		Expect(v2util.UpdateObject(ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
 		// Wait for upgrade to start
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to start the upgrade", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to start the upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -381,11 +382,11 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-		)
+		)).To(Succeed())
 
 		// Wait for upgrade to complete
 		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -397,10 +398,10 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionFalse,
 				}),
 			},
-			e2eutil.WithTimeout(upgradeTimeout),
-		)
+			v2util.WithTimeout(upgradeTimeout),
+		)).To(Succeed())
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
@@ -442,15 +443,15 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		GinkgoWriter.Printf("Upgrading NodePool %s to latest release %s\n", np.Name, latestImage)
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
+		Expect(v2util.UpdateObject(ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
 		// Wait for upgrade to start
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to start the upgrade", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to start the upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -462,11 +463,11 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-		)
+		)).To(Succeed())
 
 		// Wait for upgrade to complete
 		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -478,10 +479,10 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionFalse,
 				}),
 			},
-			e2eutil.WithTimeout(upgradeTimeout),
-		)
+			v2util.WithTimeout(upgradeTimeout),
+		)).To(Succeed())
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints, EnsureNodesRuntime require *testing.T
 	})
@@ -525,7 +526,7 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, platform)
+		expectReadyNodesByNodePool(ctx, hcClient, np, platform)
 
 		// Change instance type / VM size to trigger rolling upgrade
 		var newInstanceType, newVMSize string
@@ -536,7 +537,7 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 			newVMSize = "Standard_D4s_v5"
 		}
 
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
+		Expect(v2util.UpdateObject(ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
 			switch platform {
 			case hyperv1.AWSPlatform:
 				obj.Spec.Platform.AWS.InstanceType = newInstanceType
@@ -546,7 +547,7 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 		})).To(Succeed(), "failed to update NodePool instance type / VM size")
 
 		// Wait for rolling upgrade to start
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to start the rolling upgrade", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to start the rolling upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -558,12 +559,12 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithTimeout(2*time.Minute),
-		)
+			v2util.WithTimeout(2*time.Minute),
+		)).To(Succeed())
 
 		// Wait for rolling upgrade to complete
 		rollingTimeout := nodePoolUpgradeTimeout(platform)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to finish the rolling upgrade", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to finish the rolling upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -575,8 +576,8 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionFalse,
 				}),
 			},
-			e2eutil.WithTimeout(rollingTimeout),
-		)
+			v2util.WithTimeout(rollingTimeout),
+		)).To(Succeed())
 
 		// TODO: Verify machine specs (AWSMachineList / AzureMachineList) after upgrade.
 		// The v1 test uses capiaws.AWSMachineList and capiazure.AzureMachineList to check
@@ -618,7 +619,7 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints requires *testing.T
 	})
@@ -657,7 +658,7 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: EnsureNodesLabelsAndTaints requires *testing.T
 	})
@@ -694,7 +695,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		kcConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -716,7 +717,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			"failed to patch NodePool %s with KubeletConfig", np.Name)
 
 		// Verify mirrored ConfigMap appears in the hosted cluster
-		e2eutil.EventuallyObjects(GinkgoTB(), ctx, "KubeletConfig should be mirrored to the hosted cluster",
+		Expect(v2util.EventuallyObjects(ctx, "KubeletConfig should be mirrored to the hosted cluster",
 			func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
@@ -759,9 +760,9 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 					return true, "labels are correct", nil
 				},
 			},
-			e2eutil.WithTimeout(20*time.Minute),
-			e2eutil.WithInterval(5*time.Second),
-		)
+			v2util.WithTimeout(20*time.Minute),
+			v2util.WithInterval(5*time.Second),
+		)).To(Succeed())
 
 		// Remove KubeletConfig from NodePool and verify cleanup
 		GinkgoWriter.Printf("Removing KubeletConfig reference from NodePool %s\n", np.Name)
@@ -770,7 +771,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 		Expect(testCtx.MgmtClient.Patch(ctx, np, crclient.MergeFrom(baseNP))).To(Succeed(),
 			"failed to remove KubeletConfig from NodePool %s", np.Name)
 
-		e2eutil.EventuallyObjects(GinkgoTB(), ctx, "KubeletConfig ConfigMap to be deleted from hosted cluster",
+		Expect(v2util.EventuallyObjects(ctx, "KubeletConfig ConfigMap to be deleted from hosted cluster",
 			func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
@@ -790,9 +791,9 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 					return want == got, fmt.Sprintf("expected %d KubeletConfig ConfigMaps, got %d", want, got), nil
 				},
 			}, nil,
-			e2eutil.WithTimeout(20*time.Minute),
-			e2eutil.WithInterval(5*time.Second),
-		)
+			v2util.WithTimeout(20*time.Minute),
+			v2util.WithInterval(5*time.Second),
+		)).To(Succeed())
 	})
 }
 
@@ -834,7 +835,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// Create additional trust bundle ConfigMap
 		trustBundle := &corev1.ConfigMap{
@@ -853,7 +854,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		// Update HostedCluster to reference the trust bundle
 		GinkgoWriter.Printf("Updating HostedCluster with additional trust bundle %s\n", trustBundle.Name)
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+		Expect(v2util.UpdateObject(ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: trustBundle.Name}
 		})).To(Succeed(), "failed to update HostedCluster with trust bundle")
 
@@ -866,7 +867,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				}
 				return
 			}
-			err := e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, currentHC, func(obj *hyperv1.HostedCluster) {
+			err := v2util.UpdateObject(ctx, testCtx.MgmtClient, currentHC, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.AdditionalTrustBundle = nil
 			})
 			if err != nil && !apierrors.IsNotFound(err) {
@@ -874,7 +875,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to begin updating", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -886,10 +887,10 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateStartTimeout),
-		)
+			v2util.WithInterval(defaultPollInterval), v2util.WithTimeout(nodePoolConfigUpdateStartTimeout),
+		)).To(Succeed())
 
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to stop updating", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -905,8 +906,8 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateFinishTimeout),
-		)
+			v2util.WithInterval(defaultPollInterval), v2util.WithTimeout(nodePoolConfigUpdateFinishTimeout),
+		)).To(Succeed())
 
 		// Verify user-ca-bundle exists in the hosted cluster
 		userCAConfigMap := &corev1.ConfigMap{
@@ -915,7 +916,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				Namespace: "openshift-config",
 			},
 		}
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, "user-ca-bundle to exist in hosted cluster",
+		Expect(v2util.EventuallyObject(ctx, "user-ca-bundle to exist in hosted cluster",
 			func(ctx context.Context) (*corev1.ConfigMap, error) {
 				cm := &corev1.ConfigMap{}
 				err := hcClient.Get(ctx, crclient.ObjectKeyFromObject(userCAConfigMap), cm)
@@ -924,12 +925,12 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 			[]e2eutil.Predicate[*corev1.ConfigMap]{
 				func(obj *corev1.ConfigMap) (bool, string, error) { return true, "exists", nil },
 			},
-			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(guestUserCABundlePropagationTimeout),
-		)
+			v2util.WithInterval(defaultPollInterval), v2util.WithTimeout(guestUserCABundlePropagationTimeout),
+		)).To(Succeed())
 
 		// Remove trust bundle from HostedCluster
 		GinkgoWriter.Printf("Removing additional trust bundle from HostedCluster\n")
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+		Expect(v2util.UpdateObject(ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.AdditionalTrustBundle = nil
 		})).To(Succeed(), "failed to remove trust bundle from HostedCluster")
 
@@ -941,7 +942,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				Namespace: cpNamespace,
 			},
 		}
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, "CPO deployment to stop mounting trust bundle",
+		Expect(v2util.EventuallyObject(ctx, "CPO deployment to stop mounting trust bundle",
 			func(ctx context.Context) (*appsv1.Deployment, error) {
 				deploy := &appsv1.Deployment{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(cpoDeployment), deploy)
@@ -960,11 +961,11 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					return true, "trust bundle volume removed from CPO", nil
 				},
 			},
-			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(cpoDeploymentUpdateTimeout),
-		)
+			v2util.WithInterval(defaultPollInterval), v2util.WithTimeout(cpoDeploymentUpdateTimeout),
+		)).To(Succeed())
 
 		// Wait for NodePool to cycle again
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to begin updating after trust bundle removal", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to begin updating after trust bundle removal", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -976,10 +977,10 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateStartTimeout),
-		)
+			v2util.WithInterval(defaultPollInterval), v2util.WithTimeout(nodePoolConfigUpdateStartTimeout),
+		)).To(Succeed())
 
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to stop updating after trust bundle removal", np.Namespace, np.Name),
+		Expect(v2util.EventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to stop updating after trust bundle removal", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
@@ -995,14 +996,14 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(defaultPollInterval), e2eutil.WithTimeout(nodePoolConfigUpdateFinishTimeout),
-		)
+			v2util.WithInterval(defaultPollInterval), v2util.WithTimeout(nodePoolConfigUpdateFinishTimeout),
+		)).To(Succeed())
 
 		// Verify user-ca-bundle is deleted from the hosted cluster (4.22+)
 		if version.GE(e2eutil.Version422) {
-			e2eutil.EventuallyNotFound(GinkgoTB(), ctx, hcClient, userCAConfigMap,
-				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
-			)
+			Expect(v2util.EventuallyNotFound(ctx, hcClient, userCAConfigMap,
+				v2util.WithInterval(10*time.Second), v2util.WithTimeout(5*time.Minute),
+			)).To(Succeed())
 		}
 	})
 }
@@ -1038,7 +1039,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		ppConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1062,7 +1063,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 		cpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
 		// Verify PerformanceProfile ConfigMap exists in control plane namespace
-		e2eutil.EventuallyObjects(GinkgoTB(), ctx, "PerformanceProfile ConfigMap to exist with correct labels",
+		Expect(v2util.EventuallyObjects(ctx, "PerformanceProfile ConfigMap to exist with correct labels",
 			func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 				list := &corev1.ConfigMapList{}
 				err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
@@ -1102,13 +1103,13 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					return true, "labels are correct", nil
 				},
 			},
-			e2eutil.WithTimeout(20*time.Minute),
-			e2eutil.WithInterval(5*time.Second),
-		)
+			v2util.WithTimeout(20*time.Minute),
+			v2util.WithInterval(5*time.Second),
+		)).To(Succeed())
 
 		// Verify status ConfigMap (4.17+)
 		if testCtx.VersionAtLeast(e2eutil.Version417) {
-			e2eutil.EventuallyObjects(GinkgoTB(), ctx, "PerformanceProfile status ConfigMap to exist",
+			Expect(v2util.EventuallyObjects(ctx, "PerformanceProfile status ConfigMap to exist",
 				func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 					list := &corev1.ConfigMapList{}
 					err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
@@ -1136,9 +1137,9 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 						return true, "status ConfigMap name is as expected", nil
 					},
 				},
-				e2eutil.WithTimeout(20*time.Minute),
-				e2eutil.WithInterval(5*time.Second),
-			)
+				v2util.WithTimeout(20*time.Minute),
+				v2util.WithInterval(5*time.Second),
+			)).To(Succeed())
 		}
 
 		// Remove PerformanceProfile from NodePool and verify cleanup
@@ -1148,7 +1149,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 		Expect(testCtx.MgmtClient.Patch(ctx, np, crclient.MergeFrom(baseNP))).To(Succeed(),
 			"failed to remove PerformanceProfile from NodePool %s", np.Name)
 
-		e2eutil.EventuallyObjects(GinkgoTB(), ctx, "PerformanceProfile ConfigMap to be deleted",
+		Expect(v2util.EventuallyObjects(ctx, "PerformanceProfile ConfigMap to be deleted",
 			func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 				list := &corev1.ConfigMapList{}
 				err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
@@ -1167,9 +1168,9 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					return want == got, fmt.Sprintf("expected %d PerformanceProfile ConfigMaps, got %d", want, got), nil
 				},
 			}, nil,
-			e2eutil.WithTimeout(20*time.Minute),
-			e2eutil.WithInterval(5*time.Second),
-		)
+			v2util.WithTimeout(20*time.Minute),
+			v2util.WithInterval(5*time.Second),
+		)).To(Succeed())
 	})
 }
 
@@ -1208,13 +1209,13 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, platform)
+		expectReadyNodesByNodePool(ctx, hcClient, np, platform)
 
 		// TODO: Implement cloud-specific instance termination logic.
 		// For AWS: use EC2 TerminateInstances API to terminate the node's backing instance.
 		// For Azure: delete the VMSS instance backing the node.
 		// After termination, wait for the node to be replaced using:
-		//   e2eutil.WaitForReadyNodesByNodePool with WithCollectionPredicates and WithPredicates
+		//   v2util.WaitForReadyNodesByNodePool with WithCollectionPredicates and WithPredicates
 		//   to verify the old node is replaced and the new node is healthy.
 	})
 }
@@ -1256,7 +1257,7 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
 
 		// TODO: Verify disk encryption is applied by checking AzureMachine specs
 		// in the control plane namespace. This requires importing CAPI Azure types
@@ -1438,7 +1439,7 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 		timeout = 25 * time.Minute
 	}
 
-	e2eutil.EventuallyObjects(GinkgoTB(), ctx, fmt.Sprintf("all pods in DaemonSet %s/%s to be ready", ds.Namespace, ds.Name),
+	Expect(v2util.EventuallyObjects(ctx, fmt.Sprintf("all pods in DaemonSet %s/%s to be ready", ds.Namespace, ds.Name),
 		func(ctx context.Context) ([]*corev1.Pod, error) {
 			list := &corev1.PodList{}
 			err := client.List(ctx, list, crclient.InNamespace(ds.Namespace), crclient.MatchingLabels(ds.Spec.Selector.MatchLabels))
@@ -1460,9 +1461,23 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 				return want == got, fmt.Sprintf("expected %d ready Pods, got %d", want, got), nil
 			},
 		}, nil,
-		e2eutil.WithTimeout(timeout),
-		e2eutil.WithInterval(5*time.Second),
-	)
+		v2util.WithTimeout(timeout),
+		v2util.WithInterval(5*time.Second),
+	)).To(Succeed())
+}
+
+func expectReadyNodesByNodePool(ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType) {
+	GinkgoHelper()
+
+	_, err := v2util.WaitForReadyNodesByNodePool(ctx, client, np, platform)
+	Expect(err).NotTo(HaveOccurred(), "failed waiting for NodePool %s/%s nodes to become ready", np.Namespace, np.Name)
+}
+
+func expectNodePoolConfigUpdateComplete(ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType) {
+	GinkgoHelper()
+
+	Expect(v2util.WaitForNodePoolConfigUpdateCompleteWithPlatform(ctx, client, np, platform)).To(Succeed(),
+		"failed waiting for NodePool %s/%s config update", np.Namespace, np.Name)
 }
 
 // nodePoolUpgradeTimeout returns the appropriate timeout for NodePool upgrades

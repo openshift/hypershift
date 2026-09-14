@@ -41,6 +41,7 @@ linters:
               - vacuouspass
               - ipv6url
               - e2eutilallowlist
+              - e2eutiltestingtb
     gocyclo:
       min-complexity: 30
     govet:
