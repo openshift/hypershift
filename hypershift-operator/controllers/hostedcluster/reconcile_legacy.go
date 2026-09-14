@@ -1700,7 +1700,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster)
+	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}
