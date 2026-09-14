@@ -23,6 +23,8 @@ spec:
         - operator
         - --namespace
         - $(HOSTED_CONTROL_PLANE_NAMESPACE)
+        - --config=/var/run/configmaps/control-plane-pki-operator-config/config.yaml
+        - --terminate-on-files=/var/run/configmaps/control-plane-pki-operator-config/config.yaml
         command:
         - /usr/bin/control-plane-pki-operator
         env:
@@ -54,6 +56,9 @@ spec:
         - mountPath: /etc/pki/ca-trust/extracted/pem
           name: openshift-config-managed-trusted-ca-bundle
           readOnly: true
+        - mountPath: /var/run/configmaps/control-plane-pki-operator-config
+          name: control-plane-pki-operator-config
+          readOnly: true
       serviceAccount: control-plane-pki-operator
       serviceAccountName: control-plane-pki-operator
       volumes:
@@ -65,3 +70,6 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - configMap:
+          name: control-plane-pki-operator-config
+        name: control-plane-pki-operator-config
