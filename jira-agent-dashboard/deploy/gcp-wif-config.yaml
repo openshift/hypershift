@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-wif-config
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: scraper
+data:
+  credential-config.json: |
+    {
+      "type": "external_account",
+      "audience": "//iam.googleapis.com/projects/482048258650/locations/global/workloadIdentityPools/k8s-dashboard-pool/providers/k8s-jira-dashboard",
+      "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+      "token_url": "https://sts.googleapis.com/v1/token",
+      "credential_source": {
+        "file": "/var/run/secrets/gcp-wif/token",
+        "format": {
+          "type": "text"
+        }
+      },
+      "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/claude-gha@hosted-control-planes.iam.gserviceaccount.com:generateAccessToken"
+    }
