@@ -137,6 +137,12 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	if err != nil {
 		return err
 	}
+	err = enforceImagePullPolicy(podTemplateSpec.Spec.InitContainers)
+	if err != nil {
+		return err
+	}
+	initialContainerCount := len(podTemplateSpec.Spec.Containers)
+	initialInitContainerCount := len(podTemplateSpec.Spec.InitContainers)
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, hcp, podTemplateSpec.Spec.Containers); err != nil {
 		return err
@@ -169,6 +175,12 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 			podspec.WithOptions(c.availabilityProberOpts))
 	}
 
+	if err := enforceImagePullPolicy(podTemplateSpec.Spec.InitContainers[initialInitContainerCount:]); err != nil {
+		return err
+	}
+	if err := enforceImagePullPolicy(podTemplateSpec.Spec.Containers[initialContainerCount:]); err != nil {
+		return err
+	}
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
 	enforceReadOnlyRootFilesystem(&podTemplateSpec.Spec)
@@ -678,6 +690,7 @@ func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
 			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
 	})
+	enforceReadOnlyRootFilesystemContainers(podSpec.InitContainers)
 	enforceReadOnlyRootFilesystemContainers(podSpec.Containers)
 }
 

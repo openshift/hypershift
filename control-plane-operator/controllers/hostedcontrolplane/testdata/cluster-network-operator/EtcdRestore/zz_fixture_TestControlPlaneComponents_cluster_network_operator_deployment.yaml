@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 6b95c3a645f7a4fae887f1f12787865acbac9987b6a6bdb5322c6efded93fcb7
+    hypershift.openshift.io/desired-state-hash: 436253fb54cec415b300fdade398bb6ac9782964c5afa370e00aa99a85fa1800
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-network-operator
@@ -216,6 +216,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-socks5
         resources:
           requests:
@@ -250,10 +251,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --kubeconfig=/etc/hosted-kubernetes/kubeconfig
         - -n=openshift-network-operator
@@ -270,10 +275,14 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/hosted-kubernetes
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --service-account-namespace
         - openshift-network-operator
@@ -296,12 +305,16 @@ spec:
           requests:
             cpu: 10m
             memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/client-token
           name: client-token
         - mountPath: /etc/kubernetes
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -341,6 +354,8 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/hosted-kubernetes
@@ -351,6 +366,8 @@ spec:
           name: client-token
         - mountPath: /etc/certificate/ca
           name: ca-bundle
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       serviceAccount: cluster-network-operator
       serviceAccountName: cluster-network-operator

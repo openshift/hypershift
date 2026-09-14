@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 61f47c215f0276b07bde516c88099af27c900fea0a33c734b5b1e5a05d2f715b
+    hypershift.openshift.io/desired-state-hash: f6441153e86d49ae066842186328024b4795e666b530d6fb4a1f779278781cd7
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -350,8 +350,12 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -430,11 +434,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -476,11 +483,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -503,8 +513,12 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
       terminationGracePeriodSeconds: 135

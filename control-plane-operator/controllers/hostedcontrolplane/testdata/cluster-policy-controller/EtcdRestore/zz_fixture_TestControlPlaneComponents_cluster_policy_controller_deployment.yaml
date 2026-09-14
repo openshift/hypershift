@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 6817241ef4b10dd2e7b13c69a7aabb8258bba04c55cbd4e12a35bc7f456b6685
+    hypershift.openshift.io/desired-state-hash: 0b2fd8d612fd76a03a3c4f18a2fa223f7757a7de7744a6988a9e695e5d7e65e3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-policy-controller
@@ -121,7 +121,12 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
