@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/cluster/core"
+	clusterdump "github.com/openshift/hypershift/cmd/cluster/dump"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
 	"github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/upsert"
@@ -24,7 +24,7 @@ import (
 // DumpHostedCluster dumps the contents of the hosted cluster to the given artifact
 // directory, and returns an error if any aspect of that operation fails. The loop
 // detector is configured to return an error when any warnings are detected.
-func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, isDumpingGuestCluster bool, dumpGuestClusterPolicies map[core.DumpGuestClusterPolicy]struct{}, artifactDir string) error {
+func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, isDumpingGuestCluster bool, dumpGuestClusterPolicies map[clusterdump.DumpGuestClusterPolicy]struct{}, artifactDir string) error {
 	dumpLogFile := filepath.Join(artifactDir, "dump.log")
 	dumpLog, err := os.Create(dumpLogFile)
 	if err != nil {
@@ -43,11 +43,11 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 			allErrors = append(allErrors, fmt.Errorf("found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename))
 		}
 	}
-	err = core.DumpCluster(ctx, &core.DumpOptions{
+	err = clusterdump.DumpCluster(ctx, &clusterdump.DumpOptions{
 		Namespace:                hc.Namespace,
 		Name:                     hc.Name,
 		ArtifactDir:              artifactDir,
-		LogCheckers:              []core.LogChecker{findKubeObjectUpdateLoops},
+		LogCheckers:              []clusterdump.LogChecker{findKubeObjectUpdateLoops},
 		IsDumpingGuestCluster:    isDumpingGuestCluster,
 		DumpGuestClusterPolicies: dumpGuestClusterPolicies,
 		Log:                      zapr.NewLogger(dumpLogger),
