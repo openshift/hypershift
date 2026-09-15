@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -14,6 +15,36 @@ const (
 	testPoolID           = "test-pool"
 	testProviderID       = "test-provider"
 )
+
+func TestResourceLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected map[string]string
+	}{
+		{
+			name: "When HCP has GCP resource labels, it should convert them to a map",
+			hcp: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
+				GCP: &hyperv1.GCPPlatformSpec{ResourceLabels: []hyperv1.GCPResourceLabel{
+					{Key: "environment", Value: ptr.To("test")},
+					{Key: "empty-value"},
+				}},
+			}}},
+			expected: map[string]string{"environment": "test", "empty-value": ""},
+		},
+		{
+			name:     "When HCP has no GCP resource labels, it should return nil",
+			hcp:      &hyperv1.HostedControlPlane{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			NewWithT(t).Expect(ResourceLabels(tt.hcp)).To(Equal(tt.expected))
+		})
+	}
+}
 
 func TestBuildWorkloadIdentityCredentials(t *testing.T) {
 	t.Parallel()
