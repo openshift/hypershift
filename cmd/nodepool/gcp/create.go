@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"k8s.io/utils/ptr"
 
@@ -14,10 +15,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-)
-
-const (
-	defaultGCPMachineType = "n2-standard-4"
 )
 
 type GCPNodePoolCreateOptions struct {
@@ -79,6 +76,13 @@ func BindDeveloperOptions(opts *RawGCPNodePoolCreateOptions, flags *pflag.FlagSe
 }
 
 func (o *RawGCPNodePoolCreateOptions) Validate(_ context.Context, _ *core.CreateNodePoolOptions) (core.NodePoolPlatformCompleter, error) {
+	// Reject negative boot disk size (nonsensical input)
+	// 0 means "not set" and will use API default (64GB)
+	// 1-19 will be rejected by API validation (minimum 20GB)
+	if o.BootDiskSize < 0 {
+		return nil, fmt.Errorf("boot disk size cannot be negative: %d", o.BootDiskSize)
+	}
+
 	return &ValidatedGCPNodePoolCreateOptions{
 		validatedGCPNodePoolCreateOptions: &validatedGCPNodePoolCreateOptions{
 			RawGCPNodePoolCreateOptions: o,
@@ -124,18 +128,6 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 }
 
 func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ crclient.Client) error {
-	// Set machine type with defaults based on architecture
-	machineType := o.MachineType
-	if len(machineType) == 0 {
-		switch nodePool.Spec.Arch {
-		case hyperv1.ArchitectureAMD64:
-			machineType = defaultGCPMachineType
-		case hyperv1.ArchitectureARM64:
-			// Tau T2A family for ARM64 architecture
-			machineType = "t2a-standard-4"
-		}
-	}
-
 	// Build boot disk configuration
 	bootDisk := &hyperv1.GCPBootDisk{}
 	if o.BootDiskSize > 0 {
@@ -186,22 +178,21 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 		return fmt.Errorf("invalid provisioning model %q, must be one of: Standard, Spot, Preemptible", o.ProvisioningModel)
 	}
 
-	// Build GCP NodePool platform configuration
-	nodePool.Spec.Platform.GCP = &hyperv1.GCPNodePoolPlatform{
-		MachineType:       machineType,
-		Zone:              o.Zone,
-		Subnet:            hyperv1.GCPResourceName(o.Subnet),
-		BootDisk:          bootDisk,
-		ServiceAccount:    serviceAccount,
-		ResourceLabels:    resourceLabels,
-		NetworkTags:       convertStringSliceToResourceNames(o.NetworkTags),
-		ProvisioningModel: provisioningModel,
-	}
+	// Build basic GCP NodePool platform using shared helper
+	nodePool.Spec.Platform.GCP = util.BuildGCPNodePoolPlatform(util.GCPNodePoolPlatformOptions{
+		Zone:        o.Zone,
+		Subnet:      o.Subnet,
+		MachineType: o.MachineType,
+		Arch:        nodePool.Spec.Arch,
+		Image:       o.Image,
+	})
 
-	// Set image if provided
-	if len(o.Image) > 0 {
-		nodePool.Spec.Platform.GCP.Image = o.Image
-	}
+	// Add nodepool-specific advanced fields
+	nodePool.Spec.Platform.GCP.BootDisk = bootDisk
+	nodePool.Spec.Platform.GCP.ServiceAccount = serviceAccount
+	nodePool.Spec.Platform.GCP.ResourceLabels = resourceLabels
+	nodePool.Spec.Platform.GCP.NetworkTags = convertStringSliceToResourceNames(o.NetworkTags)
+	nodePool.Spec.Platform.GCP.ProvisioningModel = provisioningModel
 
 	return nil
 }

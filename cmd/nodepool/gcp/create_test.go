@@ -213,4 +213,23 @@ func TestUpdateNodePool(t *testing.T) {
 			t.Errorf("expected error %q, got %q", expectedError, err.Error())
 		}
 	})
+
+	t.Run("When boot disk size is negative, validation should reject it", func(t *testing.T) {
+		ctx := t.Context()
+		opts := &RawGCPNodePoolCreateOptions{
+			GCPNodePoolCreateOptions: &GCPNodePoolCreateOptions{
+				BootDiskSize: -1,
+			},
+		}
+
+		_, err := opts.Validate(ctx, nil)
+		if err == nil {
+			t.Fatal("expected error for negative boot disk size")
+		}
+
+		expectedError := "boot disk size cannot be negative: -1"
+		if err.Error() != expectedError {
+			t.Errorf("expected error %q, got %q", expectedError, err.Error())
+		}
+	})
 }
