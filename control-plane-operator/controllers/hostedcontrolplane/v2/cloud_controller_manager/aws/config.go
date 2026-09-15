@@ -39,9 +39,9 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 		}
 	}
 
-	// Start with base config from template (only zone, vpc, clusterID, subnetID, probeMode)
+	// Start with base config from template.
 	configTemplate := cm.Data[configKey]
-	baseConfig := fmt.Sprintf(configTemplate, zone, vpc, clusterID, subnetID, probeMode)
+	baseConfig := fmt.Sprintf(configTemplate, zone, cpContext.HCP.Spec.Platform.AWS.Region, vpc, clusterID, subnetID, probeMode)
 
 	// Only add probe path if annotation is present
 	if path, ok := cpContext.HCP.Annotations[hyperv1.SharedLoadBalancerHealthProbePathAnnotation]; ok && probeMode == loadBalancerHealthProbeModeShared {
