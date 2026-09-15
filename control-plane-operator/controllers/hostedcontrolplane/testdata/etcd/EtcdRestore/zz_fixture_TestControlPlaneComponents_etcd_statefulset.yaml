@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 0e1dfadb63c9771e253019b8a4801e3b3e3b1d0a01c8553769537ac2cd08a861
+    hypershift.openshift.io/desired-state-hash: b67e2a7489bc8f06f56df760ab1f72136be0b2b8743e1b7c0b4e5d1eec068a2c
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -175,7 +175,7 @@ spec:
         resources:
           requests:
             cpu: 300m
-            memory: 600Mi
+            memory: 1Gi
         securityContext:
           readOnlyRootFilesystem: true
         startupProbe:

@@ -101,10 +101,26 @@ spec:
           periodSeconds: 5
           successThreshold: 1
           timeoutSeconds: 10
+        # Initial requests for a newly created control plane, sized for the
+        # smallest supported hosted cluster. etcd holds its entire keyspace in
+        # memory, so memory tracks the guest cluster's object count rather than
+        # its node count. Memory raised from 600Mi to 1Gi: 600Mi left almost no
+        # headroom above the resident set of a freshly installed OCP cluster,
+        # making etcd the first thing evicted under management node pressure.
+        # CPU is unchanged at 300m.
+        #
+        # These are only the *initial* requests. CPO deliberately preserves the
+        # live requests of an existing StatefulSet on reconcile (see
+        # support/controlplane-component/controlplane-component.go), so editing
+        # this file does not resize control planes that already exist. Per-cluster
+        # tuning is done with the resource-request-override.hypershift.openshift.io
+        # annotation or with a VPA on the management cluster.
+        #
+        # See docs/content/how-to/cluster-sizing-guidance.md.
         resources:
           requests:
             cpu: 300m
-            memory: 600Mi
+            memory: 1Gi
         startupProbe:
           failureThreshold: 18
           httpGet:
