@@ -50,6 +50,13 @@ type CreateIAMOptions struct {
 	CreateKarpenterRoleARN bool
 	UseROSAManagedPolicies bool
 	SharedRole             bool
+
+	// ManagedDNS widens the ingress operator's route53:ChangeResourceRecordSets
+	// permission to all hosted zones and grants the control-plane-operator
+	// hosted-zone management, since the CPO creates the ingress zones at runtime
+	// and their IDs are unknown at infra-creation time. When false, both roles
+	// stay scoped to the create-time zones.
+	ManagedDNS bool
 }
 
 type CreateIAMOutput struct {
@@ -95,6 +102,7 @@ func NewCreateIAMCommand(clientProviders ...*util.ClientProvider) *cobra.Command
 	cmd.Flags().BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().BoolVar(&opts.SharedRole, "shared-role", opts.SharedRole, "Create a single shared role with all role policies instead of individual component roles")
+	cmd.Flags().BoolVar(&opts.ManagedDNS, "managed-dns", opts.ManagedDNS, "Grant the ingress operator and control-plane-operator roles the Route53 permissions needed for CPO-managed ingress DNS (spec.platform.aws.managedDNS)")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())

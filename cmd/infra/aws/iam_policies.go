@@ -20,12 +20,13 @@ type ServicesByDelegate map[string]EndpointsByService
 // APIs that each component has access to with their limited credentials.
 func APIsByDelegatedServices() (ServicesByDelegate, error) {
 	bindings := []policyBinding{
-		ingressPermPolicy("fake", "fake", false),
+		ingressPermPolicy("fake", "fake", false, false),
 		imageRegistryPermPolicy,
 		awsEBSCSIPermPolicy,
 		kubeControllerPolicy,
 		nodePoolPolicy,
-		controlPlaneOperatorPolicy("fake", false),
+		// Managed DNS yields the superset of CPO Route53 APIs to delegate.
+		controlPlaneOperatorPolicy("fake", false, true),
 		kmsProviderPolicy("fake"),
 		cloudNetworkConfigControllerPolicy,
 	}
