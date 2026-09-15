@@ -4485,6 +4485,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -4583,6 +4585,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -4699,6 +4702,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -4725,6 +4729,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -4791,6 +4801,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -8168,6 +8180,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -8266,6 +8280,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -8382,6 +8397,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -8408,6 +8424,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -8474,6 +8496,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -11408,6 +11432,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -11506,6 +11532,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -11622,6 +11649,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -11648,6 +11676,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -11714,6 +11748,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -16096,6 +16132,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -16194,6 +16232,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -16310,6 +16349,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -16336,6 +16376,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -16402,6 +16448,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -27730,6 +27778,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -27828,6 +27878,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -27944,6 +27995,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -27970,6 +28022,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -28036,6 +28094,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -29413,6 +29473,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -29511,6 +29573,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -29627,6 +29690,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -29653,6 +29717,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -29719,6 +29789,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -30020,6 +30092,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -30118,6 +30192,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -30234,6 +30309,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -30260,6 +30336,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -30326,6 +30408,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -31597,6 +31681,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on eligible nodes. Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -31695,6 +31781,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -31811,6 +31898,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -31837,6 +31925,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -31903,6 +31997,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features

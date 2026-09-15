@@ -37,6 +37,15 @@ func PullSecretTargetNamespaces() []string {
 	}
 }
 
+func CombinedPullSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "combined-pull-secret",
+			Namespace: ns,
+		},
+	}
+}
+
 func AdditionalPullSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

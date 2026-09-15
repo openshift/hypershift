@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 5bb2b4289933b94c0ee664f06c78103e08b4799a1a4fc4f6d36e398f6209e965
+    hypershift.openshift.io/desired-state-hash: 5bd7580c8f0b3aa81db6585c005825ed64125b26b37389c5bb200ae0a4f98af2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-apiserver
@@ -30,7 +30,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs,oas-trust-anchor,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e56859177829b997b
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e56859177
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: openshift-apiserver
@@ -354,7 +354,7 @@ spec:
           items:
           - key: .dockerconfigjson
             path: config.json
-          secretName: pull-secret
+          secretName: combined-pull-secret
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416
