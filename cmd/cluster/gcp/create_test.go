@@ -153,7 +153,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
 	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
@@ -201,7 +200,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, gcpOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, gcpOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 

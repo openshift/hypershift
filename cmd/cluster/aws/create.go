@@ -127,10 +127,8 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		opts.EtcdStorageClass = "gp3-csi"
 	}
 
-	client, err := util.GetClientWithKubeconfig(opts.Kubeconfig)
-	if err != nil {
-		return nil, err
-	}
+	var managementClient client.Client
+	var err error
 
 	// Load or create infrastructure for the cluster
 	var infra *awsinfra.CreateInfraOutput
@@ -147,9 +145,14 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 
 	var secretData *util.CredentialsSecretData
 	if len(o.CredentialSecretName) > 0 {
+		managementClient, err = opts.Client()
+		if err != nil {
+			return nil, err
+		}
 		// The opts.BaseDomain value is returned as-is if the input value len(opts.BaseDomain) > 0
 		secretData, err = util.ExtractOptionsFromSecret(
-			client,
+			ctx,
+			managementClient,
 			o.CredentialSecretName,
 			opts.Namespace,
 			opts.BaseDomain)
@@ -185,8 +188,14 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			return nil, fmt.Errorf("failed to load infra json: %w", err)
 		}
 	} else {
+		if managementClient == nil {
+			managementClient, err = opts.Client()
+			if err != nil {
+				return nil, err
+			}
+		}
 		opt := CreateIAMOptions(o, infra)
-		iamInfo, err = opt.CreateIAM(ctx, client, opts.Log)
+		iamInfo, err = opt.CreateIAM(ctx, managementClient, opts.Log)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create iam: %w", err)
 		}
@@ -196,7 +205,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	// TODO: drop support for this flag, it's really muddying the waters for the CLI
 	if len(o.CredentialSecretName) > 0 {
 		var secret *corev1.Secret
-		secret, err = util.GetSecretWithClient(client, o.CredentialSecretName, opts.Namespace)
+		secret, err = util.GetSecretWithClient(ctx, managementClient, o.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -525,7 +534,8 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "aws",
 		Short:        "Creates basic functional HostedCluster resources on AWS",
@@ -542,7 +552,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, awsOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, awsOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -596,8 +606,8 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 
 // ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
 // not empty; validates if the credentials secret is not empty, that it can be retrieved
-func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile, kubeconfigPath string) error {
-	if err := ValidateCredentialInfo(opts, credentialSecretName, namespace, kubeconfigPath); err != nil {
+func ValidateCreateCredentialInfo(ctx context.Context, opts awsutil.AWSCredentialsOptions, credentialSecretName, namespace, pullSecretFile string, client client.Client) error {
+	if err := ValidateCredentialInfo(ctx, opts, credentialSecretName, namespace, client); err != nil {
 		return err
 	}
 
@@ -610,8 +620,16 @@ func ValidateCreateCredentialInfo(opts awsutil.AWSCredentialsOptions, credential
 }
 
 // validateAWSOptions validates different AWS flag parameters
-func validateAWSOptions(_ context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
-	if err := ValidateCreateCredentialInfo(awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile, opts.Kubeconfig); err != nil {
+func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *RawCreateOptions) error {
+	var managementClient client.Client
+	var err error
+	if awsOpts.CredentialSecretName != "" {
+		managementClient, err = opts.Client()
+		if err != nil {
+			return err
+		}
+	}
+	if err := ValidateCreateCredentialInfo(ctx, awsOpts.Credentials, awsOpts.CredentialSecretName, opts.Namespace, opts.PullSecretFile, managementClient); err != nil {
 		return err
 	}
 
