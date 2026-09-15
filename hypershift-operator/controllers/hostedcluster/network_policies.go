@@ -178,6 +178,20 @@ func (r *HostedClusterReconciler) reconcilePlatformNetworkPolicies(ctx context.C
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 			}
+			if kubevirtCentralizedUsesHCPRouter(hcluster) {
+				policy := networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
+				ingressOnly := version.Major == 4 && version.Minor < 14
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kasBlock, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile private router network policy: %w", err)
+				}
+			} else {
+				policy := networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, policy); err != nil {
+					return fmt.Errorf("failed to delete private router network policy: %w", err)
+				}
+			}
 		} else {
 			// External infra (credentials != nil): policy targets the infra namespace on the infrastructure cluster
 			if err := r.reconcileExternalInfraVirtLauncherPolicy(ctx, log, createOrUpdate, hcluster); err != nil {
@@ -340,27 +354,34 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *
 		return nil
 	}
 
-	clusterNetworks := make([]string, 0)
+	blockedIPv4Networks := make([]string, 0, len(kasBlockExceptions))
+	blockedIPv6Networks := make([]string, 0)
+	for _, cidr := range kasBlockExceptions {
+		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(cidr, blockedIPv4Networks, blockedIPv6Networks)
+	}
 	// In vanilla kube management cluster this would be nil.
 	if managementClusterNetwork != nil {
 		for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
-			clusterNetworks = append(clusterNetworks, network.CIDR)
+			blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
 		}
 	}
 
 	// Allow to any destination not on the management cluster pod network and
 	// not on the KAS block CIDRs (either KAS endpoint /32s or the MC machine
 	// network CIDR depending on operator configuration).
-	exceptions := make([]string, 0, len(kasBlockExceptions)+len(clusterNetworks))
-	exceptions = append(exceptions, kasBlockExceptions...)
-	exceptions = append(exceptions, clusterNetworks...)
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
 		{
 			To: []networkingv1.NetworkPolicyPeer{
 				{
 					IPBlock: &networkingv1.IPBlock{
-						CIDR:   "0.0.0.0/0",
-						Except: exceptions,
+						CIDR:   netip.PrefixFrom(netip.IPv4Unspecified(), 0).String(),
+						Except: blockedIPv4Networks,
+					},
+				},
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   netip.PrefixFrom(netip.IPv6Unspecified(), 0).String(),
+						Except: blockedIPv6Networks,
 					},
 				},
 			},
@@ -658,6 +679,19 @@ func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.Ne
 	}
 
 	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, controlPlanePeers)
+}
+
+// kubevirtCentralizedUsesHCPRouter reports whether a centralized KubeVirt
+// HostedCluster routes control plane services through the dedicated HCP router
+// (KAS published as Route with an explicit hostname).
+func kubevirtCentralizedUsesHCPRouter(hcluster *hyperv1.HostedCluster) bool {
+	if hcluster.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+		return false
+	}
+	if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
+		return false
+	}
+	return netutil.UseDedicatedDNSForKASByHC(hcluster)
 }
 
 // reconcileVirtLauncherNetworkPolicyExternalInfra builds the virt-launcher
