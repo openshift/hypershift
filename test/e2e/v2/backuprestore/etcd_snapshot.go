@@ -5,12 +5,16 @@ package backuprestore
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -174,6 +179,83 @@ func validateEtcdInitResult(logger logr.Logger, result *etcdInitLogResult) error
 
 	return nil
 }
+
+// etcdMemberListResponse represents the JSON output of etcdctl member list -w json.
+type etcdMemberListResponse struct {
+	Header  etcdResponseHeader `json:"header"`
+	Members []etcdMember       `json:"members"`
+}
+
+// etcdResponseHeader contains the cluster-level metadata from an etcd response.
+type etcdResponseHeader struct {
+	ClusterID uint64 `json:"cluster_id"`
+}
+
+// etcdMember represents a single member in an etcd cluster.
+type etcdMember struct {
+	ID         uint64   `json:"ID"`
+	Name       string   `json:"name"`
+	PeerURLs   []string `json:"peerURLs"`
+	ClientURLs []string `json:"clientURLs"`
+}
+
+// parseEtcdMemberList parses the JSON output of etcdctl member list -w json.
+func parseEtcdMemberList(jsonOutput string) (*etcdMemberListResponse, error) {
+	var response etcdMemberListResponse
+	if err := json.Unmarshal([]byte(jsonOutput), &response); err != nil {
+		return nil, fmt.Errorf("failed to parse etcdctl member list output: %w", err)
+	}
+	return &response, nil
+}
+
+// VerifyEtcdClusterHealth verifies that all etcd members form a single cluster
+// after a snapshot restore. This detects split-brain scenarios where each member
+// starts as an independent 1-member cluster due to missing --name/--initial-cluster/
+// --initial-cluster-token flags during snapshot restore.
+func VerifyEtcdClusterHealth(ctx context.Context, logger logr.Logger, mgmtClient crclient.Client, cpNamespace string) error {
+	etcdSts := cpomanifests.EtcdStatefulSet(cpNamespace)
+	if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(etcdSts), etcdSts); err != nil {
+		return fmt.Errorf("failed to get etcd StatefulSet: %w", err)
+	}
+	expectedReplicas := ptr.Deref(etcdSts.Spec.Replicas, 1)
+
+	ep := fmt.Sprintf("https://etcd-client.%s.svc:2379", cpNamespace)
+	command := []string{
+		"/bin/sh", "-c",
+		fmt.Sprintf("/usr/bin/etcdctl --cacert=/etc/etcd/tls/etcd-ca/ca.crt --cert=/etc/etcd/tls/server/server.crt --key=/etc/etcd/tls/server/server.key --endpoints=%s member list -w json 2>/dev/null", ep),
+	}
+
+	stdout, err := e2eutil.RunCommandInPod(ctx, mgmtClient, "etcd", cpNamespace, command, "etcd", 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed to run etcdctl member list: %w", err)
+	}
+
+	result, err := parseEtcdMemberList(stdout)
+	if err != nil {
+		return err
+	}
+
+	if int32(len(result.Members)) != expectedReplicas {
+		return fmt.Errorf("expected %d etcd members but found %d; this may indicate a split-brain cluster where each member started as an independent 1-member cluster",
+			expectedReplicas, len(result.Members))
+	}
+
+	for _, member := range result.Members {
+		if member.Name == "" {
+			return fmt.Errorf("etcd member %d has no name, indicating it has not fully started", member.ID)
+		}
+		if len(member.PeerURLs) == 0 {
+			return fmt.Errorf("etcd member %s has no peer URLs", member.Name)
+		}
+	}
+
+	logger.Info("etcd cluster health verified: all members form a single cluster",
+		"memberCount", len(result.Members),
+		"clusterID", result.Header.ClusterID)
+
+	return nil
+}
+
 
 // etcdInitLogResult holds the results of parsing etcd-init container logs.
 type etcdInitLogResult struct {
