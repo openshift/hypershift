@@ -128,7 +128,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.EndpointAccess, flagEndpointAccess, string(hyperv1.GCPEndpointAccessPrivate), "Endpoint access type (Private or PublicAndPrivate)")
 	flags.StringVar(&opts.IssuerURL, flagIssuerURL, "", "The OIDC provider issuer URL")
 	flags.StringVar(&opts.MachineType, flagMachineType, "", "GCP machine type for node instances. Defaults to "+defaultGCPMachineType)
-	flags.StringVar(&opts.Zone, flagZone, "", "GCP zone for node instances (e.g. us-central1-a). Defaults to {region}-a")
+	flags.StringVar(&opts.Zone, flagZone, "", "GCP zone for node instances (e.g. us-central1-a)")
 	flags.StringVar(&opts.Subnet, flagSubnet, "", "Subnet name for node instances. Defaults to the PSC subnet value")
 	flags.StringVar(&opts.BootImage, flagBootImage, "", "GCP boot image for node instances. Overrides the default RHCOS image from the release payload")
 }
@@ -184,6 +184,9 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, err
 	}
 	if err := util.ValidateRequiredOption(flagNetworkServiceAccount, o.NetworkServiceAccount); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagZone, o.Zone); err != nil {
 		return nil, err
 	}
 	return &ValidatedCreateOptions{
@@ -340,9 +343,6 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		machineType = defaultGCPMachineType
 	}
 	zone := o.Zone
-	if zone == "" {
-		zone = o.Region + "-a"
-	}
 	subnet := o.Subnet
 	if subnet == "" {
 		subnet = o.PrivateServiceConnectSubnet
