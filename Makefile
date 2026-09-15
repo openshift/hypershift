@@ -403,9 +403,13 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 GO_TEST_FLAGS ?= -race
 
-test: generate
+test: generate test-e2ev2-unit
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+
+.PHONY: test-e2ev2-unit
+test-e2ev2-unit:
+	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/run-tests
 
 # Run tests only for Go packages with changes relative to PULL_BASE_SHA.
 # Skips entirely if no .go files changed. No generate dependency (verify-quick handles it).
@@ -573,7 +577,7 @@ test-backup-restore: backuprestore-e2e
 	ARTIFACT_DIR=$(ARTIFACT_DIR) bin/test-backuprestore \
 	  --ginkgo.v \
 	  --ginkgo.no-color=$(OPENSHIFT_CI) \
-	  --ginkgo.junit-report="$(ARTIFACT_DIR)/junit.xml" \
+	  --e2e.junit-report="$(ARTIFACT_DIR)/junit.xml" \
 	  --ginkgo.label-filter="backup-restore" \
 	  --ginkgo.fail-fast=$(FAIL_FAST) \
 	  --ginkgo.timeout=2h
