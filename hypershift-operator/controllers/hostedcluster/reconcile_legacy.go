@@ -331,10 +331,15 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			log.Error(nthErr, "failed to determine if AWS node termination handler is needed during pull secret recovery, defaulting to true")
 			isAWSNodeTerminationHandlerNeeded = true
 		}
+		isGCPNodeTerminationHandlerNeeded, gcpNTHErr := r.isGCPNodeTerminationHandlerNeeded(ctx, hcluster)
+		if gcpNTHErr != nil {
+			log.Error(gcpNTHErr, "failed to determine if GCP node termination handler is needed during pull secret recovery, defaulting to true")
+			isGCPNodeTerminationHandlerNeeded = true
+		}
 		_, hcpErr := createOrUpdate(ctx, r.Client, hcp, func() error {
 			// Skip cert annotation resolution during pull secret recovery — it requires
 			// the pull secret to resolve the CPO image, which is unavailable here.
-			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, isGCPNodeTerminationHandlerNeeded,
 				func() (map[string]string, error) { return nil, nil })
 		})
 		if hcpErr != nil {
@@ -1493,9 +1498,13 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine if AWS node termination handler is needed: %w", err)
 	}
+	isGCPNodeTerminationHandlerNeeded, err := r.isGCPNodeTerminationHandlerNeeded(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine if GCP node termination handler is needed: %w", err)
+	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, isGCPNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),

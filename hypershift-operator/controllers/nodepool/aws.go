@@ -39,29 +39,6 @@ func awsClusterCloudProviderTagKey(id string) string {
 	return fmt.Sprintf("kubernetes.io/cluster/%s", id)
 }
 
-// isSpotEnabled determines if spot instances should be enabled for this NodePool.
-// Returns true if either:
-// - The API spec has marketType set to "Spot" in placement options
-// - The AnnotationEnableSpot annotation is present (kept for e2e testing without real spot instances)
-func isSpotEnabled(nodePool *hyperv1.NodePool) bool {
-	if nodePool == nil {
-		return false
-	}
-	// Check API spec first - marketType: Spot
-	if nodePool.Spec.Platform.AWS != nil &&
-		nodePool.Spec.Platform.AWS.Placement != nil &&
-		nodePool.Spec.Platform.AWS.Placement.MarketType == hyperv1.MarketTypeSpot {
-		return true
-	}
-	// Check annotation (kept for e2e testing without real spot instances)
-	if nodePool.Annotations != nil {
-		if _, ok := nodePool.Annotations[AnnotationEnableSpot]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool, releaseImage *releaseinfo.ReleaseImage, rhelStream string) (*capiaws.AWSMachineTemplateSpec, error) {
 	ami, err := resolveAWSAMI(hostedCluster, nodePool, releaseImage, rhelStream)
 	if err != nil {
@@ -293,7 +270,7 @@ func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hosted
 	}
 
 	// Add termination handler tag for spot instances
-	if isSpotEnabled(nodePool) {
+	if isInterruptibleInstanceEnabled(nodePool) {
 		tags["aws-node-termination-handler/managed"] = ""
 	}
 
