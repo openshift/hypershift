@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -594,12 +595,15 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 	}
 
 	if existingAddress != nil {
-		// IP already exists, update status and continue
+		// IP already exists, update status and reconcile labels
 		log.Info("IP address already exists, updating status", "name", ipName, "ip", existingAddress.Address)
 		patch := client.MergeFrom(gcpPSC.DeepCopy())
 		gcpPSC.Status.EndpointIP = existingAddress.Address
 		if err := r.Status().Patch(ctx, gcpPSC, patch); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update EndpointIP with existing address: %w", err)
+		}
+		if err := reconcileAddressLabels(ctx, customerGCPClient, customerProject, region, ipName, gcpResourceLabels(hcp)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile labels on existing IP address: %w", err)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -610,6 +614,7 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 		Description: fmt.Sprintf("PSC endpoint IP for HyperShift cluster %s", gcpPSC.Name),
 		AddressType: "INTERNAL",
 		Subnetwork:  r.constructSubnetURL(pscSubnet, customerProject, region),
+		Labels:      gcpResourceLabels(hcp),
 		// Purpose not set for subnetwork addresses - PSC purpose is implicit when used with ForwardingRule
 	}
 
@@ -678,7 +683,9 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 	}
 
 	if existingEndpoint != nil {
-		// Update status from existing endpoint
+		if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, existingEndpoint.LabelFingerprint, existingEndpoint.Labels, gcpResourceLabels(hcp)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile labels on existing PSC endpoint: %w", err)
+		}
 		return r.updateStatusFromEndpoint(ctx, gcpPSC, existingEndpoint)
 	}
 
@@ -691,6 +698,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 		Subnetwork:  r.constructSubnetURL(string(hcp.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name), customerProject, region),
 		Target:      gcpPSC.Status.ServiceAttachmentURI,                     // From management-side
 		IPAddress:   r.constructAddressURL(ipName, customerProject, region), // Reserved IP resource URL
+		// Labels are not allowed on PSC ForwardingRule insert; applied via setLabels after creation.
 		// LoadBalancingScheme not set for PSC endpoints - it's implicit and setting it causes API errors
 	}
 
@@ -712,7 +720,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 		return r.handleGCPError(ctx, gcpPSC, "PSCEndpointCreationFailed", fmt.Errorf("operation failed: %v", op.Error.Errors))
 	}
 
-	// Fetch the newly created endpoint to update status
+	// Fetch the newly created endpoint to update status and apply labels
 	log.Info("PSC endpoint created, fetching to update status", "name", endpointName)
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer fetchCancel()
@@ -721,6 +729,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 		// Endpoint was created but we couldn't fetch it - requeue to retry
 		log.Error(err, "failed to fetch newly created endpoint, will retry")
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	}
+
+	if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, createdEndpoint.LabelFingerprint, createdEndpoint.Labels, gcpResourceLabels(hcp)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to set labels on newly created PSC endpoint: %w", err)
 	}
 
 	return r.updateStatusFromEndpoint(ctx, gcpPSC, createdEndpoint)
@@ -871,6 +883,81 @@ func (r *GCPPrivateServiceConnectReconciler) constructSubnetURL(subnetName, cust
 
 func (r *GCPPrivateServiceConnectReconciler) constructAddressURL(addressName, customerProject, region string) string {
 	return fmt.Sprintf("projects/%s/regions/%s/addresses/%s", customerProject, region, addressName)
+}
+
+// gcpResourceLabels converts HCP GCP resource labels to the map format expected by GCP APIs.
+func gcpResourceLabels(hcp *hyperv1.HostedControlPlane) map[string]string {
+	if hcp.Spec.Platform.GCP == nil || len(hcp.Spec.Platform.GCP.ResourceLabels) == 0 {
+		return nil
+	}
+	labels := make(map[string]string, len(hcp.Spec.Platform.GCP.ResourceLabels))
+	for _, l := range hcp.Spec.Platform.GCP.ResourceLabels {
+		v := ""
+		if l.Value != nil {
+			v = *l.Value
+		}
+		labels[l.Key] = v
+	}
+	return labels
+}
+
+// reconcileForwardingRuleLabels applies the desired labels to a ForwardingRule via the setLabels API.
+// GCP PSC ForwardingRules reject labels on insert, so they must be applied separately.
+func reconcileForwardingRuleLabels(ctx context.Context, svc *compute.Service, project, region, name, fingerprint string, existingLabels, desiredLabels map[string]string) error {
+	setLabelsCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer cancel()
+	req := &compute.RegionSetLabelsRequest{
+		Labels:           mergeResourceLabels(existingLabels, desiredLabels),
+		LabelFingerprint: fingerprint,
+	}
+	op, err := svc.ForwardingRules.SetLabels(project, region, name, req).Context(setLabelsCtx).Do()
+	if err != nil {
+		return fmt.Errorf("ForwardingRules.SetLabels: %w", err)
+	}
+	if op.Status != "DONE" && op.Error != nil {
+		return fmt.Errorf("ForwardingRules.SetLabels operation failed: %v", op.Error.Errors)
+	}
+	return nil
+}
+
+// reconcileAddressLabels applies the desired labels to a GCP Address resource.
+func reconcileAddressLabels(ctx context.Context, svc *compute.Service, project, region, name string, desiredLabels map[string]string) error {
+	if desiredLabels == nil {
+		desiredLabels = map[string]string{}
+	}
+	getCtx, getCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer getCancel()
+	addr, err := svc.Addresses.Get(project, region, name).Context(getCtx).Do()
+	if err != nil {
+		return fmt.Errorf("Addresses.Get for label reconciliation: %w", err)
+	}
+	setCtx, setCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer setCancel()
+	req := &compute.RegionSetLabelsRequest{
+		Labels:           mergeResourceLabels(addr.Labels, desiredLabels),
+		LabelFingerprint: addr.LabelFingerprint,
+	}
+	op, err := svc.Addresses.SetLabels(project, region, name, req).Context(setCtx).Do()
+	if err != nil {
+		return fmt.Errorf("Addresses.SetLabels: %w", err)
+	}
+	if op.Status != "DONE" && op.Error != nil {
+		return fmt.Errorf("Addresses.SetLabels operation failed: %v", op.Error.Errors)
+	}
+	return nil
+}
+
+// mergeResourceLabels preserves labels not managed by HyperShift while applying
+// the labels requested by the HostedControlPlane.
+func mergeResourceLabels(existing, desired map[string]string) map[string]string {
+	merged := maps.Clone(existing)
+	if merged == nil {
+		merged = map[string]string{}
+	}
+	for key, value := range desired {
+		merged[key] = value
+	}
+	return merged
 }
 
 // getHostedControlPlane retrieves the HostedControlPlane from the CR's owner reference
