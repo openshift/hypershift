@@ -212,10 +212,11 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 	}
 
-	readyAndServing := func(ready, serving bool) func(eps discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+	endpointConditions := func(ready, serving, terminating bool) func(eps discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
 		return func(eps discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
 			eps.Endpoints[0].Conditions.Ready = &ready
 			eps.Endpoints[0].Conditions.Serving = &serving
+			eps.Endpoints[0].Conditions.Terminating = &terminating
 			return eps
 		}
 	}
@@ -378,6 +379,28 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		return service
 	}
 
+	pairOfDualStackMachinesWithConditions := func(conditions1, conditions2 []metav1.Condition) []capiv1.Machine {
+		machines := pairOfDualStackMachines("", "")
+		machines[0].Status.Conditions = conditions1
+		machines[1].Status.Conditions = conditions2
+		return machines
+	}
+
+	readyConditions := []metav1.Condition{
+		{Type: capiv1.MachineReadyCondition, Status: metav1.ConditionTrue},
+	}
+	notReadyConditions := []metav1.Condition{
+		{Type: capiv1.MachineReadyCondition, Status: metav1.ConditionFalse},
+	}
+	infraAndNodeConditions := []metav1.Condition{
+		{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionTrue},
+		{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionTrue},
+	}
+	infraOnlyConditions := []metav1.Condition{
+		{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionTrue},
+		{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionFalse},
+	}
+
 	_ = capiv1.AddToScheme(scheme.Scheme)
 	_ = hyperv1.AddToScheme(scheme.Scheme)
 	_ = kubevirtv1.AddToScheme(scheme.Scheme)
@@ -503,16 +526,86 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			hcp: kubevirtHCP,
 		},
 		{
-			name:             "With Failing machine with internal addresses and passthrow service should mark endpointslices as not ready/not serving",
+			name:             "When a machine is failed it should mark endpointslices as not ready/not serving",
+			machines:         pairOfDualStackMachines(capiv1.MachinePhaseRunning, capiv1.MachinePhaseFailed),
+			virtualMachines:  pairOfVirtualMachines,
+			services:         []corev1.Service{defaultIngressService},
+			expectedServices: []corev1.Service{defaultIngressService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, false)),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, false)),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
+			name:             "When a machine is deleting it should mark endpointslices as not ready, serving, and terminating",
 			machines:         pairOfDualStackMachines(capiv1.MachinePhaseRunning, capiv1.MachinePhaseDeleting),
 			virtualMachines:  pairOfVirtualMachines,
 			services:         []corev1.Service{defaultIngressService},
 			expectedServices: []corev1.Service{defaultIngressService},
 			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
-				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], readyAndServing(true, true)),
-				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], readyAndServing(false, false)),
-				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], readyAndServing(true, true)),
-				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], readyAndServing(false, false)),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, true)),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, true)),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
+			name:             "When machines have Ready condition true and no phase it should create ready/serving endpointslices",
+			machines:         pairOfDualStackMachinesWithConditions(readyConditions, readyConditions),
+			virtualMachines:  pairOfVirtualMachines,
+			services:         []corev1.Service{defaultIngressService},
+			expectedServices: []corev1.Service{defaultIngressService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1]),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
+			name:             "When machines have Ready condition false and no phase it should create not-ready endpointslices",
+			machines:         pairOfDualStackMachinesWithConditions(readyConditions, notReadyConditions),
+			virtualMachines:  pairOfVirtualMachines,
+			services:         []corev1.Service{defaultIngressService},
+			expectedServices: []corev1.Service{defaultIngressService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, false)),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, false)),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
+			name:             "When machines have InfrastructureReady and NodeHealthy conditions but no Ready condition it should create ready endpointslices",
+			machines:         pairOfDualStackMachinesWithConditions(infraAndNodeConditions, infraAndNodeConditions),
+			virtualMachines:  pairOfVirtualMachines,
+			services:         []corev1.Service{defaultIngressService},
+			expectedServices: []corev1.Service{defaultIngressService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1]),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
+			name:             "When machine has InfrastructureReady but NodeHealthy is false it should create not-ready endpointslices",
+			machines:         pairOfDualStackMachinesWithConditions(infraAndNodeConditions, infraOnlyConditions),
+			virtualMachines:  pairOfVirtualMachines,
+			services:         []corev1.Service{defaultIngressService},
+			expectedServices: []corev1.Service{defaultIngressService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, false)),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], endpointConditions(false, false, false)),
 			},
 			hcp: kubevirtHCP,
 		},
@@ -650,4 +743,128 @@ func resetResourceVersionFromEndpointSlices(endpointSlices []discoveryv1.Endpoin
 		endpointSlices[i].ResourceVersion = ""
 	}
 	return endpointSlices
+}
+
+func TestMachineToEndpointConditions(t *testing.T) {
+	testCases := []struct {
+		name      string
+		machine   *capiv1.Machine
+		wantReady bool
+		wantServe bool
+		wantTerm  bool
+	}{
+		{
+			name: "When phase is Running and no conditions it should be ready and serving",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{Phase: string(capiv1.MachinePhaseRunning)},
+			},
+			wantReady: true,
+			wantServe: true,
+			wantTerm:  false,
+		},
+		{
+			name: "When phase is empty and no conditions it should not be ready",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{},
+			},
+			wantReady: false,
+			wantServe: false,
+			wantTerm:  false,
+		},
+		{
+			name: "When Ready condition is true and phase is empty it should be ready",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineReadyCondition, Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			wantReady: true,
+			wantServe: true,
+			wantTerm:  false,
+		},
+		{
+			name: "When Ready condition is true but phase is Deleting it should be serving but not ready",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Phase: string(capiv1.MachinePhaseDeleting),
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineReadyCondition, Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			wantReady: false,
+			wantServe: true,
+			wantTerm:  true,
+		},
+		{
+			name: "When InfrastructureReady and NodeHealthy are true without Ready condition it should be ready",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionTrue},
+						{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			wantReady: true,
+			wantServe: true,
+			wantTerm:  false,
+		},
+		{
+			name: "When InfrastructureReady is true but NodeHealthy is false it should not be ready",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionTrue},
+						{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			wantReady: false,
+			wantServe: false,
+			wantTerm:  false,
+		},
+		{
+			name: "When Ready condition is false it should override phase Running",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Phase: string(capiv1.MachinePhaseRunning),
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineReadyCondition, Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			wantReady: false,
+			wantServe: false,
+			wantTerm:  false,
+		},
+		{
+			name: "When machine has deletionTimestamp it should be terminating regardless of conditions",
+			machine: func() *capiv1.Machine {
+				now := metav1.Now()
+				return &capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &now},
+					Status: capiv1.MachineStatus{
+						Conditions: []metav1.Condition{
+							{Type: capiv1.MachineReadyCondition, Status: metav1.ConditionTrue},
+						},
+					},
+				}
+			}(),
+			wantReady: false,
+			wantServe: true,
+			wantTerm:  true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			got := machineToEndpointConditions(tc.machine)
+			g.Expect(*got.Ready).To(Equal(tc.wantReady), "Ready")
+			g.Expect(*got.Serving).To(Equal(tc.wantServe), "Serving")
+			g.Expect(*got.Terminating).To(Equal(tc.wantTerm), "Terminating")
+		})
+	}
 }
