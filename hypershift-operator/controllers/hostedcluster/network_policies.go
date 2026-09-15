@@ -676,6 +676,15 @@ func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.Ne
 			},
 		},
 	}
+	if kubevirtCentralizedUsesHCPRouter(hcluster) {
+		controlPlanePeers = append(controlPlanePeers, networkingv1.NetworkPolicyPeer{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "private-router",
+				},
+			},
+		})
+	}
 
 	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, controlPlanePeers)
 }
