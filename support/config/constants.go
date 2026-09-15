@@ -48,8 +48,9 @@ const (
 	EnableCVOManagementClusterMetricsAccessEnvVar = "ENABLE_CVO_MANAGEMENT_CLUSTER_METRICS_ACCESS"
 	CVOPrometheusURLEnvVar                        = "CVO_PROMETHEUS_URL"
 
-	EnableEtcdRecoveryEnvVar = "ENABLE_ETCD_RECOVERY"
-	ReconcileLegacyEnvVar    = "HYPERSHIFT_RECONCILE_LEGACY"
+	EnableEtcdRecoveryEnvVar       = "ENABLE_ETCD_RECOVERY"
+	ReconcileLegacyEnvVar          = "HYPERSHIFT_RECONCILE_LEGACY"
+	EnablePlatformMonitoringEnvVar = "ENABLE_PLATFORM_MONITORING"
 
 	AuditWebhookService = "audit-webhook"
 

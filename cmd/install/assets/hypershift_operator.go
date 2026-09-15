@@ -535,6 +535,7 @@ type HyperShiftOperatorDeployment struct {
 	ServiceAccount                          *corev1.ServiceAccount
 	Replicas                                int32
 	EnableOCPClusterMonitoring              bool
+	EnablePlatformMonitoring                bool
 	EnableCIDebugOutput                     bool
 	EnableWebhook                           bool
 	EnableValidatingWebhook                 bool
@@ -856,6 +857,7 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 		trimmedValue := strings.TrimSpace(value)
 		if trimmedKey != "" &&
 			trimmedValue != "" &&
+			trimmedKey != config.EnablePlatformMonitoringEnvVar &&
 			!slices.ContainsFunc(envVars, func(e corev1.EnvVar) bool {
 				return e.Name == trimmedKey
 			}) {
@@ -874,6 +876,9 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	}
 	if o.EnableCVOManagementClusterMetricsAccess {
 		envVars = append(envVars, corev1.EnvVar{Name: config.EnableCVOManagementClusterMetricsAccessEnvVar, Value: "1"})
+	}
+	if o.EnablePlatformMonitoring {
+		envVars = append(envVars, corev1.EnvVar{Name: config.EnablePlatformMonitoringEnvVar, Value: "1"})
 	}
 	if len(o.ManagedService) > 0 {
 		envVars = append(envVars, corev1.EnvVar{Name: "MANAGED_SERVICE", Value: o.ManagedService})
