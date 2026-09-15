@@ -34,6 +34,11 @@ func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &openshiftAPIServer{}).
 		WithAdaptFunction(adaptDeployment).
 		WithManifestAdapter(
+			"combined-pull-secret.yaml",
+			component.WithAdaptFunction(adaptCombinedPullSecret),
+			component.ReconcileExisting(),
+		).
+		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfigMap),
 		).

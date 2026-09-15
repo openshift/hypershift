@@ -6,6 +6,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The Hosted Cluster Config Operator also maintains `combined-pull-secret` in the HostedControlPlane namespace. It contains the original HostedCluster pull secret when no additional secret exists, or the merged credentials when one does. The HyperShift operator bootstraps it during cluster creation, and the OpenShift API Server mounts it for ImageStream imports that require customer-provided registry credentials.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -205,6 +207,7 @@ The implementation consists of several key components working together:
 
 3. **Hosted Cluster Config Operator Integration**
    - Monitors for the presence of `additional-pull-secret`
+   - Maintains `combined-pull-secret` in the HostedControlPlane namespace for control plane components
    - Orchestrates the entire process
    - Handles cleanup when the secret is removed
 
