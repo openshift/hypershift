@@ -418,7 +418,7 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Println("Created ARM64 workloads")
 
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, armNodeLabels)
-			waitForReadyKarpenterPods(ctx, hcClient, nodes, 1, map[string]string{"app": "arm-app"})
+			waitForReadyKarpenterPods(ctx, hcClient, nodes, nil, 1, map[string]string{"app": "arm-app"})
 		})
 	})
 }
@@ -1830,44 +1830,59 @@ func describeEC2Instance(ctx context.Context, ec2client *ec2.Client, node corev1
 	return result.Reservations[0].Instances[0], instanceID
 }
 
-func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string) {
-	t := GinkgoTB()
-	pods := &corev1.PodList{}
-	e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled on provisioned Karpenter nodes",
-		func(ctx context.Context) ([]*corev1.Pod, error) {
-			err := client.List(ctx, pods, crclient.InNamespace("default"), crclient.MatchingLabels(podLabels))
-			items := make([]*corev1.Pod, len(pods.Items))
-			for i := range pods.Items {
-				items[i] = &pods.Items[i]
+func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, includedNodes, excludedNodes []corev1.Node, numPods int, podLabels map[string]string) []corev1.Pod {
+	GinkgoHelper()
+	var matchedPods []corev1.Pod
+
+	Eventually(func(g Gomega, pollCtx context.Context) {
+		pods := &corev1.PodList{}
+		err := client.List(pollCtx, pods, crclient.InNamespace("default"), crclient.MatchingLabels(podLabels))
+		g.Expect(err).NotTo(HaveOccurred())
+		if err != nil {
+			return
+		}
+		g.Expect(pods.Items).To(HaveLen(numPods), "expected %d pods, got %d", numPods, len(pods.Items))
+
+		for i := range pods.Items {
+			pod := &pods.Items[i]
+			g.Expect(pod.Spec.NodeName).NotTo(BeEmpty(), "pod %s is not scheduled", pod.Name)
+
+			for _, node := range excludedNodes {
+				g.Expect(pod.Spec.NodeName).NotTo(Equal(node.Name),
+					"pod %s incorrectly scheduled on excluded node %q", pod.Name, node.Name)
 			}
-			return items, err
-		},
-		[]e2eutil.Predicate[[]*corev1.Pod]{
-			func(pods []*corev1.Pod) (bool, string, error) {
-				want, got := n, len(pods)
-				return want == got, fmt.Sprintf("expected %d pods, got %d", want, got), nil
-			},
-		},
-		[]e2eutil.Predicate[*corev1.Pod]{
-			e2eutil.ConditionPredicate[*corev1.Pod](e2eutil.Condition{
-				Type:   string(corev1.PodScheduled),
-				Status: metav1.ConditionTrue,
-			}),
-			func(pod *corev1.Pod) (bool, string, error) {
-				nodeName := pod.Spec.NodeName
-				for _, node := range nodes {
-					if nodeName == node.Name {
-						return true, fmt.Sprintf("pod %s correctly scheduled on node %s", pod.Name, nodeName), nil
+
+			if len(includedNodes) > 0 {
+				onIncludedNode := false
+				for _, node := range includedNodes {
+					if pod.Spec.NodeName == node.Name {
+						onIncludedNode = true
+						break
 					}
 				}
-				return false, fmt.Sprintf("pod %s scheduled on unexpected node %s", pod.Name, nodeName), nil
-			},
-			func(pod *corev1.Pod) (bool, string, error) {
-				return pod.Status.Phase == corev1.PodRunning, fmt.Sprintf("pod %s is not running", pod.Name), nil
-			},
-		},
-		e2eutil.WithTimeout(20*time.Minute),
-	)
+				g.Expect(onIncludedNode).To(BeTrue(),
+					"pod %s scheduled on unexpected node %s", pod.Name, pod.Spec.NodeName)
+			}
+
+			scheduled := false
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionTrue {
+					scheduled = true
+					break
+				}
+			}
+			g.Expect(scheduled).To(BeTrue(), "pod %s does not have PodScheduled=True", pod.Name)
+			g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning), "pod %s is not running", pod.Name)
+		}
+
+		matchedPods = pods.Items
+	}).
+		WithContext(ctx).
+		WithTimeout(20 * time.Minute).
+		WithPolling(3 * time.Second).
+		Should(Succeed())
+
+	return matchedPods
 }
 
 // waitForAutoNodeStatusVCPUs polls until HostedCluster.Status.AutoNode.VCPUs

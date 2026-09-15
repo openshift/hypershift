@@ -20,6 +20,8 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
@@ -215,6 +217,10 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	// We requeue an un-pinned NodeClass if the control plane is in the middle of an upgrade to eventually ensure the NodeClass is upgraded to the new release image.
+	if openshiftEC2NodeClass.Spec.Version == "" && isControlPlaneUpgrading(hcp) {
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -275,17 +281,52 @@ func AMISelectorTerms(userDataSecret *corev1.Secret, platform hyperv1.PlatformTy
 	return terms, nil
 }
 
+// isControlPlaneUpgrading returns true when the desired release image differs
+// from the most recent Completed version in history.
+// Returns false during initial install (no Completed entry or desired not yet populated).
+// The loop returns on the first CompletedUpdate entry found. This is safe because the
+// ControlPlaneVersion.History list is ordered newest-first per the API contract.
+func isControlPlaneUpgrading(hcp *hyperv1.HostedControlPlane) bool {
+	desiredImage := hcp.Status.ControlPlaneVersion.Desired.Image
+	if desiredImage == "" {
+		return false
+	}
+
+	for _, entry := range hcp.Status.ControlPlaneVersion.History {
+		if entry.State == configv1.CompletedUpdate {
+			return entry.Image != desiredImage
+		}
+	}
+
+	return false
+}
+
 func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane, userDataSecret *corev1.Secret) error {
 	ownerRef := config.OwnerRefFrom(openshiftEC2NodeClass)
 	ownerRef.ApplyTo(ec2NodeClass)
 
-	amiSelectorTerms, err := AMISelectorTerms(userDataSecret, hcp.Spec.Platform.Type)
-	if err != nil {
-		return fmt.Errorf("failed to get AMISelectorTerms: %w", err)
+	pauseUpgrade := isControlPlaneUpgrading(hcp)
+
+	var amiSelectorTerms []awskarpenterv1.AMISelectorTerm
+
+	userData := ptr.To(string(userDataSecret.Data["value"]))
+
+	// When upgrade is in progress, and the nodeclass is tied to the control plane version, and the EC2NodeClass already has AMI/UserData set
+	// (i.e. not the first creation), preserve the existing drift-triggering fields that cause a node rollout upgrade.
+	if pauseUpgrade && openshiftEC2NodeClass.Spec.Version == "" && len(ec2NodeClass.Spec.AMISelectorTerms) > 0 && ec2NodeClass.Spec.UserData != nil {
+		ctrl.LoggerFrom(ctx).Info("Control plane upgrade in progress, preserving existing userData and amis")
+		userData = ec2NodeClass.Spec.UserData
+		amiSelectorTerms = ec2NodeClass.Spec.AMISelectorTerms
+	} else {
+		var err error
+		amiSelectorTerms, err = AMISelectorTerms(userDataSecret, hcp.Spec.Platform.Type)
+		if err != nil {
+			return fmt.Errorf("failed to get AMISelectorTerms: %w", err)
+		}
 	}
 
 	ec2NodeClass.Spec = awskarpenterv1.EC2NodeClassSpec{
-		UserData:                         ptr.To(string(userDataSecret.Data["value"])),
+		UserData:                         userData,
 		AMIFamily:                        ptr.To("Custom"),
 		AMISelectorTerms:                 amiSelectorTerms,
 		AssociatePublicIPAddress:         karpenterAssociatePublicIPAddressFromNodeClassSpec(openshiftEC2NodeClass.Spec),
