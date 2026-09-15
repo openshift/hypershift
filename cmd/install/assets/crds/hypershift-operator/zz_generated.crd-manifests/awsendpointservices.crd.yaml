@@ -198,6 +198,26 @@ spec:
                   SecurityGroupID is the ID of the security group.
                 maxLength: 255
                 type: string
+              sharedVPCEndpointRoleARN:
+                description: |-
+                  sharedVPCEndpointRoleARN is the persisted ARN of the SharedVPC role used
+                  for EC2 endpoint and security group operations during deletion.
+
+                  The role ARN is copied from the HostedControlPlane so cleanup can continue
+                  after the HCP is gone, for example after a controller restart.
+                maxLength: 2048
+                minLength: 1
+                type: string
+              sharedVPCRoute53RoleARN:
+                description: |-
+                  sharedVPCRoute53RoleARN is the persisted ARN of the SharedVPC role used
+                  for Route53 operations during deletion.
+
+                  The role ARN is copied from the HostedControlPlane so cleanup can continue
+                  after the HCP is gone, for example after a controller restart.
+                maxLength: 2048
+                minLength: 1
+                type: string
             type: object
         type: object
     served: true
