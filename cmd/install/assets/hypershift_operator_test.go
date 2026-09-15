@@ -15,6 +15,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -833,6 +834,25 @@ func TestHyperShiftOperatorClusterRole_WebhookRBAC(t *testing.T) {
 			ResourceNames: []string{hyperv1.GroupVersion.Group},
 		})))
 	})
+}
+
+func TestHyperShiftOperatorPodDisruptionBudget_Build(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	namespace := HyperShiftNamespace{Name: "hypershift"}.Build()
+	pdb := HyperShiftOperatorPodDisruptionBudget{Namespace: namespace}.Build()
+
+	g.Expect(pdb.Namespace).To(Equal(namespace.Name))
+	g.Expect(pdb.Name).To(Equal(HypershiftOperatorName))
+	g.Expect(pdb.Labels).To(HaveKeyWithValue("name", HypershiftOperatorName))
+	g.Expect(pdb.Spec.Selector).ToNot(BeNil())
+	g.Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue("name", HypershiftOperatorName))
+	g.Expect(pdb.Spec.MaxUnavailable).To(BeNil(), "should use minAvailable, not maxUnavailable")
+	g.Expect(pdb.Spec.MinAvailable).ToNot(BeNil())
+	g.Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(1))
+	g.Expect(pdb.Spec.UnhealthyPodEvictionPolicy).ToNot(BeNil())
+	g.Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
 }
 
 func TestBuildArgs(t *testing.T) {

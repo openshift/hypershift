@@ -26,6 +26,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -1058,6 +1059,52 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 				g.Expect(hasSharedIngressClusterRole).To(BeFalse(), "expected shared ingress ClusterRole to not be present")
 				g.Expect(hasSharedIngressClusterRoleBinding).To(BeFalse(), "expected shared ingress ClusterRoleBinding to not be present")
 			}
+		})
+	}
+}
+
+func TestHyperShiftOperatorPodDisruptionBudget(t *testing.T) {
+	// The PDB must be emitted for every install regardless of the effective
+	// operator replica count, and must use maxUnavailable:1 so it never
+	// deadlocks drains of a single-replica deployment.
+	tests := []struct {
+		name string
+		opts Options
+	}{
+		{
+			name: "default (webhooks enabled, 2 replicas)",
+			opts: Options{PrivatePlatform: string(hyperv1.NonePlatform)},
+		},
+		{
+			name: "single replica (webhooks disabled)",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			_, objects, err := hyperShiftOperatorManifests(t.Context(), nil, tc.opts)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			var pdb *policyv1.PodDisruptionBudget
+			for _, obj := range objects {
+				if p, ok := obj.(*policyv1.PodDisruptionBudget); ok {
+					pdb = p
+					break
+				}
+			}
+			g.Expect(pdb).ToNot(BeNil(), "expected a PodDisruptionBudget for the operator")
+			g.Expect(pdb.Name).To(Equal(assets.HypershiftOperatorName))
+			g.Expect(pdb.Spec.MaxUnavailable).To(BeNil(), "should use minAvailable, not maxUnavailable")
+			g.Expect(pdb.Spec.MinAvailable).ToNot(BeNil())
+			g.Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(1))
+			g.Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue("name", assets.HypershiftOperatorName))
+			g.Expect(pdb.Spec.UnhealthyPodEvictionPolicy).ToNot(BeNil())
+			g.Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
 		})
 	}
 }
