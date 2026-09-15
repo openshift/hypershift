@@ -21,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -32,36 +31,6 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
-
-func TestGCPResourceLabels(t *testing.T) {
-	tests := []struct {
-		name     string
-		hcp      *hyperv1.HostedControlPlane
-		expected map[string]string
-	}{
-		{
-			name: "When HCP has GCP resource labels, it should convert them to a map",
-			hcp: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
-				GCP: &hyperv1.GCPPlatformSpec{ResourceLabels: []hyperv1.GCPResourceLabel{
-					{Key: "environment", Value: ptr.To("test")},
-					{Key: "empty-value"},
-				}},
-			}}},
-			expected: map[string]string{"environment": "test", "empty-value": ""},
-		},
-		{
-			name:     "When HCP has no GCP resource labels, it should return nil",
-			hcp:      &hyperv1.HostedControlPlane{},
-			expected: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, gcpResourceLabels(tt.hcp))
-		})
-	}
-}
 
 func TestMergeResourceLabels(t *testing.T) {
 	tests := []struct {

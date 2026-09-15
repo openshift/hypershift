@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -602,7 +603,7 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 		if err := r.Status().Patch(ctx, gcpPSC, patch); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update EndpointIP with existing address: %w", err)
 		}
-		if err := reconcileAddressLabels(ctx, customerGCPClient, customerProject, region, ipName, gcpResourceLabels(hcp)); err != nil {
+		if err := reconcileAddressLabels(ctx, customerGCPClient, customerProject, region, ipName, gcputil.ResourceLabels(hcp)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile labels on existing IP address: %w", err)
 		}
 		return ctrl.Result{}, nil
@@ -614,7 +615,7 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 		Description: fmt.Sprintf("PSC endpoint IP for HyperShift cluster %s", gcpPSC.Name),
 		AddressType: "INTERNAL",
 		Subnetwork:  r.constructSubnetURL(pscSubnet, customerProject, region),
-		Labels:      gcpResourceLabels(hcp),
+		Labels:      gcputil.ResourceLabels(hcp),
 		// Purpose not set for subnetwork addresses - PSC purpose is implicit when used with ForwardingRule
 	}
 
@@ -683,7 +684,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 	}
 
 	if existingEndpoint != nil {
-		if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, existingEndpoint.LabelFingerprint, existingEndpoint.Labels, gcpResourceLabels(hcp)); err != nil {
+		if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, existingEndpoint.LabelFingerprint, existingEndpoint.Labels, gcputil.ResourceLabels(hcp)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile labels on existing PSC endpoint: %w", err)
 		}
 		return r.updateStatusFromEndpoint(ctx, gcpPSC, existingEndpoint)
@@ -731,7 +732,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, createdEndpoint.LabelFingerprint, createdEndpoint.Labels, gcpResourceLabels(hcp)); err != nil {
+	if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, createdEndpoint.LabelFingerprint, createdEndpoint.Labels, gcputil.ResourceLabels(hcp)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to set labels on newly created PSC endpoint: %w", err)
 	}
 
@@ -883,22 +884,6 @@ func (r *GCPPrivateServiceConnectReconciler) constructSubnetURL(subnetName, cust
 
 func (r *GCPPrivateServiceConnectReconciler) constructAddressURL(addressName, customerProject, region string) string {
 	return fmt.Sprintf("projects/%s/regions/%s/addresses/%s", customerProject, region, addressName)
-}
-
-// gcpResourceLabels converts HCP GCP resource labels to the map format expected by GCP APIs.
-func gcpResourceLabels(hcp *hyperv1.HostedControlPlane) map[string]string {
-	if hcp.Spec.Platform.GCP == nil || len(hcp.Spec.Platform.GCP.ResourceLabels) == 0 {
-		return nil
-	}
-	labels := make(map[string]string, len(hcp.Spec.Platform.GCP.ResourceLabels))
-	for _, l := range hcp.Spec.Platform.GCP.ResourceLabels {
-		v := ""
-		if l.Value != nil {
-			v = *l.Value
-		}
-		labels[l.Key] = v
-	}
-	return labels
 }
 
 // reconcileForwardingRuleLabels applies the desired labels to a ForwardingRule via the setLabels API.

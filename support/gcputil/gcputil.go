@@ -7,6 +7,23 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
+// ResourceLabels converts the HCP GCP resource-label list to the map format
+// expected by GCP API calls. Returns nil when no labels are configured.
+func ResourceLabels(hcp *hyperv1.HostedControlPlane) map[string]string {
+	if hcp.Spec.Platform.GCP == nil || len(hcp.Spec.Platform.GCP.ResourceLabels) == 0 {
+		return nil
+	}
+	labels := make(map[string]string, len(hcp.Spec.Platform.GCP.ResourceLabels))
+	for _, label := range hcp.Spec.Platform.GCP.ResourceLabels {
+		value := ""
+		if label.Value != nil {
+			value = *label.Value
+		}
+		labels[label.Key] = value
+	}
+	return labels
+}
+
 // CredentialSource represents the credential source configuration for GCP external account credentials.
 type CredentialSource struct {
 	File   string                 `json:"file"`
