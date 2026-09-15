@@ -1106,6 +1106,78 @@ func TestKubevirtCentralizedUsesHCPRouter(t *testing.T) {
 	}
 }
 
+func TestReconcileVirtLauncherNetworkPolicyEgressPeers(t *testing.T) {
+	testCases := []struct {
+		name                      string
+		hcluster                  *hyperv1.HostedCluster
+		expectPrivateRouterEgress bool
+	}{
+		{
+			name: "When KubeVirt centralized uses HCP router, it should allow egress to private-router",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					InfraID:  "test-infra",
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+					},
+				},
+			},
+			expectPrivateRouterEgress: true,
+		},
+		{
+			name: "When KubeVirt centralized uses KAS LoadBalancer, it should not allow egress to private-router",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					InfraID:  "test-infra",
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service:                   hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+						},
+					},
+				},
+			},
+			expectPrivateRouterEgress: false,
+		},
+	}
+
+	managementClusterNetwork := &configv1.Network{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: configv1.NetworkSpec{
+			ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+			ServiceNetwork: []string{"172.30.0.0/16"},
+		},
+	}
+	log := ctrl.Log.WithName("test")
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			policy := networkpolicy.VirtLauncherNetworkPolicy("test-cp-ns")
+			g.Expect(reconcileVirtLauncherNetworkPolicy(log, policy, tc.hcluster, managementClusterNetwork)).To(Succeed())
+
+			g.Expect(policy.Spec.Egress).NotTo(BeEmpty())
+			hasPrivateRouterPeer := false
+			for _, peer := range policy.Spec.Egress[0].To {
+				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app"] == "private-router" {
+					hasPrivateRouterPeer = true
+					break
+				}
+			}
+			g.Expect(hasPrivateRouterPeer).To(Equal(tc.expectPrivateRouterEgress))
+		})
+	}
+}
+
 func TestReconcileServiceNetworkPolicies(t *testing.T) {
 	testCases := []struct {
 		name             string
