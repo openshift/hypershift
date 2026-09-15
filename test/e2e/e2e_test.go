@@ -184,7 +184,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPEndpointAccess, "e2e.gcp-endpoint-access", string(hyperv1.GCPEndpointAccessPrivate), "GCP endpoint access type: Private or PublicAndPrivate")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPIssuerURL, "e2e.gcp-oidc-issuer-url", "", "The OIDC provider issuer URL for GCP")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPMachineType, "e2e.gcp-machine-type", "", "GCP machine type for node instances. Defaults to n2-standard-4")
-	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPZone, "e2e.gcp-zone", "", "GCP zone for node instances. Defaults to {region}-a")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPZone, "e2e.gcp-zone", "", "GCP zone for node instances")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPSubnet, "e2e.gcp-subnet", "", "Subnet for node instances. Defaults to the PSC subnet value")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPBootImage, "e2e.gcp-boot-image", "", "GCP boot image for node instances. Overrides the default RHCOS image from the release payload")
 
