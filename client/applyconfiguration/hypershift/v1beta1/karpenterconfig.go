@@ -24,8 +24,9 @@ import (
 // KarpenterConfigApplyConfiguration represents a declarative configuration of the KarpenterConfig type for use
 // with apply.
 type KarpenterConfigApplyConfiguration struct {
-	Platform *hypershiftv1beta1.PlatformType       `json:"platform,omitempty"`
-	AWS      *KarpenterAWSConfigApplyConfiguration `json:"aws,omitempty"`
+	Platform *hypershiftv1beta1.PlatformType         `json:"platform,omitempty"`
+	AWS      *KarpenterAWSConfigApplyConfiguration   `json:"aws,omitempty"`
+	Azure    *KarpenterAzureConfigApplyConfiguration `json:"azure,omitempty"`
 }
 
 // KarpenterConfigApplyConfiguration constructs a declarative configuration of the KarpenterConfig type for use with
@@ -47,5 +48,13 @@ func (b *KarpenterConfigApplyConfiguration) WithPlatform(value hypershiftv1beta1
 // If called multiple times, the AWS field is set to the value of the last call.
 func (b *KarpenterConfigApplyConfiguration) WithAWS(value *KarpenterAWSConfigApplyConfiguration) *KarpenterConfigApplyConfiguration {
 	b.AWS = value
+	return b
+}
+
+// WithAzure sets the Azure field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Azure field is set to the value of the last call.
+func (b *KarpenterConfigApplyConfiguration) WithAzure(value *KarpenterAzureConfigApplyConfiguration) *KarpenterConfigApplyConfiguration {
+	b.Azure = value
 	return b
 }
