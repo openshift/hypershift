@@ -76,6 +76,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -1358,17 +1359,17 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 	AtLeast(t, Version418)
 	g := NewWithT(t)
 
-	isRHEL9 := IsLessThan(Version50) ||
-		nodePool.Spec.OSImageStream.Name == string(hyperv1.OSImageStreamRHEL9)
-
-	validHandlers := map[string]bool{
-		"crun": false,
-	}
-	if isRHEL9 {
-		validHandlers["runc"] = false
+	expectedHandlers, err := expectedNodeRuntimeHandlers(nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to determine expected runtime handlers")
+	if err != nil {
+		return
 	}
 
 	for _, node := range nodes {
+		validHandlers := make(map[string]bool, len(expectedHandlers))
+		for handler := range expectedHandlers {
+			validHandlers[handler] = false
+		}
 		g.Expect(node.Status.RuntimeHandlers).NotTo(BeNil(), "node %s is missing runtime handlers", node.Name)
 		for _, handler := range node.Status.RuntimeHandlers {
 			if _, ok := validHandlers[handler.Name]; ok {
@@ -1380,6 +1381,58 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 			g.Expect(present).To(BeTrue(), "node %s is missing runtime handler %s", node.Name, handler)
 		}
 	}
+}
+
+// expectedNodeRuntimeHandlers determines the runtime handlers expected for a NodePool.
+// The observed OS image stream is the source of truth after an upgrade. The requested
+// stream and the NodePool status version provide fallbacks for clusters where the stream
+// status is not available yet. The suite release version is the final legacy fallback,
+// but must not be used when current NodePool state is available because it can describe
+// the release from before an upgrade.
+func expectedNodeRuntimeHandlers(nodePool *hyperv1.NodePool) (map[string]bool, error) {
+	validHandlers := map[string]bool{
+		"crun": false,
+	}
+	usesRHEL9, err := usesRHEL9NodePool(nodePool)
+	if err != nil {
+		return nil, err
+	}
+	if usesRHEL9 {
+		validHandlers["runc"] = false
+	}
+	return validHandlers, nil
+}
+
+func usesRHEL9NodePool(nodePool *hyperv1.NodePool) (bool, error) {
+	if nodePool == nil {
+		return IsLessThan(Version50), nil
+	}
+
+	// Status reports the stream observed on the nodes and therefore takes precedence
+	// over the requested stream during and after a rollout.
+	switch nodePool.Status.OSImageStream.Name {
+	case string(hyperv1.OSImageStreamRHEL9):
+		return true, nil
+	case string(hyperv1.OSImageStreamRHEL10):
+		return false, nil
+	}
+
+	switch nodePool.Spec.OSImageStream.Name {
+	case string(hyperv1.OSImageStreamRHEL9):
+		return true, nil
+	case string(hyperv1.OSImageStreamRHEL10):
+		return false, nil
+	}
+
+	if nodePool.Status.Version != "" {
+		version, err := semver.ParseTolerant(nodePool.Status.Version)
+		if err != nil {
+			return false, fmt.Errorf("invalid NodePool status.version %q: %w", nodePool.Status.Version, err)
+		}
+		return version.LT(Version50), nil
+	}
+
+	return IsLessThan(Version50), nil
 }
 
 func getComponentName(pod *corev1.Pod) string {

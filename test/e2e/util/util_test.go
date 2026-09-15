@@ -13,6 +13,8 @@ import (
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	"k8s.io/utils/ptr"
+
+	"github.com/blang/semver"
 )
 
 func TestAllowedCIDRsTargetService(t *testing.T) {
@@ -126,6 +128,91 @@ func TestAllowedCIDRsTargetService(t *testing.T) {
 				g.Expect(svc).ToNot(BeNil())
 				g.Expect(svc.Name).To(Equal(tc.wantName))
 				g.Expect(svc.Namespace).To(Equal(ns))
+			}
+		})
+	}
+}
+
+func TestExpectedNodeRuntimeHandlers(t *testing.T) {
+	originalVersion := releaseVersion
+	t.Cleanup(func() { releaseVersion = originalVersion })
+
+	tests := []struct {
+		name           string
+		releaseVersion semver.Version
+		nodePool       *hyperv1.NodePool
+		wantRunc       bool
+		wantErr        bool
+	}{
+		{
+			name:           "observed RHEL 10 overrides an older suite release version",
+			releaseVersion: Version423,
+			nodePool: &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{
+				OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10},
+			}},
+			wantRunc: false,
+		},
+		{
+			name:           "observed RHEL 9 overrides a newer suite release version",
+			releaseVersion: Version50,
+			nodePool: &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{
+				OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9},
+			}},
+			wantRunc: true,
+		},
+		{
+			name:           "status version falls back to RHEL 9",
+			releaseVersion: Version50,
+			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "4.23.0"}},
+			wantRunc:       true,
+		},
+		{
+			name:           "status version falls back to RHEL 10",
+			releaseVersion: Version423,
+			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "5.0.0"}},
+			wantRunc:       false,
+		},
+		{
+			name:           "invalid status version fails validation",
+			releaseVersion: Version50,
+			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "not-a-semver"}},
+			wantErr:        true,
+		},
+		{
+			name:           "explicit RHEL 9 stream overrides status version",
+			releaseVersion: Version50,
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9}},
+				Status: hyperv1.NodePoolStatus{Version: "5.0.0"},
+			},
+			wantRunc: true,
+		},
+		{
+			name:           "legacy suite version is the final fallback",
+			releaseVersion: Version423,
+			nodePool:       &hyperv1.NodePool{},
+			wantRunc:       true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			releaseVersion = tc.releaseVersion
+			got, err := expectedNodeRuntimeHandlers(tc.nodePool)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid status version to fail validation")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected valid NodePool state, got error: %v", err)
+			}
+			if _, ok := got["crun"]; !ok {
+				t.Fatal("expected crun to be required")
+			}
+			if _, ok := got["runc"]; ok != tc.wantRunc {
+				t.Errorf("runc required = %t, want %t; handlers = %#v", ok, tc.wantRunc, got)
 			}
 		})
 	}
