@@ -49,6 +49,7 @@ func GetBackwardCompatibleCAPIImage(releaseVersion semver.Version) string {
 		minUnaffectedVersion        = "4.19.0-0"
 	)
 
+	releaseVersion.Pre = nil
 	if releaseVersion.LT(semver.MustParse(minUnaffectedVersion)) {
 		return backwardCompatibleCAPIImage
 	}
