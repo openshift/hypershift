@@ -1,0 +1,88 @@
+name: Create Tag (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    name: Create Tag
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      # TODO: GITHUB_TOKEN-pushed tags do not trigger downstream workflows
+      # (e.g. create-release). To enable that, create a GitHub App and
+      # uncomment the step below, then use steps.app-token.outputs.token
+      # in the checkout and git remote steps.
+      #
+      # - name: Generate App Token
+      #   id: app-token
+      #   uses: actions/create-github-app-token@...
+      #   with:
+      #     app-id: ${{ secrets.APP_ID }}
+      #     private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          # token: ${{ steps.app-token.outputs.token }}
+      - name: Install yq
+        run: |
+          YQ_VERSION="v4.44.6"
+          YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598"
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o /usr/local/bin/yq
+          echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c -
+          chmod +x /usr/local/bin/yq
+      - name: Configure git
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          # When using a GitHub App token, replace GH_TOKEN above:
+          # git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${REPO}.git"
+      - name: Reconcile tags
+        run: |
+          set -euo pipefail
+
+          tag_count=$(yq '.tags | length' releases/tags.yaml)
+
+          if [ "$tag_count" -eq 0 ]; then
+            echo "No tags defined in releases/tags.yaml."
+            echo "## Create Tag" >> "$GITHUB_STEP_SUMMARY"
+            echo "No tags defined in \`releases/tags.yaml\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          created=0
+          skipped=0
+
+          for i in $(seq 0 $((tag_count - 1))); do
+            name=$(yq ".tags[$i].name" releases/tags.yaml)
+            commit=$(yq ".tags[$i].commit" releases/tags.yaml)
+            description=$(yq ".tags[$i].description" releases/tags.yaml)
+
+            # Skip tags that already exist.
+            if git rev-parse "refs/tags/$name" >/dev/null 2>&1; then
+              echo "Tag '$name' already exists, skipping."
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            echo "Creating annotated tag '$name' at commit '$commit'..."
+            git tag -a "$name" "$commit" -m "$description"
+            git push origin "$name"
+            echo "Tag '$name' created and pushed."
+            created=$((created + 1))
+          done
+
+          echo "## Create Tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Created:** $created tag(s)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Skipped (already exist):** $skipped tag(s)" >> "$GITHUB_STEP_SUMMARY"

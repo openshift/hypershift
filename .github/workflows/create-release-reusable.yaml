@@ -1,0 +1,94 @@
+name: Create Release (Reusable)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: arc-runner-set
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        env:
+          HOME: /tmp
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Validate tag name
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if ! echo "$TAG_NAME" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Tag '$TAG_NAME' does not match semver format"
+            exit 1
+          fi
+      - name: Determine previous tag
+        id: prev-tag
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if git describe --tags --abbrev=0 "${TAG_NAME}^" >/dev/null 2>&1; then
+            prev=$(git describe --tags --abbrev=0 "${TAG_NAME}^")
+            echo "tag=$prev" >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Generate release notes
+        id: notes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          PREV_TAG_FOUND: ${{ steps.prev-tag.outputs.found }}
+          PREV_TAG: ${{ steps.prev-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "$PREV_TAG_FOUND" = "true" ]; then
+            notes=$(go run ./hack/tools/release/notes.go \
+              --from="$PREV_TAG" \
+              --to="$TAG_NAME" \
+              --token="$GITHUB_TOKEN")
+          else
+            notes="Initial release $TAG_NAME"
+          fi
+
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$notes"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build source tarball
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          git archive --format=tar.gz --prefix="hypershift-${TAG_NAME}/" \
+            -o "hypershift-${TAG_NAME}-source.tar.gz" "$TAG_NAME"
+          sha256sum "hypershift-${TAG_NAME}-source.tar.gz" \
+            > "hypershift-${TAG_NAME}-source.tar.gz.sha256"
+      - name: Create draft GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.body }}
+        run: |
+          gh release create "$TAG_NAME" \
+            --draft \
+            --title "$TAG_NAME" \
+            --notes "$RELEASE_NOTES" \
+            "hypershift-${TAG_NAME}-source.tar.gz" \
+            "hypershift-${TAG_NAME}-source.tar.gz.sha256"
+
+          echo "## Create Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Draft release **${TAG_NAME}** created." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Note:** CLI binaries will be attached by Konflux asynchronously." >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,10 @@
+# releases/tags.yaml
+#
+# To request a new tag, add an entry at the top of the list and open a PR.
+# On merge, a GitHub Action will create the tag and trigger release creation.
+#
+# Format:
+#   name:        Semver tag (e.g. v0.1.47). Must not already exist.
+#   commit:      Full 40-char SHA from the main branch.
+#   description: Short description for the GitHub Release body.
+tags: []
