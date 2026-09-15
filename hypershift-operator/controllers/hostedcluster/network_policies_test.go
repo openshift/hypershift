@@ -265,6 +265,47 @@ func TestGCPPrivateRouterNetworkPolicy_IngressOnly(t *testing.T) {
 	}
 }
 
+func TestReconcilePrivateRouterNetworkPolicy_DualStack(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcluster := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.KubevirtPlatform,
+			},
+		},
+	}
+	managementClusterNetwork := &configv1.Network{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+		Spec: configv1.NetworkSpec{
+			ClusterNetwork: []configv1.ClusterNetworkEntry{
+				{CIDR: "10.128.0.0/14"},
+				{CIDR: "fd01::/48"},
+			},
+		},
+	}
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+	kubernetesEndpoint := &corev1.Endpoints{
+		Subsets: []corev1.EndpointSubset{
+			{Addresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}, {IP: "fd02::1"}}},
+		},
+	}
+	kasBlockExceptions := kasEndpointsToCIDRs(kubernetesEndpoint)
+
+	policy := networkpolicy.PrivateRouterNetworkPolicy("test-namespace")
+	err := reconcilePrivateRouterNetworkPolicy(policy, hcluster, kasBlockExceptions, false, managementClusterNetwork, false)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	ipv4Except := collectIPBlockExceptCIDRs(policy, "0.0.0.0/0")
+	ipv6Except := collectIPBlockExceptCIDRs(policy, "::/0")
+
+	g.Expect(ipv4Except).To(ConsistOf("10.0.0.1/32", "10.128.0.0/14"))
+	g.Expect(ipv6Except).To(ConsistOf("fd02::1/128", "fd01::/48"))
+	g.Expect(ipv4Except).NotTo(ContainElement("fd01::/48"))
+	g.Expect(ipv6Except).NotTo(ContainElement("10.128.0.0/14"))
+}
+
 func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -818,8 +859,10 @@ func TestReconcilePlatformNetworkPolicies(t *testing.T) {
 		name                string
 		platformType        hyperv1.PlatformType
 		kubevirtCredentials *hyperv1.KubevirtPlatformCredentials
+		services            []hyperv1.ServicePublishingStrategyMapping
 		version             string
 		expectPrivateRouter bool
+		seedPrivateRouter   bool
 		expectVirtLauncher  bool
 		expectIngressOnly   bool
 	}{
@@ -855,6 +898,36 @@ func TestReconcilePlatformNetworkPolicies(t *testing.T) {
 			expectVirtLauncher: true,
 		},
 		{
+			name:         "When platform is KubeVirt with KAS Route and hostname, it should create private-router and virt-launcher policies",
+			platformType: hyperv1.KubevirtPlatform,
+			version:      "4.15.0",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type:  hyperv1.Route,
+						Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+					},
+				},
+			},
+			expectPrivateRouter: true,
+			expectVirtLauncher:  true,
+		},
+		{
+			name:         "When platform is KubeVirt with KAS LoadBalancer, it should not create private-router policy",
+			platformType: hyperv1.KubevirtPlatform,
+			version:      "4.15.0",
+			services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service:                   hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+				},
+			},
+			expectPrivateRouter: false,
+			seedPrivateRouter:   true,
+			expectVirtLauncher:  true,
+		},
+		{
 			name:                "When platform is KubeVirt with credentials, it should create virt-launcher policy on external infra",
 			platformType:        hyperv1.KubevirtPlatform,
 			kubevirtCredentials: &hyperv1.KubevirtPlatformCredentials{},
@@ -879,6 +952,7 @@ func TestReconcilePlatformNetworkPolicies(t *testing.T) {
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{Type: tc.platformType},
 					InfraID:  "test-infra",
+					Services: tc.services,
 				},
 			}
 			if tc.platformType == hyperv1.KubevirtPlatform {
@@ -908,7 +982,11 @@ func TestReconcilePlatformNetworkPolicies(t *testing.T) {
 			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
 			g.Expect(networkingv1.AddToScheme(scheme)).To(Succeed())
 			g.Expect(configv1.AddToScheme(scheme)).To(Succeed())
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
+			if tc.seedPrivateRouter {
+				clientBuilder = clientBuilder.WithObjects(networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName))
+			}
+			fakeClient := clientBuilder.Build()
 
 			reconciler := &HostedClusterReconciler{
 				Client:                        fakeClient,
@@ -939,6 +1017,11 @@ func TestReconcilePlatformNetworkPolicies(t *testing.T) {
 
 			_, hasPrivateRouter := createdPolicies["private-router"]
 			g.Expect(hasPrivateRouter).To(Equal(tc.expectPrivateRouter), "private-router policy presence mismatch")
+			if tc.seedPrivateRouter {
+				policy := &networkingv1.NetworkPolicy{}
+				err := fakeClient.Get(t.Context(), client.ObjectKey{Name: "private-router", Namespace: controlPlaneNamespaceName}, policy)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "stale private-router policy should be deleted")
+			}
 
 			if tc.expectIngressOnly && hasPrivateRouter {
 				policy := createdPolicies["private-router"]
@@ -948,6 +1031,112 @@ func TestReconcilePlatformNetworkPolicies(t *testing.T) {
 
 			_, hasVirtLauncher := createdPolicies["virt-launcher"]
 			g.Expect(hasVirtLauncher).To(Equal(tc.expectVirtLauncher), "virt-launcher policy presence mismatch")
+		})
+	}
+}
+
+func TestKubevirtCentralizedUsesHCPRouter(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hcluster *hyperv1.HostedCluster
+		want     bool
+	}{
+		{
+			name: "When platform is KubeVirt centralized with KAS Route and hostname, it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When platform is KubeVirt with nil Kubevirt spec and KAS Route and hostname, it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When platform is KubeVirt centralized with KAS LoadBalancer, it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service:                   hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When platform is KubeVirt external infra with KAS Route and hostname, it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{Credentials: &hyperv1.KubevirtPlatformCredentials{}},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When platform is AWS with KAS Route and hostname, it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(kubevirtCentralizedUsesHCPRouter(tc.hcluster)).To(Equal(tc.want))
 		})
 	}
 }
@@ -1617,6 +1806,11 @@ func TestKasEndpointsToCIDRs(t *testing.T) {
 			expectedCIDRs: []string{"10.0.0.1/32", "10.0.0.2/32"},
 		},
 		{
+			name:          "When the endpoint has an IPv6 address it should return a /128 CIDR",
+			addresses:     []string{"fd02::1"},
+			expectedCIDRs: []string{"fd02::1/128"},
+		},
+		{
 			name:          "When the endpoint has no addresses it should return an empty slice",
 			addresses:     []string{},
 			expectedCIDRs: []string{},
@@ -1791,4 +1985,15 @@ func collectExceptCIDRs(policy *networkingv1.NetworkPolicy) []string {
 		}
 	}
 	return cidrs
+}
+
+func collectIPBlockExceptCIDRs(policy *networkingv1.NetworkPolicy, cidr string) []string {
+	for _, rule := range policy.Spec.Egress {
+		for _, peer := range rule.To {
+			if peer.IPBlock != nil && peer.IPBlock.CIDR == cidr {
+				return peer.IPBlock.Except
+			}
+		}
+	}
+	return nil
 }
