@@ -15,6 +15,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcpnth"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
@@ -3821,6 +3822,29 @@ func TestReconcilePlatformSpecificResources(t *testing.T) {
 				// KubeVirt is not in the switch; no platform resources should be created
 			},
 		},
+		{
+			name:         "When platform is GCP and node termination handler is enabled, it should reconcile GCP node termination handler resources",
+			platformType: hyperv1.GCPPlatform,
+			verifyObjects: func(g *WithT, c client.Client) {
+				daemonSet := gcpnth.DaemonSet()
+				err := c.Get(ctx, client.ObjectKeyFromObject(daemonSet), daemonSet)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(daemonSet.Spec.Template.Spec.Containers).To(HaveLen(1))
+				g.Expect(daemonSet.Spec.Template.Spec.Containers[0].Image).To(Equal("test-hcco-image"))
+				g.Expect(daemonSet.Spec.Template.Spec.Containers[0].Command).To(Equal([]string{"/usr/bin/control-plane-operator"}))
+				g.Expect(daemonSet.Spec.Template.Spec.Containers[0].Args).To(Equal([]string{gcpnth.ComponentName}))
+
+				clusterRole := gcpnth.ClusterRole()
+				err = c.Get(ctx, client.ObjectKeyFromObject(clusterRole), clusterRole)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(clusterRole.Rules).To(HaveLen(4))
+
+				clusterRoleBinding := gcpnth.ClusterRoleBinding()
+				err = c.Get(ctx, client.ObjectKeyFromObject(clusterRoleBinding), clusterRoleBinding)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(clusterRoleBinding.Subjects).To(ContainElement(rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Namespace: metav1.NamespaceSystem, Name: gcpnth.ComponentName}))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -3848,6 +3872,7 @@ func TestReconcilePlatformSpecificResources(t *testing.T) {
 
 			// Use a nil releaseImage for platforms that don't need one (None, KubeVirt)
 			// For AWS, the reconcileAWSIdentityWebhook doesn't use releaseImage
+			t.Setenv("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE", "test-hcco-image")
 			errs := r.reconcilePlatformSpecificResources(t.Context(), log, hcp, nil)
 
 			if tt.expectErrors {
@@ -3858,6 +3883,75 @@ func TestReconcilePlatformSpecificResources(t *testing.T) {
 
 			if tt.verifyObjects != nil {
 				tt.verifyObjects(g, guestClient)
+			}
+		})
+	}
+}
+
+func TestReconcileGCPNodeTerminationHandler(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		hcpAnnotations       map[string]string
+		existingObjects      []client.Object
+		expectDaemonSet      bool
+		expectServiceAccount bool
+		expectClusterRole    bool
+	}{
+		{
+			name:                 "When GCP node termination handler is enabled, it should reconcile resources",
+			expectDaemonSet:      true,
+			expectServiceAccount: true,
+			expectClusterRole:    true,
+		},
+		{
+			name: "When GCP node termination handler is disabled, it should delete the daemonset",
+			hcpAnnotations: map[string]string{
+				hyperv1.DisableGCPNodeTerminationHandlerAnnotation: "true",
+			},
+			existingObjects: []client.Object{gcpnth.DaemonSet()},
+			expectDaemonSet: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			t.Setenv("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE", "test-hcco-image")
+
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existingObjects...).Build()
+			r := &reconciler{
+				client:                 guestClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+			hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Annotations: tc.hcpAnnotations}}
+
+			errs := r.reconcileGCPNodeTerminationHandler(t.Context(), hcp)
+			g.Expect(errs).To(BeEmpty())
+
+			daemonSet := gcpnth.DaemonSet()
+			err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(daemonSet), daemonSet)
+			if tc.expectDaemonSet {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(daemonSet.Spec.Template.Spec.Containers[0].Image).To(Equal("test-hcco-image"))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+
+			serviceAccount := gcpnth.ServiceAccount()
+			err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(serviceAccount), serviceAccount)
+			if tc.expectServiceAccount {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+
+			clusterRole := gcpnth.ClusterRole()
+			err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(clusterRole), clusterRole)
+			if tc.expectClusterRole {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(clusterRole.Rules).To(ContainElement(rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"pods/eviction"}, Verbs: []string{"create"}}))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
 		})
 	}
