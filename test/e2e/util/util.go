@@ -22,7 +22,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -30,6 +29,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
@@ -3062,7 +3062,7 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
 	}
 
-	err = awsprivatelink.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, route53types.RRTypeA)
+	err = supportawsutil.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, route53types.RRTypeA)
 	if err != nil {
 		t.Fatalf("failed to create Route53 record (details elided)")
 	}
@@ -3095,7 +3095,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
 	}
 
-	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, route53types.RRTypeA)
+	record, err := supportawsutil.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, route53types.RRTypeA)
 	if err != nil {
 		t.Fatalf("failed to find Route53 record (details elided)")
 	}
@@ -3103,7 +3103,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	if record == nil || len(record.ResourceRecords) == 0 {
 		t.Logf("Route53 record for HostedCluster %s not found", hostedCluster.Name)
 	} else {
-		err = awsprivatelink.DeleteRecord(ctx, route53Client, zoneID, record)
+		err = supportawsutil.DeleteRecord(ctx, route53Client, zoneID, record)
 		redactedRecord := redactAppsRecord(clusterName, baseDomain)
 		if err != nil {
 			t.Fatalf("failed to delete Route53 record %s (details elided)", redactedRecord)
