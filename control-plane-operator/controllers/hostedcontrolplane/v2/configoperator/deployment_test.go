@@ -8,6 +8,15 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
+func TestNewComponent(t *testing.T) {
+	t.Parallel()
+
+	g := NewWithT(t)
+	component := NewComponent(nil, nil, nil)
+	g.Expect(component).ToNot(BeNil())
+	g.Expect(component.Name()).To(Equal(ComponentName))
+}
+
 func TestIsExternalInfraKubevirt(t *testing.T) {
 	t.Parallel()
 
