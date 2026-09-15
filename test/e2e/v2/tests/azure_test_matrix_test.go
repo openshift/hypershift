@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 
 	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/ginkgo/v2/types"
 )
 
 func TestAzureTestMatrix(t *testing.T) {
@@ -24,6 +25,7 @@ func TestAzureTestMatrix(t *testing.T) {
 	report := ginkgo.PreviewSpecs("hypershift-e2e")
 	g.Expect(report.SpecReports).NotTo(BeEmpty(), "unfiltered Ginkgo preview must contain registered specs")
 	matrix := lifecycle.NewAzurePlatformConfig("").TestMatrix()
+	validateAzureMatrixFilters(g, report.SpecReports, matrix)
 
 	junitFiles := testMatrixJUnitFiles(matrix)
 	g.Expect(junitFiles).To(HaveEach(Not(BeEmpty())),
@@ -52,6 +54,31 @@ func TestAzureTestMatrix(t *testing.T) {
 	for variant, lanes := range variantLanes {
 		g.Expect(lanes).To(HaveLen(1),
 			"hosted-cluster variant %q must appear in exactly one concurrent execution lane", variant)
+	}
+}
+
+func validateAzureMatrixFilters(g Gomega, specs types.SpecReports, matrix lifecycle.TestMatrix) {
+	validateGroup := func(group lifecycle.TestGroup) {
+		filter, err := types.ParseLabelFilter(group.LabelFilter)
+		g.Expect(err).NotTo(HaveOccurred(), "Azure test group %q must have a valid label filter", group.Name)
+
+		matched := false
+		for _, spec := range specs {
+			if spec.LeafNodeType.Is(types.NodeTypeIt) && filter(spec.Labels()) {
+				matched = true
+				break
+			}
+		}
+		g.Expect(matched).To(BeTrue(), "Azure test group %q must select at least one registered test", group.Name)
+	}
+
+	for _, group := range matrix.Parallel {
+		validateGroup(group)
+	}
+	for _, sequential := range matrix.Sequential {
+		for _, group := range sequential.Steps {
+			validateGroup(group)
+		}
 	}
 }
 
