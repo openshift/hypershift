@@ -1437,11 +1437,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
+		srcData, srcHasData := src.Data[".dockerconfigjson"]
+		if !srcHasData {
+			return ctrl.Result{}, fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+		}
 		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
-			srcData, srcHasData := src.Data[".dockerconfigjson"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-			}
 			dst.Type = corev1.SecretTypeDockerConfigJson
 			if dst.Data == nil {
 				dst.Data = map[string][]byte{}
@@ -1451,6 +1451,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
+		}
+		combinedDst := controlplaneoperator.CombinedPullSecret(controlPlaneNamespace.Name)
+		combinedDst.Type = corev1.SecretTypeDockerConfigJson
+		combinedDst.Data = map[string][]byte{".dockerconfigjson": srcData}
+		if err := r.Client.Create(ctx, combinedDst); err != nil && !apierrors.IsAlreadyExists(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to bootstrap combined pull secret: %w", err)
 		}
 	}
 
