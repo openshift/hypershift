@@ -6,6 +6,8 @@ import (
 	"maps"
 	"os"
 	"path"
+	"sort"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -35,6 +37,9 @@ const (
 
 	loadBalancerDiscoveryRetry = 30 * time.Second
 	labelOperationRetry        = 5 * time.Second
+
+	maxGCPResourceLabels                           = 64
+	managedLoadBalancerResourceLabelKeysAnnotation = "hypershift.openshift.io/gcp-lb-managed-resource-label-keys"
 )
 
 // RBAC permissions for GCPLoadBalancerLabelsReconciler.
@@ -125,11 +130,9 @@ func (r *GCPLoadBalancerLabelsReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	desiredLabels := gcputil.ResourceLabels(hcp)
-	if len(desiredLabels) == 0 {
-		return ctrl.Result{}, nil
-	}
+	previouslyManagedLabelKeys := managedLoadBalancerResourceLabelKeys(hcp)
 
-	pending, updated, err := r.reconcileRouterServices(ctx, hcp, desiredLabels)
+	pending, updated, err := r.reconcileRouterServices(ctx, hcp, desiredLabels, previouslyManagedLabelKeys)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -142,10 +145,13 @@ func (r *GCPLoadBalancerLabelsReconciler) Reconcile(ctx context.Context, req ctr
 		// the operation has completed before relying on the normal event stream.
 		return ctrl.Result{RequeueAfter: labelOperationRetry}, nil
 	}
+	if err := r.updateManagedLoadBalancerResourceLabelKeys(ctx, hcp, desiredLabels); err != nil {
+		return ctrl.Result{}, fmt.Errorf("update managed load-balancer resource label keys: %w", err)
+	}
 	return ctrl.Result{}, nil
 }
 
-func (r *GCPLoadBalancerLabelsReconciler) reconcileRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, desiredLabels map[string]string) (pending, updated bool, _ error) {
+func (r *GCPLoadBalancerLabelsReconciler) reconcileRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, desiredLabels map[string]string, previouslyManagedLabelKeys map[string]struct{}) (pending, updated bool, _ error) {
 	for _, serviceName := range []string{routerServiceName, privateRouterServiceName} {
 		service := &corev1.Service{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: hcp.Namespace, Name: serviceName}, service); err != nil {
@@ -180,7 +186,10 @@ func (r *GCPLoadBalancerLabelsReconciler) reconcileRouterServices(ctx context.Co
 				continue
 			}
 			found = true
-			labels := mergeResourceLabels(forwardingRule.Labels, desiredLabels)
+			labels, err := mergeResourceLabels(forwardingRule.Labels, desiredLabels, previouslyManagedLabelKeys)
+			if err != nil {
+				return false, false, fmt.Errorf("merge labels for forwarding rule %s: %w", forwardingRule.Name, err)
+			}
 			if maps.Equal(forwardingRule.Labels, labels) {
 				continue
 			}
@@ -229,15 +238,56 @@ func isRouterService(obj client.Object) bool {
 	return obj.GetName() == routerServiceName || obj.GetName() == privateRouterServiceName
 }
 
-func mergeResourceLabels(existing, desired map[string]string) map[string]string {
+func mergeResourceLabels(existing, desired map[string]string, previouslyManagedLabelKeys map[string]struct{}) (map[string]string, error) {
 	merged := maps.Clone(existing)
 	if merged == nil {
 		merged = map[string]string{}
 	}
+	for key := range previouslyManagedLabelKeys {
+		if _, stillManaged := desired[key]; !stillManaged {
+			delete(merged, key)
+		}
+	}
 	for key, value := range desired {
 		merged[key] = value
 	}
-	return merged
+	if len(merged) > maxGCPResourceLabels {
+		return nil, fmt.Errorf("merged resource labels exceed GCP limit of %d: %d labels", maxGCPResourceLabels, len(merged))
+	}
+	return merged, nil
+}
+
+func managedLoadBalancerResourceLabelKeys(hcp *hyperv1.HostedControlPlane) map[string]struct{} {
+	keys := map[string]struct{}{}
+	for _, key := range strings.Split(hcp.Annotations[managedLoadBalancerResourceLabelKeysAnnotation], ",") {
+		if key != "" {
+			keys[key] = struct{}{}
+		}
+	}
+	return keys
+}
+
+func (r *GCPLoadBalancerLabelsReconciler) updateManagedLoadBalancerResourceLabelKeys(ctx context.Context, hcp *hyperv1.HostedControlPlane, desiredLabels map[string]string) error {
+	keys := make([]string, 0, len(desiredLabels))
+	for key := range desiredLabels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	annotationValue := strings.Join(keys, ",")
+	if hcp.Annotations[managedLoadBalancerResourceLabelKeysAnnotation] == annotationValue {
+		return nil
+	}
+
+	patch := client.MergeFrom(hcp.DeepCopy())
+	if hcp.Annotations == nil {
+		hcp.Annotations = map[string]string{}
+	}
+	if annotationValue == "" {
+		delete(hcp.Annotations, managedLoadBalancerResourceLabelKeysAnnotation)
+	} else {
+		hcp.Annotations[managedLoadBalancerResourceLabelKeysAnnotation] = annotationValue
+	}
+	return r.Patch(ctx, hcp, patch)
 }
 
 func resourceName(resourceURL string) string {
