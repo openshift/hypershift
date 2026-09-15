@@ -1675,10 +1675,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
 	var messages []string
 
-	// HostedCluster-only deprecation checks go here as they are added, e.g.:
-	// if <deprecated hcluster field/annotation is set> {
-	//     messages = append(messages, "...")
-	// }
+	// HostedCluster-only deprecation checks go here as they are added. Enumerate
+	// deprecations from api/hypershift/v1beta1/*.go only; deprecations in the
+	// generated CRD from embedded configv1 types are OpenShift-owned and out of
+	// scope. Fire on presence so users are guided to migrate even when a newer
+	// field currently overrides the deprecated mechanism.
+	if _, ok := hcluster.Annotations[hyperv1.EnableMetricsForwarding]; ok {
+		messages = append(messages, fmt.Sprintf("The deprecated %q annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation", hyperv1.EnableMetricsForwarding))
+	}
 
 	// Fold in deprecations detected by the HCP controller.
 	if hcp != nil {
