@@ -75,6 +75,15 @@ type AWSNodePoolPlatform struct {
 	//
 	// +optional
 	Placement *PlacementOptions `json:"placement,omitempty"`
+
+	// cpuOptions specifies CPU configuration for EC2 instances.
+	// Supported on C8i, M8i, and R8i instance families.
+	// When omitted, AWS defaults are used (nested virtualization is not enabled).
+	// To revert to default behavior after setting cpuOptions, remove the entire
+	// cpuOptions field rather than clearing individual sub-fields.
+	//
+	// +optional
+	CPUOptions CPUOptions `json:"cpuOptions,omitzero"`
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
@@ -174,6 +183,31 @@ const (
 	// this HostedCluster tag when both share the same key. The HostedCluster
 	// value is preserved. This is the default behavior when the field is unset.
 	AWSResourceTagOverridePolicyDeny AWSResourceTagOverridePolicy = "Deny"
+)
+
+// CPUOptions specifies CPU configuration for EC2 instances.
+// At least one field must be specified when cpuOptions is present.
+//
+// +kubebuilder:validation:MinProperties=1
+type CPUOptions struct {
+	// nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+	// Supported on C8i, M8i, and R8i instance families.
+	// When omitted, nested virtualization is not enabled (AWS default behavior).
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=Enabled;Disabled
+	NestedVirtualizationPolicy NestedVirtualizationPolicy `json:"nestedVirtualizationPolicy,omitempty"`
+}
+
+// NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.
+type NestedVirtualizationPolicy string
+
+const (
+	// NestedVirtualizationEnabled enables nested virtualization on the instance.
+	NestedVirtualizationEnabled NestedVirtualizationPolicy = "Enabled"
+
+	// NestedVirtualizationDisabled disables nested virtualization on the instance.
+	NestedVirtualizationDisabled NestedVirtualizationPolicy = "Disabled"
 )
 
 // MarketType describes the market type for EC2 instances.
