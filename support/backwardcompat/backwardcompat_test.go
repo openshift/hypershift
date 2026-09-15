@@ -1,19 +1,12 @@
 package backwardcompat
 
 import (
-	"context"
-	"fmt"
 	"testing"
 
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 
 	v1 "github.com/openshift/api/config/v1"
-	imagev1 "github.com/openshift/api/image/v1"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/blang/semver"
 )
@@ -120,116 +113,32 @@ metadata:
 	}
 }
 
-// mockReleaseProvider is a mock implementation of releaseinfo.Provider for testing.
-type mockReleaseProvider struct {
-	components map[string]string
-	err        error
-}
-
-func (m *mockReleaseProvider) Lookup(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	tags := make([]imagev1.TagReference, 0, len(m.components))
-	for name, image := range m.components {
-		tags = append(tags, imagev1.TagReference{
-			Name: name,
-			From: &corev1.ObjectReference{Name: image},
-		})
-	}
-	return &releaseinfo.ReleaseImage{
-		ImageStream: &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{Name: "4.22.14"},
-			Spec: imagev1.ImageStreamSpec{
-				Tags: tags,
-			},
-		},
-	}, nil
-}
-
 func TestGetBackwardCompatibleCAPIImage(t *testing.T) {
 	tests := []struct {
 		name           string
 		releaseVersion semver.Version
-		component      string
-		provider       *mockReleaseProvider
 		expectedImage  string
-		expectError    bool
 	}{
 		{
 			name:           "When version is 4.19.0 or above, it should return empty string",
 			releaseVersion: semver.MustParse("4.19.0"),
-			component:      "cluster-capi-controllers",
-			provider: &mockReleaseProvider{
-				components: map[string]string{
-					"cluster-capi-controllers": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
-				},
-			},
-			expectedImage: "",
-			expectError:   false,
+			expectedImage:  "",
 		},
 		{
 			name:           "When version is below 4.19.0, it should return the pinned image",
 			releaseVersion: semver.MustParse("4.18.0"),
-			component:      "cluster-capi-controllers",
-			provider: &mockReleaseProvider{
-				components: map[string]string{
-					"cluster-capi-controllers": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
-				},
-			},
-			expectedImage: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
-			expectError:   false,
+			expectedImage:  "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5c3e36db897fae332284e1a681044cd6997a70e8cb9059f810385352e7575ac",
 		},
 		{
 			name:           "When version is 4.16.0, it should return the pinned image",
 			releaseVersion: semver.MustParse("4.16.0"),
-			component:      "cluster-capi-controllers",
-			provider: &mockReleaseProvider{
-				components: map[string]string{
-					"cluster-capi-controllers": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:def456",
-				},
-			},
-			expectedImage: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:def456",
-			expectError:   false,
-		},
-		{
-			name:           "When provider returns error, it should propagate the error",
-			releaseVersion: semver.MustParse("4.18.0"),
-			component:      "cluster-capi-controllers",
-			provider: &mockReleaseProvider{
-				err: fmt.Errorf("lookup failed"),
-			},
-			expectedImage: "",
-			expectError:   true,
-		},
-		{
-			name:           "When component does not exist, it should return error",
-			releaseVersion: semver.MustParse("4.18.0"),
-			component:      "nonexistent-component",
-			provider: &mockReleaseProvider{
-				components: map[string]string{
-					"cluster-capi-controllers": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123",
-				},
-			},
-			expectedImage: "",
-			expectError:   true,
+			expectedImage:  "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5c3e36db897fae332284e1a681044cd6997a70e8cb9059f810385352e7575ac",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			pullSecret := []byte(`{"auths":{}}`)
-
-			image, err := GetBackwardCompatibleCAPIImage(ctx, pullSecret, tt.provider, tt.releaseVersion, tt.component)
-			if tt.expectError && err == nil {
-				t.Errorf("GetBackwardCompatibleCAPIImage() expected error but got none")
-				return
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("GetBackwardCompatibleCAPIImage() unexpected error: %v", err)
-				return
-			}
+			image := GetBackwardCompatibleCAPIImage(tt.releaseVersion)
 			if image != tt.expectedImage {
 				t.Errorf("GetBackwardCompatibleCAPIImage() = %q, want %q", image, tt.expectedImage)
 			}

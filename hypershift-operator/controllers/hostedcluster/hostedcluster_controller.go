@@ -131,7 +131,6 @@ const (
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
-	ImageStreamCAPI            = "cluster-capi-controllers"
 	ImageStreamAutoscalerImage = "cluster-autoscaler"
 
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
@@ -3108,15 +3107,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 
 	if imageOverride == "" {
-		pullSecret, err := hyperutil.GetPullSecretBytes(cpContext, r.Client, hcluster)
-		if err != nil {
-			return err
-		}
-
-		imageOverride, err = backwardcompat.GetBackwardCompatibleCAPIImage(cpContext, pullSecret, r.RegistryProvider.GetReleaseProvider(), releaseVersion, ImageStreamCAPI)
-		if err != nil {
-			return err
-		}
+		imageOverride = backwardcompat.GetBackwardCompatibleCAPIImage(releaseVersion)
 	}
 
 	capiManager := capimanagerv2.NewComponent(imageOverride)
