@@ -87,6 +87,7 @@ func TestNewCreateCommand(t *testing.T) {
 					"endpoint-access",
 					"instance-type",
 					"kms-key-arn",
+					"managed-dns",
 					"multi-arch",
 					"oidc-issuer-url",
 					"private-zones-in-cluster-account",
