@@ -58,7 +58,6 @@ const (
 	// out-of-band changes to GCP resources. Matches the AWS private link controller pattern.
 	driftDetectionRequeueInterval = 5 * time.Minute
 
-	maxGCPResourceLabels                  = 64
 	managedPSCResourceLabelKeysAnnotation = "hypershift.openshift.io/gcp-psc-managed-resource-label-keys"
 )
 
