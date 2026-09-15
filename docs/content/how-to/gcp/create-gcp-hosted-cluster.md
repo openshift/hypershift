@@ -21,6 +21,7 @@ hypershift create cluster gcp \
   --pull-secret=<path-to-pull-secret> \
   --project=<hosted-cluster-project-id> \
   --region=<region> \
+  --zone=<zone> \
   --network=<vpc-name> \
   --subnet=<subnet-name> \
   --private-service-connect-subnet=<psc-subnet> \
