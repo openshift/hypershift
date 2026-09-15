@@ -25,7 +25,7 @@ func APIsByDelegatedServices() (ServicesByDelegate, error) {
 		awsEBSCSIPermPolicy,
 		kubeControllerPolicy,
 		nodePoolPolicy,
-		controlPlaneOperatorPolicy("fake", false),
+		controlPlaneOperatorPolicy(false),
 		kmsProviderPolicy("fake"),
 		cloudNetworkConfigControllerPolicy,
 	}

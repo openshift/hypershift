@@ -881,6 +881,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.ConfigOperatorReconciliationSucceeded,
 		}
 
+		if hcluster.Spec.Platform.AWS != nil && hcluster.Spec.Platform.AWS.ManagedDNS != nil {
+			hcpConditions = append(hcpConditions, hyperv1.AWSManagedDNSAvailable)
+		} else {
+			// Managed DNS was disabled (or never enabled); drop any stale condition
+			// so consumers don't read outdated managed-DNS status.
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.AWSManagedDNSAvailable))
+		}
+
 		for _, conditionType := range hcpConditions {
 			condition := &metav1.Condition{
 				Type:               string(conditionType),

@@ -454,16 +454,18 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// AWS resources in the shared VPC account. A proper fix requires persisting the
 		// SharedVPC role ARNs in the AWSEndpointService status. See
 		// TestReconcileDeletionSharedVPC for details.
+		var hcp *hyperv1.HostedControlPlane
 		hcpList := &hyperv1.HostedControlPlaneList{}
 		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err == nil && len(hcpList.Items) == 1 {
-			r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
+			hcp = &hcpList.Items[0]
+			r.awsClientBuilder.initializeWithHCP(log, hcp)
 		}
 
 		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
 		}
-		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+		completed, err := r.delete(ctx, awsEndpointService, hcp, ec2Client, route53Client)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
 		}
@@ -710,6 +712,12 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		return err
 	}
 
+	if managesLocalZone(hcp) {
+		if err := r.ensureLocalZone(ctx, route53Client, awsEndpointService, hcp, log); err != nil {
+			return err
+		}
+	}
+
 	if len(endpointDNSEntries) == 0 {
 		log.Info("endpoint has no DNS entries, skipping DNS record creation", "endpointID", endpointID)
 		return nil
@@ -895,6 +903,58 @@ func (r *AWSEndpointServiceReconciler) createVPCEndpoint(ctx context.Context, ec
 	return endpointID, output.VpcEndpoint.DnsEntries, nil
 }
 
+// managesLocalZone reports whether the CPO owns the lifecycle of the
+// hypershift.local private zone for this cluster. Only managed ingress DNS
+// clusters that are not using a shared VPC create and delete the zone; in a
+// shared VPC the zone is pre-created and owned by the VPC owner.
+func managesLocalZone(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp != nil && hcp.Spec.Platform.AWS != nil &&
+		hcp.Spec.Platform.AWS.ManagedDNS != nil &&
+		hcp.Spec.Platform.AWS.SharedVPC == nil
+}
+
+// ensureLocalZone verifies and, if missing, creates the .hypershift.local
+// private zone before NodePools are created, so workers can resolve ignition DNS
+// via PrivateLink.
+func (r *AWSEndpointServiceReconciler) ensureLocalZone(ctx context.Context, route53Client awsapi.ROUTE53API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
+	cachedID := r.awsClientBuilder.getLocalHostedZoneID()
+	if cachedID == "" {
+		cachedID = awsEndpointService.Status.DNSZoneID
+	}
+	if cachedID != "" {
+		_, err := route53Client.GetHostedZone(ctx, &route53.GetHostedZoneInput{Id: aws.String(cachedID)})
+		if err == nil {
+			r.awsClientBuilder.setLocalHostedZoneID(cachedID)
+			return nil
+		}
+		var noSuchZone *route53types.NoSuchHostedZone
+		if !errors.As(err, &noSuchZone) {
+			return fmt.Errorf("failed to verify local zone %s: %w", cachedID, err)
+		}
+		// Zone was deleted externally; clear caches and fall through to recreate.
+		log.Info("Local zone deleted externally, clearing for recreation", "zoneID", cachedID)
+		r.awsClientBuilder.setLocalHostedZoneID("")
+		awsEndpointService.Status.DNSZoneID = ""
+	}
+
+	zn := zoneName(hcp.Name)
+	vpcID := hcp.Spec.Platform.AWS.CloudProviderConfig.VPC
+	region := hcp.Spec.Platform.AWS.Region
+
+	zoneID, err := supportawsutil.LookupZoneID(ctx, route53Client, zn)
+	if err != nil {
+		zoneID, err = supportawsutil.CreatePrivateHostedZone(ctx, route53Client, zn, vpcID, region, hcp.Spec.Platform.AWS.ResourceTags)
+		if err != nil {
+			return fmt.Errorf("failed to create hypershift.local zone: %w", err)
+		}
+		log.Info("Created hypershift.local zone", "zoneID", zoneID, "zoneName", zn)
+	}
+
+	awsEndpointService.Status.DNSZoneID = zoneID
+	r.awsClientBuilder.setLocalHostedZoneID(zoneID)
+	return nil
+}
+
 func (r *AWSEndpointServiceReconciler) reconcileEndpointDNSRecords(ctx context.Context, route53Client awsapi.ROUTE53API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, endpointDNSEntries []ec2types.DnsEntry, log logr.Logger) ([]string, string, error) {
 	recordNames := recordsForService(awsEndpointService, hcp)
 	if len(recordNames) == 0 {
@@ -912,7 +972,7 @@ func (r *AWSEndpointServiceReconciler) reconcileEndpointDNSRecords(ctx context.C
 		log.Info("using DNSZoneID from status", "zoneID", zoneID)
 	} else {
 		var err error
-		zoneID, err = lookupZoneID(ctx, route53Client, zn)
+		zoneID, err = supportawsutil.LookupZoneID(ctx, route53Client, zn)
 		if err != nil {
 			return nil, "", err
 		}
@@ -923,7 +983,7 @@ func (r *AWSEndpointServiceReconciler) reconcileEndpointDNSRecords(ctx context.C
 	for _, recordName := range recordNames {
 		fqdn := fmt.Sprintf("%s.%s", recordName, zn)
 		fqdns = append(fqdns, fqdn)
-		err := CreateRecord(ctx, route53Client, zoneID, fqdn, aws.ToString(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
+		err := supportawsutil.CreateRecord(ctx, route53Client, zoneID, fqdn, aws.ToString(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
 		if err != nil {
 			var noSuchZone *route53types.NoSuchHostedZone
 			if errors.As(err, &noSuchZone) {
@@ -1205,7 +1265,7 @@ func apiTagToEC2Filter(name string, in []hyperv1.AWSClusterResourceTag) []ec2typ
 	return result
 }
 
-func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client awsapi.EC2API, route53Client awsapi.ROUTE53API) (bool, error) {
+func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client awsapi.EC2API, route53Client awsapi.ROUTE53API) (bool, error) {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return false, fmt.Errorf("logger not found: %w", err)
@@ -1269,18 +1329,18 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	for _, fqdn := range awsEndpointService.Status.DNSNames {
 		if fqdn != "" && zoneID != "" {
-			record, err := FindRecord(ctx, route53Client, zoneID, fqdn, route53types.RRTypeCname)
+			record, err := supportawsutil.FindRecord(ctx, route53Client, zoneID, fqdn, route53types.RRTypeCname)
 			if err != nil {
 				var noSuchZone *route53types.NoSuchHostedZone
 				if errors.As(err, &noSuchZone) {
-					log.Info("Hosted Zone not found", "hostedzone", zoneID)
-					return true, nil
+					log.Info("Hosted Zone not found, skipping record cleanup", "hostedzone", zoneID)
+					break
 				}
 
 				return false, err
 			}
 			if record != nil {
-				err = DeleteRecord(ctx, route53Client, zoneID, record)
+				err = supportawsutil.DeleteRecord(ctx, route53Client, zoneID, record)
 				if err != nil {
 					return false, err
 				}
@@ -1289,6 +1349,13 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 				log.Info("no DNS record found", "fqdn", fqdn)
 			}
 		}
+	}
+
+	if managesLocalZone(hcp) && awsEndpointService.Status.DNSZoneID != "" {
+		if err := supportawsutil.DeleteZoneBestEffort(ctx, route53Client, awsEndpointService.Status.DNSZoneID, hypershiftLocalZone, log); err != nil {
+			return false, err
+		}
+		awsEndpointService.Status.DNSZoneID = ""
 	}
 
 	return true, nil
