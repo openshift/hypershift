@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/compute/v1"
@@ -34,30 +35,82 @@ import (
 
 func TestMergeResourceLabels(t *testing.T) {
 	tests := []struct {
-		name     string
-		existing map[string]string
-		desired  map[string]string
-		expected map[string]string
+		name                       string
+		existing                   map[string]string
+		setupExisting              func() map[string]string
+		desired                    map[string]string
+		previouslyManagedLabelKeys map[string]struct{}
+		expected                   map[string]string
+		wantErr                    string
 	}{
 		{
-			name:     "When desired labels overlap existing labels, it should update only managed values",
-			existing: map[string]string{"preserved": "value", "managed": "old"},
-			desired:  map[string]string{"managed": "new"},
-			expected: map[string]string{"preserved": "value", "managed": "new"},
+			name:                       "When desired labels overlap existing labels, it should update only managed values",
+			existing:                   map[string]string{"preserved": "value", "managed": "old"},
+			desired:                    map[string]string{"managed": "new"},
+			previouslyManagedLabelKeys: map[string]struct{}{"managed": {}},
+			expected:                   map[string]string{"preserved": "value", "managed": "new"},
+		},
+		{
+			name:                       "When a previously managed label is removed, it should remove only that label",
+			existing:                   map[string]string{"preserved": "value", "removed": "old"},
+			desired:                    map[string]string{"managed": "new"},
+			previouslyManagedLabelKeys: map[string]struct{}{"removed": {}},
+			expected:                   map[string]string{"preserved": "value", "managed": "new"},
 		},
 		{
 			name:     "When existing labels are nil, it should return the desired labels",
 			desired:  map[string]string{"managed": "new"},
 			expected: map[string]string{"managed": "new"},
 		},
+		{
+			name: "When merged labels exceed the GCP limit, it should return an error",
+			setupExisting: func() map[string]string {
+				existing := map[string]string{}
+				for i := 0; i < maxGCPResourceLabels; i++ {
+					existing[fmt.Sprintf("label-%d", i)] = "value"
+				}
+				return existing
+			},
+			desired: map[string]string{"managed": "value"},
+			wantErr: "exceed GCP limit",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := mergeResourceLabels(tt.existing, tt.desired)
+			existing := tt.existing
+			if tt.setupExisting != nil {
+				existing = tt.setupExisting()
+			}
+			result, err := mergeResourceLabels(existing, tt.desired, tt.previouslyManagedLabelKeys)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
 			assert.True(t, maps.Equal(tt.expected, result))
 		})
 	}
+}
+
+func TestUpdateManagedResourceLabelKeys(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, hyperv1.AddToScheme(scheme))
+	psc := &hyperv1.GCPPrivateServiceConnect{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-example", Name: "example"}}
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc).Build()
+	reconciler := &GCPPrivateServiceConnectReconciler{Client: client}
+
+	err := reconciler.updateManagedResourceLabelKeys(context.Background(), psc, map[string]string{"second": "value", "first": "value"})
+	require.NoError(t, err)
+
+	updated := &hyperv1.GCPPrivateServiceConnect{}
+	require.NoError(t, client.Get(context.Background(), types.NamespacedName{Namespace: psc.Namespace, Name: psc.Name}, updated))
+	assert.Equal(t, "first,second", updated.Annotations[managedPSCResourceLabelKeysAnnotation])
+
+	err = reconciler.updateManagedResourceLabelKeys(context.Background(), updated, nil)
+	require.NoError(t, err)
+	require.NoError(t, client.Get(context.Background(), types.NamespacedName{Namespace: psc.Namespace, Name: psc.Name}, updated))
+	assert.NotContains(t, updated.Annotations, managedPSCResourceLabelKeysAnnotation)
 }
 
 func TestReconcileForwardingRuleLabels(t *testing.T) {
@@ -80,7 +133,7 @@ func TestReconcileForwardingRuleLabels(t *testing.T) {
 	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
 	require.NoError(t, err)
 
-	err = reconcileForwardingRuleLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint", "fingerprint", map[string]string{"preserved": "value", "managed": "old"}, map[string]string{"managed": "new"})
+	err = reconcileForwardingRuleLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint", "fingerprint", map[string]string{"preserved": "value", "managed": "old"}, map[string]string{"managed": "new"}, map[string]struct{}{"managed": {}})
 	require.NoError(t, err)
 }
 
@@ -107,8 +160,107 @@ func TestReconcileAddressLabels(t *testing.T) {
 	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
 	require.NoError(t, err)
 
-	err = reconcileAddressLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint-ip", map[string]string{"managed": "new"})
+	err = reconcileAddressLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint-ip", map[string]string{"managed": "new"}, map[string]struct{}{"managed": {}})
 	require.NoError(t, err)
+}
+
+func TestEnsureIPAddress(t *testing.T) {
+	getCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/addresses/service-attachment-ip"):
+			getCalls++
+			_, _ = w.Write([]byte(`{"labelFingerprint":"fingerprint","labels":{"preserved":"value","managed":"old"}}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/addresses/service-attachment-ip/setLabels"):
+			var request compute.RegionSetLabelsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			assert.True(t, maps.Equal(map[string]string{"preserved": "value", "managed": "new"}, request.Labels))
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+	reconciler := &GCPPrivateServiceConnectReconciler{}
+	psc := &hyperv1.GCPPrivateServiceConnect{Status: hyperv1.GCPPrivateServiceConnectStatus{
+		EndpointIP:            "10.0.0.1",
+		ServiceAttachmentName: "service-attachment",
+	}}
+
+	result, err := reconciler.ensureIPAddress(context.Background(), psc, &hyperv1.HostedControlPlane{}, service, "customer-project", "us-central1", map[string]string{"managed": "new"}, map[string]struct{}{"managed": {}}, logr.Discard())
+	require.NoError(t, err)
+	assert.True(t, result.IsZero())
+	assert.Equal(t, 2, getCalls)
+}
+
+func TestWaitForRegionalOperation(t *testing.T) {
+	tests := []struct {
+		name           string
+		operation      *compute.Operation
+		waitResponse   string
+		wantErr        string
+		shouldCallWait bool
+	}{
+		{
+			name:      "When set labels operation is already complete, it should succeed without waiting",
+			operation: &compute.Operation{Status: "DONE"},
+		},
+		{
+			name: "When set labels operation completes after waiting, it should succeed",
+			operation: &compute.Operation{
+				Name:   "set-labels",
+				Status: "RUNNING",
+			},
+			waitResponse:   `{"name":"set-labels","status":"DONE"}`,
+			shouldCallWait: true,
+		},
+		{
+			name: "When set labels operation returns a terminal error, it should return the error",
+			operation: &compute.Operation{
+				Status: "DONE",
+				Error:  &compute.OperationError{Errors: []*compute.OperationErrorErrors{{Message: "permission denied"}}},
+			},
+			wantErr: "operation failed",
+		},
+		{
+			name: "When waited set labels operation returns an error, it should return the error",
+			operation: &compute.Operation{
+				Name:   "set-labels",
+				Status: "PENDING",
+			},
+			waitResponse:   `{"name":"set-labels","status":"DONE","error":{"errors":[{"message":"permission denied"}]}}`,
+			wantErr:        "operation failed",
+			shouldCallWait: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var service *compute.Service
+			if tt.shouldCallWait {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.True(t, strings.HasSuffix(r.URL.Path, "/regions/us-central1/operations/set-labels/wait"))
+					_, _ = w.Write([]byte(tt.waitResponse))
+				}))
+				defer server.Close()
+
+				var err error
+				service, err = compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+				require.NoError(t, err)
+			}
+
+			err := waitForRegionalOperation(context.Background(), service, "customer-project", "us-central1", tt.operation)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestConstructEndpointName(t *testing.T) {
