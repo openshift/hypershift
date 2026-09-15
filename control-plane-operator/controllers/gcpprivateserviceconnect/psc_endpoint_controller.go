@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -272,7 +270,7 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	region := r.gcpClientBuilder.region
 
 	desiredLabels := gcputil.ResourceLabels(hcp)
-	previouslyManagedLabelKeys := managedResourceLabelKeys(gcpPSC)
+	previouslyManagedLabelKeys := gcputil.ManagedResourceLabelKeys(gcpPSC.Annotations, managedPSCResourceLabelKeysAnnotation)
 
 	// 9. Ensure IP address is reserved
 	if result, err := r.ensureIPAddress(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, desiredLabels, previouslyManagedLabelKeys, log); err != nil || !result.IsZero() {
@@ -283,7 +281,7 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	if result, err := r.reconcilePSCEndpoint(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, desiredLabels, previouslyManagedLabelKeys, log); err != nil || !result.IsZero() {
 		return result, err
 	}
-	if err := r.updateManagedResourceLabelKeys(ctx, gcpPSC, desiredLabels); err != nil {
+	if err := gcputil.UpdateManagedResourceLabelKeys(ctx, r.Client, gcpPSC, managedPSCResourceLabelKeysAnnotation, desiredLabels); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update managed PSC resource label keys: %w", err)
 	}
 
@@ -903,7 +901,7 @@ func (r *GCPPrivateServiceConnectReconciler) constructAddressURL(addressName, cu
 // reconcileForwardingRuleLabels applies the desired labels to a ForwardingRule via the setLabels API.
 // GCP PSC ForwardingRules reject labels on insert, so they must be applied separately.
 func reconcileForwardingRuleLabels(ctx context.Context, svc *compute.Service, project, region, name, fingerprint string, existingLabels, desiredLabels map[string]string, previouslyManagedLabelKeys map[string]struct{}) error {
-	labels, err := mergeResourceLabels(existingLabels, desiredLabels, previouslyManagedLabelKeys)
+	labels, err := gcputil.MergeResourceLabels(existingLabels, desiredLabels, previouslyManagedLabelKeys)
 	if err != nil {
 		return err
 	}
@@ -933,7 +931,7 @@ func reconcileAddressLabels(ctx context.Context, svc *compute.Service, project, 
 	}
 	setCtx, setCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer setCancel()
-	labels, err := mergeResourceLabels(addr.Labels, desiredLabels, previouslyManagedLabelKeys)
+	labels, err := gcputil.MergeResourceLabels(addr.Labels, desiredLabels, previouslyManagedLabelKeys)
 	if err != nil {
 		return err
 	}
@@ -987,58 +985,6 @@ func waitForRegionalOperation(ctx context.Context, svc *compute.Service, project
 
 // mergeResourceLabels preserves labels not managed by HyperShift while applying
 // the labels requested by the HostedControlPlane.
-func mergeResourceLabels(existing, desired map[string]string, previouslyManagedLabelKeys map[string]struct{}) (map[string]string, error) {
-	merged := maps.Clone(existing)
-	if merged == nil {
-		merged = map[string]string{}
-	}
-	for key := range previouslyManagedLabelKeys {
-		if _, stillManaged := desired[key]; !stillManaged {
-			delete(merged, key)
-		}
-	}
-	for key, value := range desired {
-		merged[key] = value
-	}
-	if len(merged) > maxGCPResourceLabels {
-		return nil, fmt.Errorf("merged resource labels exceed GCP limit of %d: %d labels", maxGCPResourceLabels, len(merged))
-	}
-	return merged, nil
-}
-
-func managedResourceLabelKeys(gcpPSC *hyperv1.GCPPrivateServiceConnect) map[string]struct{} {
-	keys := map[string]struct{}{}
-	for _, key := range strings.Split(gcpPSC.Annotations[managedPSCResourceLabelKeysAnnotation], ",") {
-		if key != "" {
-			keys[key] = struct{}{}
-		}
-	}
-	return keys
-}
-
-func (r *GCPPrivateServiceConnectReconciler) updateManagedResourceLabelKeys(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, desiredLabels map[string]string) error {
-	keys := make([]string, 0, len(desiredLabels))
-	for key := range desiredLabels {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	annotationValue := strings.Join(keys, ",")
-	if gcpPSC.Annotations[managedPSCResourceLabelKeysAnnotation] == annotationValue {
-		return nil
-	}
-
-	patch := client.MergeFrom(gcpPSC.DeepCopy())
-	if gcpPSC.Annotations == nil {
-		gcpPSC.Annotations = map[string]string{}
-	}
-	if annotationValue == "" {
-		delete(gcpPSC.Annotations, managedPSCResourceLabelKeysAnnotation)
-	} else {
-		gcpPSC.Annotations[managedPSCResourceLabelKeysAnnotation] = annotationValue
-	}
-	return r.Patch(ctx, gcpPSC, patch)
-}
-
 // getHostedControlPlane retrieves the HostedControlPlane from the CR's owner reference
 func (r *GCPPrivateServiceConnectReconciler) getHostedControlPlane(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (*hyperv1.HostedControlPlane, error) {
 	// Find HCP from owner reference

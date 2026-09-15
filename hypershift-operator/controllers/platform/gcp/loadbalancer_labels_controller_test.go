@@ -2,9 +2,7 @@ package gcp
 
 import (
 	"context"
-	"fmt"
 	"maps"
-	"strings"
 	"testing"
 	"time"
 
@@ -177,87 +175,6 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestMergeResourceLabels(t *testing.T) {
-	tests := []struct {
-		name                       string
-		existing                   map[string]string
-		desired                    map[string]string
-		previouslyManagedLabelKeys map[string]struct{}
-		expected                   map[string]string
-		wantErr                    string
-	}{
-		{
-			name:                       "When a managed label is removed, it should preserve unrelated labels",
-			existing:                   map[string]string{"managed": "old", "unrelated": "value"},
-			desired:                    map[string]string{"new-managed": "value"},
-			previouslyManagedLabelKeys: map[string]struct{}{"managed": {}},
-			expected:                   map[string]string{"new-managed": "value", "unrelated": "value"},
-		},
-		{
-			name:     "When merged labels exceed the GCP limit, it should return an error",
-			existing: resourceLabels(maxGCPResourceLabels),
-			desired:  map[string]string{"managed": "value"},
-			wantErr:  "exceed GCP limit",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			labels, err := mergeResourceLabels(tt.existing, tt.desired, tt.previouslyManagedLabelKeys)
-			if tt.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("mergeResourceLabels() error = %v, want %q", err, tt.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("mergeResourceLabels() error = %v", err)
-			}
-			if !maps.Equal(labels, tt.expected) {
-				t.Fatalf("mergeResourceLabels() = %#v, want %#v", labels, tt.expected)
-			}
-		})
-	}
-}
-
-func TestUpdateManagedLoadBalancerResourceLabelKeys(t *testing.T) {
-	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-example", Name: "example"}}
-	fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hcp).Build()
-	reconciler := &GCPLoadBalancerLabelsReconciler{Client: fakeClient}
-
-	err := reconciler.updateManagedLoadBalancerResourceLabelKeys(context.Background(), hcp, map[string]string{"second": "value", "first": "value"})
-	if err != nil {
-		t.Fatalf("updateManagedLoadBalancerResourceLabelKeys() error = %v", err)
-	}
-
-	updated := &hyperv1.HostedControlPlane{}
-	if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(hcp), updated); err != nil {
-		t.Fatalf("get HostedControlPlane: %v", err)
-	}
-	if got := updated.Annotations[managedLoadBalancerResourceLabelKeysAnnotation]; got != "first,second" {
-		t.Fatalf("managed label keys annotation = %q, want %q", got, "first,second")
-	}
-
-	err = reconciler.updateManagedLoadBalancerResourceLabelKeys(context.Background(), updated, nil)
-	if err != nil {
-		t.Fatalf("remove managed label keys annotation: %v", err)
-	}
-	if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(hcp), updated); err != nil {
-		t.Fatalf("get HostedControlPlane after annotation removal: %v", err)
-	}
-	if _, found := updated.Annotations[managedLoadBalancerResourceLabelKeysAnnotation]; found {
-		t.Fatalf("managed label keys annotation was not removed")
-	}
-}
-
-func resourceLabels(count int) map[string]string {
-	labels := make(map[string]string, count)
-	for i := 0; i < count; i++ {
-		labels[fmt.Sprintf("label-%d", i)] = "value"
-	}
-	return labels
 }
 
 func routerService(namespace, backendService string) *corev1.Service {

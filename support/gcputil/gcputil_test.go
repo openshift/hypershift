@@ -1,13 +1,21 @@
 package gcputil
 
 import (
+	"context"
+	"fmt"
+	"maps"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -45,6 +53,82 @@ func TestResourceLabels(t *testing.T) {
 			NewWithT(t).Expect(ResourceLabels(tt.hcp)).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestMergeResourceLabels(t *testing.T) {
+	tests := []struct {
+		name                       string
+		existing                   map[string]string
+		desired                    map[string]string
+		previouslyManagedLabelKeys map[string]struct{}
+		expected                   map[string]string
+		wantErr                    string
+	}{
+		{
+			name:                       "When desired labels overlap existing labels, it should update only managed values",
+			existing:                   map[string]string{"preserved": "value", "managed": "old"},
+			desired:                    map[string]string{"managed": "new"},
+			previouslyManagedLabelKeys: map[string]struct{}{"managed": {}},
+			expected:                   map[string]string{"preserved": "value", "managed": "new"},
+		},
+		{
+			name:                       "When a previously managed label is removed, it should preserve unrelated labels",
+			existing:                   map[string]string{"preserved": "value", "removed": "old"},
+			desired:                    map[string]string{"managed": "new"},
+			previouslyManagedLabelKeys: map[string]struct{}{"removed": {}},
+			expected:                   map[string]string{"preserved": "value", "managed": "new"},
+		},
+		{
+			name:     "When existing labels are nil, it should return desired labels",
+			desired:  map[string]string{"managed": "new"},
+			expected: map[string]string{"managed": "new"},
+		},
+		{
+			name: "When merged labels exceed the GCP limit, it should return an error",
+			existing: func() map[string]string {
+				labels := make(map[string]string, MaxResourceLabels)
+				for i := 0; i < MaxResourceLabels; i++ {
+					labels[fmt.Sprintf("label-%d", i)] = "value"
+				}
+				return labels
+			}(),
+			desired: map[string]string{"managed": "value"},
+			wantErr: "exceed GCP limit",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			labels, err := MergeResourceLabels(tt.existing, tt.desired, tt.previouslyManagedLabelKeys)
+			if tt.wantErr != "" {
+				NewWithT(t).Expect(err).To(MatchError(ContainSubstring(tt.wantErr)))
+				return
+			}
+			NewWithT(t).Expect(err).ToNot(HaveOccurred())
+			NewWithT(t).Expect(maps.Equal(labels, tt.expected)).To(BeTrue())
+		})
+	}
+}
+
+func TestManagedResourceLabelKeys(t *testing.T) {
+	keys := ManagedResourceLabelKeys(map[string]string{"example": "second,first,second"}, "example")
+	NewWithT(t).Expect(keys).To(Equal(map[string]struct{}{"first": {}, "second": {}}))
+}
+
+func TestUpdateManagedResourceLabelKeys(t *testing.T) {
+	scheme := runtime.NewScheme()
+	NewWithT(t).Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-example", Name: "example"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build()
+
+	NewWithT(t).Expect(UpdateManagedResourceLabelKeys(context.Background(), c, hcp, "example", map[string]string{"second": "value", "first": "value"})).To(Succeed())
+	updated := &hyperv1.HostedControlPlane{}
+	NewWithT(t).Expect(c.Get(context.Background(), client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+	NewWithT(t).Expect(updated.Annotations).To(Equal(map[string]string{"example": "first,second"}))
+
+	NewWithT(t).Expect(UpdateManagedResourceLabelKeys(context.Background(), c, updated, "example", nil)).To(Succeed())
+	NewWithT(t).Expect(c.Get(context.Background(), client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+	NewWithT(t).Expect(updated.Annotations).To(BeEmpty())
 }
 
 func TestBuildWorkloadIdentityCredentials(t *testing.T) {
