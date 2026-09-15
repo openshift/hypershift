@@ -1,13 +1,12 @@
 // Package hcpstatuspatch bans direct Status().Update() calls and unguarded
-// client.MergeFrom() status patches on HostedControlPlane. Multiple controllers
-// (CPO, HCCO, HO/karpenter) write to the same HostedControlPlane.Status
-// concurrently — Status().Update() replaces the whole status subresource and
-// silently overwrites concurrent changes, and MergeFrom() without an optimistic
-// lock lets a stale resourceVersion succeed silently. See
-// support/statuspatching for the safe pattern.
+// client.MergeFrom() status patches on HostedCluster and HostedControlPlane.
+// Update() conflicts on stale resource versions; unguarded merge patches can
+// silently overwrite concurrent changes. Use support/statuspatching to standardize
+// fetching, mutation, no-op detection, and conflict retries.
 package hcpstatuspatch
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -18,14 +17,13 @@ import (
 
 const (
 	controllerRuntimeClientPkg = "sigs.k8s.io/controller-runtime/pkg/client"
-	hostedControlPlanePkg      = "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hostedControlPlaneType     = "HostedControlPlane"
+	hypershiftAPIPkg           = "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	optimisticLockType         = "MergeFromWithOptimisticLock"
 )
 
 var Analyzer = &analysis.Analyzer{
 	Name: "hcpstatuspatch",
-	Doc:  "bans Status().Update() and unguarded MergeFrom() status patches on HostedControlPlane; use support/statuspatching instead",
+	Doc:  "bans Status().Update() and unguarded MergeFrom() status patches on HostedCluster and HostedControlPlane; use support/statuspatching instead",
 	Run:  run,
 }
 
@@ -44,14 +42,14 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok {
 				return true
 			}
-			if isHCPStatusUpdate(pass, call) {
+			if isClusterStatusUpdate(pass, call) {
 				pass.Report(analysis.Diagnostic{
 					Pos:     call.Pos(),
 					End:     call.End(),
-					Message: "do not call Status().Update() on HostedControlPlane; use statuspatching.PatchStatus instead — Update() replaces the whole status subresource and silently overwrites concurrent writers",
+					Message: fmt.Sprintf("do not call Status().Update() on %s; use support/statuspatching.PatchStatus instead — Update() conflicts on stale resource versions; the helper standardizes fetching, mutation, no-op detection, and conflict retries", clusterResourceType(pass.TypesInfo.TypeOf(call.Args[1]))),
 				})
 			}
-			if isHCPStatusPatch(pass, call) {
+			if isClusterStatusPatch(pass, call) {
 				reportUnguardedPatchConstructors(pass, call)
 			}
 			return true
@@ -60,9 +58,9 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// isHCPStatusUpdate matches `<expr>.Status().Update(ctx, obj, ...)` where obj is
-// a HyperShift HostedControlPlane.
-func isHCPStatusUpdate(pass *analysis.Pass, call *ast.CallExpr) bool {
+// isClusterStatusUpdate matches `<expr>.Status().Update(ctx, obj, ...)` where obj is
+// a HyperShift HostedCluster or HostedControlPlane.
+func isClusterStatusUpdate(pass *analysis.Pass, call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Update" {
 		return false
@@ -78,12 +76,12 @@ func isHCPStatusUpdate(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if len(call.Args) < 2 {
 		return false
 	}
-	return isHostedControlPlane(pass.TypesInfo.TypeOf(call.Args[1]))
+	return clusterResourceType(pass.TypesInfo.TypeOf(call.Args[1])) != ""
 }
 
-// isHCPStatusPatch matches `<expr>.Status().Patch(ctx, obj, patch)` where obj is
-// a HyperShift HostedControlPlane.
-func isHCPStatusPatch(pass *analysis.Pass, call *ast.CallExpr) bool {
+// isClusterStatusPatch matches `<expr>.Status().Patch(ctx, obj, patch)` where obj is
+// a HyperShift HostedCluster or HostedControlPlane.
+func isClusterStatusPatch(pass *analysis.Pass, call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Patch" {
 		return false
@@ -99,7 +97,7 @@ func isHCPStatusPatch(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if len(call.Args) < 2 {
 		return false
 	}
-	return isHostedControlPlane(pass.TypesInfo.TypeOf(call.Args[1]))
+	return clusterResourceType(pass.TypesInfo.TypeOf(call.Args[1])) != ""
 }
 
 func reportUnguardedPatchConstructors(pass *analysis.Pass, statusPatch *ast.CallExpr) {
@@ -118,22 +116,23 @@ func reportUnguardedPatchConstructors(pass *analysis.Pass, statusPatch *ast.Call
 		if !isControllerRuntime {
 			continue
 		}
-		if len(call.Args) < 1 || !isHostedControlPlane(pass.TypesInfo.TypeOf(call.Args[0])) {
+		if len(call.Args) < 1 || clusterResourceType(pass.TypesInfo.TypeOf(call.Args[0])) == "" {
 			continue
 		}
+		resourceType := clusterResourceType(pass.TypesInfo.TypeOf(statusPatch.Args[1]))
 		switch name {
 		case "MergeFrom":
 			pass.Report(analysis.Diagnostic{
 				Pos:     call.Pos(),
 				End:     call.End(),
-				Message: "do not use MergeFrom() on HostedControlPlane without an optimistic lock; use statuspatching.PatchStatus/PatchStatusCondition, or MergeFromWithOptions(..., MergeFromWithOptimisticLock{}) at minimum",
+				Message: fmt.Sprintf("do not use MergeFrom() on %s without an optimistic lock; use support/statuspatching.PatchStatus/PatchStatusCondition, or MergeFromWithOptions(..., MergeFromWithOptimisticLock{}) at minimum", resourceType),
 			})
 		case "MergeFromWithOptions":
 			if !hasOptimisticLockOption(pass, call) {
 				pass.Report(analysis.Diagnostic{
 					Pos:     call.Pos(),
 					End:     call.End(),
-					Message: "do not use MergeFromWithOptions() on HostedControlPlane without MergeFromWithOptimisticLock{}; use statuspatching.PatchStatus/PatchStatusCondition instead",
+					Message: fmt.Sprintf("do not use MergeFromWithOptions() on %s without MergeFromWithOptimisticLock{}; use support/statuspatching.PatchStatus/PatchStatusCondition instead", resourceType),
 				})
 			}
 		}
@@ -676,15 +675,19 @@ func isFromPackage(obj types.Object, path string) bool {
 	return obj != nil && obj.Pkg() != nil && obj.Pkg().Path() == path
 }
 
-// isHostedControlPlane reports whether t is (a pointer to) HyperShift's
-// HostedControlPlane type. Matching requires both the type name and the
-// hypershift/v1beta1 package path so a local or third-party type of the same
-// name does not trigger the rule.
-func isHostedControlPlane(t types.Type) bool {
+// clusterResourceType returns the HyperShift resource name for t, including
+// pointers and aliases. Matching the package path excludes unrelated namesakes.
+func clusterResourceType(t types.Type) string {
 	named := namedType(t)
 	if named == nil {
-		return false
+		return ""
 	}
 	obj := named.Obj()
-	return obj.Name() == hostedControlPlaneType && isFromPackage(obj, hostedControlPlanePkg)
+	if isFromPackage(obj, hypershiftAPIPkg) {
+		switch obj.Name() {
+		case "HostedCluster", "HostedControlPlane":
+			return obj.Name()
+		}
+	}
+	return ""
 }
