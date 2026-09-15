@@ -193,6 +193,7 @@ type HostedControlPlaneReconciler struct {
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
 	clock                                   clock.Clock
+	lastDNSReconcile                        sync.Map
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
@@ -422,6 +423,10 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		}
 		if !done {
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+
+		if err := r.destroyAWSManagedIngressDNSZones(ctx, hostedControlPlane); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to cleanup ingress DNS zones: %w", err)
 		}
 	}
 
@@ -669,6 +674,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	switch hostedControlPlane.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		r.validateAWSKMSConfig(ctx, hostedControlPlane)
+		if err := r.reconcileAWSManagedIngressDNSZones(ctx, hostedControlPlane); err != nil {
+			r.Log.Error(err, "failed to reconcile ingress DNS zones")
+		}
 	case hyperv1.AzurePlatform:
 		r.validateAzureKMSConfig(ctx, hostedControlPlane)
 	}

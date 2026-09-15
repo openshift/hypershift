@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -680,6 +681,73 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(policyDocument).To(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
 		g.Expect(policyDocument).To(ContainSubstring("route53:ChangeResourceRecordSets"))
 	})
+}
+
+func TestIngressPermPolicy(t *testing.T) {
+	tests := []struct {
+		name              string
+		sharedVPC         bool
+		managedDNS        bool
+		expectResources   []string
+		unexpectResources []string
+	}{
+		{
+			name:              "standard cluster scopes ChangeResourceRecordSets to public and private zones",
+			expectResources:   []string{"arn:aws:route53:::hostedzone/PUBLIC", "arn:aws:route53:::hostedzone/PRIVATE"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/*"},
+		},
+		{
+			name:              "shared-VPC cluster scopes ChangeResourceRecordSets to the public zone only",
+			sharedVPC:         true,
+			expectResources:   []string{"arn:aws:route53:::hostedzone/PUBLIC"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/PRIVATE", "arn:aws:route53:::hostedzone/*"},
+		},
+		{
+			name:              "managed DNS widens ChangeResourceRecordSets to all hosted zones",
+			managedDNS:        true,
+			expectResources:   []string{"arn:aws:route53:::hostedzone/*"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/PUBLIC", "arn:aws:route53:::hostedzone/PRIVATE"},
+		},
+		{
+			name:              "managed DNS widens even for shared-VPC clusters",
+			sharedVPC:         true,
+			managedDNS:        true,
+			expectResources:   []string{"arn:aws:route53:::hostedzone/*"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/PUBLIC"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			binding := ingressPermPolicy("PUBLIC", "PRIVATE", tt.sharedVPC, tt.managedDNS)
+
+			var doc struct {
+				Statement []struct {
+					Action   []string
+					Resource json.RawMessage
+				}
+			}
+			g.Expect(json.Unmarshal([]byte(binding.policy), &doc)).To(Succeed())
+
+			var recordResource string
+			for _, s := range doc.Statement {
+				for _, a := range s.Action {
+					if a == "route53:ChangeResourceRecordSets" {
+						recordResource = string(s.Resource)
+					}
+				}
+			}
+			g.Expect(recordResource).NotTo(BeEmpty(), "policy should grant route53:ChangeResourceRecordSets")
+
+			for _, r := range tt.expectResources {
+				g.Expect(recordResource).To(ContainSubstring(r))
+			}
+			for _, r := range tt.unexpectResources {
+				g.Expect(recordResource).NotTo(ContainSubstring(r))
+			}
+		})
+	}
 }
 
 func TestEnsureHostedZonePrefix(t *testing.T) {
