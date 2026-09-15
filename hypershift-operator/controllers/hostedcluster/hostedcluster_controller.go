@@ -1729,10 +1729,14 @@ func (r *HostedClusterReconciler) reconcileCoreHCPChain(
 	if err != nil {
 		return hcp, fmt.Errorf("failed to determine if AWS node termination handler is needed: %w", err)
 	}
+	isGCPNodeTerminationHandlerNeeded, err := r.isGCPNodeTerminationHandlerNeeded(ctx, hcluster)
+	if err != nil {
+		return hcp, fmt.Errorf("failed to determine if GCP node termination handler is needed: %w", err)
+	}
 
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, isGCPNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
@@ -2820,7 +2824,7 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, defaultingToControlPlan
 	}
 }
 
-func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, isGCPNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
 	if hcp.Annotations == nil {
 		hcp.Annotations = map[string]string{}
 	}
@@ -2941,13 +2945,20 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		delete(hcp.Annotations, hyperv1.DisableAWSNodeTerminationHandlerAnnotation)
 	}
 
+	// Set the DisableGCPNodeTerminationHandlerAnnotation if not needed
+	if !isGCPNodeTerminationHandlerNeeded {
+		hcp.Annotations[hyperv1.DisableGCPNodeTerminationHandlerAnnotation] = "true"
+	} else {
+		delete(hcp.Annotations, hyperv1.DisableGCPNodeTerminationHandlerAnnotation)
+	}
+
 	return nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
-	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, certRenewalAnnotations); err != nil {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, isGCPNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, isGCPNodeTerminationHandlerNeeded, certRenewalAnnotations); err != nil {
 		return err
 	}
 
@@ -5397,6 +5408,29 @@ func (r *HostedClusterReconciler) isAWSNodeTerminationHandlerNeeded(ctx context.
 			if _, ok := nodePool.Annotations["hypershift.openshift.io/enable-spot"]; ok {
 				return true, nil
 			}
+		}
+	}
+	return false, nil
+}
+
+// isGCPNodeTerminationHandlerNeeded returns true if any GCP NodePool uses interruptible instances.
+func (r *HostedClusterReconciler) isGCPNodeTerminationHandlerNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
+	if hcluster.Spec.Platform.Type != hyperv1.GCPPlatform {
+		return false, nil
+	}
+
+	nodePools, err := listNodePools(ctx, r.Client, hcluster.Namespace, hcluster.Name)
+	if err != nil {
+		return false, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", hcluster.Name, err)
+	}
+
+	for _, nodePool := range nodePools {
+		if nodePool.Spec.Platform.GCP == nil {
+			continue
+		}
+		switch nodePool.Spec.Platform.GCP.ProvisioningModel {
+		case hyperv1.GCPProvisioningModelSpot, hyperv1.GCPProvisioningModelPreemptible:
+			return true, nil
 		}
 	}
 	return false, nil

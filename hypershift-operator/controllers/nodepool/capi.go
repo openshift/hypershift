@@ -219,9 +219,9 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		})
 	}
 
-	// Reconcile spot-specific MachineHealthCheck when spot instances are enabled
+	// Reconcile interruptible-instance-specific MachineHealthCheck when needed.
 	spotMHC := c.spotMachineHealthCheck()
-	if isSpotEnabled(nodePool) {
+	if isInterruptibleInstanceEnabled(nodePool) {
 		if result, err := ctrl.CreateOrUpdate(ctx, c.Client, spotMHC, func() error {
 			return c.reconcileSpotMachineHealthCheck(ctx, spotMHC)
 		}); err != nil {
@@ -488,8 +488,8 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		},
 	}
 
-	// This label must be on the MachineDeployment template so the spot MHC can select machines
-	if isSpotEnabled(nodePool) {
+	// This label must be on the MachineDeployment template so the spot MHC can select machines.
+	if isInterruptibleInstanceEnabled(nodePool) {
 		machineDeployment.Spec.Template.Labels[interruptibleInstanceLabel] = ""
 	}
 
@@ -1009,8 +1009,8 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 		},
 	}
 
-	// Add interruptible-instance label for spot instances
-	if isSpotEnabled(nodePool) {
+	// Add interruptible-instance label for interruptible instances.
+	if isInterruptibleInstanceEnabled(nodePool) {
 		machineSet.Spec.Template.Labels[interruptibleInstanceLabel] = ""
 	}
 

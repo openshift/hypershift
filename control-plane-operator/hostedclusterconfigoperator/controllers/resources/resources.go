@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"slices"
 	"sort"
@@ -28,6 +29,7 @@ import (
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	gcpresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcp"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcpnth"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -550,6 +552,9 @@ func (r *reconciler) reconcilePlatformSpecificResources(ctx context.Context, log
 		log.Info("reconciling Azure specific resources")
 		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
 		errs = append(errs, r.reconcileAzureIdentityWebhook(ctx)...)
+	case hyperv1.GCPPlatform:
+		log.Info("reconciling GCP specific resources")
+		errs = append(errs, r.reconcileGCPNodeTerminationHandler(ctx, hcp)...)
 	}
 	return errs
 }
@@ -3719,6 +3724,107 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", cloudNodeManagerDaemonSet, cloudNodeManagerDaemonSet.Name, err))
+	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileGCPNodeTerminationHandler(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+	var errs []error
+
+	daemonSet := gcpnth.DaemonSet()
+	if _, disabled := hcp.Annotations[hyperv1.DisableGCPNodeTerminationHandlerAnnotation]; disabled {
+		if err := r.client.Delete(ctx, daemonSet); err != nil && !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("failed to delete %T %s: %w", daemonSet, daemonSet.Name, err))
+		}
+		return errs
+	}
+
+	serviceAccount := gcpnth.ServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.client, serviceAccount, func() error { return nil }); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", serviceAccount, serviceAccount.Name, err))
+	}
+
+	clusterRole := gcpnth.ClusterRole()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRole, func() error {
+		clusterRole.Rules = []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list", "watch", "patch", "update"}},
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch", "delete"}},
+			{APIGroups: []string{""}, Resources: []string{"pods/eviction"}, Verbs: []string{"create"}},
+			{APIGroups: []string{""}, Resources: []string{"events"}, Verbs: []string{"create", "patch", "update"}},
+		}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
+	}
+
+	clusterRoleBinding := gcpnth.ClusterRoleBinding()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRoleBinding, func() error {
+		clusterRoleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     clusterRole.Name,
+		}
+		clusterRoleBinding.Subjects = []rbacv1.Subject{
+			{Kind: rbacv1.ServiceAccountKind, Namespace: serviceAccount.Namespace, Name: serviceAccount.Name},
+		}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRoleBinding, clusterRoleBinding.Name, err))
+	}
+
+	hccoImage := os.Getenv("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE")
+	if hccoImage == "" {
+		errs = append(errs, fmt.Errorf("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE is not set"))
+		return errs
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r.client, daemonSet, func() error {
+		daemonSet.Spec = appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": gcpnth.ComponentName}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"k8s-app": gcpnth.ComponentName},
+					Annotations: map[string]string{
+						"cluster-autoscaler.kubernetes.io/daemonset-pod": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: serviceAccount.Name,
+					NodeSelector:       map[string]string{"kubernetes.io/os": "linux"},
+					Tolerations: []corev1.Toleration{
+						{Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+						{Key: "node.kubernetes.io/unreachable", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+						{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:    gcpnth.ComponentName,
+							Image:   hccoImage,
+							Command: []string{"/usr/bin/control-plane-operator"},
+							Args:    []string{gcpnth.ComponentName},
+							Env: []corev1.EnvVar{
+								{
+									Name: "NODE_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+									},
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("32Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", daemonSet, daemonSet.Name, err))
 	}
 
 	return errs
