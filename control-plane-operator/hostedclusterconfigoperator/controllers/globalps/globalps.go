@@ -123,6 +123,10 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		// Generate a hash of the original pull secret content to trigger pod recreation
 		configSeed := util.HashSimple(originalPullSecretBytes)
 
+		if err := r.syncCombinedPullSecret(ctx, originalPullSecretBytes); err != nil {
+			return err
+		}
+
 		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
 		daemonSet := manifests.GlobalPullSecretDaemonSet()
 		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
@@ -165,6 +169,10 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to create global pull secret: %w", err)
 	}
 
+	if err := r.syncCombinedPullSecret(ctx, globalPullSecretBytes); err != nil {
+		return err
+	}
+
 	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
 	configSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
@@ -172,6 +180,26 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
+	return nil
+}
+
+func (r *Reconciler) syncCombinedPullSecret(ctx context.Context, pullSecretBytes []byte) error {
+	log := ctrl.LoggerFrom(ctx)
+	combinedSecret := manifests.CombinedPullSecret(r.hcpNamespace)
+	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(combinedSecret), combinedSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("combined-pull-secret not yet created by CPO, skipping update")
+			return nil
+		}
+		return fmt.Errorf("failed to get combined pull secret: %w", err)
+	}
+	combinedSecret.Type = corev1.SecretTypeDockerConfigJson
+	combinedSecret.Data = map[string][]byte{
+		corev1.DockerConfigJsonKey: pullSecretBytes,
+	}
+	if err := r.cpClient.Update(ctx, combinedSecret); err != nil {
+		return fmt.Errorf("failed to update combined pull secret: %w", err)
+	}
 	return nil
 }
 
@@ -289,13 +317,27 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	if err = json.Unmarshal(originalPullSecret, &originalJSON); err != nil {
 		return nil, fmt.Errorf("invalid original pull secret format: %w", err)
 	}
-	originalAuths = originalJSON["auths"].(map[string]any)
+	rawOriginalAuths, ok := originalJSON["auths"]
+	if !ok {
+		return nil, fmt.Errorf("original pull secret missing \"auths\" key")
+	}
+	originalAuths, ok = rawOriginalAuths.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("original pull secret \"auths\" is not an object")
+	}
 
 	// Unmarshal additional pull secret
 	if err = json.Unmarshal(userProvidedPullSecret, &userProvidedJSON); err != nil {
 		return nil, fmt.Errorf("invalid user provided pull secret format: %w", err)
 	}
-	userProvidedAuths = userProvidedJSON["auths"].(map[string]any)
+	rawUserAuths, ok := userProvidedJSON["auths"]
+	if !ok {
+		return nil, fmt.Errorf("user provided pull secret missing \"auths\" key")
+	}
+	userProvidedAuths, ok = rawUserAuths.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("user provided pull secret \"auths\" is not an object")
+	}
 
 	for k, v := range originalAuths {
 		if _, ok := userProvidedAuths[k]; ok {
