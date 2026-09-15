@@ -2,8 +2,13 @@ package gcpprivateserviceconnect
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -16,14 +21,126 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 )
+
+func TestGCPResourceLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected map[string]string
+	}{
+		{
+			name: "When HCP has GCP resource labels, it should convert them to a map",
+			hcp: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
+				GCP: &hyperv1.GCPPlatformSpec{ResourceLabels: []hyperv1.GCPResourceLabel{
+					{Key: "environment", Value: ptr.To("test")},
+					{Key: "empty-value"},
+				}},
+			}}},
+			expected: map[string]string{"environment": "test", "empty-value": ""},
+		},
+		{
+			name:     "When HCP has no GCP resource labels, it should return nil",
+			hcp:      &hyperv1.HostedControlPlane{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, gcpResourceLabels(tt.hcp))
+		})
+	}
+}
+
+func TestMergeResourceLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing map[string]string
+		desired  map[string]string
+		expected map[string]string
+	}{
+		{
+			name:     "When desired labels overlap existing labels, it should update only managed values",
+			existing: map[string]string{"preserved": "value", "managed": "old"},
+			desired:  map[string]string{"managed": "new"},
+			expected: map[string]string{"preserved": "value", "managed": "new"},
+		},
+		{
+			name:     "When existing labels are nil, it should return the desired labels",
+			desired:  map[string]string{"managed": "new"},
+			expected: map[string]string{"managed": "new"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := mergeResourceLabels(tt.existing, tt.desired)
+			assert.True(t, maps.Equal(tt.expected, result))
+		})
+	}
+}
+
+func TestReconcileForwardingRuleLabels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.True(t, strings.HasSuffix(r.URL.Path, "/setLabels"))
+
+		var request compute.RegionSetLabelsRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		assert.Equal(t, "fingerprint", request.LabelFingerprint)
+		assert.True(t, maps.Equal(map[string]string{
+			"preserved": "value",
+			"managed":   "new",
+		}, request.Labels))
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		_, _ = w.Write([]byte(`{"status":"DONE"}`))
+	}))
+	defer server.Close()
+
+	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+
+	err = reconcileForwardingRuleLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint", "fingerprint", map[string]string{"preserved": "value", "managed": "old"}, map[string]string{"managed": "new"})
+	require.NoError(t, err)
+}
+
+func TestReconcileAddressLabels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`{"labelFingerprint":"fingerprint","labels":{"preserved":"value","managed":"old"}}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/setLabels"):
+			var request compute.RegionSetLabelsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			assert.Equal(t, "fingerprint", request.LabelFingerprint)
+			assert.True(t, maps.Equal(map[string]string{
+				"preserved": "value",
+				"managed":   "new",
+			}, request.Labels))
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+
+	err = reconcileAddressLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint-ip", map[string]string{"managed": "new"})
+	require.NoError(t, err)
+}
 
 func TestConstructEndpointName(t *testing.T) {
 	r := &GCPPrivateServiceConnectReconciler{}
