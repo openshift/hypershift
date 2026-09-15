@@ -27,10 +27,16 @@ type options struct {
 	storageAccount  string
 	encryptionScope string
 	authType        string
+	azureCloud      string
 }
 
 func NewStartCommand() *cobra.Command {
-	opts := options{}
+	opts := options{
+		azureCloud: os.Getenv("AZURE_CLOUD_NAME"),
+	}
+	if opts.azureCloud == "" {
+		opts.azureCloud = "AzurePublicCloud"
+	}
 
 	cmd := &cobra.Command{
 		Use:          "etcd-upload",
@@ -60,6 +66,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.storageAccount, "azure-storage-account", "", "[Azure] Storage Account name")
 	cmd.Flags().StringVar(&opts.encryptionScope, "azure-encryption-scope", "", "[Azure] encryption scope for server-side encryption (optional)")
 	cmd.Flags().StringVar(&opts.authType, "azure-auth-type", "client-secret", "[Azure] authentication type: client-secret (default) or managed-identity (ARO HCP)")
+	cmd.Flags().StringVar(&opts.azureCloud, "azure-cloud", opts.azureCloud, "[Azure] cloud environment")
 
 	_ = cmd.MarkFlagRequired("snapshot-path")
 	_ = cmd.MarkFlagRequired("storage-type")
@@ -103,7 +110,7 @@ func newUploader(ctx context.Context, opts options) (Uploader, error) {
 	case "S3":
 		return NewS3Uploader(ctx, opts.bucket, opts.region, opts.credentialsFile, opts.kmsKeyARN)
 	case "AzureBlob":
-		return NewAzureBlobUploader(ctx, opts.container, opts.storageAccount, opts.credentialsFile, opts.encryptionScope, opts.authType)
+		return NewAzureBlobUploader(ctx, opts.container, opts.storageAccount, opts.credentialsFile, opts.encryptionScope, opts.authType, opts.azureCloud)
 	default:
 		return nil, fmt.Errorf("unsupported storage type: %q (must be S3 or AzureBlob)", opts.storageType)
 	}
