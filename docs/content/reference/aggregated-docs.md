@@ -1085,8 +1085,6 @@ Use these resources to contribute to HyperShift.
 - Pre-commit hook help
 
 
-
-
 ---
 
 ## Source: docs/content/contribute/konflux-scripts.md

@@ -7,7 +7,7 @@ title: Contribute
 Use these resources to contribute to HyperShift.
 
 - [Repositories](repositories.md)
-- [Contributing guidelines (GitHub)](https://github.com/openshift/hypershift/blob/main/.github/CONTRIBUTING.md)
+- [Contributing guidelines (GitHub)](https://github.com/openshift/hypershift/blob/main/CONTRIBUTING.md)
 - [Release Process](release-process.md)
 - [Custom Images](custom-images.md)
 - [Onboard a Platform](onboard-a-platform.md)
@@ -17,5 +17,3 @@ Use these resources to contribute to HyperShift.
 - [CPO Overrides](cpo-overrides.md)
 - [Contribute to docs](contribute-docs.md)
 - [Pre-commit hook help](precommit-hook-help.md)
-
-
