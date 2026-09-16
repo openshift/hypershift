@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: faeaaf4b23da023c0b1f5a99c8e978bb89b3f1ecb9f9e3669f1b8cb3a372f46d
+    hypershift.openshift.io/desired-state-hash: a55b76b4b842c409545fa0a913141c4e1bcd489cc06149462e00b875a2bd290f
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -269,13 +269,22 @@ spec:
           #!/bin/bash
           set -e
           # Wait for etcd DNS to be resolvable
+          # Allow approximately five minutes for DNS and etcd to become ready before failing.
+          max_attempts=100
           echo "Waiting for etcd DNS..."
-          while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done
+          attempt=1
+          until nslookup etcd-client.$(POD_NAMESPACE).svc; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "ERROR: etcd DNS did not resolve after ${max_attempts} attempts (approximately five minutes); check the etcd-client service." >&2
+              exit 1
+            fi
+            echo "DNS not yet resolved, retrying (attempt ${attempt}/${max_attempts})..."
+            attempt=$((attempt + 1))
+            sleep 1
+          done
           echo "DNS resolved, now verifying etcd connectivity..."
           # Wait for etcd to actually accept connections (not just DNS)
           # Use curl to hit etcd health endpoint with proper TLS authentication
-          # Allow approximately five minutes for etcd to become ready before failing.
-          max_attempts=100
           attempt=1
           until curl --connect-timeout 1 --max-time 2 --fail --silent \
             --show-error \
