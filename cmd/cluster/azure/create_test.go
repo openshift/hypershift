@@ -616,6 +616,50 @@ func TestValidateOAuthPublishingStrategy(t *testing.T) {
 	}
 }
 
+func TestValidateOutboundTypeFlag(t *testing.T) {
+	tests := map[string]struct {
+		outboundType     string
+		expectError      bool
+		expectedErrorMsg string
+	}{
+		"When outbound-type is unset, it should pass validation": {
+			outboundType: "",
+			expectError:  false,
+		},
+		"When outbound-type is LoadBalancer, it should pass validation": {
+			outboundType: "LoadBalancer",
+			expectError:  false,
+		},
+		"When outbound-type is UserDefinedRouting, it should pass validation": {
+			outboundType: "UserDefinedRouting",
+			expectError:  false,
+		},
+		"When outbound-type is an invalid value, it should return an error": {
+			outboundType:     "NATGateway",
+			expectError:      true,
+			expectedErrorMsg: "--outbound-type must be either LoadBalancer or UserDefinedRouting",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			opts := DefaultOptions()
+			opts.CredentialsFile = "fake"
+			opts.OutboundType = test.outboundType
+
+			_, err := opts.Validate(context.Background(), nil)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err).To(MatchError(test.expectedErrorMsg))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
 func TestCredentialSecretHasDeleteWithClusterLabel(t *testing.T) {
 	g := NewGomegaWithT(t)
 	secret := credentialSecret("test-ns", "test")

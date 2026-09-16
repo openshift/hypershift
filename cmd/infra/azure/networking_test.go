@@ -15,6 +15,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -211,16 +213,35 @@ func TestNewPublicIPAddress(t *testing.T) {
 
 func TestNewLoadBalancer(t *testing.T) {
 	tests := map[string]struct {
-		location         string
-		infraID          string
-		idPrefix         string
-		loadBalancerName string
+		location              string
+		infraID               string
+		idPrefix              string
+		loadBalancerName      string
+		outboundType          hyperv1.AzureOutboundType
+		expectedOutboundRules int
 	}{
 		"When standard configuration is provided it should create load balancer with correct settings": {
-			location:         "eastus",
-			infraID:          "test-infra-id",
-			idPrefix:         "subscriptions/sub123/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers",
-			loadBalancerName: "test-infra-id",
+			location:              "eastus",
+			infraID:               "test-infra-id",
+			idPrefix:              "subscriptions/sub123/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers",
+			loadBalancerName:      "test-infra-id",
+			expectedOutboundRules: 1,
+		},
+		"When outboundType is LoadBalancer it should create an outbound rule": {
+			location:              "eastus",
+			infraID:               "test-infra-id",
+			idPrefix:              "subscriptions/sub123/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers",
+			loadBalancerName:      "test-infra-id",
+			outboundType:          hyperv1.AzureOutboundTypeLoadBalancer,
+			expectedOutboundRules: 1,
+		},
+		"When outboundType is UserDefinedRouting it should not create an outbound rule": {
+			location:              "eastus",
+			infraID:               "test-infra-id",
+			idPrefix:              "subscriptions/sub123/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers",
+			loadBalancerName:      "test-infra-id",
+			outboundType:          hyperv1.AzureOutboundTypeUserDefinedRouting,
+			expectedOutboundRules: 0,
 		},
 	}
 
@@ -232,7 +253,7 @@ func TestNewLoadBalancer(t *testing.T) {
 				ID: stringPtr("/subscriptions/sub123/resourceGroups/test-rg/providers/Microsoft.Network/publicIPAddresses/test-ip"),
 			}
 
-			lb := NewLoadBalancer(test.location, test.infraID, test.idPrefix, test.loadBalancerName, publicIP)
+			lb := NewLoadBalancer(test.location, test.infraID, test.idPrefix, test.loadBalancerName, publicIP, test.outboundType)
 
 			g.Expect(lb.Location).ToNot(BeNil())
 			g.Expect(*lb.Location).To(Equal(test.location))
@@ -254,9 +275,12 @@ func TestNewLoadBalancer(t *testing.T) {
 			g.Expect(*lb.Properties.Probes[0].Properties.Port).To(Equal(int32(30595)))
 			g.Expect(*lb.Properties.Probes[0].Properties.RequestPath).To(Equal("/healthz"))
 
-			// Check outbound rule
-			g.Expect(lb.Properties.OutboundRules).To(HaveLen(1))
-			g.Expect(*lb.Properties.OutboundRules[0].Name).To(Equal(test.infraID))
+			// Check outbound rule. Under UserDefinedRouting the cluster owner provides egress, so
+			// the Load Balancer must not carry one.
+			g.Expect(lb.Properties.OutboundRules).To(HaveLen(test.expectedOutboundRules))
+			if test.expectedOutboundRules > 0 {
+				g.Expect(*lb.Properties.OutboundRules[0].Name).To(Equal(test.infraID))
+			}
 		})
 	}
 }

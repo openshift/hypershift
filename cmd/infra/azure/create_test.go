@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func TestValidate(t *testing.T) {
@@ -63,6 +65,31 @@ func TestValidate(t *testing.T) {
 			},
 			expectedError: false,
 			description:   "Should pass when assign-identity-roles is not set regardless of dns-zone-rg-name",
+		},
+		"When outbound-type is an unknown value it should return an error": {
+			opts: CreateInfraOptions{
+				BaseDomain:   "example.com",
+				OutboundType: "NATGateway",
+			},
+			expectedError: true,
+			errorContains: "--outbound-type must be either LoadBalancer or UserDefinedRouting",
+			description:   "Should reject outbound types the API does not accept",
+		},
+		"When outbound-type is UserDefinedRouting it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain:   "example.com",
+				OutboundType: hyperv1.AzureOutboundTypeUserDefinedRouting,
+			},
+			expectedError: false,
+			description:   "Should accept UserDefinedRouting",
+		},
+		"When outbound-type is LoadBalancer it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain:   "example.com",
+				OutboundType: hyperv1.AzureOutboundTypeLoadBalancer,
+			},
+			expectedError: false,
+			description:   "Should accept LoadBalancer",
 		},
 	}
 
