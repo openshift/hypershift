@@ -15210,20 +15210,21 @@ sequenceDiagram
     activate CG
     Note over CG: Single Go process, phases run sequentially.<br/>Phases 1, 3, and 5 use internal goroutines for parallelism.
 
-    par Phase 1: Create 5 clusters in parallel (goroutines + exec.Command)
+    par Phase 1: Create 6 clusters in parallel (goroutines + exec.Command)
         CG->>MC: Create public-{hash}
         CG->>MC: Create private-{hash} (Private endpoint access)
         CG->>MC: Create oauth-lb-{hash} (OAuth via LoadBalancer)
+        CG->>MC: Create oauth-lb-private-{hash} (Private access, OAuth via LoadBalancer)
         CG->>MC: Create upgrade-{hash} (N-1 release, HA control plane)
         CG->>MC: Create external-oidc-{hash}
     end
     Note right of CG: Each calls `hypershift create cluster azure`<br/>with variant-specific flags.<br/>Hooks run between phases:<br/>PreCreate (deploy Keycloak),<br/>PostCreate (patch OperatorConfiguration),<br/>PostAvailable, PostVersionRollout (OIDC config).
 
     CG->>MC: Watch all clusters for Available condition<br/>(controller-runtime Watch, 45m timeout)
-    MC-->>CG: All 5 clusters Available
+    MC-->>CG: All 6 clusters Available
 
     CG->>MC: Watch for version rollout completion<br/>(VersionState=Completed on all history entries)
-    MC-->>CG: All 5 clusters rolled out
+    MC-->>CG: All 6 clusters rolled out
 
     CG->>CG: Write cluster names and<br/>platform-specific config to SHARED_DIR
     deactivate CG
@@ -15239,6 +15240,7 @@ sequenceDiagram
 
     par Test lanes (each lane is a goroutine; steps within each lane are sequential)
         RT->>T: private-{hash} (private topology + compliance)
+        RT->>T: oauth-lb-private-{hash} (private topology with OAuth via LoadBalancer)
         RT->>T: public-{hash} (platform, feature, then NodePool rollout tests)
         RT->>T: oauth-lb-{hash} (OAuth/configuration, NodePool config including MachineConfig rollout, then autoscaling balancing)
         RT->>T: external-oidc-{hash} (OIDC/pull-secret, then autoscaling scale-up/down)
@@ -15274,7 +15276,7 @@ sequenceDiagram
 
     CIO->>DG: Run destroy-selfmanaged-guests step (best_effort: true)
     activate DG
-    par Destroy all 5 clusters in parallel
+    par Destroy all 6 clusters in parallel
         DG->>MC: hypershift destroy cluster azure<br/>for each variant (--cluster-grace-period=40m)
     end
     DG-->>CIO: exit code
@@ -15360,8 +15362,9 @@ Mutual exclusion between test groups is achieved through **cluster isolation** a
 ```mermaid
 flowchart TD
     subgraph TestMatrix["TestMatrix (defined by PlatformConfig)"]
-        subgraph Parallel["Parallel lane"]
+        subgraph Parallel["Parallel lanes"]
             P1["private cluster<br/>(private topology + compliance)"]
+            P2["oauth-lb-private cluster<br/>(private topology + OAuth LoadBalancer)"]
         end
 
         subgraph Public["Sequential lane: public cluster"]
@@ -15408,10 +15411,11 @@ flowchart TD
 
 **Key mechanisms:**
 
-1. **Cluster-per-lane isolation**: The Azure matrix provisions five HostedClusters:
-   `private`, `public`, `oauth-lb`, `external-oidc`, and `upgrade`. Each top-level
-   execution lane targets exactly one cluster. Tests within a lane share that
-   cluster, while different lanes never touch the same cluster.
+1. **Cluster-per-lane isolation**: The Azure matrix provisions six HostedClusters:
+   `private`, `oauth-lb-private`, `public`, `oauth-lb`, `external-oidc`, and
+   `upgrade`. Each top-level execution lane targets exactly one cluster. Tests
+   within a lane share that cluster, while different lanes never touch the same
+   cluster.
 
 2. **Label-based selection**: Ginkgo's `--ginkgo.label-filter` selects the
    intended feature specs for each process. Some labels intentionally appear in
@@ -15425,10 +15429,10 @@ flowchart TD
    enforces ordering by running steps sequentially within one goroutine. If an
    earlier step fails, the remaining steps in that lane are skipped.
 
-4. **Matrix validation prevents concurrent reuse**: `TestMatrix.Validate` rejects
-   any variant assigned to more than one top-level lane. This prevents
-   `run-tests` from launching two processes against the same HostedCluster while
-   retaining repeated steps within one sequential lane.
+4. **Matrix validation protects JUnit paths**: `TestMatrix.Validate` rejects
+   duplicate group names and names that are unsafe as JUnit filename components.
+   It does not reject a variant used by multiple top-level lanes, so custom plans
+   must keep each variant in a single lane to prevent concurrent cluster access.
 
 5. **No in-process mutex**: Each `test-e2e-v2` process targets exactly one cluster,
    so no mutex is needed between test specs. Ginkgo runs specs within a single
@@ -68360,3 +68364,4 @@ This video demonstrates how to deploy a Hosted Control Plane using the Multiclus
 This video demonstrates how to deploy an IPv6, fully disconnected Hosted Control Plane using the Agent provider.
 
 <iframe width="560" height="315" src="https://www.youtube.com/embed/Dgso--20Exg?si=dMSVnfdS1_FRkuwF" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
