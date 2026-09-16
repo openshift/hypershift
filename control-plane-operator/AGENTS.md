@@ -25,6 +25,47 @@ HCCO is a **separate binary in the same image**, invoked as `control-plane-opera
 
 HCCO controllers are in `hostedclusterconfigoperator/controllers/`. They do **not** use the v2 component framework today — this is a migration opportunity.
 
+## HostedCluster and HostedControlPlane Status Patching
+
+CPO, HCCO, and the hypershift-operator (karpenter) write to
+`HostedControlPlane.Status` concurrently. The same status-writing rules apply to
+`HostedCluster`. Use the shared helper for HC/HCP status instead of raw
+`Status().Update()` or unguarded `client.MergeFrom()` / `MergeFromWithOptions()`.
+`Update()` conflicts on stale resource versions; merge patches without an
+optimistic lock can silently overwrite concurrent changes.
+
+Use `support/statuspatching` instead:
+
+- `statuspatching.PatchStatus(ctx, c, obj, mutate)` — general case. Re-fetches
+  the object, applies `mutate`, patches with `MergeFromWithOptimisticLock`, and
+  skips no-op changes, and retries automatically on conflict.
+- `statuspatching.PatchStatusCondition(ctx, c, obj, conditions, condition)` —
+  single-condition updates. Uses `meta.SetStatusCondition`'s own change
+  detection to skip no-ops without a false positive from `LastTransitionTime`.
+
+**The mutate callback must recompute from the object it's given, not replay a
+value captured earlier.** `PatchStatus`/`PatchStatusCondition` re-fetch the
+object before calling `mutate`, so if `mutate` just re-applies a value computed
+before the call, a conflict-retry blindly overwrites whatever concurrent write
+the re-fetch picked up — defeating the point of the optimistic lock. If the
+desired value depends on `Spec` and needs an expensive computation done once
+outside the callback (e.g. an AWS API call), guard against the spec changing
+mid-flight by comparing a captured `Generation` inside the callback instead of
+patching unconditionally. A value is only safe to blindly replay on retry if
+it's derived from a fresh external probe performed immediately before the patch
+call, where no concurrent writer can invalidate the value between the probe and
+the patch, not from an earlier `Status` snapshot.
+
+The `hcpstatuspatch` static analyzer (`hack/tools/hypershiftlinter`) actively
+checks both HC and HCP in normal lint runs. It flags direct `Status().Update()`
+and unguarded `MergeFrom()` / `MergeFromWithOptions()` status patches, while
+accepting explicitly optimistic-locked patches. Existing call sites have narrow
+migration exceptions in `.golangci.yml`, not approval to repeat these patterns.
+Remove each exception when its last matching call site is migrated. An identical
+new source line in the same file will also match an exception; reviewers must
+watch for this limitation. See the [analyzer README](../hack/tools/hypershiftlinter/README.md#status-writing-enforcement-and-migration-exceptions)
+for detection boundaries and exception maintenance.
+
 ## Key Directories
 
 | Directory | Purpose |

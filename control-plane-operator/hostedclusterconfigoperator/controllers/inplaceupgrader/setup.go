@@ -8,7 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"

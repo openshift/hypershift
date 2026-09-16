@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: 6083d2abf8fef5587765d801ac8c69a1317dddc054dcfb9603cfe666c7046d4f
+  name: cluster-network-operator
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cluster-network-operator
+subjects:
+- kind: ServiceAccount
+  name: cluster-network-operator
+  namespace: hcp-namespace

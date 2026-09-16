@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	"sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -352,7 +352,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 				},
 			}
 
-			//change pull secret name to simulate node pool config update
+			// change pull secret name to simulate node pool config update
 			if tc.isUpdatingConfig {
 				hostedCluster.Spec.PullSecret.Name = "new-pull"
 				pullSecret.ObjectMeta.Name = "new-pull"
@@ -369,7 +369,8 @@ func TestUpdatingConfigCondition(t *testing.T) {
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: hostedCluster.Name,
 					Release: hyperv1.Release{
-						Image: "fake-release-image"},
+						Image: "fake-release-image",
+					},
 					Management: hyperv1.NodePoolManagement{
 						UpgradeType: tc.upgradeType,
 					},
@@ -514,7 +515,8 @@ func TestUpdatingVersionCondition(t *testing.T) {
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: hostedCluster.Name,
 					Release: hyperv1.Release{
-						Image: "fake-release-image"},
+						Image: "fake-release-image",
+					},
 					Management: hyperv1.NodePoolManagement{
 						UpgradeType: tc.upgradeType,
 					},
@@ -717,8 +719,8 @@ spec:
 	return pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3
 }
 
-func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *v1beta1.MachineSet {
-	machineSet := &v1beta1.MachineSet{
+func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *v1beta2.MachineSet {
+	machineSet := &v1beta2.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nodePool.Name,
 			Namespace: hostedCluster.Namespace + "-" + hostedCluster.Name,

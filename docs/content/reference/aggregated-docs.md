@@ -1085,8 +1085,6 @@ Use these resources to contribute to HyperShift.
 - Pre-commit hook help
 
 
-
-
 ---
 
 ## Source: docs/content/contribute/konflux-scripts.md
@@ -13996,13 +13994,13 @@ A hosted cluster failed to come up. To find out why:
 
 Common causes:
 
-| Phase | What failed | Typical cause |
+| Stage | What failed | Typical cause |
 |-------|-------------|---------------|
-| Phase 1 | `hypershift create cluster` | Invalid flags or missing credentials |
-| Phase 2 | Platform post-create hooks | Platform-specific setup failure |
-| Phase 3 | Wait for Available | Control plane startup failure |
-| Phase 4 | Platform post-available hooks | Day-2 config transition failure |
-| Phase 5 | Version rollout | Cluster came up but couldn't roll out target version |
+| Cluster creation | `hypershift create cluster` | Invalid flags or missing credentials |
+| Platform hooks | Pre-create, post-create, or post-available setup | Platform-specific configuration or API failure |
+| Wait for Available | HostedCluster availability | Control plane startup failure |
+| Version rollout | HostedCluster or NodePool rollout | Cluster came up but could not complete the target version rollout |
+| Post-rollout hooks | Day-2 configuration after rollout | Platform-specific configuration transition failure |
 
 After identifying the error, check the job history to determine if this is specific to your PR.
 
@@ -14012,7 +14010,7 @@ After identifying the error, check the job history to determine if this is speci
 
 A test assertion failed. To find which test:
 
-1. Open the **Artifacts** tab and look for JUnit XML files (e.g., `junit_self_managed_azure_public.xml`). The failed test name and assertion message are in the XML.
+1. Open the **Artifacts** tab and look for JUnit XML files (e.g., `junit_public.xml`). The failed test name and assertion message are in the XML.
 2. Alternatively, search the `run-tests` step log for `[FAIL]` to find the Ginkgo failure output, which includes the test description, the failed assertion, and the source file and line number.
 
 After identifying the failing test, check the job history to determine if this is specific to your PR.
@@ -14381,17 +14379,12 @@ All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and 
 **Source:** `test/e2e/v2/cmd/create-guests/`
 **Shipped as:** `/hypershift/bin/create-guests`
 
-Creates hosted clusters in parallel using a five-phase flow:
-
-1. **Cluster creation**: Calls `hypershift create cluster <platform>` in parallel for each `ClusterSpec` in the platform's test matrix. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing: `{variant}-{sha256(prowJobID)[:10]}`
-
-2. **Post-create hooks**: Runs platform-specific `PostCreate()` hooks. For example, Azure patches the `OperatorConfiguration` CRD to enable lifecycle tests
-
-3. **Wait for available**: Watches each cluster's `HostedClusterAvailable` condition with timeout
-
-4. **Wait for rollout**: Watches for version rollout completion on each cluster. If rollout fails, emits JUnit XML marking the cluster creation as failed
-
-5. **Write cluster names**: Writes cluster names to `SHARED_DIR` files for consumption by `run-tests`
+Creates the hosted clusters selected by the resolved `TestPlan` in parallel, runs
+platform-specific hooks, waits for availability and version rollout, and writes
+the cluster manifest and platform configuration to `SHARED_DIR` for downstream
+steps. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing:
+`{variant}-{sha256(prowJobID)[:10]}`. Rollout failures emit JUnit XML and fail
+the step.
 
 If any cluster fails to create or roll out, the binary exits non-zero and the job fails fast.
 
@@ -14400,7 +14393,7 @@ If any cluster fails to create or roll out, the binary exits non-zero and the jo
 **Source:** `test/e2e/v2/cmd/run-tests/`
 **Shipped as:** `/hypershift/bin/run-tests`
 
-Reads cluster names from `SHARED_DIR` files, then executes the platform's test matrix. For each `TestGroup`:
+Reads cluster names from `SHARED_DIR` files, then executes the resolved `TestPlan`. For each `TestGroup`:
 
 ```bash
 bin/test-e2e-v2 \
@@ -14411,11 +14404,11 @@ bin/test-e2e-v2 \
   --ginkgo.v
 ```
 
-with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the appropriate cluster name and namespace. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
+with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the selected cluster. The JUnit filename is derived as `junit_<TestGroup.Name>.xml`. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
 
 Before running any tests, `run-tests` calls `platform.SetupTestEnv(sharedDir)` to let the platform configure any environment variables needed by tests (for example, reading subnet IDs or other infrastructure details from `SHARED_DIR` files).
 
-Whether a group runs in parallel or sequentially is determined by its placement in the `TestMatrix` struct returned by `PlatformConfig.TestMatrix()`:
+By default, the binaries use `PlatformConfig.DefaultTestPlan()`. Set `TEST_PLAN` to a JSON or YAML file to provide a custom plan. The plan's `TestMatrix` determines whether a group runs in parallel or sequentially:
 
 ```go
 type TestMatrix struct {
@@ -14424,7 +14417,9 @@ type TestMatrix struct {
 }
 ```
 
-**`Parallel`** groups run concurrently across multiple clusters. This maximizes throughput and is the common case.
+**`Parallel`** groups run concurrently. The default Azure plan assigns these
+groups to different clusters; custom plans must not assign one variant to
+multiple concurrent lanes.
 
 **`Sequential`** groups run their `Steps` one after another on the same cluster. If any step fails, remaining steps in that group are skipped. Use sequential groups for ordered workflows like upgrade → validate → downgrade.
 
@@ -14468,27 +14463,26 @@ flowchart TD
 
 ### Adding a New ClusterSpec
 
-If you need a new cluster variant, add it to both `ClusterSpecs()` and `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
+If you need a new cluster variant, add it to `ClusterSpecs()` and include it in the default plan's `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
 
 ```diff
 // ClusterSpecs() — cluster creation parameters
 +{
-+    Variant:    "my-new-variant",
-+    OutputFile: "cluster-name-my-new-variant",
-+    ExtraArgs:  []string{"--my-flag=value"},
++    Variant:   "my-new-variant",
++    ExtraArgs: []string{"--my-flag=value"},
 +},
 
 // TestMatrix() — test execution parameters
 +{
 +    Name:        "my-new-variant",
-+    ClusterFile: "cluster-name-my-new-variant",
++    Variant:     "my-new-variant",
 +    LabelFilter: "my-new-label",
-+    JUnitFile:   "junit_my_new_variant.xml",
 +    // Optional fields:
-+    // Skip:     "regex-of-tests-to-skip",
-+    // ExtraEnv: []string{"KEY=value"},
++    // Skip: "regex-of-tests-to-skip",
 +},
 ```
+
+JUnit filenames are derived from `TestGroup.Name` by `TestGroup.JUnitFile()` and do not need to be configured separately.
 
 Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cluster creation + rollout + deletion). Only add new variants when state sharing is impossible.
 
@@ -14496,21 +14490,20 @@ Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cl
 
 When you write a new v2 test and want it to run in CI, the process depends on whether your test's label is already in an existing label filter.
 
-### Case 1: Label Already Exists in Filter
+### Case 1: Label Already Exists in a Matrix Filter
 
-If your test uses a label that's already in a `TestGroup.LabelFilter` (e.g., `nodepool-lifecycle`), **no changes are needed**. The test automatically runs the next time the job executes.
+If your test uses a label that's already in a `TestGroup.LabelFilter`, **no changes are needed**. The test automatically runs the next time the job executes.
 
-### Case 2: New Label
+### Case 2: New or Independently Sharded Label
 
-If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix:
+If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix. Suites such as NodePool lifecycle retain a broad parent label for non-lifecycle CI filtering, but long specs also have fine-grained labels so the Azure lifecycle job can assign them independently:
 
 ```diff
  {
-     Name:        "public",
-     ClusterFile: "cluster-name-public",
--    LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
-+    LabelFilter: "self-managed-azure-public || nodepool-lifecycle || my-new-label",
-     JUnitFile:   "junit_self_managed_azure_public.xml",
+     Name:        "oauth-lb-nodepool-config",
+     Variant:     "oauth-lb",
+-    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout",
++    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config || my-new-rollout",
  },
 ```
 
@@ -14528,7 +14521,8 @@ Create `test/e2e/v2/lifecycle/<platform>.go` implementing the `PlatformConfig` i
 // Abbreviated — see platform.go for the full interface.
 type PlatformConfig interface {
     ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
-    TestMatrix(releaseImage string) TestMatrix
+    DefaultTestPlan() TestPlan
+    TestMatrix() TestMatrix
     PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
     // Also: Name(), DefaultBaseDomain(), CreateArgs(),
     // SetupTestEnv(sharedDir), DestroyArgs()
@@ -14604,26 +14598,41 @@ This guide explains how to diagnose failing v2 CI jobs by tracing test failures 
 
 ## Finding Test Results
 
-Each `TestGroup` produces a JUnit XML file named by its `JUnitFile` field. These land in `ARTIFACT_DIR` in the Prow job artifacts.
+Each `TestGroup` produces a JUnit XML file named `junit_<TestGroup.Name>.xml` by `TestGroup.JUnitFile()`. These land in `ARTIFACT_DIR` in the Prow job artifacts.
 
 For example, the Azure self-managed job produces:
 
-- `junit_self_managed_azure_public.xml`
-- `junit_self_managed_azure_private.xml`
-- `junit_self_managed_azure_oauth_lb.xml`
-- `junit_nodepool_autoscaling.xml`
-- `junit_lifecycle_upgrade.xml`
-- `junit_lifecycle_etcd_chaos.xml`
+- `junit_public.xml`
+- `junit_public-nodepool-rollouts.xml`
+- `junit_private.xml`
+- `junit_oauth-lb.xml`
+- `junit_oauth-lb-nodepool-config.xml`
+- `junit_autoscaling-nodepool-machineconfig.xml`
+- `junit_autoscaling-balancing.xml`
+- `junit_external-oidc.xml`
+- `junit_external-oidc-autoscaling.xml`
+- `junit_external-oidc-trust-bundle.xml`
+- `junit_upgrade.xml`
+- `junit_post-upgrade-health.xml`
+- `junit_control-plane-tls.xml`
+- `junit_etcd-chaos.xml`
 
-Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each cluster that reaches Phase 4 (version rollout wait), recording either success or failure. On failure, the JUnit file contains the `HostedCluster` and `NodePool` conditions at the time of failure. On success, it records a passing test case confirming the rollout completed.
+When a group has informing test failures, the suite also emits a supplemental
+`junit_<TestGroup.Name>_informing.xml` file for lifecycle-aware reporting.
+
+Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` during
+version-rollout handling, recording either success or failure. On failure, the
+JUnit file contains the `HostedCluster` and `NodePool` conditions at the time
+of failure. On success, it records a passing test case confirming the rollout
+completed.
 
 ## Mapping Failures to Clusters
 
 To find which cluster a failing test ran against, trace the path:
 
-1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_self_managed_azure_public.xml` → `"public"`)
-2. **TestGroup.Name** → `TestGroup.ClusterFile` (e.g., `"public"` → `"cluster-name-public"`)
-3. **ClusterFile** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
+1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_public-nodepool-rollouts.xml` → `"public-nodepool-rollouts"`)
+2. **TestGroup.Name** → `TestGroup.Variant` (e.g., `"public-nodepool-rollouts"` → `"public"`)
+3. **Variant** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
 
 The `run-tests` step log shows the mapping explicitly:
 
@@ -14664,18 +14673,18 @@ Use this information to locate the failing test in the codebase and understand w
 
 ## create-guests Failures
 
-The most common failure point in v2 jobs is Phase 4 (version rollout wait) in `create-guests`. When this happens:
+The most common failure point in v2 jobs is version rollout in `create-guests`. When this happens:
 
 1. **Check for JUnit XML**: Look for `junit_hosted_cluster_*.xml` in artifacts
 2. **Read conditions**: The JUnit file contains `HostedCluster` and `NodePool` conditions at the time of failure
-3. **No JUnit file?**: If no JUnit file exists, the failure happened before Phase 4 — check the `create-guests` step log for earlier phases
+3. **No JUnit file?**: If no JUnit file exists, the failure happened before version rollout — check the `create-guests` step log for earlier stages
 
-Common pre-Phase 4 failures:
+Common failures before version rollout:
 
-- **Phase 1 (cluster creation)**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
-- **Phase 2 (post-create hooks)**: Platform-specific hook failure — check for API errors when patching resources
-- **Phase 3 (wait Available)**: Timeout waiting for `HostedClusterAvailable` condition — indicates control plane startup failure
-- **Phase 5 (write cluster names)**: Failure writing cluster names to `SHARED_DIR` — rare, typically caused by filesystem or permissions errors
+- **Cluster creation**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
+- **Platform hooks**: Platform-specific setup failure — check for API errors when patching resources or applying day-2 configuration
+- **Wait for Available**: Timeout waiting for the `HostedClusterAvailable` condition — indicates control plane startup failure
+- **Shared state**: Failure writing the cluster manifest or platform configuration to `SHARED_DIR` — typically caused by filesystem or permissions errors
 
 ## dump-guests Artifacts
 
@@ -14769,11 +14778,13 @@ flowchart TD
 
 - **Ginkgo labels** — Tags on `Describe`/`It` blocks (e.g., `hosted-cluster-health`, `lifecycle`) used by `--ginkgo.label-filter` to select which tests run on which cluster.
 
+- **TestPlan** — Declarative selection of cluster variants and their test matrix. The platform supplies a default plan, or CI can load a JSON/YAML plan through `TEST_PLAN`.
+
 - **PlatformConfig** — Interface in `test/e2e/v2/lifecycle/platform.go` that encapsulates all platform-specific configuration. Implement this to add a new platform.
 
 - **TestContext** — Shared context initialized in `BeforeSuite` from environment variables. Provides management client (created eagerly in `SetupTestContextFromEnv`) and hosted cluster client (lazy-loaded via `sync.Once` in `GetHostedClusterClient`), along with cluster name/namespace.
 
-- **Informing tests** — Tests labeled `Informing` that convert failures to skips via the custom fail handler. They appear as "skipped" in JUnit and don't fail CI or appear in Sippy.
+- **Informing tests** — Tests labeled `Informing` that convert failures to skips via the custom fail handler. They appear as "skipped" in the main JUnit report and don't fail CI; a supplemental lifecycle report makes informing failures available to Component Readiness.
 
 - **CI binaries** — Four compiled Go programs (`create-guests`, `run-tests`, `dump-guests`, `destroy-guests`) that replace inline bash in the release repo step registry.
 
@@ -14783,8 +14794,8 @@ flowchart TD
 
 1. Prow triggers the CI job (e.g., `e2e-azure-v2-self-managed`)
 2. ci-operator builds the `hypershift-tests` image from `Dockerfile.e2e`
-3. **create-guests** creates clusters in parallel — 5 phases: create, post-create hooks, wait Available, wait version rollout, write cluster names to `SHARED_DIR`. Emits JUnit XML to `ARTIFACT_DIR` recording success or failure for each cluster's version rollout.
-4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and `E2E_HOSTED_CLUSTER_NAME`. Whether groups run concurrently or sequentially is determined by placement in the `TestMatrix` struct — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
+3. **create-guests** creates the clusters selected by the `TestPlan` in parallel, runs platform hooks, waits for Available and version rollout, and writes the cluster manifest to `SHARED_DIR`. Emits JUnit XML to `ARTIFACT_DIR` recording success or failure for each cluster's version rollout.
+4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and cluster identity. Whether groups run concurrently or sequentially is determined by placement in the resolved `TestPlan`'s `TestMatrix` — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
 5. **dump-guests** collects diagnostic artifacts in parallel. Always exits 0.
 6. **destroy-guests** tears down all clusters in parallel. Exits non-zero if any destroy fails.
 
@@ -15117,44 +15128,46 @@ once, then multiple specs verify different aspects of the restore). Without `Ord
 |-------|--------|
 | **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The simple [`hypershift-e2e-v2` CI chain][e2e-v2-chain] filters these out with `--ginkgo.label-filter='!lifecycle'` so that read-only compliance runs don't trigger mutations. The `run-tests` orchestrator runs lifecycle tests on dedicated clusters via specific label filters. |
 | **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features (e.g., metrics forwarding, custom labels/tolerations). |
-| **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` with non-overlapping label sets so each process only runs specs relevant to its assigned cluster variant. The label-to-cluster mapping is defined by [`TestMatrix`][azure-platform] in the platform config. |
+| **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` expressions from the [`TestMatrix`][azure-platform]. The default Azure plan intentionally reuses `hosted-cluster-health` and `control-plane-workloads` in the post-upgrade health step, so those specs run again after upgrade. |
 
 ### How These Layers Compose
 
 ```text
 run-tests orchestrator
-├── Process 1 (public cluster): --ginkgo.label-filter="self-managed-azure-public || nodepool-lifecycle || ..."
-│   ├── Describe "NodePool Lifecycle" [Ordered] ← specs run in order, share BeforeAll setup
-│   │   ├── BeforeAll: create test nodepool
-│   │   ├── It "should scale up" ← mutation test
-│   │   ├── It "should scale down"
-│   │   └── AfterAll: delete test nodepool
-│   ├── Describe "Control Plane Workloads" ← read-only, no Ordered needed
-│   │   ├── It "should have resource requests" ← stateless assertion
+├── Sequential group (public cluster)
+│   ├── Process 1a: --ginkgo.label-filter="self-managed-azure-public || control-plane-workloads || ..."
+│   │   ├── Describe "Control Plane Workloads" ← read-only, no Ordered needed
 │   │   └── Context "Custom labels" [Informing] ← failure → skip, non-blocking
-│   └── ...
-├── Process 2 (private cluster): --ginkgo.label-filter="self-managed-azure-private || ..."
+│   └── Process 1b: --ginkgo.label-filter="nodepool-vm-size-rollout || ..."
+│       └── Describe "NodePool Lifecycle" ← independently labeled mutation specs
+├── Parallel process (private cluster): --ginkgo.label-filter="self-managed-azure-private || ..."
 │   └── ...
 └── Sequential group (upgrade cluster):
-    ├── Process 6a: --ginkgo.label-filter="control-plane-upgrade" ← must finish before 6b
-    │   └── Describe "Control Plane Upgrade" ← triggers version rollout
-    └── Process 6b: --ginkgo.label-filter="etcd-chaos" ← only runs if 6a passed
-        └── Describe "Etcd Chaos" [Ordered] ← specs run in order, BeforeAll snapshots etcd
+        ├── Process 6a: --ginkgo.label-filter="control-plane-upgrade" ← must finish before 6b
+        │   └── Describe "Control Plane Upgrade" ← triggers version rollout
+        ├── Process 6b: --ginkgo.label-filter="hosted-cluster-health || control-plane-workloads" ← must finish before 6c
+        │   └── Describe "Post-upgrade health" ← validates recovered workloads
+        ├── Process 6c: --ginkgo.label-filter="control-plane-pki-operator" ← must finish before 6d
+        │   └── Describe "Control Plane TLS" ← validates certificate rotation
+        └── Process 6d: --ginkgo.label-filter="etcd-chaos" ← only runs if 6c passed
+            └── Describe "Etcd Chaos" [Ordered] ← specs run in order, BeforeAll snapshots etcd
 ```
 
-Cluster-level isolation (different processes target different clusters) prevents
-inter-group interference. Within a process, `Ordered`/`Serial` prevent inter-spec
-interference for mutation-heavy features. `DeferCleanup` ensures each spec restores
-what it touched. `Informing` decouples experimental coverage from gate status. The
-`lifecycle` label separates mutation tests from read-only compliance runs at the CI
-job level.
+For the default Azure `TestPlan`, cluster-level isolation (different processes target
+different clusters) prevents inter-group interference. A custom `TEST_PLAN` must keep
+each hosted-cluster variant in one top-level execution lane; the runner does not
+reject a variant used by multiple concurrent lanes. Within a process, `Ordered`/`Serial`
+prevent inter-spec interference for mutation-heavy features. `DeferCleanup` ensures
+each spec restores what it touched. `Informing` decouples experimental coverage from
+gate status. The `lifecycle` label separates mutation tests from read-only compliance
+runs at the CI job level.
 
 ## High-Level Flow
 
 The diagram below shows the general v2 e2e flow. The framework is
 platform-agnostic — each platform implements the [`PlatformConfig`][platform]
-interface — but Azure is currently the only implementation and serves as the
-reference. The concrete examples here follow the
+interface. Azure and AWS provide implementations; Azure serves as the reference
+for the multi-cluster lifecycle flow. The concrete examples here follow the
 [`e2e-azure-v2-self-managed`][ci-job-config] CI job and its
 [workflow][workflow]. ci-operator builds the [`hypershift-tests`][dockerfile-e2e]
 image (via [`Dockerfile.e2e`][dockerfile-e2e], which invokes several
@@ -15221,30 +15234,48 @@ sequenceDiagram
     CIO->>RT: Run run-e2e-v2-selfmanaged step<br/>(KUBECONFIG=management_cluster_kubeconfig)
 
     activate RT
-    Note over RT: Reads HYPERSHIFT_PLATFORM → builds TestMatrix<br/>Reads cluster names and platform config from SHARED_DIR
+    Note over RT: Reads HYPERSHIFT_PLATFORM → resolves the default TestPlan or TEST_PLAN<br/>Reads cluster names and platform config from SHARED_DIR
 
     RT->>RT: PlatformConfig.SetupTestEnv()<br/>(set env vars from SHARED_DIR files)
 
-    par Parallel test groups (each is a goroutine calling exec.Command)
-        RT->>T: public-{hash} (platform + feature tests)
+    par Private lane
         RT->>T: private-{hash} (private topology + compliance)
+        T-->>RT: exit code
+    and Public sequential lane
+        RT->>T: public-{hash} (platform + feature tests)
+        T-->>RT: exit 0
+        RT->>T: public-{hash} (NodePool rollout shard)
+        T-->>RT: exit code
+    and Autoscaling sequential lane
+        RT->>T: autoscaling-{hash} (MachineConfig rollout)
+        T-->>RT: exit 0
+        RT->>T: autoscaling-{hash} (autoscaling balancing)
+        T-->>RT: exit code
+    and OAuth LoadBalancer sequential lane
         RT->>T: oauth-lb-{hash} (OAuth, health, metrics, registry)
-        RT->>T: autoscaling-{hash}
-        RT->>T: external-oidc-{hash}
+        T-->>RT: exit 0
+        RT->>T: oauth-lb-{hash} (NodePool config shard)
+        T-->>RT: exit code
+    and External OIDC sequential lane
+        RT->>T: external-oidc-{hash} (OIDC + global pull secret)
+        T-->>RT: exit 0
+        RT->>T: external-oidc-{hash} (autoscaling scale-up/down)
+        T-->>RT: exit 0
+        RT->>T: external-oidc-{hash} (trust bundle)
+        T-->>RT: exit code
+    and Upgrade sequential lane
+        RT->>T: upgrade-{hash} (upgrade)
+        T-->>RT: exit 0
+        RT->>T: upgrade-{hash} (post-upgrade health)
+        T-->>RT: exit 0
+        RT->>T: upgrade-{hash} (control-plane TLS)
+        T-->>RT: exit 0
+        RT->>T: upgrade-{hash} (etcd chaos)
+        T-->>RT: exit code
     end
-    Note right of RT: Each subprocess receives cluster name via<br/>E2E_HOSTED_CLUSTER_NAME env var and label<br/>filter via --ginkgo.label-filter
+    Note right of RT: Each subprocess receives the cluster name via env vars,<br/>plus its label filter via --ginkgo.label-filter
 
-    par Sequential group: upgrade-and-chaos (single goroutine, steps run in order)
-        RT->>T: upgrade-{hash} (upgrade tests)
-        Note over T: Process 6a (upgrade)
-        T-->>RT: exit 0 (upgrade passed)
-
-        RT->>T: upgrade-{hash} (etcd-chaos, same cluster)
-        Note over T: Process 6b (etcd-chaos)
-        T-->>RT: exit 0 or error
-    end
-
-    T-->>RT: All parallel groups return exit codes
+    T-->>RT: All execution lanes return exit codes
     RT->>RT: Collect results, report pass/fail summary
     RT-->>CIO: exit code (0 if all passed)
     deactivate RT
@@ -15330,7 +15361,7 @@ sequenceDiagram
 | **Step shell** | bash | One per CI step | Sets KUBECONFIG, runs Go binaries ([create][create-guests-sh], [run][run-tests-chain], [destroy][destroy-guests-chain]) |
 | **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster names and platform-specific config to `SHARED_DIR` |
 | **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
-| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group (7 total, up to 6 concurrent) | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
+| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | Default Azure plan: one process per test group (14 total, up to 6 concurrent) | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. Custom `TEST_PLAN` files can change the process count. |
 | **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
 
 ## Sequencing of Mutually Exclusive Tests
@@ -15341,20 +15372,17 @@ Mutual exclusion between test groups is achieved through **cluster isolation** a
 ```mermaid
 flowchart TD
     subgraph TestMatrix["TestMatrix (defined by PlatformConfig)"]
-        subgraph Parallel["Parallel Groups (all run concurrently)"]
-            P1["public cluster<br/>(platform + feature tests)"]
-            P2["private cluster<br/>(private topology + compliance)"]
-            P3["oauth-lb cluster<br/>(OAuth, health, metrics, registry)"]
-            P4["autoscaling cluster"]
-            P5["external-oidc cluster"]
+        subgraph Parallel["Parallel Group"]
+            P1["private cluster<br/>(private topology + compliance)"]
         end
 
-        subgraph Sequential["Sequential Group: upgrade-and-chaos"]
+        subgraph Sequential["Sequential Groups (run concurrently by variant)"]
             direction TB
-            S1["Step 1: upgrade tests<br/>label: control-plane-upgrade"]
-            S2["Step 2: etcd-chaos tests<br/>label: etcd-chaos"]
-            S1 -->|"pass → continue"| S2
-            S1 -.->|"fail → skip remaining"| SKIP["Steps skipped"]
+            S1["public<br/>platform/features → NodePool rollout shard"]
+            S2["autoscaling<br/>MachineConfig → balancing"]
+            S3["oauth-lb<br/>configuration tests → NodePool config shard"]
+            S4["external-oidc<br/>configuration → scale-up/down → trust bundle"]
+            S5["upgrade<br/>upgrade → post-upgrade health → TLS → etcd chaos"]
         end
     end
 
@@ -15365,25 +15393,28 @@ flowchart TD
 
 **Key mechanisms:**
 
-1. **Cluster-per-group isolation**: Each parallel test group targets a **different
-   HostedCluster**. Tests within a group share one cluster but different groups never
-   touch the same cluster. This eliminates inter-group interference without locks.
+1. **Cluster-per-lane isolation**: In the default Azure plan, each parallel group or
+   sequential group targets a **different HostedCluster variant**. Multiple processes
+   targeting one variant are steps in the same sequential group, so cleanup finishes
+   before the next process starts.
 
 2. **Label-based partitioning**: Ginkgo's `--ginkgo.label-filter` ensures each
-   `test-e2e-v2` process only runs specs matching its assigned labels. The label
-   sets are [non-overlapping across groups][azure-platform], so the same spec never
-   runs in two processes.
+   `test-e2e-v2` process only runs specs matching its assigned labels. Most filters
+   are non-overlapping, but the default Azure plan intentionally reuses
+   `hosted-cluster-health` and `control-plane-workloads` in the post-upgrade health
+   step, so those specs run again after upgrade. Custom plans must define any
+   intended overlap explicitly and keep overlapping groups in one sequential lane.
 
-3. **Sequential groups for ordered dependencies**: The `upgrade-and-chaos`
-   [sequential group][azure-platform] runs upgrade first, then etcd-chaos on the
-   **same cluster**. The [`run-tests` orchestrator][run-tests] enforces ordering by
-   running steps sequentially within a single goroutine. If upgrade fails, etcd-chaos
-   is skipped (the goroutine returns early).
+3. **Sequential groups for shared variants**: Public, autoscaling, OAuth
+   LoadBalancer, external OIDC, and upgrade each have a
+   [sequential group][azure-platform]. The [`run-tests` orchestrator][run-tests]
+   runs each group's steps sequentially within one goroutine and skips remaining
+   steps after a failure.
 
 4. **No in-process mutex**: Because each `test-e2e-v2` process targets exactly one
-   cluster and runs non-overlapping label sets, there is no need for mutexes or
-   other synchronization between test specs. Ginkgo runs specs within a single
-   process serially by default (no `--procs` flag is passed).
+   cluster and processes sharing a variant run in one sequential lane, there is no
+   need for mutexes or other synchronization between test specs. Ginkgo runs specs
+   within a single process serially by default (no `--procs` flag is passed).
 
 ## Inter-Process Communication
 
@@ -15582,34 +15613,39 @@ Labels are attached to `Describe` or `Context` blocks to categorize tests:
 
 | Category | Labels |
 |----------|--------|
-| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, `etcd-chaos`, `backup-restore` |
+| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, fine-grained NodePool shard labels, `etcd-chaos`, `backup-restore` |
 | Health/Compliance | `hosted-cluster-health`, `hosted-cluster-compliance`, `hosted-cluster-security`, `hosted-cluster-dns`, `hosted-cluster-metrics`, `hosted-cluster-image-registry`, `hosted-cluster-ccm`, `control-plane-workloads`, `routes` |
 | Platform-specific | `Azure`, `GCP`, `hosted-cluster-azure`, `self-managed-azure-public`, `self-managed-azure-private`, `self-managed-azure-oauth-lb` |
 | Meta | `Informing` |
 
 ### Layer 2: Label-filter expressions
 
-The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. Example from Azure TestMatrix:
+The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. The following is a simplified example based on the Azure TestMatrix:
 
 ```go
-Parallel: []TestGroup{
-    {
-        Name:        "public",
-        ClusterFile: "cluster-name-public",
-        LabelFilter: "self-managed-azure-public || nodepool-lifecycle",
-        JUnitFile:   "junit_self_managed_azure_public.xml",
-    },
-    // ...
-},
 Sequential: []SequentialGroup{
     {
-        Name: "upgrade",
+        Name: "public",
         Steps: []TestGroup{
             {
-                Name:        "control-plane-upgrade",
-                ClusterFile: "cluster-name-upgrade",
+                Name:        "public",
+                Variant:     "public",
+                LabelFilter: "self-managed-azure-public || control-plane-workloads",
+            },
+            {
+                Name:        "public-nodepool-rollouts",
+                Variant:     "public",
+                LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade",
+            },
+        },
+    },
+    {
+        Name: "upgrade-and-chaos",
+        Steps: []TestGroup{
+            {
+                Name:        "upgrade",
+                Variant:     "upgrade",
                 LabelFilter: "control-plane-upgrade",
-                JUnitFile:   "junit_control_plane_upgrade.xml",
             },
             // additional steps run in order within this group
         },
@@ -15618,6 +15654,10 @@ Sequential: []SequentialGroup{
 ```
 
 `Parallel` groups all run concurrently. Each `SequentialGroup` also runs concurrently with everything else, but its internal `Steps` run one after another -- if any step fails, subsequent steps are skipped.
+
+JUnit filenames are derived from each `TestGroup.Name`; configure the group name rather than a separate filename.
+
+When multiple filters target the same hosted-cluster variant, put them in the same `SequentialGroup`. Never add separate `Parallel` groups for one variant, because that launches concurrent test processes against the same hosted cluster.
 
 !!! tip "Adding a test with an existing label"
     If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).
@@ -28126,52 +28166,163 @@ spec:
 
 # Ingress and DNS configuration
 
-By default, the HyperShift operator will configure the KubeVirt platform guest
-cluster's ingress and DNS behavior to reuse what is provided by the underlying
-infra cluster that the KubeVirt VMs are running on. This section describes
-that default behavior in greater detail as well as information on advanced usage
-options.
+This guide covers how to configure ingress and DNS for KubeVirt-based Hosted
+Control Plane (HCP) clusters.
 
-## Default Ingress and DNS Behavior
+## How KubeVirt ingress works
 
-Every OpenShift cluster comes setup with a default application ingress
-controller which is expected to have an wildcard DNS record associated with it.
-By default, guest clusters created using the Hypershift KubeVirt provider
-will automatically become a subdomain of the underlying OCP cluster that
-the KubeVirt VMs run on.
+On KubeVirt HCP clusters, the guest cluster's default IngressController defaults
+to the `NodePortService` endpoint publishing strategy. This means the guest
+cluster's router pods are exposed through a NodePort Service
+(`router-nodeport-default` in the `openshift-ingress` namespace) that listens
+on dynamically assigned ports on each guest VM's network interface.
 
-For example, if an OCP cluster has a default ingress DNS entry of
-`*.apps.mgmt-cluster.example.com`, then the default ingress of a KubeVirt
-guest cluster named `guest` running on that underlying OCP cluster will
-be `*.apps.guest.apps.mgmt-cluster.example.com`.
+There are two modes for routing external traffic to these NodePorts:
+
+| Mode | When it applies | Who manages ingress routing |
+|------|----------------|----------------------------|
+| **baseDomainPassthrough** (default) | No `baseDomain` specified, or `baseDomainPassthrough` explicitly set to `true` | HyperShift (automatic) |
+| **Custom baseDomain** | Explicit `baseDomain` provided at creation time | User (manual) |
+
+### When baseDomainPassthrough is auto-enabled
+
+When creating a KubeVirt HostedCluster **without** specifying a `baseDomain`,
+the HyperShift webhook automatically enables `baseDomainPassthrough`:
+
+- If `spec.dns.baseDomain` is empty, the webhook sets
+  `spec.platform.kubevirt.baseDomainPassthrough = true`
+- If you provide an explicit `baseDomain`, the webhook does **not** enable
+  baseDomainPassthrough, and you are responsible for configuring ingress manually
+
+!!! important
+
+    `baseDomainPassthrough` is **immutable** after HostedCluster creation. If
+    you create a cluster with a custom `baseDomain` (and therefore without
+    baseDomainPassthrough), you cannot enable it later without recreating the
+    cluster.
+
+## Default: baseDomainPassthrough
+
+When `baseDomainPassthrough` is enabled (the default when no `baseDomain` is
+specified), HyperShift automatically configures all ingress routing
+infrastructure on the management cluster. No manual LoadBalancer or DNS setup
+is required.
+
+### What HyperShift creates automatically
+
+1. **A wildcard passthrough Route** on the management cluster with
+   `TLSTerminationPassthrough` and `WildcardPolicySubdomain`. This Route
+   matches all `*.apps.<guest>.<mgmt-apps-domain>` requests and forwards
+   them without terminating TLS.
+
+2. **A ClusterIP Service** on the management cluster with an empty selector
+   (no pod selector). The Service's target port is set to the guest router's
+   HTTPS NodePort.
+
+3. **EndpointSlices** managed by the Machine controller, pointing to the VM's
+   machineNetwork IPs (not pod IPs) on the correct NodePort. These are
+   automatically updated when VMs are added, removed, or live-migrated.
+
+### Resulting DNS domain
+
+The guest cluster's base domain is auto-detected as a subdomain of the
+management cluster's `*.apps` domain. For example:
+
+- Management cluster apps domain: `*.apps.mgmt-cluster.example.com`
+- Guest cluster named `guest`: `*.apps.guest.apps.mgmt-cluster.example.com`
+
+### How the default ingress passthrough works
+
+The default ingress passthrough is implemented in the infra cluster namespace
+where the KubeVirt VMs run with:
+
+- A selector-less `ClusterIP` Service (`default-ingress-passthrough-service-<id>`)
+  exposing port `443`.
+- `EndpointSlice`s for that Service, one per worker VM, pointing at the VM
+  internal IPs and the port where the guest routers listen.
+- A wildcard passthrough `Route` (`default-ingress-passthrough-route-<id>`) for
+  `*.apps.<guest>.<infra base domain>` targeting that Service.
+
+The port targeted on the VMs depends on the guest default `IngressController`
+`endpointPublishingStrategy`:
+
+- `NodePortService` (default for KubeVirt): the HTTPS `nodePort` of the
+  `openshift-ingress/router-nodeport-default` Service in the guest cluster.
+- `HostNetwork`: the `hostNetwork.httpsPort` (defaults to `443`). This strategy
+  can be selected at creation time through
+  `spec.operatorConfiguration.ingressOperator.endpointPublishingStrategy` in the
+  `HostedCluster`, for example:
+
+    ```yaml
+    spec:
+      operatorConfiguration:
+        ingressOperator:
+          endpointPublishingStrategy:
+            type: HostNetwork
+            hostNetwork:
+              httpPort: 80
+              httpsPort: 443
+              statsPort: 1936
+              protocol: TCP
+    ```
 
 !!! note
 
-    For this default ingress DNS to work properly, the underlying cluster
-    hosting the KubeVirt VMs must allow wildcard DNS routes. This can be
-    configured using the following cli command. ```oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'```
+    With `HostNetwork`, every running worker VM is added as an endpoint. Only the
+    nodes where a router pod is scheduled accept connections; the infra cluster
+    router health checks exclude the other endpoints.
+
+Other endpoint publishing strategies (e.g. `LoadBalancerService`) are not
+supported by the default ingress passthrough; use the custom baseDomain
+behavior described below instead.
+
+### Prerequisites
+
+The management cluster must allow wildcard DNS routes:
+
+```shell
+oc patch ingresscontroller -n openshift-ingress-operator default \
+  --type=json \
+  -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {"wildcardPolicy": "WildcardsAllowed"}}]'
+```
 
 !!! note
 
-    When using the default guest cluster ingress, connectivity is limited to HTTPS
-    traffic over port 443. Plain HTTP traffic over port 80 will be rejected. This
-    limitation only applies to the default ingress behavior and not the custom ingress
-    behavior where manual creation of an ingress LoadBalancer and DNS is performed.
+    When using baseDomainPassthrough, connectivity is limited to HTTPS traffic
+    over port 443. Plain HTTP traffic over port 80 will be rejected. This
+    limitation only applies to the default ingress behavior, not the custom
+    baseDomain configuration described below.
 
-## Customized Ingress and DNS Behavior
+## Custom baseDomain (without baseDomainPassthrough)
 
-In lieu of the default ingress and DNS behavior, it is also possible to
-configure a Hypershift KubeVirt guest cluster with a unique base domain
-at creation time. This option does require some manual configuration
-steps during creation though.
+When you provide an explicit `baseDomain` at creation time, HyperShift does
+**not** enable `baseDomainPassthrough` and does **not** create any ingress
+routing infrastructure on the management cluster. You are fully responsible
+for configuring:
 
-This process involves three steps:
+1. A LoadBalancer Service on the management cluster
+2. An EndpointSlice pointing to the VM machineNetwork IPs
+3. A wildcard DNS record for `*.apps.<cluster-name>.<baseDomain>`
+
+The traffic flow for this configuration is:
+
+```
+Client
+  └─> *.apps.<cluster>.<baseDomain>     (DNS wildcard)
+       └─> LoadBalancer VIP              (MetalLB / external LB)
+            └─> VM machineNetwork IP     (EndpointSlice target)
+                 └─> NodePort            (guest router)
+                      └─> guest Route    (application)
+```
+
+This process involves four steps:
 
 1. Cluster creation
-2. LoadBalancer creation
+2. LoadBalancer and EndpointSlice creation
 3. Wildcard DNS configuration
+4. Verification
 
-### Step 1 - Deploying the HostedCluster specifying our base domain
+### Step 1 - Deploy the HostedCluster with a custom baseDomain
 
 ```shell linenums="1"
 export CLUSTER_NAME=example
@@ -28190,9 +28341,10 @@ hcp create cluster kubevirt \
 --base-domain $BASE_DOMAIN
 ```
 
-With above configuration we will end up having a HostedCluster with an ingress wildcard configured for `*.apps.example.hypershift.lab` (*.apps.<hostedcluster_name\>.<base_domain\>).
+This creates a HostedCluster with ingress wildcard `*.apps.example.hypershift.lab`.
 
-This time, the HostedCluster will not finish the deployment (will remain in `Partial` progress) as we saw in the previous section, since we have configured a base domain we need to make sure that the required DNS records and load balancer are in-place:
+The HostedCluster will remain in `Partial` progress until the LoadBalancer and
+DNS are configured:
 
 ```shell linenums="1"
 oc get --namespace clusters hostedclusters
@@ -28201,95 +28353,182 @@ NAME            VERSION   KUBECONFIG                       PROGRESS   AVAILABLE 
 example                   example-admin-kubeconfig         Partial    True        False         The hosted control plane is available
 ```
 
-If we access the HostedCluster this is what we will see:
+### Step 2 - Set up the LoadBalancer and EndpointSlice
 
-```shell
-hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_NAME-kubeconfig
-```
+!!! warning
 
-```shell
-oc --kubeconfig $CLUSTER_NAME-kubeconfig get co
+    Do **not** use a pod selector (such as `kubevirt.io: virt-launcher`) on the
+    LoadBalancer Service. KubeVirt VMs typically have two network interfaces: the
+    **pod network** (used by the virt-launcher pod on the management cluster) and
+    the **machineNetwork** (the VM's actual network, often on a secondary bridge
+    interface). The guest router's NodePort only listens on the machineNetwork
+    IPs, not on the pod network IPs. A pod selector resolves to pod network IPs,
+    which causes `connection refused` or `http: server gave HTTP response to
+    HTTPS client` errors.
 
-NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.14.0    False       False         False      30m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.example.hypershift.lab): Get "https://console-openshift-console.apps.example.hypershift.lab": dial tcp: lookup console-openshift-console.apps.example.hypershift.lab on 172.31.0.10:53: no such host
-.
-.
-.
-ingress                                    4.14.0    True        False         True       28m     The "default" ingress controller reports Degraded=True: DegradedConditions: One or more other status conditions indicate a degraded state: CanaryChecksSucceeding=False (CanaryChecksRepetitiveFailures: Canary route checks for the default ingress controller are failing)
-```
-
-In the next section we will fix that.
-
-### Step 2 - Set up the LoadBalancer
-
+    Instead, create a Service with no selector and manually manage an
+    EndpointSlice that points to the VM machineNetwork IPs.
 
 !!! note
 
-    If your cluster is on bare-metal you may need MetalLB to be able to provision functional LoadBalancer services. Take a look at the section Optional MetalLB Configuration Steps.
+    If your cluster is on bare metal you may need MetalLB to be able to provision
+    functional LoadBalancer services. See the
+    Optional MetalLB Configuration Steps
+    section.
 
-This option requires configuring a new LoadBalancer service that routes to the KubeVirt VMs as well as assign a wildcard DNS entry to the LoadBalancer's IP address.
+#### 1. Retrieve the guest cluster NodePorts
 
-First, we need to create a LoadBalancer Service that routes ingress traffic to the KubeVirt VMs.
+```shell
+export CLUSTER_KUBECONFIG="${CLUSTER_NAME}-kubeconfig"
+hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_KUBECONFIG
 
-A NodePort Service exposing the HostedCluster ingress already exists, we will grab the NodePorts and create the LoadBalancer service targeting these ports.
+export HTTP_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
 
-1. Grab NodePorts
+export HTTPS_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
 
-    ```sh
-    export HTTP_NODEPORT=$(oc --kubeconfig $CLUSTER_NAME-kubeconfig get services -n openshift-ingress router-nodeport-default -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-    export HTTPS_NODEPORT=$(oc --kubeconfig $CLUSTER_NAME-kubeconfig get services -n openshift-ingress router-nodeport-default -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
-    ```
-
-2. Create LoadBalancer Service
-
-    ```sh
-    cat << EOF | oc apply -f -
-    apiVersion: v1
-    kind: Service
-    metadata:
-      labels:
-        app: $CLUSTER_NAME
-      name: $CLUSTER_NAME-apps
-      namespace: clusters-$CLUSTER_NAME
-    spec:
-      ports:
-      - name: https-443
-        port: 443
-        protocol: TCP
-        targetPort: ${HTTPS_NODEPORT}
-      - name: http-80
-        port: 80
-        protocol: TCP
-        targetPort: ${HTTP_NODEPORT}
-      selector:
-        kubevirt.io: virt-launcher
-      type: LoadBalancer
-    EOF
-    ```
-
-### Step 3 - Set up a wildcard DNS record for the `*.apps`
-
-Now that we have the ingress exposed, next step is configure a wildcard DNS A record or CNAME that references the LoadBalancer Service's external IP.
-
-1. Get the external IP.
-
-  ```shell
-  export EXTERNAL_IP=$(oc -n clusters-$CLUSTER_NAME get service $CLUSTER_NAME-apps -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-  ```
-
-2. Configure a wildcard `*.apps.<hostedcluster_name\>.<base_domain\>.` DNS entry referencing the IP stored in $EXTERNAL_IP that is routable both internally and externally of the cluster.
-
-For example, for the cluster used in this example and for an external ip value of `192.168.20.30` this is what DNS resolutions will look like:
-
-```sh
-dig +short test.apps.example.hypershift.lab
-
-192.168.20.30
+echo "HTTP NodePort: $HTTP_NODEPORT"
+echo "HTTPS NodePort: $HTTPS_NODEPORT"
 ```
 
-### Checking HostedCluster status after having fixed the ingress
+#### 2. Retrieve the VM machineNetwork IPs
 
-Now that we fixed the ingress, we should see our HostedCluster progress moved from `Partial` to `Completed`.
+```shell
+export HCP_NAMESPACE="clusters-${CLUSTER_NAME}"
+
+oc get vmi -n $HCP_NAMESPACE -o json | \
+  jq -r '.items[] | "\(.metadata.name)\t\(.status.interfaces[] | select(.name != "default" and .ipAddress != null and .ipAddress != "") | .ipAddress | split("/")[0])"'
+```
+
+This command filters out the pod network interface (`default`) and strips any
+CIDR suffix from the IP address. If your VMs use a different interface layout,
+list all interfaces with `oc get vmi -n $HCP_NAMESPACE -o yaml` and adjust the
+filter accordingly.
+
+Save the VM IPs for use in the EndpointSlice below. For example:
+
+```
+example-workers-abc12-xyz34    192.168.216.50
+example-workers-abc12-xyz56    192.168.216.51
+```
+
+#### 3. Create the LoadBalancer Service (no selector)
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ${CLUSTER_NAME}
+  name: ${CLUSTER_NAME}-apps
+  namespace: ${HCP_NAMESPACE}
+spec:
+  ports:
+  - name: https-443
+    port: 443
+    protocol: TCP
+    targetPort: ${HTTPS_NODEPORT}
+  - name: http-80
+    port: 80
+    protocol: TCP
+    targetPort: ${HTTP_NODEPORT}
+  type: LoadBalancer
+EOF
+```
+
+Note that the Service has **no `selector` field**. Traffic routing is handled
+by the EndpointSlice created in the next step.
+
+#### 4. Create the EndpointSlice
+
+Replace the IP addresses below with the VM machineNetwork IPs retrieved in
+step 2:
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: ${CLUSTER_NAME}-apps-endpoints
+  namespace: ${HCP_NAMESPACE}
+  labels:
+    kubernetes.io/service-name: ${CLUSTER_NAME}-apps
+    endpointslice.kubernetes.io/managed-by: manual
+addressType: IPv4
+ports:
+- name: https-443
+  port: ${HTTPS_NODEPORT}
+  protocol: TCP
+- name: http-80
+  port: ${HTTP_NODEPORT}
+  protocol: TCP
+endpoints:
+- addresses:
+  - "192.168.216.50"
+- addresses:
+  - "192.168.216.51"
+EOF
+```
+
+!!! important
+
+    The EndpointSlice must be updated manually whenever the guest cluster's
+    VMs change:
+
+    - **Scaling up**: Add new VM machineNetwork IPs to the EndpointSlice
+    - **Scaling down**: Remove decommissioned VM IPs
+    - **Live migration**: Update IPs if the VM's machineNetwork address changes
+
+    Run `oc get vmi -n $HCP_NAMESPACE` to retrieve the current VM IPs after
+    any scaling or migration event.
+
+### Step 3 - Set up a wildcard DNS record for `*.apps`
+
+Configure a wildcard DNS record that references the LoadBalancer Service's
+external address:
+
+1. Get the external address. Depending on the load balancer provider, either
+   `.ip` (IP-based, e.g., MetalLB, GCE) or `.hostname` (DNS-based, e.g., AWS
+   ELB) is populated:
+
+    ```shell
+    export EXTERNAL_IP=$(oc -n $HCP_NAMESPACE get service ${CLUSTER_NAME}-apps \
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    export EXTERNAL_HOSTNAME=$(oc -n $HCP_NAMESPACE get service ${CLUSTER_NAME}-apps \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+    ```
+
+2. Configure a wildcard `*.apps.<cluster_name>.<base_domain>.` DNS entry.
+   The DNS record must be routable both from outside the cluster **and from
+   inside the guest VMs** (see the Troubleshooting section
+   for hairpin issues).
+
+    - If `$EXTERNAL_IP` is set, create a wildcard **A record**:
+
+        ```
+        *.apps.example.hypershift.lab.  IN  A  192.168.20.30
+        ```
+
+    - If `$EXTERNAL_HOSTNAME` is set instead, create a wildcard **CNAME record**:
+
+        ```
+        *.apps.example.hypershift.lab.  IN  CNAME  a1b2c3-1234.us-east-1.elb.amazonaws.com.
+        ```
+
+    Verify DNS resolves correctly:
+
+    ```shell
+    dig +short test.apps.example.hypershift.lab
+    ```
+
+### Step 4 - Verify the HostedCluster status
+
+Once the LoadBalancer and DNS are in place, the HostedCluster progress should
+move from `Partial` to `Completed`:
 
 ```shell linenums="1"
 oc get --namespace clusters hostedclusters
@@ -28326,7 +28565,7 @@ outlining how to configure MetalLB after installing MetalLB using CLI.
       namespace: metallb-system
     spec:
       addresses:
-      - 192.168.216.32-192.168.216.122
+      - 192.168.216.200-192.168.216.220
     EOF
     ```
 
@@ -28344,6 +28583,70 @@ outlining how to configure MetalLB after installing MetalLB using CLI.
        - metallb
     EOF
     ```
+
+## Troubleshooting
+
+### CanaryChecksRepetitiveFailures with custom baseDomain
+
+When using a custom `baseDomain` (without `baseDomainPassthrough`), the ingress
+operator may report `Degraded` with errors like:
+
+```
+CanaryChecksRepetitiveFailures: Canary route checks for the default ingress
+controller are failing. Last 1 error messages:
+error sending canary HTTP request: http: server gave HTTP response to HTTPS client
+```
+
+or:
+
+```
+connection refused
+```
+
+#### Diagnostic steps
+
+1. **Verify DNS resolution from inside the guest VMs.** The canary check runs
+   from inside the guest cluster, so DNS must resolve correctly from within
+   the VMs:
+
+    ```shell
+    oc --kubeconfig $CLUSTER_KUBECONFIG debug node/<any-guest-node> -- \
+      chroot /host nslookup canary-openshift-ingress-canary.apps.${CLUSTER_NAME}.${BASE_DOMAIN}
+    ```
+
+    Compare this IP with the LoadBalancer VIP. If they differ, DNS is
+    misconfigured.
+
+2. **Verify the LoadBalancer endpoints use machineNetwork IPs, not pod IPs.**
+   Check the EndpointSlice:
+
+    ```shell
+    oc get endpointslice -n $HCP_NAMESPACE -l kubernetes.io/service-name=${CLUSTER_NAME}-apps -o yaml
+    ```
+
+    The IP addresses in the EndpointSlice must be the VM machineNetwork IPs
+    (the same IPs returned by the `oc get vmi -o json | jq` command in
+    Step 2), **not** the virt-launcher pod
+    IPs. If the EndpointSlice contains pod network IPs (typically in a
+    different CIDR than the machineNetwork), the guest router NodePort will
+    not be reachable and connections will be refused.
+
+3. **Test LoadBalancer VIP reachability from inside the guest.** Curl the
+   LoadBalancer VIP from within a guest VM:
+
+    ```shell
+    oc --kubeconfig $CLUSTER_KUBECONFIG debug node/<any-guest-node> -- \
+      chroot /host curl -vk --connect-timeout 5 https://<EXTERNAL_IP>:443
+    ```
+
+    If this returns `connection refused` but the same curl works from outside
+    the guest VMs, the issue is **VIP return-path routing** — the VMs are
+    sending traffic to a VIP that routes back to themselves, but the return
+    path is broken (asymmetric routing). Configure split-horizon DNS so
+    that guest VMs resolve `*.apps` directly to their own machineNetwork
+    IPs instead of the external VIP. See the JSON patch DNS override in
+    the recipe
+    for an automated approach.
 
 
 ---
@@ -28421,8 +28724,12 @@ KubeVirt platform.
 
 ## Ingress and Console cluster operators are not coming online
 
-* If the cluster is using the default ingress behavior, ensure that wildcard DNS routes are enabled on the OCP cluster the VMs are hosted on. `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'`
-* If a custom base domain is used for the HCP, double check that the Load Balancer is targeting the VM pods accurately, and make sure the wildcard DNS entry is targeting the Load Balancer IP.
+* If the cluster is using the default ingress behavior (baseDomainPassthrough), ensure that wildcard DNS routes are enabled on the management cluster: `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {"wildcardPolicy": "WildcardsAllowed"}}]'`
+* If a custom base domain is used for the HCP (without baseDomainPassthrough):
+    * Verify the LoadBalancer Service has **no pod selector**. Using a selector like `kubevirt.io: virt-launcher` resolves to pod network IPs, but the guest router's NodePort only listens on VM machineNetwork IPs. This mismatch causes `connection refused` or `http: server gave HTTP response to HTTPS client` errors. Use an EndpointSlice instead to target the VM machineNetwork IPs directly.
+    * Verify the EndpointSlice addresses match the VM machineNetwork IPs (`oc get vmi -n <hcp namespace>`), not the virt-launcher pod IPs.
+    * Verify the wildcard DNS entry `*.apps.<cluster>.<baseDomain>` resolves to the LoadBalancer's external IP, and that DNS resolves correctly **from inside the guest VMs** (hairpin routing).
+    * See Ingress and DNS - Troubleshooting for detailed diagnostic steps.
 
 ## Guest Cluster Load Balancer services are not becoming available
 
@@ -39759,6 +40066,355 @@ In this section we will expose the more frequent recipes the people could use fo
 
 ---
 
+## Source: docs/content/recipes/kubevirt/custom-ingress-with-metallb.md
+
+---
+title: Configure Custom Ingress for KubeVirt HCP
+---
+
+# Configure Custom Ingress for KubeVirt HCP
+
+This recipe walks through deploying a KubeVirt-based Hosted Control Plane with
+a custom `baseDomain` (without `baseDomainPassthrough`) on a bare-metal
+management cluster using MetalLB for LoadBalancer services.
+
+This is the typical setup when the guest cluster needs its own DNS domain
+separate from the management cluster's `*.apps` domain, and an external load
+balancer (F5, HAProxy, etc.) or MetalLB handles VIP advertisement.
+
+## Prerequisites
+
+- A bare-metal OpenShift management cluster with KubeVirt (OpenShift
+  Virtualization) installed
+- MetalLB Operator installed (see
+  Optional MetalLB Configuration Steps)
+- A DNS zone you control for the custom `baseDomain`
+- VM network configured with a secondary bridge interface (the VMs must have
+  machineNetwork connectivity, not just pod network)
+
+## Environment Variables
+
+Set these once — all subsequent commands reference them:
+
+```shell
+export CLUSTER_NAME=my-kubevirt-hcp
+export BASE_DOMAIN=example.com
+export HCP_NAMESPACE="clusters-${CLUSTER_NAME}"
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+```
+
+## Step 1 — Create the HostedCluster
+
+```shell
+hcp create cluster kubevirt \
+  --name $CLUSTER_NAME \
+  --node-pool-replicas $WORKER_COUNT \
+  --pull-secret $PULL_SECRET \
+  --memory $MEM \
+  --cores $CPU \
+  --base-domain $BASE_DOMAIN
+```
+
+Because `--base-domain` is provided, the webhook does **not** enable
+`baseDomainPassthrough`. The cluster will stay in `Partial` progress until
+ingress is manually configured.
+
+## Step 2 — Configure MetalLB
+
+### 2.1 — Create the MetalLB instance
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: MetalLB
+metadata:
+  name: metallb
+  namespace: metallb-system
+```
+
+### 2.2 — Create the IPAddressPool
+
+Adjust the address range to match available IPs on your bare-metal network:
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: hcp-ingress-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.216.200-192.168.216.220
+```
+
+!!! warning
+
+    The MetalLB address pool must be **disjoint** from the VM machineNetwork
+    addresses. If the pool includes IPs assigned to VMs (e.g., 192.168.216.50,
+    192.168.216.51 in this example), MetalLB may allocate a VIP that conflicts
+    with an existing VM address.
+
+### 2.3 — Create the L2Advertisement
+
+If your network uses a specific bridge interface (e.g., `br-sdn`), add
+`interfaces` and `nodeSelectors` as needed:
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: hcp-ingress-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - hcp-ingress-pool
+```
+
+## Step 3 — Retrieve the Guest Router NodePorts
+
+Wait for the guest cluster to have running worker nodes, then extract the
+dynamically assigned NodePorts:
+
+```shell
+export CLUSTER_KUBECONFIG="${CLUSTER_NAME}-kubeconfig"
+hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_KUBECONFIG
+
+export HTTP_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+
+export HTTPS_NODEPORT=$(oc --kubeconfig $CLUSTER_KUBECONFIG get services \
+  -n openshift-ingress router-nodeport-default \
+  -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
+
+echo "HTTP NodePort: $HTTP_NODEPORT"
+echo "HTTPS NodePort: $HTTPS_NODEPORT"
+```
+
+## Step 4 — Retrieve VM machineNetwork IPs
+
+```shell
+oc get vmi -n $HCP_NAMESPACE -o json | \
+  jq -r '.items[] | "\(.metadata.name)\t\(.status.interfaces[] | select(.name != "default" and .ipAddress != null and .ipAddress != "") | .ipAddress | split("/")[0])"'
+```
+
+This filters out the pod network interface (`default`) and strips any CIDR
+suffix. If your VMs use a different interface layout, check all interfaces with
+`oc get vmi -n $HCP_NAMESPACE -o yaml` and adjust the filter.
+
+Example output:
+
+```
+my-kubevirt-hcp-workers-abc12-xyz34    192.168.216.50
+my-kubevirt-hcp-workers-abc12-xyz56    192.168.216.51
+```
+
+!!! warning
+
+    Use the **machineNetwork IPs** (the VM's network interface on the
+    secondary bridge), not the virt-launcher pod IPs. The guest router's
+    NodePort only listens on machineNetwork IPs. Using pod IPs causes
+    `connection refused` errors. See
+    Ingress and DNS - Troubleshooting
+    for details.
+
+## Step 5 — Create the LoadBalancer Service (no selector)
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ${CLUSTER_NAME}
+  name: ${CLUSTER_NAME}-apps-ingress
+  namespace: ${HCP_NAMESPACE}
+spec:
+  ports:
+  - name: https-443
+    port: 443
+    protocol: TCP
+    targetPort: ${HTTPS_NODEPORT}
+  - name: http-80
+    port: 80
+    protocol: TCP
+    targetPort: ${HTTP_NODEPORT}
+  type: LoadBalancer
+EOF
+```
+
+The Service has **no `selector`**. Traffic routing is handled entirely by the
+EndpointSlice below.
+
+## Step 6 — Create the EndpointSlice
+
+Replace IP addresses with the values from Step 4:
+
+```shell
+cat << EOF | oc apply -f -
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: ${CLUSTER_NAME}-apps-ingress
+  namespace: ${HCP_NAMESPACE}
+  labels:
+    kubernetes.io/service-name: ${CLUSTER_NAME}-apps-ingress
+    endpointslice.kubernetes.io/managed-by: manual
+addressType: IPv4
+ports:
+- name: https-443
+  port: ${HTTPS_NODEPORT}
+  protocol: TCP
+- name: http-80
+  port: ${HTTP_NODEPORT}
+  protocol: TCP
+endpoints:
+- addresses:
+  - "192.168.216.50"
+- addresses:
+  - "192.168.216.51"
+EOF
+```
+
+## Step 7 — Configure Wildcard DNS
+
+Get the VIP assigned by MetalLB:
+
+```shell
+export EXTERNAL_IP=$(oc -n $HCP_NAMESPACE get service ${CLUSTER_NAME}-apps-ingress \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "LoadBalancer VIP: $EXTERNAL_IP"
+```
+
+Create a wildcard DNS record:
+
+```
+*.apps.my-kubevirt-hcp.example.com.  IN  A  <EXTERNAL_IP>
+```
+
+Verify:
+
+```shell
+dig +short test.apps.${CLUSTER_NAME}.${BASE_DOMAIN}
+```
+
+!!! important
+
+    DNS must resolve correctly both **externally** and **from inside the guest
+    VMs**. If the VMs resolve `*.apps` to the MetalLB VIP but the return
+    traffic path is broken (asymmetric routing), the ingress canary checks
+    will fail. Configure split-horizon DNS so guest VMs resolve directly
+    to their own machineNetwork IPs. See the JSON patch tip below for an
+    automated approach.
+
+!!! tip
+
+    As an alternative to split-horizon DNS, you can inject custom DNS
+    configuration directly into the KubeVirt VMs using a JSON patch on the
+    NodePool. This overrides the VM's DNS resolver so it points to a
+    nameserver that returns the correct IPs from inside the guest network:
+
+    ```yaml
+    apiVersion: hypershift.openshift.io/v1beta1
+    kind: NodePool
+    metadata:
+      name: my-kubevirt-hcp
+      namespace: clusters
+      annotations:
+        hypershift.openshift.io/kubevirt-vm-jsonpatch: |
+          [
+            {
+              "op": "add",
+              "path": "/spec/template/spec/dnsPolicy",
+              "value": "None"
+            },
+            {
+              "op": "add",
+              "path": "/spec/template/spec/dnsConfig",
+              "value": {
+                "nameservers": ["10.0.0.53"]
+              }
+            }
+          ]
+    ```
+
+    !!! warning
+
+        Setting `dnsPolicy: None` removes the default cluster search domains
+        (e.g., `svc.cluster.local`). Do **not** add your external baseDomain
+        to the `searches` list — this causes internal `.svc.cluster.local`
+        lookups to be appended with the external domain and resolve to
+        public IPs, breaking services like the console. If your custom
+        nameserver at `10.0.0.53` needs search domains, include only the
+        cluster-internal ones:
+
+        ```json
+        "searches": ["svc.cluster.local", "cluster.local"]
+        ```
+
+    See Configuring VMs with JSON Patch
+    for full details on the JSON patch mechanism.
+
+## Step 8 — Verify
+
+Check HostedCluster progresses to `Completed`:
+
+```shell
+oc get --namespace clusters hostedclusters
+```
+
+Expected output:
+
+```
+NAME              VERSION   KUBECONFIG                         PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
+my-kubevirt-hcp   4.17.0    my-kubevirt-hcp-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+```
+
+Verify ingress from outside:
+
+```shell
+curl -vk https://console-openshift-console.apps.${CLUSTER_NAME}.${BASE_DOMAIN}
+```
+
+Check the ingress operator is not degraded inside the guest:
+
+```shell
+oc --kubeconfig $CLUSTER_KUBECONFIG get co ingress
+```
+
+## Maintenance
+
+The EndpointSlice is **not** automatically managed. Update it when:
+
+| Event | Action |
+|-------|--------|
+| **Scale up** (new VMs) | Add new VM machineNetwork IPs to the EndpointSlice |
+| **Scale down** | Remove decommissioned VM IPs |
+| **Live migration** | Update IPs if machineNetwork address changed |
+
+Quick command to get current VM IPs:
+
+```shell
+oc get vmi -n $HCP_NAMESPACE -o json | \
+  jq -r '.items[] | "\(.metadata.name)\t\(.status.interfaces[] | select(.name != "default" and .ipAddress != null and .ipAddress != "") | .ipAddress | split("/")[0])"'
+```
+
+## Traffic Flow
+
+```
+Client
+  └─> *.apps.my-kubevirt-hcp.example.com     (DNS wildcard)
+       └─> MetalLB VIP (e.g. 192.168.216.200) (L2 advertisement)
+            └─> VM machineNetwork IP          (EndpointSlice)
+                 └─> NodePort (e.g. 31245)    (guest router)
+                      └─> guest Route         (application)
+```
+
+
+---
+
 ## Source: docs/content/reference/SLOs.md
 
 # SLOs
@@ -41426,7 +42082,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -41439,7 +42095,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -41822,6 +42478,24 @@ PlacementOptions
 <p>placement specifies the placement options for the EC2 instances.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>cpuOptions,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">
+CPUOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cpuOptions specifies CPU configuration for EC2 instances.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, AWS defaults are used (nested virtualization is not enabled).
+To revert to default behavior after setting cpuOptions, remove the entire
+cpuOptions field rather than clearing individual sub-fields.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSNodePoolResourceTag { #hypershift.openshift.io/v1beta1.AWSNodePoolResourceTag }
@@ -41854,7 +42528,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -41867,7 +42541,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -42172,7 +42846,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -42185,7 +42859,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -45094,6 +45768,41 @@ used in workload identity authentication for Azure Private Link Service operatio
 </p>
 <p>
 </p>
+###CPUOptions { #hypershift.openshift.io/v1beta1.CPUOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>CPUOptions specifies CPU configuration for EC2 instances.
+At least one field must be specified when cpuOptions is present.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nestedVirtualizationPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy">
+NestedVirtualizationPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, nested virtualization is not enabled (AWS default behavior).</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
@@ -46258,6 +46967,21 @@ has been created for the specified Internal Load Balancer in the management VPC<
 control plane.
 When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterConfigurationDeprecated&#34;</p></td>
+<td><p>HostedClusterConfigurationDeprecated indicates whether any deprecated
+mechanism is being used to configure the hosted cluster. It is intentionally
+generic so that a single condition can surface any deprecated configuration
+surface as they are added; the message identifies the specific deprecated
+mechanism in use.
+<strong>True</strong> (reason DeprecatedConfigurationInUse) means a deprecated
+configuration mechanism is set. For example, the deprecated
+hypershift.openshift.io/kube-apiserver-verbosity-level annotation fires this
+whenever the annotation is present, even if
+spec.operatorConfiguration.kubeAPIServer.logLevel is also set and taking
+precedence, so that users are guided to migrate to the logLevel field and
+remove the annotation.
+<strong>False</strong> (reason AsExpected) means no deprecated configuration is in use.</p>
+</td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
 an error that may require user intervention to resolve.</p>
@@ -46294,6 +47018,18 @@ and reports missing images if any.</p>
 <td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
+</td>
+</tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
+<td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
+ingress certificate referenced by
+spec.operatorConfiguration.ingressOperator.defaultCertificate has been
+synced from the HostedCluster namespace into the control plane namespace.
+<strong>True</strong> means the referenced Secret was found, contains tls.crt and tls.key,
+and its data was synced.
+<strong>False</strong> means the referenced Secret is missing or malformed; in that case
+the previously synced certificate (or the auto-generated wildcard certificate)
+keeps serving and the HostedCluster does not become degraded.
+The condition is absent when no defaultCertificate is configured.</p>
 </td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td><p>KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
@@ -50254,6 +50990,41 @@ SecretEncryptionStatus
 </tr>
 </tbody>
 </table>
+###HostedControlPlaneInitializationStatus { #hypershift.openshift.io/v1beta1.HostedControlPlaneInitializationStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>HostedControlPlaneInitializationStatus provides observations of the HostedControlPlane initialization process.
+This satisfies the CAPI v1beta2 ControlPlane provider contract:
+<a href="https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1361-L1379">https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1361-L1379</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>controlPlaneInitialized</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneInitialized is true when the control plane is functional enough to accept requests.
+Once this condition is marked true, its value is never changed. See the Ready condition for an
+indication of the current readiness of the cluster&rsquo;s control plane.
+This satisfies CAPI contract <a href="https://cluster-api.sigs.k8s.io/developer/providers/contracts/control-plane#controlplane-initialization-completed">https://cluster-api.sigs.k8s.io/developer/providers/contracts/control-plane#controlplane-initialization-completed</a></p>
+</td>
+</tr>
+</tbody>
+</table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
 <p>
 <p>HostedControlPlaneSpec defines the desired state of HostedControlPlane</p>
@@ -51070,6 +51841,20 @@ SecretEncryptionStatus
 <p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>initialization,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneInitializationStatus">
+HostedControlPlaneInitializationStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>initialization contains fields that track the status of the initialization of the HostedControlPlane.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###IBMCloudKMSAuthSpec { #hypershift.openshift.io/v1beta1.IBMCloudKMSAuthSpec }
@@ -51476,6 +52261,41 @@ the update is at least 70% of desired nodes.</p>
 </tr>
 </tbody>
 </table>
+###IngressDefaultCertificateReference { #hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IngressOperatorSpec">IngressOperatorSpec</a>)
+</p>
+<p>
+<p>IngressDefaultCertificateReference contains a reference to a TLS Secret
+in the HostedCluster namespace used as the default serving certificate
+for the ingress controller.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the Secret containing tls.crt and tls.key.
+The Secret must exist in the same namespace as the HostedCluster.
+name must be a valid DNS subdomain name (RFC 1123): it must contain only
+lowercase alphanumeric characters, &lsquo;-&rsquo; or &lsquo;.&rsquo;, and start and end with an
+alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###IngressOperatorSpec { #hypershift.openshift.io/v1beta1.IngressOperatorSpec }
 <p>
 (<em>Appears on:</em>
@@ -51521,6 +52341,36 @@ LoadBalancerService with External scope</p>
 - Other platforms: LoadBalancerService with External scope</p>
 <p>See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
 <a href="https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go">https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>defaultCertificate,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference">
+IngressDefaultCertificateReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>defaultCertificate is a reference to a secret in the HostedCluster namespace
+that contains the default certificate served by the default ingress controller.
+When Routes don&rsquo;t specify their own certificate, defaultCertificate is used.</p>
+<p>The secret must contain the following keys and data:
+tls.crt: certificate file contents
+tls.key: key file contents</p>
+<p>When set, this certificate replaces the auto-generated wildcard certificate
+that is normally created by the control plane operator. The secret is synced
+from the HostedCluster namespace to the control plane, and then propagated
+to the hosted cluster&rsquo;s openshift-ingress namespace.</p>
+<p>When the referenced secret is updated, the new certificate data is
+automatically propagated to the hosted cluster.</p>
+<p>When not set, the control plane operator generates a wildcard certificate
+signed by the cluster&rsquo;s root CA.</p>
+<p>Note: a cluster-admin in the hosted cluster can override the default ingress
+controller&rsquo;s certificate directly. That override takes precedence and the
+certificate referenced here is no longer served.</p>
 </td>
 </tr>
 </tbody>
@@ -52342,7 +53192,12 @@ string
 <td>
 <p>name specify the network attached to the nodes
 it is a value with the format &ldquo;[namespace]/[name]&rdquo; to reference the
-multus network attachment definition</p>
+multus network attachment definition, where namespace and name consist
+only of lowercase alphanumeric characters and hyphens, and start and
+end with alphanumeric characters
+MaxLength=55: KubeVirt requires Interface.Name to be a DNS label (max 63 chars).
+The generated name is &ldquo;iface{N}<em>{namespace}-{name}&rdquo; where N≤20 (MaxItems),
+giving a max prefix of &ldquo;iface20</em>&rdquo; (8 chars), leaving 55 chars for namespace/name.</p>
 </td>
 </tr>
 </tbody>
@@ -53774,6 +54629,29 @@ which produces significantly higher metrics volume.</p>
 <td></td>
 </tr><tr><td><p>&#34;Enable&#34;</p></td>
 <td></td>
+</tr></tbody>
+</table>
+###NestedVirtualizationPolicy { #hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">CPUOptions</a>)
+</p>
+<p>
+<p>NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>NestedVirtualizationDisabled disables nested virtualization on the instance.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>NestedVirtualizationEnabled enables nested virtualization on the instance.</p>
+</td>
 </tr></tbody>
 </table>
 ###NetworkFilter { #hypershift.openshift.io/v1beta1.NetworkFilter }
@@ -60352,6 +61230,117 @@ When `--external-dns-domain` is set to a value that matches the cluster's base d
 
 ---
 
+## Source: docs/content/reference/capi-image-overrides.md
+
+# CAPI Provider Image Overrides
+
+## Overview
+
+HyperShift uses Cluster API (CAPI) providers to manage infrastructure for hosted clusters. The CAPI provider images used in the hosted control plane are resolved through a layered override mechanism. This document describes how CAPI provider images are selected, which platforms have overrides, and a backward compatibility pinning mechanism active on specific release branches.
+
+## Image Resolution Priority
+
+For each platform, the CAPI provider image is resolved in the following order (lowest to highest priority):
+
+1. **Payload image** -- from the hosted cluster's OCP release payload (via `platform.go` `GetPlatform()`)
+2. **Environment variable override** -- from the HyperShift operator's own image references (set via `support/images/envvars.go`), meaning the image version is determined by the HyperShift operator, **not** the hosted cluster's payload
+3. **Annotation override** -- explicit per-HostedCluster annotation (always wins)
+
+When multiple sources are present, the highest-priority source takes effect. If no override is set, the image falls back to the next lower priority level.
+
+!!! note "Agent"
+    Agent does not use a payload image. It has a hardcoded default (`quay.io/edge-infrastructure/cluster-api-provider-agent:latest`), which the env var and annotation can then override.
+
+!!! warning "KubeVirt"
+    KubeVirt does not use a payload image and has **no fallback default**. If neither the env var (`IMAGE_KUBEVIRT_CAPI_PROVIDER`) nor the annotation is set, the image resolution returns an error. The env var or annotation **must** be set for KubeVirt clusters to function.
+
+## Per-Platform Behavior
+
+The table below includes the core CAPI manager (`cluster-capi-controllers`) and all per-platform CAPI providers. The core manager is separate from the platform-specific providers -- it runs the shared CAPI controller logic, while each platform provider handles infrastructure-specific operations.
+
+| Component | Env Var | Annotation | Payload Image Used? | Override Behavior | First Branch |
+|-----------|---------|------------|---------------------|-------------------|--------------|
+| Core CAPI manager | -- | `hypershift.openshift.io/capi-manager-image` | Yes (from payload) | Annotation overrides payload image; on release-4.21/4.22, backward compat pins to 4.20.10 | release-4.14+ |
+| AWS | `IMAGE_AWS_CAPI_PROVIDER` | `hypershift.openshift.io/capi-provider-aws-image` | Yes (payload >= 4.12) | Env var only overrides for `payloadVersion < 4.12` (version-gated) | release-4.14+ |
+| Azure | `IMAGE_AZURE_CAPI_PROVIDER` | `hypershift.openshift.io/capi-provider-azure-image` | Yes, but always overridden | Env var always overrides (no version check) | release-4.14+ |
+| GCP | `IMAGE_GCP_CAPI_PROVIDER` | `hypershift.openshift.io/capi-provider-gcp-image` | Yes, but always overridden | Env var always overrides | release-4.22+ (stub on 4.21) |
+| OpenStack | `IMAGE_OPENSTACK_CAPI_PROVIDER` | `hypershift.openshift.io/capi-provider-openstack-image` | Yes, but always overridden | Env var always overrides | release-4.17+ |
+| PowerVS | `IMAGE_POWERVS_CAPI_PROVIDER` | `hypershift.openshift.io/capi-provider-powervs-image` | Yes, but always overridden | Env var always overrides | release-4.14+ |
+| KubeVirt | `IMAGE_KUBEVIRT_CAPI_PROVIDER` | `hypershift.openshift.io/capi-provider-kubevirt-image` | No (never from payload) | Always from env var or annotation (no fallback -- errors if absent) | release-4.14+ |
+| Agent | `IMAGE_AGENT_CAPI_PROVIDER` | `hypershift.openshift.io/capi-provider-agent-image` | No (hardcoded default `quay.io/edge-infrastructure/cluster-api-provider-agent:latest`) | Always from env var or hardcoded default | release-4.14+ |
+
+### How Environment Variable Overrides Work
+
+The environment variables listed above (e.g. `IMAGE_AZURE_CAPI_PROVIDER`) are set on the HyperShift operator Deployment by the installation tooling. They are populated from the HyperShift operator's own image references file (`support/images/envvars.go`), which maps OCP release payload image names to environment variables.
+
+In all standard installation methods -- including MCE (Multicluster Engine) and the `hypershift install` CLI -- these env vars are set automatically. When an env var is present, it takes precedence over the payload image. The practical effect is that the CAPI provider version is determined by the **HyperShift operator version**, not the hosted cluster's OCP payload version.
+
+!!! note
+    AWS is the only platform where the hosted cluster's OCP payload determines the CAPI provider image (for payloads >= 4.12). For all other platforms, the image is always determined by the HyperShift operator.
+
+## Backward Compatibility: CAPI v1beta2 Image Pinning
+
+### Background
+
+Starting with OCP 4.21, the upstream CAPI v1.11 bump introduced the `v1beta2` API version. Since HyperShift does not yet support CAPI `v1beta2`, a backward compatibility mechanism pins specific CAPI images to their 4.20.10 equivalents (which ship CAPI v1.10 / `v1beta1` only).
+
+### Implementation
+
+The pinning is implemented in `support/backwardcompat/backwardcompat.go` via the `GetBackwardCompatibleCAPIImage()` function. For hosted clusters with payload version >= 4.21.0, this function extracts the CAPI images from a pinned 4.20.10 release instead of the hosted cluster's own payload.
+
+Pinned release:
+
+```text
+quay.io/openshift-release-dev/ocp-release@sha256:7f183e9b5610a2c9f9aabfd5906b418adfbe659f441b019933426a19bf6a5962
+```
+
+This corresponds to the `4.20.10-multi` release.
+
+### Affected Components
+
+The pinning applies to these three components only:
+
+- **`cluster-capi-controllers`** (core CAPI manager) -- overridden in `hostedcluster_controller.go`
+- **`aws-cluster-api-controllers`** (CAPA) -- overridden in `platform.go`
+- **`azure-cluster-api-controllers`** (CAPZ) -- overridden in `platform.go`
+
+The following platforms are **not affected** by the pinning: PowerVS, OpenStack, GCP, KubeVirt, Agent.
+
+### Branch Status
+
+| Branch | Pinning Active? | Pinned Components | Notes |
+|--------|-----------------|-------------------|-------|
+| release-4.20 | No | -- | Not needed -- already ships CAPI v1.10 |
+| release-4.21 | Yes | `cluster-capi-controllers`, CAPA (AWS), CAPZ (Azure) | Pins to 4.20.10 for payloads >= 4.21 |
+| release-4.22 | Yes | `cluster-capi-controllers`, CAPA (AWS), CAPZ (Azure) | Pins to 4.20.10 for payloads >= 4.21 |
+| release-5.0+ | No | -- | Pinning removed -- CAPI bumped to v1.11 (CNTRLPLANE-2207) |
+| main | No | -- | Pinning removed -- HyperShift compiles against CAPI v1.11+ (CNTRLPLANE-2207) |
+
+!!! note
+    The pinning was removed once HyperShift gained the ability to compile with CAPI v1.11+, tracked under CNTRLPLANE-2207. The related `v1beta2` client migration is tracked separately under CNTRLPLANE-1200. Release 5.0 and all future versions will **not** have this pinning.
+
+### Introducing PRs
+
+- OCPBUGS-74247: CAPI image overrides aware of registry config -- initial implementation (merged to main)
+- OCPBUGS-86295: CAPI image overrides aware of registry config -- backport to release-4.21
+
+### Known Issues
+
+In disconnected environments, the 4.20.10 images are not part of the 4.21/4.22 payload's `image-references`, so `oc-mirror` does not discover them automatically. Users must manually mirror the 4.20.10 release.
+
+Tracked under OCPBUGS-74263 and OCPBUGS-86056.
+
+## Related Files
+
+- `support/backwardcompat/backwardcompat.go` -- backward compatibility image pinning (release-4.21, release-4.22)
+- `hypershift-operator/controllers/hostedcluster/internal/platform/platform.go` -- `GetPlatform()` payload image lookup
+- `hypershift-operator/controllers/hostedcluster/internal/platform/{aws,azure,gcp,kubevirt,agent,openstack,powervs}/` -- per-platform `CAPIProviderDeploymentSpec()`
+- `support/images/envvars.go` -- env var to payload image name mapping
+- `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` -- CAPI manager image override
+
+
+---
+
 ## Source: docs/content/reference/concepts-and-personas.md
 
 # Concepts and Personas
@@ -60675,459 +61664,6 @@ classDiagram
   CAPIMachineSet ..> CAPIInfrastructureTemplate
 ```
 
-
-
----
-
-## Source: docs/content/reference/e2e-v2-test-flow.md
-
-# E2E v2 Test Flow
-
-This document describes the end-to-end flow of the HyperShift v2 e2e test framework,
-from CI job trigger through test execution and teardown. It covers process boundaries,
-inter-process communication, and the sequencing of mutually exclusive tests.
-
-## Contents
-
-- Ginkgo Decorators, Hooks, and Labels for Test Isolation
-    - Decorators
-    - Hooks
-    - Labels
-    - How These Layers Compose
-- High-Level Flow
-- Inside a test-e2e-v2 Process (Ginkgo Lifecycle)
-- Process Boundary Summary
-- Sequencing of Mutually Exclusive Tests
-- Inter-Process Communication
-
-## Ginkgo Decorators, Hooks, and Labels for Test Isolation
-
-The v2 framework uses Ginkgo features at two levels to keep tests from interfering
-with each other: the [**`run-tests` orchestrator**][run-tests] isolates test groups
-into separate OS processes targeting different clusters, and **within each process**,
-Ginkgo decorators and hooks manage execution order, state mutation, cleanup, and
-reporting semantics.
-
-### Decorators
-
-| Decorator | Purpose | Used by |
-|-----------|---------|---------|
-| **`Ordered`** | Specs in the container run in declaration order. If one fails, subsequent specs in the same container are skipped. Prevents dependent steps from running against corrupted state. | [BackupRestore, EtcdSnapshot][backup-restore-test], [EtcdChaos][etcd-chaos-test], [AzurePrivateLink, AzureEndpointAccess][azure-test], [PKI operator TLS modification][pki-test], [AdmissionPolicies][security-test], [ImageRegistryCapability][image-registry-test], [ExternalOIDCKeycloakAuth][external-oidc-test] |
-| **`Serial`** | Specs never run concurrently with other specs, even if Ginkgo parallel mode were enabled. Applied alongside `Ordered` when a test mutates shared cluster state that could interfere with other specs. | [BackupRestore, EtcdSnapshot][backup-restore-test] (separate binary), [PKI operator TLS modification][pki-test] |
-
-`Ordered` is the primary tool for inter-test dependencies within a single feature
-(e.g., backup must complete before restore can start). `Serial` adds the guarantee
-that no other spec in the process runs at the same time, which matters for tests
-that mutate cluster-wide resources like HostedCluster configuration or etcd state.
-In practice, since `run-tests` does not pass `--procs` to Ginkgo, all specs within
-a process already run sequentially — but `Serial` makes the constraint explicit and
-future-proof.
-
-### Hooks
-
-| Hook | Scope | Purpose |
-|------|-------|---------|
-| **`BeforeSuite`** | Once per process | Initializes the global [`TestContext`][test-context] from env vars (cluster name, namespace, artifact dir, management client). Runs before any spec. See [`suite_test.go`][suite-test]. |
-| **`BeforeAll`** | Once per `Ordered` container | Initializes shared state for an ordered sequence (e.g., resolve `TestContext`, validate platform support, capture original config for later restoration). Runs once before the first spec in the container. |
-| **`AfterAll`** | Once per `Ordered` container | Tears down shared state created by `BeforeAll` (e.g., delete backup resources, restore original HostedCluster config). |
-| **`BeforeEach`** | Before every spec | Top-level: resolves `TestContext` and validates the hosted cluster resource exists on the management cluster. (`Ordered` containers use `BeforeAll` for the same purpose.) Nested (in `Context`/`When` blocks) or inline in specs: runs platform guards (`Skip()` if wrong platform) or other precondition checks. |
-| **`DeferCleanup`** | After each spec (LIFO) | Restores mutated state or deletes created resources. Registered immediately after mutation/creation so cleanup runs even if the test panics or fails before reaching manual deletion. |
-
-The `BeforeAll`/`AfterAll` pair is critical for lifecycle tests that share expensive
-preconditions across multiple ordered specs (e.g., backup-restore creates a backup
-once, then multiple specs verify different aspects of the restore). Without `Ordered`,
-`BeforeAll`/`AfterAll` cannot be used — Ginkgo enforces this at the framework level.
-
-### Labels
-
-| Label | Effect |
-|-------|--------|
-| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The simple [`hypershift-e2e-v2` CI chain][e2e-v2-chain] filters these out with `--ginkgo.label-filter='!lifecycle'` so that read-only compliance runs don't trigger mutations. The `run-tests` orchestrator runs lifecycle tests on dedicated clusters via specific label filters. |
-| **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features (e.g., metrics forwarding, custom labels/tolerations). |
-| **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` with non-overlapping label sets so each process only runs specs relevant to its assigned cluster variant. The label-to-cluster mapping is defined by [`TestMatrix`][azure-platform] in the platform config. |
-
-### How These Layers Compose
-
-```
-run-tests orchestrator
-├── Process 1 (public cluster): --ginkgo.label-filter="self-managed-azure-public || nodepool-lifecycle || ..."
-│   ├── Describe "NodePool Lifecycle" [Ordered] ← specs run in order, share BeforeAll setup
-│   │   ├── BeforeAll: create test nodepool
-│   │   ├── It "should scale up" ← mutation test
-│   │   ├── It "should scale down"
-│   │   └── AfterAll: delete test nodepool
-│   ├── Describe "Control Plane Workloads" ← read-only, no Ordered needed
-│   │   ├── It "should have resource requests" ← stateless assertion
-│   │   └── Context "Custom labels" [Informing] ← failure → skip, non-blocking
-│   └── ...
-├── Process 2 (private cluster): --ginkgo.label-filter="self-managed-azure-private || ..."
-│   └── ...
-└── Sequential group (upgrade cluster):
-    ├── Process 6a: --ginkgo.label-filter="control-plane-upgrade" ← must finish before 6b
-    │   └── Describe "Control Plane Upgrade" ← triggers version rollout
-    └── Process 6b: --ginkgo.label-filter="etcd-chaos" ← only runs if 6a passed
-        └── Describe "Etcd Chaos" [Ordered] ← specs run in order, BeforeAll snapshots etcd
-```
-
-Cluster-level isolation (different processes target different clusters) prevents
-inter-group interference. Within a process, `Ordered`/`Serial` prevent inter-spec
-interference for mutation-heavy features. `DeferCleanup` ensures each spec restores
-what it touched. `Informing` decouples experimental coverage from gate status. The
-`lifecycle` label separates mutation tests from read-only compliance runs at the CI
-job level.
-
-## High-Level Flow
-
-The diagram below shows the general v2 e2e flow. The framework is
-platform-agnostic — each platform implements the [`PlatformConfig`][platform]
-interface — but Azure is currently the only implementation and serves as the
-reference. The concrete examples here follow the
-[`e2e-azure-v2-self-managed`][ci-job-config] CI job and its
-[workflow][workflow]. ci-operator builds the [`hypershift-tests`][dockerfile-e2e]
-image (via [`Dockerfile.e2e`][dockerfile-e2e], which invokes several
-[`Makefile`][makefile] targets), then chains together cluster creation, test
-execution, and teardown steps.
-
-```mermaid
-sequenceDiagram
-    autonumber
-
-    box Prow Cluster
-        participant Prow
-        participant CIO as ci-operator
-    end
-
-    box CI Pod (hypershift-tests image)
-        participant Shell as Step Shell<br/>(bash)
-        participant CG as create-guests<br/>(Go binary)
-        participant RT as run-tests<br/>(Go binary)
-        participant DG as destroy-guests<br/>(Go binary)
-    end
-
-    box Test Subprocesses (forked by run-tests)
-        participant TP as test-e2e-v2<br/>[public cluster]
-        participant TPr as test-e2e-v2<br/>[private cluster]
-        participant TO as test-e2e-v2<br/>[oauth-lb cluster]
-        participant TA as test-e2e-v2<br/>[autoscaling cluster]
-        participant TE as test-e2e-v2<br/>[external-oidc cluster]
-        participant TU as test-e2e-v2<br/>[upgrade cluster]
-    end
-
-    box Cloud Infrastructure
-        participant MC as Management Cluster<br/>(nested OCP)
-        participant HC as HostedClusters<br/>(6 variants)
-    end
-
-    Note over Prow,HC: Phase 1: CI Job Setup (openshift-release workflow)
-
-    Prow->>CIO: Trigger job (PR event / periodic)
-    CIO->>CIO: Build hypershift-tests image (Dockerfile.e2e)
-
-    Note over CIO: Key v2 binaries:<br/>test-e2e-v2, test-backuprestore, create-guests,<br/>run-tests, destroy-guests, dump-guests, hypershift
-
-    CIO->>CIO: Execute workflow pre steps
-
-    Note over CIO,MC: Pre steps (sequential):<br/>1. ipi-install-rbac<br/>2. hypershift-setup-nested-management-cluster<br/>3. hypershift-azure-setup-private-link<br/>4. hypershift-install (HyperShift operator)<br/>5. hypershift-resolve-nodepool-releases<br/>6. create-selfmanaged-guests (shown below)
-
-    Note over Prow,HC: Phase 2: Guest Cluster Creation (create-guests binary, pre step 6)
-
-    CIO->>Shell: Run create-selfmanaged-guests step
-    Shell->>Shell: export KUBECONFIG=management_cluster_kubeconfig
-    Shell->>CG: /hypershift/bin/create-guests
-
-    activate CG
-    Note over CG: Single Go process, phases run sequentially.<br/>Phases 1, 3, and 5 use internal goroutines for parallelism.
-
-    CG->>MC: Phase 0: PreCreate hooks<br/>(deploy Keycloak for external-oidc)
-
-    par Phase 1: Create 6 clusters in parallel (goroutines + exec.Command)
-        CG->>MC: Create public-{hash}
-        CG->>MC: Create private-{hash} (Private endpoint access)
-        CG->>MC: Create oauth-lb-{hash} (OAuth via LoadBalancer)
-        CG->>MC: Create upgrade-{hash} (N-1 release, HA control plane)
-        CG->>MC: Create autoscaling-{hash}
-        CG->>MC: Create external-oidc-{hash}
-    end
-    Note right of CG: Each calls `hypershift create cluster azure`<br/>with variant-specific flags
-
-    CG->>MC: Phase 2: PostCreate hooks<br/>(patch public cluster OperatorConfiguration)
-
-    CG->>MC: Phase 3: Watch all clusters for Available condition<br/>(controller-runtime Watch, 45m timeout)
-    MC-->>CG: All 6 clusters Available
-
-    CG->>MC: Phase 4: PostAvailable hooks
-
-    CG->>MC: Phase 5: Watch for version rollout completion<br/>(VersionState=Completed on all history entries)
-    MC-->>CG: All 6 clusters rolled out
-
-    CG->>MC: Phase 6: PostVersionRollout hooks<br/>(patch external-oidc cluster with OIDC config)
-
-    CG->>Shell: Phase 7: Write cluster names and<br/>platform-specific config to SHARED_DIR
-    deactivate CG
-
-    Note over Prow,HC: Phase 3: Test Execution (run-tests binary)
-
-    CIO->>Shell: Run run-e2e-v2-selfmanaged step
-    Shell->>Shell: export KUBECONFIG=management_cluster_kubeconfig
-    Shell->>RT: /hypershift/bin/run-tests
-
-    activate RT
-    Note over RT: Reads HYPERSHIFT_PLATFORM → builds TestMatrix<br/>Reads cluster names and platform config from SHARED_DIR
-
-    RT->>RT: PlatformConfig.SetupTestEnv()<br/>(set env vars from SHARED_DIR files)
-
-    par Parallel test groups (each is a goroutine calling exec.Command)
-        RT->>TP: test-e2e-v2 → public-{hash}<br/>(platform + feature tests)
-        activate TP
-
-        RT->>TPr: test-e2e-v2 → private-{hash}<br/>(private topology + compliance)
-        activate TPr
-
-        RT->>TO: test-e2e-v2 → oauth-lb-{hash}<br/>(OAuth, health, metrics, registry)
-        activate TO
-
-        RT->>TA: test-e2e-v2 → autoscaling-{hash}
-        activate TA
-
-        RT->>TE: test-e2e-v2 → external-oidc-{hash}
-        activate TE
-    end
-    Note right of RT: Each subprocess receives cluster name via<br/>E2E_HOSTED_CLUSTER_NAME env var and label<br/>filter via --ginkgo.label-filter
-
-    par Sequential group: upgrade-and-chaos (single goroutine, steps run in order)
-        RT->>TU: test-e2e-v2 → upgrade-{hash}<br/>(upgrade tests)
-        activate TU
-        Note over TU: Process 6a (upgrade)
-        TU-->>RT: exit 0 (upgrade passed)
-        deactivate TU
-
-        RT->>TU: test-e2e-v2 → upgrade-{hash}<br/>(etcd-chaos tests, same cluster)
-        activate TU
-        Note over TU: Process 6b (etcd-chaos)
-        TU-->>RT: exit 0 or error
-        deactivate TU
-    end
-
-    TP-->>RT: exit code
-    deactivate TP
-    TPr-->>RT: exit code
-    deactivate TPr
-    TO-->>RT: exit code
-    deactivate TO
-    TA-->>RT: exit code
-    deactivate TA
-    TE-->>RT: exit code
-    deactivate TE
-
-    RT->>RT: Collect results, report pass/fail summary
-    RT-->>Shell: exit code (0 if all passed)
-    deactivate RT
-
-    Note over Prow,HC: Phase 4: Teardown (post steps, always run)
-
-    CIO->>Shell: Run dump-selfmanaged-guests step
-    Shell->>Shell: /hypershift/bin/dump-guests<br/>(collect artifacts from all clusters)
-
-    CIO->>Shell: Run destroy-selfmanaged-guests step (best_effort: true)
-    Shell->>DG: /hypershift/bin/destroy-guests
-    activate DG
-    par Destroy all 6 clusters in parallel
-        DG->>MC: hypershift destroy cluster azure<br/>for each variant (40m grace period)
-    end
-    DG-->>Shell: exit code
-    deactivate DG
-
-    CIO->>CIO: Destroy nested management cluster
-    CIO->>Prow: Report results (JUnit XML)
-```
-
-## Inside a test-e2e-v2 Process (Ginkgo Lifecycle)
-
-Each `test-e2e-v2` invocation is a single OS process running the Ginkgo v2 test
-framework. The process is a compiled Go test binary (`go test -c`) with the `e2ev2`
-build tag.
-
-```mermaid
-sequenceDiagram
-    autonumber
-
-    participant RT as run-tests<br/>(parent process)
-    participant G as test-e2e-v2<br/>(Ginkgo process)
-    participant MC as Management<br/>Cluster API
-    participant HCA as HostedCluster<br/>API (guest)
-
-    RT->>G: exec test-e2e-v2 with label filter,<br/>env: E2E_HOSTED_CLUSTER_NAME/NAMESPACE
-
-    activate G
-    Note over G: Go test framework calls TestE2EV2(t)<br/>which calls ginkgo.RunSpecs(t, "hypershift-e2e")
-
-    G->>G: BeforeSuite: SetupTestContextFromEnv()<br/>(management client, cluster identity, artifact dir)
-
-    Note over G: Ginkgo builds spec tree from all<br/>var _ = Describe(...) registrations
-
-    G->>G: Label filter prunes spec tree<br/>(only specs matching --ginkgo.label-filter run)
-
-    loop For each matching spec (It block)
-        G->>G: BeforeEach: get TestContext,<br/>platform guard (Skip if wrong platform)
-
-        alt First access to HostedCluster (sync.Once)
-            G->>MC: Get HostedCluster {name}/{namespace}
-            MC-->>G: HostedCluster object (cached for process lifetime)
-        end
-
-        alt First access to HostedCluster client (sync.Once)
-            G->>MC: Get kubeconfig Secret from HC status
-            MC-->>G: Secret with kubeconfig data
-            G->>G: Build REST config + controller-runtime client<br/>(cached for process lifetime)
-        end
-
-        G->>MC: Test assertions against management cluster
-        G->>HCA: Test assertions against hosted cluster
-
-        alt Test has "Informing" label and fails
-            G->>G: InformingAwareFailHandler converts<br/>Fail → Skip (test marked skipped, not failed)
-        else Test fails normally
-            G->>G: Standard Ginkgo Fail (spec marked failed)
-        end
-
-        G->>G: DeferCleanup runs (restore mutations)
-    end
-
-    G->>G: Write JUnit XML report to ARTIFACT_DIR
-    G-->>RT: exit code (0=all passed, 1=failures)
-    deactivate G
-```
-
-## Process Boundary Summary
-
-| Process | Binary | Lifecycle | Communication |
-|---------|--------|-----------|---------------|
-| **ci-operator** | CI infrastructure | Manages the entire [job][ci-job-config] | Runs [workflow steps][workflow] as pods |
-| **Step shell** | bash | One per CI step | Sets KUBECONFIG, runs Go binaries ([create][create-guests-sh], [run][run-tests-chain], [destroy][destroy-guests-chain]) |
-| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster names and platform-specific config to `SHARED_DIR` |
-| **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
-| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group (7 total, up to 6 concurrent) | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
-| **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
-
-## Sequencing of Mutually Exclusive Tests
-
-Mutual exclusion between test groups is achieved through **cluster isolation** and
-**sequential groups**, not through in-process locking:
-
-```mermaid
-flowchart TD
-    subgraph TestMatrix["TestMatrix (defined by PlatformConfig)"]
-        subgraph Parallel["Parallel Groups (all run concurrently)"]
-            P1["public cluster<br/>(platform + feature tests)"]
-            P2["private cluster<br/>(private topology + compliance)"]
-            P3["oauth-lb cluster<br/>(OAuth, health, metrics, registry)"]
-            P4["autoscaling cluster"]
-            P5["external-oidc cluster"]
-        end
-
-        subgraph Sequential["Sequential Group: upgrade-and-chaos"]
-            direction TB
-            S1["Step 1: upgrade tests<br/>label: control-plane-upgrade"]
-            S2["Step 2: etcd-chaos tests<br/>label: etcd-chaos"]
-            S1 -->|"pass → continue"| S2
-            S1 -.->|"fail → skip remaining"| SKIP["Steps skipped"]
-        end
-    end
-
-    RT["run-tests orchestrator"] --> Parallel
-    RT --> Sequential
-
-```
-
-**Key mechanisms:**
-
-1. **Cluster-per-group isolation**: Each parallel test group targets a **different
-   HostedCluster**. Tests within a group share one cluster but different groups never
-   touch the same cluster. This eliminates inter-group interference without locks.
-
-2. **Label-based partitioning**: Ginkgo's `--ginkgo.label-filter` ensures each
-   `test-e2e-v2` process only runs specs matching its assigned labels. The label
-   sets are [non-overlapping across groups][azure-platform], so the same spec never
-   runs in two processes.
-
-3. **Sequential groups for ordered dependencies**: The `upgrade-and-chaos`
-   [sequential group][azure-platform] runs upgrade first, then etcd-chaos on the
-   **same cluster**. The [`run-tests` orchestrator][run-tests] enforces ordering by
-   running steps sequentially within a single goroutine. If upgrade fails, etcd-chaos
-   is skipped (the goroutine returns early).
-
-4. **No in-process mutex**: Because each `test-e2e-v2` process targets exactly one
-   cluster and runs non-overlapping label sets, there is no need for mutexes or
-   other synchronization between test specs. Ginkgo runs specs within a single
-   process serially by default (no `--procs` flag is passed).
-
-## Inter-Process Communication
-
-```mermaid
-flowchart LR
-    subgraph "SHARED_DIR (filesystem)"
-        F1["cluster-name-{variant}<br/>(one per cluster)"]
-        F2["management_cluster_kubeconfig"]
-        F3["platform-specific config<br/>(OIDC bundles, subnet IDs, etc.)"]
-    end
-
-    CG["create-guests"] -->|"writes"| F1
-    CG -->|"writes"| F3
-
-    RT["run-tests"] -->|"reads"| F1
-    RT -->|"reads"| F3
-    RT -->|"env vars"| TB["test-e2e-v2<br/>(subprocess)"]
-    TB -->|"JUnit XML"| AD["ARTIFACT_DIR"]
-
-    DG["destroy-guests"] -->|"derives names from<br/>PROW_JOB_ID + sha256"| MC["Management Cluster"]
-
-```
-
-- **SHARED_DIR**: Filesystem directory shared across all CI steps within a job.
-  [`create-guests`][create-guests] writes cluster names and platform-specific
-  config; [`run-tests`][run-tests] reads them. This is the primary IPC mechanism
-  between CI steps.
-- **Environment variables**: `run-tests` passes cluster identity to each `test-e2e-v2`
-  subprocess via `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` env vars.
-- **PROW_JOB_ID + SHA256**: [`destroy-guests`][destroy-guests] does not read
-  SHARED_DIR cluster names. Instead, it re-derives cluster names deterministically
-  from `PROW_JOB_ID` using the same [`DeriveClusterName()`][platform] function as
-  `create-guests`. This makes teardown idempotent and independent of whether creation
-  succeeded.
-- **KUBECONFIG**: All processes authenticate to the management cluster via the
-  kubeconfig file at `${SHARED_DIR}/management_cluster_kubeconfig`, set up by the
-  nested management cluster provisioning step.
-- **Exit codes**: `run-tests` collects exit codes from all `test-e2e-v2` subprocesses
-  and exits non-zero if any group failed.
-- **JUnit XML**: Each `test-e2e-v2` process writes a separate JUnit report to
-  `ARTIFACT_DIR`. ci-operator collects these for Sippy/Prow reporting.
-
-<!-- HyperShift repo links (openshift/hypershift, main branch) -->
-[run-tests]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/cmd/run-tests/main.go
-[create-guests]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/cmd/create-guests/main.go
-[destroy-guests]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/cmd/destroy-guests/main.go
-[suite-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/suite_test.go
-[test-context]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/internal/test_context.go
-[fail-handler]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/internal/fail_handler.go
-[platform]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/platform.go
-[azure-platform]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/azure.go
-[backup-restore-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/backup_restore_test.go
-[etcd-chaos-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/etcd_chaos_test.go
-[azure-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_azure_test.go
-[pki-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/control_plane_pki_operator_test.go
-[security-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_security_test.go
-[image-registry-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_image_registry_test.go
-[external-oidc-test]: https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/hosted_cluster_external_oidc_test.go
-[dockerfile-e2e]: https://github.com/openshift/hypershift/blob/main/Dockerfile.e2e
-[makefile]: https://github.com/openshift/hypershift/blob/main/Makefile
-
-<!-- openshift/release repo links (master branch) -->
-[ci-job-config]: https://github.com/openshift/release/blob/master/ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml
-[workflow]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/azure/e2e/v2-self-managed/hypershift-azure-e2e-v2-self-managed-workflow.yaml
-[create-guests-sh]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/azure/create-selfmanaged-guests/hypershift-azure-create-selfmanaged-guests-commands.sh
-[run-tests-chain]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/azure/run-e2e-v2-selfmanaged/hypershift-azure-run-e2e-v2-selfmanaged-chain.yaml
-[destroy-guests-chain]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/azure/destroy-selfmanaged-guests/hypershift-azure-destroy-selfmanaged-guests-chain.yaml
-[e2e-v2-chain]: https://github.com/openshift/release/blob/master/ci-operator/step-registry/hypershift/e2e-v2/hypershift-e2e-v2-chain.yaml
 
 
 ---
@@ -65703,6 +66239,89 @@ title: OCP Standalone behaviour deviations
 ---
 
 In this section, we will outline the behavioral differences between Hosted Control Planes/Hypershift and standalone OpenShift.
+
+
+---
+
+## Source: docs/content/reference/ocp-behaviour-deviations/osimagestream-discovery.md
+
+# OSImageStream Behaviour
+
+This section documents how OSImageStream behaves in Hosted Control Planes, including deviations from standalone OpenShift, the container runtime matrix, and upgrade scenarios.
+
+## Background
+
+Starting in OCP 5.0, the `osImageStream` feature graduated from TechPreview to Default. The MachineConfig Operator (MCO) uses OS image streams to determine which RHCOS version (RHEL 9 or RHEL 10) to boot worker nodes with.
+
+During MCC (Machine Config Controller) bootstrap, the controller must discover which OS image streams are available in the release payload and populate `osImageStream.Status` accordingly.
+
+## Expected Behavior for OCP Standalone
+
+In standalone OCP, the MCC bootstrap process calls `fetchOSImageStream()`, which performs **network-based container image inspection** to discover available OS streams from the release payload. This function:
+
+1. Reads the release payload image references.
+2. Performs HTTP requests to container registries to inspect image manifests.
+3. Uses the cluster's proxy configuration (`HTTP_PROXY`, `HTTPS_PROXY`) to reach the registries.
+4. Populates `osImageStream.Status` with the discovered streams (e.g., `rhel-9`, `rhel-10`).
+
+This works because in standalone OCP, the MCC runs on the same network as the cluster and can reach the configured proxy.
+
+## Expected Behavior for Hosted Control Planes
+
+In HyperShift (`ExternalTopologyMode`), the standalone approach does not work. The MCC bootstrap runs inside the **ignition-server pod on the management cluster**, but the proxy configuration comes from the **guest cluster** (e.g., a private VPC IP like `10.0.x.x:3128`). The management cluster cannot reach the guest's proxy, causing all image inspection requests to time out.
+
+### The Fix
+
+The MCO fix (machine-config-operator#6420, machine-config-operator#6423) skips `fetchOSImageStream()` when `ControlPlaneTopology == ExternalTopologyMode` and instead builds `osImageStream.Status` directly from fields that are already available locally:
+
+- `ControllerConfig.Spec.BaseOSContainerImage` (resolved by digest from the release payload)
+- `ControllerConfig.Spec.DefaultStream`
+
+This produces the same result without additional network access for OSImageStream discovery, since the release payload already contains the resolved image references. The HyperShift control-plane-operator sets these fields when reconciling the `ControllerConfig` into the hosted cluster's control plane namespace.
+
+### Why This Is Safe
+
+The network-based inspection in standalone OCP is effectively a redundant verification step — the release payload already contains all the information needed to determine OS stream availability. By reading from `ControllerConfig.Spec` fields that the control-plane-operator already populates, the HyperShift path arrives at the same `osImageStream.Status` without crossing the management-to-guest network boundary.
+
+## OSImageStream and Container Runtime Behavior Matrix
+
+The following table documents the expected behavior for each `osImageStream` and container runtime combination in HyperShift. These scenarios were validated through E2E testing during the OSStreams graduation (CNTRLPLANE-4204).
+
+### Runtime Availability by RHEL Version
+
+| RHEL Version | Available Runtimes | Default Runtime (OCP 5.0+) | Notes |
+|---|---|---|---|
+| RHEL 9 (RHCOS 9.x) | `crun`, `runc` | `crun` | Both runtimes available. `runc` can be selected via `ContainerRuntimeConfig` |
+| RHEL 10 (RHCOS 10.x) | `crun` only | `crun` | `runc` is **not available**. Requesting `runc` via `ContainerRuntimeConfig` sets `ValidMachineConfig=False` |
+
+### NodePool Scenarios
+
+| Scenario | OCP Version | `spec.osImageStream` | Resulting RHCOS | Runtime Handlers | Outcome |
+|---|---|---|---|---|---|
+| New cluster, no explicit stream | 5.0+ | (unset) | RHCOS 10 | `crun` | `status.osImageStream` reports `rhel-10` |
+| New cluster, explicit `rhel-10` | 5.0+ | `rhel-10` | RHCOS 10 | `crun` | Same as default |
+| New cluster, explicit `rhel-9` | 5.0+ | `rhel-9` | RHCOS 9 | `crun`, `runc` | Pin to RHEL 9 — both runtimes available |
+| Mixed cluster (rhel-9 + rhel-10 NodePools) | 5.0+ | `rhel-9` on one NP, `rhel-10` on another | RHCOS 9 + RHCOS 10 | Per-NP (see above) | Both coexist, each NP runs its matching OS and runtimes |
+| Upgrade 4.x to 5.0+ (no explicit stream) | 4.x → 5.0 | (unset) → `rhel-10` | RHCOS 9 → RHCOS 10 | `runc`,`crun` → `crun` | Default stream changes on upgrade; nodes move to RHEL 10 |
+| Upgrade 4.x to 5.0+ (pinned `rhel-9`) | 4.x → 5.0 | `rhel-9` | RHCOS 9 | `crun`, `runc` | Pin preserved across upgrade; nodes stay on RHEL 9 |
+| `rhel-10` with `runc` ContainerRuntimeConfig | 5.0+ | `rhel-10` | — | — | **Rejected**: `ValidMachineConfig=False` with reason `ValidationFailed` |
+| `rhel-10` on OCP < 5.0 | < 5.0 | `rhel-10` | — | — | **Rejected**: API validation fails (RHEL 10 requires OCP ≥ 5.0) |
+
+### Deviations from Standalone OCP
+
+| Behavior | Standalone OCP | Hosted Control Planes | Notes |
+|---|---|---|---|
+| OSImageStream discovery | Network-based image inspection (`fetchOSImageStream()`) | Local lookup from `ControllerConfig.Spec` fields | See The Fix section above |
+| Runtime migration on upgrade (4.x → 5.0) | Existing nodes **do not** auto-migrate from `runc` to `crun` | Existing NodePools **do** migrate on upgrade | Same rationale as the 4.17 to 4.18 migration; the decision applies to all major upgrades |
+| Runtime migration mechanism (Replace strategy) | N/A | New nodes boot with new payload; old nodes replaced in rolling fashion | New nodes come directly with `crun` on RHEL 10 |
+| Runtime migration mechanism (InPlace strategy) | N/A | Nodes cordoned, drained, rebooted with new ignition payload | Reboot applies new MCS templates with `crun` |
+
+## Related References
+
+- **Bug**: OCPBUGS-112082 — OSImageStream discovery fails in HyperShift due to proxy unreachable
+- **MCO fix**: machine-config-operator#6420 — Skip `fetchOSImageStream()` for ExternalTopologyMode
+- **MCO backport**: machine-config-operator#6423 — Backport to release branch
+- **Feature gate graduation**: CNTRLPLANE-3871 — OSStreams TechPreview to Default in OCP 5.0
 
 
 ---

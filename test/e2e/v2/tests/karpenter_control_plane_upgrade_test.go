@@ -17,8 +17,6 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
-	configv1 "github.com/openshift/api/config/v1"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -132,46 +130,36 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster release image")
 
 			By("Waiting for NodeClaims to be drifted")
-			driftChan := make(chan struct{})
-			go func() {
-				defer close(driftChan)
-				defer GinkgoRecover()
-				for _, nodeClaim := range nodeClaims.Items {
-					waitForNodeClaimDrifted(ctx, hcClient, &nodeClaim)
-				}
-			}()
+			for i := range nodeClaims.Items {
+				nodeClaim := &nodeClaims.Items[i]
+				Eventually(func(g Gomega, pollCtx context.Context) {
+					current := &karpenterv1.NodeClaim{}
+					err := hcClient.Get(pollCtx, crclient.ObjectKeyFromObject(nodeClaim), current)
+					g.Expect(err).NotTo(HaveOccurred())
+					if err != nil {
+						return
+					}
+
+					found := false
+					for _, condition := range current.Status.Conditions {
+						if condition.Type == karpenterv1.ConditionTypeDrifted {
+							found = true
+							g.Expect(condition.Status).To(Equal(metav1.ConditionTrue),
+								"condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nodeClaim.Name)
+						}
+					}
+					g.Expect(found).To(BeTrue(), "condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nodeClaim.Name)
+				}).
+					WithContext(ctx).
+					WithTimeout(5 * time.Minute).
+					WithPolling(3 * time.Second).
+					Should(Succeed())
+			}
+			GinkgoWriter.Println("Karpenter Nodes drifted")
 
 			By("Waiting for control plane components to complete rollout")
-			Eventually(func(g Gomega) {
-				currentHC := &hyperv1.HostedCluster{}
-				hcErr := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC)
-				if hcErr != nil {
-					g.Expect(hcErr).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
-					return
-				}
-
-				g.Expect(currentHC.Status.ControlPlaneVersion.Desired.Image).To(Equal(latestImage))
-				if len(currentHC.Status.ControlPlaneVersion.History) == 0 {
-					g.Expect(currentHC.Status.ControlPlaneVersion.History).NotTo(BeEmpty())
-					return
-				}
-				g.Expect(currentHC.Status.ControlPlaneVersion.History[0].State).To(Equal(configv1.CompletedUpdate))
-
-				if currentHC.Status.Version == nil {
-					g.Expect(currentHC.Status.Version).NotTo(BeNil())
-					return
-				}
-				g.Expect(currentHC.Status.Version.Desired.Image).To(Equal(latestImage))
-				if len(currentHC.Status.Version.History) == 0 {
-					g.Expect(currentHC.Status.Version.History).NotTo(BeEmpty())
-					return
-				}
-				g.Expect(currentHC.Status.Version.History[0].State).To(Equal(configv1.CompletedUpdate))
-			}).WithContext(ctx).WithTimeout(30 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
-
-			GinkgoWriter.Printf("Control plane upgraded, awaiting drift\n")
-			<-driftChan
-			GinkgoWriter.Println("Karpenter Nodes drifted")
+			ExpectHostedClusterUpgradeToComplete(ctx, tc.MgmtClient, hc, latestImage)
+			GinkgoWriter.Println("Control plane upgraded")
 
 			preUpgradeRHCOSVersion := extractRHCOSVersion(preUpgradeOSImage)
 			GinkgoWriter.Printf("Pre-upgrade RHCOS version: %s\n", preUpgradeRHCOSVersion)
@@ -205,29 +193,30 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			nodeClaims = waitForReadyNodeClaims(ctx, hcClient, len(nodes))
 
 			By("Validating AutoNode status counts are populated after upgrade")
-			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNode status counts", hc.Namespace, hc.Name),
-				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
-					updated := &hyperv1.HostedCluster{}
-					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), updated)
-					return updated, err
-				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
-					func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
-						if hc.Status.AutoNode.NodeCount == nil {
-							return false, "Status.AutoNode.NodeCount is nil", nil
-						}
-						if *hc.Status.AutoNode.NodeCount < int32(len(nodes)) {
-							return false, fmt.Sprintf("expected NodeCount >= %d, got %v", len(nodes), hc.Status.AutoNode.NodeCount), nil
-						}
-						if hc.Status.AutoNode.NodeClaimCount == nil || *hc.Status.AutoNode.NodeClaimCount < int32(len(nodeClaims.Items)) {
-							return false, fmt.Sprintf("expected NodeClaimCount >= %d, got %v", len(nodeClaims.Items), hc.Status.AutoNode.NodeClaimCount), nil
-						}
-						return true, fmt.Sprintf("AutoNode status: NodeCount=%d, NodeClaimCount=%d",
-							*hc.Status.AutoNode.NodeCount, *hc.Status.AutoNode.NodeClaimCount), nil
-					},
-				},
-				e2eutil.WithTimeout(5*time.Minute),
-			)
+			Eventually(func(g Gomega, pollCtx context.Context) {
+				updated := &hyperv1.HostedCluster{}
+				err := tc.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(hc), updated)
+				g.Expect(err).NotTo(HaveOccurred())
+				if err != nil {
+					return
+				}
+
+				g.Expect(updated.Status.AutoNode.NodeCount).NotTo(BeNil())
+				if updated.Status.AutoNode.NodeCount == nil {
+					return
+				}
+				g.Expect(*updated.Status.AutoNode.NodeCount).To(BeNumerically(">=", len(nodes)))
+
+				g.Expect(updated.Status.AutoNode.NodeClaimCount).NotTo(BeNil())
+				if updated.Status.AutoNode.NodeClaimCount == nil {
+					return
+				}
+				g.Expect(*updated.Status.AutoNode.NodeClaimCount).To(BeNumerically(">=", len(nodeClaims.Items)))
+			}).
+				WithContext(ctx).
+				WithTimeout(5 * time.Minute).
+				WithPolling(3 * time.Second).
+				Should(Succeed())
 		})
 	})
 }
@@ -294,39 +283,4 @@ func waitForReadyNodeClaims(ctx context.Context, client crclient.Client, n int) 
 	)
 
 	return nodeClaims
-}
-
-// waitForNodeClaimDrifted polls until the given NodeClaim has the Drifted
-// condition set to True.
-func waitForNodeClaimDrifted(ctx context.Context, client crclient.Client, nc *karpenterv1.NodeClaim) {
-	t := GinkgoTB()
-	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodeClaim %s to be drifted", nc.Name),
-		func(ctx context.Context) (*karpenterv1.NodeClaim, error) {
-			nodeClaim := &karpenterv1.NodeClaim{}
-			err := client.Get(ctx, crclient.ObjectKeyFromObject(nc), nodeClaim)
-			if err == nil {
-				haystack, err := e2eutil.Conditions(nodeClaim)
-				if err != nil {
-					return nil, err
-				}
-				for _, condition := range haystack {
-					if karpenterv1.ConditionTypeDrifted == condition.Type {
-						if condition.Status == metav1.ConditionTrue {
-							return nodeClaim, nil
-						}
-						return nil, fmt.Errorf("condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-					}
-				}
-				return nil, fmt.Errorf("condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-			}
-			return nil, err
-		},
-		[]e2eutil.Predicate[*karpenterv1.NodeClaim]{
-			e2eutil.ConditionPredicate[*karpenterv1.NodeClaim](e2eutil.Condition{
-				Type:   karpenterv1.ConditionTypeDrifted,
-				Status: metav1.ConditionTrue,
-			}),
-		},
-		e2eutil.WithTimeout(5*time.Minute),
-	)
 }

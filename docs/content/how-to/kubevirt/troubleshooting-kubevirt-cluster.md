@@ -33,8 +33,12 @@ KubeVirt platform.
 
 ## Ingress and Console cluster operators are not coming online
 
-* If the cluster is using the default ingress behavior, ensure that wildcard DNS routes are enabled on the OCP cluster the VMs are hosted on. `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'`
-* If a custom base domain is used for the HCP, double check that the Load Balancer is targeting the VM pods accurately, and make sure the wildcard DNS entry is targeting the Load Balancer IP.
+* If the cluster is using the default ingress behavior (baseDomainPassthrough), ensure that wildcard DNS routes are enabled on the management cluster: `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {"wildcardPolicy": "WildcardsAllowed"}}]'`
+* If a custom base domain is used for the HCP (without baseDomainPassthrough):
+    * Verify the LoadBalancer Service has **no pod selector**. Using a selector like `kubevirt.io: virt-launcher` resolves to pod network IPs, but the guest router's NodePort only listens on VM machineNetwork IPs. This mismatch causes `connection refused` or `http: server gave HTTP response to HTTPS client` errors. Use an EndpointSlice instead to target the VM machineNetwork IPs directly.
+    * Verify the EndpointSlice addresses match the VM machineNetwork IPs (`oc get vmi -n <hcp namespace>`), not the virt-launcher pod IPs.
+    * Verify the wildcard DNS entry `*.apps.<cluster>.<baseDomain>` resolves to the LoadBalancer's external IP, and that DNS resolves correctly **from inside the guest VMs** (hairpin routing).
+    * See [Ingress and DNS - Troubleshooting](ingress-and-dns.md#troubleshooting) for detailed diagnostic steps.
 
 ## Guest Cluster Load Balancer services are not becoming available
 

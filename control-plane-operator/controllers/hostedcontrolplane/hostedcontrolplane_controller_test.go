@@ -1153,6 +1153,19 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 			subDirSuffix: "ModernTLS",
 		},
+		{
+			name:         "When etcd snapshot restore is configured, it should reconcile expected components",
+			featureSet:   configv1.Default,
+			subDirSuffix: "EtcdRestore",
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+					Storage: hyperv1.ManagedEtcdStorageSpec{
+						Type:               hyperv1.PersistentVolumeEtcdStorage,
+						RestoreSnapshotURL: []string{"https://etcd-backup-bucket.s3.us-east-1.amazonaws.com/backups/etcd-snapshot-2024-01-15.db"},
+					},
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -3513,6 +3526,87 @@ func TestReconcileKASStatus(t *testing.T) {
 			if tc.expectedCondition.Message != "" {
 				g.Expect(cond.Message).To(Equal(tc.expectedCondition.Message))
 			}
+		})
+	}
+}
+
+func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
+	testCases := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		expectedCondition metav1.Condition
+	}{
+		{
+			name: "When the logLevel field is set and the deprecated annotation is also present, it should still set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 3,
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "5",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+							ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{
+								LogLevel: hyperv1.Debug,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				ObservedGeneration: 3,
+			},
+		},
+		{
+			name: "When the logLevel field is unset and the deprecated annotation is present, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 5,
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "5",
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				ObservedGeneration: 5,
+			},
+		},
+		{
+			name: "When neither the logLevel field nor the deprecated annotation is set, it should set the condition to False with AsExpected reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 7,
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.AsExpectedReason,
+				ObservedGeneration: 7,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := &HostedControlPlaneReconciler{}
+			r.reconcileDeprecatedConfigurationStatus(tc.hcp)
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.HostedClusterConfigurationDeprecated))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedCondition.Status))
+			g.Expect(cond.Reason).To(Equal(tc.expectedCondition.Reason))
+			g.Expect(cond.ObservedGeneration).To(Equal(tc.expectedCondition.ObservedGeneration))
 		})
 	}
 }

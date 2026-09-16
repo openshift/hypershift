@@ -36,13 +36,16 @@ const (
 )
 
 var (
-	_ Platform = aws.AWS{}
-	_ Platform = azure.Azure{}
-	_ Platform = ibmcloud.IBMCloud{}
-	_ Platform = none.None{}
-	_ Platform = agent.Agent{}
-	_ Platform = kubevirt.Kubevirt{}
-	_ Platform = gcp.GCP{}
+	_ Platform      = aws.AWS{}
+	_ Platform      = azure.Azure{}
+	_ Platform      = ibmcloud.IBMCloud{}
+	_ Platform      = none.None{}
+	_ Platform      = agent.Agent{}
+	_ Platform      = kubevirt.Kubevirt{}
+	_ Platform      = gcp.GCP{}
+	_ OrphanDeleter = aws.AWS{}
+	_ OrphanDeleter = azure.Azure{}
+	_ OrphanDeleter = gcp.GCP{}
 )
 
 type Platform interface {

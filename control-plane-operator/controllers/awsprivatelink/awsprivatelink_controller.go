@@ -1236,11 +1236,22 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		}
 
 		if output != nil && len(output.VpcEndpoints) != 0 {
-			// Once the VPC Endpoint is deleted, we need to return an error to reexecute the reconciliation
-			return false, fmt.Errorf("resource requested for deletion but still present")
+			// Check if all returned endpoints are in terminal/transitional deletion states.
+			// AWS continues to return endpoints in "Deleting" and "Deleted" states for a period
+			// after DeleteVpcEndpoints is called. Treating these states as "still present" causes
+			// error-driven exponential backoff, which can delay security group cleanup long enough
+			// for the hypershift-operator's 10-minute grace period to expire — orphaning the SG.
+			// Instead, proceed to SG cleanup when the endpoint is being deleted; the existing
+			// DependencyViolation retry (fixed 5s interval) handles the ENI detachment race.
+			for _, ep := range output.VpcEndpoints {
+				if ep.State != ec2types.StateDeleting && ep.State != ec2types.StateDeleted {
+					return false, fmt.Errorf("resource requested for deletion but still present in state %s", ep.State)
+				}
+			}
+			log.Info("endpoint deletion in progress, proceeding to security group cleanup", "endpointID", endpointID, "state", output.VpcEndpoints[0].State)
+		} else {
+			log.Info("endpoint deleted", "endpointID", endpointID)
 		}
-
-		log.Info("endpoint deleted", "endpointID", endpointID)
 	}
 
 	if awsEndpointService.Status.SecurityGroupID != "" {

@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,13 +31,13 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -57,6 +55,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,7 +72,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -399,6 +398,27 @@ func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Clien
 		t.Fatalf("could not create client for guest cluster: %v", err)
 	}
 	return guestClient
+}
+
+// guestClientImpersonating returns a guest cluster client that impersonates the given username in
+// the system:masters group. The group keeps the request authorized, so admission is what decides
+// the outcome, while the username is one no admission policy whitelists.
+func guestClientImpersonating(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, username string) crclient.Client {
+	g := NewWithT(t)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+	guestConfig.Impersonate = rest.ImpersonationConfig{
+		UserName: username,
+		Groups:   []string{"system:masters"},
+	}
+
+	impersonatingClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
+	g.Expect(err).NotTo(HaveOccurred(), "could not create impersonating client for guest cluster")
+	return impersonatingClient
 }
 
 func GetGuestKubeconfigHost(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
@@ -995,6 +1015,35 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 	})
 }
 
+// isKubeVirtPod returns true if the pod is a KubeVirt-managed pod that should be
+// skipped from HCP validation checks. This includes virt-launcher pods, VMI console
+// debug pods, and CDI importer pods, all of which have hardcoded labels/tolerations
+// that cannot be customized.
+func isKubeVirtPod(pod corev1.Pod) bool {
+	if pod.Labels["kubevirt.io"] == "virt-launcher" {
+		return true
+	}
+	if pod.Labels["app"] == "vmi-console-debug" {
+		return true
+	}
+	if _, ok := pod.Labels["cdi.kubevirt.io"]; ok {
+		return true
+	}
+	return false
+}
+
+// filterControlPlanePods returns only the pods that are managed by the control plane,
+// filtering out KubeVirt/CDI pods whose labels and tolerations cannot be customized.
+func filterControlPlanePods(pods []corev1.Pod) []corev1.Pod {
+	var filtered []corev1.Pod
+	for _, pod := range pods {
+		if !isKubeVirtPod(pod) {
+			filtered = append(filtered, pod)
+		}
+	}
+	return filtered
+}
+
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHavePullPolicyIfNotPresent", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1032,7 +1081,7 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 			"network-node-identity",
 			"ovnkube-control-plane",
 		}
-		for _, pod := range podList.Items {
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			skip := false
 			for _, excludedPod := range excludedPods {
 				if strings.HasPrefix(pod.Name, excludedPod) {
@@ -1041,11 +1090,6 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 				}
 			}
 			if skip {
-				continue
-			}
-
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
 				continue
 			}
 
@@ -1113,6 +1157,7 @@ func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crcl
 
 func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureCAPIFinalizers", func(t *testing.T) {
+		AtLeast(t, Version422)
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		for _, name := range hcc.CAPIComponents {
@@ -1807,6 +1852,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "cloud-network-config-controller"}:        {},
 			{label: "app", value: "vmi-console-debug"}:                      {},
 			{label: "kubevirt.io", value: "virt-launcher"}:                  {}, // virt-launcher pods have no app label
+			{label: "app", value: "containerized-data-importer"}:            {}, // CDI importer pods have hardcoded settings
 		}
 
 		for _, pod := range hcpPods.Items {
@@ -1867,6 +1913,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "cloud-network-config-controller"}:        {},
 			{label: "app", value: "vmi-console-debug"}:                      {},
 			{label: "kubevirt.io", value: "virt-launcher"}:                  {}, // virt-launcher pods have no app label
+			{label: "app", value: "containerized-data-importer"}:            {}, // CDI importer pods have hardcoded settings
 			{label: "app", value: "csi-snapshot-controller"}:                {},
 			{label: "app", value: "csi-snapshot-webhook"}:                   {},
 			{label: "app", value: "packageserver"}: {
@@ -2395,7 +2442,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 
 		// Generate a custom certificate for the KAS
 		t.Log("Generating custom certificate with DNS name", customApiServerHost)
-		customCert, customKey, err := GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
+		customCert, customKey, err := v2util.GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to generate custom certificate")
 
 		// Create secret with the custom certificate
@@ -2761,6 +2808,9 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 			hccokasvap.AdmissionPolicyNameInfra,
 			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
 		}
+		if IsGreaterThanOrEqualTo(Version51) {
+			requiredVAPs = append(requiredVAPs, hccokasvap.AdmissionPolicyNameRBAC)
+		}
 		presentVAPs := []string{}
 		for _, vap := range validatingAdmissionPolicies.Items {
 			presentVAPs = append(presentVAPs, vap.Name)
@@ -2785,6 +2835,26 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesBlockRBACDeletion", func(t *testing.T) {
+		CPOAtLeast(t, Version51, hc)
+		g := NewWithT(t)
+		t.Log("Checking that VAP blocks deletion of protected ClusterRoleBindings")
+		// The admin kubeconfig authenticates as system:admin, which the policy whitelists so the
+		// KAS bootstrap container can apply these bindings. Impersonate an unrelated user to
+		// exercise the path the policy actually guards.
+		impersonatingClient := guestClientImpersonating(t, ctx, mgmtClient, hc, "hypershift-e2e-rbac-vap-test")
+		for _, name := range []string{"hcco-cluster-admin", "kas-bootstrap-container-cluster-admin"} {
+			crb := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			err := impersonatingClient.Get(ctx, crclient.ObjectKeyFromObject(crb), crb)
+			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to get %s ClusterRoleBinding: %v", name, err))
+			// Dry run: admission still evaluates the policy, but a cluster missing the VAP is not
+			// left without a binding HCCO depends on.
+			err = impersonatingClient.Delete(ctx, crb, crclient.DryRunAll)
+			g.Expect(err).To(HaveOccurred(), "VAP should block deletion of %s ClusterRoleBinding", name)
+			g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
+				fmt.Sprintf("rejection should come from a ValidatingAdmissionPolicy, got: %v", err))
+		}
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)
@@ -3146,58 +3216,9 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 }
 
 // ValidateHostedClusterConditions checks that a HostedCluster's conditions and status fields
-// match expected values. Pass nil for uc when calling outside of an upgrade test context.
+// match expected values. Pass nil for upgradeContext when calling outside of an upgrade test context.
 func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration, upgradeContext *UpgradeContext) {
-	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
-	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
-	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
-	if !hasWorkerNodes {
-		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
-		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
-	}
-	if IsLessThan(Version415) {
-		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-	}
-	if IsLessThan(Version421) {
-		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
-	}
-
-	if IsLessThan(Version422) {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-	}
-
-	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
-	// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if upgradeContext != nil {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-	}
-
-	if IsLessThan(Version423) {
-		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-	}
-
-	// TODO: TEMPORARY - Remove this once ConfigOperatorReconciliationSucceeded condition is merged and stable.
-	// Exclude ConfigOperatorReconciliationSucceeded during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if upgradeContext != nil {
-		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-	}
-
-	var predicates []Predicate[*hyperv1.HostedCluster]
-	for conditionType, conditionStatus := range expectedConditions {
-		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{
-			Type:   string(conditionType),
-			Status: conditionStatus,
-		}))
-	}
+	predicates := []Predicate[*hyperv1.HostedCluster]{hostedClusterConditionsPredicate(hasWorkerNodes, upgradeContext)}
 
 	if IsGreaterThanOrEqualTo(Version422) {
 		cpvFieldPath := "status.controlPlaneVersion"
@@ -3219,6 +3240,68 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 			return hc, err
 		}, predicates, WithTimeout(timeout), WithoutConditionDump(),
 	)
+}
+
+// hostedClusterConditionsPredicate evaluates expectations against each freshly fetched cluster.
+func hostedClusterConditionsPredicate(hasWorkerNodes bool, upgradeContext *UpgradeContext) Predicate[*hyperv1.HostedCluster] {
+	return func(hc *hyperv1.HostedCluster) (bool, string, error) {
+		expectedConditions := conditions.ExpectedHCConditions(hc)
+		// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
+		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
+		if !hasWorkerNodes {
+			expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+			expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+			expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
+			expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
+			expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
+		}
+		if IsLessThan(Version415) {
+			// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+		}
+		if IsLessThan(Version421) {
+			delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
+		}
+
+		if IsLessThan(Version422) {
+			delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
+		}
+
+		// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
+		// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
+		// may not be present in all builds during the upgrade window.
+		if upgradeContext != nil {
+			delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+		}
+
+		if IsLessThan(Version423) {
+			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+		}
+
+		// TODO: TEMPORARY - Remove this once ConfigOperatorReconciliationSucceeded condition is merged and stable.
+		// Exclude ConfigOperatorReconciliationSucceeded during upgrade tests as the condition
+		// may not be present in all builds during the upgrade window.
+		if upgradeContext != nil {
+			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+		}
+		var reasons []string
+		for conditionType, conditionStatus := range expectedConditions {
+			done, reason, err := ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(conditionType),
+				Status: conditionStatus,
+			})(hc)
+			if err != nil {
+				return false, reason, err
+			}
+			if !done {
+				reasons = append(reasons, reason)
+			}
+		}
+		return len(reasons) == 0, strings.Join(reasons, "; "), nil
+	}
 }
 
 func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -3320,12 +3403,7 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 			},
 		}
 
-		for _, pod := range podList.Items {
-			// Skip KubeVirt VM worker node related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// SRO is being removed in 4.18, not worth correcting the tolerations on back releases
 			if pod.Labels["name"] == "shared-resource-csi-driver-operator" {
 				continue
@@ -3522,12 +3600,7 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 		}
 
 		var podsWithoutLabel []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has the custom label
 			if value, exist := pod.Labels["hypershift-e2e-test-label"]; !exist || value != "test" {
 				podsWithoutLabel = append(podsWithoutLabel, pod.Name)
@@ -3551,12 +3624,7 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 		}
 
 		var podsWithoutToleration []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has the custom toleration
 			found := false
 			for _, toleration := range pod.Spec.Tolerations {
@@ -3590,12 +3658,7 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 		}
 
 		var podsWithoutAppLabel []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has an app label set
 			val, ok := pod.Labels["app"]
 			if ok && val != "" {
@@ -3881,29 +3944,6 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 	})
-}
-
-// GenerateCustomCertificate generates a self-signed certificate for the given DNS names
-func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byte, []byte, error) {
-	if len(dnsNames) == 0 {
-		return nil, nil, fmt.Errorf("no DNS names provided")
-	}
-
-	cfg := &certs.CertCfg{
-		Subject:      pkix.Name{CommonName: dnsNames[0], Organization: []string{"kubernetes"}, OrganizationalUnit: []string{"test"}},
-		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		Validity:     validity,
-		DNSNames:     dnsNames,
-		IsCA:         false,
-	}
-
-	key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate self-signed certificate: %w", err)
-	}
-
-	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), nil
 }
 
 // EnsureOpenshiftSamplesCapabilityDisabled validates the expectations for when OpenShiftSamplesCapability is Disabled

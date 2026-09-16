@@ -20,6 +20,8 @@ https://raw.githubusercontent.com/openshift/hypershift/refs/heads/main/.chai-bot
 
 Use `fetch_web_content` to retrieve this file. Parse the YAML to extract each category's `name`, `description`, `platform`, `ocp_versions`, `test_framework`, and job list. The `platform`, `ocp_versions`, and `test_framework` fields are the authoritative grouping keys; do not infer them from display names.
 
+Also parse the optional `slack_handle` field when present. Most categories will not have one; only those whose owning team has registered a handle will include it.
+
 This registry is auto-generated nightly by `hack/ci/update-job-registry.py` from the periodic job configs in `openshift/release`.
 
 ### Step 2 — Collect Build History
@@ -209,6 +211,12 @@ Use the `---THREAD_DETAILS---` delimiter to start threaded content. Use `---THRE
    - Classify the failure (infrastructure, test flake, product regression, configuration)
    - Link to the failing build: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{JOB_NAME}/{BUILD_ID}`
 4. **Common patterns**: If multiple jobs share the same failure mode, call it out
+
+**Team ping**: If the category has a `slack_handle` in the registry **and** its pass rate is below 50% or its trend is 📉, end the thread with:
+```text
+cc {slack_handle} — please investigate ({pass_rate}% pass rate)
+```
+Do not ping when the pass rate is ≥ 50% and the trend is not 📉, even if a handle is configured.
 
 **Thread constraints:**
 - Keep each thread under 4000 characters

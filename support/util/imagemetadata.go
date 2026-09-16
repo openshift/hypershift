@@ -408,13 +408,17 @@ func getRepository(ctx context.Context, ref reference.DockerImageReference, pull
 	return registryContext.Repository(ctx, ref.DockerClientDefaults().RegistryURL(), ref.RepositoryName(), false)
 }
 
-// ImageLabels returns labels on a given image metadata
+// ImageLabels returns labels on a given image metadata. Labels may be recorded on either
+// Config or ContainerConfig depending on how the image was built, so fall back to
+// ContainerConfig when Config carries no labels. Returning Config.Labels unconditionally
+// (even when nil) would silently drop labels that live on ContainerConfig, which can turn a
+// present capability label into a spurious "absent" and, for the AWS default worker security
+// group capability, flip an AWSMachineTemplate hash and roll all workers (OCPBUGS-105464).
 func ImageLabels(metadata *dockerv1client.DockerImageConfig) map[string]string {
-	if metadata.Config != nil {
+	if metadata.Config != nil && len(metadata.Config.Labels) > 0 {
 		return metadata.Config.Labels
-	} else {
-		return metadata.ContainerConfig.Labels
 	}
+	return metadata.ContainerConfig.Labels
 }
 
 // Attempts only a root registry override match.

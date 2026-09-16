@@ -416,6 +416,14 @@ func AWSEBSCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "aws-ebs-csi-driver-controller-metrics-serving-cert")
 }
 
+func GCPPDCsiDriverOperatorServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "gcp-pd-csi-driver-operator-serving-cert")
+}
+
+func GCPPDCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "gcp-pd-csi-driver-controller-metrics-serving-cert")
+}
+
 func MultusAdmissionControllerServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "multus-admission-controller-secret")
 }

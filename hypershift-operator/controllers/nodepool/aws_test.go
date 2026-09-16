@@ -23,7 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -543,7 +543,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					md := &capiv1.MachineDeployment{
 						ObjectMeta: metav1.ObjectMeta{Name: tc.nodePool.GetName(), Namespace: namespace},
 						Spec: capiv1.MachineDeploymentSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{Name: tc.existingTemplate.Name},
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: tc.existingTemplate.Name},
 						}}},
 					}
 					existingObjs = append(existingObjs, md)
@@ -551,7 +551,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					ms := &capiv1.MachineSet{
 						ObjectMeta: metav1.ObjectMeta{Name: tc.nodePool.GetName(), Namespace: namespace},
 						Spec: capiv1.MachineSetSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{Name: tc.existingTemplate.Name},
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: tc.existingTemplate.Name},
 						}}},
 					}
 					existingObjs = append(existingObjs, ms)
@@ -677,6 +677,84 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 				Client: fakeClient,
 			}
 			err := reconciler.validateAWSPlatformConfig(t.Context(), nodePool, hostedcluster, tc.oldCondition)
+			if tc.expectedError == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nothing")
+			}
+
+			if !strings.Contains(err.Error(), tc.expectedError) {
+				t.Fatalf("expected error to contain %s, got %v", tc.expectedError, err)
+			}
+		})
+	}
+}
+
+func TestValidateNestedVirtualizationInstanceType(t *testing.T) {
+	testCases := []struct {
+		name          string
+		cpuOptions    hyperv1.CPUOptions
+		instanceType  string
+		expectedError string
+	}{
+		{
+			name:         "nestedVirtualizationPolicy unset, any instance type is valid",
+			cpuOptions:   hyperv1.CPUOptions{},
+			instanceType: "m5.large",
+		},
+		{
+			name:         "enabled on supported c8i family",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "c8i.2xlarge",
+		},
+		{
+			name:         "enabled on supported c8i-flex variant",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "c8i-flex.2xlarge",
+		},
+		{
+			name:         "enabled on supported m8i family",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "m8i.4xlarge",
+		},
+		{
+			name:         "enabled on supported r8i-flex variant",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType: "r8i-flex.xlarge",
+		},
+		{
+			name:         "disabled on unsupported family is still valid (explicit disable is a no-op everywhere)",
+			cpuOptions:   hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationDisabled},
+			instanceType: "m5.large",
+		},
+		{
+			name:          "enabled on unsupported m5 family",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "m5.large",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+		{
+			name:          "enabled on unsupported c7i family (previous generation)",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "c7i.2xlarge",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+		{
+			name:          "enabled on unsupported AMD c8a family",
+			cpuOptions:    hyperv1.CPUOptions{NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled},
+			instanceType:  "c8a.2xlarge",
+			expectedError: "cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateNestedVirtualizationInstanceType(tc.cpuOptions, tc.instanceType)
 			if tc.expectedError == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -1774,6 +1852,41 @@ func TestBuildAWSSecurityGroups(t *testing.T) {
 			},
 		},
 		{
+			// Regression for OCPBUGS-105464: the CPO capability flag (defaultSG) is derived
+			// from a fail-open image label and can transiently read false even after the
+			// default worker SG has been created. Injection must key on the SG ID recorded in
+			// status, not solely on the flag, so the resulting security group list (and thus
+			// the AWSMachineTemplate hash) is identical whether the flag reads true or false.
+			// Otherwise a false->true flip re-renders the template and rolls all workers. This
+			// must produce the same output as the equivalent "defaultSG is true" case above.
+			name: "When defaultSG is false but the default SG already exists in status, it should still inject it",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							SecurityGroups: []hyperv1.AWSResourceReference{
+								{ID: ptr.To("sg-custom")},
+							},
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Platform: &hyperv1.PlatformStatus{
+						AWS: &hyperv1.AWSPlatformStatus{
+							DefaultWorkerSecurityGroupID: "sg-default",
+						},
+					},
+				},
+			},
+			defaultSG: false,
+			expectedSGs: []capiaws.AWSResourceReference{
+				{ID: ptr.To("sg-custom")},
+				{ID: ptr.To("sg-default")},
+			},
+		},
+		{
 			name: "When security group has filters, it should copy filters to CAPI format",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
@@ -1820,12 +1933,13 @@ func TestBuildAWSSecurityGroups(t *testing.T) {
 	}
 }
 
-func TestApplyAWSPlacementOptions(t *testing.T) {
+func TestApplyAWSMachineOptions(t *testing.T) {
 	capacityReservationID := "cr-0123456789abcdef0"
 
 	testCases := []struct {
 		name                             string
 		nodePool                         *hyperv1.NodePool
+		expectedNestedVirtualization     capiaws.NestedVirtualizationPolicy
 		expectedSpotMarketOptions        *capiaws.SpotMarketOptions
 		expectedMarketType               capiaws.MarketType
 		expectedTenancy                  string
@@ -1840,6 +1954,46 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 						AWS: &hyperv1.AWSNodePoolPlatform{
 							Placement: nil,
 						},
+					},
+				},
+			},
+		},
+		{
+			name: "When nested virtualization is enabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CPUOptions: hyperv1.CPUOptions{
+								NestedVirtualizationPolicy: hyperv1.NestedVirtualizationEnabled,
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyEnabled,
+		},
+		{
+			name: "When nested virtualization is disabled, it should set CPUOptions on spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							CPUOptions: hyperv1.CPUOptions{
+								NestedVirtualizationPolicy: hyperv1.NestedVirtualizationDisabled,
+							},
+						},
+					},
+				},
+			},
+			expectedNestedVirtualization: capiaws.NestedVirtualizationPolicyDisabled,
+		},
+		{
+			name: "When AWS platform is nil, it should not modify spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: nil,
 					},
 				},
 			},
@@ -1988,13 +2142,15 @@ func TestApplyAWSPlacementOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			spec := &capiaws.AWSMachineTemplateSpec{}
+			applyAWSCPUOptions(tc.nodePool, spec)
 			applyAWSPlacementOptions(tc.nodePool, spec)
 
-			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions))
-			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType))
-			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy))
-			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID))
-			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference))
+			g.Expect(spec.Template.Spec.CPUOptions.NestedVirtualization).To(Equal(tc.expectedNestedVirtualization), "CPUOptions.NestedVirtualization mismatch")
+			g.Expect(spec.Template.Spec.SpotMarketOptions).To(Equal(tc.expectedSpotMarketOptions), "SpotMarketOptions mismatch")
+			g.Expect(spec.Template.Spec.MarketType).To(Equal(tc.expectedMarketType), "MarketType mismatch")
+			g.Expect(spec.Template.Spec.Tenancy).To(Equal(tc.expectedTenancy), "Tenancy mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationID).To(Equal(tc.expectedCapacityReservationID), "CapacityReservationID mismatch")
+			g.Expect(spec.Template.Spec.CapacityReservationPreference).To(Equal(tc.expectedCapReservationPreference), "CapacityReservationPreference mismatch")
 		})
 	}
 }

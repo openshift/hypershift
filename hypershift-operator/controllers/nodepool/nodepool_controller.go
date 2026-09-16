@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -43,7 +44,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,6 +58,8 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -90,14 +93,11 @@ const (
 	PerformanceProfileConfigMapLabel                     = "hypershift.openshift.io/performanceprofile-config"
 	NodeTuningGeneratedPerformanceProfileStatusLabel     = "hypershift.openshift.io/nto-generated-performance-profile-status"
 	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
-	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
-	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
-	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
 )
 
 type NodePoolReconciler struct {
@@ -194,12 +194,14 @@ func (r *NodePoolReconciler) managedResources() []client.Object {
 	return managedResources
 }
 
-func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+var nodePoolTracer = tracing.Tracer("nodepool")
+
+func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Fetch the nodePool instance
 	nodePool := &hyperv1.NodePool{}
-	err := r.Client.Get(ctx, req.NamespacedName, nodePool)
+	err = r.Client.Get(ctx, req.NamespacedName, nodePool)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("not found", "request", req.String())
@@ -207,6 +209,32 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		log.Error(err, "error getting nodepool")
 		return ctrl.Result{}, err
+	}
+
+	startOpts := []trace.SpanStartOption{
+		trace.WithAttributes(
+			tracing.AttrNodePoolName.String(nodePool.Name),
+			tracing.AttrNodePoolNamespace.String(nodePool.Namespace),
+			tracing.AttrNodePoolClusterName.String(nodePool.Spec.ClusterName),
+		),
+	}
+	if link := tracing.SpanLinkFromAnnotations(nodePool.Annotations); link.SpanContext.IsValid() {
+		startOpts = append(startOpts, trace.WithLinks(link))
+	}
+	ctx, span := nodePoolTracer.Start(ctx, tracing.SpanNodePoolReconcile, startOpts...)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	if nodePool.Spec.Release.Image != "" {
+		span.SetAttributes(tracing.AttrNodePoolReleaseImage.String(nodePool.Spec.Release.Image))
+	}
+	if !nodePool.DeletionTimestamp.IsZero() {
+		span.SetAttributes(tracing.AttrNodePoolDeleting.Bool(true))
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName)
@@ -234,6 +262,10 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	if hcluster.Spec.InfraID != "" {
+		span.SetAttributes(tracing.CorrelationAttrs(hcluster.Spec.InfraID)...)
+	}
+
 	// Ensure the nodePool has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(nodePool, finalizer) {
 		controllerutil.AddFinalizer(nodePool, finalizer)
@@ -248,7 +280,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	result, err := r.reconcile(ctx, hcluster, nodePool)
+	result, err = r.reconcile(ctx, hcluster, nodePool)
 	if err != nil {
 		log.Error(err, "Failed to reconcile NodePool")
 		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
@@ -831,40 +863,38 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
-//
-// In CAPI v1.11+, the controller writes status natively in v1beta2 and the v1beta1 status
-// fields come from conversion. The converted v1beta1 fields (especially UpdatedReplicas,
-// which maps from deprecated.v1beta1.updatedReplicas rather than the native upToDateReplicas)
-// can transiently disagree with the v1beta2 native fields. To guard against this, when the
-// v1beta1 fields indicate completion we cross-check against the v1beta2 status stored in the
-// Status.V1Beta2 field, which is kept current on every status-subresource write.
-func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
-	newStatus := &deployment.Status
-	v1beta1Complete := newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.Replicas == *(deployment.Spec.Replicas) &&
-		newStatus.AvailableReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.ObservedGeneration >= deployment.Generation
-	if !v1beta1Complete {
-		return false
-	}
-	return machineDeploymentCompleteFromV1Beta2Status(deployment)
-}
-
-// machineDeploymentCompleteFromV1Beta2Status verifies that the native v1beta2 status fields
-// also indicate completion. The v1beta1 Status.V1Beta2 field is populated by the v1beta2-to-v1beta1
-// conversion on every status-subresource write, so it is always current.
-// If V1Beta2 is nil (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
-func machineDeploymentCompleteFromV1Beta2Status(deployment *capiv1.MachineDeployment) bool {
-	v1beta2 := deployment.Status.V1Beta2
-	if v1beta2 == nil {
-		return true
-	}
-	if v1beta2.UpToDateReplicas == nil || v1beta2.AvailableReplicas == nil {
-		return false
-	}
+// It requires the list of MachineSets owned by the MachineDeployment to verify that only a single
+// active MachineSet remains. This guards against a race in CAPI where ObservedGeneration and status
+// counters (UpToDateReplicas, AvailableReplicas) are set before downstream controllers (Machine,
+// MachineSet) have reconciled the template change, causing the counters to be stale.
+// See https://github.com/kubernetes-sigs/cluster-api/issues/13738.
+func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets []capiv1.MachineSet) bool {
 	desired := ptr.Deref(deployment.Spec.Replicas, 0)
-	return *v1beta2.UpToDateReplicas == desired &&
-		*v1beta2.AvailableReplicas == desired
+	newStatus := &deployment.Status
+
+	// differentiate the nil and 0 cases
+	if newStatus.Replicas == nil || newStatus.AvailableReplicas == nil || newStatus.UpToDateReplicas == nil {
+		return false
+	}
+
+	if *newStatus.AvailableReplicas != desired ||
+		*newStatus.Replicas != desired ||
+		*newStatus.UpToDateReplicas != desired ||
+		newStatus.ObservedGeneration < deployment.Generation {
+		return false
+	}
+
+	// Guard against stale counters: verify that no old MachineSet still has replicas.
+	// If old MachineSets still have replicas, the rollout is not complete regardless
+	// of what the MachineDeployment counters report.
+	currentRevision := deployment.Annotations[capiv1.RevisionAnnotation]
+	for i := range machineSets {
+		if machineSets[i].Annotations[capiv1.RevisionAnnotation] != currentRevision && ptr.Deref(machineSets[i].Status.Replicas, 0) > 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.

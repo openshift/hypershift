@@ -9,6 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sigyaml "sigs.k8s.io/yaml"
+
+	"github.com/blang/semver"
 )
 
 const ImageStreamImportModeField = "imageStreamImportMode"
@@ -30,6 +32,29 @@ func GetBackwardCompatibleConfigHash(config *v1beta1.ClusterConfiguration) (stri
 	// We need to drop the field when it shows up as empty in the marshaled string to keep backward compatibility.
 	// Implementing this at the marshal operation level might result in undesired impact as we might potentially modify other fields and ordering is not deterministic
 	return supportutil.HashStructWithJSONMapper(config, supportutil.NewOmitFieldIfEmptyJSONMapper(ImageStreamImportModeField))
+}
+
+// GetBackwardCompatibleCAPIImage returns a CAPI image pinned to a version that
+// writes status through the v1beta2 API. Payloads at 4.18 or below ship a CAPI
+// controller that writes status via v1beta1; the v1beta1→v1beta2 conversion
+// drops the phase field, leaving it permanently empty.
+// The pinned image is from OCP 4.22 which includes CAPI 1.13. It is the
+// cluster-capi-controllers component from the pinned OCP release payload
+// quay.io/openshift-release-dev/ocp-release@sha256:1dbbdfdde4bb3f3ed4bca965e810a2990a3913990fb4a57072764b771f604554.
+// Keep this as the component image rather than the release payload so
+// reconciliation does not need to look up the entire pinned payload.
+func GetBackwardCompatibleCAPIImage(releaseVersion semver.Version) string {
+	const (
+		backwardCompatibleCAPIImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5c3e36db897fae332284e1a681044cd6997a70e8cb9059f810385352e7575ac"
+		minUnaffectedVersion        = "4.19.0-0"
+	)
+
+	releaseVersion.Pre = nil
+	if releaseVersion.LT(semver.MustParse(minUnaffectedVersion)) {
+		return backwardCompatibleCAPIImage
+	}
+
+	return ""
 }
 
 // NormalizeV1Alpha1ClusterImagePolicy rewrites the apiVersion of ClusterImagePolicy

@@ -111,7 +111,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -241,7 +240,6 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 }
 
 func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedControlPlane) {
-
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
@@ -548,6 +546,39 @@ func (r *HostedControlPlaneReconciler) reconcileKASStatus(ctx context.Context, h
 	return nil
 }
 
+// reconcileDeprecatedConfigurationStatus surfaces a generic warning condition whenever a
+// deprecated mechanism is used to configure the hosted control plane. Each deprecation
+// check appends a message to the collected list; if any fire, the condition is set to True
+// with the messages joined together, otherwise it is set to False. This makes it easy to
+// add new deprecation checks over time. Today the only such mechanism is the
+// hypershift.openshift.io/kube-apiserver-verbosity-level annotation, which fires whenever
+// the annotation is present, even if spec.operatorConfiguration.kubeAPIServer.logLevel is
+// also set and taking precedence, so that users are guided to remove the deprecated
+// annotation entirely. The condition is message-only: it does not affect verbosity
+// resolution, config hashes, or rollouts.
+func (r *HostedControlPlaneReconciler) reconcileDeprecatedConfigurationStatus(hostedControlPlane *hyperv1.HostedControlPlane) {
+	var deprecationMessages []string
+
+	if _, hasVerbosityAnnotation := hostedControlPlane.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; hasVerbosityAnnotation {
+		deprecationMessages = append(deprecationMessages, fmt.Sprintf("The deprecated %q annotation is set; migrate to spec.operatorConfiguration.kubeAPIServer.logLevel and remove the annotation", hyperv1.KubeAPIServerVerbosityLevelAnnotation))
+	}
+
+	newCondition := metav1.Condition{
+		Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.AsExpectedReason,
+		Message: "No deprecated configuration is in use",
+	}
+	if len(deprecationMessages) > 0 {
+		newCondition.Status = metav1.ConditionTrue
+		newCondition.Reason = hyperv1.DeprecatedConfigurationInUseReason
+		newCondition.Message = strings.Join(deprecationMessages, "; ")
+	}
+
+	newCondition.ObservedGeneration = hostedControlPlane.Generation
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+}
+
 func (r *HostedControlPlaneReconciler) reconcileDegradedStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
 	condition := metav1.Condition{
 		Type:               string(hyperv1.HostedControlPlaneDegraded),
@@ -646,6 +677,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	r.reconcileDeprecatedConfigurationStatus(hostedControlPlane)
+
 	if err := r.reconcileDegradedStatus(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -692,6 +725,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	hostedControlPlane.Status.Initialized = true
+
+	// Set status.initialization.controlPlaneInitialized for CAPI 1.11 v1beta2 contract.
+	// CAPI reads this field from the ControlPlane provider object to determine if the
+	// control plane is initialized (ControlPlaneInitialized condition on the CAPI Cluster).
+	hostedControlPlane.Status.Initialization.ControlPlaneInitialized = ptr.To(true)
 
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
@@ -1864,6 +1902,30 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 	return nil
 }
 
+// reconcileGCPPlatformCerts reconciles the metrics serving-cert secrets for the GCP PD CSI
+// driver operator and controller.
+//
+// csi-operator stamps the service.beta.openshift.io/serving-cert-secret-name annotation on the
+// GCP PD CSI metrics Services unconditionally. On a GKE management cluster there is no
+// service-ca-operator to honor that annotation, so self-sign unconditionally.
+func (r *HostedControlPlaneReconciler) reconcileGCPPlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	gcpPDCsiDriverOperatorServingCert := manifests.GCPPDCsiDriverOperatorServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, gcpPDCsiDriverOperatorServingCert, func() error {
+		return pki.ReconcileGCPPDCsiDriverOperatorMetricsServingCertSecret(gcpPDCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile gcp pd csi driver operator serving cert: %w", err)
+	}
+
+	gcpPDCsiDriverControllerMetricsServingCert := manifests.GCPPDCsiDriverControllerMetricsServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, gcpPDCsiDriverControllerMetricsServingCert, func() error {
+		return pki.ReconcileGCPPDCsiDriverControllerMetricsServingCertSecret(gcpPDCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile gcp pd csi driver controller metrics serving cert: %w", err)
+	}
+
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileAzurePlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
 	azureWorkloadIdentityWebhookServingCert := manifests.AzureWorkloadIdentityWebhookServingCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, azureWorkloadIdentityWebhookServingCert, func() error {
@@ -2042,17 +2104,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}
 	}
 
+	return r.reconcilePlatformSpecificCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
+}
+
+// reconcilePlatformSpecificCerts dispatches to the platform-specific PKI reconciliation logic, if any,
+// for the given HostedControlPlane's platform type.
+func (r *HostedControlPlaneReconciler) reconcilePlatformSpecificCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		if err := r.reconcileAWSPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
-			return err
-		}
+		return r.reconcileAWSPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
 	case hyperv1.AzurePlatform:
-		if err := r.reconcileAzurePlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
-			return err
-		}
+		return r.reconcileAzurePlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
+	case hyperv1.GCPPlatform:
+		return r.reconcileGCPPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
 	}
-
 	return nil
 }
 
@@ -2355,20 +2420,20 @@ func (r *HostedControlPlaneReconciler) removeHCPIngressFromRoutes(ctx context.Co
 		// when the HCP router admits routes. We filter by this specific name to ensure
 		// we only remove ingress entries from the HCP router, not from other routers
 		// (e.g., the default ingress controller router).
-		originalRoute := route.DeepCopy()
-		filteredIngress := make([]routev1.RouteIngress, 0, len(route.Status.Ingress))
-		for _, ingress := range route.Status.Ingress {
-			if ingress.RouterName != "router" {
-				filteredIngress = append(filteredIngress, ingress)
-			}
-		}
-		if len(filteredIngress) != len(route.Status.Ingress) {
-			route.Status.Ingress = filteredIngress
-			if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {
-				if err := r.Status().Patch(ctx, route, client.MergeFrom(originalRoute)); err != nil {
-					return fmt.Errorf("failed to clear route %s ingress: %w", route.Name, err)
+		// The filtering is recomputed inside the PatchStatus closure against whatever is
+		// freshly fetched on each retry, rather than a value captured beforehand, so a
+		// concurrent ingress write from the actual router controller isn't clobbered.
+		if err := statuspatching.PatchStatus(ctx, r.Client, route, func() error {
+			filteredIngress := make([]routev1.RouteIngress, 0, len(route.Status.Ingress))
+			for _, ingress := range route.Status.Ingress {
+				if ingress.RouterName != "router" {
+					filteredIngress = append(filteredIngress, ingress)
 				}
 			}
+			route.Status.Ingress = filteredIngress
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to clear route %s ingress: %w", route.Name, err)
 		}
 	}
 

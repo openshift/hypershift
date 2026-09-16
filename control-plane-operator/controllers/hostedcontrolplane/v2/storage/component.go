@@ -68,6 +68,11 @@ func NewComponent() component.ControlPlaneComponent {
 			"controller-config.yaml",
 			component.WithAdaptFunction(component.NewGenericControllerConfigAdapter("0.0.0.0:8443", "")),
 		).
+		WithManifestAdapter(
+			"gcp-pd-csi-config.yaml",
+			component.WithAdaptFunction(adaptGCPPDCSIConfig),
+			component.EnableForPlatform(hyperv1.GCPPlatform),
+		).
 		WithDependencies(oapiv2.ComponentName).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "guest-kubeconfig",

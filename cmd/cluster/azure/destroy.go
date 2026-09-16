@@ -2,7 +2,9 @@ package azure
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,6 +24,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
@@ -139,14 +142,37 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 			return fmt.Errorf("failed to create new resource groups client: %w", err)
 		}
 
-		if _, err = resourceGroupClient.Get(ctx, o.AzurePlatform.ResourceGroupName, nil); err != nil {
-			return fmt.Errorf("failed to get resource group name, '%s': %w", o.AzurePlatform.ResourceGroupName, err)
+		if err := checkResourceGroup(ctx, resourceGroupClient, o.AzurePlatform.ResourceGroupName, o.Log); err != nil {
+			return err
 		}
 	} else {
 		o.AzurePlatform.ResourceGroupName = o.Name + "-" + o.InfraID
 	}
 
 	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
+}
+
+type resourceGroupClient interface {
+	Get(context.Context, string, *armresources.ResourceGroupsClientGetOptions) (armresources.ResourceGroupsClientGetResponse, error)
+}
+
+func checkResourceGroup(ctx context.Context, client resourceGroupClient, resourceGroupName string, logger logr.Logger) error {
+	if _, err := client.Get(ctx, resourceGroupName, nil); err != nil {
+		if isResourceGroupNotFound(err) {
+			logger.Info("Resource group not found, continuing with cluster deletion", "resourceGroup", resourceGroupName)
+		} else {
+			return fmt.Errorf("failed to get resource group name, '%s': %w", resourceGroupName, err)
+		}
+	}
+	return nil
+}
+
+// isResourceGroupNotFound returns true if err is an Azure 404 response, indicating the
+// resource group was already deleted out-of-band (e.g. via the Azure portal or an expired
+// credential's cleanup process).
+func isResourceGroupNotFound(err error) bool {
+	var respErr *azcore.ResponseError
+	return stderrors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
 }
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {

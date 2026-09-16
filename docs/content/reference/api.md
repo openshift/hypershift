@@ -1628,7 +1628,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -1641,7 +1641,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -2024,6 +2024,24 @@ PlacementOptions
 <p>placement specifies the placement options for the EC2 instances.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>cpuOptions,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">
+CPUOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cpuOptions specifies CPU configuration for EC2 instances.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, AWS defaults are used (nested virtualization is not enabled).
+To revert to default behavior after setting cpuOptions, remove the entire
+cpuOptions field rather than clearing individual sub-fields.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSNodePoolResourceTag { #hypershift.openshift.io/v1beta1.AWSNodePoolResourceTag }
@@ -2056,7 +2074,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -2069,7 +2087,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -2374,7 +2392,7 @@ string
 <td>
 <p>key is the key of the tag.
 Must be between 1 and 128 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 </td>
 </tr>
 <tr>
@@ -2387,7 +2405,7 @@ string
 <td>
 <p>value is the value of the tag.
 Must be between 1 and 256 characters and may only contain letters, digits,
-and the characters _ . : / = + - @</p>
+spaces, and the characters _ . : / = + - @</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -5296,6 +5314,41 @@ used in workload identity authentication for Azure Private Link Service operatio
 </p>
 <p>
 </p>
+###CPUOptions { #hypershift.openshift.io/v1beta1.CPUOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>CPUOptions specifies CPU configuration for EC2 instances.
+At least one field must be specified when cpuOptions is present.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nestedVirtualizationPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy">
+NestedVirtualizationPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, nested virtualization is not enabled (AWS default behavior).</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
@@ -6460,6 +6513,21 @@ has been created for the specified Internal Load Balancer in the management VPC<
 control plane.
 When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterConfigurationDeprecated&#34;</p></td>
+<td><p>HostedClusterConfigurationDeprecated indicates whether any deprecated
+mechanism is being used to configure the hosted cluster. It is intentionally
+generic so that a single condition can surface any deprecated configuration
+surface as they are added; the message identifies the specific deprecated
+mechanism in use.
+<strong>True</strong> (reason DeprecatedConfigurationInUse) means a deprecated
+configuration mechanism is set. For example, the deprecated
+hypershift.openshift.io/kube-apiserver-verbosity-level annotation fires this
+whenever the annotation is present, even if
+spec.operatorConfiguration.kubeAPIServer.logLevel is also set and taking
+precedence, so that users are guided to migrate to the logLevel field and
+remove the annotation.
+<strong>False</strong> (reason AsExpected) means no deprecated configuration is in use.</p>
+</td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
 an error that may require user intervention to resolve.</p>
@@ -6496,6 +6564,18 @@ and reports missing images if any.</p>
 <td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
+</td>
+</tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
+<td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
+ingress certificate referenced by
+spec.operatorConfiguration.ingressOperator.defaultCertificate has been
+synced from the HostedCluster namespace into the control plane namespace.
+<strong>True</strong> means the referenced Secret was found, contains tls.crt and tls.key,
+and its data was synced.
+<strong>False</strong> means the referenced Secret is missing or malformed; in that case
+the previously synced certificate (or the auto-generated wildcard certificate)
+keeps serving and the HostedCluster does not become degraded.
+The condition is absent when no defaultCertificate is configured.</p>
 </td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td><p>KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
@@ -10456,6 +10536,41 @@ SecretEncryptionStatus
 </tr>
 </tbody>
 </table>
+###HostedControlPlaneInitializationStatus { #hypershift.openshift.io/v1beta1.HostedControlPlaneInitializationStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>HostedControlPlaneInitializationStatus provides observations of the HostedControlPlane initialization process.
+This satisfies the CAPI v1beta2 ControlPlane provider contract:
+<a href="https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1361-L1379">https://github.com/kubernetes-sigs/cluster-api/blob/v1.11.5/api/core/v1beta2/cluster_types.go#L1361-L1379</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>controlPlaneInitialized</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneInitialized is true when the control plane is functional enough to accept requests.
+Once this condition is marked true, its value is never changed. See the Ready condition for an
+indication of the current readiness of the cluster&rsquo;s control plane.
+This satisfies CAPI contract <a href="https://cluster-api.sigs.k8s.io/developer/providers/contracts/control-plane#controlplane-initialization-completed">https://cluster-api.sigs.k8s.io/developer/providers/contracts/control-plane#controlplane-initialization-completed</a></p>
+</td>
+</tr>
+</tbody>
+</table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
 <p>
 <p>HostedControlPlaneSpec defines the desired state of HostedControlPlane</p>
@@ -11272,6 +11387,20 @@ SecretEncryptionStatus
 <p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>initialization,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneInitializationStatus">
+HostedControlPlaneInitializationStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>initialization contains fields that track the status of the initialization of the HostedControlPlane.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###IBMCloudKMSAuthSpec { #hypershift.openshift.io/v1beta1.IBMCloudKMSAuthSpec }
@@ -11678,6 +11807,41 @@ the update is at least 70% of desired nodes.</p>
 </tr>
 </tbody>
 </table>
+###IngressDefaultCertificateReference { #hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IngressOperatorSpec">IngressOperatorSpec</a>)
+</p>
+<p>
+<p>IngressDefaultCertificateReference contains a reference to a TLS Secret
+in the HostedCluster namespace used as the default serving certificate
+for the ingress controller.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the Secret containing tls.crt and tls.key.
+The Secret must exist in the same namespace as the HostedCluster.
+name must be a valid DNS subdomain name (RFC 1123): it must contain only
+lowercase alphanumeric characters, &lsquo;-&rsquo; or &lsquo;.&rsquo;, and start and end with an
+alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###IngressOperatorSpec { #hypershift.openshift.io/v1beta1.IngressOperatorSpec }
 <p>
 (<em>Appears on:</em>
@@ -11723,6 +11887,36 @@ LoadBalancerService with External scope</p>
 - Other platforms: LoadBalancerService with External scope</p>
 <p>See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
 <a href="https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go">https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>defaultCertificate,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IngressDefaultCertificateReference">
+IngressDefaultCertificateReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>defaultCertificate is a reference to a secret in the HostedCluster namespace
+that contains the default certificate served by the default ingress controller.
+When Routes don&rsquo;t specify their own certificate, defaultCertificate is used.</p>
+<p>The secret must contain the following keys and data:
+tls.crt: certificate file contents
+tls.key: key file contents</p>
+<p>When set, this certificate replaces the auto-generated wildcard certificate
+that is normally created by the control plane operator. The secret is synced
+from the HostedCluster namespace to the control plane, and then propagated
+to the hosted cluster&rsquo;s openshift-ingress namespace.</p>
+<p>When the referenced secret is updated, the new certificate data is
+automatically propagated to the hosted cluster.</p>
+<p>When not set, the control plane operator generates a wildcard certificate
+signed by the cluster&rsquo;s root CA.</p>
+<p>Note: a cluster-admin in the hosted cluster can override the default ingress
+controller&rsquo;s certificate directly. That override takes precedence and the
+certificate referenced here is no longer served.</p>
 </td>
 </tr>
 </tbody>
@@ -12544,7 +12738,12 @@ string
 <td>
 <p>name specify the network attached to the nodes
 it is a value with the format &ldquo;[namespace]/[name]&rdquo; to reference the
-multus network attachment definition</p>
+multus network attachment definition, where namespace and name consist
+only of lowercase alphanumeric characters and hyphens, and start and
+end with alphanumeric characters
+MaxLength=55: KubeVirt requires Interface.Name to be a DNS label (max 63 chars).
+The generated name is &ldquo;iface{N}<em>{namespace}-{name}&rdquo; where N≤20 (MaxItems),
+giving a max prefix of &ldquo;iface20</em>&rdquo; (8 chars), leaving 55 chars for namespace/name.</p>
 </td>
 </tr>
 </tbody>
@@ -13976,6 +14175,29 @@ which produces significantly higher metrics volume.</p>
 <td></td>
 </tr><tr><td><p>&#34;Enable&#34;</p></td>
 <td></td>
+</tr></tbody>
+</table>
+###NestedVirtualizationPolicy { #hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">CPUOptions</a>)
+</p>
+<p>
+<p>NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>NestedVirtualizationDisabled disables nested virtualization on the instance.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>NestedVirtualizationEnabled enables nested virtualization on the instance.</p>
+</td>
 </tr></tbody>
 </table>
 ###NetworkFilter { #hypershift.openshift.io/v1beta1.NetworkFilter }

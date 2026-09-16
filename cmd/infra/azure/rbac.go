@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -22,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	azureauth "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	"github.com/go-logr/logr"
@@ -30,6 +32,26 @@ import (
 const (
 	graphAPIEndpoint = "https://graph.microsoft.com/v1.0/servicePrincipals"
 )
+
+var graphRequestBackoff = wait.Backoff{
+	Steps:    4,
+	Duration: time.Second,
+	Factor:   2,
+	Jitter:   0.1,
+}
+
+var graphRetryStatusCodes = []int{
+	http.StatusRequestTimeout,
+	http.StatusTooManyRequests,
+	http.StatusInternalServerError,
+	http.StatusBadGateway,
+	http.StatusServiceUnavailable,
+	http.StatusGatewayTimeout,
+}
+
+type httpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // roleAssignmentClient abstracts the Azure role assignment operations for testability.
 type roleAssignmentClient interface {
@@ -41,8 +63,10 @@ type roleAssignmentClient interface {
 
 // RBACManager handles Azure RBAC operations
 type RBACManager struct {
-	subscriptionID string
-	creds          azcore.TokenCredential
+	subscriptionID    string
+	creds             azcore.TokenCredential
+	graphClient       httpClient
+	graphRetryBackoff wait.Backoff
 }
 
 // ServicePrincipalResponse represents the response from Microsoft Graph API
@@ -58,8 +82,10 @@ type ServicePrincipal struct {
 // NewRBACManager creates a new RBACManager
 func NewRBACManager(subscriptionID string, creds azcore.TokenCredential) *RBACManager {
 	return &RBACManager{
-		subscriptionID: subscriptionID,
-		creds:          creds,
+		subscriptionID:    subscriptionID,
+		creds:             creds,
+		graphClient:       &http.Client{},
+		graphRetryBackoff: graphRequestBackoff,
 	}
 }
 
@@ -372,6 +398,9 @@ func (r *RBACManager) getObjectIDFromClientID(ctx context.Context, clientID stri
 	if !uuidPattern.MatchString(clientID) {
 		return "", fmt.Errorf("invalid client ID format: must be a UUID")
 	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return "", fmt.Errorf("request to Microsoft Graph canceled: %w", ctxErr)
+	}
 
 	filterQuery := "$filter=appId eq '" + clientID + "'"
 	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
@@ -386,11 +415,38 @@ func (r *RBACManager) getObjectIDFromClientID(ctx context.Context, clientID stri
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	req.Header.Set("Content-Type", "application/json")
 
-	// Send request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	graphRequest, err := runtime.NewRequestFromRequest(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return "", fmt.Errorf("failed to create Microsoft Graph request: %w", err)
+	}
+
+	maxRetries := r.graphRetryBackoff.Steps - 1
+	if maxRetries < 0 {
+		maxRetries = -1
+	}
+	// Use the Azure SDK policy so transport errors and transient Graph responses
+	// share retry behavior, including Retry-After and response body draining.
+	graphPipeline := runtime.NewPipeline("", "", runtime.PipelineOptions{}, &policy.ClientOptions{
+		Retry: policy.RetryOptions{
+			MaxRetries:    int32(maxRetries),
+			RetryDelay:    r.graphRetryBackoff.Duration,
+			MaxRetryDelay: r.graphRetryBackoff.Cap,
+			StatusCodes:   graphRetryStatusCodes,
+		},
+		Transport: r.graphClient,
+	})
+	resp, requestErr := graphPipeline.Do(graphRequest)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		return "", fmt.Errorf("request to Microsoft Graph canceled: %w", ctxErr)
+	}
+	if requestErr != nil {
+		return "", fmt.Errorf("failed to send Microsoft Graph request after retries: %w", requestErr)
+	}
+	if resp == nil {
+		return "", fmt.Errorf("request to Microsoft Graph returned no response")
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()

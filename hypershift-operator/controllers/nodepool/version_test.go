@@ -11,14 +11,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestNodeVersionsFromMachines(t *testing.T) {
 	testCases := []struct {
 		name     string
-		machines []*v1beta1.Machine
+		machines []*capiv1.Machine
 		nodePool *hyperv1.NodePool
 		expected []hyperv1.NodeVersion
 	}{
@@ -32,7 +32,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When all machines have the same version and are healthy, it should return a single entry",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m3", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -46,7 +46,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When there are mixed versions during rolling upgrade, it should return one entry per version",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m3", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
@@ -61,7 +61,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When there is mixed health, it should report ready and unready counts per version",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
 				machineWithVersionAndHealth("m3", "v1.32.1", false, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
@@ -76,7 +76,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When NodeHealthy condition is absent, it should count the node as unready",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndConditions("m1", "v1.31.4", nil, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 			},
 			nodePool: &hyperv1.NodePool{
@@ -88,14 +88,14 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When some machines have no NodeInfo, it should skip them",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "m2",
 						Annotations: map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						// NodeInfo is nil — not yet provisioned
 					},
 				},
@@ -109,10 +109,10 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When all machines have no NodeInfo, it should return nil",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "m1"},
-					Status:     v1beta1.MachineStatus{},
+					Status:     capiv1.MachineStatus{},
 				},
 			},
 			nodePool: &hyperv1.NodePool{
@@ -122,7 +122,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When machine has release-version annotation, it should use it for ocpVersion",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 			},
 			nodePool: &hyperv1.NodePool{
@@ -134,7 +134,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When machine has no annotation, it should fall back to nodePool.Status.Version",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, nil),
 			},
 			nodePool: &hyperv1.NodePool{
@@ -146,7 +146,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When there are multiple versions, it should sort by ocpVersion then kubeletVersion",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m3", "v1.31.5", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -206,7 +206,7 @@ func TestSetNodesInfoStatus(t *testing.T) {
 		{
 			name: "When machines exist with NodeInfo it should populate NodesInfo",
 			machines: []client.Object{
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m1",
 						Namespace: "clusters-test-cluster",
@@ -215,10 +215,10 @@ func TestSetNodesInfoStatus(t *testing.T) {
 							hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12",
 						},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						NodeInfo: &corev1.NodeSystemInfo{KubeletVersion: "v1.31.4"},
-						Conditions: v1beta1.Conditions{
-							{Type: v1beta1.MachineNodeHealthyCondition, Status: corev1.ConditionTrue},
+						Conditions: []metav1.Condition{
+							{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionStatus(corev1.ConditionTrue)},
 						},
 					},
 				},
@@ -244,7 +244,7 @@ func TestSetNodesInfoStatus(t *testing.T) {
 		{
 			name: "When all machines lack NodeInfo it should clear previously set NodesInfo",
 			machines: []client.Object{
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m1",
 						Namespace: "clusters-test-cluster",
@@ -252,7 +252,7 @@ func TestSetNodesInfoStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{},
+					Status: capiv1.MachineStatus{},
 				},
 			},
 			nodePool: &hyperv1.NodePool{
@@ -280,9 +280,9 @@ func TestSetNodesInfoStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			machines := make([]*v1beta1.Machine, 0, len(tc.machines))
+			machines := make([]*capiv1.Machine, 0, len(tc.machines))
 			for _, obj := range tc.machines {
-				machines = append(machines, obj.(*v1beta1.Machine))
+				machines = append(machines, obj.(*capiv1.Machine))
 			}
 
 			r := &NodePoolReconciler{}
@@ -356,7 +356,7 @@ func TestRhcosStreamFromOSImage(t *testing.T) {
 func TestOsImageStreamFromMachines(t *testing.T) {
 	testCases := []struct {
 		name     string
-		machines []*v1beta1.Machine
+		machines []*capiv1.Machine
 		expected string
 	}{
 		{
@@ -366,14 +366,14 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 		},
 		{
 			name: "When a single machine reports RHEL 9, it should return rhel-9",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 			},
 			expected: StreamRHEL9,
 		},
 		{
 			name: "When all machines report RHEL 9, it should return rhel-9",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 				machineWithOSImage("m3", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
@@ -382,7 +382,7 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 		},
 		{
 			name: "When all machines report RHEL 10, it should return rhel-10",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
 			},
@@ -390,7 +390,7 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 		},
 		{
 			name: "When a majority reports RHEL 10 during rolling upgrade, it should return rhel-10",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
 				machineWithOSImage("m3", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
@@ -399,7 +399,7 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 		},
 		{
 			name: "When streams are evenly split, it should return empty string",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)"),
 				machineWithOSImage("m2", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
 			},
@@ -407,24 +407,24 @@ func TestOsImageStreamFromMachines(t *testing.T) {
 		},
 		{
 			name: "When machines have no NodeInfo, it should return empty string",
-			machines: []*v1beta1.Machine{
-				{ObjectMeta: metav1.ObjectMeta{Name: "m1"}, Status: v1beta1.MachineStatus{}},
+			machines: []*capiv1.Machine{
+				{ObjectMeta: metav1.ObjectMeta{Name: "m1"}, Status: capiv1.MachineStatus{}},
 			},
 			expected: "",
 		},
 		{
 			name: "When machines have unrecognized OSImage, it should return empty string",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithOSImage("m1", "Ubuntu 22.04 LTS"),
 			},
 			expected: "",
 		},
 		{
 			name: "When some machines have no NodeInfo, it should count only those with NodeInfo",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithOSImage("m1", "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)"),
-				{ObjectMeta: metav1.ObjectMeta{Name: "m2"}, Status: v1beta1.MachineStatus{}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "m3"}, Status: v1beta1.MachineStatus{}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "m2"}, Status: capiv1.MachineStatus{}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "m3"}, Status: capiv1.MachineStatus{}},
 			},
 			expected: StreamRHEL10,
 		},
@@ -462,7 +462,7 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 		{
 			name: "When all machines report RHEL 9 it should set status to rhel-9",
 			machines: []client.Object{
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m1",
 						Namespace: "clusters-test-cluster",
@@ -470,13 +470,13 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						NodeInfo: &corev1.NodeSystemInfo{
 							OSImage: "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
 						},
 					},
 				},
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m2",
 						Namespace: "clusters-test-cluster",
@@ -484,7 +484,7 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						NodeInfo: &corev1.NodeSystemInfo{
 							OSImage: "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
 						},
@@ -505,7 +505,7 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 		{
 			name: "When majority reports RHEL 10 it should set status to rhel-10",
 			machines: []client.Object{
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m1",
 						Namespace: "clusters-test-cluster",
@@ -513,13 +513,13 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						NodeInfo: &corev1.NodeSystemInfo{
 							OSImage: "Red Hat Enterprise Linux CoreOS 419.97.202505081234-0 (Plow)",
 						},
 					},
 				},
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m2",
 						Namespace: "clusters-test-cluster",
@@ -527,13 +527,13 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						NodeInfo: &corev1.NodeSystemInfo{
 							OSImage: "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)",
 						},
 					},
 				},
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m3",
 						Namespace: "clusters-test-cluster",
@@ -541,7 +541,7 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						NodeInfo: &corev1.NodeSystemInfo{
 							OSImage: "Red Hat Enterprise Linux CoreOS 510.97.202506011200-0 (Plow)",
 						},
@@ -562,7 +562,7 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 		{
 			name: "When previous status exists and no machines have NodeInfo it should preserve previous status",
 			machines: []client.Object{
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m1",
 						Namespace: "clusters-test-cluster",
@@ -570,7 +570,7 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{},
+					Status: capiv1.MachineStatus{},
 				},
 			},
 			nodePool: &hyperv1.NodePool{
@@ -593,9 +593,9 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			machines := make([]*v1beta1.Machine, 0, len(tc.machines))
+			machines := make([]*capiv1.Machine, 0, len(tc.machines))
 			for _, obj := range tc.machines {
-				machines = append(machines, obj.(*v1beta1.Machine))
+				machines = append(machines, obj.(*capiv1.Machine))
 			}
 
 			r := &NodePoolReconciler{}
@@ -605,12 +605,12 @@ func TestSetOSImageStreamStatus(t *testing.T) {
 	}
 }
 
-func machineWithOSImage(name, osImage string) *v1beta1.Machine {
-	return &v1beta1.Machine{
+func machineWithOSImage(name, osImage string) *capiv1.Machine {
+	return &capiv1.Machine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Status: v1beta1.MachineStatus{
+		Status: capiv1.MachineStatus{
 			NodeInfo: &corev1.NodeSystemInfo{
 				OSImage: osImage,
 			},
@@ -618,23 +618,23 @@ func machineWithOSImage(name, osImage string) *v1beta1.Machine {
 	}
 }
 
-func machineWithVersionAndHealth(name, kubeletVersion string, healthy bool, annotations map[string]string) *v1beta1.Machine {
-	healthStatus := corev1.ConditionTrue
+func machineWithVersionAndHealth(name, kubeletVersion string, healthy bool, annotations map[string]string) *capiv1.Machine {
+	healthStatus := metav1.ConditionTrue
 	if !healthy {
-		healthStatus = corev1.ConditionFalse
+		healthStatus = metav1.ConditionFalse
 	}
-	return machineWithVersionAndConditions(name, kubeletVersion, v1beta1.Conditions{
-		{Type: v1beta1.MachineNodeHealthyCondition, Status: healthStatus},
+	return machineWithVersionAndConditions(name, kubeletVersion, []metav1.Condition{
+		{Type: capiv1.MachineNodeHealthyCondition, Status: healthStatus},
 	}, annotations)
 }
 
-func machineWithVersionAndConditions(name, kubeletVersion string, conditions v1beta1.Conditions, annotations map[string]string) *v1beta1.Machine {
-	return &v1beta1.Machine{
+func machineWithVersionAndConditions(name, kubeletVersion string, conditions []metav1.Condition, annotations map[string]string) *capiv1.Machine {
+	return &capiv1.Machine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Annotations: annotations,
 		},
-		Status: v1beta1.MachineStatus{
+		Status: capiv1.MachineStatus{
 			NodeInfo:   &corev1.NodeSystemInfo{KubeletVersion: kubeletVersion},
 			Conditions: conditions,
 		},

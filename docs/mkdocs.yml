@@ -365,6 +365,8 @@ nav:
     - 'Configure SPO with Audit Logging and Seccomp': recipes/common/spo-audit-logging-seccomp.md
     - 'ACM/MCE HyperShift Operator Overrides': recipes/common/acm-mce-hypershift-operator-overrides.md
     - 'Control Plane Metrics Forwarding': recipes/common/control-plane-metrics-forwarding.md
+  - 'KubeVirt':
+    - 'Configure Custom Ingress for KubeVirt HCP': recipes/kubevirt/custom-ingress-with-metallb.md
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
@@ -416,6 +418,7 @@ nav:
   - 'Openshift behaviour deviations':
     - reference/ocp-behaviour-deviations/index.md
     - 'Upgrade 4.17 > 4.18': reference/ocp-behaviour-deviations/upgrade-4.17-4.18.md
+    - 'OSImageStream Behaviour': reference/ocp-behaviour-deviations/osimagestream-discovery.md
   - 'Test Information/Debugging':
     - 'ARO HCP / AKS e2e':
       - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
@@ -424,6 +427,7 @@ nav:
   - reference/SLOs.md
   - reference/versioning-support.md
   - reference/service-publishing-strategies.md
+  - 'CAPI Provider Image Overrides': reference/capi-image-overrides.md
 - 'Contribute':
   - contribute/index.md
   - 'Repositories': contribute/repositories.md

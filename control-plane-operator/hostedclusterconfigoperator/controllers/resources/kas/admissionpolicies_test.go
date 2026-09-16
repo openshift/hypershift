@@ -8,9 +8,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -140,6 +142,42 @@ func TestGenerateCelExpression(t *testing.T) {
 	}
 }
 
+func TestReconcileRBACValidatingAdmissionPolicy(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	c := fake.NewClientBuilder().Build()
+	g.Expect(reconcileRBACValidatingAdmissionPolicy(t.Context(), c, upsert.New(false).CreateOrUpdate)).To(Succeed())
+
+	vap := &k8sadmissionv1.ValidatingAdmissionPolicy{}
+	g.Expect(c.Get(t.Context(), client.ObjectKey{Name: AdmissionPolicyNameRBAC}, vap)).To(Succeed())
+
+	rule := vap.Spec.MatchConstraints.ResourceRules[0]
+	g.Expect(rule.APIGroups).To(ConsistOf(rbacv1.SchemeGroupVersion.Group))
+	g.Expect(rule.APIVersions).To(ConsistOf(rbacv1.SchemeGroupVersion.Version))
+	g.Expect(rule.Resources).To(ConsistOf("clusterrolebindings"))
+	g.Expect(rule.Operations).To(ConsistOf(k8sadmissionv1.OperationType("UPDATE"), k8sadmissionv1.OperationType("DELETE")))
+	g.Expect(rule.ResourceNames).To(ConsistOf("hcco-cluster-admin", "kas-bootstrap-container-cluster-admin"))
+
+	// system:admin has to be whitelisted here and only here: the KAS bootstrap container applies
+	// kas-bootstrap-container-cluster-admin under that identity on every kube-apiserver start, and
+	// a denial crash-loops the container.
+	expression := vap.Spec.Validations[0].Expression
+	g.Expect(expression).To(ContainSubstring("'system:admin'"))
+	g.Expect(expression).To(ContainSubstring(fmt.Sprintf("'system:%s'", config.HCCOUser)))
+	g.Expect(expression).To(ContainSubstring(fmt.Sprintf("'system:%s'", config.KASBootstrapContainerUser)))
+
+	// The shared HCCOUserValidation must not have been widened with system:admin, otherwise every
+	// policy reconciled afterwards would inherit that whitelist entry.
+	g.Expect(HCCOUserValidation.Expression).NotTo(ContainSubstring("'system:admin'"))
+	// ...and the shared userWhiteList must not have been extended in place by the append.
+	g.Expect(userWhiteList).NotTo(ContainElement(systemAdminUser))
+
+	binding := &k8sadmissionv1.ValidatingAdmissionPolicyBinding{}
+	g.Expect(c.Get(t.Context(), client.ObjectKey{Name: AdmissionPolicyNameRBAC + "-binding"}, binding)).To(Succeed())
+	g.Expect(binding.Spec.PolicyName).To(Equal(AdmissionPolicyNameRBAC))
+	g.Expect(binding.Spec.ValidationActions).To(ConsistOf(k8sadmissionv1.Deny))
+}
+
 func failOnNthCreateOrUpdate(n int) upsert.CreateOrUpdateFN {
 	call := 0
 	return func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
@@ -261,6 +299,12 @@ func TestReconcileKASValidatingAdmissionPolicies(t *testing.T) {
 			createOrUpdate: failOnNthCreateOrUpdate(9),
 			wantErr:        true,
 			errSubstr:      "error reconciling mirrored ConfigMaps Validating Admission Policy",
+		},
+		{
+			name:           "When RBAC VAP reconcile fails, it should return a wrapped RBAC error",
+			createOrUpdate: failOnNthCreateOrUpdate(11),
+			wantErr:        true,
+			errSubstr:      "failed to reconcile RBAC Validating Admission Policy",
 		},
 	}
 

@@ -6,7 +6,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -36,7 +35,7 @@ func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.H
 
 	if netutil.UseSharedIngressHCP(hcp) {
 		endpoint = externalRoute.Spec.Host
-		port = sharedingress.ExternalDNSLBPort
+		port = netutil.ExternalDNSLBPort
 	}
 
 	if netutil.UseSharedIngressHCP(hcp) &&

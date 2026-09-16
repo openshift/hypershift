@@ -521,6 +521,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
+	// Aggregate deprecated-configuration warnings from the HostedCluster and the HCP.
+	r.reconcileDeprecatedConfigurationStatus(hcluster, hcp)
+
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
@@ -1361,6 +1364,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
+	if err := r.reconcileIngressDefaultCertSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile ingress default certificate: %w", err)
+	}
+
 	// Reconcile the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving the source reference
 	// from the HostedCluster and syncing the CM in the control plane namespace.
 	if err := r.reconcileAdditionalTrustBundle(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name); err != nil {
@@ -1693,7 +1700,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster)
+	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}

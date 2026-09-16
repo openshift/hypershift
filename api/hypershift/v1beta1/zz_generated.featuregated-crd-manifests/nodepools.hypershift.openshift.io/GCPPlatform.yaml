@@ -409,6 +409,25 @@ spec:
                           is chosen based on the NodePool release payload image.
                         maxLength: 255
                         type: string
+                      cpuOptions:
+                        description: |-
+                          cpuOptions specifies CPU configuration for EC2 instances.
+                          Supported on C8i, M8i, and R8i instance families.
+                          When omitted, AWS defaults are used (nested virtualization is not enabled).
+                          To revert to default behavior after setting cpuOptions, remove the entire
+                          cpuOptions field rather than clearing individual sub-fields.
+                        minProperties: 1
+                        properties:
+                          nestedVirtualizationPolicy:
+                            description: |-
+                              nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+                              Supported on C8i, M8i, and R8i instance families.
+                              When omitted, nested virtualization is not enabled (AWS default behavior).
+                            enum:
+                            - Enabled
+                            - Disabled
+                            type: string
+                        type: object
                       imageType:
                         description: |-
                           imageType specifies the type of image to use for node instances.
@@ -613,19 +632,19 @@ spec:
                               description: |-
                                 key is the key of the tag.
                                 Must be between 1 and 128 characters and may only contain letters, digits,
-                                and the characters _ . : / = + - @
+                                spaces, and the characters _ . : / = + - @
                               maxLength: 128
                               minLength: 1
                               type: string
                               x-kubernetes-validations:
-                              - message: 'key must only contain letters, digits, and
-                                  the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
+                              - message: 'key must only contain letters, digits, spaces,
+                                  and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                             value:
                               description: |-
                                 value is the value of the tag.
                                 Must be between 1 and 256 characters and may only contain letters, digits,
-                                and the characters _ . : / = + - @
+                                spaces, and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
@@ -635,8 +654,8 @@ spec:
                               type: string
                               x-kubernetes-validations:
                               - message: 'value must only contain letters, digits,
-                                  and the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
+                                  spaces, and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                           required:
                           - key
                           - value
@@ -1371,14 +1390,28 @@ spec:
                               description: |-
                                 name specify the network attached to the nodes
                                 it is a value with the format "[namespace]/[name]" to reference the
-                                multus network attachment definition
-                              maxLength: 255
+                                multus network attachment definition, where namespace and name consist
+                                only of lowercase alphanumeric characters and hyphens, and start and
+                                end with alphanumeric characters
+                                MaxLength=55: KubeVirt requires Interface.Name to be a DNS label (max 63 chars).
+                                The generated name is "iface{N}_{namespace}-{name}" where N≤20 (MaxItems),
+                                giving a max prefix of "iface20_" (8 chars), leaving 55 chars for namespace/name.
+                              maxLength: 55
                               type: string
+                              x-kubernetes-validations:
+                              - message: name must be in the format <namespace>/<name>
+                                  where namespace and name consist only of lowercase
+                                  alphanumeric characters and hyphens, and start and
+                                  end with alphanumeric characters
+                                rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?/[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
                           required:
                           - name
                           type: object
                         maxItems: 20
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
                       attachDefaultNetwork:
                         default: true
                         description: |-

@@ -191,7 +191,7 @@ func isTestFieldName(name string) bool {
 	testFieldNames := []string{
 		"want", "expected", "expectError", "expectErr", "wantErr",
 		"args", "input", "output", "result", "fields", "setup",
-		"assertion", "validate", "check",
+		"assertion", "validate", "check", "ips",
 	}
 	return slices.Contains(testFieldNames, name)
 }

@@ -38,6 +38,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -210,6 +211,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				HCNamespace:       testCtx.ClusterNamespace,
 				StorageLocation:   testCtx.ClusterName,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
 			}
 			err = backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
 			Expect(err).NotTo(HaveOccurred())
@@ -233,6 +235,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 				HCNamespace:       testCtx.ClusterNamespace,
 				StorageLocation:   testCtx.ClusterName,
 				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
 			}
 			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
 			Expect(err).NotTo(HaveOccurred())
@@ -603,6 +606,21 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 	})
 
 	Context(ContextPostRestoreControlPlane, func() {
+		// etcd-init log verification must run before the health check. After restore,
+		// CPO clears restoreSnapshotURL which triggers a second StatefulSet rollout
+		// that replaces the pod without the etcd-init container. The poll-based
+		// function captures logs before that window closes.
+		It("should have etcd-init container logs showing successful snapshot restore", func() {
+			By("Polling for etcd-init container completion and verifying restore logs")
+			restConfig, err := util.GetConfig()
+			Expect(err).NotTo(HaveOccurred(), "failed to get REST config for pod log access")
+			kubeClient, err := kubernetes.NewForConfig(restConfig)
+			Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
+
+			err = backuprestore.WaitForEtcdInitAndVerifyLogs(testCtx.Context, GinkgoLogr.WithName("etcd-init"), kubeClient, testCtx.ControlPlaneNamespace)
+			Expect(err).NotTo(HaveOccurred(), "etcd-init container logs should confirm snapshot restore")
+		})
+
 		It("should have control plane healthy after restore", func() {
 			validatePostRestoreControlPlane(testCtx, platformCfg.excludeWorkloads, expectedConditions, false)
 		})
@@ -625,17 +643,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 					"expected restoreSnapshotURL to be a non-empty presigned URL")
 			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
 			GinkgoWriter.Printf("RestoreSnapshotURL is set on HostedCluster\n")
-		})
-
-		It("should have etcd-init container logs showing successful snapshot restore", func() {
-			By("Verifying etcd-0 init container logs for snapshot restore traces")
-			restConfig, err := util.GetConfig()
-			Expect(err).NotTo(HaveOccurred(), "failed to get REST config for pod log access")
-			kubeClient, err := kubernetes.NewForConfig(restConfig)
-			Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
-
-			err = backuprestore.VerifyEtcdInitLogs(testCtx.Context, GinkgoLogr.WithName("etcd-init"), kubeClient, testCtx.ControlPlaneNamespace)
-			Expect(err).NotTo(HaveOccurred(), "etcd-init container logs should confirm snapshot restore")
 		})
 	})
 })

@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -82,7 +82,7 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 						Labels:    map[string]string{"machineset": "test"},
 					},
 					Status: capiv1.MachineStatus{
-						NodeRef: &corev1.ObjectReference{Name: "test-node-1"},
+						NodeRef: capiv1.MachineNodeReference{Name: "test-node-1"},
 					},
 				},
 			},
@@ -156,7 +156,7 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 						Labels:    map[string]string{"machineset": "test"},
 					},
 					Status: capiv1.MachineStatus{
-						NodeRef: &corev1.ObjectReference{Name: "test-node-1"},
+						NodeRef: capiv1.MachineNodeReference{Name: "test-node-1"},
 					},
 				},
 			},
@@ -273,7 +273,7 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 						Labels:    map[string]string{"machineset": "test"},
 					},
 					Status: capiv1.MachineStatus{
-						NodeRef: &corev1.ObjectReference{Name: "test-node-1"},
+						NodeRef: capiv1.MachineNodeReference{Name: "test-node-1"},
 					},
 				},
 			},
@@ -325,7 +325,7 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 						Labels:    map[string]string{"machineset": "inplace"},
 					},
 					Status: capiv1.MachineStatus{
-						NodeRef: &corev1.ObjectReference{Name: "inplace-node-1"},
+						NodeRef: capiv1.MachineNodeReference{Name: "inplace-node-1"},
 					},
 				},
 			},

@@ -1,12 +1,18 @@
 package hostedcluster
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/openshift/hypershift/support/tracing"
+
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // operationCategory classifies a reconcile operation for error handling and blocking.
@@ -29,7 +35,10 @@ type operationResult struct {
 
 // reconcileReport collects results from all reconcile operations and produces
 // the final error aggregate, condition messages, and requeue signals.
+// When ctx carries an active trace span, each operation automatically creates
+// a child span for observability.
 type reconcileReport struct {
+	ctx          context.Context
 	results      []operationResult
 	requeueAfter *time.Duration
 }
@@ -44,19 +53,50 @@ func (r *reconcileReport) requestRequeue(d *time.Duration) {
 	}
 }
 
-// execute runs fn and records its result.
+// execute runs fn and records its result. If tracing is active, a child span
+// is created for the operation.
 func (r *reconcileReport) execute(name string, cat operationCategory, fn func() error) {
-	r.results = append(r.results, operationResult{name: name, category: cat, err: fn()})
+	_, span := hostedClusterTracer.Start(r.ctx, tracing.ReconcileSubSpan(name),
+		trace.WithAttributes(
+			tracing.AttrReconcileOperation.String(name),
+			tracing.AttrReconcileCritical.Bool(cat == critical),
+		),
+	)
+	err := fn()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+	r.results = append(r.results, operationResult{name: name, category: cat, err: err})
 }
 
 // executeOrBlock runs fn and records its result as nonCritical, or records
 // a blocked entry if a prior critical operation failed.
 func (r *reconcileReport) executeOrBlock(name string, fn func() error) {
 	if r.shouldBlock() {
+		_, span := hostedClusterTracer.Start(r.ctx, tracing.ReconcileSubSpan(name),
+			trace.WithAttributes(
+				tracing.AttrReconcileOperation.String(name),
+				tracing.AttrReconcileBlocked.Bool(true),
+			),
+		)
+		span.End()
 		r.results = append(r.results, operationResult{name: name, category: nonCritical, blocked: true})
 		return
 	}
-	r.results = append(r.results, operationResult{name: name, category: nonCritical, err: fn()})
+	_, span := hostedClusterTracer.Start(r.ctx, tracing.ReconcileSubSpan(name),
+		trace.WithAttributes(
+			tracing.AttrReconcileOperation.String(name),
+		),
+	)
+	err := fn()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+	r.results = append(r.results, operationResult{name: name, category: nonCritical, err: err})
 }
 
 // hasCriticalFailure returns true if any critical operation has actually failed (not blocked).

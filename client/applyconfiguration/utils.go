@@ -177,6 +177,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ControlPlaneUpdateHistoryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneVersionStatus"):
 		return &hypershiftv1beta1.ControlPlaneVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CPUOptions"):
+		return &hypershiftv1beta1.CPUOptionsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
 		return &hypershiftv1beta1.DataPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):
@@ -261,6 +263,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.HostedClusterStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlane"):
 		return &hypershiftv1beta1.HostedControlPlaneApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlaneInitializationStatus"):
+		return &hypershiftv1beta1.HostedControlPlaneInitializationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlaneSpec"):
 		return &hypershiftv1beta1.HostedControlPlaneSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedControlPlaneStatus"):
@@ -277,6 +281,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.IBMCloudPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ImageContentSource"):
 		return &hypershiftv1beta1.ImageContentSourceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("IngressDefaultCertificateReference"):
+		return &hypershiftv1beta1.IngressDefaultCertificateReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IngressOperatorSpec"):
 		return &hypershiftv1beta1.IngressOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("InPlaceUpgrade"):

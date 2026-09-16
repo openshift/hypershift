@@ -4,26 +4,41 @@ This guide explains how to diagnose failing v2 CI jobs by tracing test failures 
 
 ## Finding Test Results
 
-Each `TestGroup` produces a JUnit XML file named by its `JUnitFile` field. These land in `ARTIFACT_DIR` in the Prow job artifacts.
+Each `TestGroup` produces a JUnit XML file named `junit_<TestGroup.Name>.xml` by `TestGroup.JUnitFile()`. These land in `ARTIFACT_DIR` in the Prow job artifacts.
 
 For example, the Azure self-managed job produces:
 
-- `junit_self_managed_azure_public.xml`
-- `junit_self_managed_azure_private.xml`
-- `junit_self_managed_azure_oauth_lb.xml`
-- `junit_nodepool_autoscaling.xml`
-- `junit_lifecycle_upgrade.xml`
-- `junit_lifecycle_etcd_chaos.xml`
+- `junit_public.xml`
+- `junit_public-nodepool-rollouts.xml`
+- `junit_private.xml`
+- `junit_oauth-lb.xml`
+- `junit_oauth-lb-nodepool-config.xml`
+- `junit_autoscaling-nodepool-machineconfig.xml`
+- `junit_autoscaling-balancing.xml`
+- `junit_external-oidc.xml`
+- `junit_external-oidc-autoscaling.xml`
+- `junit_external-oidc-trust-bundle.xml`
+- `junit_upgrade.xml`
+- `junit_post-upgrade-health.xml`
+- `junit_control-plane-tls.xml`
+- `junit_etcd-chaos.xml`
 
-Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` for each cluster that reaches Phase 4 (version rollout wait), recording either success or failure. On failure, the JUnit file contains the `HostedCluster` and `NodePool` conditions at the time of failure. On success, it records a passing test case confirming the rollout completed.
+When a group has informing test failures, the suite also emits a supplemental
+`junit_<TestGroup.Name>_informing.xml` file for lifecycle-aware reporting.
+
+Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` during
+version-rollout handling, recording either success or failure. On failure, the
+JUnit file contains the `HostedCluster` and `NodePool` conditions at the time
+of failure. On success, it records a passing test case confirming the rollout
+completed.
 
 ## Mapping Failures to Clusters
 
 To find which cluster a failing test ran against, trace the path:
 
-1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_self_managed_azure_public.xml` → `"public"`)
-2. **TestGroup.Name** → `TestGroup.ClusterFile` (e.g., `"public"` → `"cluster-name-public"`)
-3. **ClusterFile** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
+1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_public-nodepool-rollouts.xml` → `"public-nodepool-rollouts"`)
+2. **TestGroup.Name** → `TestGroup.Variant` (e.g., `"public-nodepool-rollouts"` → `"public"`)
+3. **Variant** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
 
 The `run-tests` step log shows the mapping explicitly:
 
@@ -64,18 +79,18 @@ Use this information to locate the failing test in the codebase and understand w
 
 ## create-guests Failures
 
-The most common failure point in v2 jobs is Phase 4 (version rollout wait) in `create-guests`. When this happens:
+The most common failure point in v2 jobs is version rollout in `create-guests`. When this happens:
 
 1. **Check for JUnit XML**: Look for `junit_hosted_cluster_*.xml` in artifacts
 2. **Read conditions**: The JUnit file contains `HostedCluster` and `NodePool` conditions at the time of failure
-3. **No JUnit file?**: If no JUnit file exists, the failure happened before Phase 4 — check the `create-guests` step log for earlier phases
+3. **No JUnit file?**: If no JUnit file exists, the failure happened before version rollout — check the `create-guests` step log for earlier stages
 
-Common pre-Phase 4 failures:
+Common failures before version rollout:
 
-- **Phase 1 (cluster creation)**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
-- **Phase 2 (post-create hooks)**: Platform-specific hook failure — check for API errors when patching resources
-- **Phase 3 (wait Available)**: Timeout waiting for `HostedClusterAvailable` condition — indicates control plane startup failure
-- **Phase 5 (write cluster names)**: Failure writing cluster names to `SHARED_DIR` — rare, typically caused by filesystem or permissions errors
+- **Cluster creation**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
+- **Platform hooks**: Platform-specific setup failure — check for API errors when patching resources or applying day-2 configuration
+- **Wait for Available**: Timeout waiting for the `HostedClusterAvailable` condition — indicates control plane startup failure
+- **Shared state**: Failure writing the cluster manifest or platform configuration to `SHARED_DIR` — typically caused by filesystem or permissions errors
 
 ## dump-guests Artifacts
 
