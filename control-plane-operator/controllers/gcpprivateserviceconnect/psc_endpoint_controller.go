@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -904,6 +905,9 @@ func reconcileForwardingRuleLabels(ctx context.Context, svc *compute.Service, pr
 	if err != nil {
 		return err
 	}
+	if maps.Equal(existingLabels, labels) {
+		return nil
+	}
 	setLabelsCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
 	req := &compute.RegionSetLabelsRequest{
@@ -933,6 +937,9 @@ func reconcileAddressLabels(ctx context.Context, svc *compute.Service, project, 
 	labels, err := gcputil.MergeResourceLabels(addr.Labels, desiredLabels, previouslyManagedLabelKeys)
 	if err != nil {
 		return err
+	}
+	if maps.Equal(addr.Labels, labels) {
+		return nil
 	}
 	req := &compute.RegionSetLabelsRequest{
 		Labels:           labels,
