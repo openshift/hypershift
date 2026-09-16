@@ -15243,7 +15243,7 @@ sequenceDiagram
         RT->>T: oauth-lb-private-{hash} (private topology with OAuth via LoadBalancer)
         RT->>T: public-{hash} (platform, feature, then NodePool rollout tests)
         RT->>T: oauth-lb-{hash} (OAuth/configuration, NodePool config including MachineConfig rollout, then autoscaling balancing)
-        RT->>T: external-oidc-{hash} (OIDC/pull-secret, then autoscaling scale-up/down)
+        RT->>T: external-oidc-{hash} (OIDC/pull-secret, autoscaling scale-up/down, then trust bundle tests)
     end
     Note right of RT: Each subprocess receives the cluster name via env vars,<br/>plus its label filter via --ginkgo.label-filter
 
