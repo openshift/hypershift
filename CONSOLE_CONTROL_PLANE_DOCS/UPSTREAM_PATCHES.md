@@ -14,11 +14,19 @@ we consume (safe to drop the local workaround).
 
 ## Notes / candidates not yet filed
 
-- **`hypershift` (control-plane-operator):** the router `console`/`downloads` backend cases
-  (`v2/router/config.go`, `manifests/ingress.go`) are currently local changes in *this* repo/branch,
-  not upstream. If the control-plane-side console graduates beyond a spike, these need to land in
-  `openshift/hypershift` (as a generic labeled-Route mechanism or an owned component) rather than a
-  per-route hardcode. No PR/Jira yet.
+- **`hypershift` (control-plane-operator):** local changes in *this* repo/branch, not upstream —
+  CPO owns the console/downloads exposure end to end (GCP only), mirroring the KAS model:
+  1. Router `console`/`downloads` backend cases, incl. the `-private` route names
+     (`v2/router/config.go`).
+  2. Console/downloads Route ownership: public vs `-private` variant per `endpointAccess`, host
+     derived from the APIServer host (`console/route.go`, `infra/infra.go`, `manifests/ingress.go`).
+  3. Private-mode `console`/`downloads` ExternalName services so external-dns publishes their
+     records to the PSC endpoint (`gcpprivateserviceconnect/psc_endpoint_controller.go`,
+     `manifests/infra.go`).
+
+  All are console/downloads-specific hardcodes. If the control-plane-side console graduates beyond
+  a spike, they should become a generic labeled-Route mechanism (or an owned component) in
+  `openshift/hypershift`. No PR/Jira yet. See `PRIVATE_ENDPOINT_ACCESS.md`.
 - **`openshift/console-operator` / CVO:** none required for Part 1. A future phase that makes the
   control-plane-side console operator-managed (capability gate, placement flag) would touch these —
   add rows here when that work starts.

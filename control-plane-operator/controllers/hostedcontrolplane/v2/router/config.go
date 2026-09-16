@@ -133,14 +133,18 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 			p.Backends = append(p.Backends, backendDesc{Name: "metrics_forwarder", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: route.Spec.Port.TargetPort.IntVal})
 		case manifests.MetricsProxyRoute("").Name:
 			p.Backends = append(p.Backends, backendDesc{Name: "metrics_proxy", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 443})
-		case manifests.ConsoleRoute("").Name:
-			// Phase 1 spike: hand-applied "console" Route, targetPort 8443.
+		case manifests.ConsoleRoute("").Name,
+			manifests.ConsolePrivateRoute("").Name:
+			// Phase 1 console spike: CPO-managed "console" Route (public or
+			// -private variant), targetPort 8443. Both map to the same backend.
 			p.Backends = append(p.Backends, backendDesc{Name: "console", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 8443})
-		case manifests.DownloadsRoute("").Name:
-			// Phase 1 spike: hand-applied "downloads" Route. The downloads pod
-			// serves plain HTTP:8080, so it runs a TLS-terminating sidecar on
-			// 8443 (the router is SNI passthrough only and cannot do upstream's
-			// edge termination); the Service exposes 8443, dialed directly here.
+		case manifests.DownloadsRoute("").Name,
+			manifests.DownloadsPrivateRoute("").Name:
+			// Phase 1 console spike: CPO-managed "downloads" Route (public or
+			// -private variant). The downloads pod serves plain HTTP:8080, so it
+			// runs a TLS-terminating sidecar on 8443 (the router is SNI
+			// passthrough only and cannot do upstream's edge termination); the
+			// Service exposes 8443, dialed directly here.
 			p.Backends = append(p.Backends, backendDesc{Name: "downloads", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 8443})
 		}
 	}

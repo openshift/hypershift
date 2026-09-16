@@ -10,6 +10,16 @@ Three layers, each building on the last:
 
 Add a new per-cluster overlay by copying `pat-console/` and swapping its values; `hypershift/` should rarely need to change.
 
+## Route ownership
+
+CPO creates the console/downloads exposure Routes: per `endpointAccess` it
+reconciles a public route, or a `-private` route (labeled
+`route-visibility=private`) plus a matching ExternalName service for external-dns
+under Private, deriving the host from the APIServer host (`api.<domain>` →
+`console.<domain>` / `downloads.<domain>`). This tree manages the
+Deployments/Services/PDBs/Secret; the console Deployment's `-base-address` (set
+in the per-cluster overlay) must match CPO's derived host.
+
 ## Downloads operand (CLI download server)
 
 The `downloads` operand serves the `oc`/CLI download page. Two Phase 1 notes:

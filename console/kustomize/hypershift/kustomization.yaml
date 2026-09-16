@@ -209,35 +209,18 @@ patches:
         path: /spec/ports/0/port
         value: 8443
 
+  # CPO owns the console/downloads Routes (creates the public or -private
+  # variant per endpointAccess, derives the host from the APIServer host, and
+  # under Private the matching ExternalName service for external-dns).
   - target:
       kind: Route
       name: console
     patch: |
-      # HCPRouteLabel: makes the HCP router adopt this Route as an SNI
-      # backend (support/netutil/route.go AddHCPRouteLabel). VALUE MUST equal
-      # the HCP namespace; the per-cluster overlay patches the real value.
-      - op: add
-        path: /metadata/labels/hypershift.openshift.io~1hosted-control-plane
-        value: REPLACE_HCP_NAMESPACE
-      # Upstream leaves this to the guest route-admission default-host
-      # mechanism; we have no such thing here, so it must be explicit.
-      - op: add
-        path: /spec/host
-        value: REPLACE_CONSOLE_HOST
-      # Integer, not the named "https" port: the router config generator's
-      # console case reads a fixed 8443 regardless, but Route API validation/
-      # convention expects a concrete target port once passthrough is set.
-      - op: replace
-        path: /spec/port/targetPort
-        value: 8443
-      # The bridge terminates its own TLS (D3); the router is SNI passthrough
-      # only, so upstream's reencrypt/edge-redirect model doesn't apply.
-      - op: replace
-        path: /spec/tls/termination
-        value: passthrough
-      - op: replace
-        path: /spec/tls/insecureEdgeTerminationPolicy
-        value: None
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: console
 
   # ======================================================================
   # downloads operand — split-cluster adaptations
@@ -424,26 +407,8 @@ patches:
       kind: Route
       name: downloads
     patch: |
-      # HCPRouteLabel: makes the HCP router adopt this Route as an SNI backend.
-      # VALUE MUST equal the HCP namespace; per-cluster overlay sets it.
-      # The upstream downloads Route has no `labels` map at all (unlike the
-      # console Route), so create the whole map here rather than `add`ing a
-      # single key into a missing parent.
-      - op: add
-        path: /metadata/labels
-        value:
-          hypershift.openshift.io/hosted-control-plane: REPLACE_HCP_NAMESPACE
-      - op: add
-        path: /spec/host
-        value: REPLACE_DOWNLOADS_HOST
-      # Passthrough (sidecar terminates TLS), integer target port 8443 —
-      # upstream's edge/http model doesn't apply to the passthrough router.
-      - op: replace
-        path: /spec/port/targetPort
-        value: 8443
-      - op: replace
-        path: /spec/tls/termination
-        value: passthrough
-      - op: replace
-        path: /spec/tls/insecureEdgeTerminationPolicy
-        value: None
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: downloads

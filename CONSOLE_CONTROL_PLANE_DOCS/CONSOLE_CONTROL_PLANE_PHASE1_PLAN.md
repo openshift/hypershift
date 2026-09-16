@@ -289,11 +289,21 @@ spec:
 
 ## 9. Part 1 acceptance criteria
 
-- [ ] Patched CPO router serves the `console` SNI host (backend present in HAProxy config).
-- [ ] `https://${CONSOLE_HOST}` loads the console UI, publicly-trusted TLS, in both PublicAndPrivate and Private target clusters.
-- [ ] Console browses guest cluster resources via the in-namespace guest KAS (no konnectivity), TLS verified with `root-ca`.
-- [ ] Works zero-node.
-- [ ] Zero console code changes; only the single CPO router `default`-case change.
+Status against `pat-console` (GCP, zero-node):
+
+- [x] CPO router serves the `console` (and `downloads`) SNI host — backend present in HAProxy
+  config (verified live). Note the router change grew from the originally-planned single
+  `default` case into named `console`/`downloads` cases (plus their `-private` variants), and CPO
+  now owns the Routes themselves — see §22 / `PRIVATE_ENDPOINT_ACCESS.md`.
+- [x] `https://<console host>` reachable with publicly-trusted TLS in **PublicAndPrivate** (direct
+  public `curl` 200) and **Private** (via an in-VPC bastion, `curl` 200) — `PRIVATE_ENDPOINT_ACCESS.md`.
+  Browser UI load itself was confirmed earlier on the public path.
+- [x] Console browses guest cluster resources via the in-namespace guest KAS (no konnectivity),
+  TLS verified with `root-ca` (patched bridge, no skip-verify — §22).
+- [x] Works zero-node (validated: `pat-console` has 0 nodes).
+- [~] Console code: one small bridge patch was needed after all (the `-ca-file` off-cluster fix,
+  §22 / `UPSTREAM_PATCHES.md`), not zero. CPO changes are the router cases + console/downloads
+  Route ownership + Private ExternalName services.
 
 ## 10. Known limitations carried out of Part 1 (by design)
 

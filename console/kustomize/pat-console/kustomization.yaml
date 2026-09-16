@@ -39,28 +39,6 @@ patches:
         name: console-serving-cert
 
   - target:
-      kind: Route
-      name: console
-    patch: |
-      - op: replace
-        path: /metadata/labels/hypershift.openshift.io~1hosted-control-plane
-        value: clusters-pat-console-pat-console
-      - op: replace
-        path: /spec/host
-        value: console.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
-
-  - target:
-      kind: Route
-      name: downloads
-    patch: |
-      - op: replace
-        path: /metadata/labels/hypershift.openshift.io~1hosted-control-plane
-        value: clusters-pat-console-pat-console
-      - op: replace
-        path: /spec/host
-        value: downloads.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
-
-  - target:
       kind: Deployment
       name: downloads
     patch: |

@@ -137,10 +137,15 @@ func MetricsProxyRoute(ns string) *routev1.Route {
 	}
 }
 
-// ConsoleRoute is a hand-applied (not CPO-generated) passthrough Route for
-// the Phase 1 console spike. Referenced here only so the router config
-// generator can recognize it by name; CPO does not create or manage this
-// Route itself.
+// Console/downloads passthrough Routes for the Phase 1 control-plane-side
+// console (GCP only). CPO owns these, mirroring the KAS public/private route
+// model: the public route (external-dns -> public LB) exists under
+// Public/PublicAndPrivate; the -private route (labeled route-visibility=private
+// so external-dns ignores it, leaving the ExternalName service to own the
+// record -> PSC endpoint) exists under Private. Both target the same
+// user-facing host and the same in-namespace Service.
+
+// ConsoleRoute is the public console passthrough Route.
 func ConsoleRoute(ns string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
@@ -150,14 +155,31 @@ func ConsoleRoute(ns string) *routev1.Route {
 	}
 }
 
-// DownloadsRoute is a hand-applied (not CPO-generated) passthrough Route for
-// the Phase 1 console CLI-downloads spike. Like ConsoleRoute, it is referenced
-// here only so the router config generator can recognize it by name; CPO does
-// not create or manage this Route itself.
+// ConsolePrivateRoute is the private console passthrough Route (Private mode).
+func ConsolePrivateRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "console-private",
+			Namespace: ns,
+		},
+	}
+}
+
+// DownloadsRoute is the public downloads passthrough Route.
 func DownloadsRoute(ns string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "downloads",
+			Namespace: ns,
+		},
+	}
+}
+
+// DownloadsPrivateRoute is the private downloads passthrough Route (Private mode).
+func DownloadsPrivateRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "downloads-private",
 			Namespace: ns,
 		},
 	}
