@@ -53,6 +53,8 @@ func LookupZone(ctx context.Context, client awsapi.ROUTE53API, name string, isPr
 	return cleanZoneID(aws.ToString(zones[0].Id)), nil
 }
 
+// lookupZones returns every hosted zone matching the name and visibility.
+// It intentionally visits all pages so callers can filter same-name zones by VPC association.
 func lookupZones(ctx context.Context, client awsapi.ROUTE53API, name string, isPrivateZone bool) ([]route53types.HostedZone, error) {
 	var zones []route53types.HostedZone
 	if err := retryRoute53WithBackoff(ctx, func() error {
@@ -101,12 +103,13 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 				return err
 			}
 			if id == "" {
+				// This error is intentionally retryable while Route53's VPC association visibility converges.
 				return fmt.Errorf("no matching hosted zone association is visible yet")
 			}
 			return nil
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to find existing private hosted zone %q associated with VPC %q: %w", name, vpcID, err)
+			return "", fmt.Errorf("failed to verify existing private hosted zone association: %w", err)
 		}
 		logger.Info("Found existing private zone", "name", name, "id", id)
 		err = setSOAMinimum(ctx, client, id, name)
@@ -154,19 +157,23 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 						continue
 					}
 					if zone.Config == nil || !zone.Config.PrivateZone || !route53NamesEqual(aws.ToString(zone.Name), name) {
-						return &nonRetryableRoute53Error{err: fmt.Errorf("cannot verify ownership of hosted zone %q for caller reference %q", aws.ToString(zone.Id), callerReference)}
+						return &nonRetryableRoute53Error{err: fmt.Errorf("cannot verify ownership of hosted zone for caller reference %q", callerReference)}
 					}
+					// Use the zone owner's client because createRequest.VPC is the bootstrap initialVPC in
+					// the cross-account flow, not the target VPC owned by vpcAssociationClient.
 					associated, err := route53VPCContainsHostedZone(ctx, client, createRequest.VPC, aws.ToString(zone.Id))
 					if err != nil {
-						return fmt.Errorf("failed to verify VPC ownership of hosted zone %q for caller reference %q: %w", aws.ToString(zone.Id), callerReference, err)
+						return fmt.Errorf("failed to verify VPC ownership of hosted zone for caller reference %q: %w", callerReference, err)
 					}
 					if !associated {
-						return fmt.Errorf("cannot yet verify VPC ownership of hosted zone %q for caller reference %q", aws.ToString(zone.Id), callerReference)
+						// This error is intentionally retryable while Route53's hosted-zone association visibility converges.
+						return fmt.Errorf("cannot yet verify VPC ownership of hosted zone for caller reference %q", callerReference)
 					}
 					res = &route53.CreateHostedZoneOutput{HostedZone: zone}
 					return nil
 				}
 			}
+			// This error is intentionally retryable while Route53's hosted-zone visibility converges.
 			return fmt.Errorf("cannot verify ownership of hosted zone for caller reference %q: no matching hosted zone found", callerReference)
 		} else {
 			res = output
@@ -495,7 +502,7 @@ func route53VPCMatchingHostedZone(ctx context.Context, client awsapi.ROUTE53API,
 			return "", nil
 		}
 		if nextToken == aws.ToString(input.NextToken) {
-			return "", fmt.Errorf("duplicate pagination token %q", nextToken)
+			return "", errors.New("duplicate pagination token")
 		}
 		input.NextToken = output.NextToken
 	}
