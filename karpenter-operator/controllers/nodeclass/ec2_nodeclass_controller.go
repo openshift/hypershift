@@ -296,6 +296,7 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 		MetadataOptions:                  karpenterMetadataOptionsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 		CapacityReservationSelectorTerms: karpenterCapacityReservationSelectorTermsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 		Kubelet:                          karpenterKubeletConfigurationFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		CPUOptions:                       karpenterCPUOptionsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 	}
 
 	// Set instance profile from HostedCluster annotation (platform-controlled)

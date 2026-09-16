@@ -221,3 +221,14 @@ func ptrIfNonZero(v int32) *int32 {
 	}
 	return ptr.To(v)
 }
+
+func karpenterCPUOptionsFromNodeClassSpec(spec hyperkarpenterv1.OpenshiftEC2NodeClassSpec) *awskarpenterv1.CPUOptions {
+	lowerCase := strings.ToLower(string(spec.CPUOptions.NestedVirtualization))
+	if lowerCase == "" {
+		return nil
+	}
+
+	return &awskarpenterv1.CPUOptions{
+		NestedVirtualization: &lowerCase,
+	}
+}
