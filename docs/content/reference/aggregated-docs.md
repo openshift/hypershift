@@ -3177,7 +3177,7 @@ you should adjust to your own environment.
         make build
         sudo install -m 0755 bin/hypershift /usr/local/bin/hypershift
         ```
-2. Admin access to an OpenShift cluster (version 4.12+) specified by the `KUBECONFIG` environment variable.
+2. Admin access to an OpenShift management cluster (version 4.21+) specified by the `KUBECONFIG` environment variable. See management-cluster version requirements.
 3. The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 4. A valid pull secret file for the `quay.io/openshift-release-dev` repository.
 5. AWS credentials with permissions to create infrastructure for the cluster. You will need:
@@ -68143,13 +68143,22 @@ Information above is subject to change; check IBM Cloud documentation or
 contact IBM development.
 
 ### Management Cluster
-In general, the upstream HyperShift project does not place strict requirements on the OpenShift version of your
-management cluster. This may vary depending on the particular platform; for example, Kubevirt requires management
-clusters with OCP 4.14 and higher.
+The upstream HyperShift management-cluster minimum is OpenShift 4.21, or Kubernetes
+1.34 for non-OpenShift management configurations. Platform-specific requirements
+still apply. This minimum applies to the cluster running the HyperShift Operator
+and hosting the HyperShift CRDs. Management API-server compatibility tests start
+at these versions.
 
-The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the HO section for
-more details. However, different versions of the HO are thoroughly tested only on a limited set of OpenShift versions,
-and this should inform your deployment decisions.
+This does not raise the minimum OCP payload version for HostedClusters or NodePools.
+The HO determines which hosted OCP releases it supports; see the HO section.
+Downstream products and managed services maintain their own support matrices;
+this upstream baseline does not redefine their support commitments.
+
+Upgrade older management clusters before adopting an upstream HyperShift build
+with this baseline. The installer and operator do not explicitly reject older
+management versions, but successful installation does not establish support or
+compatibility. This policy change does not itself upgrade clusters or change
+workload templates.
 
 #### Production Use Cases
 For production use & support, it is required to use a downstream product which bundles a supported build of the
