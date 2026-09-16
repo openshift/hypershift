@@ -1,22 +1,99 @@
 package hostedcluster
 
 import (
+	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/support/api"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
+
+func TestCreateEtcdRecoveryResources(t *testing.T) {
+	t.Run("When the policy is invalid, it should fail before creating recovery resources", func(t *testing.T) {
+		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{hyperv1.ContainerResourcePolicyAnnotation: "{}"}}}
+		// No client or upsert function: validation must precede all API writes.
+		NewWithT(t).Expect((&HostedClusterReconciler{}).createEtcdRecoveryResources(t.Context(), hc, "clusters", &batchv1.Job{}, nil)).NotTo(Succeed())
+	})
+}
+
+func TestReconcileEtcdRecoveryJob(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		policy      bool
+		invalid     bool
+		constrained bool
+	}{
+		{name: "When no policy is configured, it should retain the unconfigured recovery job defaults"},
+		{name: "When a startup policy is configured, it should apply fallback requests to the recovery job", policy: true},
+		{name: "When constrained sizing is configured, it should limit the recovery job before creation", policy: true, constrained: true},
+		{name: "When the policy is invalid, it should reject the job without partial mutation", invalid: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster", Namespace: "clusters"}}
+			if tt.policy {
+				policy := schedulingv1alpha1.ContainerResourcePolicy{
+					DefaultRequests:      schedulingv1alpha1.ContainerRequests{CPU: resource.MustParse("25m"), Memory: resource.MustParse("100Mi")},
+					GoMemoryLimitPercent: 90, MemoryLimitMultiplier: 3,
+				}
+				if tt.constrained {
+					policy.MemoryLimitMultiplier, policy.MemoryLimitPercent, policy.CPULimitPolicy = 0, 110, schedulingv1alpha1.CPULimitPolicyEqualsRequest
+				}
+				encoded, err := json.Marshal(policy)
+				g.Expect(err).NotTo(HaveOccurred())
+				hc.Annotations = map[string]string{hyperv1.ContainerResourcePolicyAnnotation: string(encoded)}
+			}
+			if tt.invalid {
+				hc.Annotations = map[string]string{hyperv1.ContainerResourcePolicyAnnotation: "{}"}
+			}
+			job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "etcd-recovery", Labels: map[string]string{"preserve": "label"}}}
+			before := job.DeepCopy()
+			r := &HostedClusterReconciler{HypershiftOperatorImage: "quay.io/hypershift/hypershift-operator:latest"}
+			err := r.reconcileEtcdRecoveryJob(job, hc)
+			if tt.invalid {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(job).To(Equal(before))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(job.Labels).To(HaveKeyWithValue("preserve", "label"))
+			g.Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
+			container := job.Spec.Template.Spec.Containers[0]
+			g.Expect(container.Image).To(Equal(r.HypershiftOperatorImage))
+			g.Expect(container.Env).To(ContainElement(HaveField("Name", "NAMESPACE")))
+			if tt.policy {
+				g.Expect(container.Resources.Requests.Cpu().String()).To(Equal("25m"))
+				g.Expect(container.Resources.Requests.Memory().String()).To(Equal("100Mi"))
+				if tt.constrained {
+					g.Expect(container.Resources.Limits.Memory().String()).To(Equal("110Mi"))
+					g.Expect(container.Resources.Limits.Cpu().String()).To(Equal("25m"))
+				} else {
+					g.Expect(container.Resources.Limits.Memory().String()).To(Equal("300Mi"))
+					g.Expect(container.Resources.Limits).NotTo(HaveKey(corev1.ResourceCPU))
+				}
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "GOMEMLIMIT", Value: "94371840"}))
+				g.Expect(job.Spec.Template.Annotations["hypershift.openshift.io/container-resource-policy-hash"]).To(HaveLen(64))
+			} else {
+				g.Expect(container.Resources).To(Equal(corev1.ResourceRequirements{}))
+				g.Expect(container.Env).To(HaveLen(1))
+			}
+		})
+	}
+}
 
 func TestEtcdRecoveryJobStatus(t *testing.T) {
 	tests := []struct {
@@ -407,6 +484,48 @@ func TestFindFailingEtcdPod(t *testing.T) {
 }
 
 func TestHandleExistingEtcdRecoveryJob(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		existingPolicy bool
+		desiredPolicy  bool
+		changed        bool
+		wantError      bool
+	}{
+		{name: "When an unfinished job predates policy activation, it should report immutable policy drift", desiredPolicy: true, wantError: true},
+		{name: "When an unfinished job has an old policy, it should report immutable policy drift", existingPolicy: true, desiredPolicy: true, changed: true, wantError: true},
+		{name: "When policy is removed during recovery, it should report immutable policy drift", existingPolicy: true, wantError: true},
+		{name: "When an unfinished job has the desired policy, it should continue waiting", existingPolicy: true, desiredPolicy: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			policy := startupSizingConfig().Spec.Sizes[1].Effects.ContainerResourcePolicy
+			encoded, err := json.Marshal(policy)
+			g.Expect(err).NotTo(HaveOccurred())
+			hc := &hyperv1.HostedCluster{}
+			job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "etcd-recovery", Namespace: "clusters-test"}}
+			if tt.existingPolicy {
+				g.Expect(controlplanecomponent.ApplyContainerResourcePolicy("etcd-recovery", &job.Spec.Template, map[string]string{hyperv1.ContainerResourcePolicyAnnotation: string(encoded)})).To(Succeed())
+			}
+			if tt.changed {
+				policy.DefaultRequests.CPU = resource.MustParse("50m")
+				encoded, err = json.Marshal(policy)
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			if tt.desiredPolicy {
+				hc.Annotations = map[string]string{hyperv1.ContainerResourcePolicyAnnotation: string(encoded)}
+			}
+			before := job.DeepCopy()
+			// No client: the immutable job must not be patched or deleted.
+			done, err := (&HostedClusterReconciler{}).handleExistingEtcdRecoveryJob(t.Context(), zap.New(), hc, job, &etcdJobStatus{exists: true})
+			g.Expect(done).To(BeTrue())
+			if tt.wantError {
+				g.Expect(err).To(MatchError(ContainSubstring("immutable and requires manual intervention")))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			g.Expect(job).To(Equal(before))
+		})
+	}
 	tests := []struct {
 		name            string
 		jobStatus       *etcdJobStatus
