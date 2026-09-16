@@ -68,22 +68,35 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/args/6
         value: -k8s-public-endpoint=https://api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com:6443
+      - op: replace
+        path: /spec/template/spec/containers/0/args/9
+        value: -user-auth-oidc-client-id=581003993532-kubhjbqnrc5iknkrc19cnvb67nj7qgbd.apps.googleusercontent.com
       # Reuse the existing api-server wildcard secret instead of a
       # dedicated console-serving-cert (see certificate.yaml delete above).
       - op: replace
         path: /spec/template/spec/volumes/0/secret/secretName
         value: external-api-cert
 
-# Guest cluster-admin bearer token, gitignored
-# (../../hostedcluster/console-guest-token.txt). `behavior: replace` swaps
-# out the base's REPLACE_WITH_GUEST_SA_TOKEN Secret for this generator's
-# output (same name/namespace), keeping the Secret kind intact end-to-end.
+# OIDC client secret for the bridge. apply.sh extracts .web.client_secret from
+# the intact OAuth client JSON into a gitignored .oidc-client-secret file that
+# this generator reads (key: clientSecret). `behavior: replace` swaps the
+# hypershift layer's REPLACE_WITH_OIDC_CLIENT_SECRET placeholder.
 secretGenerator:
-  - name: console-static-token
+  - name: console-oidc-client-secret
     behavior: replace
     type: Opaque
     files:
-      - token=../../hostedcluster/console-guest-token.txt
+      - clientSecret=.oidc-client-secret
+    options:
+      disableNameSuffixHash: true
+  # Session cookie keys — apply.sh generates .session-encryption-key (32B) and
+  # .session-authentication-key (64B) as gitignored random files.
+  - name: console-session
+    behavior: replace
+    type: Opaque
+    files:
+      - encryptionKey=.session-encryption-key
+      - authenticationKey=.session-authentication-key
     options:
       disableNameSuffixHash: true
 

@@ -27,7 +27,7 @@ metadata:
   labels:
     gcp.managed.openshift.io/cluster-id: pat-console
   annotations:
-    hypershift.openshift.io/control-plane-operator-image: quay.io/patmarti/hypershift-console-control-plane:260916140620
+    hypershift.openshift.io/control-plane-operator-image: quay.io/patmarti/hypershift-console-control-plane:260916160339
     # Same custom-cert-for-own-hostname pattern as patmarti-102447 (also has
     # this annotation): the api.<cluster>-user... named certificate overlaps
     # with the KAS's own external API SAN, which the SAN-conflict validator
@@ -70,6 +70,14 @@ spec:
         issuer:
           audiences:
           - 32555940559.apps.googleusercontent.com
+          # console OIDC client id — must be an accepted audience so the guest
+          # KAS accepts ID tokens the console forwards after login. (The
+          # console bridge is configured with this client directly via CLI
+          # flags; an oidcProviders[].oidcClients entry is not usable here
+          # because its admission requires status.oidcClients, which only a
+          # running guest console-operator writes — see
+          # CONSOLE_CONTROL_PLANE_DOCS/GOOGLE_OIDC_CLIENT_SETUP.md.)
+          - 581003993532-kubhjbqnrc5iknkrc19cnvb67nj7qgbd.apps.googleusercontent.com
           issuerCertificateAuthority:
             name: ""
           issuerURL: https://accounts.google.com

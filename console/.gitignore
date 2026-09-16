@@ -7,3 +7,7 @@ hostedcluster/pull-secret.json
 hostedcluster/console-guest-token.txt
 hostedcluster/kubeadmin.kubeconfig
 *.kubeconfig
+guest/oauth_client_secret.json
+.oidc-client-secret
+.session-encryption-key
+.session-authentication-key

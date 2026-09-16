@@ -5,7 +5,9 @@
 **Goal of Phase 1:** Prove the **core** OpenShift console runs in an existing HostedControlPlane (HCP) namespace on the management cluster and works fully end-to-end — DNS, publicly-trusted cert, static/no auth, and the guest-network path for both **PublicAndPrivate** and **Private** GCP clusters. No console-operator, no HyperShift lifecycle plumbing (that comes later).
 
 **Scope decisions (locked):**
-- Auth: `-user-auth=disabled` + static guest bearer token (browse works, every session = that identity; dev only).
+- Auth: started as `-user-auth=disabled` + static guest bearer token; **now upgraded to
+  per-user Google OIDC login** (`-user-auth=oidc`), validated live. See §10 (Resolved) and
+  `GOOGLE_OIDC_CLIENT_SETUP.md`.
 - Guest KAS TLS: verified via the `root-ca` secret (not skip-verify).
 - Endpoint modes: **PublicAndPrivate** and **Private** (Public not supported → out of scope).
 - Exposure: **minimal CPO code change** — make the HCP HAProxy router accept a generic labeled Route. Route/Service/cert/DNS are **hand-applied**. Router acceptance is **always-on** (no annotation/flag gate).
@@ -300,6 +302,9 @@ Status against `pat-console` (GCP, zero-node):
   Browser UI load itself was confirmed earlier on the public path.
 - [x] Console browses guest cluster resources via the in-namespace guest KAS (no konnectivity),
   TLS verified with `root-ca` (patched bridge, no skip-verify — §22).
+- [x] **Per-user login via Google OIDC** (upgraded from the planned `-user-auth=disabled` static
+  token): browser login → session → guest KAS accepts the token → user browses as their own
+  identity. See §10 (Resolved) and `GOOGLE_OIDC_CLIENT_SETUP.md`.
 - [x] Works zero-node (validated: `pat-console` has 0 nodes).
 - [~] Console code: one small bridge patch was needed after all (the `-ca-file` off-cluster fix,
   §22 / `UPSTREAM_PATCHES.md`), not zero. CPO changes are the router cases + console/downloads
@@ -307,12 +312,30 @@ Status against `pat-console` (GCP, zero-node):
 
 ## 10. Known limitations carried out of Part 1 (by design)
 
-- Static shared identity (auth disabled) — real per-user OIDC is a later track.
 - Router config not hot-reloaded — manual router restart after applying the Route (CPO TODO `component.go:74-75`).
 - No plugins / no monitoring (needs the guest pod-network path) — **Part 2**.
 - Everything hand-applied (no operator, no lifecycle) — later phases.
+- **Multi-replica sessions:** the bridge keeps sessions in a per-pod in-memory
+  map (`server_session.go`), and the SNI-passthrough router (`mode tcp`) cannot
+  do cookie-based affinity, so with >1 replica a browser can land on a pod that
+  doesn't hold its session. A shared session store is a bridge code change,
+  deferred. (Login was validated live with 2 replicas — it works when requests
+  land on the same pod; it is not robust across pods.)
 
 Resolved during implementation (no longer limitations):
+- **Per-user OIDC login: DONE (verified live end-to-end).** Replaces the Phase 1
+  `-user-auth=disabled` + static token. Each user logs in via Google and browses
+  as their own identity/RBAC. Requirements, all hand-replicated because there is
+  no console-operator: (1) `-user-auth=oidc` + issuer/client-id + client-secret
+  file; (2) the console client ID added to the guest KAS OIDC `audiences` (the
+  only HC-spec change — an `oidcProviders[].oidcClients` entry is *not* usable
+  here, its admission requires `status.oidcClients` which only a running guest
+  console-operator writes); (3) `-user-auth-oidc-token-scopes=email,profile` so
+  the ID token carries the `email` claim the KAS maps to username (with only the
+  default `openid` scope Google omits `email` and KAS rejects every request with
+  `oidc: parse username claims "email": claim not present`); (4) session cookie
+  keys (32B AES + 64B HMAC), normally operator-generated, hand-provided via a
+  Secret. See `GOOGLE_OIDC_CLIENT_SETUP.md` and `STUDY.md` §22.
 - **CLI-downloads server: DONE**, incl. the UI link. Deployed control-plane-side with a
   TLS-terminating oauth-proxy sidecar + `cli-artifacts` image + dedicated CPO router `downloads`
   backend; serves real `oc` binaries end-to-end. The UI "Command Line Tools" page is wired by

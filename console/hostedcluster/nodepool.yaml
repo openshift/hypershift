@@ -32,4 +32,4 @@ spec:
     type: GCP
   release:
     image: quay.io/openshift-release-dev/ocp-release@sha256:fe1fae8677554f0091de1df21d612d33163b23479880a9c7c88e9fe066348266
-  replicas: 0
+  replicas: 4
