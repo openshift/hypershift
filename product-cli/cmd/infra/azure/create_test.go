@@ -87,6 +87,7 @@ func TestNewCreateCommand(t *testing.T) {
 			"location",
 			"name",
 			"network-security-group-id",
+			"outbound-type",
 			"output-file",
 			"resource-group-name",
 			"resource-group-tags",

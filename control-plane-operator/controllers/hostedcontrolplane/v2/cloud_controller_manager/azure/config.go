@@ -138,7 +138,12 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 		CloudProviderBackoff:         true,
 		CloudProviderBackoffDuration: 6,
 		LoadBalancerSku:              "standard",
-		DisableOutboundSNAT:          true,
+		// Outbound SNAT on the cluster Load Balancer is always disabled. Egress is provided by the
+		// outbound rule created alongside the Load Balancer (LoadBalancer outbound type) or by the
+		// customer's own egress infrastructure (UserDefinedRouting). Leaving implicit outbound SNAT
+		// enabled would make every Service load balancing rule an egress path through the ingress
+		// frontend IP, which is not an address the cluster owner controls under UserDefinedRouting.
+		DisableOutboundSNAT:                       true,
 		ClusterServiceLoadBalancerHealthProbeMode: probeMode,
 		UseInstanceMetadata:                       true,
 	}

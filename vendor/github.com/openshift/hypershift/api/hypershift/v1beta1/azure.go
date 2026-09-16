@@ -400,6 +400,9 @@ type AzureNodePoolOSDisk struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.topology) || !has(oldSelf.topology) || (self.topology == 'Public') == (oldSelf.topology == 'Public')",message="transitions between Public and non-Public topology are not supported"
 // +kubebuilder:validation:XValidation:rule="has(self.topology) && (self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private)",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="!has(self.private) || self.private.type != 'PrivateLink' || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.outboundType) || has(self.outboundType)",message="outboundType cannot be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(self.outboundType) || !has(oldSelf.outboundType) || self.outboundType == oldSelf.outboundType",message="outboundType is immutable once set"
+// +kubebuilder:validation:XValidation:rule="has(self.outboundType) && !has(oldSelf.outboundType) ? self.outboundType == 'LoadBalancer' : true",message="outboundType cannot be set to UserDefinedRouting on an existing cluster that was created without it"
 type AzurePlatformSpec struct {
 	// cloud is the Azure cloud environment identifier.
 	//
@@ -536,6 +539,24 @@ type AzurePlatformSpec struct {
 	//
 	// +optional
 	Private AzurePrivateSpec `json:"private,omitzero"`
+
+	// outboundType specifies how worker node traffic leaving the cluster reaches the internet.
+	// - LoadBalancer: egress uses the cluster Load Balancer's outbound rule. Worker NICs are attached
+	//   to that Load Balancer's backend pool.
+	// - UserDefinedRouting: the cluster owner provisions no egress infrastructure. Worker NICs are not
+	//   attached to any Load Balancer backend pool, and the subnets must already route egress through
+	//   the customer's own mechanism (NAT gateway, virtual appliance, or similar) before the cluster is
+	//   created. Nodes will fail to pull images and reach the control plane if that routing is absent.
+	// Outbound SNAT on the cluster Load Balancer is disabled for both values, so a Service of type
+	// LoadBalancer never becomes an egress path.
+	// When omitted, behavior matches LoadBalancer.
+	// This field is immutable once set: the Load Balancer's outbound rule is created with the
+	// cluster's infrastructure and no component reconciles it afterwards, so switching between
+	// LoadBalancer and UserDefinedRouting on an existing cluster cannot change the egress path.
+	// UserDefinedRouting cannot be adopted on a cluster that was created without outboundType set.
+	//
+	// +optional
+	OutboundType AzureOutboundType `json:"outboundType,omitempty"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -754,6 +775,18 @@ const (
 	AzureTopologyPublicAndPrivate AzureTopologyType = "PublicAndPrivate"
 	// AzureTopologyPrivate indicates the API server is accessible only via a private endpoint.
 	AzureTopologyPrivate AzureTopologyType = "Private"
+)
+
+// AzureOutboundType specifies the outbound connectivity method for worker nodes.
+// +kubebuilder:validation:Enum=LoadBalancer;UserDefinedRouting
+type AzureOutboundType string
+
+const (
+	// AzureOutboundTypeLoadBalancer uses an Azure Load Balancer with outbound rules for egress.
+	AzureOutboundTypeLoadBalancer AzureOutboundType = "LoadBalancer"
+	// AzureOutboundTypeUserDefinedRouting delegates outbound connectivity to the customer's egress mechanism.
+	// Worker NICs are not attached to any Load Balancer backend pool when this type is set.
+	AzureOutboundTypeUserDefinedRouting AzureOutboundType = "UserDefinedRouting"
 )
 
 // AzurePrivateType specifies the type of private connectivity mechanism used for the Azure
