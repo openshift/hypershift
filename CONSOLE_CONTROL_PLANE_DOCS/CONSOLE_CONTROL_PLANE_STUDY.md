@@ -1285,7 +1285,20 @@ in `console/kustomize/` (origin → hypershift → pat-console), reachable end-t
 router is SNI-passthrough only and can't do upstream's `edge` termination), the `cli-artifacts`
 image (`DOWNLOADS_IMAGE`, not the console image), a dedicated CPO router `downloads` backend
 case, and an explicit 6Gi ephemeral-storage request (GKE Autopilot evicts the archive-generating
-pod under its 1Gi default). **Remaining gap:** the UI "Command Line Tools" page reads
-`ConsoleCLIDownloads` CRs from the guest, whose CRD isn't installed (guest `Console` capability
-disabled) — the server is reachable at its host but the UI link stays empty until that guest-side
-CRD + CR are added. See `console/kustomize/README.md`.
+pod under its 1Gi default). The UI "Command Line Tools" page reads `ConsoleCLIDownloads` CRs from
+the guest; the guest has the `Console` capability disabled so that CRD isn't installed and nothing
+generates the CR. For the spike we hand-apply both to the guest (`console/guest/`): the verbatim
+upstream CRD plus an `oc-cli-downloads` CR mirroring what the console-operator's
+`CLIDownloadsSyncController` would generate, pointing at our downloads host. With those in place
+the bridge proxy returns the CR (HTTP 200) and the page populates.
+
+**Ownership questions (open, for later phases):**
+- **Who installs the CRD?** Normally the `Console` capability pulls the `console.openshift.io`
+  CRDs into the guest via CVO. With that capability disabled we install it by hand. A real design
+  must decide: re-enable a scoped console capability, have HCCO/CPO reconcile just this CRD into
+  the guest, or ship it another way.
+- **Who owns the CR?** Upstream, the console-operator writes/updates/deletes `oc-cli-downloads`
+  from the downloads Route host (`CLIDownloadsSyncController`). We run without the operator, so the
+  CR is static and hand-maintained — it will drift if the downloads host changes. A real design
+  needs a reconciler (operator or an HCP-side controller) to keep it in sync, same "operator
+  normally does this" pattern as CPO now owning the Routes.

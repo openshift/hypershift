@@ -313,11 +313,13 @@ Status against `pat-console` (GCP, zero-node):
 - Everything hand-applied (no operator, no lifecycle) — later phases.
 
 Resolved during implementation (no longer limitations):
-- **CLI-downloads server: DONE.** Deployed control-plane-side with a TLS-terminating oauth-proxy
-  sidecar + `cli-artifacts` image + dedicated CPO router `downloads` backend; serves real `oc`
-  binaries end-to-end. Remaining sub-gap: the UI "Command Line Tools" page stays empty because
-  the guest `ConsoleCLIDownloads` CRD isn't installed (guest `Console` capability disabled) — the
-  server itself is reachable. See `console/kustomize/README.md` and `STUDY.md` §22.
+- **CLI-downloads server: DONE**, incl. the UI link. Deployed control-plane-side with a
+  TLS-terminating oauth-proxy sidecar + `cli-artifacts` image + dedicated CPO router `downloads`
+  backend; serves real `oc` binaries end-to-end. The UI "Command Line Tools" page is wired by
+  hand-applying the `ConsoleCLIDownloads` CRD + an `oc-cli-downloads` CR to the guest
+  (`console/guest/`), since the guest `Console` capability is disabled and there's no
+  console-operator. Open design question (deferred): who installs that CRD and reconciles the CR
+  long-term — see `STUDY.md` §22.
 - **Off-cluster `-ca-file` verification: DONE (patched image; upstream PR open).** Runs with
   `-ca-file`-verified `root-ca` trust and NO skip-verify. Tracking: `UPSTREAM_PATCHES.md`,
   Jira GCP-1219, PR openshift/console#17185. See `STUDY.md` §22.

@@ -29,11 +29,12 @@ The `downloads` operand serves the `oc`/CLI download page. Two Phase 1 notes:
   `oauth-proxy` sidecar (auth bypassed via `-skip-auth-regex=^/`) that
   terminates TLS on 8443 and forwards to the verbatim upstream
   download-server on `127.0.0.1:8080`.
-- **UI link gap (not wired):** the console UI's "Command Line Tools" page
-  lists `ConsoleCLIDownloads` CRs read from the guest cluster. On this HC the
-  `Console` capability is disabled, so that CRD isn't installed and no CRs
-  exist — the downloads server is reachable at its own host, but the UI link
-  stays empty until the CRD + an `oc-cli-downloads` CR (pointing at the
-  downloads host) are added to the guest. That guest-side wiring is deferred.
+- **UI "Command Line Tools" link:** the page lists `ConsoleCLIDownloads` CRs
+  read (browser-side) from the guest. The guest has the `Console` capability
+  disabled, so the CRD isn't installed and nothing generates the CR. We supply
+  both by hand in `../guest/` (the CRD + an `oc-cli-downloads` CR pointing at
+  the downloads host). Open question — who installs the CRD and owns the CR
+  long-term (normally the Console capability + console-operator): see
+  `CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_STUDY.md` §22.
 
 See `CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md` and `CONSOLE_CONTROL_PLANE_STUDY.md` for the design this implements.
