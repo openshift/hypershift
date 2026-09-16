@@ -321,6 +321,12 @@ Status against `pat-console` (GCP, zero-node):
   doesn't hold its session. A shared session store is a bridge code change,
   deferred. (Login was validated live with 2 replicas — it works when requests
   land on the same pod; it is not robust across pods.)
+- **User-settings persistence** needs guest-side setup we don't create: the
+  `openshift-console-user-settings` namespace + console-SA RBAC that
+  console-operator normally provisions. Browsing/login are unaffected; per-user
+  console preferences don't save until that RBAC exists (operator-owned, Phase 2).
+  (The TLS half of this — the anonymous transport ignoring `-ca-file` — was fixed
+  in the console PR and verified live; see STUDY.md §22.)
 
 Resolved during implementation (no longer limitations):
 - **Per-user OIDC login: DONE (verified live end-to-end).** Replaces the Phase 1

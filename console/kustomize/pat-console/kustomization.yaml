@@ -112,7 +112,7 @@ images:
   # Revert to the stock digest once the fix lands upstream + in a release.
   - name: REPLACE_CONSOLE_IMAGE_REGISTRY
     newName: quay.io/patmarti/console
-    newTag: "260916124530"
+    newTag: "260916181415"
   # oauth-proxy (downloads TLS sidecar), resolved via
   #   oc adm release info --image-for=oauth-proxy <release>
   - name: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY

@@ -1286,6 +1286,31 @@ removed `-k8s-mode-off-cluster-skip-verify-tls`. Verified live: `/api/kubernetes
 with no x509 errors. The `-ca-file`/`guest-ca` volume were already plumbed. Reverts to the stock
 release console image once the upstream PR merges and ships.
 
+**Second instance of the same bug — the anonymous transport (also FIXED).** The first fix covered
+the main resource proxy (`K8sProxyConfig` / `InternalProxiedK8SClientConfig`). Two other code
+paths use a *different* transport, `AnonymousInternalProxiedK8SRT`, built via
+`rest.TransportFor(rest.AnonymousClientConfig(srv.InternalProxiedK8SClientConfig))`.
+`rest.AnonymousClientConfig()` copies the config's own `TLSClientConfig.CAFile`/`CAData` but
+**does not copy an already-built `Transport`** — and the off-cluster config carried its RootCAs on
+`Transport`, not on those fields — so the anonymous transport fell back to system trust and
+couldn't verify the private guest CA. Consumers:
+- `pkg/auth/metrics.go` login-role metrics (`isKubeAdmin` / `canGetNamespaces`) — best-effort
+  goroutine, cosmetic.
+- `pkg/usersettings/handlers.go` — user-settings persistence failed with `x509: certificate
+  signed by unknown authority`.
+
+Fix (folded into the same PR): when `-ca-file` is set, re-supply trust by setting
+`TLSClientConfig.CAFile` on the anonymous config (extracted into `anonymousK8SClientConfig` with a
+unit test), so `rest.TransportFor` builds a CA-aware transport. Note the constraint that forced
+this shape: `transport.New` rejects a config that has both a custom `Transport` **and** CA
+options, so the CA can't simply be added to `InternalProxiedK8SClientConfig` (which already sets
+`Transport`) — only to the anonymous derivative, which has no `Transport`. **Verified live:** the
+x509 errors on the user-settings/metrics paths are gone; the user-settings call now reaches the
+guest KAS (TLS verified) and fails only on RBAC — the `openshift-console-user-settings` namespace
++ console-SA RBAC that console-operator normally creates don't exist here, a separate
+operator-owned gap (Phase 2 / productization), not a bridge bug. Upstream: PR
+openshift/console#17185 / Jira GCP-1219.
+
 ---
 
 **`downloads` (CLI download server) — now IMPLEMENTED in Phase 1.** Deployed control-plane-side
