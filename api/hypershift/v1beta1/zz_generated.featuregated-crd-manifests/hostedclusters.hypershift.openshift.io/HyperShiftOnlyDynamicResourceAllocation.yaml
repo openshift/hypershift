@@ -5594,6 +5594,19 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      outboundType:
+                        description: |-
+                          outboundType specifies the outbound connectivity method for worker node traffic leaving the cluster.
+                          - LoadBalancer: outbound traffic uses an Azure Load Balancer with outbound rules.
+                          - UserDefinedRouting: outbound traffic is managed by the customer's egress mechanism (e.g. NAT gateway,
+                            virtual appliance). The customer must configure egress on their subnets before cluster creation.
+                            HyperShift disables outbound SNAT on the Load Balancer when this is set.
+                          When omitted, defaults to LoadBalancer behavior.
+                          Once set, this field is immutable.
+                        enum:
+                        - LoadBalancer
+                        - UserDefinedRouting
+                        type: string
                       private:
                         description: |-
                           private configures private connectivity to the hosted cluster's API server.
@@ -5843,6 +5856,11 @@ spec:
                       rule: '!has(self.private) || self.private.type != ''PrivateLink''
                         || self.azureAuthenticationConfig.azureAuthenticationConfigType
                         != ''WorkloadIdentities'' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)'
+                    - message: outboundType cannot be removed once set
+                      rule: '!has(oldSelf.outboundType) || has(self.outboundType)'
+                    - message: outboundType is immutable once set
+                      rule: '!has(self.outboundType) || !has(oldSelf.outboundType)
+                        || self.outboundType == oldSelf.outboundType'
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
