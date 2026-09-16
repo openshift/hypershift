@@ -8,6 +8,7 @@ import (
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenterignition"
+	"github.com/openshift/hypershift/karpenter-operator/controllers/node"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -137,6 +138,11 @@ func run(ctx context.Context) error {
 	mac := karpenter.MachineApproverController{}
 	if err := mac.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
+	}
+
+	nodeReconciler := node.Reconciler{}
+	if err := nodeReconciler.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup node controller with manager: %w", err)
 	}
 
 	encr := nodeclass.EC2NodeClassReconciler{

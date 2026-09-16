@@ -1,6 +1,7 @@
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -284,6 +285,15 @@ type OpenshiftEC2NodeClassSpec struct {
 	// These settings are injected into the node's ignition configuration via MachineConfig.
 	// +optional
 	Kubelet KubeletConfiguration `json:"kubelet,omitzero"`
+
+	// tuningConfig lists Node Tuning Operator configurations to apply to nodes provisioned by this NodeClass.
+	// Each entry is the name of a tuning config already created for the cluster.
+	// The same tuning config may be used by more than one NodeClass.
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	// +listType=atomic
+	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
