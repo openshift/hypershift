@@ -1,7 +1,10 @@
 # Phase 2 Implementation Plan: Day-0 console UX — pod terminal + monitoring
 
-**Status:** In progress — **Part A (pod terminal): DONE (verified live).** Part B
-(monitoring): not started.
+**Status:** In progress — **Part A (pod terminal): DONE (verified live).**
+**Part B (monitoring): backend path DONE (verified live: console → konnectivity
+socks5 → guest Thanos = HTTP 200, PromQL `up` returns data).** Browser
+verification of Observe → Metrics/Alerts pending. Required a guest VPC firewall
+fix (geneve UDP 6081) — see B.6.
 **Companions:** `CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md` (core console, DONE),
 `CONSOLE_CONTROL_PLANE_STUDY.md` (feasibility + file:line, esp. §5.1 DNS/resolver
 and §13.10/§14 konnectivity), `console-control-plane-manifests.example.yaml`
@@ -136,23 +139,68 @@ can dial, (2) the two URL flags pointing at the guest services.
    (study/main.go note), so some tenancy-scoped features may degrade vs a real
    in-cluster deployment; validate the common Observe views first.
 
-5. **TLS / auth to Thanos & Alertmanager.** These front with their own
-   oauth-proxy/serving certs. Determine what the bridge presents (the off-cluster
-   proxies use `serviceProxyTLSConfig`; the user's bearer token flows for tenancy).
-   Expect to sort out CA trust for the monitoring services' serving certs
-   (possibly a second CA beyond `root-ca`) and whether Alertmanager needs the
-   user token vs the console identity. This is the most likely place for
-   iteration.
+5. **TLS / auth to Thanos & Alertmanager — DONE.** Thanos/Alertmanager present
+   service-serving certs signed by the **service-ca**
+   (`openshift-service-serving-signer`), a *different* signer than the KAS
+   `-ca-file` (root-ca). The stock off-cluster bridge trusts only `-ca-file` for
+   every proxy — a real gap. Fixed by teaching the off-cluster branch to honor
+   `-service-ca-file` for the service proxies (mirrors in-cluster), keeping
+   `-ca-file` for KAS; falls back to `-ca-file` when unset. Mounted from the
+   HCP-namespace `service-serving-ca` ConfigMap. See
+   `_console-research/OFF_CLUSTER_SERVICE_CA_FILE_PLAN.md`, STUDY §22. Auth:
+   `AuthMiddleware` already injects `Authorization: Bearer <user.Token>`; Thanos
+   9091 authorizes via `cluster-monitoring-view`, satisfied by our OIDC admin's
+   cluster-admin.
 
 ## B.4 Part B acceptance
 
-- [ ] Konnectivity socks5 sidecar healthy on the console pod; resolves + dials
-  `thanos-querier.openshift-monitoring.svc`.
-- [ ] Observe → **Metrics**: a PromQL query (e.g. `up`) returns data from the 4
-  nodes.
-- [ ] Observe → **Alerts**: Alertmanager alerts list loads.
+- [x] Konnectivity socks5 sidecar healthy on the console pod; resolves + dials
+  `thanos-querier.openshift-monitoring.svc`. **Verified live.**
+- [x] Backend path proven: `console → socks5 → thanos-querier:9091/-/healthy` =
+  **HTTP 200**, and `.../api/v1/query?query=up` returns
+  `{"status":"success",...}` with real metric series. **Verified live.**
+- [x] Alertmanager reachable over the same path (returns an RBAC 403 to a
+  low-privilege token — i.e. the request reaches AM and authorizes; the console's
+  cluster-admin OIDC user passes). **Verified live.**
+- [ ] Browser: Observe → **Metrics** (`up`) and Observe → **Alerts** render.
+  (Backend proven; UI click-through pending.)
 - [ ] Core console (Phase 1) + terminal (Part A) still work with the sidecar and
-  proxy env present (NO_PROXY keeps KAS direct).
+  proxy env present (NO_PROXY keeps KAS direct). Pods came up 2/2; regression
+  browser check pending.
+
+## B.6 Guest VPC firewall fix (geneve) — REQUIRED, discovered live
+
+The socks5 sidecar + flags + TLS were correct, but the first live test still got
+`504 Gateway Timeout` from konnectivity. Root cause was **not** the console and
+**not** NetworkPolicy — it was the **guest VPC firewall silently dropping OVN-K
+geneve overlay traffic (UDP 6081) between worker nodes**, which broke *all*
+cross-node pod networking (konnectivity agent on node A could not reach a pod on
+node B).
+
+Diagnosis chain (all verified live):
+- Console → socks5 → thanos = 504; NetworkPolicy allow-all made no difference →
+  not an NP problem.
+- konnectivity agent logs: `dial tcp <podIP>:<port>: i/o timeout` for cross-node
+  targets; kubelet (node-IP:10250) worked.
+- Pod→pod reachability matrix: same-node OK, **every cross-node pair FAIL** (both
+  directions, all 4 nodes).
+- OVN was fully configured (chassis + geneve tunnels to all peers) but tunnel
+  interface stats showed **tx>0, rx=0** on every tunnel → underlay dropping
+  geneve.
+- Guest VPC (`patmart-b3bb-network`) firewall had only `tcp:22` (bastion) and
+  `tcp:10250` (kubelet); GCP implied-deny dropped everything else, incl. geneve.
+
+Fix: one INGRESS allow rule, `udp:6081` from the node subnet (`10.0.0.0/24` on
+this cluster). Geneve alone was sufficient — OVN-K encapsulates *all* pod/service
+traffic inside geneve, so no pod-CIDR/service-port rules were needed. After the
+rule: geneve rx became nonzero, cross-node TCP recovered (timeout → connection
+established), and console → socks5 → thanos went **504 → HTTP 200**.
+
+- Repro/fix script: `console/guest/allow-geneve-firewall.sh`.
+- **Productization:** this is a HyperShift GCP infra-provisioning gap — the node
+  VPC must ship a geneve allow rule. Being fixed in `gcp-hcp-ctl`
+  (cross-node-traffic fix). Not console work, but a hard prerequisite for any
+  guest pod/service-network feature (monitoring, plugins) on GCP.
 
 ## B.5 Non-goals / risks
 
@@ -173,6 +221,10 @@ can dial, (2) the two URL flags pointing at the guest services.
 1. **Part A (terminal): DONE.** Worked with no changes (rides the Phase 1 KAS
    exec path); confirmed day-0 exec UX and that WebSocket-through-the-router is a
    non-issue.
-2. **Part B (monitoring): next.** Build the konnectivity socks5 sidecar (the
-   reusable piece Phase 3 plugins also need), then wire the two flags and iterate
-   on monitoring-service TLS/auth.
+2. **Part B (monitoring): backend DONE.** Built the konnectivity socks5 sidecar
+   (the reusable piece Phase 3 plugins also need), wired the two flags, fixed the
+   off-cluster `-service-ca-file` trust gap, and — critically — fixed the guest
+   VPC geneve firewall that was silently breaking all cross-node pod networking
+   (B.6). Verified live: console → socks5 → thanos = HTTP 200 + PromQL data.
+   Remaining: browser click-through of Observe → Metrics/Alerts, and the
+   productization moves (CPO-injected sidecar; geneve rule in gcp-hcp-ctl).

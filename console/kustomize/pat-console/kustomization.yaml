@@ -76,6 +76,13 @@ patches:
       - op: replace
         path: /spec/template/spec/volumes/0/secret/secretName
         value: external-api-cert
+      # Phase 2: resolve the NO_PROXY placeholder to this HCP namespace so the
+      # guest KAS in-namespace ClusterIP dial stays direct (not tunneled through
+      # the socks5 sidecar). env[2] = NO_PROXY (env order: HTTP_PROXY,
+      # HTTPS_PROXY, NO_PROXY in the hypershift layer).
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: kube-apiserver.clusters-pat-console-pat-console.svc,localhost,127.0.0.1
 
 # OIDC client secret for the bridge. apply.sh extracts .web.client_secret from
 # the intact OAuth client JSON into a gitignored .oidc-client-secret file that
@@ -104,15 +111,20 @@ secretGenerator:
 # target the name the base already rewrote it to, not the original "console".
 images:
   # Custom console image = stock release-payload console
-  # (ocp-v4.0-art-dev@sha256:93f39a2...) + the patched bridge binary that wires
-  # -ca-file into the off-cluster k8s proxy TLS trust (branch
+  # (ocp-v4.0-art-dev@sha256:93f39a2...) + the patched bridge binary (branch
   # off-cluster-ca-file-trust in _console-research; built by
-  # console/build-console.sh). Lets us drop
-  # -k8s-mode-off-cluster-skip-verify-tls and verify the guest KAS via root-ca.
-  # Revert to the stock digest once the fix lands upstream + in a release.
+  # console/build-console.sh). Two off-cluster TLS-trust fixes:
+  #   1. wire -ca-file into the off-cluster k8s proxy trust (drops
+  #      -k8s-mode-off-cluster-skip-verify-tls; verifies the guest KAS via
+  #      root-ca).
+  #   2. honor -service-ca-file for the off-cluster service proxies
+  #      (Thanos/Alertmanager/terminal/plugins) so they verify service-serving
+  #      certs signed by the service-ca, a different signer than the KAS CA
+  #      (Phase 2 monitoring). Falls back to -ca-file when unset.
+  # Revert to the stock digest once the fixes land upstream + in a release.
   - name: REPLACE_CONSOLE_IMAGE_REGISTRY
     newName: quay.io/patmarti/console
-    newTag: "260916181415"
+    newTag: "260916190318"
   # oauth-proxy (downloads TLS sidecar), resolved via
   #   oc adm release info --image-for=oauth-proxy <release>
   - name: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY
@@ -124,3 +136,12 @@ images:
   - name: REPLACE_DOWNLOADS_IMAGE_REGISTRY
     newName: quay.io/openshift-release-dev/ocp-v4.0-art-dev
     digest: sha256:b520b5ae46c95b6fd45bd63d04d405dadf8f9b6d855134f617c078abe12fcd05
+  # CPO image for the Phase 2 konnectivity-proxy-socks5 sidecar (ships the
+  # control-plane-operator binary with the konnectivity-socks5-proxy subcommand).
+  # Pinned to the exact image this HCP's control-plane-operator + the live
+  # per-HCP catalog-operator socks5 sidecar already run, so the sidecar matches a
+  # proven-working shape. In productization this is injected by the CPO v2
+  # framework's InjectKonnectivityContainer, not hand-pinned here.
+  - name: REPLACE_CPO_IMAGE_REGISTRY
+    newName: quay.io/patmarti/hypershift-console-control-plane
+    newTag: "260916160339"

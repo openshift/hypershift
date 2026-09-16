@@ -1311,6 +1311,30 @@ guest KAS (TLS verified) and fails only on RBAC — the `openshift-console-user-
 operator-owned gap (Phase 2 / productization), not a bridge bug. Upstream: PR
 openshift/console#17185 / Jira GCP-1219.
 
+**Third instance — off-cluster ignores `-service-ca-file` (also FIXED, Phase 2).** The two
+fixes above cover the guest **KAS** trust (`-ca-file` = root-ca). Monitoring adds a *second* trust
+domain: Thanos/Alertmanager (and terminal/plugins/catalogd/gitops) present **service-serving
+certs** signed by the **service-ca** (`openshift-service-serving-signer`), a different signer than
+the KAS CA. The **in-cluster** branch already keeps these separate — KAS trust from the in-cluster
+CA, service trust from **`-service-ca-file`** (`cmd/bridge/main.go` `case "in-cluster"`, the
+`if *fServiceCAFile != ""` block). But the **off-cluster** branch builds a *single*
+`serviceProxyTLSConfig` from `-ca-file` and uses it for **both** the KAS proxy and the service
+proxies, and never reads the (already globally-defined) `-service-ca-file` flag. So off-cluster
+monitoring can't verify the service-serving certs — TLS fails. Fix (same PR): in the off-cluster
+branch, keep `-ca-file` for the KAS proxy and build a separate service-proxy trust from
+`-service-ca-file`, falling back to `-ca-file` when unset (backwards compatible). Added a
+`mustLoadCAPool` helper + unit test. Deployment side mounts the HCP-namespace `service-serving-ca`
+ConfigMap (key `service-ca.crt`) and passes `-service-ca-file`. **Verified live:** console →
+konnectivity socks5 → `thanos-querier:9091` = HTTP 200 and PromQL `up` returns data. Full plan for
+the code change: `_console-research/OFF_CLUSTER_SERVICE_CA_FILE_PLAN.md`. Upstream: PR
+openshift/console#17185 / Jira GCP-1219.
+
+> Note: reaching the guest monitoring services also required a **guest VPC firewall fix** (allow
+> OVN-K geneve UDP 6081 between nodes) — without it all cross-node pod networking, and thus the
+> konnectivity tunnel to guest pods/services, is silently broken. That is a HyperShift GCP
+> infra-provisioning gap, not a console bug. See `CONSOLE_CONTROL_PLANE_PHASE2_PLAN.md` §B.6 and
+> `console/guest/allow-geneve-firewall.sh`.
+
 ---
 
 **`downloads` (CLI download server) — now IMPLEMENTED in Phase 1.** Deployed control-plane-side

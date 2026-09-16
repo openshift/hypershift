@@ -182,6 +182,29 @@ patches:
           # though the image is the genuine OCP release-payload console.
           # (Appended, not inserted, for the same arg-index reason as above.)
           - -branding=ocp
+          # ---- Phase 2: monitoring (Observe -> Metrics / Alerts). ----
+          # The guest Thanos/Alertmanager are ClusterIP Services on the guest
+          # service network, unreachable from this control-plane-side pod
+          # directly. The konnectivity-proxy-socks5 sidecar (added below) tunnels
+          # to them; the HTTP(S)_PROXY env on this container (added below) routes
+          # these proxy dials through it, while NO_PROXY keeps the in-namespace
+          # KAS dial direct. The bridge only builds the Thanos/Alertmanager
+          # proxies in off-cluster mode when these flags are set
+          # (cmd/bridge/main.go: fK8sModeOffClusterThanos / *Alertmanager).
+          # Ports per the thanos-querier/alertmanager-main Service (9091 = all
+          # Thanos endpoints, gated by cluster-monitoring-view; 9094 = the
+          # Alertmanager web port). The bridge appends /api to each URL.
+          - -k8s-mode-off-cluster-thanos=https://thanos-querier.openshift-monitoring.svc:9091
+          - -k8s-mode-off-cluster-alertmanager=https://alertmanager-main.openshift-monitoring.svc:9094
+          # Thanos/Alertmanager present service-serving certs signed by the
+          # service-ca (openshift-service-serving-signer), a DIFFERENT CA from
+          # the KAS -ca-file (root-ca). The stock off-cluster bridge trusts only
+          # -ca-file for every proxy; the patched image adds -service-ca-file
+          # support to the off-cluster branch (mirrors in-cluster), keeping
+          # -ca-file for KAS. Mounted from the HCP-namespace service-serving-ca
+          # ConfigMap (volume added below). Inert on the stock bridge, so safe if
+          # the image is ever reverted.
+          - -service-ca-file=/var/run/service-ca/service-ca.crt
 
       # -- Volumes/mounts the operator would otherwise inject: the console's own
       #    serving cert, the guest KAS's serving CA, and the OIDC client secret
@@ -193,6 +216,62 @@ patches:
           - { name: guest-ca, mountPath: /var/run/guest-ca, readOnly: true }
           - { name: oidc-client-secret, mountPath: /var/oidc, readOnly: true }
           - { name: session-keys, mountPath: /var/session, readOnly: true }
+          # Phase 2: service-serving CA for the Thanos/Alertmanager proxies
+          # (-service-ca-file above). Key service-ca.crt.
+          - { name: service-ca, mountPath: /var/run/service-ca, readOnly: true }
+
+      # ---- Phase 2: konnectivity socks5 proxy env for this bridge container ----
+      # Routes the Thanos/Alertmanager proxy dials through the socks5 sidecar
+      # (added below) into the guest service network. NO_PROXY keeps the guest
+      # KAS in-namespace ClusterIP dial DIRECT (not tunneled) so resource
+      # browsing + the pod terminal — which go via KAS — are unaffected. The
+      # bridge's service proxies honor these env vars for non-websocket requests
+      # (pkg/proxy/proxy.go: Proxy: http.ProxyFromEnvironment).
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - { name: HTTP_PROXY, value: "socks5://127.0.0.1:8090" }
+          - { name: HTTPS_PROXY, value: "socks5://127.0.0.1:8090" }
+          - { name: NO_PROXY, value: "kube-apiserver.REPLACE_HCP_NAMESPACE.svc,localhost,127.0.0.1" }
+
+      # ---- Phase 2: konnectivity socks5 sidecar ----
+      # Tunnels the bridge's HTTP(S)_PROXY traffic into the guest service network
+      # via the reverse konnectivity tunnel, resolving guest Service -> ClusterIP
+      # from the guest API (via KUBECONFIG). Shape mirrors the framework's
+      # InjectKonnectivityContainer({Mode: Socks5}) (support/controlplane-component/
+      # konnectivity-container.go), copied verbatim from the live per-HCP
+      # catalog-operator sidecar: same command/args/env/mounts. --prefer-ipv4 is
+      # set because this HCP is single-stack IPv4 (the framework forces it there).
+      # Image is a transform-friendly placeholder rewritten by the overlay's
+      # images: transform to the CPO image (which ships the control-plane-operator
+      # binary with the konnectivity-socks5-proxy subcommand).
+      - op: add
+        path: /spec/template/spec/containers/-
+        value:
+          name: konnectivity-proxy-socks5
+          image: REPLACE_CPO_IMAGE_REGISTRY:REPLACE_CPO_IMAGE_TAG
+          command: [/usr/bin/control-plane-operator, konnectivity-socks5-proxy]
+          args: [run, --prefer-ipv4=true]
+          env:
+            - name: KUBECONFIG
+              value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
+          resources:
+            requests:
+              cpu: 10m
+              memory: 30Mi
+          volumeMounts:
+            - { name: konnectivity-kubeconfig, mountPath: /etc/kubernetes/secrets/kubeconfig }
+            - { name: konnectivity-proxy-cert, mountPath: /etc/konnectivity/proxy-client }
+            - { name: konnectivity-proxy-ca, mountPath: /etc/konnectivity/proxy-ca }
+            - { name: konnectivity-tmp, mountPath: /tmp }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          terminationMessagePolicy: FallbackToLogsOnError
       - op: add
         path: /spec/template/spec/volumes
         value:
@@ -212,6 +291,34 @@ patches:
             secret:
               secretName: console-session # keys: encryptionKey (32B), authenticationKey (64B)
               defaultMode: 416
+          # Phase 2: service-serving CA for the Thanos/Alertmanager proxies.
+          # This HCP-namespace ConfigMap holds the service-ca
+          # (openshift-service-serving-signer) under key service-ca.crt.
+          - name: service-ca
+            configMap:
+              name: service-serving-ca
+              items: [{ key: service-ca.crt, path: service-ca.crt }]
+          # ---- Phase 2: konnectivity socks5 sidecar volumes ----
+          # Guest admin kubeconfig the sidecar's resolver uses to look up guest
+          # Service -> ClusterIP (reachable via the in-namespace KAS ClusterIP).
+          - name: konnectivity-kubeconfig
+            secret:
+              secretName: service-network-admin-kubeconfig
+              defaultMode: 416
+          # Konnectivity client cert (tls.crt/tls.key at the sidecar's default
+          # -tls-cert-path/-tls-key-path under /etc/konnectivity/proxy-client).
+          - name: konnectivity-proxy-cert
+            secret:
+              secretName: konnectivity-client
+              defaultMode: 416
+          # Konnectivity CA (ca.crt at the sidecar's default -ca-cert-path under
+          # /etc/konnectivity/proxy-ca).
+          - name: konnectivity-proxy-ca
+            configMap:
+              name: konnectivity-ca-bundle
+          # Writable /tmp for the sidecar (readOnlyRootFilesystem: true).
+          - name: konnectivity-tmp
+            emptyDir: {}
 
   - target:
       kind: Service
