@@ -493,9 +493,19 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	azureCluster.Spec.NetworkSpec.Vnet.Name = vnetName
 	azureCluster.Spec.NetworkSpec.Vnet.ResourceGroup = vnetResourceGroup
 	azureCluster.Spec.SubscriptionID = hcluster.Spec.Platform.Azure.SubscriptionID
-	azureCluster.Spec.NetworkSpec.NodeOutboundLB = &capiazure.LoadBalancerSpec{}
-	azureCluster.Spec.NetworkSpec.NodeOutboundLB.Name = hcluster.Spec.InfraID
-	azureCluster.Spec.NetworkSpec.NodeOutboundLB.BackendPool.Name = hcluster.Spec.InfraID
+
+	// NodeOutboundLB makes CAPZ attach every worker NIC to the cluster Load Balancer's backend pool.
+	// CAPZ builds that backend pool ID by string construction without checking it exists, so if no
+	// Load Balancer was provisioned the NIC create is rejected by ARM with InvalidResourceReference
+	// and the node never comes up. Under UserDefinedRouting the cluster owner provisions no Load
+	// Balancer for egress, so leave NodeOutboundLB unset.
+	if hcluster.Spec.Platform.Azure.OutboundType == hyperv1.AzureOutboundTypeUserDefinedRouting {
+		azureCluster.Spec.NetworkSpec.NodeOutboundLB = nil
+	} else {
+		azureCluster.Spec.NetworkSpec.NodeOutboundLB = &capiazure.LoadBalancerSpec{}
+		azureCluster.Spec.NetworkSpec.NodeOutboundLB.Name = hcluster.Spec.InfraID
+		azureCluster.Spec.NetworkSpec.NodeOutboundLB.BackendPool.Name = hcluster.Spec.InfraID
+	}
 
 	azureCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
 		Host: apiEndpoint.Host,

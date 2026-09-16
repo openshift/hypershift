@@ -102,6 +102,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, util.NetworkSecurityGroupIDDescription)
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, util.ResourceGroupTagsDescription)
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, util.SubnetIDDescription)
+	flags.StringVar(&opts.OutboundType, "outbound-type", opts.OutboundType, util.OutboundTypeDescription)
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", util.OIDCIssuerURLDescription)
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
@@ -134,6 +135,7 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, util.NetworkSecurityGroupIDDescription)
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, util.ResourceGroupTagsDescription)
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
+	flags.StringVar(&opts.OutboundType, "outbound-type", opts.OutboundType, util.OutboundTypeDescription)
 
 	// Self-managed Azure identity flags
 	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
@@ -195,6 +197,10 @@ func (o *RawCreateOptions) Validate(ctx context.Context, coreOpts *core.CreateOp
 		}
 	default:
 		return nil, fmt.Errorf("--oauth-publishing-strategy must be either Route or LoadBalancer")
+	}
+
+	if err := azureinfra.ValidateOutboundType(hyperv1.AzureOutboundType(o.OutboundType)); err != nil {
+		return nil, err
 	}
 
 	// Validate NAT subnet resource ID format if provided
@@ -391,6 +397,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			OutboundType:      hyperv1.AzureOutboundType(o.OutboundType),
 		},
 	}
 
@@ -721,5 +728,6 @@ func CreateInfraOptions(azureOpts *ValidatedCreateOptions, opts *core.CreateOpti
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
 		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
 		DisableClusterCapabilities:  opts.DisableClusterCapabilities,
+		OutboundType:                hyperv1.AzureOutboundType(azureOpts.OutboundType),
 	}, nil
 }

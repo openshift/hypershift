@@ -33,6 +33,7 @@ type RawCreateOptions struct {
 	EndpointAccessPrivateNATSubnetID                    string
 	EndpointAccessPrivateAdditionalAllowedSubscriptions []string
 	OAuthPublishingStrategy                             string
+	OutboundType                                        string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }

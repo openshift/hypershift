@@ -50,6 +50,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool. If not provided, a new Network Security Group will be created.")
 	cmd.Flags().StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed. If not provided, a new subnet will be created.")
 	cmd.Flags().StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "The VNet ID to use. If not provided, a new VNet will be created.")
+	cmd.Flags().StringVar((*string)(&opts.OutboundType), "outbound-type", string(opts.OutboundType), util.OutboundTypeDescription)
 	cmd.Flags().StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	cmd.Flags().StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to file containing ARO HCP managed identities JSON")
 	cmd.Flags().StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, "Path to file containing ARO HCP data plane identities JSON")
@@ -110,6 +111,7 @@ func BindProductFlags(opts *CreateInfraOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, util.VnetIDDescription)
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, util.SubnetIDDescription)
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, util.NetworkSecurityGroupIDDescription)
+	flags.StringVar((*string)(&opts.OutboundType), "outbound-type", string(opts.OutboundType), util.OutboundTypeDescription)
 
 	// Self-managed Azure identity flags
 	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
@@ -312,11 +314,15 @@ func (o *CreateInfraOptions) createDNSAndLBResources(ctx context.Context, l logr
 	}
 	l.Info("Successfully created public IP address for guest cluster egress load balancer")
 
-	err = netMgr.CreateLoadBalancer(ctx, resourceGroupName, o.InfraID, o.Location, publicIPAddress)
+	err = netMgr.CreateLoadBalancer(ctx, resourceGroupName, o.InfraID, o.Location, publicIPAddress, o.OutboundType)
 	if err != nil {
 		return err
 	}
-	l.Info("Successfully created guest cluster egress load balancer")
+	if o.OutboundType == hyperv1.AzureOutboundTypeUserDefinedRouting {
+		l.Info("Successfully created guest cluster load balancer without an outbound rule; the cluster owner must provide egress for the node subnet", "outboundType", o.OutboundType)
+	} else {
+		l.Info("Successfully created guest cluster egress load balancer")
+	}
 	return nil
 }
 
@@ -347,7 +353,22 @@ func (o *CreateInfraOptions) Validate() error {
 		return fmt.Errorf("--dns-zone-rg-name is required when --assign-identity-roles or --assign-custom-hcp-roles is set")
 	}
 
+	if err := ValidateOutboundType(o.OutboundType); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// ValidateOutboundType checks that outboundType is a value the API accepts. An empty value is
+// allowed and means the API default, LoadBalancer.
+func ValidateOutboundType(outboundType hyperv1.AzureOutboundType) error {
+	switch outboundType {
+	case "", hyperv1.AzureOutboundTypeLoadBalancer, hyperv1.AzureOutboundTypeUserDefinedRouting:
+		return nil
+	default:
+		return fmt.Errorf("--outbound-type must be either %s or %s", hyperv1.AzureOutboundTypeLoadBalancer, hyperv1.AzureOutboundTypeUserDefinedRouting)
+	}
 }
 
 // validateDeploymentModelFlags validates that deployment model flags are not conflicting

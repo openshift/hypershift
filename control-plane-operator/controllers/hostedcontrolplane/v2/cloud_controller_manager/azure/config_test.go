@@ -74,6 +74,45 @@ func TestConfig(t *testing.T) {
 	})
 }
 
+func TestConfigDisableOutboundSNAT(t *testing.T) {
+	// Outbound SNAT must stay disabled for every outbound type. A Service of type LoadBalancer
+	// creates a load balancing rule on the cluster Load Balancer, and a rule that does not disable
+	// outbound SNAT is by itself a working egress path out through the ingress frontend IP. Under
+	// UserDefinedRouting that address is not one the cluster owner provisioned, so enabling outbound
+	// SNAT there would route egress through infrastructure the customer never asked for. Egress for
+	// the LoadBalancer outbound type comes from the Load Balancer's outbound rule, not from implicit
+	// SNAT on load balancing rules.
+	testCases := []struct {
+		name         string
+		outboundType hyperv1.AzureOutboundType
+	}{
+		{
+			name: "When outboundType is unset it should disable outbound SNAT",
+		},
+		{
+			name:         "When outboundType is LoadBalancer it should disable outbound SNAT",
+			outboundType: hyperv1.AzureOutboundTypeLoadBalancer,
+		},
+		{
+			name:         "When outboundType is UserDefinedRouting it should disable outbound SNAT",
+			outboundType: hyperv1.AzureOutboundTypeUserDefinedRouting,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hcp := newTestHCP(nil)
+			hcp.Spec.Platform.Azure.OutboundType = tc.outboundType
+
+			cfg, err := azureConfig(component.WorkloadContext{HCP: hcp}, false)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(cfg.DisableOutboundSNAT).To(BeTrue())
+		})
+	}
+}
+
 // newTestHCP creates a HostedControlPlane with default Azure configuration for testing.
 // Custom annotations can be provided to override defaults.
 func newTestHCP(annotations map[string]string) *hyperv1.HostedControlPlane {

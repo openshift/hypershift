@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -458,7 +459,13 @@ func newOutboundRule(name string, idPrefix string, loadBalancerName string, infr
 //   - Frontend IP configuration with a public IP address
 //   - Backend address pool for guest cluster nodes
 //   - Health probe for monitoring node health
-//   - Outbound rule for explicit egress SNAT configuration
+//   - Outbound rule for explicit egress SNAT configuration, unless outboundType is
+//     UserDefinedRouting
+//
+// Under UserDefinedRouting the cluster owner provides egress, so no outbound rule is created.
+// The Load Balancer itself is still created: the Azure cloud provider needs it to back Services
+// of type LoadBalancer, and its load balancing rules carry disableOutboundSNAT: true (set in the
+// cloud provider config), so they never become an egress path.
 //
 // Parameters:
 //   - location: Azure region where the load balancer will be created
@@ -466,10 +473,11 @@ func newOutboundRule(name string, idPrefix string, loadBalancerName string, infr
 //   - idPrefix: Azure resource ID prefix for constructing component references
 //   - loadBalancerName: Name for the load balancer resource
 //   - publicIPAddress: Public IP address to use for the frontend configuration
+//   - outboundType: Outbound connectivity method; an empty value is treated as LoadBalancer
 //
 // Returns a fully configured armnetwork.LoadBalancer with Standard SKU.
-func NewLoadBalancer(location string, infraID string, idPrefix string, loadBalancerName string, publicIPAddress *armnetwork.PublicIPAddress) armnetwork.LoadBalancer {
-	return armnetwork.LoadBalancer{
+func NewLoadBalancer(location string, infraID string, idPrefix string, loadBalancerName string, publicIPAddress *armnetwork.PublicIPAddress, outboundType hyperv1.AzureOutboundType) armnetwork.LoadBalancer {
+	lb := armnetwork.LoadBalancer{
 		Location: ptr.To(location),
 		SKU: &armnetwork.LoadBalancerSKU{
 			Name: ptr.To(armnetwork.LoadBalancerSKUNameStandard),
@@ -484,15 +492,21 @@ func NewLoadBalancer(location string, infraID string, idPrefix string, loadBalan
 			Probes: []*armnetwork.Probe{
 				newHealthProbe(infraID, 30595, "/healthz"),
 			},
-			OutboundRules: []*armnetwork.OutboundRule{
-				newOutboundRule(infraID, idPrefix, loadBalancerName, infraID),
-			},
 		},
 	}
+
+	if outboundType != hyperv1.AzureOutboundTypeUserDefinedRouting {
+		lb.Properties.OutboundRules = []*armnetwork.OutboundRule{
+			newOutboundRule(infraID, idPrefix, loadBalancerName, infraID),
+		}
+	}
+
+	return lb
 }
 
-// CreateLoadBalancer creates a load balancer (LB) with an outbound rule for guest cluster egress; azure cloud provider will reuse this LB to add a public ip address and the load balancer rules
-func (n *NetworkManager) CreateLoadBalancer(ctx context.Context, resourceGroupName string, infraID string, location string, publicIPAddress *armnetwork.PublicIPAddress) error {
+// CreateLoadBalancer creates a load balancer (LB) with an outbound rule for guest cluster egress; azure cloud provider will reuse this LB to add a public ip address and the load balancer rules.
+// When outboundType is UserDefinedRouting the outbound rule is omitted and the LB provides no egress.
+func (n *NetworkManager) CreateLoadBalancer(ctx context.Context, resourceGroupName string, infraID string, location string, publicIPAddress *armnetwork.PublicIPAddress, outboundType hyperv1.AzureOutboundType) error {
 	idPrefix := fmt.Sprintf("subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/loadBalancers", n.subscriptionID, resourceGroupName)
 	loadBalancerName := infraID
 
@@ -505,7 +519,7 @@ func (n *NetworkManager) CreateLoadBalancer(ctx context.Context, resourceGroupNa
 		return fmt.Errorf("failed to create load balancer client, %w", err)
 	}
 
-	loadBalancer := NewLoadBalancer(location, infraID, idPrefix, loadBalancerName, publicIPAddress)
+	loadBalancer := NewLoadBalancer(location, infraID, idPrefix, loadBalancerName, publicIPAddress, outboundType)
 	pollerResp, err := loadBalancerClient.BeginCreateOrUpdate(ctx, resourceGroupName, loadBalancerName, loadBalancer, nil)
 
 	if err != nil {

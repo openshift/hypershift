@@ -28,6 +28,7 @@ const (
 	VnetIDDescription                 = "Full resource ID of an existing VNET to use for the cluster (e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<name>). If omitted, a new VNET will be created."
 	SubnetIDDescription               = "Full resource ID of an existing subnet where VMs will be placed. If omitted for cluster creation, a new subnet will be created."
 	NetworkSecurityGroupIDDescription = "Full resource ID of an existing Network Security Group for the default NodePool. If omitted, a new NSG will be created."
+	OutboundTypeDescription           = "How worker nodes reach the internet: LoadBalancer (default) creates a Load Balancer outbound rule, UserDefinedRouting creates no egress infrastructure and requires the node subnet to already have egress (NAT Gateway, firewall, or a route to one). UserDefinedRouting cannot be set on an existing cluster."
 
 	// Identity
 	WorkloadIdentitiesFileDescription = "Path to a JSON file containing workload identity client IDs that map Azure identities to HyperShift components. Required for self-managed Azure clusters using workload identity authentication."
