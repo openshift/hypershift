@@ -170,6 +170,39 @@ func TestLookupPublicZone(t *testing.T) {
 	}
 }
 
+func TestLookupZone(t *testing.T) {
+	t.Run("When a pagination token repeats non-consecutively, it should return a redacted duplicate-token error", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		firstToken := "opaque-hosted-zone-token-a"
+		secondToken := "opaque-hosted-zone-token-b"
+
+		gomock.InOrder(
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					g.Expect(input.Marker).To(BeNil())
+					return &route53.ListHostedZonesOutput{IsTruncated: true, NextMarker: aws.String(firstToken)}, nil
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					g.Expect(aws.ToString(input.Marker)).To(Equal(firstToken))
+					return &route53.ListHostedZonesOutput{IsTruncated: true, NextMarker: aws.String(secondToken)}, nil
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					g.Expect(aws.ToString(input.Marker)).To(Equal(secondToken))
+					return &route53.ListHostedZonesOutput{IsTruncated: true, NextMarker: aws.String(firstToken)}, nil
+				}),
+		)
+
+		_, err := LookupZone(cancelledCtx(), mockR53, testZoneName, false)
+		g.Expect(err).To(MatchError("failed to list hosted zones: duplicate pagination token"))
+		g.Expect(err.Error()).NotTo(ContainSubstring(firstToken))
+		g.Expect(err.Error()).NotTo(ContainSubstring(secondToken))
+	})
+}
+
 func TestCreatePrivateZone(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -190,7 +223,7 @@ func TestCreatePrivateZone(t *testing.T) {
 			zoneName: testZoneName,
 			vpcID:    testVPCID,
 			setupMock: func(m *awsapi.MockROUTE53API) {
-				// LookupZone finds the existing zone
+				// lookupZones finds the existing zone
 				m.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(privateZonePage("EXISTZONE", testZoneName), nil)
 				m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -225,7 +258,7 @@ func TestCreatePrivateZone(t *testing.T) {
 			zoneName: testZoneName,
 			vpcID:    testVPCID,
 			setupMock: func(m *awsapi.MockROUTE53API) {
-				// LookupZone finds no zone
+				// lookupZones finds no zone
 				m.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(emptyZonePage(), nil)
 				// CreateHostedZone
@@ -549,6 +582,47 @@ func TestCreatePrivateZone(t *testing.T) {
 		g.Expect(callerReferences[0]).To(Equal(callerReferences[1]))
 	})
 
+	t.Run("When duplicate-response recovery sees a non-consecutive repeated pagination token, it should return a redacted duplicate-token error", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		firstToken := "opaque-recovery-token-a"
+		secondToken := "opaque-recovery-token-b"
+		var callerReference string
+
+		gomock.InOrder(
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(emptyZonePage(), nil),
+			mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+					callerReference = aws.ToString(input.CallerReference)
+					return nil, &route53types.HostedZoneAlreadyExists{Message: aws.String("already created")}
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					g.Expect(input.Marker).To(BeNil())
+					return &route53.ListHostedZonesOutput{IsTruncated: true, NextMarker: aws.String(firstToken)}, nil
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					g.Expect(aws.ToString(input.Marker)).To(Equal(firstToken))
+					return &route53.ListHostedZonesOutput{IsTruncated: true, NextMarker: aws.String(secondToken)}, nil
+				}),
+			mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
+					g.Expect(aws.ToString(input.Marker)).To(Equal(secondToken))
+					return &route53.ListHostedZonesOutput{IsTruncated: true, NextMarker: aws.String(firstToken)}, nil
+				}),
+		)
+
+		o := &CreateInfraOptions{Region: "us-east-1"}
+		id, err := o.CreatePrivateZone(cancelledCtx(), logr.Discard(), mockR53, testZoneName, testVPCID, false, mockR53, "")
+		g.Expect(err).To(MatchError("failed to create hosted zone: duplicate pagination token"))
+		g.Expect(err.Error()).NotTo(ContainSubstring(firstToken))
+		g.Expect(err.Error()).NotTo(ContainSubstring(secondToken))
+		g.Expect(err.Error()).NotTo(ContainSubstring(callerReference))
+		g.Expect(id).To(BeEmpty())
+	})
+
 	t.Run("When a cross-account successful response is lost, it should recover only the zone with the same caller reference", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
@@ -647,7 +721,7 @@ func TestCreatePrivateZone(t *testing.T) {
 		g.Expect(id).To(Equal("RECOVEREDZONE"))
 	})
 
-	t.Run("When a duplicate response belongs to an unrelated zone, it should return an ownership error", func(t *testing.T) {
+	t.Run("When a duplicate-response zone is not associated with the requested VPC, it should return a retryable association error without exposing the zone ID", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockR53 := awsapi.NewMockROUTE53API(ctrl)
@@ -672,34 +746,47 @@ func TestCreatePrivateZone(t *testing.T) {
 
 		o := &CreateInfraOptions{Region: "us-east-1"}
 		id, err := o.CreatePrivateZone(cancelledCtx(), logr.Discard(), mockR53, testZoneName, testVPCID, false, mockR53, "")
-		g.Expect(err).To(MatchError(ContainSubstring("cannot yet verify VPC ownership")))
+		g.Expect(err).To(MatchError(ContainSubstring("cannot yet verify hosted zone VPC association")))
 		g.Expect(err.Error()).NotTo(ContainSubstring("UNRELATEDZONE"))
+		g.Expect(err.Error()).NotTo(ContainSubstring(callerReference))
 		g.Expect(id).To(BeEmpty())
 	})
 }
 
 func TestRoute53VPCMatchingHostedZone(t *testing.T) {
-	g := NewWithT(t)
-	ctrl := gomock.NewController(t)
-	mockR53 := awsapi.NewMockROUTE53API(ctrl)
-	opaqueToken := "opaque-route53-pagination-token"
+	t.Run("When a pagination token repeats non-consecutively, it should return a redacted duplicate-token error", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockR53 := awsapi.NewMockROUTE53API(ctrl)
+		firstToken := "opaque-vpc-token-a"
+		secondToken := "opaque-vpc-token-b"
 
-	gomock.InOrder(
-		mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&route53.ListHostedZonesByVPCOutput{NextToken: aws.String(opaqueToken)}, nil),
-		mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
-				g.Expect(aws.ToString(input.NextToken)).To(Equal(opaqueToken))
-				return &route53.ListHostedZonesByVPCOutput{NextToken: aws.String(opaqueToken)}, nil
-			}),
-	)
+		gomock.InOrder(
+			mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+					g.Expect(input.NextToken).To(BeNil())
+					return &route53.ListHostedZonesByVPCOutput{NextToken: aws.String(firstToken)}, nil
+				}),
+			mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+					g.Expect(aws.ToString(input.NextToken)).To(Equal(firstToken))
+					return &route53.ListHostedZonesByVPCOutput{NextToken: aws.String(secondToken)}, nil
+				}),
+			mockR53.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+					g.Expect(aws.ToString(input.NextToken)).To(Equal(secondToken))
+					return &route53.ListHostedZonesByVPCOutput{NextToken: aws.String(firstToken)}, nil
+				}),
+		)
 
-	_, err := route53VPCMatchingHostedZone(t.Context(), mockR53, &route53types.VPC{
-		VPCId:     aws.String(testVPCID),
-		VPCRegion: route53types.VPCRegionUsEast1,
-	}, map[string]struct{}{})
-	g.Expect(err).To(MatchError("duplicate pagination token"))
-	g.Expect(err.Error()).NotTo(ContainSubstring(opaqueToken))
+		_, err := route53VPCMatchingHostedZone(t.Context(), mockR53, &route53types.VPC{
+			VPCId:     aws.String(testVPCID),
+			VPCRegion: route53types.VPCRegionUsEast1,
+		}, map[string]struct{}{})
+		g.Expect(err).To(MatchError("duplicate pagination token"))
+		g.Expect(err.Error()).NotTo(ContainSubstring(firstToken))
+		g.Expect(err.Error()).NotTo(ContainSubstring(secondToken))
+	})
 }
 
 func TestCleanupPublicZone(t *testing.T) {
