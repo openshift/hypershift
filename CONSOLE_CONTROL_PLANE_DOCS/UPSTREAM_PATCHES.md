@@ -12,6 +12,7 @@ we consume (safe to drop the local workaround).
 |------|--------|----------------|------|----|--------|--------------------------------------|
 | `openshift/console` | Honor `-ca-file` for the off-cluster k8s resource proxy TLS trust (wire it into `serviceProxyTLSConfig.RootCAs`, `cmd/bridge/main.go`) | Off-cluster bridge can't verify the HyperShift guest KAS (private `root-ca`) without it; only skip-verify worked | [GCP-1219](https://redhat.atlassian.net/browse/GCP-1219) | [openshift/console#17185](https://github.com/openshift/console/pull/17185) | pr-open | Custom image `quay.io/patmarti/console:*` (built by `console/build-console.sh`, branch `off-cluster-ca-file-trust`). Revert overlay `images:` to the stock release console digest once shipped. |
 | `openshift/hypershift` (CPO) | Own the console/downloads exposure Routes + Private ExternalName services + router backends (GCP) | The HCP router only builds backends for known route names, and Private needs ExternalName services for external-dns → PSC; console/downloads aren't HyperShift service types | [GCP-1202](https://redhat.atlassian.net/browse/GCP-1202) | [openshift/hypershift#9622](https://github.com/openshift/hypershift/pull/9622) (draft/RFC) | pr-open | Custom CPO image (`console/build.sh`); carried on branch `console-control-plane-study`. Console/downloads-specific hardcode — RFC proposes a generic mechanism. |
+| `openshift/cluster-network-operator` | Set container-level `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]` (and multus pod-level `runAsNonRoot: true`) on its self-managed network operands when on an SCC-less/restricted-PSA management cluster | On GKE the HCP namespace enforces restricted PSA; CNO's templates only set pod-level `runAsUser`/`runAsNonRoot`/`seccompProfile` (#2757/#2780), so 4 CNO Deployments fail admission → CSRs never approved → nodes never Ready | not yet filed | not yet filed | local | Live strategic-merge patch on the 4 Deployments (see `CNO_RESTRICTED_PSA_GAP.md`). **Stopgap only** — CNO owns these objects and reconciles the patch away. Not an image; re-apply if CNO reverts. |
 
 ## Notes / candidates not yet filed
 
@@ -33,6 +34,12 @@ we consume (safe to drop the local workaround).
 - **`openshift/console-operator` / CVO:** none required for Part 1. A future phase that makes the
   control-plane-side console operator-managed (capability gate, placement flag) would touch these —
   add rows here when that work starts.
+- **`openshift/cluster-network-operator`:** its self-managed network operands
+  (`network-node-identity`, `ovnkube-control-plane`, `multus-admission-controller`,
+  `cloud-network-config-controller`) violate restricted PSA on SCC-less management clusters (GKE),
+  blocking node bring-up entirely. Worked around live with a stopgap that CNO reverts; needs an
+  upstream CNO fix. Not console-specific — surfaced by the spike. Full analysis + the exact patch:
+  `CNO_RESTRICTED_PSA_GAP.md`. File Jira + CNO PR when this moves past the stopgap.
 
 ## When a patch ships
 

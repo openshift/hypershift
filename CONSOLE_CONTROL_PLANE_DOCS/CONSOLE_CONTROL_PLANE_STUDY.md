@@ -1172,6 +1172,20 @@ when the console-operator ports the operand Deployment generation upstream (§14
 generated pod/container spec already includes this `securityContext` (confirmed above) — no
 new PSS work needed there either, provided the ported code path doesn't drop it.
 
+### 20.5 Same class of gap in CNO's self-managed operands (blocks node bring-up)
+
+The same restricted-PSA enforcement bites a different, non-console owner:
+**cluster-network-operator (CNO)** renders four network Deployments
+(`network-node-identity`, `ovnkube-control-plane`, `multus-admission-controller`,
+`cloud-network-config-controller`) from its own bindata, outside CPO's component framework, and its
+templates set only the **pod-level** security fields — missing the container-level
+`allowPrivilegeEscalation: false` / `capabilities.drop: [ALL]` restricted PSA requires. On GKE
+(no SCC → PSA fallback) all four fail admission, so node CSRs are never approved and guest nodes
+never become Ready. This is independent of the console spike (it blocks any zero-SCC HyperShift
+guest), but the spike surfaced it when scaling nodes. Worked around live with a stopgap that CNO
+reverts; needs an upstream CNO fix mirroring CPO's GCP-205 work. Full analysis + the exact patch:
+`CNO_RESTRICTED_PSA_GAP.md`; tracker row in `UPSTREAM_PATCHES.md`.
+
 ---
 
 ## 21. Kustomize tree restructure — origin → hypershift → pat-console
