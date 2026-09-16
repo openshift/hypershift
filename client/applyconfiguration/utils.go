@@ -513,6 +513,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationStatusApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ConcurrencyConfiguration"):
 		return &applyconfigurationschedulingv1alpha1.ConcurrencyConfigurationApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ContainerRequests"):
+		return &applyconfigurationschedulingv1alpha1.ContainerRequestsApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ContainerResourcePolicy"):
+		return &applyconfigurationschedulingv1alpha1.ContainerResourcePolicyApplyConfiguration{}
+	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ContainerResources"):
+		return &applyconfigurationschedulingv1alpha1.ContainerResourcesApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("Effects"):
 		return &applyconfigurationschedulingv1alpha1.EffectsApplyConfiguration{}
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("Management"):

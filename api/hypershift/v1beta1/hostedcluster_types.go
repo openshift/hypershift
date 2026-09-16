@@ -294,6 +294,10 @@ const (
 	// the memory footprint of the kube-apiserver during upgrades.
 	KubeAPIServerGOMemoryLimitAnnotation = "hypershift.openshift.io/kube-apiserver-gomemlimit"
 
+	// ContainerResourcePolicyAnnotation transports the JSON-encoded experimental
+	// scheduling ContainerResourcePolicy from HostedCluster to HostedControlPlane.
+	ContainerResourcePolicyAnnotation = "hypershift.openshift.io/container-resource-policy"
+
 	// KubeAPIServerMaximumRequestsInFlight allows overriding the default value for the kube-apiserver max-requests-inflight
 	// flag. This allows controlling how many concurrent requests can be handled by the Kube API server at any given time.
 	KubeAPIServerMaximumRequestsInFlight = "hypershift.openshift.io/kube-apiserver-max-requests-inflight"
