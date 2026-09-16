@@ -197,10 +197,11 @@ rule: geneve rx became nonzero, cross-node TCP recovered (timeout → connection
 established), and console → socks5 → thanos went **504 → HTTP 200**.
 
 - Repro/fix script: `console/guest/allow-geneve-firewall.sh`.
-- **Productization:** this is a HyperShift GCP infra-provisioning gap — the node
-  VPC must ship a geneve allow rule. Being fixed in `gcp-hcp-ctl`
-  (cross-node-traffic fix). Not console work, but a hard prerequisite for any
-  guest pod/service-network feature (monitoring, plugins) on GCP.
+- **Productization:** this is a GCP infra-provisioning gap — the node VPC must
+  ship a geneve allow rule. Fixed upstream in
+  [openshift-online/gcp-hcp-ctl#36](https://github.com/openshift-online/gcp-hcp-ctl/pull/36)
+  (tracked in `UPSTREAM_PATCHES.md`). Not console work, but a hard prerequisite
+  for any guest pod/service-network feature (monitoring, plugins) on GCP.
 
 ## B.5 Non-goals / risks
 

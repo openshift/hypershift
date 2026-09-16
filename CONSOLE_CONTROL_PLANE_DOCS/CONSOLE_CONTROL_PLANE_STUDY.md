@@ -1331,9 +1331,10 @@ openshift/console#17185 / Jira GCP-1219.
 
 > Note: reaching the guest monitoring services also required a **guest VPC firewall fix** (allow
 > OVN-K geneve UDP 6081 between nodes) — without it all cross-node pod networking, and thus the
-> konnectivity tunnel to guest pods/services, is silently broken. That is a HyperShift GCP
-> infra-provisioning gap, not a console bug. See `CONSOLE_CONTROL_PLANE_PHASE2_PLAN.md` §B.6 and
-> `console/guest/allow-geneve-firewall.sh`.
+> konnectivity tunnel to guest pods/services, is silently broken. That is a GCP infra-provisioning
+> gap, not a console bug; fixed upstream in openshift-online/gcp-hcp-ctl#36. See
+> `CONSOLE_CONTROL_PLANE_PHASE2_PLAN.md` §B.6, `console/guest/allow-geneve-firewall.sh`, and the
+> `UPSTREAM_PATCHES.md` tracker.
 
 ---
 
