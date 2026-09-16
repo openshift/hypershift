@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -113,7 +113,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
-				nodepool.PerformanceProfileConfigMapLabel: "true",
+				npconst.PerformanceProfileConfigMapLabel: "true",
 			}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
 			for i := range list.Items {
@@ -129,18 +129,18 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		},
 		[]e2eutil.Predicate[*corev1.ConfigMap]{
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
-				if want, got := netutil.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength), configMap.Name; want != got {
+				if want, got := netutil.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, npconst.QualifiedNameMaxLength), configMap.Name; want != got {
 					return false, fmt.Sprintf("expected performance profile ConfigMap name to be '%s', got '%s'", want, got), nil
 				}
 				return true, fmt.Sprintf("performance profile ConfigMap name is as expected"), nil
 			},
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
 				if diff := cmp.Diff(map[string]string{
-					nodepool.PerformanceProfileConfigMapLabel: configMap.Labels[nodepool.PerformanceProfileConfigMapLabel],
-					hyperv1.NodePoolLabel:                     configMap.Labels[hyperv1.NodePoolLabel],
+					npconst.PerformanceProfileConfigMapLabel: configMap.Labels[npconst.PerformanceProfileConfigMapLabel],
+					hyperv1.NodePoolLabel:                    configMap.Labels[hyperv1.NodePoolLabel],
 				}, map[string]string{
-					nodepool.PerformanceProfileConfigMapLabel: "true",
-					hyperv1.NodePoolLabel:                     nodePool.Name,
+					npconst.PerformanceProfileConfigMapLabel: "true",
+					hyperv1.NodePoolLabel:                    nodePool.Name,
 				}); diff != "" {
 					return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 				}
@@ -160,7 +160,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
-				nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+				npconst.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
 			}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
 			for i := range list.Items {
@@ -176,17 +176,17 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		},
 		[]e2eutil.Predicate[*corev1.ConfigMap]{
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
-				if want, got := fmt.Sprintf("status-%s", netutil.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength)), configMap.Name; want != got {
+				if want, got := fmt.Sprintf("status-%s", netutil.ShortenName(performanceProfileConfigMap.Name, nodePool.Name, npconst.QualifiedNameMaxLength)), configMap.Name; want != got {
 					return false, fmt.Sprintf("expected performance profile status ConfigMap name to be '%s', got '%s'", want, got), nil
 				}
 				return true, fmt.Sprintf("performance profile status ConfigMap name is as expected"), nil
 			},
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
 				if diff := cmp.Diff(map[string]string{
-					nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: configMap.Labels[nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel],
+					npconst.NodeTuningGeneratedPerformanceProfileStatusLabel: configMap.Labels[npconst.NodeTuningGeneratedPerformanceProfileStatusLabel],
 					hyperv1.NodePoolLabel: configMap.Labels[hyperv1.NodePoolLabel],
 				}, map[string]string{
-					nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+					npconst.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
 					hyperv1.NodePoolLabel: nodePool.Name,
 				}); diff != "" {
 					return false, fmt.Sprintf("incorrect labels: %v", diff), nil
@@ -262,7 +262,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
-				nodepool.PerformanceProfileConfigMapLabel: "true",
+				npconst.PerformanceProfileConfigMapLabel: "true",
 			}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
 			for i := range list.Items {

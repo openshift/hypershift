@@ -22,11 +22,10 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
-	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
-	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -110,8 +109,8 @@ func testKarpenterPlumbing(ctx context.Context, mgtClient, guestClient crclient.
 			karpenterassets.KarpenterBuildInfoMetricName,
 			karpenterassets.KarpenterOperatorInfoMetricName,
 		}
-		operatorComponentName := karpenteroperatorcpov2.ComponentName
-		karpenterComponentName := karpentercpov2.ComponentName
+		operatorComponentName := cpconst.KarpenterOperatorComponentName
+		karpenterComponentName := cpconst.KarpenterComponentName
 		karpenterNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		t.Log("Checking Karpenter metrics are exposed")
