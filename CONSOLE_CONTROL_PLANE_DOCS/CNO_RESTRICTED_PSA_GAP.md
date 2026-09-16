@@ -54,7 +54,30 @@ PSA also requires — they leave `capabilities.drop: [NET_RAW]` only (a
 baseline-level hardening leftover, not restricted). So the pods fail restricted
 admission despite the pod-level fields.
 
-## Stopgap applied (live, will not persist)
+## Workaround (preferred) — relax the HCP namespace to `baseline` PSA
+
+Set on the HostedCluster:
+
+```yaml
+metadata:
+  annotations:
+    hypershift.openshift.io/pod-security-admission-label-override: baseline
+```
+
+The HyperShift operator applies this to the HCP namespace's
+`pod-security.kubernetes.io/{enforce,audit,warn}` labels
+(`hostedcluster_controller.go:1977-1981`,
+`PodSecurityAdmissionLabelOverrideAnnotation` in
+`api/hypershift/v1beta1/hostedcluster_types.go`). `baseline` admits the CNO
+operands as-is — they already carry `capabilities.drop: [NET_RAW]`, which is
+baseline-compliant — so no per-Deployment patching is needed and it **survives
+reconciles** (the operator owns the namespace labels).
+
+This is the workaround carried in `console/hostedcluster/hostedcluster.yaml`. It
+is still a stopgap: it relaxes PSA for the *entire* HCP namespace (not just the
+CNO operands), so the real per-container fix belongs upstream (below).
+
+## Alternative stopgap — patch the Deployments directly (does not persist)
 
 Strategic-merge patch by container name on each Deployment, in namespace
 `clusters-pat-console-pat-console` on the management cluster

@@ -33,6 +33,15 @@ metadata:
     # with the KAS's own external API SAN, which the SAN-conflict validator
     # flags as a false positive. Required for the HC to reconcile.
     hypershift.openshift.io/skip-kas-conflict-san-validation: "true"
+    # Relax the HCP namespace PodSecurity enforcement from `restricted` to
+    # `baseline`. On GKE (no SCC) HyperShift enforces restricted PSA, but
+    # cluster-network-operator's self-managed operands only set pod-level
+    # security fields and omit the container-level allowPrivilegeEscalation /
+    # capabilities.drop [ALL] restricted requires, so their pods fail admission
+    # and guest nodes never come up. baseline accepts them (they keep
+    # capabilities.drop [NET_RAW]). This is a stopgap for an upstream CNO gap —
+    # see CONSOLE_CONTROL_PLANE_DOCS/CNO_RESTRICTED_PSA_GAP.md.
+    hypershift.openshift.io/pod-security-admission-label-override: baseline
 spec:
   autoscaling:
     scaling: ScaleUpAndScaleDown
