@@ -74,6 +74,24 @@ rules:
   - ""
   resources:
   - secrets
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  resourceNames:
+  - combined-pull-secret
+  - kubeadmin-password
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
   - services
   verbs:
   - get

@@ -103,7 +103,7 @@ spec:
         workingDir: /var/log/openshift-apiserver
       - args:
         - -c
-        - |          
+        - |
           set -o errexit
           set -o nounset
           set -o pipefail
@@ -204,4 +204,4 @@ spec:
           items:
           - key: .dockerconfigjson
             path: config.json
-          secretName: pull-secret
+          secretName: combined-pull-secret
