@@ -162,7 +162,7 @@ func KASReadinessCheckContainer(kasLivezURL string) corev1.Container {
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
-					Command: []string{"/bin/bash", "-c", fmt.Sprintf("curl -kfs %s > /dev/null", kasLivezURL)},
+					Command: []string{"curl", "-kfs", "-o", "/dev/null", kasLivezURL},
 				},
 			},
 			FailureThreshold: 3,
