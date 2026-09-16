@@ -137,6 +137,32 @@ func MetricsProxyRoute(ns string) *routev1.Route {
 	}
 }
 
+// ConsoleRoute is a hand-applied (not CPO-generated) passthrough Route for
+// the Phase 1 console spike. Referenced here only so the router config
+// generator can recognize it by name; CPO does not create or manage this
+// Route itself.
+func ConsoleRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "console",
+			Namespace: ns,
+		},
+	}
+}
+
+// DownloadsRoute is a hand-applied (not CPO-generated) passthrough Route for
+// the Phase 1 console CLI-downloads spike. Like ConsoleRoute, it is referenced
+// here only so the router config generator can recognize it by name; CPO does
+// not create or manage this Route itself.
+func DownloadsRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "downloads",
+			Namespace: ns,
+		},
+	}
+}
+
 func RouterPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
 	return &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{

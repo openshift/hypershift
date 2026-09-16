@@ -1,0 +1,61 @@
+# Faster copy of ../Dockerfile.dev for CPO iteration (console spike).
+#
+# Two changes vs ../Dockerfile.dev, both aimed at incremental-rebuild speed:
+#
+#   1. RUN --mount=type=cache on the Go build cache (/root/.cache/go-build).
+#      The base build uses CGO_ENABLED=1 + -mod=vendor (vendored deps, no
+#      `go mod download` step), so the module cache isn't the cost — the cold
+#      compile is. `COPY . .` is invalidated on every source edit, but with a
+#      persistent GOCACHE `go build` only recompiles the packages that
+#      actually changed (CPO router + dependents) instead of everything.
+#
+#   2. `make control-plane-operator control-plane-pki-operator` instead of
+#      `make build`. The console spike only needs the CPO binaries (the image
+#      is used solely as the control-plane-operator-image override); building
+#      hypershift/hcp/hypershift-operator/karpenter-operator every time was
+#      wasted work. The final stage below copies only the CPO binaries.
+#
+# Build with BuildKit/buildah cache-mount support (podman does; use --layers).
+# The COPY is still required: the build runs in-container, so the source must
+# be brought into the empty builder stage before `make` can compile it.
+
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-5.1 AS builder
+ARG COMMIT_HASH
+
+WORKDIR /hypershift
+
+COPY . .
+
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    make control-plane-operator control-plane-pki-operator
+
+FROM registry.access.redhat.com/ubi9:latest
+COPY --from=builder /hypershift/bin/control-plane-operator \
+                    /hypershift/bin/control-plane-pki-operator \
+     /usr/bin/
+
+RUN cd /usr/bin && \
+    ln -s control-plane-operator ignition-server && \
+    ln -s control-plane-operator konnectivity-socks5-proxy && \
+    ln -s control-plane-operator availability-prober && \
+    ln -s control-plane-operator token-minter && \
+    ln -s control-plane-operator fetch-etcd-certs
+
+# CPO-only image: the entrypoint is the control-plane-operator (HyperShift
+# invokes this image solely as the control-plane-operator-image override).
+ENTRYPOINT ["/usr/bin/control-plane-operator"]
+
+LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
+LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
+LABEL io.openshift.hypershift.ignition-server-healthz-handler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
+LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true
+LABEL io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label=true
+LABEL io.openshift.hypershift.restricted-psa=true
+LABEL io.openshift.hypershift.control-plane-pki-operator-signs-csrs=true
+LABEL io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count=true
+LABEL io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig=true
+LABEL io.openshift.hypershift.control-plane-operator.v2-isdefault=true

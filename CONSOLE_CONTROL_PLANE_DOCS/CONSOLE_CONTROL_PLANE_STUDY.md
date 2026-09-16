@@ -1085,3 +1085,207 @@ Secret/PDB/SA/Route) **in the HCP namespace**. It needs HCP-namespace RBAC for t
 
 ingress-operator ships **no** mgmt RBAC because its operands live in the guest (accessed via
 kubeconfig) — that is *not* the console model; CNO is.
+
+---
+
+## 20. Pod Security Standards — HCP namespaces enforce `restricted` (verified live)
+
+Discovered while deploying the Phase 1 core-console Deployment by hand
+(`console/kustomize/base/deployment.yaml`) against a live GCP HCP cluster: the pod was
+rejected outright, not just warned.
+
+### 20.1 What was observed
+
+`kubectl get ns <hcp-ns> -o jsonpath='{.metadata.labels}'` on a live HCP namespace shows:
+
+```json
+{
+  "pod-security.kubernetes.io/audit": "restricted",
+  "pod-security.kubernetes.io/enforce": "restricted",
+  "pod-security.kubernetes.io/warn": "restricted"
+}
+```
+
+This is standard Kubernetes Pod Security Admission (PSA), **enforced**, not just audited/warned.
+A Deployment whose pod/container spec doesn't satisfy the `restricted` profile fails to create
+pods at all — the ReplicaSet shows a `FailedCreate`/`ReplicaFailure` condition:
+
+```
+pods "console-xxx" is forbidden: violates PodSecurity "restricted:latest":
+allowPrivilegeEscalation != false (container "console" must set
+securityContext.allowPrivilegeEscalation=false), unrestricted capabilities
+(container "console" must set securityContext.capabilities.drop=["ALL"]),
+runAsNonRoot != true (pod or container "console" must set securityContext.runAsNonRoot=true)
+```
+
+This applies to **every** control-plane-side component landing in the HCP namespace —
+not console-specific. Any future CPO v2 component (§13) that ships its own
+`deployment.yaml` asset must set a `restricted`-compliant `securityContext` or its pods
+will never schedule.
+
+### 20.2 Required fields (verified against `kube-apiserver`'s Deployment in the same namespace)
+
+**Pod-level `spec.securityContext`:**
+```yaml
+runAsNonRoot: true
+seccompProfile:
+  type: RuntimeDefault
+```
+
+**Container-level `securityContext`:**
+```yaml
+allowPrivilegeEscalation: false
+capabilities:
+  drop: [ALL]
+readOnlyRootFilesystem: true
+```
+
+(`kube-apiserver`'s Deployment additionally pins `runAsUser: 1001` at the pod level, but this
+is not required — see below.)
+
+### 20.3 The console bridge image is already compatible
+
+Checked directly: `podman run --rm --entrypoint="" <console-image> id` →
+`uid=1001(1001) gid=0(root) groups=0(root)`. The console bridge image already runs as a
+non-root arbitrary UID by default (standard OpenShift image convention), so
+`runAsNonRoot: true` is satisfied with **no explicit `runAsUser` override needed** —
+unlike `kube-apiserver`, which sets `runAsUser: 1001` explicitly.
+
+### 20.4 Where this landed
+
+Originally added by hand to a from-scratch base `deployment.yaml`. The kustomize tree was
+later restructured into three layers — `console/kustomize/{origin,hypershift,pat-console}/`,
+see `console/kustomize/README.md` — with `origin/` vendoring the **actual upstream**
+`console-operator` static Deployment asset verbatim. That revealed the upstream asset
+**already ships this exact `securityContext`** (pod-level `runAsNonRoot`/`seccompProfile`,
+container-level `allowPrivilegeEscalation: false`/`capabilities.drop: [ALL]`/
+`readOnlyRootFilesystem: true`) — the earlier PSS failure was a gap introduced by writing the
+base from scratch instead of from upstream, not a genuine `restricted`-PSS gap in the console
+image/config itself. The `hypershift/` overlay layer makes **zero changes** to security context
+as a result — it's inherited unchanged from `origin/`. This is a good example of why the
+origin→hypershift→pat-console layering is worth the extra directory: it makes "what did we
+actually have to change" an explicit, reviewable diff instead of an assumption baked into a
+hand-written manifest.
+
+**Action item for §13 (CPO v2 `consoleoperator` component) and §19.2 (management-side RBAC):**
+when the console-operator ports the operand Deployment generation upstream (§14.4), the
+generated pod/container spec already includes this `securityContext` (confirmed above) — no
+new PSS work needed there either, provided the ported code path doesn't drop it.
+
+---
+
+## 21. Kustomize tree restructure — origin → hypershift → pat-console
+
+`console/kustomize/` was restructured into three layers (`console/kustomize/README.md`) so
+every departure from stock upstream `console-operator` manifests is an explicit, cited patch
+rather than baked into a hand-written manifest. `origin/` vendors the upstream static assets
+verbatim (`openshift/console-operator@7fa0a807`, `bindata/assets/{deployments,services,routes,
+pdb,serviceaccounts}/console-*.yaml`); `hypershift/` patches them for the no-operator Phase 1
+model; `pat-console/` supplies live per-cluster values. Diffing against `origin/` this way
+surfaced several additional real deltas beyond §20's securityContext finding:
+
+| Field | Upstream (`origin/`) | Phase 1 (`hypershift/`) | Why |
+|---|---|---|---|
+| `priorityClassName` | `system-cluster-critical` | `hypershift-control-plane` | Guest-cluster OCP default; doesn't apply to a pod now running on the management cluster. Verified every other operator Deployment in a live HCP namespace uses `hypershift-control-plane` (kube-apiserver/openshift-apiserver/router/packageserver use the higher `hypershift-api-critical` tier instead — console doesn't need that tier). |
+| `spec.template.spec.nodeSelector`/`tolerations` (`node-role.kubernetes.io/master`) | present | removed | Guest-master-node concept; meaningless once the pod runs on the management cluster, not guest nodes. |
+| `serviceAccountName`/`serviceAccount` | `console` | removed (`automountServiceAccountToken: false`) | The bridge never calls the **management**-cluster API (off-cluster mode only, static guest token) — no mgmt-side SA identity needed. `origin/serviceaccount.yaml` is vendored for reference but intentionally not included as a `hypershift/` resource. |
+| Service `spec.ports[0].port` | `443` (→ `targetPort: 8443`) | `8443` | **Functional, not cosmetic.** The CPO router's `case manifests.ConsoleRoute("").Name` (`v2/router/config.go:136-138`) hardcodes `DestinationPort: 8443` and dials the Service's **ClusterIP:8443 directly** (bypassing the Service's own port-mapping) — upstream's `443` would leave nothing listening on `ClusterIP:8443`. |
+| Service annotation `service.beta.openshift.io/serving-cert-secret-name` | present | removed | No service-ca operator on GKE (D3); dead annotation there. |
+| Route `spec.host` | unset (guest route-admission fills a default) | explicit | No such admission mechanism for a hand-applied Route on the management cluster; must be set. |
+| Route `spec.tls.termination` | `reencrypt` + `insecureEdgeTerminationPolicy: Redirect` | `passthrough` / `None` | Router is SNI-passthrough only; the bridge terminates its own TLS (D3). |
+| Route `spec.port.targetPort` | named `https` | integer `8443` | Route-API convention/validation once passthrough is set; CPO's console case actually hardcodes the port regardless (see Service row above), but the field should still be concrete. |
+| `spec.replicas` | unset (operator's `withReplicas` sets it based on infra topology) | `2` | No operator to compute it. |
+| Container `command`/`args`, `env`, `volumeMounts`, pod `volumes` | operator-generated (`--config=console-config.yaml` + dynamically injected volumes: `console-config`, `service-ca`, `console-oauth-config`, `tmp`) | static off-cluster CLI flags + `serving-cert`/`guest-ca` volumes | No console-operator in Phase 1 to generate `console-config.yaml`/inject auth volumes (§14.4, §14.8) — replaced with direct bridge flags and the two volumes Phase 1 actually needs. |
+
+**Deliberately unchanged from `origin/`** (confirms these upstream choices already fit the new
+topology, nothing to do): restricted-PSS `securityContext` (§20), the
+`target.workload.openshift.io/management` pod annotation (matches every other HCP-namespace
+operator Deployment observed live), probes, container port, resource requests, and the
+`app: console, component: ui` label pair (Service/Deployment/PDB selectors all kept faithful to
+upstream — see the immutable-selector note below).
+
+**Gotcha hit during the restructure:** Deployment `spec.selector` is immutable. The prior
+hand-written base used `app: console` only; adopting upstream's real `{app: console, component:
+ui}` selector faithfully required **deleting and recreating** the live Deployment (Service/PDB
+selector changes were accepted in place; only Deployment's is immutable).
+
+**Second gotcha — kustomize's `images:` transformer can't match `${IMAGE}`.** Upstream's
+`image: ${IMAGE}` is the operator's own string-substitution placeholder (Go code, not
+kustomize); kustomize's `images:` transform parses the field as a docker image reference to
+match by name, and `${IMAGE}`'s `$`/`{`/`}` characters fail that parse — so the transform
+**silently no-ops** (no error, image stays `${IMAGE}` verbatim), the same class of "silent
+skip" hit earlier with `newTag: null` + `digest:` together. First deploy attempt after the
+restructure got pods stuck `InvalidImageName` with image literally `${IMAGE}`. Fix: patch the
+image field directly with a JSON6902 `replace` op (unconditional string replace, no name
+matching) to a transform-friendly placeholder (`REPLACE_CONSOLE_IMAGE_REGISTRY:
+REPLACE_CONSOLE_IMAGE_TAG`) in `hypershift/kustomization.yaml`, then let the per-cluster
+overlay's `images:` transform target that valid-looking name as before. **Lesson: never rely on
+the `images:` transformer to rewrite a non-image-shaped placeholder string — patch it to a
+valid-looking name first, transform second.**
+
+---
+
+## 22. Upstream gap — `-ca-file` is not honored by the off-cluster k8s resource proxy
+
+**Status: FIXED (patched image in use); upstream PR open.** The fix wires `-ca-file` into the
+off-cluster proxy `RootCAs`; we run a patched console image with it and have dropped
+`-k8s-mode-off-cluster-skip-verify-tls`. See the trailing "Resolution" note in this section.
+Tracking: Jira GCP-1219, upstream PR https://github.com/openshift/console/pull/17185
+(`openshift/console`), and `CONSOLE_CONTROL_PLANE_DOCS/UPSTREAM_PATCHES.md`.
+
+Discovered while validating Part 1
+end-to-end: every `/api/kubernetes/*` call (all resource browsing) returned `502`, with bridge
+logs showing `http: proxy error: tls: failed to verify certificate: x509: certificate signed by
+unknown authority`. Confirmed this is NOT a cert/mount misconfiguration on our side — the
+mounted `/var/run/guest-ca/ca.crt` is byte-identical to the `root-ca` ConfigMap, and `openssl
+verify` against the real guest KAS cert chain succeeds cleanly with that same CA.
+
+**Root cause (`cmd/bridge/main.go`):** `-ca-file` (`*fCAFile`/`caCertFilePath`) is only ever
+consumed by `completedAuthnOptions.ApplyTo(srv, k8sEndpoint, caCertFilePath, ...)` (`:738`) —
+the **OIDC/authn** path. The actual k8s resource reverse-proxy (`srv.K8sProxyConfig`, backing
+`/api/kubernetes/*`) is built per-mode:
+- `in-cluster` (`:419-446`): reads `k8sInClusterCA` (`/var/run/secrets/kubernetes.io/
+  serviceaccount/ca.crt`) into an explicit `x509.CertPool` → `RootCAs` on the proxy's TLS config.
+- `off-cluster` (`:514-542`): builds `serviceProxyTLSConfig` from `InsecureSkipVerify:
+  *fK8sModeOffClusterSkipVerifyTLS` only — **no `RootCAs` field at all**, so it falls back to the
+  Go process's system trust store, which cannot know about a hand-provisioned private CA like
+  `root-ca`.
+
+**Consequence:** in `off-cluster` mode there is currently no way to get a custom-CA-verified k8s
+resource proxy — only `-k8s-mode-off-cluster-skip-verify-tls=true` (explicitly labeled "DEV
+ONLY" in the flag's own help text) works. This directly contradicts the Phase 1 plan's original
+intent ("Guest KAS TLS: verified via the `root-ca` secret, not skip-verify" — §1 scope
+decisions) — that intent assumed `-ca-file` applied uniformly across modes, which this version's
+code does not do.
+
+**Interim/current state:** `console/kustomize/hypershift/kustomization.yaml` sets
+`-k8s-mode-off-cluster-skip-verify-tls=true` as a documented, dev-only deviation so Part 1
+validation could proceed. `-ca-file`/the `guest-ca` volume are left in place (harmless, and
+ready to become effective once the upstream fix lands).
+
+**Fix needed upstream (`openshift/console`):** wire `RootCAs` from `-ca-file` into the
+`off-cluster` branch's `serviceProxyTLSConfig` the same way the `in-cluster` branch does —
+roughly, when `*fCAFile != ""`, read+parse it into an `x509.CertPool` and set it as `RootCAs`
+alongside (not instead of) `InsecureSkipVerify`. Small, targeted change, same shape as the
+existing `in-cluster` code (`:426-431`). Until this lands, "verified via root-ca, not
+skip-verify" is not actually achievable in `off-cluster` mode as shipped.
+
+**Resolution:** implemented the fix (read `-ca-file` into an `x509.CertPool` → `RootCAs` on the
+off-cluster `serviceProxyTLSConfig`, alongside `InsecureSkipVerify`), built a patched console
+image (`console/build-console.sh` → `quay.io/patmarti/console:*`), pointed the overlay at it, and
+removed `-k8s-mode-off-cluster-skip-verify-tls`. Verified live: `/api/kubernetes/*` returns 200
+with no x509 errors. The `-ca-file`/`guest-ca` volume were already plumbed. Reverts to the stock
+release console image once the upstream PR merges and ships.
+
+---
+
+**`downloads` (CLI download server) — now IMPLEMENTED in Phase 1.** Deployed control-plane-side
+in `console/kustomize/` (origin → hypershift → pat-console), reachable end-to-end (serves real
+`oc` binaries). Split-cluster adaptations: a TLS-terminating `oauth-proxy` sidecar (the HCP
+router is SNI-passthrough only and can't do upstream's `edge` termination), the `cli-artifacts`
+image (`DOWNLOADS_IMAGE`, not the console image), a dedicated CPO router `downloads` backend
+case, and an explicit 6Gi ephemeral-storage request (GKE Autopilot evicts the archive-generating
+pod under its 1Gi default). **Remaining gap:** the UI "Command Line Tools" page reads
+`ConsoleCLIDownloads` CRs from the guest, whose CRD isn't installed (guest `Console` capability
+disabled) — the server is reachable at its host but the UI link stays empty until that guest-side
+CRD + CR are added. See `console/kustomize/README.md`.

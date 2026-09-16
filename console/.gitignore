@@ -1,0 +1,9 @@
+# Real credentials / cluster access — never commit.
+# (Templates and ExternalSecret references ARE tracked:
+#  kustomize/hypershift/secret-static-token.yaml has a REPLACE_ placeholder,
+#  hostedcluster/pull-secret.yaml is an ExternalSecret pointer, not creds.)
+pull-secret.json
+hostedcluster/pull-secret.json
+hostedcluster/console-guest-token.txt
+hostedcluster/kubeadmin.kubeconfig
+*.kubeconfig

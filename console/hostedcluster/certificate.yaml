@@ -1,0 +1,30 @@
+# cert-manager Certificate for pat-console API/OAuth endpoints.
+# Modeled on clusters-patmarti-102447/external-api-cert.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: external-api-cert
+  namespace: clusters-pat-console
+  labels:
+    gcp.managed.openshift.io/cluster-id: pat-console
+spec:
+  dnsNames:
+  - '*.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com'
+  duration: 2160h
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: public-issuer
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    rotationPolicy: Always
+    size: 2048
+  renewBefore: 720h
+  secretName: external-api-cert
+  subject:
+    organizations:
+    - Red Hat - Hypershift
+  usages:
+  - server auth
+  - client auth

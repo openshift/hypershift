@@ -1,0 +1,163 @@
+# HostedCluster for pat-console.
+# Modeled on clusters-patmarti-102447/patmarti-102447 (same mgmt cluster:
+# gcp-hcp-int-mc-us-central1-yjiv). Basically patmarti-102447 -> pat-console.
+#
+# Reused from patmarti-102447 (shared, per explicit approval):
+#   - infraID: patmart-b3bb
+#   - issuerURL (OIDC provider/issuer): unchanged, same as patmarti-102447
+#   - GCP project, VPC network, PSC subnet, workload identity pool/provider,
+#     and all workload identity service account emails
+#   - SA signing key (spec.serviceAccountSigningKey -> sa-signing-key.yaml,
+#     gitignored): both HCs share the same OIDC bucket path since they
+#     share infraID, so they must sign SA tokens with the same keypair to
+#     avoid clobbering each other's published JWKS.
+#
+# New/unique to pat-console:
+#   - namespace / cluster name: pat-console
+#   - clusterID: new UUID
+#   - hostnames/baseDomain: pat-console-user... (pat-console name itself is
+#     unique, no random suffix needed)
+#
+# NOT applied to the cluster — manifest saved for review only.
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: pat-console
+  namespace: clusters-pat-console
+  labels:
+    gcp.managed.openshift.io/cluster-id: pat-console
+  annotations:
+    hypershift.openshift.io/control-plane-operator-image: quay.io/patmarti/hypershift-console-control-plane:260916121736
+    # Same custom-cert-for-own-hostname pattern as patmarti-102447 (also has
+    # this annotation): the api.<cluster>-user... named certificate overlaps
+    # with the KAS's own external API SAN, which the SAN-conflict validator
+    # flags as a false positive. Required for the HC to reconcile.
+    hypershift.openshift.io/skip-kas-conflict-san-validation: "true"
+spec:
+  autoscaling:
+    scaling: ScaleUpAndScaleDown
+  capabilities:
+    disabled:
+    - ImageRegistry
+    - Console
+    - Ingress
+  # channel: stable-4.22
+  clusterID: e4b7c8a2-6f1d-4e3a-9c0b-2d5f8a91c3e7
+  configuration:
+    apiServer:
+      audit:
+        profile: Default
+      clientCA:
+        name: ""
+      encryption: {}
+      servingCerts:
+        namedCertificates:
+        - names:
+          - api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+          servingCertificate:
+            name: external-api-cert
+    authentication:
+      oauthMetadata:
+        name: ""
+      oidcProviders:
+      - claimMappings:
+          groups:
+            claim: hd
+            prefix: ""
+          username:
+            claim: email
+            prefixPolicy: ""
+        issuer:
+          audiences:
+          - 32555940559.apps.googleusercontent.com
+          issuerCertificateAuthority:
+            name: ""
+          issuerURL: https://accounts.google.com
+        name: google
+      serviceAccountIssuer: ""
+      type: OIDC
+  controllerAvailabilityPolicy: HighlyAvailable
+  dns:
+    baseDomain: in.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+    baseDomainPrefix: ""
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  # Reused from patmarti-102447 (shared VPC / project / WI pool).
+  infraID: patmart-b3bb
+  # Reused verbatim from patmarti-102447 (same OIDC provider/issuer).
+  issuerURL: https://oidc.int-reg-us-c1-nkcw.int.gcp-hcp.devshift.net/patmart-b3bb
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    gcp:
+      endpointAccess: PublicAndPrivate
+      networkConfig:
+        network:
+          name: patmart-b3bb-network
+        privateServiceConnectSubnet:
+          name: patmart-b3bb-subnet
+      project: patmarti-hcp-test
+      region: us-central1
+      resourceLabels:
+      - key: goog-partner-solution
+        value: isol_psn_0014m00001h31bnqaq_openshift
+      workloadIdentity:
+        poolID: patmart-b3bb-wi-pool
+        projectNumber: "581003993532"
+        providerID: patmart-b3bb-k8s-provider
+        serviceAccountsEmails:
+          cloudController: patmart-b3bb-cloud-controller@patmarti-hcp-test.iam.gserviceaccount.com
+          controlPlane: patmart-b3bb-ctrlplane-op@patmarti-hcp-test.iam.gserviceaccount.com
+          imageRegistry: patmart-b3bb-image-registry@patmarti-hcp-test.iam.gserviceaccount.com
+          network: patmart-b3bb-cloud-network@patmarti-hcp-test.iam.gserviceaccount.com
+          nodePool: patmart-b3bb-nodepool-mgmt@patmarti-hcp-test.iam.gserviceaccount.com
+          storage: patmart-b3bb-gcp-pd-csi@patmarti-hcp-test.iam.gserviceaccount.com
+    type: GCP
+  pullSecret:
+    name: pull-secret
+  # Shared SA signing key with patmarti-102447 (see sa-signing-key.yaml,
+  # gitignored). Required because both HCs share infraID patmart-b3bb and
+  # thus the same OIDC bucket path — using the same keypair avoids the two
+  # clusters clobbering each other's published JWKS. Setting this also
+  # makes HyperShift Operator skip its own OIDC document upload for
+  # pat-console (patmarti-102447 keeps publishing the matching JWKS).
+  serviceAccountSigningKey:
+    name: sa-signing-key-import
+  # 4.23.0-ec.0: earliest release whose apiserver-network-proxy (konnectivity)
+  # image supports --tls-min-version, which CPO now always passes to the
+  # konnectivity-server container (commit 20a145c47). 4.22.9 through at least
+  # 4.22.14 lack this flag and crash-loop with "unknown flag: --tls-min-version".
+  # No stable-4.23/candidate-4.23 channel exists yet (4.23 is pre-GA), so
+  # spec.channel is omitted rather than pointing at a nonexistent channel.
+  release:
+    image: quay.io/openshift-release-dev/ocp-release@sha256:14350234fcd6c464fbf37c07679b653567b2d250be0d18132b79a621f164d719
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      route:
+        hostname: api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      route:
+        hostname: oauth.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  sshKey:
+    name: ""

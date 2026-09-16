@@ -1,0 +1,449 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Layer 2 of 3 — see ../README.md.
+#
+# Generic (cluster-agnostic) template: turns the upstream ../origin assets
+# into what Phase 1's core console needs when run control-plane-side, with NO
+# console-operator (see CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md
+# and CONSOLE_CONTROL_PLANE_STUDY.md §20). Every patch below exists because
+# the operator would otherwise be doing that work at runtime; there is no
+# HyperShift-specific customization beyond "what the operator used to inject".
+#
+# Deliberately NOT modified vs. origin (kept as-is; listed so the "diff" is
+# complete, not just what changed):
+#   - restricted-PSS securityContext (pod + container) — origin already ships
+#     it; Phase 1 needs zero changes here (CONSOLE_CONTROL_PLANE_STUDY.md §20).
+#   - `target.workload.openshift.io/management` pod annotation — this is
+#     exactly the workload-partitioning annotation every other HCP-namespace
+#     operator in this repo's live clusters already carries (verified:
+#     cluster-network-operator, dns-operator, etc.) — correct for our new
+#     topology unchanged.
+#   - probes, container port, resources, `openshift.io/required-scc`
+#     annotation (inert outside OCP's SCC admission, harmless to leave).
+#
+# No `namespace:` field here — the per-cluster overlay sets it (and must also
+# patch the off-cluster-endpoint arg / HCPRouteLabel value to match, since
+# kustomize's namespace transformer does not rewrite string args).
+#
+# ClusterIssuer defaults to `public-issuer`; override in the per-cluster
+# overlay if a different issuer is used for a given management cluster.
+
+resources:
+  # The whole ../origin layer (both the console and downloads operands). We
+  # patch individual resources below by kind+name, so pulling origin in as a
+  # single unit is equivalent to — and less surprising than — listing every
+  # file. This also pulls in both operands' ServiceAccounts
+  # (origin/serviceaccount.yaml + origin/downloads-serviceaccount.yaml), which
+  # we then $patch: delete below — neither the console bridge nor the
+  # download-server makes mgmt-side API calls, so both pods run under the
+  # namespace `default` SA (which also carries the pull secret they need).
+  - ../origin
+  - secret-static-token.yaml # new; no upstream analog (no operator/OAuth in Phase 1)
+  - certificate.yaml # new; no upstream analog (no service-ca operator on GKE)
+
+patches:
+  # Drop the console ServiceAccount pulled in via ../origin (see note above).
+  - target:
+      kind: ServiceAccount
+      name: console
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: console
+
+  # Drop the downloads ServiceAccount too — the download-server makes no API
+  # calls and nothing binds RBAC to it. Removing it makes the pod fall back to
+  # the namespace `default` SA, which HyperShift provisions with
+  # imagePullSecrets: [pull-secret] — so the pod can pull the ocp-v4.0-art-dev
+  # images with no extra wiring (the custom `downloads` SA had no pull secret,
+  # which caused 401 ErrImagePull). See the downloads Deployment patch below.
+  - target:
+      kind: ServiceAccount
+      name: downloads
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: downloads
+
+  - target:
+      kind: Deployment
+      name: console
+    patch: |
+      # -- Fields the operator would set dynamically; static here since there's no operator --
+      - op: add
+        path: /spec/replicas
+        value: 2
+
+      # -- The HCP router's egress NetworkPolicy (CPO-managed, `private-router`)
+      #    only allows unrestricted egress to pods carrying this label (KAS,
+      #    OAuth, ignition, konnectivity) or DNS; its 0.0.0.0/0 egress rule
+      #    does NOT cover intra-cluster pod IPs on GKE Dataplane V2 (Cilium
+      #    treats ipBlock CIDRs as external-only). Without this label the
+      #    router pod cannot reach the console pod at all (silent connection
+      #    timeout, no TCP RST). This HC has no dedicated-request-serving-node
+      #    topology enabled, so the label has no other scheduling effect here. --
+      - op: add
+        path: /spec/template/metadata/labels/hypershift.openshift.io~1request-serving-component
+        value: "true"
+
+      # -- Fields specific to guest clusters' master nodes; meaningless on the
+      #    management cluster where this pod now runs --
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/tolerations
+
+      # -- Upstream's default OCP priority class; HCP-namespace convention on
+      #    the management cluster is `hypershift-control-plane` (verified:
+      #    every other operator Deployment in a live HCP namespace uses it) --
+      - op: replace
+        path: /spec/template/spec/priorityClassName
+        value: hypershift-control-plane
+
+      # -- No mgmt-side ServiceAccount needed (see note above) --
+      - op: remove
+        path: /spec/template/spec/serviceAccountName
+      - op: remove
+        path: /spec/template/spec/serviceAccount
+      - op: add
+        path: /spec/template/spec/automountServiceAccountToken
+        value: false
+
+      # -- Replace the operator's `--config=console-config.yaml` file-based
+      #    wiring (no operator to generate that ConfigMap) with explicit
+      #    bridge CLI flags for off-cluster mode + static-token auth. --
+      # `${IMAGE}` is upstream's own placeholder, substituted by the
+      # operator's Go code at runtime — kustomize's `images:` transformer
+      # can't match it (fails image-ref parsing on `$`/`{`/`}`, silent
+      # no-op, same gotcha as the base rewrite below). Patch it directly to
+      # a transform-friendly placeholder instead; the per-cluster overlay's
+      # `images:` transform targets this name.
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: REPLACE_CONSOLE_IMAGE_REGISTRY:REPLACE_CONSOLE_IMAGE_TAG
+
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: [/opt/bridge/bin/bridge]
+      - op: add
+        path: /spec/template/spec/containers/0/args
+        value:
+          - -listen=https://0.0.0.0:8443
+          - -base-address=https://REPLACE_CONSOLE_HOST
+          - -public-dir=/opt/bridge/static
+          # ---- off-cluster: guest KAS in-namespace, verified via root-ca.
+          #      -ca-file is honored by the k8s resource proxy TLS trust via
+          #      the patched bridge (custom image in the per-cluster overlay's
+          #      images: transform; upstream fix pending). No skip-verify. ----
+          - -k8s-mode=off-cluster
+          - -k8s-mode-off-cluster-endpoint=https://kube-apiserver.REPLACE_HCP_NAMESPACE.svc:6443
+          - -ca-file=/var/run/guest-ca/ca.crt
+          - -k8s-public-endpoint=https://REPLACE_API_DOMAIN:6443
+          # ---- auth OFF: static token used for ALL requests ----
+          - -user-auth=disabled
+          - -k8s-auth-bearer-token=$(GUEST_TOKEN)
+          # ---- TLS at the pod (router is passthrough) ----
+          - -tls-cert-file=/var/serving-cert/tls.crt
+          - -tls-key-file=/var/serving-cert/tls.key
+          # ---- APPENDED, not inserted mid-list: the per-cluster overlay's
+          #      Deployment patches target earlier args by numeric index
+          #      (args/1, args/4, args/6) — inserting anywhere before them
+          #      would silently shift those indices (hit this exact bug once
+          #      already: a mid-list insert here left a stale duplicate
+          #      REPLACE_API_DOMAIN arg and silently dropped a flag). ----
+          # Masthead/title branding. The bridge compiles in `okd` as its
+          # default (cmd/bridge/main.go: -branding default "okd"); on a real
+          # OCP cluster the console-operator overrides this to `ocp` via
+          # console-config.yaml (operator build tag `ocp` ->
+          # configmap/brand_ocp.go DEFAULT_BRAND = "ocp"). With no operator
+          # here we must set it explicitly or the UI shows the OKD logo even
+          # though the image is the genuine OCP release-payload console.
+          # (Appended, not inserted, for the same arg-index reason as above.)
+          - -branding=ocp
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: GUEST_TOKEN
+            valueFrom:
+              secretKeyRef: { name: console-static-token, key: token }
+
+      # -- Replace the operator-injected volumes (console-config, service-ca,
+      #    oauth-config configmaps/secrets) with the Phase 1 equivalents: the
+      #    console's own serving cert + the guest KAS's serving CA. --
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts
+        value:
+          - { name: serving-cert, mountPath: /var/serving-cert, readOnly: true }
+          - { name: guest-ca, mountPath: /var/run/guest-ca, readOnly: true }
+      - op: add
+        path: /spec/template/spec/volumes
+        value:
+          - name: serving-cert
+            secret:
+              secretName: console-serving-cert # or a reused wildcard secret; patched by the per-cluster overlay if needed
+              defaultMode: 416
+          - name: guest-ca
+            configMap:
+              name: root-ca # guest KAS serving CA (key ca.crt)
+              items: [{ key: ca.crt, path: ca.crt }]
+
+  - target:
+      kind: Service
+      name: console
+    patch: |
+      # No service-ca operator on GKE (see certificate.yaml); this annotation
+      # has no effect there.
+      - op: remove
+        path: /metadata/annotations
+      # MUST equal the CPO router's hardcoded console backend port
+      # (v2/router/config.go: `case manifests.ConsoleRoute("").Name` ->
+      # DestinationPort: 8443, dialed directly against this Service's
+      # ClusterIP:port — upstream's 443->8443 mapping would leave nothing
+      # listening on ClusterIP:8443).
+      - op: replace
+        path: /spec/ports/0/port
+        value: 8443
+
+  - target:
+      kind: Route
+      name: console
+    patch: |
+      # HCPRouteLabel: makes the HCP router adopt this Route as an SNI
+      # backend (support/netutil/route.go AddHCPRouteLabel). VALUE MUST equal
+      # the HCP namespace; the per-cluster overlay patches the real value.
+      - op: add
+        path: /metadata/labels/hypershift.openshift.io~1hosted-control-plane
+        value: REPLACE_HCP_NAMESPACE
+      # Upstream leaves this to the guest route-admission default-host
+      # mechanism; we have no such thing here, so it must be explicit.
+      - op: add
+        path: /spec/host
+        value: REPLACE_CONSOLE_HOST
+      # Integer, not the named "https" port: the router config generator's
+      # console case reads a fixed 8443 regardless, but Route API validation/
+      # convention expects a concrete target port once passthrough is set.
+      - op: replace
+        path: /spec/port/targetPort
+        value: 8443
+      # The bridge terminates its own TLS (D3); the router is SNI passthrough
+      # only, so upstream's reencrypt/edge-redirect model doesn't apply.
+      - op: replace
+        path: /spec/tls/termination
+        value: passthrough
+      - op: replace
+        path: /spec/tls/insecureEdgeTerminationPolicy
+        value: None
+
+  # ======================================================================
+  # downloads operand — split-cluster adaptations
+  #
+  # The download-server container is kept VERBATIM from ../origin (plain
+  # HTTP:8080). The only structural change is a TLS-terminating oauth-proxy
+  # sidecar on 8443 forwarding to 127.0.0.1:8080, because the HCP HAProxy
+  # router is SNI passthrough only (mode tcp) and cannot perform the upstream
+  # downloads Route's `edge` TLS termination. Auth is disabled in Phase 1, so
+  # the sidecar bypasses all auth (-skip-auth-regex='^/').
+  # ======================================================================
+  - target:
+      kind: Deployment
+      name: downloads
+    patch: |
+      # -- Fields the operator would set dynamically; static here since there's no operator --
+      - op: add
+        path: /spec/replicas
+        value: 2
+
+      # -- Same HCP-router egress NetworkPolicy requirement as the console
+      #    Deployment: the router pod can only reach pods carrying this label
+      #    (see the console patch above for the full rationale). --
+      - op: add
+        path: /spec/template/metadata/labels/hypershift.openshift.io~1request-serving-component
+        value: "true"
+
+      # -- Guest master-node scheduling fields; meaningless on the mgmt cluster --
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/tolerations
+
+      # -- HCP-namespace priority-class convention (see console patch) --
+      - op: replace
+        path: /spec/template/spec/priorityClassName
+        value: hypershift-control-plane
+
+      # -- Drop the upstream `downloads` ServiceAccount: the download-server is
+      #    a plain static file server that makes ZERO Kubernetes API calls, and
+      #    no RBAC anywhere references this SA (the operator creates it purely
+      #    as ceremony, same generic controller as the console SA). Falling
+      #    back to the namespace `default` SA — exactly like the console pod —
+      #    also means the pod inherits `default`'s imagePullSecrets
+      #    ([pull-secret]) needed to pull the ocp-v4.0-art-dev images.
+      #    Otherwise the custom `downloads` SA has no pull secret -> 401. --
+      - op: remove
+        path: /spec/template/spec/serviceAccountName
+      - op: remove
+        path: /spec/template/spec/serviceAccount
+
+      # -- Pin the download-server container image. NOTE this is NOT the
+      #    console image: upstream sets the download-server container to
+      #    DOWNLOADS_IMAGE (subresource/deployment/deployment.go
+      #    withDownloadsContainerImage), which the operator manifests map to
+      #    the release payload's `cli-artifacts` tag — that image ships the oc
+      #    binaries at /usr/share/openshift/... that the server symlinks.
+      #    (Using the console image gives 404s on every binary.) Distinct
+      #    placeholder so the overlay's images: transform can point it at the
+      #    cli-artifacts digest. Upstream's ${IMAGE} literal can't be matched
+      #    by the transformer, so patch it directly here (same gotcha as
+      #    console). --
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: REPLACE_DOWNLOADS_IMAGE_REGISTRY:REPLACE_DOWNLOADS_IMAGE_TAG
+
+      # -- cli-artifacts defaults to running as root, but the pod
+      #    securityContext sets runAsNonRoot: true — so, like the tls-proxy
+      #    sidecar, the download-server container needs an explicit non-root
+      #    UID or the kubelet rejects it (CreateContainerConfigError). This
+      #    wasn't needed while (wrongly) using the console image, which
+      #    declares a non-root USER. --
+      - op: add
+        path: /spec/template/spec/containers/0/securityContext/runAsNonRoot
+        value: true
+      - op: add
+        path: /spec/template/spec/containers/0/securityContext/runAsUser
+        value: 1001
+
+      # -- Ephemeral-storage sizing. On startup the download-server generates a
+      #    .tar AND .zip for every oc binary (4 arch x linux/mac/windows, each
+      #    binary ~139 MB) into /tmp (emptyDir) — observed ~3.2 GB. Upstream
+      #    sets no ephemeral-storage request, so GKE Autopilot injects a 1Gi
+      #    default limit; the pod blows past it as the async archive threads
+      #    finish and Autopilot EVICTS it (clean SIGTERM -> the script's handler
+      #    exits 0 -> pod shows Completed), then the Deployment recreates it and
+      #    the cycle repeats — a continuous evict/replace loop, NOT node churn.
+      #    Set an explicit request/limit with headroom over the observed 3.2 GB. --
+      - op: add
+        path: /spec/template/spec/containers/0/resources/requests/ephemeral-storage
+        value: 6Gi
+      - op: add
+        path: /spec/template/spec/containers/0/resources/limits
+        value:
+          ephemeral-storage: 6Gi
+
+      # -- TLS-terminating sidecar: oauth-proxy in pure-passthrough mode
+      #    (auth disabled in Phase 1). Serves HTTPS:8443 -> http://127.0.0.1:8080.
+      #    Image is a transform-friendly placeholder rewritten by the overlay. --
+      - op: add
+        path: /spec/template/spec/containers/-
+        value:
+          name: tls-proxy
+          image: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY:REPLACE_OAUTH_PROXY_IMAGE_TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          args:
+            - -provider=openshift
+            - -https-address=:8443
+            - -http-address=
+            - -upstream=http://127.0.0.1:8080
+            - -tls-cert=/var/serving-cert/tls.crt
+            - -tls-key=/var/serving-cert/tls.key
+            # Auth is disabled in Phase 1: bypass authentication for every
+            # path so the proxy is a pure TLS terminator.
+            - -skip-auth-regex=^/
+            # oauth-proxy's config validation requires client-id/client-secret/
+            # cookie-secret up front for -provider=openshift, EVEN with
+            # -skip-auth-regex=^/ (every request bypasses auth, so these are
+            # never actually used to talk to an OAuth server or sign a cookie).
+            # Throwaway values just satisfy the validator; cookie-secret is
+            # patched to a real 32-byte value by the per-cluster overlay.
+            - -client-id=unused
+            - -client-secret=unused
+            - -cookie-secret=REPLACE_UNUSED_COOKIE_SECRET
+          volumeMounts:
+            - name: serving-cert
+              mountPath: /var/serving-cert
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 50Mi
+          securityContext:
+            # The oauth-proxy image defaults to running as root, but the pod
+            # securityContext (inherited verbatim from upstream) sets
+            # runAsNonRoot: true — so the sidecar must declare an explicit
+            # non-root UID or the kubelet refuses it (CreateContainerConfigError:
+            # "container has runAsNonRoot and image will run as root"). The
+            # download-server container doesn't need this: its image already
+            # declares a non-root USER. 1001 is arbitrary/high, fine under the
+            # namespace's restricted PSS on GKE (no OCP SCC uid-range here).
+            runAsNonRoot: true
+            runAsUser: 1001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          terminationMessagePolicy: FallbackToLogsOnError
+
+      # -- Serving-cert volume for the sidecar (reuses the same secret as
+      #    console; per-cluster overlay patches secretName to the wildcard). --
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: serving-cert
+          secret:
+            secretName: console-serving-cert
+            defaultMode: 416
+
+  - target:
+      kind: Service
+      name: downloads
+    patch: |
+      # Expose 8443 (the sidecar) instead of upstream's 80->8080. The CPO
+      # router's downloads backend dials this Service's ClusterIP:8443
+      # directly (v2/router/config.go: DownloadsRoute case -> DestinationPort
+      # 8443).
+      - op: replace
+        path: /spec/ports/0/name
+        value: https
+      - op: replace
+        path: /spec/ports/0/port
+        value: 8443
+      - op: replace
+        path: /spec/ports/0/targetPort
+        value: 8443
+
+  - target:
+      kind: Route
+      name: downloads
+    patch: |
+      # HCPRouteLabel: makes the HCP router adopt this Route as an SNI backend.
+      # VALUE MUST equal the HCP namespace; per-cluster overlay sets it.
+      # The upstream downloads Route has no `labels` map at all (unlike the
+      # console Route), so create the whole map here rather than `add`ing a
+      # single key into a missing parent.
+      - op: add
+        path: /metadata/labels
+        value:
+          hypershift.openshift.io/hosted-control-plane: REPLACE_HCP_NAMESPACE
+      - op: add
+        path: /spec/host
+        value: REPLACE_DOWNLOADS_HOST
+      # Passthrough (sidecar terminates TLS), integer target port 8443 —
+      # upstream's edge/http model doesn't apply to the passthrough router.
+      - op: replace
+        path: /spec/port/targetPort
+        value: 8443
+      - op: replace
+        path: /spec/tls/termination
+        value: passthrough
+      - op: replace
+        path: /spec/tls/insecureEdgeTerminationPolicy
+        value: None

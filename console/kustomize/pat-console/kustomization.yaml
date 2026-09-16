@@ -1,0 +1,135 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Phase 1 (Part 1) console overlay for the pat-console HostedCluster.
+# See CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md §7-8.
+#
+# Values below come from the live pat-console HostedCluster/HostedControlPlane
+# (mgmt cluster gcp-hcp-int-mc-us-central1-yjiv):
+#   - HCP namespace:  clusters-pat-console-pat-console
+#   - console host:   console.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+#                      (covered by the existing external-api-cert wildcard secret
+#                      *.pat-console-user...  -> reuse it as-is, option (a); no
+#                      dedicated Certificate needed. Same principle as OAuth's
+#                      named-cert handling — mount the existing serving-cert
+#                      Secret directly, don't mint a new leaf cert per host
+#                      (v2/oauth/deployment.go:applyNamedCertificateMounts))
+#   - API domain:     api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+#   - console image:  resolved via
+#       oc adm release info --image-for=console \
+#         quay.io/openshift-release-dev/ocp-release@sha256:14350234fcd6c464fbf37c07679b653567b2d250be0d18132b79a621f164d719
+#     -> quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:93f39a224f8b86f25fa1395008a52f901e374e207a71c42956315560e2987f8d
+
+namespace: clusters-pat-console-pat-console
+
+resources:
+  - ../hypershift
+
+# Reusing the api-server wildcard cert (option (a)) instead of a dedicated
+# Certificate, so drop the base's certificate.yaml.
+patches:
+  - target:
+      kind: Certificate
+      name: console-serving-cert
+    patch: |
+      $patch: delete
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: console-serving-cert
+
+  - target:
+      kind: Route
+      name: console
+    patch: |
+      - op: replace
+        path: /metadata/labels/hypershift.openshift.io~1hosted-control-plane
+        value: clusters-pat-console-pat-console
+      - op: replace
+        path: /spec/host
+        value: console.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+
+  - target:
+      kind: Route
+      name: downloads
+    patch: |
+      - op: replace
+        path: /metadata/labels/hypershift.openshift.io~1hosted-control-plane
+        value: clusters-pat-console-pat-console
+      - op: replace
+        path: /spec/host
+        value: downloads.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+
+  - target:
+      kind: Deployment
+      name: downloads
+    patch: |
+      # Reuse the api-server wildcard secret for the TLS sidecar (same choice
+      # as the console Deployment above — the wildcard *.pat-console-user...
+      # covers the downloads host too).
+      - op: replace
+        path: /spec/template/spec/volumes/1/secret/secretName
+        value: external-api-cert
+      # A real (unused) cookie-secret so oauth-proxy starts. Auth is bypassed
+      # (-skip-auth-regex=^/), so this value is never used to sign anything;
+      # it just satisfies the flag's presence requirement. 32 bytes.
+      - op: replace
+        path: /spec/template/spec/containers/1/args/9
+        value: -cookie-secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+  - target:
+      kind: Deployment
+      name: console
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/args/1
+        value: -base-address=https://console.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+      - op: replace
+        path: /spec/template/spec/containers/0/args/4
+        value: -k8s-mode-off-cluster-endpoint=https://kube-apiserver.clusters-pat-console-pat-console.svc:6443
+      - op: replace
+        path: /spec/template/spec/containers/0/args/6
+        value: -k8s-public-endpoint=https://api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com:6443
+      # Reuse the existing api-server wildcard secret instead of a
+      # dedicated console-serving-cert (see certificate.yaml delete above).
+      - op: replace
+        path: /spec/template/spec/volumes/0/secret/secretName
+        value: external-api-cert
+
+# Guest cluster-admin bearer token, gitignored
+# (../../hostedcluster/console-guest-token.txt). `behavior: replace` swaps
+# out the base's REPLACE_WITH_GUEST_SA_TOKEN Secret for this generator's
+# output (same name/namespace), keeping the Secret kind intact end-to-end.
+secretGenerator:
+  - name: console-static-token
+    behavior: replace
+    type: Opaque
+    files:
+      - token=../../hostedcluster/console-guest-token.txt
+    options:
+      disableNameSuffixHash: true
+
+# Overrides the base's own (REPLACE_*) images: transformer, so this must
+# target the name the base already rewrote it to, not the original "console".
+images:
+  # Custom console image = stock release-payload console
+  # (ocp-v4.0-art-dev@sha256:93f39a2...) + the patched bridge binary that wires
+  # -ca-file into the off-cluster k8s proxy TLS trust (branch
+  # off-cluster-ca-file-trust in _console-research; built by
+  # console/build-console.sh). Lets us drop
+  # -k8s-mode-off-cluster-skip-verify-tls and verify the guest KAS via root-ca.
+  # Revert to the stock digest once the fix lands upstream + in a release.
+  - name: REPLACE_CONSOLE_IMAGE_REGISTRY
+    newName: quay.io/patmarti/console
+    newTag: "260916124530"
+  # oauth-proxy (downloads TLS sidecar), resolved via
+  #   oc adm release info --image-for=oauth-proxy <release>
+  - name: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY
+    newName: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+    digest: sha256:41253fda8f43222f17f1b10b133847e6369b853591472095a6d170765f944745
+  # download-server = the release payload's cli-artifacts image (ships the oc
+  # binaries at /usr/share/openshift/...), NOT the console image. Resolved via
+  #   oc adm release info --image-for=cli-artifacts <release>
+  - name: REPLACE_DOWNLOADS_IMAGE_REGISTRY
+    newName: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+    digest: sha256:b520b5ae46c95b6fd45bd63d04d405dadf8f9b6d855134f617c078abe12fcd05
