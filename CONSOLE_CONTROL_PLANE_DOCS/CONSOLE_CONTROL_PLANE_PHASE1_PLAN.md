@@ -1,6 +1,11 @@
 # Phase 1 Implementation Plan: Prove Core Console Runs Control-Plane-Side (GCP HCP)
 
-**Status:** Draft plan — local, not committed
+**Status: PART 1 CLOSED — DONE (verified live on `pat-console`).** All Part 1
+acceptance criteria pass end-to-end (§9): core console + CLI-downloads deployed
+control-plane-side, exposed Public + Private, per-user Google OIDC login, guest
+resource browsing over `-ca-file`-verified TLS, on real nodes. Remaining items
+are operator/lifecycle productization (moved to later phases, §13) and the
+guest-network path (Phase 2 = terminal + monitoring; Phase 3 = plugins). Phase 2 not started.
 **Companions:** `CONSOLE_CONTROL_PLANE_STUDY.md` (feasibility + file:line), `CONSOLE_CONTROL_PLANE_POC_PLAN.md` (roadmap), `console-control-plane-manifests.example.yaml` (full-featured illustration)
 **Goal of Phase 1:** Prove the **core** OpenShift console runs in an existing HostedControlPlane (HCP) namespace on the management cluster and works fully end-to-end — DNS, publicly-trusted cert, static/no auth, and the guest-network path for both **PublicAndPrivate** and **Private** GCP clusters. No console-operator, no HyperShift lifecycle plumbing (that comes later).
 
@@ -11,9 +16,9 @@
 - Guest KAS TLS: verified via the `root-ca` secret (not skip-verify).
 - Endpoint modes: **PublicAndPrivate** and **Private** (Public not supported → out of scope).
 - Exposure: **minimal CPO code change** — make the HCP HAProxy router accept a generic labeled Route. Route/Service/cert/DNS are **hand-applied**. Router acceptance is **always-on** (no annotation/flag gate).
-- No console code changes in Part 1. (Custom image + 1-line fix only in Part 2 for plugins.)
+- No console code changes in Part 1 for the core path. (A `-ca-file` bridge fix was needed after all — see §9/§22; a further 1-line asset-proxy fix comes in Phase 3 for plugins.)
 
-**Split:** **Part 1 = core console deployment.** **Part 2 = plugin path (adapted).** Deploy and validate Part 1 first.
+**Split:** **Part 1 = core console deployment** (this doc). Follow-on phases: **Phase 2 = pod terminal + monitoring** (`CONSOLE_CONTROL_PLANE_PHASE2_PLAN.md`), **Phase 3 = plugin path** (below). Deploy and validate Part 1 first. (The "Part 1 / Part 2" naming below predates the phase split — "Part 2" throughout the later sections means the plugin path, now Phase 3.)
 
 ---
 
@@ -89,7 +94,7 @@ Notes / correctness:
   Use that digest ref directly in the Deployment (§6).
 - **CPO:** the patched CPO image from §2 (temporary, e.g. `quay.io/patmarti/control-plane-operator:console-phase1`).
 
-`quay.io/patmarti` custom **console** image is **only** needed in Part 2 (plugin proxy fix).
+A `quay.io/patmarti` custom **console** image is already in use for the `-ca-file` fix (§9/§22); the plugin asset-proxy fix (Phase 3) is a further change to that image.
 
 ## 4. Static guest token (auth disabled)
 
@@ -289,9 +294,10 @@ spec:
    - **Zero-node check:** works on a guest cluster with no workers (proves control-plane-side).
    - **Private mode:** validate from a client inside the PSC-reachable network.
 
-## 9. Part 1 acceptance criteria
+## 9. Part 1 acceptance criteria — ALL MET (verified live)
 
-Status against `pat-console` (GCP, zero-node):
+Status against `pat-console` (GCP). Validated both zero-node and later with 4
+worker nodes:
 
 - [x] CPO router serves the `console` (and `downloads`) SNI host — backend present in HAProxy
   config (verified live). Note the router change grew from the originally-planned single
@@ -305,7 +311,7 @@ Status against `pat-console` (GCP, zero-node):
 - [x] **Per-user login via Google OIDC** (upgraded from the planned `-user-auth=disabled` static
   token): browser login → session → guest KAS accepts the token → user browses as their own
   identity. See §10 (Resolved) and `GOOGLE_OIDC_CLIENT_SETUP.md`.
-- [x] Works zero-node (validated: `pat-console` has 0 nodes).
+- [x] Works zero-node (validated with 0 nodes) and with workers (later scaled to 4 for real-workload browsing).
 - [~] Console code: one small bridge patch was needed after all (the `-ca-file` off-cluster fix,
   §22 / `UPSTREAM_PATCHES.md`), not zero. CPO changes are the router cases + console/downloads
   Route ownership + Private ExternalName services.
@@ -313,7 +319,7 @@ Status against `pat-console` (GCP, zero-node):
 ## 10. Known limitations carried out of Part 1 (by design)
 
 - Router config not hot-reloaded — manual router restart after applying the Route (CPO TODO `component.go:74-75`).
-- No plugins / no monitoring (needs the guest pod-network path) — **Part 2**.
+- No monitoring / no plugins yet (both need the guest pod-network path) — **Phase 2** (terminal + monitoring) and **Phase 3** (plugins). Pod terminal itself goes via the KAS exec path (no konnectivity) and is Phase 2's cheap win.
 - Everything hand-applied (no operator, no lifecycle) — later phases.
 - **Multi-replica sessions:** the bridge keeps sessions in a per-pod in-memory
   map (`server_session.go`), and the SNI-passthrough router (`mode tcp`) cannot
@@ -321,12 +327,11 @@ Status against `pat-console` (GCP, zero-node):
   doesn't hold its session. A shared session store is a bridge code change,
   deferred. (Login was validated live with 2 replicas — it works when requests
   land on the same pod; it is not robust across pods.)
-- **User-settings persistence** needs guest-side setup we don't create: the
-  `openshift-console-user-settings` namespace + console-SA RBAC that
-  console-operator normally provisions. Browsing/login are unaffected; per-user
-  console preferences don't save until that RBAC exists (operator-owned, Phase 2).
-  (The TLS half of this — the anonymous transport ignoring `-ca-file` — was fixed
-  in the console PR and verified live; see STUDY.md §22.)
+- **User-settings persistence** needs guest-side setup we don't create (the
+  `openshift-console-user-settings` namespace + console-SA RBAC console-operator
+  normally provisions). Operator/lifecycle work — moved to later phases (§13).
+  Browsing/login are unaffected. (The TLS half — the anonymous transport ignoring
+  `-ca-file` — was fixed in the console PR and verified live; see STUDY.md §22.)
 
 Resolved during implementation (no longer limitations):
 - **Per-user OIDC login: DONE (verified live end-to-end).** Replaces the Phase 1
@@ -355,14 +360,30 @@ Resolved during implementation (no longer limitations):
 
 ---
 
-# PART 2 — Plugin path (adapted)
+# Follow-on phases
 
-Deploy and validate **after Part 1 passes.** Plugins are the one piece that needs the guest **pod/service network** (plugin asset backends are guest ClusterIP Services like `<plugin-svc>.<ns>.svc.cluster.local`), which the core console never touches. This is where konnectivity + the one console code fix + a custom image come in.
+**Phase 1 (this doc): DONE.** Core console + CLI-downloads, exposure, OIDC login.
 
-## 11. What changes vs Part 1
+**Phase 2 — day-0 UX: pod terminal + monitoring.** See the dedicated
+`CONSOLE_CONTROL_PLANE_PHASE2_PLAN.md`. Pod terminal goes through the guest KAS
+`pods/exec` path we already have (likely works today; needs a browser test);
+monitoring needs the konnectivity socks5 guest-network path + the bridge
+`-k8s-mode-off-cluster-thanos`/`-alertmanager` flags.
+
+**Phase 3 — plugins** (below). Was "Part 2" here; re-numbered because terminal +
+monitoring are the higher-priority day-0 functionality. Plugins share Phase 2's
+konnectivity path plus a 1-line console asset-proxy fix.
+
+---
+
+# PHASE 3 — Plugin path (adapted)
+
+Deploy and validate **after Phase 2.** Plugins need the guest **pod/service network** (plugin asset backends are guest ClusterIP Services like `<plugin-svc>.<ns>.svc.cluster.local`), which the core console never touches. This is where konnectivity + the one console code fix + a custom image come in. (Phase 2 builds the shared konnectivity socks5 sidecar; Phase 3 adds the asset-proxy fix + plugin config on top.)
+
+## 11. What changes vs Phase 1
 
 1. **Console code fix (1 line)** — the plugin **asset** transport is hand-built and ignores `HTTP_PROXY` (`_console-research/pkg/server/server.go:520-525`). Add `Proxy: http.ProxyFromEnvironment` at `server.go:524` so plugin asset fetches go through the konnectivity socks5 proxy. (The plugin **API** proxy `/api/proxy` already honors proxy env — `server.go:555`; and the off-cluster k8s proxy already sets `UseProxyFromEnvironment: true` — `cmd/bridge/main.go:541`.)
-   - Build a patched console image → push to **`quay.io/patmarti/console:console-phase2`** (public repo). Use it as `${CONSOLE_IMAGE}` in Part 2.
+   - Build a patched console image (on top of the existing `-ca-file` custom image) → push to `quay.io/patmarti/console:*`. Use it as `${CONSOLE_IMAGE}` for Phase 3.
 
 2. **Konnectivity socks5 sidecar** on the bridge pod — tunnels `HTTP(S)_PROXY` traffic into the guest pod network via the reverse konnectivity tunnel. It resolves guest Service names → ClusterIP by reading the Service object from the guest API (resolver step 2, study §5.1), then dials through konnectivity. In the real component this is injected by `.InjectKonnectivityContainer({Mode: Socks5})`; for a manual spike, hand-roll it from the CPO image (`control-plane-operator konnectivity-socks5-proxy run`, listens `:8090`, mounts konnectivity client cert `konnectivity-client` + CA `konnectivity-ca`). See `console-control-plane-manifests.example.yaml` object 9 sidecar as the shape.
 
@@ -378,17 +399,33 @@ Deploy and validate **after Part 1 passes.** Plugins are the one piece that need
 
 5. **console-config with plugins** — Part 1 runs flags-only with no plugins. To load a plugin without the operator, provide a `console-config.yaml` ConfigMap listing the plugin `name → https://<svc>.<ns>.svc.cluster.local:<port>` and mount it (`-config`). Endpoints resolve in-guest via the socks5 sidecar. (Study §14.5 confirms URL shape `getServiceURL` `configmap.go:255-262`.) Dynamic discovery of guest `ConsolePlugin` CRs is operator work — **not** in Phase 1; here we wire one plugin by hand to prove the path.
 
-## 12. Part 2 validation
+## 12. Phase 3 validation
 
 - [ ] Patched console image (`quay.io/patmarti/console:console-phase2`) runs.
 - [ ] Konnectivity socks5 sidecar healthy; resolves a known guest plugin Service.
 - [ ] A hand-configured plugin loads in the console UI (assets fetched through the tunnel — proves the `server.go:524` fix + socks5 path).
-- [ ] Core console (Part 1) still works unchanged with the sidecar present.
+- [ ] Core console (Phase 1) + terminal/monitoring (Phase 2) still work unchanged with the plugin config present.
 
-## 13. Part 2 non-goals
+## 13. Phase 3 non-goals / later phases
 
 - Dynamic plugin discovery (guest `ConsolePlugin` CR watch → config regen → rollout) — operator work, later phase.
-- Monitoring (Thanos/Alertmanager) — same konnectivity path, out of Phase 1 scope.
+
+**Deferred operator/lifecycle work (a later phase, not the plugin path):** these
+are things console-operator normally owns that we hand-replicated or left unwired
+in Part 1, and which a real productization must provision.
+
+- **User-settings namespace + RBAC.** Per-user console preferences persist to
+  ConfigMaps in the guest `openshift-console-user-settings` namespace via the
+  console's own (anonymous) identity. console-operator normally creates that
+  namespace and the console-SA Role/RoleBinding; with no operator they don't
+  exist, so saves fail on RBAC (`system:anonymous cannot get configmaps ...`).
+  The TLS path to the guest KAS is already fixed (STUDY.md §22); only the
+  namespace + RBAC provisioning remains. Same "who owns this guest-side object"
+  question as the CLI-downloads CRD/CR (§10 Resolved, STUDY.md §22).
+- **`status.oidcClients` owner** (so an `oidcProviders[].oidcClients` entry is
+  admissible) and the day-2 "enable console with this OIDC client id + secret"
+  frontend/lifecycle knob — see `GOOGLE_OIDC_CLIENT_SETUP.md` and STUDY.md §23.
+- **Session cookie key generation/rotation**, currently hand-provided (STUDY.md §23).
 
 ---
 
@@ -414,4 +451,4 @@ Deploy and validate **after Part 1 passes.** Plugins are the one piece that need
 | Off-cluster k8s proxy honors proxy env | `_console-research/cmd/bridge/main.go:541` |
 | Bridge binary/assets paths | `_console-research/Dockerfile.product:27-35` |
 | `/health` endpoint | `_console-research/pkg/server/server.go:350` |
-| Plugin asset transport ignores proxy (Part 2 fix) | `_console-research/pkg/server/server.go:520-525` |
+| Plugin asset transport ignores proxy (Phase 3 fix) | `_console-research/pkg/server/server.go:520-525` |
