@@ -93,6 +93,8 @@ type hypershiftTest struct {
 
 	upgradeContext    *UpgradeContext
 	hasBeenTornedDown bool
+	startTime         time.Time
+	opts              *PlatformAgnosticOptions
 }
 
 func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFunc) *hypershiftTest {
@@ -137,6 +139,8 @@ func (h *hypershiftTest) WithHOUpgrade() *hypershiftTest {
 }
 
 func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir, name string, serviceAccountSigningKey []byte) {
+	h.startTime = time.Now()
+	h.opts = opts
 	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
 
 	// create a hypershift cluster for the test
@@ -226,8 +230,19 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 
 // runs after each test.
 func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hyperv1.PlatformType) {
+	// Run the CloudTrail permission check regardless of test outcome —
+	// permission denied events are most useful when tests fail.
+	if platform == hyperv1.AWSPlatform && h.opts != nil && h.opts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
+		NoticeCloudTrailPermissionDenied(h.T, h.ctx,
+			h.client,
+			h.opts.AWSPlatform.Credentials.AWSCredentialsFile,
+			h.opts.AWSPlatform.Region,
+			h.startTime,
+			hostedCluster)
+	}
+
 	if h.Failed() {
-		// skip if Main failed
+		// skip remaining assertions if Main failed
 		return
 	}
 	h.Run("EnsureHostedCluster", func(t *testing.T) {
