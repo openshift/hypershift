@@ -788,6 +788,12 @@ func setupPlatformControllers(mgr ctrl.Manager, opts *StartOptions, mgmtClusterC
 		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create GCPPrivateServiceConnect controller: %w", err)
 		}
+		if err := (&gcp.GCPLoadBalancerLabelsReconciler{
+			Client: mgr.GetClient(),
+			Log:    ctrl.Log.WithName("controllers").WithName("GCPLoadBalancerLabels"),
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create GCP load-balancer labels controller: %w", err)
+		}
 	case hyperv1.AzurePlatform:
 		if err := setupAzurePlatformController(mgr, log); err != nil {
 			return err
