@@ -210,9 +210,9 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 			e2eutil.WithTimeout(2*time.Minute),
 		)
 	}
-	initialNodePool := &hyperv1.NodePool{}
-	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), initialNodePool)).To(Succeed(), "failed to get NodePool before upgrade")
-	e2eutil.EnsureNodesRuntime(t, nodes, initialNodePool)
+	preUpgradeNodePool := &hyperv1.NodePool{}
+	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), preUpgradeNodePool)).To(Succeed(), "failed to get NodePool before upgrade")
+	e2eutil.EnsureNodesRuntime(t, nodes, preUpgradeNodePool)
 
 	// Validate NodesInfo is populated with the previous version before upgrade.
 	t.Logf("Validating NodesInfo is populated with version %s before upgrade", previousReleaseInfo.Version())
@@ -277,9 +277,9 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		e2eutil.WithTimeout(ru.getNodePoolUpgradeTimeout()),
 	)
 	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
-	upgradedNodePool := &hyperv1.NodePool{}
-	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), upgradedNodePool)).To(Succeed(), "failed to get NodePool after upgrade")
-	e2eutil.EnsureNodesRuntime(t, newNodes, upgradedNodePool)
+	postUpgradeNodePool := &hyperv1.NodePool{}
+	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), postUpgradeNodePool)).To(Succeed(), "failed to get NodePool after upgrade")
+	e2eutil.EnsureNodesRuntime(t, newNodes, postUpgradeNodePool)
 
 	// Validate NodesInfo is populated with the latest version after upgrade.
 	t.Logf("Validating NodesInfo is populated with version %s after upgrade", latestReleaseInfo.Version())

@@ -161,6 +161,15 @@ func TestExpectedNodeRuntimeHandlers(t *testing.T) {
 			wantRunc: true,
 		},
 		{
+			name:           "observed RHEL 9 takes precedence over requested RHEL 10",
+			releaseVersion: Version50,
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10}},
+				Status: hyperv1.NodePoolStatus{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9}},
+			},
+			wantRunc: true,
+		},
+		{
 			name:           "status version falls back to RHEL 9",
 			releaseVersion: Version50,
 			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "4.23.0"}},
@@ -191,6 +200,11 @@ func TestExpectedNodeRuntimeHandlers(t *testing.T) {
 			name:           "legacy suite version is the final fallback",
 			releaseVersion: Version423,
 			nodePool:       &hyperv1.NodePool{},
+			wantRunc:       true,
+		},
+		{
+			name:           "nil NodePool uses the legacy suite version fallback",
+			releaseVersion: Version423,
 			wantRunc:       true,
 		},
 	}

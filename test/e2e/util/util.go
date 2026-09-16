@@ -1361,9 +1361,6 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 
 	expectedHandlers, err := expectedNodeRuntimeHandlers(nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to determine expected runtime handlers")
-	if err != nil {
-		return
-	}
 
 	for _, node := range nodes {
 		validHandlers := make(map[string]bool, len(expectedHandlers))
