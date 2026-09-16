@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/upsert"
@@ -17,12 +21,19 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 )
 
 func TestConstructEndpointName(t *testing.T) {
@@ -902,4 +913,513 @@ func TestReconcileDNSEndpoint(t *testing.T) {
 			assert.Equal(t, tt.hcp.Name, ownerRefs[0].Name)
 		})
 	}
+}
+
+func TestGetHCPOrCleanupOrphan(t *testing.T) {
+	tests := []struct {
+		name                  string
+		hcpExists             bool
+		pscHasFinalizer       bool
+		expectHCP             bool
+		expectFinalizerAbsent bool
+	}{
+		{
+			name:            "When the owning HCP exists, it should return the HCP without modifying the PSC finalizer",
+			hcpExists:       true,
+			pscHasFinalizer: true,
+			expectHCP:       true,
+		},
+		{
+			name:                  "When the owning HCP is missing and the PSC has a finalizer, it should remove the orphaned finalizer",
+			pscHasFinalizer:       true,
+			expectFinalizerAbsent: true,
+		},
+		{
+			name:            "When the owning HCP is missing and the PSC has no finalizer, it should return without modifying the PSC",
+			pscHasFinalizer: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newGCPPSCTestScheme(t)
+			psc := newTestGCPPSC("test-psc", "test-ns", tt.pscHasFinalizer)
+			objects := []client.Object{psc}
+			if tt.hcpExists {
+				objects = append(objects, newTestHCP("test-hcp", "test-ns"))
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+
+			storedPSC := &hyperv1.GCPPrivateServiceConnect{}
+			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), storedPSC))
+
+			r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
+			hcp, err := r.getHCPOrCleanupOrphan(t.Context(), storedPSC, testr.New(t))
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectHCP, hcp != nil)
+
+			updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
+			if tt.expectFinalizerAbsent {
+				assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+			} else {
+				assert.Equal(t, tt.pscHasFinalizer, controllerutil.ContainsFinalizer(updatedPSC, pscEndpointFinalizer))
+			}
+		})
+	}
+}
+
+func TestEnsureHCPFinalizer(t *testing.T) {
+	tests := []struct {
+		name               string
+		finalizers         []string
+		patchConflict      bool
+		expectRequeueAfter time.Duration
+		expectFinalizer    bool
+	}{
+		{
+			name:            "When the HCP does not have the PSC finalizer, it should add it",
+			expectFinalizer: true,
+		},
+		{
+			name:            "When the HCP already has the PSC finalizer, it should not add a duplicate",
+			finalizers:      []string{hcpGCPPSCFinalizerName},
+			expectFinalizer: true,
+		},
+		{
+			name:               "When patching the HCP finalizer conflicts, it should requeue after one second",
+			patchConflict:      true,
+			expectRequeueAfter: time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newGCPPSCTestScheme(t)
+			hcp := newTestHCP("test-hcp", "test-ns")
+			hcp.Finalizers = tt.finalizers
+			clientBuilder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp)
+			if tt.patchConflict {
+				conflictErr := apierrors.NewConflict(hyperv1.Resource("hostedcontrolplanes"), hcp.Name, errors.New("conflict"))
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+						if _, ok := obj.(*hyperv1.HostedControlPlane); ok {
+							return conflictErr
+						}
+						return c.Patch(ctx, obj, patch, opts...)
+					},
+				})
+			}
+			fakeClient := clientBuilder.Build()
+
+			r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
+			result, err := r.ensureHCPFinalizer(t.Context(), hcp, testr.New(t))
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectRequeueAfter, result.RequeueAfter)
+
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+			assert.Equal(t, tt.expectFinalizer, controllerutil.ContainsFinalizer(updatedHCP, hcpGCPPSCFinalizerName))
+		})
+	}
+}
+
+func TestRemoveHCPFinalizer(t *testing.T) {
+	tests := []struct {
+		name               string
+		finalizers         []string
+		patchConflict      bool
+		expectRequeueAfter time.Duration
+		expectFinalizer    bool
+	}{
+		{
+			name:       "When the HCP has the PSC finalizer, it should remove it",
+			finalizers: []string{hcpGCPPSCFinalizerName, "other-finalizer"},
+		},
+		{
+			name:       "When the HCP does not have the PSC finalizer, it should leave other finalizers unchanged",
+			finalizers: []string{"other-finalizer"},
+		},
+		{
+			name:               "When removing the HCP finalizer conflicts, it should requeue after one second",
+			finalizers:         []string{hcpGCPPSCFinalizerName, "other-finalizer"},
+			patchConflict:      true,
+			expectRequeueAfter: time.Second,
+			expectFinalizer:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newGCPPSCTestScheme(t)
+			hcp := newTestHCP("test-hcp", "test-ns")
+			hcp.Finalizers = tt.finalizers
+			clientBuilder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp)
+			if tt.patchConflict {
+				conflictErr := apierrors.NewConflict(hyperv1.Resource("hostedcontrolplanes"), hcp.Name, errors.New("conflict"))
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+						if _, ok := obj.(*hyperv1.HostedControlPlane); ok {
+							return conflictErr
+						}
+						return c.Patch(ctx, obj, patch, opts...)
+					},
+				})
+			}
+			fakeClient := clientBuilder.Build()
+
+			r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
+			result, err := r.removeHCPFinalizer(t.Context(), hcp, testr.New(t))
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectRequeueAfter, result.RequeueAfter)
+
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+			assert.Equal(t, tt.expectFinalizer, controllerutil.ContainsFinalizer(updatedHCP, hcpGCPPSCFinalizerName))
+			assert.Contains(t, updatedHCP.Finalizers, "other-finalizer")
+		})
+	}
+}
+
+func TestReconcileHCPDeletion(t *testing.T) {
+	tests := []struct {
+		name            string
+		clientFactory   func(*testing.T) func(context.Context) (*compute.Service, error)
+		expectError     bool
+		expectRequeue   time.Duration
+		expectHCDeleted bool
+	}{
+		{
+			name:            "When GCP cleanup succeeds, it should remove PSC and HCP finalizers",
+			clientFactory:   successfulGCPClientFactory,
+			expectHCDeleted: true,
+		},
+		{
+			name: "When a GCP deletion operation is in progress, it should retain finalizers and requeue",
+			clientFactory: func(t *testing.T) func(context.Context) (*compute.Service, error) {
+				return testGCPClientFactory(t, http.StatusOK, "PENDING")
+			},
+			expectRequeue: pscEndpointDeletionRequeueDuration,
+		},
+		{
+			name: "When GCP cleanup fails, it should retain PSC and HCP finalizers",
+			clientFactory: func(t *testing.T) func(context.Context) (*compute.Service, error) {
+				return testGCPClientFactory(t, http.StatusInternalServerError, "")
+			},
+			expectError: true,
+		},
+		{
+			name: "When the GCP client cannot be initialized, it should retain PSC and HCP finalizers",
+			clientFactory: func(*testing.T) func(context.Context) (*compute.Service, error) {
+				return func(context.Context) (*compute.Service, error) {
+					return nil, errors.New("GCP credentials unavailable")
+				}
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newGCPPSCTestScheme(t)
+			psc := newTestGCPPSC("test-psc", "test-ns", true)
+			hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
+
+			r := &GCPPrivateServiceConnectReconciler{
+				Client: fakeClient,
+				gcpClientBuilder: gcpClientBuilder{
+					customerProject: "customer-project",
+					region:          "us-central1",
+					initialized:     true,
+					newClient:       tt.clientFactory(t),
+				},
+			}
+			result, err := r.reconcileHCPDeletion(t.Context(), hcp, testr.New(t))
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.expectRequeue, result.RequeueAfter)
+
+			updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP)
+			if tt.expectHCDeleted {
+				assert.True(t, apierrors.IsNotFound(err))
+				assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Contains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+			assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
+		})
+	}
+}
+
+func TestReconcile(t *testing.T) {
+	t.Run("When the HCP is being deleted, it should not re-add the PSC finalizer", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		psc := newTestGCPPSC("test-psc", "test-ns", false)
+		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{"other-finalizer"})
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized: true,
+				newClient: func(context.Context) (*compute.Service, error) {
+					return nil, errors.New("GCP credentials unavailable")
+				},
+			},
+		}
+
+		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(psc)})
+		require.Error(t, err)
+
+		updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
+		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+	})
+
+	t.Run("When the Service Attachment is unavailable, it should wait without adding the HCP finalizer", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		psc := newTestGCPPSC("test-psc", "test-ns", true)
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
+		r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
+
+		result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(psc)})
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Second, result.RequeueAfter)
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+		assert.NotContains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
+	})
+
+	t.Run("When the PSC endpoint IP is unavailable, it should wait without adding the HCP finalizer", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		psc := newReadyServiceAttachmentPSC("test-psc", "test-ns")
+		psc.Finalizers = []string{pscEndpointFinalizer}
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized:     true,
+				customerProject: "customer-project",
+				region:          "us-central1",
+				newClient:       testGCPClientFactory(t, http.StatusOK, "PENDING"),
+			},
+		}
+
+		result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(psc)})
+		require.NoError(t, err)
+		assert.Equal(t, 15*time.Second, result.RequeueAfter)
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+		assert.NotContains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
+	})
+
+	t.Run("When the PSC endpoint is ready, it should add the HCP finalizer", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		psc := newReadyServiceAttachmentPSC("test-psc", "test-ns")
+		psc.Finalizers = []string{pscEndpointFinalizer}
+		psc.Status.EndpointIP = "10.0.0.10"
+		hcp := newTestHCP("test-hcp", "test-ns")
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).WithStatusSubresource(psc).Build()
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized:     true,
+				customerProject: "customer-project",
+				region:          "us-central1",
+				newClient:       existingGCPResourcesClientFactory(t),
+			},
+			dnsReconciler: func(context.Context, *hyperv1.GCPPrivateServiceConnect, *hyperv1.HostedControlPlane, logr.Logger) (ctrl.Result, error) {
+				return ctrl.Result{}, nil
+			},
+		}
+
+		result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(psc)})
+		require.NoError(t, err)
+		assert.Equal(t, driftDetectionRequeueInterval, result.RequeueAfter)
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+		assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
+	})
+}
+
+func TestMapHCPToPSC(t *testing.T) {
+	tests := []struct {
+		name          string
+		hcpFinalizers []string
+		expectNames   []string
+	}{
+		{
+			name:          "When the HCP has the PSC finalizer, it should enqueue every PSC in its namespace",
+			hcpFinalizers: []string{hcpGCPPSCFinalizerName},
+			expectNames:   []string{"first", "second"},
+		},
+		{
+			name:        "When the HCP does not have the PSC finalizer, it should not enqueue PSC resources",
+			expectNames: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newGCPPSCTestScheme(t)
+			hcp := newTestHCP("test-hcp", "test-ns")
+			hcp.Finalizers = tt.hcpFinalizers
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+				hcp,
+				newTestGCPPSC("first", "test-ns", false),
+				newTestGCPPSC("second", "test-ns", false),
+				newTestGCPPSC("other-namespace", "other-ns", false),
+			).Build()
+			r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
+
+			requests := r.mapHCPToPSC()(t.Context(), hcp)
+			requestNames := make([]string, 0, len(requests))
+			for _, request := range requests {
+				requestNames = append(requestNames, request.Name)
+			}
+			assert.ElementsMatch(t, tt.expectNames, requestNames)
+		})
+	}
+}
+
+func newGCPPSCTestScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, hyperv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	return scheme
+}
+
+func newTestHCP(name, namespace string) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
+}
+
+func newTestGCPHCP(name, namespace string) *hyperv1.HostedControlPlane {
+	hcp := newTestHCP(name, namespace)
+	hcp.Spec.Platform = hyperv1.PlatformSpec{
+		Type: hyperv1.GCPPlatform,
+		GCP: &hyperv1.GCPPlatformSpec{
+			Project: "customer-project",
+			Region:  "us-central1",
+			NetworkConfig: hyperv1.GCPNetworkConfig{
+				Network:                     hyperv1.GCPResourceReference{Name: "customer-network"},
+				PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "psc-subnet"},
+			},
+		},
+	}
+	return hcp
+}
+
+func newDeletingTestHCP(name, namespace string, finalizers []string) *hyperv1.HostedControlPlane {
+	hcp := newTestHCP(name, namespace)
+	hcp.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	hcp.Finalizers = finalizers
+	return hcp
+}
+
+func newTestGCPPSC(name, namespace string, withFinalizer bool) *hyperv1.GCPPrivateServiceConnect {
+	psc := &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Status: hyperv1.GCPPrivateServiceConnectStatus{
+			ServiceAttachmentName: "test-service-attachment",
+		},
+	}
+	psc.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: hyperv1.GroupVersion.String(),
+		Kind:       "HostedControlPlane",
+		Name:       "test-hcp",
+	}}
+	if withFinalizer {
+		psc.Finalizers = []string{pscEndpointFinalizer}
+	}
+	return psc
+}
+
+func newReadyServiceAttachmentPSC(name, namespace string) *hyperv1.GCPPrivateServiceConnect {
+	psc := newTestGCPPSC(name, namespace, false)
+	psc.Status.ServiceAttachmentURI = "projects/customer-project/regions/us-central1/serviceAttachments/test-service-attachment"
+	psc.Status.Conditions = []metav1.Condition{{
+		Type:   string(hyperv1.GCPServiceAttachmentAvailable),
+		Status: metav1.ConditionTrue,
+	}}
+	return psc
+}
+
+func successfulGCPClientFactory(t *testing.T) func(context.Context) (*compute.Service, error) {
+	return testGCPClientFactory(t, http.StatusOK, "DONE")
+}
+
+func testGCPClientFactory(t *testing.T, responseStatus int, operationStatus string) func(context.Context) (*compute.Service, error) {
+	t.Helper()
+	httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		statusCode := responseStatus
+		body := fmt.Sprintf(`{"status": %q}`, operationStatus)
+		if responseStatus != http.StatusOK {
+			body = `{"error":{"code":500,"message":"GCP API error"}}`
+		}
+		if r.Method == http.MethodGet {
+			statusCode = http.StatusNotFound
+			body = `{"error":{"code":404,"message":"not found"}}`
+		}
+		return &http.Response{
+			Status:        fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
+			StatusCode:    statusCode,
+			Header:        http.Header{"Content-Type": []string{"application/json"}},
+			Body:          io.NopCloser(strings.NewReader(body)),
+			ContentLength: int64(len(body)),
+			Request:       r,
+		}, nil
+	})}
+
+	service, err := compute.NewService(
+		t.Context(),
+		option.WithHTTPClient(httpClient),
+		option.WithoutAuthentication(),
+	)
+	require.NoError(t, err)
+	return func(context.Context) (*compute.Service, error) {
+		return service, nil
+	}
+}
+
+func existingGCPResourcesClientFactory(t *testing.T) func(context.Context) (*compute.Service, error) {
+	t.Helper()
+	httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		body := `{"address":"10.0.0.10"}`
+		if strings.Contains(r.URL.Path, "/forwardingRules/") {
+			body = `{"IPAddress":"10.0.0.10","target":"projects/management-project/regions/us-central1/serviceAttachments/test-service-attachment"}`
+		}
+		return &http.Response{
+			Status:        "200 OK",
+			StatusCode:    http.StatusOK,
+			Header:        http.Header{"Content-Type": []string{"application/json"}},
+			Body:          io.NopCloser(strings.NewReader(body)),
+			ContentLength: int64(len(body)),
+			Request:       r,
+		}, nil
+	})}
+	service, err := compute.NewService(t.Context(), option.WithHTTPClient(httpClient), option.WithoutAuthentication())
+	require.NoError(t, err)
+	return func(context.Context) (*compute.Service, error) {
+		return service, nil
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }

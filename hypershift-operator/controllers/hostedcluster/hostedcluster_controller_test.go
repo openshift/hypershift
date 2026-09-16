@@ -8321,6 +8321,47 @@ func TestDeleteOrcImagesDuringHostedClusterDeletion(t *testing.T) {
 	}
 }
 
+func TestDelete_WhenGCPPSCExists_ItShouldLeaveCleanupToTheCPO(t *testing.T) {
+	g := NewWithT(t)
+	const (
+		hcNamespace = "test-namespace"
+		hcName      = "test-cluster"
+		pscName     = "private-router"
+	)
+	cpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP:  &hyperv1.GCPPlatformSpec{},
+			},
+		},
+	}
+	hcp := controlplaneoperator.HostedControlPlane(cpNamespace, hcName)
+	psc := &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       pscName,
+			Namespace:  cpNamespace,
+			Finalizers: []string{"hypershift.openshift.io/gcp-psc-customer"},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hc, hcp, psc).Build()
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+	}
+
+	done, err := r.delete(t.Context(), hc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(done).To(BeFalse(), "deletion should wait for the HostedControlPlane")
+
+	updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(psc), updatedPSC)).To(Succeed())
+	g.Expect(updatedPSC.Finalizers).To(ContainElement("hypershift.openshift.io/gcp-psc-customer"))
+}
+
 func TestKasServingCertHashFromEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
