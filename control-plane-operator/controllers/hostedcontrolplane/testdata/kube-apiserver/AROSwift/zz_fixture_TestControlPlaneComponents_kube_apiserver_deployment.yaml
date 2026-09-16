@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: df6148036ab90734cd9f0fa75bea03751f4576a60c0de24120583abedc59f98d
+    hypershift.openshift.io/desired-state-hash: 2835cdbeb7c16c9abcbc6e1a46bcc186b24d9c63c1c06bae5bebd9e56d9a56ae
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -560,8 +560,43 @@ spec:
       - args:
         - -c
         - |
-          #!/bin/sh
-          while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done
+          #!/bin/bash
+          set -e
+          # Wait for etcd DNS to be resolvable and etcd to become ready.
+          # DNS check: max 100 seconds. etcd health check: max 5 minutes.
+          max_attempts=100
+          echo "Waiting for etcd DNS..."
+          attempt=1
+          until nslookup etcd-client.$(POD_NAMESPACE).svc; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "ERROR: etcd DNS did not resolve after ${max_attempts} attempts (approximately 100 seconds); check the etcd-client service." >&2
+              exit 1
+            fi
+            echo "DNS not yet resolved, retrying (attempt ${attempt}/${max_attempts})..."
+            attempt=$((attempt + 1))
+            sleep 1
+          done
+          echo "DNS resolved, now verifying etcd connectivity..."
+          # Wait for etcd to actually accept connections (not just DNS)
+          # Use curl to hit etcd health endpoint with proper TLS authentication
+          attempt=1
+          until curl --connect-timeout 1 --max-time 2 --fail --silent \
+            --cacert /etc/kubernetes/certs/etcd-ca/ca.crt \
+            --cert /etc/kubernetes/certs/etcd/etcd-client.crt \
+            --key /etc/kubernetes/certs/etcd/etcd-client.key \
+            https://etcd-client.$(POD_NAMESPACE).svc:2379/health 2>/dev/null; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "ERROR: etcd did not become ready after ${max_attempts} attempts (approximately five minutes); check the etcd pods and the etcd-client service for connectivity or health issues." >&2
+              exit 1
+            fi
+            if [ "${attempt}" -eq 10 ]; then
+              echo "WARNING: etcd is still not ready after ${attempt} attempts; inspect the etcd pods and the etcd-client service while the init container continues waiting." >&2
+            fi
+            echo "etcd not yet ready, retrying (attempt ${attempt}/${max_attempts})..."
+            attempt=$((attempt + 1))
+            sleep 1
+          done
+          echo "etcd is ready and accepting connections"
         command:
         - /bin/bash
         env:
@@ -573,8 +608,27 @@ spec:
         image: cli
         imagePullPolicy: IfNotPresent
         name: wait-for-etcd
-        resources: {}
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 0
+          runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes/certs/etcd-ca
+          name: etcd-ca
+        - mountPath: /etc/kubernetes/certs/etcd
+          name: etcd-client-crt
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
       terminationGracePeriodSeconds: 135
