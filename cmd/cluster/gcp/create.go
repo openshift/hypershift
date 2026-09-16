@@ -21,8 +21,7 @@ import (
 var _ core.Platform = (*CreateOptions)(nil)
 
 const (
-	SATokenIssuerSecret   = "sa-token-issuer-key"
-	defaultGCPMachineType = "n2-standard-4"
+	SATokenIssuerSecret = "sa-token-issuer-key"
 
 	flagProject                       = "project"
 	flagRegion                        = "region"
@@ -127,7 +126,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ServiceAccountSigningKeyPath, flagServiceAccountSigningKeyPath, "", "The file to the private key for the service account token issuer")
 	flags.StringVar(&opts.EndpointAccess, flagEndpointAccess, string(hyperv1.GCPEndpointAccessPrivate), "Endpoint access type (Private or PublicAndPrivate)")
 	flags.StringVar(&opts.IssuerURL, flagIssuerURL, "", "The OIDC provider issuer URL")
-	flags.StringVar(&opts.MachineType, flagMachineType, "", "GCP machine type for node instances. Defaults to "+defaultGCPMachineType)
+	flags.StringVar(&opts.MachineType, flagMachineType, "", "GCP machine type for node instances (default: n2-standard-4 for AMD64, t2a-standard-4 for ARM64)")
 	flags.StringVar(&opts.Zone, flagZone, "", "GCP zone for node instances (e.g. us-central1-a). Defaults to {region}-a")
 	flags.StringVar(&opts.Subnet, flagSubnet, "", "Subnet name for node instances. Defaults to the PSC subnet value")
 	flags.StringVar(&opts.BootImage, flagBootImage, "", "GCP boot image for node instances. Overrides the default RHCOS image from the release payload")
@@ -335,10 +334,6 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 	}
 
-	machineType := o.MachineType
-	if machineType == "" {
-		machineType = defaultGCPMachineType
-	}
 	zone := o.Zone
 	if zone == "" {
 		zone = o.Region + "-a"
@@ -347,12 +342,15 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	if subnet == "" {
 		subnet = o.PrivateServiceConnectSubnet
 	}
-	nodePool.Spec.Platform.GCP = &hyperv1.GCPNodePoolPlatform{
-		MachineType: machineType,
+
+	nodePool.Spec.Platform.GCP = util.BuildGCPNodePoolPlatform(util.GCPNodePoolPlatformOptions{
 		Zone:        zone,
-		Subnet:      hyperv1.GCPResourceName(subnet),
+		Subnet:      subnet,
+		MachineType: o.MachineType,
+		Arch:        nodePool.Spec.Arch,
 		Image:       o.BootImage,
-	}
+	})
+
 	return []*hyperv1.NodePool{nodePool}
 }
 
