@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/gcputil"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -55,11 +56,15 @@ type loadBalancerLabelsComputeServiceAdapter struct {
 }
 
 func (a *loadBalancerLabelsComputeServiceAdapter) ListForwardingRules(ctx context.Context, project, region, filter string) ([]*compute.ForwardingRule, error) {
-	response, err := a.svc.ForwardingRules.List(project, region).Filter(filter).Context(ctx).Do()
+	var forwardingRules []*compute.ForwardingRule
+	err := a.svc.ForwardingRules.List(project, region).Filter(filter).Context(ctx).Pages(ctx, func(page *compute.ForwardingRuleList) error {
+		forwardingRules = append(forwardingRules, page.Items...)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	return response.Items, nil
+	return forwardingRules, nil
 }
 
 func (a *loadBalancerLabelsComputeServiceAdapter) SetForwardingRuleLabels(ctx context.Context, project, region, name string, labels *compute.RegionSetLabelsRequest) (*compute.Operation, error) {
@@ -124,6 +129,10 @@ func (r *GCPLoadBalancerLabelsReconciler) Reconcile(ctx context.Context, req ctr
 	}
 	if !hcp.DeletionTimestamp.IsZero() || hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
 		return ctrl.Result{}, nil
+	}
+	if isPaused, duration := supportutil.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
+		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
 	desiredLabels := gcputil.ResourceLabels(hcp)

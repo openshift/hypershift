@@ -34,54 +34,116 @@ import (
 )
 
 func TestReconcileForwardingRuleLabels(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.True(t, strings.HasSuffix(r.URL.Path, "/setLabels"))
+	tests := []struct {
+		name             string
+		existingLabels   map[string]string
+		desiredLabels    map[string]string
+		wantSetLabels    map[string]string
+		wantSetLabelCall int
+	}{
+		{
+			name:             "When labels differ, it should update the forwarding rule labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "old"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabels:    map[string]string{"preserved": "value", "managed": "new"},
+			wantSetLabelCall: 1,
+		},
+		{
+			name:             "When forwarding rule labels already match, it should not call set labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "new"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabelCall: 0,
+		},
+		{
+			name:             "When forwarding rule and desired labels are empty, it should not call set labels",
+			wantSetLabelCall: 0,
+		},
+	}
 
-		var request compute.RegionSetLabelsRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
-		assert.Equal(t, "fingerprint", request.LabelFingerprint)
-		assert.True(t, maps.Equal(map[string]string{
-			"preserved": "value",
-			"managed":   "new",
-		}, request.Labels))
-		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
-		_, _ = w.Write([]byte(`{"status":"DONE"}`))
-	}))
-	defer server.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setLabelCalls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				setLabelCalls++
+				require.Equal(t, http.MethodPost, r.Method)
+				require.True(t, strings.HasSuffix(r.URL.Path, "/setLabels"))
 
-	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
-	require.NoError(t, err)
+				var request compute.RegionSetLabelsRequest
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				assert.Equal(t, "fingerprint", request.LabelFingerprint)
+				assert.True(t, maps.Equal(tt.wantSetLabels, request.Labels))
+				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+				_, _ = w.Write([]byte(`{"status":"DONE"}`))
+			}))
+			defer server.Close()
 
-	err = reconcileForwardingRuleLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint", "fingerprint", map[string]string{"preserved": "value", "managed": "old"}, map[string]string{"managed": "new"}, map[string]struct{}{"managed": {}})
-	require.NoError(t, err)
+			service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+			require.NoError(t, err)
+
+			err = reconcileForwardingRuleLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint", "fingerprint", tt.existingLabels, tt.desiredLabels, map[string]struct{}{"managed": {}})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSetLabelCall, setLabelCalls)
+		})
+	}
 }
 
 func TestReconcileAddressLabels(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(`{"labelFingerprint":"fingerprint","labels":{"preserved":"value","managed":"old"}}`))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/setLabels"):
-			var request compute.RegionSetLabelsRequest
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
-			assert.Equal(t, "fingerprint", request.LabelFingerprint)
-			assert.True(t, maps.Equal(map[string]string{
-				"preserved": "value",
-				"managed":   "new",
-			}, request.Labels))
-			_, _ = w.Write([]byte(`{"status":"DONE"}`))
-		default:
-			http.Error(w, "unexpected request", http.StatusBadRequest)
-		}
-	}))
-	defer server.Close()
+	tests := []struct {
+		name             string
+		existingLabels   map[string]string
+		desiredLabels    map[string]string
+		wantSetLabels    map[string]string
+		wantSetLabelCall int
+	}{
+		{
+			name:             "When labels differ, it should update the address labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "old"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabels:    map[string]string{"preserved": "value", "managed": "new"},
+			wantSetLabelCall: 1,
+		},
+		{
+			name:             "When address labels already match, it should not call set labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "new"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabelCall: 0,
+		},
+		{
+			name:             "When address and desired labels are empty, it should not call set labels",
+			wantSetLabelCall: 0,
+		},
+	}
 
-	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setLabelCalls := 0
+			addressResponse, err := json.Marshal(compute.Address{LabelFingerprint: "fingerprint", Labels: tt.existingLabels})
+			require.NoError(t, err)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet:
+					_, _ = w.Write(addressResponse)
+				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/setLabels"):
+					setLabelCalls++
+					var request compute.RegionSetLabelsRequest
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					assert.Equal(t, "fingerprint", request.LabelFingerprint)
+					assert.True(t, maps.Equal(tt.wantSetLabels, request.Labels))
+					_, _ = w.Write([]byte(`{"status":"DONE"}`))
+				default:
+					http.Error(w, "unexpected request", http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
 
-	err = reconcileAddressLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint-ip", map[string]string{"managed": "new"}, map[string]struct{}{"managed": {}})
-	require.NoError(t, err)
+			service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+			require.NoError(t, err)
+
+			err = reconcileAddressLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint-ip", tt.desiredLabels, map[string]struct{}{"managed": {}})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSetLabelCall, setLabelCalls)
+		})
+	}
 }
 
 func TestEnsureIPAddress(t *testing.T) {

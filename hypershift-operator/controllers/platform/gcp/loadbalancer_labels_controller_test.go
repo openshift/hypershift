@@ -2,7 +2,10 @@ package gcp
 
 import (
 	"context"
+	"fmt"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -19,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr/testr"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
 )
 
 type setForwardingRuleLabelsCall struct {
@@ -61,7 +65,12 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 		wantFilter       string
 		checkFilter      bool
 		wantRequeueAfter time.Duration
+		wantPaused       bool
 	}{
+		{
+			name:       "When HostedControlPlane reconciliation is paused, it should requeue without updating labels",
+			wantPaused: true,
+		},
 		{
 			name: "When forwarding rule has unrelated labels, it should preserve them while applying HCP labels",
 			labels: []hyperv1.GCPResourceLabel{
@@ -134,12 +143,16 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var pausedUntil *string
+			if tt.wantPaused {
+				pausedUntil = ptr.To(time.Now().Add(time.Hour).Format(time.RFC3339))
+			}
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "example", Annotations: tt.annotations},
 				Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.GCPPlatform,
 					GCP:  &hyperv1.GCPPlatformSpec{ResourceLabels: tt.labels},
-				}},
+				}, PausedUntil: pausedUntil},
 			}
 			objects := []client.Object{hcp}
 			if tt.service != nil {
@@ -158,7 +171,11 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reconcile: %v", err)
 			}
-			if result.RequeueAfter != tt.wantRequeueAfter {
+			if tt.wantPaused {
+				if result.RequeueAfter <= 0 || result.RequeueAfter > time.Hour {
+					t.Fatalf("RequeueAfter = %s, want a positive duration no greater than one hour", result.RequeueAfter)
+				}
+			} else if result.RequeueAfter != tt.wantRequeueAfter {
 				t.Fatalf("RequeueAfter = %s, want %s", result.RequeueAfter, tt.wantRequeueAfter)
 			}
 			if len(gcpClient.setCalls) != tt.wantSetCalls {
@@ -174,6 +191,44 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 				t.Fatalf("forwarding rule filter = %q, want %q", gcpClient.forwardingRuleFilter, tt.wantFilter)
 			}
 		})
+	}
+}
+
+func TestLoadBalancerLabelsComputeServiceAdapterListForwardingRules(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		switch requestCount {
+		case 1:
+			if r.URL.Query().Get("pageToken") != "" {
+				http.Error(w, "unexpected page token", http.StatusBadRequest)
+				return
+			}
+			_, _ = fmt.Fprint(w, `{"items":[{"name":"first"}],"nextPageToken":"second-page"}`)
+		case 2:
+			if r.URL.Query().Get("pageToken") != "second-page" {
+				http.Error(w, "missing page token", http.StatusBadRequest)
+				return
+			}
+			_, _ = fmt.Fprint(w, `{"items":[{"name":"second"}]}`)
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	if err != nil {
+		t.Fatalf("create compute service: %v", err)
+	}
+	adapter := &loadBalancerLabelsComputeServiceAdapter{svc: service}
+
+	forwardingRules, err := adapter.ListForwardingRules(context.Background(), "project", "us-east1", "")
+	if err != nil {
+		t.Fatalf("list forwarding rules: %v", err)
+	}
+	if len(forwardingRules) != 2 || forwardingRules[0].Name != "first" || forwardingRules[1].Name != "second" {
+		t.Fatalf("forwarding rules = %#v, want both pages", forwardingRules)
 	}
 }
 
