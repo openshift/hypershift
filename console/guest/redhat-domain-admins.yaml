@@ -1,3 +1,9 @@
+# Grants cluster-admin to users who log in via Google OIDC. The guest KAS maps
+# the token's `hd` (hosted-domain) claim to a group, so Workspace users in the
+# redhat.com domain get the `redhat.com` group; the explicit User subject covers
+# a consumer account that has no `hd` claim. Applied by hand because there is no
+# console-operator / default RBAC for external-OIDC identities in this topology.
+# Restrict or replace this for anything beyond the spike.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
