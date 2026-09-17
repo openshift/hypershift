@@ -20,6 +20,14 @@ const (
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 
+	// Initialize annotations map if nil
+	if deployment.Annotations == nil {
+		deployment.Annotations = make(map[string]string)
+	}
+
+	// Set the release version annotation for MonitorOperandsRolloutStatus
+	deployment.Annotations["release.openshift.io/version"] = cpContext.ReleaseImageProvider.Version()
+
 	podspec.UpdateVolume(kubeconfigVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
 		v.Secret.SecretName = manifests.KASServiceCAPIKubeconfigSecret(hcp.Namespace, hcp.Spec.InfraID).Name
 	})
