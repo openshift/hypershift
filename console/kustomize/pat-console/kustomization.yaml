@@ -2,19 +2,19 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # Phase 1 (Part 1) console overlay for the pat-console HostedCluster.
-# See CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md §7-8.
+# See CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PROGRESS.md (Phase 1).
 #
 # Values below come from the live pat-console HostedCluster/HostedControlPlane
-# (mgmt cluster gcp-hcp-int-mc-us-central1-yjiv):
+# (mgmt cluster dev-mgt-us-c1-p0917):
 #   - HCP namespace:  clusters-pat-console-pat-console
-#   - console host:   console.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+#   - console host:   console.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
 #                      (covered by the existing external-api-cert wildcard secret
 #                      *.pat-console-user...  -> reuse it as-is, option (a); no
 #                      dedicated Certificate needed. Same principle as OAuth's
 #                      named-cert handling — mount the existing serving-cert
 #                      Secret directly, don't mint a new leaf cert per host
 #                      (v2/oauth/deployment.go:applyNamedCertificateMounts))
-#   - API domain:     api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+#   - API domain:     api.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
 #   - console image:  resolved via
 #       oc adm release info --image-for=console \
 #         quay.io/openshift-release-dev/ocp-release@sha256:14350234fcd6c464fbf37c07679b653567b2d250be0d18132b79a621f164d719
@@ -61,13 +61,13 @@ patches:
     patch: |
       - op: replace
         path: /spec/template/spec/containers/0/args/1
-        value: -base-address=https://console.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+        value: -base-address=https://console.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
       - op: replace
         path: /spec/template/spec/containers/0/args/4
         value: -k8s-mode-off-cluster-endpoint=https://kube-apiserver.clusters-pat-console-pat-console.svc:6443
       - op: replace
         path: /spec/template/spec/containers/0/args/6
-        value: -k8s-public-endpoint=https://api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com:6443
+        value: -k8s-public-endpoint=https://api.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net:6443
       - op: replace
         path: /spec/template/spec/containers/0/args/9
         value: -user-auth-oidc-client-id=581003993532-kubhjbqnrc5iknkrc19cnvb67nj7qgbd.apps.googleusercontent.com
@@ -83,6 +83,30 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/env/2/value
         value: kube-apiserver.clusters-pat-console-pat-console.svc,localhost,127.0.0.1
+
+  # Phase 3: set the token-minter's guest-issuer audience for this cluster. The
+  # guest KAS accepts `console` SA tokens whose audience is this HCP's IssuerURL
+  # (matches hostedcluster.yaml spec.issuerURL). Name-keyed strategic merge so it
+  # survives container-ordering changes in the base overlay.
+  - target:
+      kind: Deployment
+      name: console
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: console
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: console-sa-token-minter
+                args:
+                  - --service-account-namespace=openshift-console
+                  - --service-account-name=console
+                  - --token-audience=https://oidc.int-reg-us-c1-nkcw.int.gcp-hcp.devshift.net/patmart-b3bb
+                  - --token-file=/var/run/console-sa/token
+                  - --kubeconfig=/etc/kubernetes/secrets/kubeconfig/kubeconfig
 
 # OIDC client secret for the bridge. apply.sh extracts .web.client_secret from
 # the intact OAuth client JSON into a gitignored .oidc-client-secret file that
@@ -124,7 +148,7 @@ images:
   # Revert to the stock digest once the fixes land upstream + in a release.
   - name: REPLACE_CONSOLE_IMAGE_REGISTRY
     newName: quay.io/patmarti/console
-    newTag: "260916190318"
+    newTag: "260917095913"
   # oauth-proxy (downloads TLS sidecar), resolved via
   #   oc adm release info --image-for=oauth-proxy <release>
   - name: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY
@@ -144,4 +168,4 @@ images:
   # framework's InjectKonnectivityContainer, not hand-pinned here.
   - name: REPLACE_CPO_IMAGE_REGISTRY
     newName: quay.io/patmarti/hypershift-console-control-plane
-    newTag: "260916160339"
+    newTag: "260917115254"

@@ -5,7 +5,7 @@ kind: Kustomization
 #
 # Generic (cluster-agnostic) template: turns the upstream ../origin assets
 # into what Phase 1's core console needs when run control-plane-side, with NO
-# console-operator (see CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md
+# console-operator (see CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PROGRESS.md
 # and CONSOLE_CONTROL_PLANE_STUDY.md §20). Every patch below exists because
 # the operator would otherwise be doing that work at runtime; there is no
 # HyperShift-specific customization beyond "what the operator used to inject".
@@ -205,6 +205,31 @@ patches:
           # ConfigMap (volume added below). Inert on the stock bridge, so safe if
           # the image is ever reverted.
           - -service-ca-file=/var/run/service-ca/service-ca.crt
+          # ---- Phase 3: dynamic plugin enablement (monitoring-plugin). ----
+          # The Console capability is on, so CMO ships the monitoring-plugin
+          # workload + its ConsolePlugin CR in the guest (Observe ->
+          # Alerting/Dashboards/Targets UI). Enabling/wiring a plugin is normally
+          # the console-operator's job (it writes the enabled set into the console
+          # config); with no operator here we pass -plugins directly. The bridge
+          # dials the plugin's guest ClusterIP Service, so it rides the same
+          # konnectivity socks5 tunnel as Thanos/Alertmanager and presents a
+          # service-ca-signed cert (covered by -service-ca-file above). Trailing
+          # dot on the FQDN avoids the NO_PROXY suffix-match excluding it from the
+          # proxy. Format: -plugins=<name>=<url>.
+          - -plugins=monitoring-plugin=https://monitoring-plugin.openshift-monitoring.svc.cluster.local.:9443
+          # ---- Phase 3: service-account identity for the bridge's OWN backend
+          # calls (dashboards ConfigMaps in openshift-config-managed, plugin
+          # metrics). With -user-auth=oidc, USER requests proxy with the logged-in
+          # user's token, but the bridge's internal K8s calls need a service
+          # account. Without this they go as system:anonymous -> 403 (Dashboards
+          # "console service account cannot list resource: 403 Forbidden"). The
+          # token is minted for the guest `console` ServiceAccount by the
+          # token-minter sidecar below (which also creates that SA — normally the
+          # console-operator's job). The guest ClusterRoleBinding/console +
+          # RoleBinding/console-configmap-reader (shipped by the Console
+          # capability CVO manifests) already bind that SA. Bridge flag:
+          # InternalProxiedK8SClientConfig.BearerTokenFile (cmd/bridge/main.go).
+          - -k8s-mode-off-cluster-service-account-bearer-token-file=/var/run/console-sa/token
 
       # -- Volumes/mounts the operator would otherwise inject: the console's own
       #    serving cert, the guest KAS's serving CA, and the OIDC client secret
@@ -219,6 +244,10 @@ patches:
           # Phase 2: service-serving CA for the Thanos/Alertmanager proxies
           # (-service-ca-file above). Key service-ca.crt.
           - { name: service-ca, mountPath: /var/run/service-ca, readOnly: true }
+          # Phase 3: guest `console` SA token minted by the token-minter sidecar
+          # (-k8s-mode-off-cluster-service-account-bearer-token-file above).
+          # Shared in-memory emptyDir; the sidecar writes token, the bridge reads.
+          - { name: console-sa-token, mountPath: /var/run/console-sa, readOnly: true }
 
       # ---- Phase 2: konnectivity socks5 proxy env for this bridge container ----
       # Routes the Thanos/Alertmanager proxy dials through the socks5 sidecar
@@ -245,6 +274,14 @@ patches:
       # Image is a transform-friendly placeholder rewritten by the overlay's
       # images: transform to the CPO image (which ships the control-plane-operator
       # binary with the konnectivity-socks5-proxy subcommand).
+      #
+      # Kept as a REGULAR container (not a native init-sidecar) to match the
+      # framework: InjectKonnectivityContainer always appends to podSpec.Containers
+      # regardless of K8s version (support/controlplane-component/
+      # konnectivity-container.go), which is why every live socks5 consumer on
+      # this MC (catalog-operator, olm-operator, openshift-apiserver, ...) runs it
+      # as a MAIN container too. The bridge tolerates a brief proxy-not-ready
+      # window at startup and recovers.
       - op: add
         path: /spec/template/spec/containers/-
         value:
@@ -272,6 +309,64 @@ patches:
             capabilities:
               drop: [ALL]
           terminationMessagePolicy: FallbackToLogsOnError
+
+      # ---- Phase 3: console SA token-minter sidecar ----
+      # Mints a token for the guest `console` ServiceAccount (creating the SA if
+      # absent — normally the console-operator's job) and continuously refreshes
+      # it to a shared emptyDir the bridge reads via
+      # -k8s-mode-off-cluster-service-account-bearer-token-file. This gives the
+      # bridge's OWN backend calls (Dashboards, plugin metrics) a real identity
+      # instead of system:anonymous. Shape mirrors the framework's
+      # InjectTokenMinterContainer(KubeAPIServerToken) (support/controlplane-
+      # component/token-minter-container.go): audience = the HCP IssuerURL (guest
+      # KAS accepts SA tokens with that audience), reaching the guest via the same
+      # service-network-admin-kubeconfig the socks5 sidecar mounts (server
+      # https://kube-apiserver:6443, in-namespace, no tunnel). Uses --kubeconfig
+      # (mounted file) not --kubeconfig-secret-name, so no mgmt-side secret-read
+      # RBAC is needed (same as the live ovnkube-control-plane minter).
+      #
+      # Native sidecar: initContainer with restartPolicy=Always (K8s >= 1.29),
+      # matching the framework's InjectTokenMinterContainer path and the live
+      # gcp-cloud-controller-manager cloud-token-minter. Unlike konnectivity, the
+      # token-minter DOES use the native-sidecar shape. The startupProbe blocks
+      # the bridge until the token file exists (test -f), so the bridge never
+      # makes a backend call without an identity. Probe mirrors the live
+      # gcp-cloud-controller-manager cloud-token-minter verbatim.
+      - op: add
+        path: /spec/template/spec/initContainers
+        value:
+        - name: console-sa-token-minter
+          image: REPLACE_CPO_IMAGE_REGISTRY:REPLACE_CPO_IMAGE_TAG
+          restartPolicy: Always
+          command: [/usr/bin/control-plane-operator, token-minter]
+          args:
+            - --service-account-namespace=openshift-console
+            - --service-account-name=console
+            # Guest KAS accepts SA tokens whose audience is the cluster issuer.
+            # Concrete value set per-cluster in the pat-console overlay.
+            - --token-audience=REPLACE_ISSUER_URL
+            - --token-file=/var/run/console-sa/token
+            - --kubeconfig=/etc/kubernetes/secrets/kubeconfig/kubeconfig
+          startupProbe:
+            exec: { command: [test, -f, /var/run/console-sa/token] }
+            periodSeconds: 1
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 30Mi
+          volumeMounts:
+            - { name: console-sa-token, mountPath: /var/run/console-sa }
+            - { name: konnectivity-kubeconfig, mountPath: /etc/kubernetes/secrets/kubeconfig }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          terminationMessagePolicy: FallbackToLogsOnError
+
       - op: add
         path: /spec/template/spec/volumes
         value:
@@ -319,6 +414,9 @@ patches:
           # Writable /tmp for the sidecar (readOnlyRootFilesystem: true).
           - name: konnectivity-tmp
             emptyDir: {}
+          # Phase 3: shared in-memory token file (minter writes, bridge reads).
+          - name: console-sa-token
+            emptyDir: { medium: Memory }
 
   - target:
       kind: Service

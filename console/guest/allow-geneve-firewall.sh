@@ -14,7 +14,7 @@ set -euo pipefail
 # infrastructure reconciliation (this rule should be created with the cluster),
 # tracked in Jira GCP-1221 — which aims to replace this workaround script. Kept
 # here as a manual repro for existing clusters until that ships (see
-# CONSOLE_CONTROL_PLANE_DOCS/UPSTREAM_PATCHES.md).
+# CONSOLE_CONTROL_PLANE_DOCS/reference/UPSTREAM_PATCHES.md).
 
 PROJECT=patmarti-hcp-test
 NETWORK=patmart-b3bb-network

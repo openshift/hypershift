@@ -1,19 +1,20 @@
-# Faster copy of ../Dockerfile.dev for CPO iteration (console spike).
+# All-in-one dev image (console spike) — adapted from ../Dockerfile.dev.
 #
-# Two changes vs ../Dockerfile.dev, both aimed at incremental-rebuild speed:
+# One image now serves BOTH roles for the console spike:
+#   1. the HyperShift **operator** image (deployed on the management cluster —
+#      the deployment sets `command: /usr/bin/hypershift-operator` explicitly),
+#      and
+#   2. the **control-plane-operator** override (via the
+#      hypershift.openshift.io/control-plane-operator-image annotation on the
+#      HostedCluster — HyperShift invokes this same image with the
+#      `control-plane-operator` subcommand).
 #
-#   1. RUN --mount=type=cache on the Go build cache (/root/.cache/go-build).
-#      The base build uses CGO_ENABLED=1 + -mod=vendor (vendored deps, no
-#      `go mod download` step), so the module cache isn't the cost — the cold
-#      compile is. `COPY . .` is invalidated on every source edit, but with a
-#      persistent GOCACHE `go build` only recompiles the packages that
-#      actually changed (CPO router + dependents) instead of everything.
-#
-#   2. `make control-plane-operator control-plane-pki-operator` instead of
-#      `make build`. The console spike only needs the CPO binaries (the image
-#      is used solely as the control-plane-operator-image override); building
-#      hypershift/hcp/hypershift-operator/karpenter-operator every time was
-#      wasted work. The final stage below copies only the CPO binaries.
+# It therefore builds the full binary set (like ../Dockerfile.dev), not just the
+# CPO binaries. The one difference vs ../Dockerfile.dev is the persistent Go
+# build-cache mount (/root/.cache/go-build), which lets incremental rebuilds
+# recompile only the changed packages instead of a full cold compile. `COPY . .`
+# is invalidated on every source edit, but with a persistent GOCACHE `go build`
+# only recompiles what actually changed.
 #
 # Build with BuildKit/buildah cache-mount support (podman does; use --layers).
 # The COPY is still required: the build runs in-container, so the source must
@@ -27,10 +28,14 @@ WORKDIR /hypershift
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    make control-plane-operator control-plane-pki-operator
+    make build
 
 FROM registry.access.redhat.com/ubi9:latest
-COPY --from=builder /hypershift/bin/control-plane-operator \
+COPY --from=builder /hypershift/bin/hypershift \
+                    /hypershift/bin/hcp \
+                    /hypershift/bin/hypershift-operator \
+                    /hypershift/bin/karpenter-operator \
+                    /hypershift/bin/control-plane-operator \
                     /hypershift/bin/control-plane-pki-operator \
      /usr/bin/
 
@@ -41,9 +46,7 @@ RUN cd /usr/bin && \
     ln -s control-plane-operator token-minter && \
     ln -s control-plane-operator fetch-etcd-certs
 
-# CPO-only image: the entrypoint is the control-plane-operator (HyperShift
-# invokes this image solely as the control-plane-operator-image override).
-ENTRYPOINT ["/usr/bin/control-plane-operator"]
+ENTRYPOINT ["/usr/bin/hypershift"]
 
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true

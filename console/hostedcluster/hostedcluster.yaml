@@ -1,24 +1,26 @@
 # HostedCluster for pat-console.
-# Modeled on clusters-patmarti-102447/patmarti-102447 (same mgmt cluster:
-# gcp-hcp-int-mc-us-central1-yjiv). Basically patmarti-102447 -> pat-console.
+# Now targets the dev-patmarti management cluster (dev-mgt-us-c1-p0917), while
+# reusing the patmarti-102447 customer project + infraID (see below).
 #
-# Reused from patmarti-102447 (shared, per explicit approval):
-#   - infraID: patmart-b3bb
-#   - issuerURL (OIDC provider/issuer): unchanged, same as patmarti-102447
-#   - GCP project, VPC network, PSC subnet, workload identity pool/provider,
-#     and all workload identity service account emails
+# Reused (shared customer project / infra, per explicit approval):
+#   - GCP customer project: patmarti-hcp-test
+#   - infraID: patmart-b3bb (VPC network, PSC subnet, workload identity
+#     pool/provider, and all workload identity service account emails)
+#   - issuerURL (OIDC provider/issuer): unchanged — kept on the previous
+#     region's OIDC URL/bucket (oidc.int-reg-us-c1-nkcw...); the JWKS public
+#     docs are already published there and the SA signing key still matches.
 #   - SA signing key (spec.serviceAccountSigningKey -> sa-signing-key.yaml,
-#     gitignored): both HCs share the same OIDC bucket path since they
-#     share infraID, so they must sign SA tokens with the same keypair to
-#     avoid clobbering each other's published JWKS.
+#     gitignored): must stay the same keypair as the published JWKS at the
+#     shared infraID's OIDC bucket path.
 #
-# New/unique to pat-console:
+# Changed for the dev-patmarti MC:
+#   - API / OAuth / console endpoints moved to the new region's HC DNS zone:
+#     us-central1-p0917-1.dev.gcp-hcp.devshift.net (was
+#     us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com).
+#
+# Unique to pat-console:
 #   - namespace / cluster name: pat-console
 #   - clusterID: new UUID
-#   - hostnames/baseDomain: pat-console-user... (pat-console name itself is
-#     unique, no random suffix needed)
-#
-# NOT applied to the cluster — manifest saved for review only.
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
@@ -27,7 +29,7 @@ metadata:
   labels:
     gcp.managed.openshift.io/cluster-id: pat-console
   annotations:
-    hypershift.openshift.io/control-plane-operator-image: quay.io/patmarti/hypershift-console-control-plane:260916160339
+    hypershift.openshift.io/control-plane-operator-image: quay.io/patmarti/hypershift-console-control-plane:260917115254
     # Same custom-cert-for-own-hostname pattern as patmarti-102447 (also has
     # this annotation): the api.<cluster>-user... named certificate overlaps
     # with the KAS's own external API SAN, which the SAN-conflict validator
@@ -40,7 +42,7 @@ metadata:
     # capabilities.drop [ALL] restricted requires, so their pods fail admission
     # and guest nodes never come up. baseline accepts them (they keep
     # capabilities.drop [NET_RAW]). This is a stopgap for an upstream CNO gap —
-    # see CONSOLE_CONTROL_PLANE_DOCS/CNO_RESTRICTED_PSA_GAP.md.
+    # see CONSOLE_CONTROL_PLANE_DOCS/gaps/CNO_RESTRICTED_PSA_GAP.md.
     hypershift.openshift.io/pod-security-admission-label-override: baseline
 spec:
   autoscaling:
@@ -48,7 +50,6 @@ spec:
   capabilities:
     disabled:
     - ImageRegistry
-    - Console
     - Ingress
   # channel: stable-4.22
   clusterID: e4b7c8a2-6f1d-4e3a-9c0b-2d5f8a91c3e7
@@ -62,7 +63,7 @@ spec:
       servingCerts:
         namedCertificates:
         - names:
-          - api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+          - api.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
           servingCertificate:
             name: external-api-cert
     authentication:
@@ -85,7 +86,7 @@ spec:
           # flags; an oidcProviders[].oidcClients entry is not usable here
           # because its admission requires status.oidcClients, which only a
           # running guest console-operator writes — see
-          # CONSOLE_CONTROL_PLANE_DOCS/GOOGLE_OIDC_CLIENT_SETUP.md.)
+          # CONSOLE_CONTROL_PLANE_DOCS/reference/GOOGLE_OIDC_CLIENT_SETUP.md.)
           - 581003993532-kubhjbqnrc5iknkrc19cnvb67nj7qgbd.apps.googleusercontent.com
           issuerCertificateAuthority:
             name: ""
@@ -95,7 +96,7 @@ spec:
       type: OIDC
   controllerAvailabilityPolicy: HighlyAvailable
   dns:
-    baseDomain: in.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+    baseDomain: in.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
     baseDomainPrefix: ""
   etcd:
     managed:
@@ -163,12 +164,12 @@ spec:
   - service: APIServer
     servicePublishingStrategy:
       route:
-        hostname: api.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+        hostname: api.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
       type: Route
   - service: OAuthServer
     servicePublishingStrategy:
       route:
-        hostname: oauth.pat-console-user.us-central1-nkcw-1.int.gcp-hcp.openshiftapps.com
+        hostname: oauth.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
       type: Route
   - service: Konnectivity
     servicePublishingStrategy:

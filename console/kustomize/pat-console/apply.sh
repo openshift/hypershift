@@ -14,7 +14,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-export KUBECONFIG="${KUBECONFIG:-/home/patmarti/.kube/config_gcp-hcp-int-mc-us-central1-yjiv}"
+export KUBECONFIG="${KUBECONFIG:-$HOME/dev/gcp-hcp/gcp-hcp-infra-worktrees/dev-patmarti/terraform/config/dev-all-in-one/dev-patmarti/mc}"
 
 # Extract the OIDC client secret from the intact OAuth client JSON into a
 # gitignored file the secretGenerator reads (keeps the JSON as the source of

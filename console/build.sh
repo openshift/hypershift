@@ -6,14 +6,14 @@ TAG=$(date +%y%m%d%H%M%S)
 
 cd "$(dirname "$0")/.."
 
-# CPO-only dev image (console/Dockerfile.dev.fast) — a faster copy of
-# ../Dockerfile.dev for iterating on control-plane-operator changes: it uses a
-# persistent Go build-cache mount and builds only the CPO binaries, so
-# incremental rebuilds recompile just the changed packages instead of doing a
-# full cold compile of all six binaries. This image is used solely as the
-# control-plane-operator-image override (see annotation update below), which is
-# all the console spike needs. --layers is required for the cache mount to be
-# reused across builds. Still avoids Dockerfile.control-plane's auth-gated base.
+# All-in-one dev image (console/Dockerfile.dev.fast) — a faster copy of
+# ../Dockerfile.dev with a persistent Go build-cache mount so incremental
+# rebuilds recompile just the changed packages instead of doing a full cold
+# compile. It builds the full binary set so the ONE image serves both roles:
+# the HyperShift operator image (deployed on the MC) AND the
+# control-plane-operator-image override on the HostedCluster (annotation update
+# below). --layers is required for the cache mount to be reused across builds.
+# Still avoids Dockerfile.control-plane's auth-gated base.
 podman build --layers -f console/Dockerfile.dev.fast --build-arg COMMIT_HASH="$(git rev-parse HEAD)" -t "$REPO:$TAG" .
 podman push "$REPO:$TAG"
 
