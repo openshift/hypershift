@@ -48,7 +48,7 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 		)
 
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,inplaceupgrader,drainer,hcpstatus")
+			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus")
 		}
 
 		c.Env = append(c.Env, []corev1.EnvVar{
