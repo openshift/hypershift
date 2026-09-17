@@ -164,6 +164,7 @@ These are a set of tasks we need to perform on every OCP branching. We need to:
 1. Update the HyperShift Repository to add the latest supported OCP version - Update Supported Version
 1. Update the base images in our Dockerfiles (if they are available at branching) - Update Dockerfiles
 1. Update the Renovate configuration to include the new release branch - Update Renovate
+1. Update the GitHub Actions branch filters and verify the checks on the new release branch - Update GitHub Actions
 1. Update the OpenShift Release repository to fix the step registry configuration files - OpenShift/Release
 1. Update TestGrid to include the new OCP version tests - TestGrid
 1. Add upgrade-from-.0 periodic jobs for ROSA and ARO HCP once the new version is GA - Upgrade-from-.0 Periodics
@@ -230,6 +231,31 @@ Example change for release-4.21:
   ]
 }
 ```
+
+#### Update GitHub Actions Branch Filters
+
+GitHub evaluates a `pull_request` workflow from the pull request's base branch. After cutting a release branch, first identify which GitHub Actions checks are intended to run for that release, then update those workflows on both `main` and the new release branch:
+
+1. Decide which checks should run for the new release branch. Do not automatically enable every workflow.
+2. Add the new branch to `pull_request.branches` in each selected caller workflow under `.github/workflows/`.
+3. Add the new branch to `push.branches` in the selected reusable workflows that run post-merge checks. Ensure the release branch contains the same intended job configuration so pull request and post-merge coverage do not diverge.
+4. Merge the update into the new release branch. The GitHub Actions checks do not run on this bootstrap pull request because its base branch does not contain the new filter yet.
+5. Synchronize an existing pull request against the release branch, or open a test pull request, and verify that only the expected GitHub Actions checks are reported.
+
+For `release-5.0`, only the OCP and vanilla Kubernetes envtests are enabled. Add the branch to `envtest-ocp.yaml`, `envtest-kube.yaml`, and the matching reusable workflows. The release-branch reusable workflows must also include the Kubernetes 1.36 matrix entries from `main` before enabling their post-merge triggers.
+
+For example:
+
+```yaml
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+      - release-5.0
+```
+
+Use `gh pr checks <pull-request-number> --repo openshift/hypershift` to verify the pull request checks. To verify post-merge workflows, use `gh run list --repo openshift/hypershift --event push --branch <release-branch>`. Do not use the release branch with `gh run list --event pull_request --branch`; GitHub records pull request runs under the pull request's head branch.
 
 ---
 
@@ -13272,7 +13298,9 @@ This pattern provides:
 
 ## 📋 Workflows
 
-All workflows run on self-hosted ARC runners and target the `main` and `release-4.22` branches.
+The PR validation workflows run on self-hosted ARC runners. Most target `main` and `release-4.22`; only the OCP and vanilla Kubernetes envtest workflows also target `release-5.0`.
+
+Pull request callers resolve their reusable workflows from `main`, while post-merge runs use the reusable workflow stored on the pushed branch. Keep branch-local matrices synchronized with `main`; `release-5.0` envtests must include Kubernetes 1.36 for consistent pull request and post-merge coverage.
 
 ### 🧹 Code Quality
 
@@ -13339,7 +13367,7 @@ To add a new GHA workflow:
 
 1. **Create the reusable workflow** (e.g., `my-check-reusable.yaml`) with `on: workflow_call`. This is where all the job logic lives.
 2. **Create the caller workflow** (e.g., `my-check.yaml`) that uses the reusable workflow pinned at `@main`.
-3. Add **branch filters** for `main` and any active release branches (e.g., `release-4.22`).
+3. Add **branch filters** for `main` and each release branch where the workflow is intended to run. Do not assume every workflow should target every release branch.
 4. Use `arc-runner-set` as the runner.
 
 ### Post-merge runs
