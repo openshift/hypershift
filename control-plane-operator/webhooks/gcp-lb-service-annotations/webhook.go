@@ -10,10 +10,14 @@
 package gcplbserviceannotations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/openshift/hypershift/support/gcputil"
 
@@ -22,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	"github.com/spf13/cobra"
 )
@@ -31,8 +36,19 @@ var (
 	codecs = serializer.NewCodecFactory(scheme)
 )
 
+const (
+	// maxAdmissionReviewSize permits the kube-apiserver's maximum request body plus
+	// the AdmissionReview envelope sent to this webhook.
+	maxAdmissionReviewSize = 4 * 1024 * 1024
+
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 120 * time.Second
+)
+
 func init() {
-	_ = admissionv1.AddToScheme(scheme)
+	utilruntime.Must(admissionv1.AddToScheme(scheme))
 }
 
 // Options holds the webhook server configuration.
@@ -63,7 +79,7 @@ Service{type: LoadBalancer} created in the hosted cluster, so that the
 GCP cloud-controller-manager applies the specified resource labels to the
 GCP forwarding rules it creates.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return opts.Run()
+			return opts.Run(cmd.Context())
 		},
 	}
 
@@ -76,7 +92,10 @@ GCP forwarding rules it creates.`,
 }
 
 // Run starts the HTTPS webhook server. It blocks until the server exits.
-func (o *Options) Run() error {
+func (o *Options) Run(ctx context.Context) error {
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mutate", o.handleMutate)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -85,16 +104,41 @@ func (o *Options) Run() error {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", o.Port)
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 
-	return server.ListenAndServeTLS(o.TLSCertFile, o.TLSKeyFile)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServeTLS(o.TLSCertFile, o.TLSKeyFile)
+	}()
+
+	select {
+	case err := <-errCh:
+		if err == http.ErrServerClosed {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shut down webhook server: %w", err)
+		}
+		if err := <-errCh; err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("serve webhook: %w", err)
+		}
+		return nil
+	}
 }
 
 // handleMutate is the admission webhook handler.
 func (o *Options) handleMutate(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAdmissionReviewSize))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
 		return
@@ -143,7 +187,7 @@ func (o *Options) mutate(req *admissionv1.AdmissionRequest) *admissionv1.Admissi
 	}
 
 	currentValue, annotationExists := svc.Annotations[gcputil.LBResourceLabelsAnnotation]
-	if currentValue == o.Labels || (!annotationExists && o.Labels == "") {
+	if (!annotationExists && o.Labels == "") || (annotationExists && o.Labels != "" && currentValue == o.Labels) {
 		return &admissionv1.AdmissionResponse{Allowed: true}
 	}
 

@@ -1,7 +1,10 @@
 package gcplbserviceannotations
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -97,6 +100,32 @@ func TestMutate_WhenLabelsAreRemoved_RemovesAnnotation(t *testing.T) {
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(string(resp.Patch)).To(ContainSubstring(`"op":"remove"`))
+}
+
+func TestMutate_WhenLabelsAreRemovedAndAnnotationIsEmpty_RemovesAnnotation(t *testing.T) {
+	g := NewGomegaWithT(t)
+	opts := &Options{}
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{gcputil.LBResourceLabelsAnnotation: ""}},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+	}
+	resp := opts.mutate(makeRequest(t, svc))
+
+	g.Expect(resp.Allowed).To(BeTrue())
+	g.Expect(string(resp.Patch)).To(ContainSubstring(`"op":"remove"`))
+}
+
+func TestHandleMutate_WhenRequestExceedsMaximumSize_ReturnsBadRequest(t *testing.T) {
+	opts := &Options{}
+	req := httptest.NewRequest(http.MethodPost, "/mutate", bytes.NewReader(make([]byte, maxAdmissionReviewSize+1)))
+	resp := httptest.NewRecorder()
+
+	opts.handleMutate(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.Code)
+	}
 }
 
 func TestMutate_WhenLoadBalancerWithNoAnnotations_InjectsAnnotation(t *testing.T) {
