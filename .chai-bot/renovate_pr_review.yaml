@@ -4,20 +4,21 @@
 # instructions. It is intentionally limited to public GitHub metadata.
 #
 # Matching semantics:
-# - author_logins is required and matches any listed normalized GitHub login.
+# - author_logins is required and matches any listed GitHub login exactly.
 # - title_contains is optional; every listed value must be a case-insensitive
 #   literal substring of the PR title.
 # - labels is optional; every listed value must be present on the PR, matched
 #   case-insensitively.
 # - Configured matching categories are combined with AND semantics.
 #
-# The default login is the normalized form of red-hat-konflux[bot], the
-# MintMaker (Renovate-powered) author documented on PR #7029.
+# The default login is red-hat-konflux[bot], the MintMaker (Renovate-powered)
+# author documented on PR #7029. Keep the GitHub App suffix: GitHub search
+# filters author identities literally.
 version: 1
 repository: openshift/hypershift
 matching:
   author_logins:
-    - red-hat-konflux
+    - "red-hat-konflux[bot]"
   title_contains: []
   labels: []
 report:
