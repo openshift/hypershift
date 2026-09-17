@@ -82,11 +82,11 @@ GitHub evaluates a `pull_request` workflow from the pull request's base branch. 
 
 1. Decide which checks should run for the new release branch. Do not automatically enable every workflow.
 2. Add the new branch to `pull_request.branches` in each selected caller workflow under `.github/workflows/`.
-3. Add the new branch to `push.branches` in the selected reusable workflows that run post-merge checks.
+3. Add the new branch to `push.branches` in the selected reusable workflows that run post-merge checks. Ensure the release branch contains the same intended job configuration so pull request and post-merge coverage do not diverge.
 4. Merge the update into the new release branch. The GitHub Actions checks do not run on this bootstrap pull request because its base branch does not contain the new filter yet.
 5. Synchronize an existing pull request against the release branch, or open a test pull request, and verify that only the expected GitHub Actions checks are reported.
 
-For `release-5.0`, only the OCP and vanilla Kubernetes envtests are enabled. Add the branch to `envtest-ocp.yaml`, `envtest-kube.yaml`, and the matching reusable workflows.
+For `release-5.0`, only the OCP and vanilla Kubernetes envtests are enabled. Add the branch to `envtest-ocp.yaml`, `envtest-kube.yaml`, and the matching reusable workflows. The release-branch reusable workflows must also include the Kubernetes 1.36 matrix entries from `main` before enabling their post-merge triggers.
 
 For example:
 
