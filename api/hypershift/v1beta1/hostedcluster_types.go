@@ -521,7 +521,10 @@ type Capabilities struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
-	// +kubebuilder:validation:XValidation:rule="!self.exists(cap, cap == 'Ingress') || self.exists(cap, cap == 'Console')",message="Ingress capability can only be disabled if Console capability is also disabled"
+	// NOTE: The "Ingress capability can only be disabled if Console capability is also disabled" rule
+	// is enforced at the HostedClusterSpec level (see HostedClusterSpec) so it can be relaxed for the
+	// GCP platform, where the console runs control-plane-side and guest Ingress is intentionally absent
+	// (GCP-1219 console control-plane-side study). Field-level CEL here cannot see spec.platform.type.
 	Disabled []OptionalCapability `json:"disabled,omitempty"`
 }
 
@@ -538,6 +541,11 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
+// TODO: Remove the validation that requires the Ingress capability to be disabled only when Console is also disabled, once OCPBUGS-58422 is resolved by the console team.
+// Relaxed for the GCP platform (GCP-1219 console control-plane-side study): on GCP the console runs
+// control-plane-side and guest Ingress is intentionally disabled, so Console may be enabled while
+// Ingress is disabled. For all other platforms the original constraint still applies.
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'GCP' || !has(self.capabilities) || !has(self.capabilities.disabled) || !self.capabilities.disabled.exists(cap, cap == 'Ingress') || self.capabilities.disabled.exists(cap, cap == 'Console')",message="Ingress capability can only be disabled if Console capability is also disabled"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.

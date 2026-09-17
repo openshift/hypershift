@@ -5398,6 +5398,10 @@ Once set, this field cannot be changed.</p>
 <p>disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
 Once set, this field cannot be changed.</p>
 <p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo;, &lsquo;Console&rsquo;, &lsquo;NodeTuning&rsquo;, &lsquo;Ingress&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
+<p>NOTE: The &ldquo;Ingress capability can only be disabled if Console capability is also disabled&rdquo; rule
+is enforced at the HostedClusterSpec level (see HostedClusterSpec) so it can be relaxed for the
+GCP platform, where the console runs control-plane-side and guest Ingress is intentionally absent
+(GCP-1219 console control-plane-side study). Field-level CEL here cannot see spec.platform.type.</p>
 </td>
 </tr>
 </tbody>
@@ -9728,6 +9732,10 @@ Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</
 <a href="#hypershift.openshift.io/v1beta1.HostedCluster">HostedCluster</a>)
 </p>
 <p>
+<p>TODO: Remove the validation that requires the Ingress capability to be disabled only when Console is also disabled, once OCPBUGS-58422 is resolved by the console team.
+Relaxed for the GCP platform (GCP-1219 console control-plane-side study): on GCP the console runs
+control-plane-side and guest Ingress is intentionally disabled, so Console may be enabled while
+Ingress is disabled. For all other platforms the original constraint still applies.</p>
 </p>
 <table>
 <thead>
