@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"reflect"
@@ -1363,10 +1364,7 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 	g.Expect(err).NotTo(HaveOccurred(), "failed to determine expected runtime handlers")
 
 	for _, node := range nodes {
-		validHandlers := make(map[string]bool, len(expectedHandlers))
-		for handler := range expectedHandlers {
-			validHandlers[handler] = false
-		}
+		validHandlers := maps.Clone(expectedHandlers)
 		g.Expect(node.Status.RuntimeHandlers).NotTo(BeNil(), "node %s is missing runtime handlers", node.Name)
 		for _, handler := range node.Status.RuntimeHandlers {
 			if _, ok := validHandlers[handler.Name]; ok {
@@ -1400,6 +1398,7 @@ func expectedNodeRuntimeHandlers(nodePool *hyperv1.NodePool) (map[string]bool, e
 	return validHandlers, nil
 }
 
+// usesRHEL9NodePool reports whether the given NodePool runs RHEL 9 nodes.
 func usesRHEL9NodePool(nodePool *hyperv1.NodePool) (bool, error) {
 	if nodePool == nil {
 		return IsLessThan(Version50), nil
@@ -1408,16 +1407,16 @@ func usesRHEL9NodePool(nodePool *hyperv1.NodePool) (bool, error) {
 	// Status reports the stream observed on the nodes and therefore takes precedence
 	// over the requested stream during and after a rollout.
 	switch nodePool.Status.OSImageStream.Name {
-	case string(hyperv1.OSImageStreamRHEL9):
+	case hyperv1.OSImageStreamRHEL9:
 		return true, nil
-	case string(hyperv1.OSImageStreamRHEL10):
+	case hyperv1.OSImageStreamRHEL10:
 		return false, nil
 	}
 
 	switch nodePool.Spec.OSImageStream.Name {
-	case string(hyperv1.OSImageStreamRHEL9):
+	case hyperv1.OSImageStreamRHEL9:
 		return true, nil
-	case string(hyperv1.OSImageStreamRHEL10):
+	case hyperv1.OSImageStreamRHEL10:
 		return false, nil
 	}
 

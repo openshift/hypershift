@@ -145,7 +145,7 @@ func TestExpectedNodeRuntimeHandlers(t *testing.T) {
 		wantErr        bool
 	}{
 		{
-			name:           "observed RHEL 10 overrides an older suite release version",
+			name:           "When status reports RHEL 10 and suite is pre-5.0, it should not require runc",
 			releaseVersion: Version423,
 			nodePool: &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{
 				OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10},
@@ -153,7 +153,7 @@ func TestExpectedNodeRuntimeHandlers(t *testing.T) {
 			wantRunc: false,
 		},
 		{
-			name:           "observed RHEL 9 overrides a newer suite release version",
+			name:           "When status reports RHEL 9 and suite is 5.0+, it should require runc",
 			releaseVersion: Version50,
 			nodePool: &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{
 				OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9},
@@ -161,7 +161,16 @@ func TestExpectedNodeRuntimeHandlers(t *testing.T) {
 			wantRunc: true,
 		},
 		{
-			name:           "observed RHEL 9 takes precedence over requested RHEL 10",
+			name:           "When status reports RHEL 10 and spec requests RHEL 9, it should not require runc",
+			releaseVersion: Version423,
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9}},
+				Status: hyperv1.NodePoolStatus{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10}},
+			},
+			wantRunc: false,
+		},
+		{
+			name:           "When status reports RHEL 9 and spec requests RHEL 10, it should require runc",
 			releaseVersion: Version50,
 			nodePool: &hyperv1.NodePool{
 				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10}},
@@ -170,25 +179,25 @@ func TestExpectedNodeRuntimeHandlers(t *testing.T) {
 			wantRunc: true,
 		},
 		{
-			name:           "status version falls back to RHEL 9",
+			name:           "When status version is pre-5.0 with no stream info, it should require runc",
 			releaseVersion: Version50,
 			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "4.23.0"}},
 			wantRunc:       true,
 		},
 		{
-			name:           "status version falls back to RHEL 10",
+			name:           "When status version is 5.0+ with no stream info, it should not require runc",
 			releaseVersion: Version423,
 			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "5.0.0"}},
 			wantRunc:       false,
 		},
 		{
-			name:           "invalid status version fails validation",
+			name:           "When status version is invalid semver, it should return an error",
 			releaseVersion: Version50,
 			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "not-a-semver"}},
 			wantErr:        true,
 		},
 		{
-			name:           "explicit RHEL 9 stream overrides status version",
+			name:           "When spec requests RHEL 9 and status version is 5.0+, it should require runc",
 			releaseVersion: Version50,
 			nodePool: &hyperv1.NodePool{
 				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9}},
@@ -197,13 +206,13 @@ func TestExpectedNodeRuntimeHandlers(t *testing.T) {
 			wantRunc: true,
 		},
 		{
-			name:           "legacy suite version is the final fallback",
+			name:           "When NodePool has no stream or version info, it should fall back to suite release version",
 			releaseVersion: Version423,
 			nodePool:       &hyperv1.NodePool{},
 			wantRunc:       true,
 		},
 		{
-			name:           "nil NodePool uses the legacy suite version fallback",
+			name:           "When NodePool is nil, it should fall back to suite release version",
 			releaseVersion: Version423,
 			wantRunc:       true,
 		},

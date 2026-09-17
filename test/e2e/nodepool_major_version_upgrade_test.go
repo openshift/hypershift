@@ -119,12 +119,10 @@ func (ru *NodePoolMajorVersionUpgradeTest) Run(t *testing.T, nodePool hyperv1.No
 	)
 
 	// Record pre-upgrade osImageStream.
-	{
-		np := &hyperv1.NodePool{}
-		g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)).To(Succeed())
-		t.Logf("Pre-upgrade osImageStream: %q", np.Status.OSImageStream.Name)
-		e2eutil.EnsureNodesRuntime(t, nodes, np)
-	}
+	preUpgradeNodePool := &hyperv1.NodePool{}
+	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), preUpgradeNodePool)).To(Succeed())
+	t.Logf("Pre-upgrade osImageStream: %q", preUpgradeNodePool.Status.OSImageStream.Name)
+	e2eutil.EnsureNodesRuntime(t, nodes, preUpgradeNodePool)
 
 	// Upgrade to latest release.
 	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
