@@ -63,13 +63,19 @@ The user or service account used in the provided kubeconfig should have full per
 * `endpointslices`
 * `endpointslices/restricted`
 * `routes`
+* `networkpolicies`
 The user or service account used in the provided kubeconfig should also have get/create/delete permissions over the following resources:
 * `volumesnapshots`
-As well as get permission for:
+As well as get/create/update permission for:
+* `events`
+And get permission for:
 * `persistentvolumeclaims`
 
 All of these permissions are needed only on the target namespace on the infra cluster (passed through the `--infra-namespace` command-line argument).
-This can be achieved by binding the following Role to the user used in the external infra kubeconfig:
+
+In addition, the HyperShift operator reads the infrastructure cluster's network configuration (`networks.config.openshift.io`) to build a virt-launcher NetworkPolicy that blocks egress to the infra cluster's internal pod/service networks. This resource is **cluster-scoped**, so it requires a separate ClusterRole and ClusterRoleBinding (see below). If this permission is not granted, the NetworkPolicy is still created but without CIDR-based egress blocking, and a `ValidKubeVirtInfraNetworkPolicyRBAC=False` condition is set on the HostedCluster along with a warning event in the infrastructure cluster namespace.
+
+This can be achieved by binding the following Role **and** ClusterRole to the user used in the external infra kubeconfig:
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -118,6 +124,20 @@ rules:
     verbs:
       - '*'
   - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - '*'
+  - apiGroups:
+      - ''
+    resources:
+      - events
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
     - snapshot.storage.k8s.io
     resources:
     - volumesnapshots
@@ -131,4 +151,33 @@ rules:
     - persistentvolumeclaims
     verbs:
     - get
+```
+
+For full virt-launcher network isolation, also create a ClusterRole and ClusterRoleBinding
+to allow reading the infrastructure cluster's network configuration:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kv-external-infra-network-reader
+rules:
+  - apiGroups:
+      - config.openshift.io
+    resources:
+      - networks
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kv-external-infra-network-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kv-external-infra-network-reader
+subjects:
+  - kind: ServiceAccount
+    name: hcp-infra-sa
+    namespace: clusters-example
 ```
