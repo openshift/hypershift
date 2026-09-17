@@ -145,10 +145,13 @@ images:
   #      (Thanos/Alertmanager/terminal/plugins) so they verify service-serving
   #      certs signed by the service-ca, a different signer than the KAS CA
   #      (Phase 2 monitoring). Falls back to -ca-file when unset.
+  #   3. request a refresh token for OIDC (access_type=offline + prompt=consent
+  #      in LoginFunc) so a session survives access-token expiry / pod restart /
+  #      cross-replica load-balancing — enables console replicas:2 (Phase 3).
   # Revert to the stock digest once the fixes land upstream + in a release.
   - name: REPLACE_CONSOLE_IMAGE_REGISTRY
     newName: quay.io/patmarti/console
-    newTag: "260917095913"
+    newTag: "260917140201"
   # oauth-proxy (downloads TLS sidecar), resolved via
   #   oc adm release info --image-for=oauth-proxy <release>
   - name: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY

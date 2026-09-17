@@ -76,6 +76,20 @@ patches:
       name: console
     patch: |
       # -- Fields the operator would set dynamically; static here since there's no operator --
+      # replicas: 2 — multi-replica works because of TWO things together:
+      #   1. the patched bridge requests a refresh token for OIDC
+      #      (access_type=offline + prompt=consent, pkg/auth/oauth2/auth.go
+      #      LoginFunc), and
+      #   2. POD_NAME (below) makes session cookies pod-specific.
+      # When a request is load-balanced to a replica with no in-memory session,
+      # the OIDC login path (pkg/auth/oauth2/auth_oidc.go getLoginState) reads the
+      # refresh-token cookie and does a SILENT back-channel token refresh to
+      # rebuild the session on that pod — no interactive login / consent redirect.
+      # (Our HCP router is SNI-passthrough so it can't do HAProxy cookie affinity,
+      # and Service sessionAffinity:ClientIP is useless — the router dials the
+      # Service fresh so it only sees the router pod IP; the refresh-token cookie is
+      # what makes replicas work without affinity.) Google does not honor the
+      # `offline_access` scope, hence the request-param approach.
       - op: add
         path: /spec/replicas
         value: 2
@@ -262,16 +276,15 @@ patches:
           - { name: HTTP_PROXY, value: "socks5://127.0.0.1:8090" }
           - { name: HTTPS_PROXY, value: "socks5://127.0.0.1:8090" }
           - { name: NO_PROXY, value: "kube-apiserver.REPLACE_HCP_NAMESPACE.svc,localhost,127.0.0.1" }
-          # Multi-replica session correctness. Under -user-auth=oidc the bridge
-          # names its session cookie per-pod (SessionCookieName() =
-          # <cookie>-$POD_NAME, pkg/auth/sessions/combined_sessions.go) so a user
-          # load-balanced across replicas gets stale-pod cookies expired and the
-          # session rebuilt from the refresh-token cookie on the new pod. The
-          # console-operator normally injects this via the downward API
-          # ("console distinguishes cookie sessions by pod names in OIDC envs" —
-          # console-operator deployment.go); with no operator we set it here.
-          # Without it BOTH pods share one empty-suffix cookie name and the
-          # cross-pod cookie hygiene (expireOldPodCookies) is defeated.
+          # POD_NAME — operator-parity (the console-operator injects it via the
+          # downward API: "console distinguishes cookie sessions by pod names in
+          # OIDC envs", console-operator deployment.go). The bridge names its
+          # session cookie per-pod (SessionCookieName() = <cookie>-$POD_NAME,
+          # pkg/auth/sessions/combined_sessions.go) and expires other pods'
+          # cookies. REQUIRED for multi-replica (replicas:2 above): together with
+          # the refresh-token cookie it lets a request on any replica rebuild the
+          # session via a silent token refresh. Without it both pods share one
+          # empty-suffix cookie name and the cross-pod hygiene is defeated.
           - name: POD_NAME
             valueFrom:
               fieldRef:

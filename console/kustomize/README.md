@@ -51,7 +51,7 @@ The real deltas:
 | Service annotation `service.beta.openshift.io/serving-cert-secret-name` | present | removed | No service-ca operator on GKE. |
 | Route `spec.host` | unset (guest admission fills default) | explicit | No route-admission for a hand-applied mgmt-cluster Route. |
 | Route `spec.tls.termination` | `reencrypt`+`Redirect` | `passthrough`/`None` | Router is SNI-passthrough only; bridge terminates its own TLS. |
-| `spec.replicas` | unset (operator computes) | `2` | No operator to compute it. |
+| `spec.replicas` | unset (operator computes) | `1` | No operator to compute it — **and required to be 1**: under `-user-auth=oidc` the bridge keeps login state per-pod and can only recover a cross-pod session from a refresh-token cookie, which Google won't issue without a bridge change (`access_type=offline`); our SNI-passthrough router also can't do cookie affinity. >1 replica → re-auth loop. Multi-replica HA is a Phase 4 item. |
 | Container `command`/`args`, `env`, `volumeMounts`, `volumes` | operator-generated (`--config=console-config.yaml` + injected volumes) | static off-cluster CLI flags + `serving-cert`/`guest-ca` volumes | No console-operator to generate `console-config.yaml`/inject auth volumes. |
 | `POD_NAME` env (downward API `metadata.name`) | injected at runtime by the operator (`deployment.go`, *not* in the static bindata) — "console distinguishes cookie sessions by pod names in OIDC envs" | added in `hypershift/` | Multi-replica OIDC session correctness: the bridge names its session cookie `<cookie>-$POD_NAME` and expires other pods' cookies. Without it both replicas share one cookie name. This is why it's absent from `origin/` (that file is the *verbatim static bindata*; the operator appends this env in Go at apply time). |
 
