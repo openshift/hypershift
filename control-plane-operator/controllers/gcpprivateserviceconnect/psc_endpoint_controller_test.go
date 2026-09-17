@@ -1200,7 +1200,7 @@ func TestReconcile(t *testing.T) {
 		assert.NotContains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
 	})
 
-	t.Run("When the PSC endpoint IP is unavailable, it should wait without adding the HCP finalizer", func(t *testing.T) {
+	t.Run("When the PSC endpoint IP is unavailable, it should add the HCP finalizer before resource creation", func(t *testing.T) {
 		scheme := newGCPPSCTestScheme(t)
 		psc := newReadyServiceAttachmentPSC("test-psc", "test-ns")
 		psc.Finalizers = []string{pscEndpointFinalizer}
@@ -1220,9 +1220,11 @@ func TestReconcile(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 15*time.Second, result.RequeueAfter)
 
+		// HCP finalizer should be added even though endpoint IP is not ready yet
+		// The finalizer is added after GCP client is obtained (before resource creation)
 		updatedHCP := &hyperv1.HostedControlPlane{}
 		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
-		assert.NotContains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
+		assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName, "HCP finalizer should be added after GCP client is obtained, before endpoint IP is created")
 	})
 
 	t.Run("When the PSC endpoint is ready, it should add the HCP finalizer", func(t *testing.T) {
