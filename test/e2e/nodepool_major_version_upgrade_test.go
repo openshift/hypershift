@@ -119,11 +119,10 @@ func (ru *NodePoolMajorVersionUpgradeTest) Run(t *testing.T, nodePool hyperv1.No
 	)
 
 	// Record pre-upgrade osImageStream.
-	{
-		np := &hyperv1.NodePool{}
-		g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)).To(Succeed())
-		t.Logf("Pre-upgrade osImageStream: %q", np.Status.OSImageStream.Name)
-	}
+	preUpgradeNodePool := &hyperv1.NodePool{}
+	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), preUpgradeNodePool)).To(Succeed())
+	t.Logf("Pre-upgrade osImageStream: %q", preUpgradeNodePool.Status.OSImageStream.Name)
+	e2eutil.EnsureNodesRuntime(t, nodes, preUpgradeNodePool)
 
 	// Upgrade to latest release.
 	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
@@ -176,8 +175,6 @@ func (ru *NodePoolMajorVersionUpgradeTest) Run(t *testing.T, nodePool hyperv1.No
 	)
 
 	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
-	e2eutil.EnsureNodesRuntime(t, newNodes, &nodePool)
-
 	// Verify osImageStream is rhel-10 after major-version upgrade to OCP 5.0+.
 	expectedStream := string(hyperv1.OSImageStreamRHEL10)
 	t.Logf("Verifying osImageStream=%s after major-version upgrade to %s", expectedStream, latestReleaseInfo.Version())
@@ -195,4 +192,8 @@ func (ru *NodePoolMajorVersionUpgradeTest) Run(t *testing.T, nodePool hyperv1.No
 		e2eutil.WithTimeout(5*time.Minute),
 		e2eutil.WithInterval(15*time.Second),
 	)
+
+	upgradedNodePool := &hyperv1.NodePool{}
+	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), upgradedNodePool)).To(Succeed(), "failed to get NodePool after upgrade")
+	e2eutil.EnsureNodesRuntime(t, newNodes, upgradedNodePool)
 }
