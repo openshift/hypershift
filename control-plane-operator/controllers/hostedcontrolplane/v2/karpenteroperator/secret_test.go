@@ -16,16 +16,23 @@ import (
 func TestAdaptCredentialsSecret(t *testing.T) {
 	t.Parallel()
 
+	const clientID = "12345678-1234-1234-1234-123456789012"
+
 	testCases := []struct {
-		name                string
-		roleARN             string
-		validateCredentials func(t *testing.T, g Gomega, credentials string)
+		name        string
+		hcp         *hyperv1.HostedControlPlane
+		expectError string
+		validate    func(t *testing.T, g Gomega, secret *corev1.Secret)
 	}{
 		{
-			name:    "When AWS role ARN is provided, it should generate correct credentials format",
-			roleARN: "arn:aws:iam::123456789012:role/karpenter-role",
-			validateCredentials: func(t *testing.T, g Gomega, credentials string) {
+			name: "When AWS role ARN is provided, it should generate correct credentials format",
+			hcp: hcpWithKarpenter(hyperv1.KarpenterConfig{
+				Platform: hyperv1.AWSPlatform,
+				AWS:      hyperv1.KarpenterAWSConfig{RoleARN: "arn:aws:iam::123456789012:role/karpenter-role"},
+			}),
+			validate: func(t *testing.T, g Gomega, secret *corev1.Secret) {
 				t.Helper()
+				credentials := string(secret.Data["credentials"])
 				g.Expect(credentials).To(ContainSubstring("[default]"))
 				g.Expect(credentials).To(ContainSubstring("role_arn = arn:aws:iam::123456789012:role/karpenter-role"))
 				g.Expect(credentials).To(ContainSubstring("web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token"))
@@ -33,20 +40,60 @@ func TestAdaptCredentialsSecret(t *testing.T) {
 			},
 		},
 		{
-			name:    "When different role ARN format is provided, it should be included correctly",
-			roleARN: "arn:aws:iam::999999999999:role/my-custom-karpenter-role",
-			validateCredentials: func(t *testing.T, g Gomega, credentials string) {
+			name: "When different AWS role ARN format is provided, it should be included correctly",
+			hcp: hcpWithKarpenter(hyperv1.KarpenterConfig{
+				Platform: hyperv1.AWSPlatform,
+				AWS:      hyperv1.KarpenterAWSConfig{RoleARN: "arn:aws:iam::999999999999:role/my-custom-karpenter-role"},
+			}),
+			validate: func(t *testing.T, g Gomega, secret *corev1.Secret) {
 				t.Helper()
-				g.Expect(credentials).To(ContainSubstring("role_arn = arn:aws:iam::999999999999:role/my-custom-karpenter-role"))
+				g.Expect(string(secret.Data["credentials"])).To(ContainSubstring("role_arn = arn:aws:iam::999999999999:role/my-custom-karpenter-role"))
 			},
 		},
 		{
-			name:    "When role ARN has path component, it should be preserved",
-			roleARN: "arn:aws:iam::111111111111:role/path/to/role/karpenter",
-			validateCredentials: func(t *testing.T, g Gomega, credentials string) {
+			name: "When AWS role ARN has path component, it should be preserved",
+			hcp: hcpWithKarpenter(hyperv1.KarpenterConfig{
+				Platform: hyperv1.AWSPlatform,
+				AWS:      hyperv1.KarpenterAWSConfig{RoleARN: "arn:aws:iam::111111111111:role/path/to/role/karpenter"},
+			}),
+			validate: func(t *testing.T, g Gomega, secret *corev1.Secret) {
 				t.Helper()
-				g.Expect(credentials).To(ContainSubstring("role_arn = arn:aws:iam::111111111111:role/path/to/role/karpenter"))
+				g.Expect(string(secret.Data["credentials"])).To(ContainSubstring("role_arn = arn:aws:iam::111111111111:role/path/to/role/karpenter"))
 			},
+		},
+		{
+			name: "When AWS credentials are generated, it should match the expected template",
+			hcp: hcpWithKarpenter(hyperv1.KarpenterConfig{
+				Platform: hyperv1.AWSPlatform,
+				AWS:      hyperv1.KarpenterAWSConfig{RoleARN: "arn:aws:iam::123456789012:role/test-role"},
+			}),
+			validate: func(t *testing.T, g Gomega, secret *corev1.Secret) {
+				t.Helper()
+				roleARN := "arn:aws:iam::123456789012:role/test-role"
+				expectedTemplate := "[default]\n\t\trole_arn = %s\n\t\tweb_identity_token_file = /var/run/secrets/openshift/serviceaccount/token\n\t\tsts_regional_endpoints = regional\n\t"
+				g.Expect(string(secret.Data["credentials"])).To(Equal(fmt.Sprintf(expectedTemplate, roleARN)))
+			},
+		},
+		{
+			name: "When Azure platform is requested, it should return unsupported",
+			hcp: hcpWithKarpenter(hyperv1.KarpenterConfig{
+				Platform: hyperv1.AzurePlatform,
+				Azure:    hyperv1.KarpenterAzureConfig{ClientID: hyperv1.AzureClientID(clientID)},
+			}, hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					TenantID:       "tenant-id",
+					SubscriptionID: "subscription-id",
+				},
+			}),
+			expectError: "unsupported platform: Azure",
+		},
+		{
+			name: "When platform is unsupported, it should return an error",
+			hcp: hcpWithKarpenter(hyperv1.KarpenterConfig{
+				Platform: hyperv1.GCPPlatform,
+			}),
+			expectError: "unsupported platform: GCP",
 		},
 	}
 
@@ -55,30 +102,6 @@ func TestAdaptCredentialsSecret(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			hcp := &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-hcp",
-					Namespace: "test-namespace",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					AutoNode: hyperv1.AutoNode{
-						Provisioner: hyperv1.ProvisionerConfig{
-							Karpenter: hyperv1.KarpenterConfig{
-								Platform: hyperv1.AWSPlatform,
-								AWS: hyperv1.KarpenterAWSConfig{
-									RoleARN: tc.roleARN,
-								},
-							},
-						},
-					},
-				},
-			}
-
-			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				HCP:     hcp,
-			}
-
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "karpenter-credentials",
@@ -86,76 +109,43 @@ func TestAdaptCredentialsSecret(t *testing.T) {
 				},
 			}
 
-			err := adaptCredentialsSecret(cpContext, secret)
-			g.Expect(err).ToNot(HaveOccurred())
+			err := adaptCredentialsSecret(controlplanecomponent.WorkloadContext{
+				Context: t.Context(),
+				HCP:     tc.hcp,
+			}, secret)
 
-			// Verify secret type
-			g.Expect(secret.Type).To(Equal(corev1.SecretTypeOpaque))
-
-			// Verify credentials data exists
-			g.Expect(secret.Data).To(HaveKey("credentials"))
-			credentials := string(secret.Data["credentials"])
-
-			// Verify credentials content
-			if tc.validateCredentials != nil {
-				tc.validateCredentials(t, g, credentials)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectError))
+				return
 			}
 
-			// Verify role ARN is in credentials
-			g.Expect(credentials).To(ContainSubstring(tc.roleARN))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(secret.Type).To(Equal(corev1.SecretTypeOpaque))
+			if tc.validate != nil {
+				tc.validate(t, g, secret)
+			}
 		})
 	}
 }
 
-func TestAdaptCredentialsSecretFormat(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
+func hcpWithKarpenter(karpenter hyperv1.KarpenterConfig, platform ...hyperv1.PlatformSpec) *hyperv1.HostedControlPlane {
+	spec := hyperv1.HostedControlPlaneSpec{
+		AutoNode: hyperv1.AutoNode{
+			Provisioner: hyperv1.ProvisionerConfig{
+				Karpenter: karpenter,
+			},
+		},
+	}
+	if len(platform) > 0 {
+		spec.Platform = platform[0]
+	}
 
-	roleARN := "arn:aws:iam::123456789012:role/test-role"
-
-	hcp := &hyperv1.HostedControlPlane{
+	return &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-hcp",
 			Namespace: "test-namespace",
 		},
-		Spec: hyperv1.HostedControlPlaneSpec{
-			AutoNode: hyperv1.AutoNode{
-				Provisioner: hyperv1.ProvisionerConfig{
-					Karpenter: hyperv1.KarpenterConfig{
-						Platform: hyperv1.AWSPlatform,
-						AWS: hyperv1.KarpenterAWSConfig{
-							RoleARN: roleARN,
-						},
-					},
-				},
-			},
-		},
+		Spec: spec,
 	}
-
-	cpContext := controlplanecomponent.WorkloadContext{
-		Context: t.Context(),
-		HCP:     hcp,
-	}
-
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "karpenter-credentials",
-			Namespace: "test-namespace",
-		},
-	}
-
-	err := adaptCredentialsSecret(cpContext, secret)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	credentials := string(secret.Data["credentials"])
-
-	// Verify the exact format matches AWS credentials file format
-	expectedTemplate := `[default]
-	role_arn = %s
-	web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-	sts_regional_endpoints = regional
-`
-	expected := fmt.Sprintf(expectedTemplate, roleARN)
-
-	g.Expect(credentials).To(Equal(expected))
 }

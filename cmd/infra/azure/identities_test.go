@@ -119,6 +119,38 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"kms",
 			},
 		},
+		"When public topology with Karpenter it should return 8 identity definitions including karpenter": {
+			clusterName:   "test-cluster",
+			opts:          WorkloadIdentityOptions{Topology: "Public", IncludeKarpenter: true},
+			expectedCount: 8,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+				"karpenter",
+			},
+		},
+		"When empty topology with KMS and Karpenter it should return 10 identity definitions for cleanup": {
+			clusterName:   "test-cluster",
+			opts:          WorkloadIdentityOptions{IncludeKMS: true, IncludeKarpenter: true},
+			expectedCount: 10,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+				"controlPlaneOperator",
+				"kms",
+				"karpenter",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -147,6 +179,26 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestKarpenterWorkloadIdentityDefinition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	definitions := GetWorkloadIdentityDefinitions("test-cluster", WorkloadIdentityOptions{Topology: "Public", IncludeKarpenter: true})
+
+	var karpenter *WorkloadIdentityDefinition
+	for i := range definitions {
+		if definitions[i].ComponentName == "karpenter" {
+			karpenter = &definitions[i]
+			break
+		}
+	}
+	g.Expect(karpenter).ToNot(BeNil())
+	g.Expect(karpenter.IdentityNameSuffix).To(Equal("-karpenter"))
+	g.Expect(karpenter.FederatedCredentials).To(HaveLen(1))
+	g.Expect(karpenter.FederatedCredentials[0].CredentialName).To(Equal("test-cluster-karpenter-fed-id"))
+	g.Expect(karpenter.FederatedCredentials[0].Subject).To(Equal("system:serviceaccount:kube-system:karpenter"))
+	g.Expect(karpenter.FederatedCredentials[0].Audience).To(Equal("openshift"))
 }
 
 func TestFederatedCredentialConfig(t *testing.T) {
