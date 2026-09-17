@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - release-4.22
+      - release-5.0
 
 permissions:
   contents: read

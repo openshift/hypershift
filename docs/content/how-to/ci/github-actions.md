@@ -29,7 +29,7 @@ This pattern provides:
 
 ## 📋 Workflows
 
-All workflows run on self-hosted ARC runners and target the `main` and `release-4.22` branches.
+The PR validation workflows run on self-hosted ARC runners. Most target `main` and `release-4.22`; only the OCP and vanilla Kubernetes envtest workflows also target `release-5.0`.
 
 ### 🧹 Code Quality
 
@@ -96,7 +96,7 @@ To add a new GHA workflow:
 
 1. **Create the reusable workflow** (e.g., `my-check-reusable.yaml`) with `on: workflow_call`. This is where all the job logic lives.
 2. **Create the caller workflow** (e.g., `my-check.yaml`) that uses the reusable workflow pinned at `@main`.
-3. Add **branch filters** for `main` and any active release branches (e.g., `release-4.22`).
+3. Add **branch filters** for `main` and each release branch where the workflow is intended to run. Do not assume every workflow should target every release branch.
 4. Use `arc-runner-set` as the runner.
 
 ### Post-merge runs

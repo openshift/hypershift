@@ -8,6 +8,7 @@ These are a set of tasks we need to perform on every OCP branching. We need to:
 1. Update the HyperShift Repository to add the latest supported OCP version - [Update Supported Version](#update-supported-version)
 1. Update the base images in our Dockerfiles (if they are available at branching) - [Update Dockerfiles](#update-dockerfiles)
 1. Update the Renovate configuration to include the new release branch - [Update Renovate](#update-renovate-configuration)
+1. Update the GitHub Actions branch filters and verify the checks on the new release branch - [Update GitHub Actions](#update-github-actions-branch-filters)
 1. Update the OpenShift Release repository to fix the step registry configuration files - [OpenShift/Release](#openshiftrelease-repository)
 1. Update TestGrid to include the new OCP version tests - [TestGrid](#update-testgrid)
 1. Add upgrade-from-.0 periodic jobs for ROSA and ARO HCP once the new version is GA - [Upgrade-from-.0 Periodics](#add-upgrade-from-0-periodic-jobs)
@@ -75,6 +76,31 @@ Example change for release-4.21:
 }
 ```
 
+#### Update GitHub Actions Branch Filters
+
+GitHub evaluates a `pull_request` workflow from the pull request's base branch. After cutting a release branch, first identify which GitHub Actions checks are intended to run for that release, then update those workflows on both `main` and the new release branch:
+
+1. Decide which checks should run for the new release branch. Do not automatically enable every workflow.
+2. Add the new branch to `pull_request.branches` in each selected caller workflow under `.github/workflows/`.
+3. Add the new branch to `push.branches` in the selected reusable workflows that run post-merge checks.
+4. Merge the update into the new release branch. The GitHub Actions checks do not run on this bootstrap pull request because its base branch does not contain the new filter yet.
+5. Synchronize an existing pull request against the release branch, or open a test pull request, and verify that only the expected GitHub Actions checks are reported.
+
+For `release-5.0`, only the OCP and vanilla Kubernetes envtests are enabled. Add the branch to `envtest-ocp.yaml`, `envtest-kube.yaml`, and the matching reusable workflows.
+
+For example:
+
+```yaml
+on:
+  pull_request:
+    branches:
+      - main
+      - release-4.22
+      - release-5.0
+```
+
+Use `gh pr checks <pull-request-number> --repo openshift/hypershift` to verify the pull request checks. To verify post-merge workflows, use `gh run list --repo openshift/hypershift --event push --branch <release-branch>`. Do not use the release branch with `gh run list --event pull_request --branch`; GitHub records pull request runs under the pull request's head branch.
+
 ---
 
 ### [Openshift/Release](https://github.com/openshift/release) Repository
@@ -96,7 +122,7 @@ We should also ensure that the latest release branch is using the Hypershift Ope
 ---
 
 ### Update TestGrid
-We need to update TestGrid to include the new OCP version tests. 
+We need to update TestGrid to include the new OCP version tests.
 
 Here is an [Example PR](https://github.com/kubernetes/test-infra/pull/35535) to do that.
 
