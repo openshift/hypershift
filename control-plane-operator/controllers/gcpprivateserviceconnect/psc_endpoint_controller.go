@@ -250,22 +250,11 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{}, r.Update(ctx, gcpPSC)
 	}
 
-	// 6. Check if reconciliation is paused
-	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
-		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
-		return ctrl.Result{RequeueAfter: duration}, nil
-	}
-
-	// 7. Initialize client builder with HCP configuration
+	// 6. Initialize client builder with HCP configuration
 	r.gcpClientBuilder.initializeWithHCP(hcp)
 
-	// 8. Wait for Service Attachment to be ready
-	if !r.isServiceAttachmentReady(gcpPSC) {
-		log.Info("Waiting for Service Attachment to be ready")
-		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
-	}
-
-	// 9. Get customer GCP client using client builder
+	// 7. Get customer GCP client using client builder
+	// This proves WIF credentials are usable before adding the HCP finalizer
 	customerGCPClient, err := r.gcpClientBuilder.getClient(ctx)
 	if err != nil {
 		log.Error(err, "failed to create customer GCP client")
@@ -276,11 +265,27 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
 
-	// 10. Add HCP finalizer immediately after WIF credentials are confirmed usable
+	// 8. Add HCP finalizer immediately after WIF credentials are confirmed usable
 	// This ensures cleanup will run even if GCP resource provisioning fails partway through.
-	// CRITICAL: Must happen BEFORE any GCP resource creation (ensureIPAddress, etc.)
+	// CRITICAL: Must happen BEFORE pause check, Service Attachment check, and any GCP resource creation.
+	// If we returned early before adding this finalizer, HCP deletion wouldn't trigger cleanup.
 	if result, err := r.ensureHCPFinalizer(ctx, hcp, log); err != nil || !result.IsZero() {
 		return result, err
+	}
+
+	// 9. Check if reconciliation is paused
+	// Safe to return early here because HCP finalizer is already set above.
+	// This allows cleanup to run even if cluster is deleted while paused.
+	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
+		return ctrl.Result{RequeueAfter: duration}, nil
+	}
+
+	// 10. Wait for Service Attachment to be ready
+	// Safe to return early here because HCP finalizer is already set above
+	if !r.isServiceAttachmentReady(gcpPSC) {
+		log.Info("Waiting for Service Attachment to be ready")
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
 	// 11. Ensure IP address is reserved

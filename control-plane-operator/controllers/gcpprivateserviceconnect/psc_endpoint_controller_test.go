@@ -1184,20 +1184,31 @@ func TestReconcile(t *testing.T) {
 		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
 	})
 
-	t.Run("When the Service Attachment is unavailable, it should wait without adding the HCP finalizer", func(t *testing.T) {
+	t.Run("When the Service Attachment is unavailable, it should add HCP finalizer and wait", func(t *testing.T) {
 		scheme := newGCPPSCTestScheme(t)
 		psc := newTestGCPPSC("test-psc", "test-ns", true)
+		psc.Finalizers = []string{pscEndpointFinalizer}
 		hcp := newTestGCPHCP("test-hcp", "test-ns")
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
-		r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized:     true,
+				customerProject: "customer-project",
+				region:          "us-central1",
+				newClient:       testGCPClientFactory(t, http.StatusOK, "READY"),
+			},
+		}
 
 		result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(psc)})
 		require.NoError(t, err)
 		assert.Equal(t, 30*time.Second, result.RequeueAfter)
 
+		// HCP finalizer should be added even though Service Attachment is not ready
+		// The finalizer is added after GCP client is obtained, before Service Attachment check
 		updatedHCP := &hyperv1.HostedControlPlane{}
 		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
-		assert.NotContains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
+		assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName, "HCP finalizer should be added after GCP client is obtained, even if Service Attachment is not ready")
 	})
 
 	t.Run("When the PSC endpoint IP is unavailable, it should add the HCP finalizer before resource creation", func(t *testing.T) {
