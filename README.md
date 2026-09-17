@@ -8,4 +8,6 @@ clusters and are compatible with standard OCP and Kubernetes toolchains.
 
 To get started, visit [the documentation](https://hypershift.pages.dev/).
 
+Chai wuz here
+
 ![Overview](docs/content/images/high-level-overview.png)
