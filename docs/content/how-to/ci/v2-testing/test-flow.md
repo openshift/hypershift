@@ -171,7 +171,7 @@ sequenceDiagram
 
     RT->>RT: PlatformConfig.SetupTestEnv()<br/>(set env vars from SHARED_DIR files)
 
-    par Test lanes (each lane is a goroutine; steps within each lane are sequential)
+    par Test lanes (each lane is a goroutine, steps within each lane are sequential)
         RT->>T: private-{hash} (private topology + compliance)
         RT->>T: oauth-lb-private-{hash} (private topology with OAuth via LoadBalancer)
         RT->>T: public-{hash} (platform, feature, then NodePool rollout tests)
