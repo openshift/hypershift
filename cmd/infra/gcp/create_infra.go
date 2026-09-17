@@ -30,17 +30,16 @@ type CreateInfraOptions struct {
 
 // CreateInfraOutput contains the output from infrastructure creation
 type CreateInfraOutput struct {
-	Region           string `json:"region"`
-	ProjectID        string `json:"projectId"`
-	InfraID          string `json:"infraId"`
-	NetworkName      string `json:"networkName"`
-	NetworkSelfLink  string `json:"networkSelfLink"`
-	SubnetName       string `json:"subnetName"`
-	SubnetSelfLink   string `json:"subnetSelfLink"`
-	SubnetCIDR       string `json:"subnetCidr"`
-	RouterName       string `json:"routerName"`
-	NATName          string `json:"natName"`
-	FirewallRuleName string `json:"firewallRuleName"`
+	Region          string `json:"region"`
+	ProjectID       string `json:"projectId"`
+	InfraID         string `json:"infraId"`
+	NetworkName     string `json:"networkName"`
+	NetworkSelfLink string `json:"networkSelfLink"`
+	SubnetName      string `json:"subnetName"`
+	SubnetSelfLink  string `json:"subnetSelfLink"`
+	SubnetCIDR      string `json:"subnetCidr"`
+	RouterName      string `json:"routerName"`
+	NATName         string `json:"natName"`
 }
 
 // NewCreateCommand creates a new cobra command for creating GCP infrastructure
@@ -157,12 +156,8 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, logger logr.Logger
 	result.NetworkName = network.Name
 	result.NetworkSelfLink = network.SelfLink
 
-	// Create firewall rule for kubelet access
-	firewall, err := networkManager.CreateFirewallRule(ctx, network.SelfLink)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create firewall rule: %w", err)
-	}
-	result.FirewallRuleName = firewall.Name
+	// The worker firewall rule (<infra-id>-internal-cluster) is created and
+	// continuously reconciled by the control-plane-operator, not by this CLI.
 
 	// Create subnet
 	subnet, err := networkManager.CreateSubnet(ctx, network.SelfLink, o.VPCCidr)
