@@ -118,7 +118,7 @@ func TestMutate_WhenLabelsAreRemovedAndAnnotationIsEmpty_RemovesAnnotation(t *te
 
 func TestHandleMutate_WhenRequestExceedsMaximumSize_ReturnsBadRequest(t *testing.T) {
 	opts := &Options{}
-	req := httptest.NewRequest(http.MethodPost, "/mutate", bytes.NewReader(make([]byte, maxAdmissionReviewSize+1)))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mutate", bytes.NewReader(make([]byte, maxAdmissionReviewSize+1)))
 	resp := httptest.NewRecorder()
 
 	opts.handleMutate(resp, req)

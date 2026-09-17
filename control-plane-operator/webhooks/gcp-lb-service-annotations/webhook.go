@@ -12,6 +12,7 @@ package gcplbserviceannotations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -119,7 +120,7 @@ func (o *Options) Run(ctx context.Context) error {
 
 	select {
 	case err := <-errCh:
-		if err == http.ErrServerClosed {
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
@@ -129,7 +130,7 @@ func (o *Options) Run(ctx context.Context) error {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shut down webhook server: %w", err)
 		}
-		if err := <-errCh; err != nil && err != http.ErrServerClosed {
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("serve webhook: %w", err)
 		}
 		return nil
