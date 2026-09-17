@@ -67,10 +67,12 @@ type TestMatrix struct {
 	Sequential []SequentialGroup `json:"sequential,omitempty"`
 }
 
-// Validate checks that all group names within the matrix are unique
-// and safe for use as JUnit filename components.
+// Validate checks that all group names within the matrix are unique and safe
+// for use as JUnit filename components. It also rejects variants assigned to
+// different top-level execution lanes, because those lanes run concurrently.
 func (m TestMatrix) Validate() error {
 	seen := make(map[string]bool)
+	variantLanes := make(map[string]string)
 	var errs []error
 	check := func(name string) {
 		if err := validateGroupName(name); err != nil {
@@ -81,12 +83,22 @@ func (m TestMatrix) Validate() error {
 		}
 		seen[name] = true
 	}
+	checkVariant := func(variant, lane string) {
+		if previousLane, ok := variantLanes[variant]; ok && previousLane != lane {
+			errs = append(errs, fmt.Errorf("variant %q is used by concurrent lanes %q and %q", variant, previousLane, lane))
+			return
+		}
+		variantLanes[variant] = lane
+	}
 	for _, g := range m.Parallel {
 		check(g.Name)
+		checkVariant(g.Variant, "parallel/"+g.Name)
 	}
-	for _, sg := range m.Sequential {
+	for i, sg := range m.Sequential {
+		lane := fmt.Sprintf("sequential/%d/%s", i, sg.Name)
 		for _, step := range sg.Steps {
 			check(step.Name)
+			checkVariant(step.Variant, lane)
 		}
 	}
 	return errors.Join(errs...)
