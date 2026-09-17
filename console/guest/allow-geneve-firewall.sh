@@ -10,10 +10,11 @@ set -euo pipefail
 # cascaded into konnectivity 504s and blocked control-plane-side console
 # monitoring. See CONSOLE_CONTROL_PLANE_DOCS (Phase 2).
 #
-# This is the minimal unblock (geneve only). The real fix lives in GCP cluster
-# provisioning (this rule should be created with the cluster): upstream
-# openshift-online/gcp-hcp-ctl#36. Kept here as a manual repro for existing
-# clusters until that ships (see CONSOLE_CONTROL_PLANE_DOCS/UPSTREAM_PATCHES.md).
+# This is the minimal unblock (geneve only). The real fix belongs in CPO's GCP
+# infrastructure reconciliation (this rule should be created with the cluster),
+# tracked in Jira GCP-1221 — which aims to replace this workaround script. Kept
+# here as a manual repro for existing clusters until that ships (see
+# CONSOLE_CONTROL_PLANE_DOCS/UPSTREAM_PATCHES.md).
 
 PROJECT=patmarti-hcp-test
 NETWORK=patmart-b3bb-network

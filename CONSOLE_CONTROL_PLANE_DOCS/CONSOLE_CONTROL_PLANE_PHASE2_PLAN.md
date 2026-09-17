@@ -1,10 +1,22 @@
 # Phase 2 Implementation Plan: Day-0 console UX — pod terminal + monitoring
 
-**Status:** In progress — **Part A (pod terminal): DONE (verified live).**
-**Part B (monitoring): backend path DONE (verified live: console → konnectivity
-socks5 → guest Thanos = HTTP 200, PromQL `up` returns data).** Browser
-verification of Observe → Metrics/Alerts pending. Required a guest VPC firewall
-fix (geneve UDP 6081) — see B.6.
+**Status: DONE.** **Part A (pod terminal): DONE (verified live).** **Part B
+(monitoring): DONE (verified live end-to-end, browser included)** — console →
+konnectivity socks5 → guest Thanos = HTTP 200, PromQL `up` returns data, and
+Observe → **Metrics** renders in the browser with real graphs. Required a guest
+VPC firewall fix (geneve UDP 6081) — see B.6.
+
+**Scope correction (Alerting UI → Phase 3):** Observe → **Alerting** (and
+Dashboards/Targets) is not core console — it's rendered by the
+`monitoring-plugin` dynamic `ConsolePlugin` (`github.com/openshift/
+monitoring-plugin`), normally shipped by CMO/the Console capability. It is not
+deployed in this hand-rolled setup (`window.SERVER_FLAGS.consolePlugins` is
+`[]` live), so there is no UI surface for it regardless of backend readiness.
+Since plugin loading is already Phase 3 scope, the Alerting UI checkbox moves
+there instead of blocking Phase 2 — see B.7. The Alertmanager *backend* path
+(reachability, TLS, auth) is proven and stays a Phase 2 deliverable; alerts are
+in fact firing (`Watchdog`, `TargetDown`), confirmed by querying Alertmanager's
+API directly.
 **Companions:** `CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md` (core console, DONE),
 `CONSOLE_CONTROL_PLANE_STUDY.md` (feasibility + file:line, esp. §5.1 DNS/resolver
 and §13.10/§14 konnectivity), `console-control-plane-manifests.example.yaml`
@@ -12,9 +24,11 @@ and §13.10/§14 konnectivity), `console-control-plane-manifests.example.yaml`
 
 **Goal:** Make the two pieces of core day-0 console UX work control-plane-side on
 a HyperShift/GCP HostedCluster: the **pod terminal** (Pods → Terminal) and the
-**monitoring UI** (Observe → Metrics / Alerts / Dashboards / Targets). Plugins are
-deliberately deferred to Phase 3 — these two are what an operator expects to work
-out of the box.
+**monitoring UI** (Observe → Metrics, backed by Thanos/Alertmanager reachability).
+Plugin-delivered UI (Alerting, Dashboards, Targets — all part of
+`monitoring-plugin`) is deliberately deferred to Phase 3 along with the rest of
+plugin support — these two are what an operator expects to work out of the box
+without a plugin.
 
 ## Why these two, and why now
 
@@ -162,11 +176,14 @@ can dial, (2) the two URL flags pointing at the guest services.
 - [x] Alertmanager reachable over the same path (returns an RBAC 403 to a
   low-privilege token — i.e. the request reaches AM and authorizes; the console's
   cluster-admin OIDC user passes). **Verified live.**
-- [ ] Browser: Observe → **Metrics** (`up`) and Observe → **Alerts** render.
-  (Backend proven; UI click-through pending.)
-- [ ] Core console (Phase 1) + terminal (Part A) still work with the sidecar and
-  proxy env present (NO_PROXY keeps KAS direct). Pods came up 2/2; regression
-  browser check pending.
+- [x] Browser: Observe → **Metrics** (`up`) renders with real graphs. **Verified
+  live.**
+- [x] Core console (Phase 1) + terminal (Part A) still work with the sidecar and
+  proxy env present (NO_PROXY keeps KAS direct). Pods 2/2; verified live.
+- [~] Observe → **Alerting** UI — moved to Phase 3 (see B.7): it's rendered by
+  the `monitoring-plugin` ConsolePlugin, not core console, and isn't deployed
+  here. Backend (Alertmanager reachability/TLS/auth, real firing alerts) stays
+  proven under Part B.
 
 ## B.6 Guest VPC firewall fix (geneve) — REQUIRED, discovered live
 
@@ -198,10 +215,45 @@ established), and console → socks5 → thanos went **504 → HTTP 200**.
 
 - Repro/fix script: `console/guest/allow-geneve-firewall.sh`.
 - **Productization:** this is a GCP infra-provisioning gap — the node VPC must
-  ship a geneve allow rule. Fixed upstream in
-  [openshift-online/gcp-hcp-ctl#36](https://github.com/openshift-online/gcp-hcp-ctl/pull/36)
-  (tracked in `UPSTREAM_PATCHES.md`). Not console work, but a hard prerequisite
-  for any guest pod/service-network feature (monitoring, plugins) on GCP.
+  ship a geneve allow rule. The fix belongs in CPO's GCP infrastructure
+  reconciliation and is tracked in Jira **GCP-1221**, which aims to replace the
+  workaround script above (see `UPSTREAM_PATCHES.md`). Not console work, but a
+  hard prerequisite for any guest pod/service-network feature (monitoring,
+  plugins) on GCP.
+
+## B.7 Alerting UI is a plugin, not core console — moved to Phase 3
+
+Live browser check confirmed Observe → **Metrics** renders (graphs for `up`,
+etc.). There is no Observe → **Alerts** (or Dashboards/Targets) entry at all in
+the nav — not an RBAC or proxy issue, but because that UI is delivered by a
+**dynamic ConsolePlugin**, not core console.
+
+Evidence:
+- Console upstream README (`_console-research/README.md`): "In order to enable
+  the monitoring UI and see the **Alerting** nav item... you'll need to run the
+  OpenShift Monitoring dynamic plugin alongside Bridge" — `monitoring-plugin`
+  (`github.com/openshift/monitoring-plugin`), set via `BRIDGE_PLUGINS=
+  monitoring-plugin=http://...`.
+- Live: `window.SERVER_FLAGS.consolePlugins` on `pat-console`'s console is `[]`
+  — no dynamic plugins loaded.
+- Live: no `monitoring-plugin` (or any ConsolePlugin-backed) pod exists on the
+  guest cluster. In a normal OpenShift install this ships via the `Console`
+  cluster capability / CMO; this HyperShift setup has neither.
+- The legacy static Prometheus query UI (`prometheusBaseURL: /api/prometheus`,
+  core console, not a plugin) is what actually renders Observe → Metrics —
+  confirmed present in `SERVER_FLAGS` and working live.
+
+**Disposition:** since loading dynamic plugins into this hand-rolled console is
+already Phase 3 scope (`CONSOLE_CONTROL_PLANE_PHASE1_PLAN.md` §"PHASE 3 —
+Plugin path"), the Observe → Alerting/Dashboards/Targets UI moves there as a
+`monitoring-plugin` instance rather than staying an open Phase 2 item. This
+does **not** reopen any Phase 2 backend work: the Alertmanager proxy
+(reachability, `-service-ca-file` trust, auth) is unchanged and already proven
+(B.4) — confirmed live by querying Alertmanager's `/api/v2/alerts` directly
+through `oc exec`, which shows real firing alerts (`Watchdog`, `TargetDown` for
+crio in `kube-system`). Phase 3 only needs to add the `monitoring-plugin`
+ConsolePlugin on top of the existing konnectivity socks5 + proxy-env plumbing
+Phase 2 already built.
 
 ## B.5 Non-goals / risks
 
@@ -222,10 +274,15 @@ established), and console → socks5 → thanos went **504 → HTTP 200**.
 1. **Part A (terminal): DONE.** Worked with no changes (rides the Phase 1 KAS
    exec path); confirmed day-0 exec UX and that WebSocket-through-the-router is a
    non-issue.
-2. **Part B (monitoring): backend DONE.** Built the konnectivity socks5 sidecar
-   (the reusable piece Phase 3 plugins also need), wired the two flags, fixed the
+2. **Part B (monitoring): DONE.** Built the konnectivity socks5 sidecar (the
+   reusable piece Phase 3 plugins also need), wired the two flags, fixed the
    off-cluster `-service-ca-file` trust gap, and — critically — fixed the guest
    VPC geneve firewall that was silently breaking all cross-node pod networking
-   (B.6). Verified live: console → socks5 → thanos = HTTP 200 + PromQL data.
-   Remaining: browser click-through of Observe → Metrics/Alerts, and the
-   productization moves (CPO-injected sidecar; geneve rule in gcp-hcp-ctl).
+   (B.6). Verified live end-to-end, including the browser: console → socks5 →
+   thanos = HTTP 200 + PromQL data, and Observe → Metrics renders real graphs.
+   Alertmanager backend path also proven (B.4), including real firing alerts.
+   The Observe → Alerting **UI** turned out to require a dynamic ConsolePlugin
+   (`monitoring-plugin`) not present in this setup — moved to Phase 3 (B.7)
+   since it's plugin work, not a Phase 2 gap. Remaining for a later phase:
+   productization moves (CPO-injected sidecar; geneve rule in CPO GCP infra,
+   Jira GCP-1221) and, in Phase 3, deploying `monitoring-plugin`.

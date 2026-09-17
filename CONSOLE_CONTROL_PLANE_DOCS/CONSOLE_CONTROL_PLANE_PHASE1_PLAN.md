@@ -399,11 +399,23 @@ Deploy and validate **after Phase 2.** Plugins need the guest **pod/service netw
 
 5. **console-config with plugins** — Part 1 runs flags-only with no plugins. To load a plugin without the operator, provide a `console-config.yaml` ConfigMap listing the plugin `name → https://<svc>.<ns>.svc.cluster.local:<port>` and mount it (`-config`). Endpoints resolve in-guest via the socks5 sidecar. (Study §14.5 confirms URL shape `getServiceURL` `configmap.go:255-262`.) Dynamic discovery of guest `ConsolePlugin` CRs is operator work — **not** in Phase 1; here we wire one plugin by hand to prove the path.
 
+**Candidate first plugin: `monitoring-plugin`.** Phase 2 found that Observe →
+Alerting/Dashboards/Targets (unlike Metrics, which is core console) is rendered
+by the `monitoring-plugin` dynamic ConsolePlugin (`github.com/openshift/
+monitoring-plugin`), normally shipped by CMO/the `Console` cluster capability —
+neither is present in this HyperShift setup, so there's currently no UI for
+Alerting even though the Alertmanager backend path is proven
+(`CONSOLE_CONTROL_PLANE_PHASE2_PLAN.md` §B.7). Deploying `monitoring-plugin` by
+hand is a good concrete first target for "a hand-configured plugin loads in the
+console UI" below — it also gives real UI validation of the konnectivity
+socks5 + asset-proxy path against a plugin operators actually care about, not
+just a toy one.
+
 ## 12. Phase 3 validation
 
 - [ ] Patched console image (`quay.io/patmarti/console:console-phase2`) runs.
 - [ ] Konnectivity socks5 sidecar healthy; resolves a known guest plugin Service.
-- [ ] A hand-configured plugin loads in the console UI (assets fetched through the tunnel — proves the `server.go:524` fix + socks5 path).
+- [ ] A hand-configured plugin loads in the console UI (assets fetched through the tunnel — proves the `server.go:524` fix + socks5 path). Suggested: `monitoring-plugin`, closing the Observe → Alerting/Dashboards/Targets gap noted in Phase 2 §B.7.
 - [ ] Core console (Phase 1) + terminal/monitoring (Phase 2) still work unchanged with the plugin config present.
 
 ## 13. Phase 3 non-goals / later phases
