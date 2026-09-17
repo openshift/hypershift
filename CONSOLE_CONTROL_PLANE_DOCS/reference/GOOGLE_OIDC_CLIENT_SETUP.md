@@ -127,7 +127,7 @@ off / zero-node, nothing writes it, so including the spec entry blocks the whole
 auth-config push (including the audience). We therefore run with **audience +
 bridge flags only** and omit the `oidcClients` entry; login works. Making the
 `oidcClients` entry usable requires a control-plane-side owner of
-`status.oidcClients` (see `CONSOLE_CONTROL_PLANE_STUDY.md` §23). Note the API
+`status.oidcClients` (see `../CONSOLE_CONTROL_PLANE_STUDY.md` §23). Note the API
 also requires `oidcClients[].clientID` to be non-empty (`MinLength=1`), reinforcing
 that the client must exist before it can be registered.
 

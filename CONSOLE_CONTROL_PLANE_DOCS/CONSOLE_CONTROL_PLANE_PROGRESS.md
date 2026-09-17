@@ -1,0 +1,176 @@
+# Console control-plane-side — progress log (what we did)
+
+Running log of the console-on-the-control-plane study for HyperShift/GCP HCP: the big steps we
+followed, the changes actually made, and the PR/Jira refs. Active/ongoing work and future needs live
+in `CONSOLE_CONTROL_PLANE_PHASE3_PLAN.md`; the design and file:line references live in
+`CONSOLE_CONTROL_PLANE_STUDY.md`; upstream patch/PR/Jira tracking lives in `reference/UPSTREAM_PATCHES.md`.
+
+Target cluster for all live validation: HostedCluster **`pat-console`** on GCP HCP. Phases 1–2 were
+validated on the shared integration MC `gcp-hcp-int-mc-us-central1-yjiv`; Phase 3 on a dedicated dev
+MC `dev-mgt-us-c1-p0917` (dev-patmarti), reusing the same customer project (`patmarti-hcp-test`) and
+infraID (`patmart-b3bb`).
+
+## Big-step arc
+
+1. **Study** — feasibility of running the console bridge control-plane-side (in the HCP namespace on
+   the management cluster) instead of in the guest. Verdict: viable; core console needs no code
+   change, plugins/monitoring need a guest-network tunnel. → `CONSOLE_CONTROL_PLANE_STUDY.md`.
+2. **Phase 1 — core console (DONE).** Bridge deployed control-plane-side, exposed Public + Private,
+   per-user Google OIDC login, guest resource browsing, CLI-downloads.
+3. **Phase 2 — day-0 UX (DONE).** Pod terminal + monitoring (Observe → Metrics) via a konnectivity
+   socks5 tunnel to guest Thanos/Alertmanager.
+4. **Phase 3 — dynamic plugins + Console capability guest-side (DONE, verified live).** Console
+   capability enabled (Ingress disabled) via a GCP-gated CEL relax; console-operator stripped from
+   the guest payload (GCP-gated); CMO ships the `monitoring-plugin`; the bridge loads it via a
+   `-plugins` flag; Observe → Alerting/Dashboards/Targets render in the browser. See the Phase 3
+   section below and `CONSOLE_CONTROL_PLANE_PHASE3_PLAN.md` for the design/analysis.
+
+---
+
+## Phase 1 — core console control-plane-side (DONE, verified live)
+
+**What it proves:** the core OpenShift console runs in the HCP namespace on the management cluster,
+reachable from a browser for both PublicAndPrivate and Private GCP clusters, browsing guest
+resources through the in-namespace guest KAS (no konnectivity), on a zero-node guest and later on 4
+workers.
+
+**Data path:** browser → (public LB `:443` / Private PSC endpoint) → HCP HAProxy router (SNI
+passthrough) → console Service (ClusterIP `:8443`) → console bridge pod (terminates TLS) →
+off-cluster k8s proxy → guest KAS `kube-apiserver.<hcp-ns>.svc:6443`.
+
+**Changes made:**
+- **CPO router — generic labeled-Route backend.** The HCP HAProxy router only built backends for
+  hardcoded route names; a hand-applied `console` Route was skipped. Added console/downloads router
+  backend cases. This grew into CPO **owning** the console/downloads exposure Routes (+ `-private`
+  variants + PSC ExternalName services for external-dns) — **Jira GCP-1202**, PR
+  openshift/hypershift#9622 (draft/RFC). Detail: `reference/PRIVATE_ENDPOINT_ACCESS.md`, `reference/UPSTREAM_PATCHES.md`.
+- **Console bridge `-ca-file` off-cluster TLS trust (patched image).** The off-cluster bridge
+  couldn't verify the guest KAS private `root-ca` (only skip-verify worked). Fixed in three places
+  (KAS resource proxy, anonymous transport, and — Phase 2 — `-service-ca-file` for service proxies).
+  **Jira GCP-1219**, PR openshift/console#17185. Custom image `quay.io/patmarti/console:*` built by
+  `console/build-console.sh` (branch `off-cluster-ca-file-trust`). Detail: `reference/UPSTREAM_PATCHES.md`.
+- **Live manifests:** `console/kustomize/` (origin → hypershift → pat-console layers; see
+  `console/kustomize/README.md` for the stock→ours delta table).
+- **Per-user Google OIDC login** (upgraded from the initial `-user-auth=disabled` static token):
+  bridge OIDC flags + the console client ID added to the guest KAS OIDC `audiences` +
+  `email,profile` scopes + a session-key Secret — all hand-replicated (no console-operator). Runbook:
+  `reference/GOOGLE_OIDC_CLIENT_SETUP.md`.
+
+**Key findings (carried forward):**
+- Guest KAS is a plain in-namespace ClusterIP — core console needs **no konnectivity**.
+- An `oidcProviders[].oidcClients[]` entry is **not admissible** here (its admission needs
+  `status.oidcClients`, which only a running guest console-operator writes) → we use audience +
+  bridge flags only. A control-plane-side `status.oidcClients` owner is a future need.
+- HCP namespaces enforce **restricted PSA**; the upstream console asset is already compliant.
+
+**Known limitations carried out of Phase 1 (still open):**
+- Router config not hot-reloaded — manual router restart after applying a Route.
+- **Multi-replica sessions** — the bridge keeps sessions per-pod in-memory and the SNI-passthrough
+  router can't do cookie affinity; robust fix = shared session store (bridge code change, deferred).
+- **User-settings persistence** needs the guest `openshift-console-user-settings` namespace +
+  console-SA RBAC that the console-operator normally provisions (operator/lifecycle work).
+- Everything hand-applied (no operator, no lifecycle).
+
+---
+
+## Phase 2 — pod terminal + monitoring (DONE, verified live)
+
+**Part A — pod terminal (DONE).** Works with **zero** new plumbing: the Pods-page terminal opens a
+WebSocket to the k8s resource proxy (`/api/kubernetes/.../pods/<pod>/exec`) → guest KAS → kubelet,
+riding the Phase 1 path. Verified: interactive shell in a guest pod via the UI, governed by the
+logged-in OIDC user's guest RBAC.
+
+**Part B — monitoring (DONE).** Observe → **Metrics** renders live (real graphs; PromQL `up` returns
+data). Thanos/Alertmanager are guest ClusterIP services unreachable from the control-plane pod, so:
+
+**Changes made:**
+- **Konnectivity socks5 sidecar** on the console pod (tunnels the bridge's `HTTP(S)_PROXY` into the
+  guest network, resolving guest Service → ClusterIP), plus bridge `-k8s-mode-off-cluster-thanos` /
+  `-alertmanager` flags and `HTTP(S)_PROXY`/`NO_PROXY` env. Reused verbatim in Phase 3.
+- **`-service-ca-file` off-cluster trust** (folded into the same GCP-1219 console PR): service
+  proxies (Thanos/Alertmanager/terminal/plugins) present service-ca-signed certs, a different signer
+  than the KAS CA. Detail: `reference/UPSTREAM_PATCHES.md`.
+- **Guest VPC geneve firewall fix.** First live test got `504` because the guest VPC dropped OVN-K
+  geneve (UDP 6081) between nodes, breaking all cross-node pod networking (and thus konnectivity to
+  guest pods). Fixed with one INGRESS allow rule (`console/guest/allow-geneve-firewall.sh`).
+  Productization = CPO owning the rule — **Jira GCP-1221** (later cherry-picked into this branch as
+  the CPO firewall reconciler, commit `feat(gcp): GCP-1221 | manage worker firewall rule in CPO`).
+
+**Key finding (shaped Phase 3):** Observe → **Alerting/Dashboards/Targets** is **not** core console —
+it's the `monitoring-plugin` dynamic ConsolePlugin (shipped by CMO / the Console capability, neither
+present here; `SERVER_FLAGS.consolePlugins` is `[]` live). The Alertmanager *backend* path is proven
+(real alerts firing, seen via `oc exec`). Loading the plugin moved to Phase 3.
+
+---
+
+## Phase 3 — dynamic plugins + Console capability guest-side (DONE, verified live)
+
+**What it proves:** with the guest **`Console` capability enabled** (and Ingress kept disabled) but
+the **console-operator running nowhere**, a **dynamic ConsolePlugin** (`monitoring-plugin`) loads and
+renders in the control-plane-side console — Observe → **Alerting / Dashboards / Targets** all render
+in the browser. Validated live on the dev-patmarti MC.
+
+**Changes made:**
+- **GCP-gated CEL relax (API).** Upstream CEL forbids disabling Ingress unless Console is also
+  disabled. Relaxed it to a spec-level rule guarded `self.platform.type == 'GCP'`, so GCP HCs may run
+  **Console enabled + Ingress disabled** (console runs control-plane-side). `hostedcluster_types.go`
+  + regenerated CRDs + an envtest case (AWS rejects, GCP accepts). Converges on upstream OCPBUGS-58422
+  (console-operator #1182 merged; hypershift #8933 removes the rule for all platforms — replace the
+  GCP-only relax when it merges). Tracker: `reference/UPSTREAM_PATCHES.md`.
+- **GCP-gated console-operator strip (CPO).** Enabling the Console capability installs the whole
+  Console payload incl. the operator Deployment + ClusterOperator, which we don't want running on the
+  guest. CPO's CVO `preparePayloadScript` now strips
+  `0000_50_console-operator_07-operator-ibm-cloud-managed.yaml` +
+  `0000_50_console-operator_95-clusteroperator.yaml` (BOTH — the CO strip is required or guest CVO
+  blocks on `ClusterOperatorNotAvailable`), gated to GCP. `v2/cvo/deployment.go` + test. Result:
+  guest has the 8 Console CRDs + namespaces + RBAC, but **no console-operator** (verified live).
+- **All-in-one dev image.** `console/Dockerfile.dev.fast` now builds the full binary set so ONE image
+  serves both the **HyperShift operator** (deployed on the MC) and the **CPO override** on the HC.
+  `console/build.sh` pushes `quay.io/patmarti/hypershift-console-control-plane:*`.
+- **Plugin enablement via bridge flag.** The console-operator normally writes the enabled-plugin set
+  into `console-config`; with no operator, the bridge gets
+  `-plugins=monitoring-plugin=https://monitoring-plugin.openshift-monitoring.svc.cluster.local.:9443`
+  directly. The plugin backend is a guest ClusterIP Service, so it reuses the Phase 2 konnectivity
+  socks5 tunnel + `-service-ca-file` trust unchanged.
+- **Bridge service-account identity (Dashboards RBAC fix).** With `-user-auth=oidc`, USER requests
+  proxy with the logged-in user's token, but the bridge's OWN backend calls (Dashboards ConfigMaps in
+  `openshift-config-managed`, plugin metrics) need a service account — otherwise `system:anonymous` →
+  403 ("console service account cannot list resource"). Added a **token-minter native init-sidecar**
+  (CPO `token-minter` subcommand) that creates the guest `console` SA (normally the operator's job),
+  mints a KAS-audience token (`--token-audience=<HCP IssuerURL>`) to a shared in-memory file, and
+  auto-refreshes it; the bridge reads it via
+  `-k8s-mode-off-cluster-service-account-bearer-token-file`. The Console capability's own
+  `ClusterRoleBinding/console` + `RoleBinding/console-configmap-reader` (shipped by CVO) already bind
+  that SA, so Dashboards then returns 200. Shape mirrors the framework's
+  `InjectTokenMinterContainer(KubeAPIServerToken)`; the konnectivity socks5 sidecar stays a regular
+  container, matching `InjectKonnectivityContainer` (which never uses native sidecars).
+
+**Key findings (carried forward):**
+- **Capability enablement replaces the Phase-1 hand-rolled guest scaffolding.** CVO installs all 8
+  Console CRDs (incl. `consoleplugins`, `consoleclidownloads`), namespaces, and RBAC — so
+  `console/guest/consoleclidownloads-crd.yaml` was deleted. The `oc-cli-downloads` **CR** is still
+  hand-applied (`console/guest/oc-cli-downloads.yaml`): the operator that normally creates it is
+  stripped, and other CLI-download CRs (helm, netobserv) come from their own operators/CVO.
+- **Plugin ownership holds:** CMO (the provider) ships the plugin **workload + `ConsolePlugin` CR**
+  once the capability is on; only enablement/wiring (the operator's job) is replaced by our flag.
+- **Cross-region OIDC works:** the HC keeps its issuerURL on the *previous* region's OIDC bucket
+  (shared infraID / published JWKS); `serviceAccountSigningKey` makes the new MC's operator skip
+  re-upload.
+
+**Remaining (open, benign / analysis):**
+- **Login-role metric unavailable under OIDC:** `auth.metrics isKubeAdmin` queries the OpenShift User
+  API (`users.user.openshift.io`), which doesn't exist under pure Google OIDC → a harmless
+  login-metrics-only error (upstream-acknowledged `// FIXME`). No functional impact.
+- **Multi-replica sessions / user-settings persistence** limitations from Phase 1 still stand (the
+  token-minter fixed the SA-identity RBAC, not the user-settings namespace provisioning).
+- **Part C (operator analysis):** what a control-plane-side console-operator must own (plugin config
+  generation, `status.oidcClients`, SA/RBAC provisioning, secret injection) — see the Phase 3 plan.
+
+---
+
+## Cross-cutting infra gap (open) — CNO restricted PSA
+
+Independent of console: cluster-network-operator's self-managed network operands set only pod-level
+security fields and fail restricted-PSA admission on SCC-less (GKE) management clusters, blocking
+node bring-up. Worked around live with `pod-security-admission-label-override: baseline` on the HC.
+Needs an upstream CNO fix. Full analysis: `gaps/CNO_RESTRICTED_PSA_GAP.md`; tracker: `reference/UPSTREAM_PATCHES.md`.

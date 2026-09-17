@@ -196,14 +196,14 @@ with dynamic registration**; secret isolation is available via the day-2 `hosted
 pattern ([OCPSTRAT-2173](https://redhat.atlassian.net/browse/OCPSTRAT-2173)).
 
 **This is the single biggest open risk in the study. Full analysis — options, security, day-2,
-broker design, private-cluster handling — lives in `CONSOLE_AUTH_OPTIONS.md` §7** (tracked as the
+broker design, private-cluster handling — lives in `reference/CONSOLE_AUTH_OPTIONS.md` §7** (tracked as the
 open Gap 4).
 
 **D3 — Hostname: `console.<domain>`, same pattern as `api.<domain>` / `oauth.<domain>`.**
 Rides shared router SNI + public LB / GCP PSC + external-dns. Sets KAS `ConsolePublicURL` for the
 `oc-oidc` login command. This replaces the classic `console-openshift-console.apps.<basedomain>`
 guest-ingress hostname. **No per-cluster OIDC redirect-URI registration** in the GCP model: Google
-is the issuer with a pre-existing shared OAuth client (`CONSOLE_AUTH_OPTIONS.md` §7), so there is no
+is the issuer with a pre-existing shared OAuth client (`reference/CONSOLE_AUTH_OPTIONS.md` §7), so there is no
 `https://console.<domain>/auth/callback` whitelisting step the console port provisions
 (earlier drafts wrongly implied one).
 
@@ -298,7 +298,7 @@ Constraint: console TLS terminates at the console pod; it must serve the SNI hos
 - Update KAS `ConsolePublicURL` (`kas/params.go:77`, `kas/config.go:151`) to `https://console.<domain>`.
 - OIDC console client: provision an entry (`openshift-console`/`console`) in the HC auth spec when
   Console is enabled; HCCO copies the secret to the guest (`resources.go:1566+`). The client model
-  itself is the open blocker — see `CONSOLE_AUTH_OPTIONS.md` §7.
+  itself is the open blocker — see `reference/CONSOLE_AUTH_OPTIONS.md` §7.
 
 **H. Tests**
 - Unit: component config gen, sidecar injection, plugin endpoint injection, OIDC config, Service/Route + label, cert SANs.
@@ -367,15 +367,12 @@ Must change (file:line):
 
 ---
 
-## 12. Cleanup note
+## 12. Research clones
 
-Shallow clones left at `_console-research/`, `_console-operator-research/`, and
-`_cluster-network-operator-research/` (openshift/cluster-network-operator, the CNO dual-cluster
-precedent) — none gitignored. Remove before any commit:
-
-```
-rm -rf _console-research _console-operator-research _cluster-network-operator-research
-```
+`_console-research/` (openshift/console — also holds our in-progress bridge patches on branch
+`off-cluster-ca-file-trust`), `_console-operator-research/` (openshift/console-operator), and
+`_cluster-network-operator-research/` (the CNO dual-cluster precedent) are working clones used for
+code references and patch builds. Not gitignored; not part of the committed tree.
 
 ---
 
@@ -618,7 +615,7 @@ already in production in this repo and upstream. CNO registers `--extra-clusters
 (`cmd/cluster-network-operator/main.go:78-80`), builds a `map[string]*OperatorClusterClient`
 (`pkg/client/client.go:98-125`), and selects per-object via `ClientFor(name)`
 (`client.go:135-144`, `ManagementClusterName`/`DefaultClusterName` `names.go:230-234`). Console
-adopts the **same flag idiom and deployment shape** (see STUDY_COMPONENTS_DEPLOYMENT_PATTERNS.md
+adopts the **same flag idiom and deployment shape** (see reference/STUDY_COMPONENTS_DEPLOYMENT_PATTERNS.md
 "CNO's multi-cluster client"). **But** CNO routes objects to clusters via a
 `network.operator.openshift.io/cluster-name` annotation + one generic `apply.ApplyObject`
 (`apply.go:38`) — console-operator has **no** such central apply/routing (typed clients per
@@ -985,7 +982,7 @@ the operator itself — not a parallel CPO reimplementation. Avoiding **code dup
 
 ## 18. Removing the data-plane console — capability gate + placement flag (Gap 7)
 
-Full detail and open sub-items live in the companion `CONSOLE_CONTROL_PLANE_GAPS.md` (Gap 7).
+Full detail and open sub-items live in the companion `gaps/CONSOLE_CONTROL_PLANE_GAPS.md` (Gap 7).
 Summary of the model and the verified mechanism:
 
 ### 18.1 Two orthogonal switches
@@ -1088,258 +1085,54 @@ kubeconfig) — that is *not* the console model; CNO is.
 
 ---
 
-## 20. Pod Security Standards — HCP namespaces enforce `restricted` (verified live)
+## 20. Pod Security Standards — HCP namespaces enforce `restricted` (resolved)
 
-Discovered while deploying the Phase 1 core-console Deployment by hand
-(`console/kustomize/base/deployment.yaml`) against a live GCP HCP cluster: the pod was
-rejected outright, not just warned.
+HCP namespaces enforce Kubernetes Pod Security Admission at `restricted` (enforce, not just warn),
+so **every** control-plane-side component landing in the HCP namespace must ship a
+`restricted`-compliant `securityContext` (pod: `runAsNonRoot`/`seccompProfile: RuntimeDefault`;
+container: `allowPrivilegeEscalation: false`/`capabilities.drop: [ALL]`/`readOnlyRootFilesystem: true`)
+or its pods never schedule.
 
-### 20.1 What was observed
+**Resolved for console:** the upstream `console-operator` static Deployment asset (vendored in
+`console/kustomize/origin/`) already ships exactly this `securityContext`, and the console image runs
+as non-root uid 1001 by default — so `hypershift/` inherits it unchanged, no work needed. A future
+CPO v2 `consoleoperator` component (§13) inherits the same compliant spec via §14.4's ported operand
+generation. An early PSS failure was an artifact of a from-scratch base manifest, not a real gap.
 
-`kubectl get ns <hcp-ns> -o jsonpath='{.metadata.labels}'` on a live HCP namespace shows:
+**Same class of gap, different owner (still open):** cluster-network-operator renders four network
+Deployments from its own bindata setting only pod-level security fields (missing container-level
+`allowPrivilegeEscalation`/`capabilities.drop`), so on GKE (no SCC → PSA fallback) they fail
+admission and guest nodes never come up. Independent of console; surfaced by the spike when scaling
+nodes. Full analysis + patch: `gaps/CNO_RESTRICTED_PSA_GAP.md`; tracker: `reference/UPSTREAM_PATCHES.md`.
 
-```json
-{
-  "pod-security.kubernetes.io/audit": "restricted",
-  "pod-security.kubernetes.io/enforce": "restricted",
-  "pod-security.kubernetes.io/warn": "restricted"
-}
-```
+## 21. Kustomize tree — origin → hypershift → pat-console
 
-This is standard Kubernetes Pod Security Admission (PSA), **enforced**, not just audited/warned.
-A Deployment whose pod/container spec doesn't satisfy the `restricted` profile fails to create
-pods at all — the ReplicaSet shows a `FailedCreate`/`ReplicaFailure` condition:
-
-```
-pods "console-xxx" is forbidden: violates PodSecurity "restricted:latest":
-allowPrivilegeEscalation != false (container "console" must set
-securityContext.allowPrivilegeEscalation=false), unrestricted capabilities
-(container "console" must set securityContext.capabilities.drop=["ALL"]),
-runAsNonRoot != true (pod or container "console" must set securityContext.runAsNonRoot=true)
-```
-
-This applies to **every** control-plane-side component landing in the HCP namespace —
-not console-specific. Any future CPO v2 component (§13) that ships its own
-`deployment.yaml` asset must set a `restricted`-compliant `securityContext` or its pods
-will never schedule.
-
-### 20.2 Required fields (verified against `kube-apiserver`'s Deployment in the same namespace)
-
-**Pod-level `spec.securityContext`:**
-```yaml
-runAsNonRoot: true
-seccompProfile:
-  type: RuntimeDefault
-```
-
-**Container-level `securityContext`:**
-```yaml
-allowPrivilegeEscalation: false
-capabilities:
-  drop: [ALL]
-readOnlyRootFilesystem: true
-```
-
-(`kube-apiserver`'s Deployment additionally pins `runAsUser: 1001` at the pod level, but this
-is not required — see below.)
-
-### 20.3 The console bridge image is already compatible
-
-Checked directly: `podman run --rm --entrypoint="" <console-image> id` →
-`uid=1001(1001) gid=0(root) groups=0(root)`. The console bridge image already runs as a
-non-root arbitrary UID by default (standard OpenShift image convention), so
-`runAsNonRoot: true` is satisfied with **no explicit `runAsUser` override needed** —
-unlike `kube-apiserver`, which sets `runAsUser: 1001` explicitly.
-
-### 20.4 Where this landed
-
-Originally added by hand to a from-scratch base `deployment.yaml`. The kustomize tree was
-later restructured into three layers — `console/kustomize/{origin,hypershift,pat-console}/`,
-see `console/kustomize/README.md` — with `origin/` vendoring the **actual upstream**
-`console-operator` static Deployment asset verbatim. That revealed the upstream asset
-**already ships this exact `securityContext`** (pod-level `runAsNonRoot`/`seccompProfile`,
-container-level `allowPrivilegeEscalation: false`/`capabilities.drop: [ALL]`/
-`readOnlyRootFilesystem: true`) — the earlier PSS failure was a gap introduced by writing the
-base from scratch instead of from upstream, not a genuine `restricted`-PSS gap in the console
-image/config itself. The `hypershift/` overlay layer makes **zero changes** to security context
-as a result — it's inherited unchanged from `origin/`. This is a good example of why the
-origin→hypershift→pat-console layering is worth the extra directory: it makes "what did we
-actually have to change" an explicit, reviewable diff instead of an assumption baked into a
-hand-written manifest.
-
-**Action item for §13 (CPO v2 `consoleoperator` component) and §19.2 (management-side RBAC):**
-when the console-operator ports the operand Deployment generation upstream (§14.4), the
-generated pod/container spec already includes this `securityContext` (confirmed above) — no
-new PSS work needed there either, provided the ported code path doesn't drop it.
-
-### 20.5 Same class of gap in CNO's self-managed operands (blocks node bring-up)
-
-The same restricted-PSA enforcement bites a different, non-console owner:
-**cluster-network-operator (CNO)** renders four network Deployments
-(`network-node-identity`, `ovnkube-control-plane`, `multus-admission-controller`,
-`cloud-network-config-controller`) from its own bindata, outside CPO's component framework, and its
-templates set only the **pod-level** security fields — missing the container-level
-`allowPrivilegeEscalation: false` / `capabilities.drop: [ALL]` restricted PSA requires. On GKE
-(no SCC → PSA fallback) all four fail admission, so node CSRs are never approved and guest nodes
-never become Ready. This is independent of the console spike (it blocks any zero-SCC HyperShift
-guest), but the spike surfaced it when scaling nodes. Worked around live with a stopgap that CNO
-reverts; needs an upstream CNO fix mirroring CPO's GCP-205 work. Full analysis + the exact patch:
-`CNO_RESTRICTED_PSA_GAP.md`; tracker row in `UPSTREAM_PATCHES.md`.
+`console/kustomize/` is layered so every departure from stock upstream `console-operator` manifests
+is an explicit, reviewable patch: `origin/` vendors the upstream static assets verbatim,
+`hypershift/` patches them for the no-operator model, `pat-console/` supplies per-cluster values. The
+full delta table (what changed vs stock and why) + the two restructure gotchas (immutable Deployment
+selector; kustomize `images:` can't match `${IMAGE}`) live in **`console/kustomize/README.md`**.
 
 ---
 
-## 21. Kustomize tree restructure — origin → hypershift → pat-console
+## 22. Off-cluster bridge TLS-trust fixes (`-ca-file` / `-service-ca-file`) — FIXED
 
-`console/kustomize/` was restructured into three layers (`console/kustomize/README.md`) so
-every departure from stock upstream `console-operator` manifests is an explicit, cited patch
-rather than baked into a hand-written manifest. `origin/` vendors the upstream static assets
-verbatim (`openshift/console-operator@7fa0a807`, `bindata/assets/{deployments,services,routes,
-pdb,serviceaccounts}/console-*.yaml`); `hypershift/` patches them for the no-operator Phase 1
-model; `pat-console/` supplies live per-cluster values. Diffing against `origin/` this way
-surfaced several additional real deltas beyond §20's securityContext finding:
+The off-cluster bridge as shipped couldn't verify the guest KAS's private `root-ca` (only
+skip-verify worked), and separately ignored `-service-ca-file` for the service proxies
+(Thanos/Alertmanager/terminal/plugins present **service-ca**-signed certs, a different signer than
+the KAS CA). Three related fixes, all implemented in our patched image and verified live:
+1. Wire `-ca-file` → `RootCAs` on the off-cluster KAS resource proxy (`serviceProxyTLSConfig`).
+2. Re-supply `-ca-file` trust to the anonymous transport (`anonymousK8SClientConfig`) that
+   user-settings + login-metrics use (`AnonymousClientConfig` drops the source `Transport`).
+3. Honor `-service-ca-file` for the off-cluster service proxies, falling back to `-ca-file`.
 
-| Field | Upstream (`origin/`) | Phase 1 (`hypershift/`) | Why |
-|---|---|---|---|
-| `priorityClassName` | `system-cluster-critical` | `hypershift-control-plane` | Guest-cluster OCP default; doesn't apply to a pod now running on the management cluster. Verified every other operator Deployment in a live HCP namespace uses `hypershift-control-plane` (kube-apiserver/openshift-apiserver/router/packageserver use the higher `hypershift-api-critical` tier instead — console doesn't need that tier). |
-| `spec.template.spec.nodeSelector`/`tolerations` (`node-role.kubernetes.io/master`) | present | removed | Guest-master-node concept; meaningless once the pod runs on the management cluster, not guest nodes. |
-| `serviceAccountName`/`serviceAccount` | `console` | removed (`automountServiceAccountToken: false`) | The bridge never calls the **management**-cluster API (off-cluster mode only, static guest token) — no mgmt-side SA identity needed. `origin/serviceaccount.yaml` is vendored for reference but intentionally not included as a `hypershift/` resource. |
-| Service `spec.ports[0].port` | `443` (→ `targetPort: 8443`) | `8443` | **Functional, not cosmetic.** The CPO router's `case manifests.ConsoleRoute("").Name` (`v2/router/config.go:136-138`) hardcodes `DestinationPort: 8443` and dials the Service's **ClusterIP:8443 directly** (bypassing the Service's own port-mapping) — upstream's `443` would leave nothing listening on `ClusterIP:8443`. |
-| Service annotation `service.beta.openshift.io/serving-cert-secret-name` | present | removed | No service-ca operator on GKE (D3); dead annotation there. |
-| Route `spec.host` | unset (guest route-admission fills a default) | explicit | No such admission mechanism for a hand-applied Route on the management cluster; must be set. |
-| Route `spec.tls.termination` | `reencrypt` + `insecureEdgeTerminationPolicy: Redirect` | `passthrough` / `None` | Router is SNI-passthrough only; the bridge terminates its own TLS (D3). |
-| Route `spec.port.targetPort` | named `https` | integer `8443` | Route-API convention/validation once passthrough is set; CPO's console case actually hardcodes the port regardless (see Service row above), but the field should still be concrete. |
-| `spec.replicas` | unset (operator's `withReplicas` sets it based on infra topology) | `2` | No operator to compute it. |
-| Container `command`/`args`, `env`, `volumeMounts`, pod `volumes` | operator-generated (`--config=console-config.yaml` + dynamically injected volumes: `console-config`, `service-ca`, `console-oauth-config`, `tmp`) | static off-cluster CLI flags + `serving-cert`/`guest-ca` volumes | No console-operator in Phase 1 to generate `console-config.yaml`/inject auth volumes (§14.4, §14.8) — replaced with direct bridge flags and the two volumes Phase 1 actually needs. |
-
-**Deliberately unchanged from `origin/`** (confirms these upstream choices already fit the new
-topology, nothing to do): restricted-PSS `securityContext` (§20), the
-`target.workload.openshift.io/management` pod annotation (matches every other HCP-namespace
-operator Deployment observed live), probes, container port, resource requests, and the
-`app: console, component: ui` label pair (Service/Deployment/PDB selectors all kept faithful to
-upstream — see the immutable-selector note below).
-
-**Gotcha hit during the restructure:** Deployment `spec.selector` is immutable. The prior
-hand-written base used `app: console` only; adopting upstream's real `{app: console, component:
-ui}` selector faithfully required **deleting and recreating** the live Deployment (Service/PDB
-selector changes were accepted in place; only Deployment's is immutable).
-
-**Second gotcha — kustomize's `images:` transformer can't match `${IMAGE}`.** Upstream's
-`image: ${IMAGE}` is the operator's own string-substitution placeholder (Go code, not
-kustomize); kustomize's `images:` transform parses the field as a docker image reference to
-match by name, and `${IMAGE}`'s `$`/`{`/`}` characters fail that parse — so the transform
-**silently no-ops** (no error, image stays `${IMAGE}` verbatim), the same class of "silent
-skip" hit earlier with `newTag: null` + `digest:` together. First deploy attempt after the
-restructure got pods stuck `InvalidImageName` with image literally `${IMAGE}`. Fix: patch the
-image field directly with a JSON6902 `replace` op (unconditional string replace, no name
-matching) to a transform-friendly placeholder (`REPLACE_CONSOLE_IMAGE_REGISTRY:
-REPLACE_CONSOLE_IMAGE_TAG`) in `hypershift/kustomization.yaml`, then let the per-cluster
-overlay's `images:` transform target that valid-looking name as before. **Lesson: never rely on
-the `images:` transformer to rewrite a non-image-shaped placeholder string — patch it to a
-valid-looking name first, transform second.**
+Full per-fix detail, root cause, PR, and drop-when-shipped tracking: **`reference/UPSTREAM_PATCHES.md`**
+(row 1, GCP-1219 / openshift/console#17185). Reaching the guest monitoring services also needed a
+guest VPC geneve firewall fix (GCP-1221) — see `CONSOLE_CONTROL_PLANE_PROGRESS.md`.
 
 ---
 
-## 22. Upstream gap — `-ca-file` is not honored by the off-cluster k8s resource proxy
-
-**Status: FIXED (patched image in use); upstream PR open.** The fix wires `-ca-file` into the
-off-cluster proxy `RootCAs`; we run a patched console image with it and have dropped
-`-k8s-mode-off-cluster-skip-verify-tls`. See the trailing "Resolution" note in this section.
-Tracking: Jira GCP-1219, upstream PR https://github.com/openshift/console/pull/17185
-(`openshift/console`), and `CONSOLE_CONTROL_PLANE_DOCS/UPSTREAM_PATCHES.md`.
-
-Discovered while validating Part 1
-end-to-end: every `/api/kubernetes/*` call (all resource browsing) returned `502`, with bridge
-logs showing `http: proxy error: tls: failed to verify certificate: x509: certificate signed by
-unknown authority`. Confirmed this is NOT a cert/mount misconfiguration on our side — the
-mounted `/var/run/guest-ca/ca.crt` is byte-identical to the `root-ca` ConfigMap, and `openssl
-verify` against the real guest KAS cert chain succeeds cleanly with that same CA.
-
-**Root cause (`cmd/bridge/main.go`):** `-ca-file` (`*fCAFile`/`caCertFilePath`) is only ever
-consumed by `completedAuthnOptions.ApplyTo(srv, k8sEndpoint, caCertFilePath, ...)` (`:738`) —
-the **OIDC/authn** path. The actual k8s resource reverse-proxy (`srv.K8sProxyConfig`, backing
-`/api/kubernetes/*`) is built per-mode:
-- `in-cluster` (`:419-446`): reads `k8sInClusterCA` (`/var/run/secrets/kubernetes.io/
-  serviceaccount/ca.crt`) into an explicit `x509.CertPool` → `RootCAs` on the proxy's TLS config.
-- `off-cluster` (`:514-542`): builds `serviceProxyTLSConfig` from `InsecureSkipVerify:
-  *fK8sModeOffClusterSkipVerifyTLS` only — **no `RootCAs` field at all**, so it falls back to the
-  Go process's system trust store, which cannot know about a hand-provisioned private CA like
-  `root-ca`.
-
-**Consequence:** in `off-cluster` mode there is currently no way to get a custom-CA-verified k8s
-resource proxy — only `-k8s-mode-off-cluster-skip-verify-tls=true` (explicitly labeled "DEV
-ONLY" in the flag's own help text) works. This directly contradicts the Phase 1 plan's original
-intent ("Guest KAS TLS: verified via the `root-ca` secret, not skip-verify" — §1 scope
-decisions) — that intent assumed `-ca-file` applied uniformly across modes, which this version's
-code does not do.
-
-**Fix needed upstream (`openshift/console`):** wire `RootCAs` from `-ca-file` into the
-`off-cluster` branch's `serviceProxyTLSConfig` the same way the `in-cluster` branch does —
-roughly, when `*fCAFile != ""`, read+parse it into an `x509.CertPool` and set it as `RootCAs`
-alongside (not instead of) `InsecureSkipVerify`. Small, targeted change, same shape as the
-existing `in-cluster` code (`:426-431`). Until this lands, "verified via root-ca, not
-skip-verify" is not actually achievable in `off-cluster` mode as shipped.
-
-**Resolution:** implemented the fix (read `-ca-file` into an `x509.CertPool` → `RootCAs` on the
-off-cluster `serviceProxyTLSConfig`, alongside `InsecureSkipVerify`), built a patched console
-image (`console/build-console.sh` → `quay.io/patmarti/console:*`), pointed the overlay at it, and
-removed `-k8s-mode-off-cluster-skip-verify-tls`. Verified live: `/api/kubernetes/*` returns 200
-with no x509 errors. The `-ca-file`/`guest-ca` volume were already plumbed. Reverts to the stock
-release console image once the upstream PR merges and ships.
-
-**Second instance of the same bug — the anonymous transport (also FIXED).** The first fix covered
-the main resource proxy (`K8sProxyConfig` / `InternalProxiedK8SClientConfig`). Two other code
-paths use a *different* transport, `AnonymousInternalProxiedK8SRT`, built via
-`rest.TransportFor(rest.AnonymousClientConfig(srv.InternalProxiedK8SClientConfig))`.
-`rest.AnonymousClientConfig()` copies the config's own `TLSClientConfig.CAFile`/`CAData` but
-**does not copy an already-built `Transport`** — and the off-cluster config carried its RootCAs on
-`Transport`, not on those fields — so the anonymous transport fell back to system trust and
-couldn't verify the private guest CA. Consumers:
-- `pkg/auth/metrics.go` login-role metrics (`isKubeAdmin` / `canGetNamespaces`) — best-effort
-  goroutine, cosmetic.
-- `pkg/usersettings/handlers.go` — user-settings persistence failed with `x509: certificate
-  signed by unknown authority`.
-
-Fix (folded into the same PR): when `-ca-file` is set, re-supply trust by setting
-`TLSClientConfig.CAFile` on the anonymous config (extracted into `anonymousK8SClientConfig` with a
-unit test), so `rest.TransportFor` builds a CA-aware transport. Note the constraint that forced
-this shape: `transport.New` rejects a config that has both a custom `Transport` **and** CA
-options, so the CA can't simply be added to `InternalProxiedK8SClientConfig` (which already sets
-`Transport`) — only to the anonymous derivative, which has no `Transport`. **Verified live:** the
-x509 errors on the user-settings/metrics paths are gone; the user-settings call now reaches the
-guest KAS (TLS verified) and fails only on RBAC — the `openshift-console-user-settings` namespace
-+ console-SA RBAC that console-operator normally creates don't exist here, a separate
-operator-owned gap (Phase 2 / productization), not a bridge bug. Upstream: PR
-openshift/console#17185 / Jira GCP-1219.
-
-**Third instance — off-cluster ignores `-service-ca-file` (also FIXED, Phase 2).** The two
-fixes above cover the guest **KAS** trust (`-ca-file` = root-ca). Monitoring adds a *second* trust
-domain: Thanos/Alertmanager (and terminal/plugins/catalogd/gitops) present **service-serving
-certs** signed by the **service-ca** (`openshift-service-serving-signer`), a different signer than
-the KAS CA. The **in-cluster** branch already keeps these separate — KAS trust from the in-cluster
-CA, service trust from **`-service-ca-file`** (`cmd/bridge/main.go` `case "in-cluster"`, the
-`if *fServiceCAFile != ""` block). But the **off-cluster** branch builds a *single*
-`serviceProxyTLSConfig` from `-ca-file` and uses it for **both** the KAS proxy and the service
-proxies, and never reads the (already globally-defined) `-service-ca-file` flag. So off-cluster
-monitoring can't verify the service-serving certs — TLS fails. Fix (same PR): in the off-cluster
-branch, keep `-ca-file` for the KAS proxy and build a separate service-proxy trust from
-`-service-ca-file`, falling back to `-ca-file` when unset (backwards compatible). Added a
-`mustLoadCAPool` helper + unit test. Deployment side mounts the HCP-namespace `service-serving-ca`
-ConfigMap (key `service-ca.crt`) and passes `-service-ca-file`. **Verified live:** console →
-konnectivity socks5 → `thanos-querier:9091` = HTTP 200 and PromQL `up` returns data. Full plan for
-the code change: `_console-research/OFF_CLUSTER_SERVICE_CA_FILE_PLAN.md`. Upstream: PR
-openshift/console#17185 / Jira GCP-1219.
-
-> Note: reaching the guest monitoring services also required a **guest VPC firewall fix** (allow
-> OVN-K geneve UDP 6081 between nodes) — without it all cross-node pod networking, and thus the
-> konnectivity tunnel to guest pods/services, is silently broken. That is a GCP infra-provisioning
-> gap, not a console bug; the productization fix (add the geneve rule to CPO's GCP infra
-> reconciliation, replacing our workaround script) is tracked in Jira GCP-1221. See
-> `CONSOLE_CONTROL_PLANE_PHASE2_PLAN.md` §B.6, `console/guest/allow-geneve-firewall.sh`, and the
-> `UPSTREAM_PATCHES.md` tracker.
-
----
-
-**`downloads` (CLI download server) — now IMPLEMENTED in Phase 1.** Deployed control-plane-side
+**`downloads` (CLI download server) — IMPLEMENTED in Phase 1.** Deployed control-plane-side
 in `console/kustomize/` (origin → hypershift → pat-console), reachable end-to-end (serves real
 `oc` binaries). Split-cluster adaptations: a TLS-terminating `oauth-proxy` sidecar (the HCP
 router is SNI-passthrough only and can't do upstream's `edge` termination), the `cli-artifacts`
@@ -1363,68 +1156,21 @@ the bridge proxy returns the CR (HTTP 200) and the page populates.
   needs a reconciler (operator or an HCP-side controller) to keep it in sync, same "operator
   normally does this" pattern as CPO now owning the Routes.
 
-## 23. Per-user OIDC login — validated live, operator-less
+## 23. Per-user OIDC login — validated live, operator-less (DONE)
 
 **Status: DONE (verified end-to-end).** The console does real per-user Google login
-(`-user-auth=oidc`); each user browses as their own identity/RBAC, no static shared token. See
-`GOOGLE_OIDC_CLIENT_SETUP.md` for the client-creation runbook. This section records what the
-console-operator normally owns that we had to hand-replicate, and the two non-obvious failures
-that cost the most time.
+(`-user-auth=oidc`); each user browses as their own identity/RBAC, no static shared token. Four
+pieces the console-operator normally owns are hand-replicated: bridge OIDC flags, the KAS
+`audiences` entry (= the console client ID; the only HC-spec change), `email,profile` scopes, and a
+session-key Secret.
 
-**What it took (four pieces, all normally operator-owned):**
+**Full runbook, both enable-sequencing options, and the two non-obvious root causes**
+(missing `email` claim → "Authentication error"; the `oidcClients` spec entry being inadmissible
+without a `status.oidcClients` writer) live in **`reference/GOOGLE_OIDC_CLIENT_SETUP.md`**. The multi-replica
+session limitation is in `CONSOLE_CONTROL_PLANE_PROGRESS.md`.
 
-1. **Bridge flags** — `-user-auth=oidc`, `-user-auth-oidc-issuer-url=https://accounts.google.com`,
-   `-user-auth-oidc-client-id=<console web client>`, `-user-auth-oidc-client-secret-file`. Normally
-   the console-operator renders these from `console-config.yaml` + the guest-synced client secret.
-2. **KAS audience** — the console client ID added to the guest KAS OIDC `audiences`
-   (`spec.configuration.authentication.oidcProviders[].issuer.audiences`). This is the **only**
-   HC-spec change. Without it, login succeeds but every resource call is rejected on audience
-   mismatch.
-3. **`email` (+`profile`) scopes** — see the root-cause note below.
-4. **Session cookie keys** — a `console-session` Secret with a 32-byte AES encryption key and a
-   64-byte HMAC authentication key, mounted via `-cookie-encryption-key-file` /
-   `-cookie-authentication-key-file`. Required for `-user-auth=oidc` (the bridge stores the ID
-   token in an encrypted+signed cookie via gorilla/securecookie). Normally generated by the
-   console-operator (`session_secret.go`); here hand-provided (random, generated once by
-   `apply.sh`; regenerating invalidates existing sessions).
-
-**Root cause #1 — missing `email` claim (the "Authentication error").** With only the default
-`openid` scope, Google's ID token carries `sub` but **not `email`**. The guest KAS maps
-`username ← email`, so it rejected every authenticated request with
-`authentication.go: Unable to authenticate the request: oidc: parse username claims "email":
-claim not present` → the browser showed a generic "Authentication error." The `oauth success` log
-was misleading: it means the *callback* (token exchange + ID-token verify) succeeded; the failure
-was on the *next* request to the guest KAS. Fix: `-user-auth-oidc-token-scopes=email,profile`
-(the bridge assembles the redirect scope as `ExtraScopes + "openid"`).
-
-**Root cause #2 — `oidcClients` entry is unusable in this topology.** The obvious way to register
-the console with the IdP is an `oidcProviders[].oidcClients[]` entry in the HC (with `componentName:
-console` + client secret ref). It does **not** work here: the guest `authentication/cluster` CEL
-admission requires a matching `status.oidcClients`, which only a **running guest console-operator**
-writes (`oidcsetup.go`). With the guest `Console` capability off / zero-node, nothing writes that
-status, so the whole auth-config push (including the audience) is blocked. We **dropped** the
-`oidcClients` entry entirely; login works fine with just the audience + bridge flags. (This
-matches §14.9's finding that the `status.oidcClients` write is status/observability only for
-*login* — but it is still gating for *admission* of the `oidcClients` **spec** entry, which is why
-we can't include one.)
-
-**Multi-replica session limitation.** The bridge session store is a per-pod in-memory map
-(`server_session.go`); the SNI-passthrough HCP router (`mode tcp`) cannot do cookie-based affinity
-(it never sees plaintext HTTP), and `sessionAffinity: ClientIP` on the Service is useless because
-the router is the only client IP. So with >1 replica a browser can hit a pod that lacks its
-session. Standalone OpenShift avoids this because its default (non-passthrough) router inserts a
-route cookie automatically. A robust fix is a shared session store — a bridge code change,
-deferred. Validated live at 2 replicas (works when requests land on the same pod; not robust).
-
-**Google account-type notes.** The OAuth consent screen was switched to **External** user type for
-a consumer Google account. Consumer accounts have no `hd` (hosted-domain) claim, so the
-`groups ← hd` mapping yields no groups (tolerated — a missing `claim:`-based groups claim is
-non-fatal). For a Workspace org, `hd` maps org users to a domain group. The browser
-authorization-code flow always sets the ID token `aud` to the OAuth client ID (Google does not
-allow a custom `aud` there); custom audiences exist only in service-account/`target_audience`
-flows, which browser login does not use — so the KAS audience must equal the client ID.
-
-**Productization gap.** The HCP frontend/lifecycle layer needs a day-2 "enable console with *this*
-OIDC client ID + secret" operation that produces: the KAS audience entry, the bridge OIDC flags,
-the session-key Secret, and (eventually) the `oidcClients` wiring once a control-plane-side owner
-of `status.oidcClients` exists. Today all four are hand-applied.
+**Why the `oidcClients` entry matters here (the design hook this section anchors):** the "proper"
+registration (`oidcProviders[].oidcClients[]`) is blocked because guest `authentication/cluster` CEL
+admission requires a `status.oidcClients` that only a running guest console-operator writes — so a
+**control-plane-side owner of `status.oidcClients`** is the productization piece that would make it
+usable (ties to §14.9). Until then, audience + bridge flags only.

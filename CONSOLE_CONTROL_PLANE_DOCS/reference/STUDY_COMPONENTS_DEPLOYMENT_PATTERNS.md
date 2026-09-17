@@ -12,8 +12,8 @@ HyperShift's only involvement is CVO selectively stripping one manifest
 (`0000_50_console-operator_01-oauth.yaml`, conditionally, when OAuth is
 disabled — `v2/cvo/deployment.go`).
 
-A proposal exists (see untracked `CONSOLE_CONTROL_PLANE_STUDY.md` /
-`CONSOLE_CONTROL_PLANE_GAPS.md` in repo root) to port console-operator to run
+A proposal exists (see untracked `../CONSOLE_CONTROL_PLANE_STUDY.md` /
+`../gaps/CONSOLE_CONTROL_PLANE_GAPS.md` in repo root) to port console-operator to run
 **control-plane-side** as a CPO v2 `ControlPlaneComponent`, with its operand
 split: the bridge Deployment/Service/ConfigMap/Secret/PDB/ServiceAccount would
 live in the **management** cluster's HCP namespace, while
@@ -187,7 +187,7 @@ against the current asset file in this pass and should be treated as
 
 Console-operator's current guest-only architecture is fundamentally
 single-cluster: `~14 controllers` (approximate count from
-`CONSOLE_CONTROL_PLANE_STUDY.md` — not independently verified against
+`../CONSOLE_CONTROL_PLANE_STUDY.md` — not independently verified against
 upstream `openshift/console-operator` source as part of this study), each
 holding a typed client and calling `resourceapply.Apply*` directly against
 one apiserver. There is no central apply function and no cluster-routing
@@ -210,7 +210,7 @@ and (per CNO's pattern) a second kubeconfig via whatever mechanism replaces
 `--extra-clusters` for a non-CNO binary — none of that needs inventing. The
 actual code risk is entirely inside console-operator's own controller code,
 which was not built with a routing abstraction the way CNO's was. See
-`CONSOLE_CONTROL_PLANE_STUDY.md` §14 and `CONSOLE_CONTROL_PLANE_GAPS.md`
+`../CONSOLE_CONTROL_PLANE_STUDY.md` §14 and `../gaps/CONSOLE_CONTROL_PLANE_GAPS.md`
 Gap 2 for the detailed controller-by-controller breakdown.
 
 ## Open questions
@@ -246,7 +246,7 @@ Gap 2 for the detailed controller-by-controller breakdown.
 - `support/controlplane-component/konnectivity-container.go:46-49` — bootstrap-ordering rationale (ingress-operator, for contrast only)
 - `docs/content/reference/konnectivity.md:32-37` — diagram showing CNO and ovnkube-control-plane as distinct peer pods in the HCP namespace
 - `docs/content/how-to/pki/control-plane-certificates.md:53` — multus/network-node-identity/ovn-metrics certs signed as control-plane components
-- Untracked drafts in repo root (not part of codebase): `CONSOLE_CONTROL_PLANE_STUDY.md`, `CONSOLE_CONTROL_PLANE_GAPS.md` — the console port proposal this study evaluates
+- Untracked drafts in repo root (not part of codebase): `../CONSOLE_CONTROL_PLANE_STUDY.md`, `../gaps/CONSOLE_CONTROL_PLANE_GAPS.md` — the console port proposal this study evaluates
 
 **Upstream (cloned separately for verification, not present in this repo):**
 - `openshift/cluster-network-operator`: `cmd/cluster-network-operator/main.go:78-80`, `pkg/client/client.go:98-144`, `pkg/names/names.go:103-104,230-234`, `pkg/apply/apply.go:38`, `pkg/hypershift/hypershift.go:117`

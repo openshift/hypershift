@@ -2,10 +2,10 @@
 
 **Status:** Draft. Base design resolved; this file tracks only what remains **open**.
 **Companion files:**
-- `CONSOLE_CONTROL_PLANE_STUDY.md` — the design study (resolved decisions live here).
-- `CONSOLE_AUTH_OPTIONS.md` — authoritative console-auth reference (definitive for Gap 4).
+- `../CONSOLE_CONTROL_PLANE_STUDY.md` — the design study (resolved decisions live here).
+- `../reference/CONSOLE_AUTH_OPTIONS.md` — authoritative console-auth reference (definitive for Gap 4).
 - `console-control-plane-manifests.example.yaml` — illustrative manifests.
-- `STUDY_COMPONENTS_DEPLOYMENT_PATTERNS.md` — CVO-shipped vs control-plane-side patterns (CNO precedent).
+- `../reference/STUDY_COMPONENTS_DEPLOYMENT_PATTERNS.md` — CVO-shipped vs control-plane-side patterns (CNO precedent).
 
 **Strategy (D1):** port the console-operator upstream (split-cluster refactor), full-featured
 (plugins in scope). The direct-CPO "start simple" alternative was rejected (study §17).
@@ -17,7 +17,7 @@
 | 1 — Guest KAS auth | ✅ RESOLVED | study §16 |
 | 2 — Dual-client refactor | ◑ De-risked; residual is mechanical only | study §14, §14.10 — **open items below** |
 | 3 — Upstream flag API | ◑ De-risked (CNO precedent); naming/framing open | **open items below** |
-| 4 — GCP OIDC client model | ⛔ **BLOCKER open** | `CONSOLE_AUTH_OPTIONS.md` §7 — **summary below** |
+| 4 — GCP OIDC client model | ⛔ **BLOCKER open** | `../reference/CONSOLE_AUTH_OPTIONS.md` §7 — **summary below** |
 | 5 — Konnectivity mode | ✅ RESOLVED | study §13.10 |
 | 6 — Guest + mgmt RBAC | ✅ RESOLVED | study §19 |
 | 7 — CVO console removal | ◑ Mechanism verified; specifics open | **open items below** |
@@ -29,7 +29,7 @@ repeated here. Only open work follows.
 
 ## Gap 4 — GCP OIDC console client model ⛔ (the primary blocker)
 
-**Full analysis:** `CONSOLE_AUTH_OPTIONS.md` §7. Summary only here.
+**Full analysis:** `../reference/CONSOLE_AUTH_OPTIONS.md` §7. Summary only here.
 
 **What's solved:** the OIDC base works on live GCP HCP; HCCO owns the guest `Authentication` CR and
 already **delivers** any `oidcClients[]` entry + client secret to the guest. Bridge login is

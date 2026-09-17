@@ -258,7 +258,7 @@ separate `componentName` from `console` and is not gated by the same
 
 On a HostedCluster, the guest `Authentication` CR is written by HCCO from
 `HostedCluster.spec.configuration.authentication`
-(per `CONSOLE_CONTROL_PLANE_STUDY.md:188-195` in this repo). If an
+(per `../CONSOLE_CONTROL_PLANE_STUDY.md:188-195` in this repo). If an
 `oidcClients[]` entry for the console component exists in the HostedCluster
 spec, HyperShift copies it verbatim to the guest CR, and HCCO copies its
 referenced `ClientSecret` down as well — so the "must provision a secret"
@@ -267,7 +267,7 @@ a `Secret` (management-side, referenced by the HC spec) containing the
 OIDC client secret for the console component before HyperShift will produce
 a working guest `Authentication` CR for console OIDC login.
 
-The known live gap tracked in this repo (`CONSOLE_CONTROL_PLANE_STUDY.md`
+The known live gap tracked in this repo (`../CONSOLE_CONTROL_PLANE_STUDY.md`
 Gap 4) is specifically that **registering a web-client (with secret) on the
 external IdP side** (e.g. Google) for the
 `https://console.<domain>/auth/callback` redirect is a manual,
@@ -358,7 +358,7 @@ up.**
 
 ## 7. GCP HCP: the console OIDC client model (the Gap-4 blocker)
 
-This section is the **authoritative deep analysis** for `CONSOLE_CONTROL_PLANE_GAPS.md` Gap 4.
+This section is the **authoritative deep analysis** for `../gaps/CONSOLE_CONTROL_PLANE_GAPS.md` Gap 4.
 The gaps file keeps only a summary + decision and points here.
 
 ### 7.1 What already works (verified live + across codebases)

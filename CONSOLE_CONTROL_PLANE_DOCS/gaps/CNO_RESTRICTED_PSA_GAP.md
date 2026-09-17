@@ -6,7 +6,7 @@ upstream fix in `openshift/cluster-network-operator`.**
 Discovered while scaling `pat-console`'s NodePool from 0 to 4 nodes to observe
 real workloads: **no guest node ever became Ready.** The root cause is a
 restricted-PodSecurity-Admission (PSA) violation in four CNO-managed Deployments
-in the HCP namespace — the same class of problem STUDY.md §20 describes for the
+in the HCP namespace — the same class of problem ../CONSOLE_CONTROL_PLANE_STUDY.md §20 describes for the
 console workloads, but hitting a different owner (CNO, not CPO).
 
 This is *not* console-specific. It blocks **any** zero-SCC (e.g. GKE) HyperShift
@@ -19,7 +19,7 @@ here because the spike surfaced it.
    `FailedCreate` / `ReplicaFailure`, `ReplicaSet ... has timed out progressing`.
    Their pods are rejected at admission because the HCP namespace enforces
    `pod-security.kubernetes.io/enforce: restricted` (GKE has no
-   SecurityContextConstraints, so HyperShift falls back to PSA — see STUDY.md
+   SecurityContextConstraints, so HyperShift falls back to PSA — see ../CONSOLE_CONTROL_PLANE_STUDY.md
    §20).
 2. `network-node-identity`'s **approver** container therefore never runs, so node
    client CSRs (`kubernetes.io/kube-apiserver-client`, `system:ovn-node:*`) stay
@@ -116,6 +116,6 @@ equivalent of the restricted-PSS work CPO already did for its own workloads
 
 ## Tracking
 
-Add a row to `UPSTREAM_PATCHES.md` and file a Jira + upstream CNO PR when this
-moves past the stopgap. Cross-ref: STUDY.md §20 (restricted PSA in HCP
+Add a row to `../reference/UPSTREAM_PATCHES.md` and file a Jira + upstream CNO PR when this
+moves past the stopgap. Cross-ref: ../CONSOLE_CONTROL_PLANE_STUDY.md §20 (restricted PSA in HCP
 namespaces), GCP-205 (CPO's equivalent fix).
