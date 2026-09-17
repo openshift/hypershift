@@ -53,6 +53,7 @@ The real deltas:
 | Route `spec.tls.termination` | `reencrypt`+`Redirect` | `passthrough`/`None` | Router is SNI-passthrough only; bridge terminates its own TLS. |
 | `spec.replicas` | unset (operator computes) | `2` | No operator to compute it. |
 | Container `command`/`args`, `env`, `volumeMounts`, `volumes` | operator-generated (`--config=console-config.yaml` + injected volumes) | static off-cluster CLI flags + `serving-cert`/`guest-ca` volumes | No console-operator to generate `console-config.yaml`/inject auth volumes. |
+| `POD_NAME` env (downward API `metadata.name`) | injected at runtime by the operator (`deployment.go`, *not* in the static bindata) — "console distinguishes cookie sessions by pod names in OIDC envs" | added in `hypershift/` | Multi-replica OIDC session correctness: the bridge names its session cookie `<cookie>-$POD_NAME` and expires other pods' cookies. Without it both replicas share one cookie name. This is why it's absent from `origin/` (that file is the *verbatim static bindata*; the operator appends this env in Go at apply time). |
 
 **Deliberately unchanged from `origin/`** (upstream choices that already fit): the restricted-PSA
 `securityContext` (pod `runAsNonRoot`/`seccompProfile`, container `allowPrivilegeEscalation: false`/

@@ -24,6 +24,9 @@ infraID (`patmart-b3bb`).
    the guest payload (GCP-gated); CMO ships the `monitoring-plugin`; the bridge loads it via a
    `-plugins` flag; Observe → Alerting/Dashboards/Targets render in the browser. See the Phase 3
    section below and `CONSOLE_CONTROL_PLANE_PHASE3_PLAN.md` for the design/analysis.
+5. **Phase 4 — the console-operator's role (NOT STARTED).** Define what a control-plane-side
+   console-operator must own (all the injections/lifecycle we currently hand-roll) and decide **port
+   vs. reimplement (e.g. in CPO)**, then build it. Seeded by the Phase 3 "Part C" analysis.
 
 ---
 
@@ -63,13 +66,18 @@ off-cluster k8s proxy → guest KAS `kube-apiserver.<hcp-ns>.svc:6443`.
   bridge flags only. A control-plane-side `status.oidcClients` owner is a future need.
 - HCP namespaces enforce **restricted PSA**; the upstream console asset is already compliant.
 
-**Known limitations carried out of Phase 1 (still open):**
-- Router config not hot-reloaded — manual router restart after applying a Route.
-- **Multi-replica sessions** — the bridge keeps sessions per-pod in-memory and the SNI-passthrough
-  router can't do cookie affinity; robust fix = shared session store (bridge code change, deferred).
-- **User-settings persistence** needs the guest `openshift-console-user-settings` namespace +
-  console-SA RBAC that the console-operator normally provisions (operator/lifecycle work).
-- Everything hand-applied (no operator, no lifecycle).
+**Known limitations carried out of Phase 1 (status updated in Phase 3):**
+- Router config not hot-reloaded — manual router restart after applying a Route. *(Still open.)*
+- ~~Multi-replica sessions~~ — **RESOLVED in Phase 3** (was a false alarm + one missing env). See the
+  Phase 3 section: the upstream bridge already recovers a session on any replica from the
+  refresh-token cookie; we only needed the operator-injected `POD_NAME` env, which our overlay had
+  omitted.
+- ~~User-settings persistence~~ — **RESOLVED in Phase 3.** Enabling the Console capability installs the
+  `openshift-console-user-settings` namespace + `console-user-settings-admin` RBAC, and the
+  token-minter gives the bridge the `console` SA identity to use it (verified: per-user settings
+  Roles/RoleBindings are created live).
+- Everything hand-applied (no operator, no lifecycle) — the ownership of these injections is the
+  Phase 4 (operator) question.
 
 ---
 
@@ -144,6 +152,11 @@ in the browser. Validated live on the dev-patmarti MC.
   that SA, so Dashboards then returns 200. Shape mirrors the framework's
   `InjectTokenMinterContainer(KubeAPIServerToken)`; the konnectivity socks5 sidecar stays a regular
   container, matching `InjectKonnectivityContainer` (which never uses native sidecars).
+- **`POD_NAME` env for multi-replica sessions.** The bridge names its OIDC session cookie per-pod
+  (`SessionCookieName()` = `<cookie>-$POD_NAME`) and rebuilds a session on any replica from the
+  refresh-token cookie; the console-operator injects `POD_NAME` via the downward API. Our overlay had
+  omitted it (both replicas shared one empty-suffix cookie name, defeating the cross-pod cookie
+  hygiene). Added `POD_NAME` from `metadata.name` in the `hypershift` overlay — operator-parity.
 
 **Key findings (carried forward):**
 - **Capability enablement replaces the Phase-1 hand-rolled guest scaffolding.** CVO installs all 8
@@ -156,15 +169,25 @@ in the browser. Validated live on the dev-patmarti MC.
 - **Cross-region OIDC works:** the HC keeps its issuerURL on the *previous* region's OIDC bucket
   (shared infraID / published JWKS); `serviceAccountSigningKey` makes the new MC's operator skip
   re-upload.
+- **Multi-replica is not broken (corrected a Phase-1 assumption).** The upstream bridge stores the
+  OIDC **refresh token in the client cookie** and rebuilds the server-side session on whichever
+  replica a request lands on — no sticky sessions / shared store needed. Regular `/api/*` requests
+  scatter across pods (that's the designed-for case); only long-lived WebSocket watches pin to a pod,
+  and those carry the user's own token, not session state. `sessionAffinity: ClientIP` would not help
+  anyway: the SNI-passthrough router dials the console Service fresh, so the Service sees the **router
+  pod IP** as source (in both public and private), not the real client. The only real gap was the
+  missing `POD_NAME` env (fixed above).
 
-**Remaining (open, benign / analysis):**
+**Remaining (open, benign / deferred to Phase 4):**
 - **Login-role metric unavailable under OIDC:** `auth.metrics isKubeAdmin` queries the OpenShift User
   API (`users.user.openshift.io`), which doesn't exist under pure Google OIDC → a harmless
   login-metrics-only error (upstream-acknowledged `// FIXME`). No functional impact.
-- **Multi-replica sessions / user-settings persistence** limitations from Phase 1 still stand (the
-  token-minter fixed the SA-identity RBAC, not the user-settings namespace provisioning).
-- **Part C (operator analysis):** what a control-plane-side console-operator must own (plugin config
-  generation, `status.oidcClients`, SA/RBAC provisioning, secret injection) — see the Phase 3 plan.
+- **Router config not hot-reloaded** (Phase 1) — manual router restart after applying a Route.
+- **Phase 4 — the console-operator's role.** Everything the operator normally injects/owns we
+  currently hand-roll (plugin enablement, `POD_NAME`, the console SA + token, `status.oidcClients`,
+  user-settings RBAC, secret injection). Phase 4 defines that role and decides **port the
+  console-operator vs. reimplement (e.g. in CPO)** — see `CONSOLE_CONTROL_PLANE_PHASE3_PLAN.md`
+  "Part C" (the analysis that seeds Phase 4).
 
 ---
 

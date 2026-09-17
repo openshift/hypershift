@@ -262,6 +262,21 @@ patches:
           - { name: HTTP_PROXY, value: "socks5://127.0.0.1:8090" }
           - { name: HTTPS_PROXY, value: "socks5://127.0.0.1:8090" }
           - { name: NO_PROXY, value: "kube-apiserver.REPLACE_HCP_NAMESPACE.svc,localhost,127.0.0.1" }
+          # Multi-replica session correctness. Under -user-auth=oidc the bridge
+          # names its session cookie per-pod (SessionCookieName() =
+          # <cookie>-$POD_NAME, pkg/auth/sessions/combined_sessions.go) so a user
+          # load-balanced across replicas gets stale-pod cookies expired and the
+          # session rebuilt from the refresh-token cookie on the new pod. The
+          # console-operator normally injects this via the downward API
+          # ("console distinguishes cookie sessions by pod names in OIDC envs" —
+          # console-operator deployment.go); with no operator we set it here.
+          # Without it BOTH pods share one empty-suffix cookie name and the
+          # cross-pod cookie hygiene (expireOldPodCookies) is defeated.
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
 
       # ---- Phase 2: konnectivity socks5 sidecar ----
       # Tunnels the bridge's HTTP(S)_PROXY traffic into the guest service network

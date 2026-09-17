@@ -611,13 +611,18 @@ come from the capability payload. The remaining `console/guest/` files are the t
 
 ---
 
-# Part C — Analysis: what the console-operator must do (not built here)
+# Part C — Analysis: what the console-operator must do (seeds Phase 4)
+
+> **This became Phase 4.** Part C is the *analysis* that enumerates everything a control-plane-side
+> console-operator would own (the things Parts A/B hand-wire). Turning that into a decision —
+> **port the console-operator vs. reimplement (e.g. in CPO)** — and building it is **Phase 4**, a
+> separate phase. The inventory below is the Phase 4 backlog.
 
 ## 10. Gap inventory — what's missing when nothing runs the operator
 
-Parts A/B leave a set of things the **console-operator normally owns** hand-wired or unwired. Part
-C is the **analysis deliverable**: enumerate them precisely so the operator phase (POC Track B /
-study §14) has a concrete backlog. We do **not** build the operator in Phase 3.
+Parts A/B leave a set of things the **console-operator normally owns** hand-wired or unwired. This
+inventory enumerates them precisely so **Phase 4** (the operator phase — port vs. reimplement) has a
+concrete backlog. We did **not** build the operator in Phase 3.
 
 Grouped by what the (ported, control-plane-side) operator would reconcile. Cross-refs to study
 §14's split-client work.
@@ -631,6 +636,12 @@ Grouped by what the (ported, control-plane-side) operator would reconcile. Cross
 - **Bridge CLI flags** we set by hand (off-cluster endpoint, `-ca-file`, `-service-ca-file`, OIDC
   issuer/client-id/secret file, session keys, `-branding=ocp`, `-plugins`, monitoring/Thanos/AM
   URLs, proxy env) — all things the operator would render from `console-config.yaml` + cluster CRs.
+- **`POD_NAME` env** (downward API) the operator injects for multi-replica OIDC session cookie
+  naming ("console distinguishes cookie sessions by pod names in OIDC envs" — console-operator
+  `deployment.go`). Hand-set in the `hypershift` overlay today.
+- **`console` SA token / identity** the bridge uses for its own backend calls (Dashboards, plugin
+  metrics). Today a token-minter sidecar creates the guest SA + mints the token; the operator would
+  own the SA + token lifecycle.
 
 ### 10.2 Plugin config (today: Part A `-plugins` flag + hand-applied CR)
 - **Dynamic discovery:** operator watches guest `ConsolePlugin` CRs → `getPluginsEndpointMap` →
