@@ -15,6 +15,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -64,6 +65,11 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
+		// This test does not wait for CAPI worker NodePools. BaseNodePool and TestWorkload use a
+		// dedicated taint and matching tolerations so platform workloads stay off these nodes,
+		// which isolates Karpenter behavior on HyperShift. The test does not assert how many
+		// Karpenter nodes exist; it only checks that a workload running on a pre-upgrade node
+		// is rescheduled onto a replacement node after control plane upgrade and drift.
 		It("should upgrade the control plane and drift Karpenter nodes to the new version", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
@@ -76,101 +82,30 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
 			Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
 			previousImage := hc.Spec.Release.Image
-			GinkgoWriter.Printf("Starting Karpenter control plane upgrade. FromImage: %s, toImage: %s\n", previousImage, latestImage)
+			By("Starting Karpenter control plane upgrade")
+			GinkgoWriter.Printf("FromImage: %s, toImage: %s\n", previousImage, latestImage)
 
-			// TODO(maxcao13): On 0-worker AutoNode clusters, platform workloads can still scale Karpenter
-			// beyond one NodeClaim. Follow-up: baseline drift checks from NodeClaims for this Karpenter
-			// NodePool (stable count), not a single node.
-			hypershiftNodePoolList := &hyperv1.NodePoolList{}
-			Expect(tc.MgmtClient.List(ctx, hypershiftNodePoolList, crclient.InNamespace(hc.Namespace))).To(Succeed())
-			hasWorkerNodePool := false
-			for i := range hypershiftNodePoolList.Items {
-				np := &hypershiftNodePoolList.Items[i]
-				if np.Spec.ClusterName != hc.Name {
-					continue
-				}
-				if np.Spec.Replicas != nil && *np.Spec.Replicas > 0 {
-					hasWorkerNodePool = true
-					break
-				}
-			}
-			if !hasWorkerNodePool {
-				// TODO(maxcao13): We should not skip and support fixing this test when there are zero CAPI workloads
-				// The fix should be that don't prescribe exactly how many Karpenter NodeClaim/Nodes are expected,
-				// rather that a workload that was scheduled onto a Karpenter Node, was rescheduled onto and runs on some new Karpenter Node.
-				Skip("no Hypershift NodePools with replicas > 0; upgrade test requires CAPI workers until multi-NodeClaim baseline is implemented")
-			}
-
-			By("Waiting for Hypershift NodePool workers to be ready on the hosted cluster")
-			for i := range hypershiftNodePoolList.Items {
-				np := &hypershiftNodePoolList.Items[i]
-				if np.Spec.ClusterName != hc.Name {
-					continue
-				}
-				if np.Spec.Replicas != nil && *np.Spec.Replicas > 0 {
-					e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, np, hc.Spec.Platform.Type)
-				}
-			}
-
-			karpenterNodePool := baseNodePool("on-demand", "default")
-			// TODO(maxcao13): We disable consolidation as a hack to prevent flakiness in this blocking test.
-			// Erroneous consolidation can cause the test to fail where the new Node is consolidated due to Empty or
-			// Underutilized before the old node's pods get scheduled to it. The proper fix should come from upstream
-			// Karpenter's disruption ordering/budgeting logic. Ref: https://redhat.atlassian.net/browse/OCPBUGS-91966
+			karpenterNodePool := v2util.BaseNodePool("on-demand", "default")
+			// Disable consolidation so a drift replacement is not removed before the workload reschedules.
 			karpenterNodePool.Spec.Disruption.ConsolidateAfter = karpenterv1.MustParseNillableDuration("Never")
 
 			replicas := 1
+			podLabels := map[string]string{"app": "web-app"}
 			nodeLabels := map[string]string{
 				karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
 			}
-			workLoads := testWorkload("web-app", int32(replicas), nodeLabels)
+			workload := v2util.TestWorkload("web-app", int32(replicas), nodeLabels)
 
-			By("Creating Karpenter NodePool and workloads")
-			Expect(hcClient.Create(ctx, karpenterNodePool)).To(Succeed())
-			DeferCleanup(func() {
-				if err := hcClient.Delete(ctx, karpenterNodePool); err != nil {
-					if !apierrors.IsNotFound(err) {
-						Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", karpenterNodePool.Name)
-					}
-				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, nodeLabels)
-			})
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, karpenterNodePool, workload, nodeLabels, false)
+			By("Waiting for workload to run on a Karpenter node")
+			preUpgradePods := v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nil, nil, replicas, podLabels)
+			preUpgradeNode := &corev1.Node{}
+			Expect(hcClient.Get(ctx, crclient.ObjectKey{Name: preUpgradePods[0].Spec.NodeName}, preUpgradeNode)).To(Succeed())
+			logKarpenterNodeVersionInfo("pre-upgrade", preUpgradeNode, previousImage)
 
-			By("Waiting for Karpenter NodePool to be ready")
-			Eventually(func(g Gomega, pollCtx context.Context) {
-				np := &karpenterv1.NodePool{}
-				g.Expect(hcClient.Get(pollCtx, crclient.ObjectKeyFromObject(karpenterNodePool), np)).To(Succeed())
-				for _, want := range []string{karpenterv1.ConditionTypeValidationSucceeded, karpenterv1.ConditionTypeNodeClassReady} {
-					var found bool
-					for _, c := range np.Status.Conditions {
-						if c.Type == want {
-							found = true
-							g.Expect(c.Status).To(Equal(metav1.ConditionTrue), "NodePool %s condition %s", np.Name, want)
-						}
-					}
-					g.Expect(found).To(BeTrue(), "NodePool %s missing condition %s", np.Name, want)
-				}
-			}).
-				WithContext(ctx).
-				WithTimeout(5 * time.Minute).
-				WithPolling(3 * time.Second).
-				Should(Succeed())
-
-			Expect(hcClient.Create(ctx, workLoads)).To(Succeed())
-			DeferCleanup(func() {
-				if err := hcClient.Delete(ctx, workLoads); err != nil && !apierrors.IsNotFound(err) {
-					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete Deployment %s", workLoads.Name)
-				}
-			})
-			GinkgoWriter.Println("Created workloads")
-
-			By("Waiting for Karpenter nodes and pods to be ready")
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, int32(replicas), nodeLabels)
-			nodeClaims := waitForReadyNodeClaims(ctx, hcClient, len(nodes), nil, true)
-			waitForReadyKarpenterPods(ctx, hcClient, nodes, nil, replicas, map[string]string{"app": "web-app"})
-
-			preUpgradeNode := nodes[0]
-			GinkgoWriter.Printf("Pre-upgrade node: %s\n", preUpgradeNode.Name)
+			By("Waiting for ready NodeClaim associated with pre-upgrade node")
+			preUpgradeNodeClaim := waitForReadyNodeClaim(Default, ctx, hcClient, preUpgradeNode.Name, karpenterNodePool.Name)
+			GinkgoWriter.Printf("Pre-upgrade NodeClaim: %s\n", preUpgradeNodeClaim.Name)
 
 			By(fmt.Sprintf("Updating cluster release image to %s", latestImage))
 			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
@@ -185,68 +120,47 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			// Assert NO drift during CP upgrade. Unpinned NodeClaims should not detect
 			// drift until the control plane upgrade completes, because the ignition config
 			// hash is derived from the completed release image, not the desired one.
-			By("Waiting for CP rollout and asserting no premature drift")
-			expectControlPlaneRolloutWithoutDrift(ctx, tc.MgmtClient, hcClient, hc, latestImage, nodeClaims)
-			GinkgoWriter.Println("Control plane upgraded")
+			By("Waiting for control plane rollout without premature NodeClaim drift")
+			expectControlPlaneRolloutWithoutDrift(Default, ctx, tc.MgmtClient, hcClient, hc, latestImage, preUpgradeNodeClaim)
+			GinkgoWriter.Println("Control plane upgrade completed")
 
-			// By this point, there should only be 1 NodeClaim we are waiting for to drift.
-			By("Waiting for NodeClaims to be drifted after CP upgrade")
-			for i := range nodeClaims.Items {
-				nodeClaim := &nodeClaims.Items[i]
-				Eventually(func(g Gomega, pollCtx context.Context) {
-					current := &karpenterv1.NodeClaim{}
-					err := hcClient.Get(pollCtx, crclient.ObjectKeyFromObject(nodeClaim), current)
-					if apierrors.IsNotFound(err) {
-						GinkgoWriter.Printf("WARNING: NodeClaim %s not found; assuming it was deleted after drifting\n", nodeClaim.Name)
-						return
+			By("Waiting for pre-upgrade NodeClaim to be drifted after control plane upgrade")
+			Eventually(func(g Gomega, pollCtx context.Context) {
+				current := &karpenterv1.NodeClaim{}
+				err := hcClient.Get(pollCtx, crclient.ObjectKeyFromObject(preUpgradeNodeClaim), current)
+				if apierrors.IsNotFound(err) {
+					GinkgoWriter.Printf("WARNING: NodeClaim %s not found; assuming it was deleted after drifting\n", preUpgradeNodeClaim.Name)
+					return
+				}
+				g.Expect(err).NotTo(HaveOccurred())
+
+				found := false
+				for _, condition := range current.Status.Conditions {
+					if condition.Type == karpenterv1.ConditionTypeDrifted {
+						found = true
+						g.Expect(condition.Status).To(Equal(metav1.ConditionTrue),
+							"condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, preUpgradeNodeClaim.Name)
 					}
-					g.Expect(err).NotTo(HaveOccurred())
-					if err != nil {
-						return
-					}
+				}
+				g.Expect(found).To(BeTrue(), "condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, preUpgradeNodeClaim.Name)
+			}).
+				WithContext(ctx).
+				WithTimeout(5 * time.Minute).
+				WithPolling(3 * time.Second).
+				Should(Succeed())
+			GinkgoWriter.Println("Pre-upgrade NodeClaim reported drifted")
 
-					found := false
-					for _, condition := range current.Status.Conditions {
-						if condition.Type == karpenterv1.ConditionTypeDrifted {
-							found = true
-							g.Expect(condition.Status).To(Equal(metav1.ConditionTrue),
-								"condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nodeClaim.Name)
-						}
-					}
-					g.Expect(found).To(BeTrue(), "condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nodeClaim.Name)
-				}).
-					WithContext(ctx).
-					WithTimeout(5 * time.Minute).
-					WithPolling(3 * time.Second).
-					Should(Succeed())
-			}
-			GinkgoWriter.Println("Karpenter Nodes drifted")
+			By("Waiting for workload to reschedule off the pre-upgrade node")
+			newReadyPods := v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nil, []corev1.Node{*preUpgradeNode}, replicas, podLabels)
+			postUpgradeNode := &corev1.Node{}
+			Expect(hcClient.Get(ctx, crclient.ObjectKey{Name: newReadyPods[0].Spec.NodeName}, postUpgradeNode)).To(Succeed())
+			logKarpenterNodeVersionInfo("post-upgrade", postUpgradeNode, latestImage)
+			GinkgoWriter.Printf("Workload rescheduled from node %s to node %s\n",
+				preUpgradeNode.Name, postUpgradeNode.Name)
 
-			By("Waiting for replacement NodeClaims to be ready")
-			replacementNodeClaims := waitForReadyNodeClaims(ctx, hcClient, replicas, nodeClaims.Items, false)
-			Expect(replacementNodeClaims.Items).NotTo(BeEmpty(), "no replacement NodeClaims found")
-
-			// Collect all the associated Nodes for the replacement NodeClaims.
-			replacementNodes := make([]corev1.Node, 0, len(replacementNodeClaims.Items))
-			for i := range replacementNodeClaims.Items {
-				claim := &replacementNodeClaims.Items[i]
-				Expect(claim.Status.NodeName).NotTo(BeEmpty(), "replacement NodeClaim %s has no nodeName", claim.Name)
-				Expect(claim.Status.NodeName).NotTo(Equal(preUpgradeNode.Name),
-					"replacement NodeClaim %s has unexpected associated node: %s", claim.Name, claim.Status.NodeName)
-
-				node := &corev1.Node{}
-				Expect(hcClient.Get(ctx, crclient.ObjectKey{Name: claim.Status.NodeName}, node)).To(Succeed())
-				replacementNodes = append(replacementNodes, *node)
-				GinkgoWriter.Printf("Replacement node: %s\n", node.Name)
-			}
-
-			// Make sure that the workloads are actually rescheduled on the replacement nodes.
-			By("Waiting for workloads to schedule on replacement nodes")
-			newReadyPods := waitForReadyKarpenterPods(ctx, hcClient, replacementNodes, []corev1.Node{preUpgradeNode}, replicas, map[string]string{"app": "web-app"})
-
-			Expect(len(newReadyPods)).To(Equal(replicas), "expected %d new ready pods, got %d", replicas, len(newReadyPods))
-			postUpgradeNodeName := newReadyPods[0].Spec.NodeName
-			GinkgoWriter.Printf("Workload successfully rescheduled from node: %s to node: %s\n", preUpgradeNode.Name, postUpgradeNodeName)
+			By("Waiting for ready NodeClaim associated with replacement node")
+			replacementNodeClaim := waitForReadyNodeClaim(Default, ctx, hcClient, postUpgradeNode.Name, karpenterNodePool.Name)
+			GinkgoWriter.Printf("Replacement NodeClaim: %s\n", replacementNodeClaim.Name)
 
 			By("Validating AutoNode status counts are populated after upgrade")
 			Eventually(func(g Gomega, pollCtx context.Context) {
@@ -277,92 +191,69 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// waitForReadyNodeClaims polls until n non-excluded NodeClaims are ready.
-// When strict is true, exactly n ready non-excluded NodeClaims are required.
-// When strict is false, at least n ready non-excluded NodeClaims are required.
-func waitForReadyNodeClaims(ctx context.Context, client crclient.Client, n int, excludeNodeClaims []karpenterv1.NodeClaim, strict bool) *karpenterv1.NodeClaimList {
+// logKarpenterNodeVersionInfo logs the version information of a Karpenter node for debugging and observability purposes.
+// It's possible that both the kubeletVersion and the OSImage don't change (but underlying ignition config does).
+// Therefore, don't assert that they should differ after an upgrade, but simply log for observability.
+func logKarpenterNodeVersionInfo(testPhase string, node *corev1.Node, releaseImage string) {
 	GinkgoHelper()
-	nodeClaims := &karpenterv1.NodeClaimList{}
-	matched := &karpenterv1.NodeClaimList{}
+	info := node.Status.NodeInfo
+	GinkgoWriter.Printf("%s node: %s\n", testPhase, node.Name)
+	GinkgoWriter.Printf("  releaseImage:      %s\n", releaseImage)
+	GinkgoWriter.Printf("  kubelet:           %s\n", info.KubeletVersion)
+	GinkgoWriter.Printf("  osImage:           %s\n", info.OSImage)
+}
 
-	Eventually(func(g Gomega, pollCtx context.Context) {
-		err := client.List(pollCtx, nodeClaims)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to list NodeClaims")
-
-		candidates := make([]karpenterv1.NodeClaim, 0, len(nodeClaims.Items))
-		for i := range nodeClaims.Items {
-			claim := nodeClaims.Items[i]
+// waitForReadyNodeClaim polls until a non-deleting, Initialized NodeClaim exists for the
+// given node and NodePool name.
+func waitForReadyNodeClaim(g Gomega, ctx context.Context, client crclient.Client, nodeName, nodePoolName string) *karpenterv1.NodeClaim {
+	GinkgoHelper()
+	var matched *karpenterv1.NodeClaim
+	g.Eventually(func(pollG Gomega, pollCtx context.Context) {
+		all := &karpenterv1.NodeClaimList{}
+		pollG.Expect(client.List(pollCtx, all)).To(Succeed())
+		for i := range all.Items {
+			claim := &all.Items[i]
+			if claim.Status.NodeName != nodeName {
+				continue
+			}
+			if claim.Labels[karpenterv1.NodePoolLabelKey] != nodePoolName {
+				continue
+			}
 			if !claim.DeletionTimestamp.IsZero() {
 				continue
 			}
-			excluded := false
-			for _, excludedClaim := range excludeNodeClaims {
-				if claim.Name == excludedClaim.Name {
-					excluded = true
+			ready := false
+			for _, c := range claim.Status.Conditions {
+				if c.Type == karpenterv1.ConditionTypeInitialized && c.Status == metav1.ConditionTrue {
+					ready = true
 					break
 				}
 			}
-			if excluded {
-				continue
-			}
-			candidates = append(candidates, claim)
+			pollG.Expect(ready).To(BeTrue(), "NodeClaim %s for node %s is not ready", claim.Name, nodeName)
+			matched = claim
+			return
 		}
-
-		readyCandidates := make([]karpenterv1.NodeClaim, 0, len(candidates))
-		for i := range candidates {
-			claim := &candidates[i]
-			hasLaunched := false
-			hasRegistered := false
-			hasInitialized := false
-			for _, condition := range claim.Status.Conditions {
-				if condition.Type == karpenterv1.ConditionTypeLaunched && condition.Status == metav1.ConditionTrue {
-					hasLaunched = true
-				}
-				if condition.Type == karpenterv1.ConditionTypeRegistered && condition.Status == metav1.ConditionTrue {
-					hasRegistered = true
-				}
-				if condition.Type == karpenterv1.ConditionTypeInitialized && condition.Status == metav1.ConditionTrue {
-					hasInitialized = true
-				}
-			}
-			if !hasLaunched || !hasRegistered || !hasInitialized {
-				continue
-			}
-			readyCandidates = append(readyCandidates, *claim)
-		}
-
-		if strict {
-			g.Expect(readyCandidates).To(HaveLen(n),
-				"expected exactly %d ready non-excluded NodeClaims, got %d", n, len(readyCandidates))
-		} else {
-			g.Expect(len(readyCandidates)).To(BeNumerically(">=", n),
-				"expected at least %d ready non-excluded NodeClaims, got %d", n, len(readyCandidates))
-		}
-
-		matched.Items = readyCandidates
-		if len(matched.Items) > n {
-			matched.Items = matched.Items[:n]
-		}
+		pollG.Expect(matched).NotTo(BeNil(), "no ready NodeClaim for node %s in NodePool %s", nodeName, nodePoolName)
 	}).
 		WithContext(ctx).
-		WithTimeout(10 * time.Minute).
+		WithTimeout(5 * time.Minute).
 		WithPolling(10 * time.Second).
 		Should(Succeed())
-
 	return matched
 }
 
 // expectControlPlaneRolloutWithoutDrift waits for ControlPlaneVersion to reach
-// Completed for the target image while asserting that no pre-upgrade NodeClaim
-// drifts or is deleted before the rollout finishes. If any NodeClaim shows
+// Completed for the target image while asserting that the pre-upgrade NodeClaim
+// does not drift or get deleted before the rollout finishes. If the NodeClaim shows
 // premature drift or disappears, the failure is permanent (StopTrying).
 func expectControlPlaneRolloutWithoutDrift(
+	g Gomega,
 	ctx context.Context,
 	mgmtClient crclient.Client,
 	guestClient crclient.Client,
 	hc *hyperv1.HostedCluster,
 	targetImage string,
-	nodeClaims *karpenterv1.NodeClaimList,
+	nodeClaim *karpenterv1.NodeClaim,
 ) {
 	GinkgoHelper()
 
@@ -371,12 +262,12 @@ func expectControlPlaneRolloutWithoutDrift(
 	// spec. An UpgradePending condition on the NodeClass set in the same reconcile as NodeClass.spec
 	// freeze/unfreeze would remove that race. We may have to go with that path if tests show to be flaky.
 
-	Eventually(func(g Gomega) {
+	g.Eventually(func(pollG Gomega) {
 		// Check CP completion first. If the target image already reached Completed,
 		// drift is expected and correct, so return success without inspecting NodeClaims.
 		currentHC := &hyperv1.HostedCluster{}
 		err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
+		pollG.Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
 
 		cpv := currentHC.Status.ControlPlaneVersion
 		if cpv.Desired.Image == targetImage &&
@@ -387,30 +278,28 @@ func expectControlPlaneRolloutWithoutDrift(
 		}
 
 		// CP rollout still in progress — any drift at this point is premature.
-		for i := range nodeClaims.Items {
-			nc := &karpenterv1.NodeClaim{}
-			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(&nodeClaims.Items[i]), nc)
-			if apierrors.IsNotFound(err) {
-				StopTrying(fmt.Sprintf("NodeClaim %s deleted before CP upgrade completed", nodeClaims.Items[i].Name)).Now()
-			}
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodeClaim %s", nodeClaims.Items[i].Name)
+		nc := &karpenterv1.NodeClaim{}
+		err = guestClient.Get(ctx, crclient.ObjectKeyFromObject(nodeClaim), nc)
+		if apierrors.IsNotFound(err) {
+			StopTrying(fmt.Sprintf("NodeClaim %s deleted before CP upgrade completed", nodeClaim.Name)).Now()
+		}
+		pollG.Expect(err).NotTo(HaveOccurred(), "failed to get NodeClaim %s", nodeClaim.Name)
 
-			conditions, err := e2eutil.Conditions(nc)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to read conditions for NodeClaim %s", nodeClaims.Items[i].Name)
-			for _, c := range conditions {
-				if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
-					StopTrying(fmt.Sprintf("NodeClaim %s detected drift before CP upgrade completed", nodeClaims.Items[i].Name)).Now()
-				}
+		conditions, err := e2eutil.Conditions(nc)
+		pollG.Expect(err).NotTo(HaveOccurred(), "failed to read conditions for NodeClaim %s", nodeClaim.Name)
+		for _, c := range conditions {
+			if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
+				StopTrying(fmt.Sprintf("NodeClaim %s detected drift before CP upgrade completed", nodeClaim.Name)).Now()
 			}
 		}
 
 		// Signal that CP is not yet complete so Eventually retries. History[0] may
 		// still be the previous Completed rollout right after Desired moves to
 		// targetImage, so require History[0].Image to match as well.
-		g.Expect(cpv.Desired.Image).To(Equal(targetImage))
-		g.Expect(cpv.History).NotTo(BeEmpty(), "controlPlaneVersion has no history yet")
-		g.Expect(cpv.History[0].Image).To(Equal(targetImage), "waiting for target image in controlPlaneVersion history")
-		g.Expect(cpv.History[0].State).To(Equal(configv1.CompletedUpdate))
+		pollG.Expect(cpv.Desired.Image).To(Equal(targetImage))
+		pollG.Expect(cpv.History).NotTo(BeEmpty(), "controlPlaneVersion has no history yet")
+		pollG.Expect(cpv.History[0].Image).To(Equal(targetImage), "waiting for target image in controlPlaneVersion history")
+		pollG.Expect(cpv.History[0].State).To(Equal(configv1.CompletedUpdate))
 	}).
 		WithContext(ctx).
 		WithTimeout(30 * time.Minute).
