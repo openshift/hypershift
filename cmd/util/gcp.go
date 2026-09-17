@@ -1,6 +1,10 @@
 package util
 
-import hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+import (
+	"strings"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
 
 const (
 	DefaultGCPMachineTypeAMD64 = "n2-standard-4"
@@ -9,14 +13,16 @@ const (
 
 // DefaultGCPMachineType returns appropriate machine type for architecture.
 // Returns n2-standard-4 for AMD64 and t2a-standard-4 (Tau T2A) for ARM64.
+// Returns empty string for unknown architectures.
 func DefaultGCPMachineType(arch string) string {
-	switch arch {
-	case "arm64":
+	switch strings.ToLower(arch) {
+	case hyperv1.ArchitectureARM64:
 		return DefaultGCPMachineTypeARM64
-	case "amd64":
-		fallthrough
-	default:
+	case hyperv1.ArchitectureAMD64:
 		return DefaultGCPMachineTypeAMD64
+	default:
+		// Empty string will fail API validation (machineType has +kubebuilder:validation:MinLength=1)
+		return ""
 	}
 }
 

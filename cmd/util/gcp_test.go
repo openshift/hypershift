@@ -23,14 +23,14 @@ func TestDefaultGCPMachineType(t *testing.T) {
 			expected: DefaultGCPMachineTypeARM64,
 		},
 		{
-			name:     "When arch is empty, it should default to AMD64",
+			name:     "When arch is empty, it should return empty string",
 			arch:     "",
-			expected: DefaultGCPMachineTypeAMD64,
+			expected: "",
 		},
 		{
-			name:     "When arch is unknown, it should default to AMD64",
+			name:     "When arch is unknown, it should return empty string",
 			arch:     "unknown",
-			expected: DefaultGCPMachineTypeAMD64,
+			expected: "",
 		},
 	}
 

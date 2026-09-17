@@ -128,17 +128,20 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 }
 
 func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, _ crclient.Client) error {
-	// Build boot disk configuration
-	bootDisk := &hyperv1.GCPBootDisk{}
-	if o.BootDiskSize > 0 {
-		bootDisk.DiskSizeGB = int64(o.BootDiskSize)
-	}
-	if len(o.BootDiskType) > 0 {
-		bootDisk.DiskType = o.BootDiskType
-	}
-	if len(o.BootDiskEncryptionKey) > 0 {
-		bootDisk.EncryptionKey = hyperv1.GCPDiskEncryptionKey{
-			KMSKeyName: o.BootDiskEncryptionKey,
+	// Build boot disk configuration only if any boot-disk flag is set
+	var bootDisk *hyperv1.GCPBootDisk
+	if o.BootDiskSize > 0 || len(o.BootDiskType) > 0 || len(o.BootDiskEncryptionKey) > 0 {
+		bootDisk = &hyperv1.GCPBootDisk{}
+		if o.BootDiskSize > 0 {
+			bootDisk.DiskSizeGB = int64(o.BootDiskSize)
+		}
+		if len(o.BootDiskType) > 0 {
+			bootDisk.DiskType = o.BootDiskType
+		}
+		if len(o.BootDiskEncryptionKey) > 0 {
+			bootDisk.EncryptionKey = hyperv1.GCPDiskEncryptionKey{
+				KMSKeyName: o.BootDiskEncryptionKey,
+			}
 		}
 	}
 
@@ -165,19 +168,6 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 		})
 	}
 
-	// Convert provisioning model string to enum
-	var provisioningModel hyperv1.GCPProvisioningModel
-	switch o.ProvisioningModel {
-	case "", "Standard":
-		provisioningModel = hyperv1.GCPProvisioningModelStandard
-	case "Spot":
-		provisioningModel = hyperv1.GCPProvisioningModelSpot
-	case "Preemptible":
-		provisioningModel = hyperv1.GCPProvisioningModelPreemptible
-	default:
-		return fmt.Errorf("invalid provisioning model %q, must be one of: Standard, Spot, Preemptible", o.ProvisioningModel)
-	}
-
 	// Build basic GCP NodePool platform using shared helper
 	nodePool.Spec.Platform.GCP = util.BuildGCPNodePoolPlatform(util.GCPNodePoolPlatformOptions{
 		Zone:        o.Zone,
@@ -192,7 +182,7 @@ func (o *CompletedGCPNodePoolCreateOptions) UpdateNodePool(ctx context.Context, 
 	nodePool.Spec.Platform.GCP.ServiceAccount = serviceAccount
 	nodePool.Spec.Platform.GCP.ResourceLabels = resourceLabels
 	nodePool.Spec.Platform.GCP.NetworkTags = convertStringSliceToResourceNames(o.NetworkTags)
-	nodePool.Spec.Platform.GCP.ProvisioningModel = provisioningModel
+	nodePool.Spec.Platform.GCP.ProvisioningModel = hyperv1.GCPProvisioningModel(o.ProvisioningModel)
 
 	return nil
 }
