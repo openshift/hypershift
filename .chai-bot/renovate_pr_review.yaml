@@ -30,5 +30,6 @@ report:
     - review_approval_state
     - blockers
     - next_action
-  max_pull_requests: 20
+  # github_prs returns at most 10 inline PRs; keep every selected PR inspectable.
+  max_pull_requests: 10
   silence_when_empty: true
