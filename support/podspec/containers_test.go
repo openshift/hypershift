@@ -6,10 +6,36 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestKASReadinessCheckContainer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{name: "When probing a service name, it should use direct curl without changing readiness semantics", url: "https://kube-apiserver:6443/livez"},
+		{name: "When probing a qualified service name, it should use direct curl without changing readiness semantics", url: "https://kube-apiserver.clusters-example.svc:6443/livez"},
+		{name: "When probing an IPv6 endpoint, it should use direct curl without changing readiness semantics", url: "https://[fd00::1]:7443/livez"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			NewWithT(t).Expect(KASReadinessCheckContainer(tc.url)).To(Equal(corev1.Container{
+				Name: "kas-readiness-check", Image: "cli",
+				Command: []string{"/bin/bash", "-c", "sleep infinity"},
+				ReadinessProbe: &corev1.Probe{
+					ProbeHandler:     corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"curl", "-kfs", "-o", "/dev/null", tc.url}}},
+					FailureThreshold: 3, PeriodSeconds: 10, TimeoutSeconds: 5,
+				},
+				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("10Mi"),
+				}},
+			}))
+		})
+	}
+}
 
 func TestFindContainer(t *testing.T) {
 	t.Parallel()

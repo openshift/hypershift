@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 649d186c3a9233eb7c82356ff4cd250285c1ca5e86d41c4002d267c576c63d0e
+    hypershift.openshift.io/desired-state-hash: 73fb22842dd4e76916e2f164e18e02b5247ef63bc4c4aa95495706458691fc3e
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-apiserver
@@ -207,9 +207,11 @@ spec:
         readinessProbe:
           exec:
             command:
-            - /bin/bash
-            - -c
-            - curl -kfs https://kube-apiserver:6443/livez > /dev/null
+            - curl
+            - -kfs
+            - -o
+            - /dev/null
+            - https://kube-apiserver:6443/livez
           failureThreshold: 3
           periodSeconds: 10
           timeoutSeconds: 5
