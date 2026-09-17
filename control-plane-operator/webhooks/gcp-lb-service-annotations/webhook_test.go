@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -118,13 +119,23 @@ func TestMutate_WhenLabelsAreRemovedAndAnnotationIsEmpty_RemovesAnnotation(t *te
 
 func TestHandleMutate_WhenRequestExceedsMaximumSize_ReturnsBadRequest(t *testing.T) {
 	opts := &Options{}
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mutate", bytes.NewReader(make([]byte, maxAdmissionReviewSize+1)))
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			"padding": strings.Repeat("x", maxAdmissionReviewSize),
+		}},
+		Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+	}
+	review := &admissionv1.AdmissionReview{Request: makeRequest(t, svc)}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mutate", bytes.NewReader(mustMarshal(t, review)))
 	resp := httptest.NewRecorder()
 
 	opts.handleMutate(resp, req)
 
 	if resp.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.Code)
+	}
+	if !strings.Contains(resp.Body.String(), "http: request body too large") {
+		t.Errorf("expected request body limit error, got %q", resp.Body.String())
 	}
 }
 
