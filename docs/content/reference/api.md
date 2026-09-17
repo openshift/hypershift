@@ -6501,6 +6501,18 @@ created in the customer VPC</p>
 <td><p>GCPEndpointAvailable indicates whether the GCP PSC Endpoint has been
 created in the customer VPC</p>
 </td>
+</tr><tr><td><p>&#34;GCPFirewallRulesReady&#34;</p></td>
+<td><p>GCPFirewallRulesReady indicates whether the control-plane-operator has
+reconciled the managed GCP worker firewall rule (<infra-id>-internal-cluster)
+to its desired state.
+This reconcile is best-effort: expected, recoverable states such as missing
+Workload Identity Federation credentials, insufficient IAM permissions (the
+ctrlplane-op service account is missing roles/compute.securityAdmin), an
+unresolvable project/VPC, or an ownership conflict set this condition to
+False with an actionable message but do not fail the overall HCP reconcile.
+The next periodic reconcile converges automatically once the underlying
+condition clears.</p>
+</td>
 </tr><tr><td><p>&#34;GCPPrivateServiceConnectAvailable&#34;</p></td>
 <td><p>GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability</p>
 </td>
@@ -8895,6 +8907,7 @@ This GSA requires the following IAM roles:
 - roles/dns.admin (DNS Admin - for managing DNS records)
 - roles/compute.networkAdmin (Compute Network Admin - for network management)
 - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
+- roles/compute.securityAdmin (Security Admin - for managing worker firewall rules)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.

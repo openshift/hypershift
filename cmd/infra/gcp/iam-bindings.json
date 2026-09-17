@@ -20,6 +20,7 @@
       "roles": [
         "roles/dns.admin",
         "roles/compute.networkAdmin",
+        "roles/compute.securityAdmin",
         "roles/compute.viewer"
       ],
       "k8sServiceAccounts": [

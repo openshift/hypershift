@@ -499,6 +499,11 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			hyperv1.ControlPlaneConnectionAvailable,
 			hyperv1.EtcdBackupSucceeded,
 		}
+		// GCPFirewallRulesReady is GCP-specific; only propagate it for GCP
+		// HostedClusters so non-GCP clusters don't gain an Unknown condition.
+		if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+			hcpConditions = append(hcpConditions, hyperv1.GCPFirewallRulesReady)
+		}
 
 		for _, conditionType := range hcpConditions {
 			condition := &metav1.Condition{
