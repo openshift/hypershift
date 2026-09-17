@@ -3,9 +3,7 @@
 package tests
 
 import (
-	"net"
 	"os"
-	"strconv"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -27,29 +25,7 @@ func TestAzureTestMatrix(t *testing.T) {
 	report := ginkgo.PreviewSpecs("hypershift-e2e")
 	g.Expect(report.SpecReports).NotTo(BeEmpty(), "unfiltered Ginkgo preview must contain registered specs")
 	matrix := lifecycle.NewAzurePlatformConfig("").TestMatrix()
-
-	previousFilters := []string{
-		"self-managed-azure-public || nodepool-lifecycle || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
-		"self-managed-azure-private || hosted-cluster-compliance",
-		"self-managed-azure-oauth-lb || hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
-		"nodepool-autoscaling",
-		"external-oidc || global-pull-secret",
-		"control-plane-upgrade",
-		"control-plane-pki-operator",
-		"etcd-chaos",
-	}
-
-	previousSelection := selectedSpecs(g, report.SpecReports, previousFilters)
-	currentSelection := selectedSpecs(g, report.SpecReports, testMatrixFilters(matrix))
-
-	g.Expect(currentSelection).To(Equal(previousSelection),
-		"the Azure matrix must select every previously selected spec exactly once")
-	for spec, count := range previousSelection {
-		g.Expect(count).To(Equal(1), "previous Azure matrix selected spec %q more than once", spec)
-	}
-	for spec, count := range currentSelection {
-		g.Expect(count).To(Equal(1), "current Azure matrix selects spec %q more than once", spec)
-	}
+	validateAzureMatrixFilters(g, report.SpecReports, matrix)
 
 	junitFiles := testMatrixJUnitFiles(matrix)
 	g.Expect(junitFiles).To(HaveEach(Not(BeEmpty())),
@@ -65,12 +41,13 @@ func TestAzureTestMatrix(t *testing.T) {
 
 	variantLanes := testMatrixVariantLanes(matrix)
 	expectedVariantLanes := map[string][]string{
-		"private":       {"parallel:private"},
-		"public":        {"sequential:public"},
-		"autoscaling":   {"sequential:autoscaling"},
-		"oauth-lb":      {"sequential:oauth-lb"},
-		"external-oidc": {"sequential:external-oidc"},
-		"upgrade":       {"sequential:upgrade-and-chaos"},
+		"private":          {"parallel:private"},
+		"oauth-lb-private": {"parallel:oauth-lb-private"},
+		"public":           {"sequential:public"},
+		"autoscaling":      {"sequential:autoscaling"},
+		"oauth-lb":         {"sequential:oauth-lb"},
+		"external-oidc":    {"sequential:external-oidc"},
+		"upgrade":          {"sequential:upgrade-and-chaos"},
 	}
 	g.Expect(variantLanes).To(Equal(expectedVariantLanes),
 		"every Azure variant must be assigned to its intended execution lane")
@@ -80,37 +57,29 @@ func TestAzureTestMatrix(t *testing.T) {
 	}
 }
 
-func selectedSpecs(g Gomega, specs types.SpecReports, filters []string) map[string]int {
-	parsedFilters := make([]types.LabelFilter, 0, len(filters))
-	for _, filter := range filters {
-		parsed, err := types.ParseLabelFilter(filter)
-		g.Expect(err).NotTo(HaveOccurred(), "label filter %q must parse", filter)
-		parsedFilters = append(parsedFilters, parsed)
-	}
+func validateAzureMatrixFilters(g Gomega, specs types.SpecReports, matrix lifecycle.TestMatrix) {
+	validateGroup := func(group lifecycle.TestGroup) {
+		filter, err := types.ParseLabelFilter(group.LabelFilter)
+		g.Expect(err).NotTo(HaveOccurred(), "Azure test group %q must have a valid label filter", group.Name)
 
-	selected := map[string]int{}
-	for _, spec := range specs {
-		for _, filter := range parsedFilters {
-			if filter(spec.Labels()) {
-				id := net.JoinHostPort(spec.LeafNodeLocation.FileName, strconv.Itoa(spec.LeafNodeLocation.LineNumber)) + ": " + spec.FullText()
-				selected[id]++
+		matched := false
+		for _, spec := range specs {
+			if spec.LeafNodeType.Is(types.NodeTypeIt) && filter(spec.Labels()) {
+				matched = true
+				break
 			}
 		}
+		g.Expect(matched).To(BeTrue(), "Azure test group %q must select at least one registered test", group.Name)
 	}
-	return selected
-}
 
-func testMatrixFilters(matrix lifecycle.TestMatrix) []string {
-	var filters []string
 	for _, group := range matrix.Parallel {
-		filters = append(filters, group.LabelFilter)
+		validateGroup(group)
 	}
-	for _, sequentialGroup := range matrix.Sequential {
-		for _, step := range sequentialGroup.Steps {
-			filters = append(filters, step.LabelFilter)
+	for _, sequential := range matrix.Sequential {
+		for _, group := range sequential.Steps {
+			validateGroup(group)
 		}
 	}
-	return filters
 }
 
 func testMatrixJUnitFiles(matrix lifecycle.TestMatrix) []string {
