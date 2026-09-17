@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -41,6 +42,9 @@ const (
 
 	azureWorkloadIdentityWebhookServingCertVolumeName = "azure-wi-webhook-serving-certs"
 	azureWorkloadIdentityWebhookKubeconfigVolumeName  = "azure-wi-webhook-kubeconfig"
+
+	gcpLBServiceAnnotationsWebhookServingCertVolumeName = "gcp-lb-service-annotations-webhook-serving-certs"
+	gcpLBServiceAnnotationsWebhookPort                  = 8443
 )
 
 var azureWorkloadIdentityWebhookWaitForKASVersionTemplate = template.Must(template.New("azure-workload-identity-webhook").Parse(`set -u
@@ -127,18 +131,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, portieris)
 	}
 
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		if err := applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
-			return fmt.Errorf("failed to apply AWS pod identity webhook container: %w", err)
-		}
-	case hyperv1.AzurePlatform:
-		if hcp.Spec.Platform.Azure == nil {
-			return fmt.Errorf("azure platform type requires spec.platform.azure")
-		}
-		if err := applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
-			return fmt.Errorf("failed to create azure workload identity webhook container: %w", err)
-		}
+	if err := applyPlatformSpecificContainers(&deployment.Spec.Template.Spec, hcp); err != nil {
+		return err
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -349,6 +343,25 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 	return nil
 }
 
+func applyPlatformSpecificContainers(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if err := applyAWSPodIdentityWebhookContainer(podSpec, hcp); err != nil {
+			return fmt.Errorf("apply AWS pod identity webhook container: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		if hcp.Spec.Platform.Azure == nil {
+			return fmt.Errorf("azure platform type requires spec.platform.azure")
+		}
+		if err := applyAzureWorkloadIdentityWebhookContainer(podSpec, hcp); err != nil {
+			return fmt.Errorf("apply Azure workload identity webhook container: %w", err)
+		}
+	case hyperv1.GCPPlatform:
+		applyGCPLBServiceAnnotationsWebhookContainer(podSpec, hcp)
+	}
+	return nil
+}
+
 func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
 	command := []string{
 		"/usr/bin/aws-pod-identity-webhook",
@@ -503,6 +516,48 @@ func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hy
 		},
 	)
 	return nil
+}
+
+// applyGCPLBServiceAnnotationsWebhookContainer adds the gcp-lb-service-annotations-webhook sidecar to the KAS pod.
+// The sidecar listens on 127.0.0.1:8443 and mutates Service{type: LoadBalancer}
+// objects to inject the cloud.google.com/load-balancer-resource-labels annotation,
+// so the GCP CCM applies HCP resource labels to the forwarding rules it creates.
+func applyGCPLBServiceAnnotationsWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+	labels := gcputil.LBResourceLabelsAnnotationValue(gcputil.ResourceLabels(hcp))
+
+	cpoImage := podspec.CPOImageName
+
+	podSpec.Containers = append(podSpec.Containers, corev1.Container{
+		Name:            "gcp-lb-service-annotations-webhook",
+		Image:           cpoImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command: []string{
+			"/usr/bin/control-plane-operator",
+			"gcp-lb-service-annotations-webhook",
+			fmt.Sprintf("--labels=%s", labels),
+			fmt.Sprintf("--port=%d", gcpLBServiceAnnotationsWebhookPort),
+			"--tls-cert=/var/run/app/certs/tls.crt",
+			"--tls-key=/var/run/app/certs/tls.key",
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("5m"),
+				corev1.ResourceMemory: resource.MustParse("20Mi"),
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: gcpLBServiceAnnotationsWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},
+		},
+	})
+
+	podSpec.Volumes = append(podSpec.Volumes,
+		corev1.Volume{
+			Name: gcpLBServiceAnnotationsWebhookServingCertVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.GCPLBServiceAnnotationsWebhookServingCert("").Name},
+			},
+		},
+	)
 }
 
 func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) corev1.Volume {

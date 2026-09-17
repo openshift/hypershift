@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 61f47c215f0276b07bde516c88099af27c900fea0a33c734b5b1e5a05d2f715b
+    hypershift.openshift.io/desired-state-hash: b6910fb241d1659eb49e09fe7e54a545c79e546529cab25d0c99c82c8d93c2c3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -336,6 +336,33 @@ spec:
           name: logs
         - mountPath: /tmp
           name: tmp-dir
+      - command:
+        - /usr/bin/control-plane-operator
+        - gcp-lb-service-annotations-webhook
+        - --labels=
+        - --port=8443
+        - --tls-cert=/var/run/app/certs/tls.crt
+        - --tls-key=/var/run/app/certs/tls.key
+        image: controlplane-operator
+        imagePullPolicy: IfNotPresent
+        name: gcp-lb-service-annotations-webhook
+        resources:
+          requests:
+            cpu: 5m
+            memory: 20Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/app/certs
+          name: gcp-lb-service-annotations-webhook-serving-certs
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /bin/sh
@@ -622,6 +649,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: konnectivity-cluster
+      - name: gcp-lb-service-annotations-webhook-serving-certs
+        secret:
+          defaultMode: 416
+          secretName: gcp-lb-service-annotations-webhook-serving-cert
       - emptyDir: {}
         name: tmp-dir
 status: {}

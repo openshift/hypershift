@@ -98,3 +98,25 @@ func TestBuildWorkloadIdentityCredentialsValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestLBResourceLabelsAnnotationValue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   string
+	}{
+		{name: "When no labels are configured, it should return an empty value", want: ""},
+		{name: "When labels are configured, it should sort them by key", labels: map[string]string{"z": "last", "a": "first"}, want: "a=first,z=last"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := LBResourceLabelsAnnotationValue(tt.labels); got != tt.want {
+				t.Errorf("LBResourceLabelsAnnotationValue() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
