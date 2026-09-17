@@ -19,12 +19,13 @@ infraID (`patmart-b3bb`).
    per-user Google OIDC login, guest resource browsing, CLI-downloads.
 3. **Phase 2 — day-0 UX (DONE).** Pod terminal + monitoring (Observe → Metrics) via a konnectivity
    socks5 tunnel to guest Thanos/Alertmanager.
-4. **Phase 3 — dynamic plugins + Console capability guest-side (DONE, verified live).** Console
+4. **Phase 3 — dynamic plugins + Console capability guest-side (CLOSED — verified live).** Console
    capability enabled (Ingress disabled) via a GCP-gated CEL relax; console-operator stripped from
    the guest payload (GCP-gated); CMO ships the `monitoring-plugin`; the bridge loads it via a
-   `-plugins` flag; Observe → Alerting/Dashboards/Targets render in the browser. See the Phase 3
-   section below and `CONSOLE_CONTROL_PLANE_PHASE3_PLAN.md` for the design/analysis.
-5. **Phase 4 — the console-operator's role (NOT STARTED).** Define what a control-plane-side
+   `-plugins` flag; Observe → Alerting/Dashboards/Targets render in the browser; multi-replica HA
+   proven (OIDC refresh-token recovery). See the Phase 3 section below and
+   `CONSOLE_CONTROL_PLANE_PHASE3_PLAN.md` for the design/analysis.
+5. **Phase 4 — the console-operator's role (NEXT / active).** Define what a control-plane-side
    console-operator must own (all the injections/lifecycle we currently hand-roll) and decide **port
    vs. reimplement (e.g. in CPO)**, then build it. Seeded by the Phase 3 "Part C" analysis.
 
@@ -68,11 +69,11 @@ off-cluster k8s proxy → guest KAS `kube-apiserver.<hcp-ns>.svc:6443`.
 
 **Known limitations carried out of Phase 1 (status updated in Phase 3):**
 - Router config not hot-reloaded — manual router restart after applying a Route. *(Still open.)*
-- **Multi-replica sessions** — **run `replicas: 1`** (Phase 3 investigation). For OIDC the bridge
-  recovers a cross-pod session only from a refresh-token cookie, which Google won't issue without a
-  bridge change (`access_type=offline`); our SNI-passthrough router also can't do cookie affinity.
-  One replica is correct for the spike; multi-replica HA is a Phase 4 item. Details in the Phase 3
-  section.
+- **Multi-replica sessions** — **RESOLVED in Phase 3** (`replicas: 2`). For OIDC the bridge recovers
+  a cross-pod session only from a refresh-token cookie; the Phase 3 bridge change
+  (`access_type=offline` + `prompt=consent`, PR #17185) makes the provider issue one, so a request on
+  any replica rebuilds the session via a silent refresh — no sticky routing needed (our
+  SNI-passthrough router can't do affinity anyway). Proven live. Details in the Phase 3 section.
 - ~~User-settings persistence~~ — **RESOLVED in Phase 3.** Enabling the Console capability installs the
   `openshift-console-user-settings` namespace + `console-user-settings-admin` RBAC, and the
   token-minter gives the bridge the `console` SA identity to use it (verified: per-user settings
@@ -112,7 +113,7 @@ present here; `SERVER_FLAGS.consolePlugins` is `[]` live). The Alertmanager *bac
 
 ---
 
-## Phase 3 — dynamic plugins + Console capability guest-side (DONE, verified live)
+## Phase 3 — dynamic plugins + Console capability guest-side (CLOSED, verified live)
 
 **What it proves:** with the guest **`Console` capability enabled** (and Ingress kept disabled) but
 the **console-operator running nowhere**, a **dynamic ConsolePlugin** (`monitoring-plugin`) loads and
@@ -153,11 +154,16 @@ in the browser. Validated live on the dev-patmarti MC.
   that SA, so Dashboards then returns 200. Shape mirrors the framework's
   `InjectTokenMinterContainer(KubeAPIServerToken)`; the konnectivity socks5 sidecar stays a regular
   container, matching `InjectKonnectivityContainer` (which never uses native sidecars).
-- **`POD_NAME` env (operator-parity) + `replicas: 1`.** The bridge names its OIDC session cookie
-  per-pod (`SessionCookieName()` = `<cookie>-$POD_NAME`); the console-operator injects `POD_NAME` via
-  the downward API. Our overlay omitted it, so we added it. Investigating it surfaced that OIDC
-  multi-replica needs cross-pod session recovery the bridge can't do with Google today, so we set
-  **`replicas: 1`** (see the multi-replica finding below); `POD_NAME` is kept for operator-parity.
+- **Multi-replica sessions (`replicas: 2`) via OIDC refresh-token recovery.** The bridge names its
+  OIDC session cookie per-pod (`SessionCookieName()` = `<cookie>-$POD_NAME`; the console-operator
+  injects `POD_NAME` via the downward API — our overlay omitted it, now added). But POD_NAME alone
+  caused a re-auth loop across replicas, because the OIDC path rebuilds a cross-pod session **only**
+  from a refresh-token cookie and the bridge never requested one. Fix: the bridge now requests offline
+  access for OIDC (`access_type=offline` + `prompt=consent`, openshift/console **PR #17185**; Google
+  rejects the `offline_access` *scope*, so request params are the mechanism), so a request on any
+  replica rebuilds the session via a silent back-channel refresh. No sticky routing needed — which
+  matters because our SNI-passthrough router can't do cookie affinity and Service
+  `sessionAffinity: ClientIP` only ever sees the router pod IP. Proven live (see the finding below).
 
 **Key findings (carried forward):**
 - **Capability enablement replaces the Phase-1 hand-rolled guest scaffolding.** CVO installs all 8
@@ -170,22 +176,23 @@ in the browser. Validated live on the dev-patmarti MC.
 - **Cross-region OIDC works:** the HC keeps its issuerURL on the *previous* region's OIDC bucket
   (shared infraID / published JWKS); `serviceAccountSigningKey` makes the new MC's operator skip
   re-upload.
-- **Multi-replica: run one replica (an OIDC + exposure-model constraint, not a bug).** We
-  investigated this thoroughly. Under `-user-auth=oidc` the bridge (`pkg/auth/oauth2/auth_oidc.go`)
-  keeps login state **per-pod in memory** and recovers a session on another pod **only** from a
-  **refresh-token cookie** (the code comment: *"requires smart routing when running multiple backend
-  instances"*; the OIDC path has no access-token recovery-cookie fallback — that exists only for the
-  openshift-oauth path). Google issues a refresh token **only** with `access_type=offline` on the
-  auth request; the bridge doesn't send it, and the OIDC `offline_access` **scope is rejected by
-  Google** (`invalid_scope`, confirmed live). So there is no cross-pod recovery. Normal clusters run
-  >1 replica because the edge/reencrypt Route lets HAProxy do **cookie session affinity**; our HCP
-  router is **SNI-passthrough** (can't), and Service `sessionAffinity: ClientIP` is useless (the
-  router dials the Service fresh, so it only ever sees the **router pod IP**, in both public and
-  private). With >1 replica, `POD_NAME` (correctly) makes each pod expire the others' session cookie
-  on every cross-pod hop → **endless re-auth loop**. Fix: **`replicas: 1`** (all sessions on one
-  pod). `POD_NAME` is kept for operator-parity but is a single-pod no-op today. Multi-replica HA is a
-  **Phase 4** item: bridge `access_type=offline` + refresh recovery, a shared session store, or
-  router-level cookie affinity.
+- **Multi-replica works (`replicas: 2`) — the investigation, in full.** Under `-user-auth=oidc` the
+  bridge (`pkg/auth/oauth2/auth_oidc.go`) keeps login state **per-pod in memory** and recovers a
+  session on another pod **only** from a **refresh-token cookie** (code comment: *"requires smart
+  routing when running multiple backend instances"*; the OIDC path has no access-token
+  recovery-cookie fallback — that exists only for the openshift-oauth path). Two problems compounded:
+  (1) the bridge never requested a refresh token, and (2) `POD_NAME` (correctly) makes each pod expire
+  the others' session cookie, so every cross-pod hop forced a re-login → **endless re-auth loop**.
+  This is worse in our topology because normal clusters get **cookie session affinity** from the
+  edge/reencrypt Route's HAProxy, whereas our HCP router is **SNI-passthrough** (can't), and Service
+  `sessionAffinity: ClientIP` is useless (the router dials the Service fresh, so it only ever sees the
+  **router pod IP**, public or private). **Fix:** make the bridge request offline access for OIDC
+  (`access_type=offline` + `prompt=consent`, PR #17185) so the provider returns a refresh token
+  (Google rejects the `offline_access` *scope* — `invalid_scope`, confirmed live — hence request
+  params). Now a request on any replica rebuilds the session via a **silent back-channel refresh**;
+  `POD_NAME` keeps per-pod cookies clean. **Proven live:** with 2 replicas, deleting the
+  session-holding pod (and even a freshly-created replacement pod) kept the user logged in with **zero
+  `session was not found`** — before the change the same setup looped continuously.
 
 **Remaining (open, benign / deferred to Phase 4):**
 - **Login-role metric unavailable under OIDC:** `auth.metrics isKubeAdmin` queries the OpenShift User

@@ -1,12 +1,13 @@
 # Phase 3 Implementation Plan: Dynamic plugin support — load a ConsolePlugin control-plane-side
 
-**Status: DONE — verified live on the dev-patmarti MC.** Console capability enabled (Ingress
+**Status: CLOSED — verified live on the dev-patmarti MC.** Console capability enabled (Ingress
 disabled) via a GCP-gated CEL relax; console-operator stripped from the guest payload (GCP-gated);
 CMO ships the `monitoring-plugin`; the bridge loads it via a `-plugins` flag; a token-minter sidecar
 gives the bridge the guest `console` SA identity (fixing Dashboards RBAC); Observe →
-**Alerting / Dashboards / Targets** all render in the browser. **What was actually delivered is
-recorded in `CONSOLE_CONTROL_PLANE_PROGRESS.md` (Phase 3 section)** — this document remains the
-design/analysis record (Parts A/B/C, the strip, the CEL relax, and the Part C operator analysis).
+**Alerting / Dashboards / Targets** all render in the browser; multi-replica HA is proven (2 bridge
+replicas + OIDC refresh-token recovery). **What was actually delivered is recorded in
+`CONSOLE_CONTROL_PLANE_PROGRESS.md` (Phase 3 section)** — this document remains the design/analysis
+record (Parts A/B/C, the strip, the CEL relax, and the Part C operator analysis, now **Phase 4**).
 **Goal:** Prove a **dynamic ConsolePlugin** loads and renders in the control-plane-side
 console on a HyperShift/GCP HostedCluster — plugin **assets** fetched from a **guest**
 ClusterIP Service through the konnectivity tunnel, verified TLS, no console-operator.
