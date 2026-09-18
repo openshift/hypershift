@@ -3153,8 +3153,41 @@ func verifyKASCheckerTopologySpread(t *testing.T, dep *appsv1.Deployment) {
 
 func verifyKASCheckerAnnotations(t *testing.T, dep *appsv1.Deployment) {
 	t.Helper()
+	// kube-system is exempt from SCC admission, so the annotation is inert there and
+	// would reject the explicit non-root UID if that exemption ever changed.
 	if got, ok := dep.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"]; ok {
 		t.Errorf("openshift.io/required-scc annotation should not be set, got %s", got)
+	}
+}
+
+func verifyKASCheckerSecurityContext(t *testing.T, dep *appsv1.Deployment, container corev1.Container) {
+	t.Helper()
+	// A numeric UID is required: nothing assigns one in kube-system, and RunAsNonRoot
+	// alone would fail at the kubelet because the cli image declares no user.
+	podSecurityContext := dep.Spec.Template.Spec.SecurityContext
+	if podSecurityContext == nil || podSecurityContext.RunAsUser == nil {
+		t.Fatal("Pod SecurityContext should set RunAsUser")
+	}
+	if *podSecurityContext.RunAsUser != 1000 {
+		t.Errorf("Expected RunAsUser 1000, got %d", *podSecurityContext.RunAsUser)
+	}
+
+	if container.SecurityContext == nil {
+		t.Fatal("Container SecurityContext should be set")
+	}
+	if !ptr.Deref(container.SecurityContext.RunAsNonRoot, false) {
+		t.Error("RunAsNonRoot should be true")
+	}
+	if ptr.Deref(container.SecurityContext.AllowPrivilegeEscalation, true) {
+		t.Error("AllowPrivilegeEscalation should be false")
+	}
+	if !ptr.Deref(container.SecurityContext.ReadOnlyRootFilesystem, false) {
+		t.Error("ReadOnlyRootFilesystem should be true")
+	}
+	if container.SecurityContext.Capabilities == nil ||
+		len(container.SecurityContext.Capabilities.Drop) != 1 ||
+		container.SecurityContext.Capabilities.Drop[0] != "ALL" {
+		t.Errorf("Expected all capabilities dropped, got %v", container.SecurityContext.Capabilities)
 	}
 	if dep.Spec.Template.ObjectMeta.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"] != "true" {
 		t.Error("Expected safe-to-evict annotation to be set to 'true'")
@@ -3206,6 +3239,7 @@ func TestReconcileKASConnectionChecker(t *testing.T) {
 				verifyKASCheckerResources(t, container)
 				verifyKASCheckerNoTolerations(t, dep)
 				verifyKASCheckerAnnotations(t, dep)
+				verifyKASCheckerSecurityContext(t, dep, container)
 				verifyKASCheckerTopologySpread(t, dep)
 
 				cm := &corev1.ConfigMap{}
@@ -3257,6 +3291,10 @@ func TestReconcileKASConnectionChecker(t *testing.T) {
 							Labels: map[string]string{
 								"app": "old-label",
 							},
+							// Written by an older HCCO; must be cleared on upgrade.
+							Annotations: map[string]string{
+								"openshift.io/required-scc": "restricted-v2",
+							},
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
@@ -3285,6 +3323,7 @@ func TestReconcileKASConnectionChecker(t *testing.T) {
 				}
 				verifyKASCheckerNoTolerations(t, dep)
 				verifyKASCheckerAnnotations(t, dep)
+				verifyKASCheckerSecurityContext(t, dep, container)
 				verifyKASCheckerTopologySpread(t, dep)
 			},
 		},
