@@ -45,6 +45,7 @@ type KubeAPIServerConfigParams struct {
 	EtcdURL                          string
 	EtcdServersOverrides             []string
 	FeatureGates                     []string
+	KubernetesVersion                string
 	NodePortRange                    string
 	AuditWebhookEnabled              bool
 	ConsolePublicURL                 string
