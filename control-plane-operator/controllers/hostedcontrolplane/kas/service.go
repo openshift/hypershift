@@ -60,7 +60,6 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
 	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
 
-	// TODO (alberto): if this port ever need to be configurable it should come from new field in the LB publishing strategy.
 	portSpec.Port = int32(apiServerServicePort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromString("client")
@@ -86,6 +85,18 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 			}
 			if !azureutil.IsAroHCPByHCP(hcp) {
 				svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
+			}
+
+			// For Azure (or KubeVirt-on-Azure management), bind the KAS LB Service to a
+			// dedicated Public IP so it gets its own frontend IP configuration on the Azure LB.
+			// This avoids the port 6443 collision with the management cluster's KAS.
+			// ARO-HCP is excluded because it uses Swift networking, not standard Azure LB.
+			// Only set on CREATE to avoid breaking existing clusters that don't have the
+			// dedicated PIP yet (the PIP is created by the infra CLI during provisioning).
+			if isCreate && !azureutil.IsAroHCPByHCP(hcp) && isAzureOrKubeVirtOnAzure(hcp) && hcp.Spec.InfraID != "" {
+				svc.Annotations[azureutil.PIPNameAnnotation] = hcp.Spec.InfraID + "-kas-pip"
+				// With a dedicated PIP, the standard port 6443 can be used.
+				portSpec.Port = int32(config.KASSVCPort)
 			}
 
 			if isPrivate {
@@ -116,6 +127,18 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	svc.Spec.Ports[0] = portSpec
 
 	return nil
+}
+
+// isAzureOrKubeVirtOnAzure returns true when the HCP runs on Azure or on a
+// KubeVirt platform whose management cluster is Azure. In both cases the Azure
+// cloud-provider manages the LoadBalancer, so a dedicated Public IP is needed
+// to avoid port 6443 collision with the management cluster's KAS.
+func isAzureOrKubeVirtOnAzure(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		return true
+	}
+	return hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)
 }
 
 func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference) error {
