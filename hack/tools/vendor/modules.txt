@@ -39,8 +39,8 @@ github.com/AdminBenni/iota-mixing/pkg/analyzer/flags
 # github.com/AlwxSin/noinlineerr v1.0.5
 ## explicit; go 1.23.0
 github.com/AlwxSin/noinlineerr
-# github.com/Antonboom/errname v1.1.1
-## explicit; go 1.23.0
+# github.com/Antonboom/errname v1.1.2
+## explicit; go 1.24.0
 github.com/Antonboom/errname/pkg/analyzer
 # github.com/Antonboom/nilnil v1.1.1
 ## explicit; go 1.24.0
