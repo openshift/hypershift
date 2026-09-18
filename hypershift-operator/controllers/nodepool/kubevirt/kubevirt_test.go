@@ -579,6 +579,148 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 			expectedValidationError: "host device count must be greater than or equal to 1. received: -7",
 		},
+		{
+			// amd64 nodepool on a multi-arch cluster: verifies that Architecture
+			// and the auto-injected kubernetes.io/arch NodeSelector are set correctly.
+			name: "When arch is amd64, it should set Architecture=amd64 and inject kubernetes.io/arch=amd64 NodeSelector",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("8Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("8Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							archTmpltOpt(hyperv1.ArchitectureAMD64),
+							nodeSelectorTmpltOpt(map[string]string{"kubernetes.io/arch": hyperv1.ArchitectureAMD64}),
+						),
+					},
+				},
+			},
+		},
+		{
+			// s390x nodepool: verifies that Architecture and the auto-injected
+			// kubernetes.io/arch NodeSelector are set correctly for s390x.
+			name: "When arch is s390x, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("8Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("8Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							archTmpltOpt(hyperv1.ArchitectureS390X),
+							nodeSelectorTmpltOpt(map[string]string{"kubernetes.io/arch": hyperv1.ArchitectureS390X}),
+						),
+					},
+				},
+			},
+		},
+		{
+			// A user-supplied kubernetes.io/arch in kvPlatform.NodeSelector must
+			// take precedence over the automatically injected value.
+			name: "When user supplies kubernetes.io/arch in NodeSelector, it should not be overwritten by the auto-injected arch value",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("8Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							nodeSelectorNPOption(map[string]string{
+								"kubernetes.io/arch": hyperv1.ArchitectureAMD64,
+								"custom-label":       "custom-value",
+							}),
+						),
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("8Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							archTmpltOpt(hyperv1.ArchitectureAMD64),
+							nodeSelectorTmpltOpt(map[string]string{
+								"kubernetes.io/arch": hyperv1.ArchitectureAMD64,
+								"custom-label":       "custom-value",
+							}),
+						),
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1386,6 +1528,27 @@ func addNetworkOpt(nw kubevirtv1.Network) nodeTemplateOption {
 func annotationsTmpltOpt(annotations map[string]string) nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.ObjectMeta.Annotations = annotations
+	}
+}
+
+// archTmpltOpt sets the VMI Architecture field — verifies Change 1.
+func archTmpltOpt(arch string) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Architecture = arch
+	}
+}
+
+// nodeSelectorTmpltOpt sets the NodeSelector on the VMI template — verifies Change 2.
+func nodeSelectorTmpltOpt(nodeSelector map[string]string) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.NodeSelector = nodeSelector
+	}
+}
+
+// nodeSelectorNPOption sets a user-supplied NodeSelector on the KubevirtNodePoolPlatform.
+func nodeSelectorNPOption(nodeSelector map[string]string) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		kvNodePool.NodeSelector = nodeSelector
 	}
 }
 
