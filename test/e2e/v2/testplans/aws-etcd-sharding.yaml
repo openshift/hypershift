@@ -1,0 +1,27 @@
+# Etcd sharding test plan for AWS.
+#
+# Selects only the "etcd-sharded" cluster variant (see
+# test/e2e/v2/lifecycle/aws.go), which creates a HostedCluster with
+# spec.etcd.managed.shards populated. Sharding is a create-time only setting,
+# so it cannot be layered onto the clusters the default aws-full plan creates.
+#
+# Requires the HyperShift Operator to be installed with
+# --tech-preview-no-upgrade: EtcdSharding is a management cluster feature gate
+# in the TechPreviewNoUpgrade set, and without it spec.etcd.managed.shards is
+# absent from the installed HostedCluster CRD.
+name: aws-etcd-sharding
+platform: aws
+testMatrix:
+  sequential:
+    - name: etcd-sharding
+      steps:
+        # Shard deployment, kube-apiserver routing, per-kind key placement,
+        # shard member restart and day-2 immutability.
+        - name: etcd-sharding
+          variant: etcd-sharded
+          labelFilter: etcd-sharding
+        # Cluster operations with sharding enabled: runs after the sharding
+        # specs so it also covers recovery from the shard member restart.
+        - name: post-sharding-health
+          variant: etcd-sharded
+          labelFilter: hosted-cluster-health || control-plane-workloads
