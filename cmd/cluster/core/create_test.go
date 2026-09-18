@@ -1688,11 +1688,13 @@ func TestValidateArchAndFeatureSet(t *testing.T) {
 
 func TestApplyClusterCapabilities(t *testing.T) {
 	tests := []struct {
-		name           string
-		enableCaps     []string
-		disableCaps    []string
-		expectEnabled  []hyperv1.OptionalCapability
-		expectDisabled []hyperv1.OptionalCapability
+		name                  string
+		enableCaps            []string
+		disableCaps           []string
+		expectEnabled         []hyperv1.OptionalCapability
+		expectDisabled        []hyperv1.OptionalCapability
+		startWithNilCaps      bool
+		expectNilCapabilities bool
 	}{
 		{
 			name:           "When both enable and disable capabilities are provided, it should set both",
@@ -1709,15 +1711,21 @@ func TestApplyClusterCapabilities(t *testing.T) {
 		{
 			name: "When neither enable nor disable are provided, it should not set capabilities",
 		},
+		{
+			name:                  "When Capabilities starts as nil and no flags are provided, it should stay nil",
+			startWithNilCaps:      true,
+			expectNilCapabilities: true,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			cluster := &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Capabilities: &hyperv1.Capabilities{},
-				},
+				Spec: hyperv1.HostedClusterSpec{},
+			}
+			if !tc.startWithNilCaps {
+				cluster.Spec.Capabilities = &hyperv1.Capabilities{}
 			}
 			opts := &CreateOptions{
 				completedCreateOptions: &completedCreateOptions{
@@ -1734,15 +1742,19 @@ func TestApplyClusterCapabilities(t *testing.T) {
 
 			applyClusterCapabilities(cluster, opts)
 
-			if tc.expectEnabled != nil {
-				g.Expect(cluster.Spec.Capabilities.Enabled).To(Equal(tc.expectEnabled))
+			if tc.expectNilCapabilities {
+				g.Expect(cluster.Spec.Capabilities).To(BeNil())
 			} else {
-				g.Expect(cluster.Spec.Capabilities.Enabled).To(BeNil())
-			}
-			if tc.expectDisabled != nil {
-				g.Expect(cluster.Spec.Capabilities.Disabled).To(Equal(tc.expectDisabled))
-			} else {
-				g.Expect(cluster.Spec.Capabilities.Disabled).To(BeNil())
+				if tc.expectEnabled != nil {
+					g.Expect(cluster.Spec.Capabilities.Enabled).To(Equal(tc.expectEnabled))
+				} else {
+					g.Expect(cluster.Spec.Capabilities.Enabled).To(BeNil())
+				}
+				if tc.expectDisabled != nil {
+					g.Expect(cluster.Spec.Capabilities.Disabled).To(Equal(tc.expectDisabled))
+				} else {
+					g.Expect(cluster.Spec.Capabilities.Disabled).To(BeNil())
+				}
 			}
 		})
 	}

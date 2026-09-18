@@ -49,11 +49,11 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 		clusterOpts.NodePoolReplicas = 1
 	}
-	if !e2eutil.IsLessThan(e2eutil.Version418) {
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 	}
 
-	if !e2eutil.IsLessThan(e2eutil.Version419) && (globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform) {
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version419) && (globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform) {
 		// Configure Ingress Operator with custom endpointPublishingStrategy before cluster creation
 		clusterOpts.BeforeApply = func(o crclient.Object) {
 			switch hc := o.(type) {
@@ -75,7 +75,7 @@ func TestCreateCluster(t *testing.T) {
 		}
 	}
 
-	if !e2eutil.IsLessThan(e2eutil.Version418) {
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version419) {
 		clusterOpts.PodsLabels = map[string]string{
 			"hypershift-e2e-test-label": "test",
 		}
