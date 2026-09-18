@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coreos/go-systemd/dbus"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/spf13/cobra"
@@ -23,48 +22,23 @@ import (
 
 // syncGlobalPullSecretOptions contains the configuration options for the sync-global-pullsecret command
 type syncGlobalPullSecretOptions struct {
-	kubeletConfigJsonPath string
-}
-
-//go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn,KubeletRestarter
-type dbusConn interface {
-	RestartUnit(name string, mode string, ch chan<- string) (int, error)
-	Close()
-}
-
-// KubeletRestarter is an interface for restarting the kubelet service.
-// This allows tests to inject a mock implementation.
-type KubeletRestarter interface {
-	Restart() error
-}
-
-// realKubeletRestarter implements KubeletRestarter using systemd dbus.
-type realKubeletRestarter struct{}
-
-func (r *realKubeletRestarter) Restart() error {
-	return signalKubeletToRestartProcess()
+	authDDropInPath string
 }
 
 // GlobalPullSecretSyncer handles the synchronization of pull secrets
 type GlobalPullSecretSyncer struct {
-	kubeletConfigJsonPath string
-	log                   logr.Logger
-	kubeletRestarter      KubeletRestarter
+	authDDropInPath string
+	log             logr.Logger
 }
 
 const (
-	defaultKubeletConfigJsonPath = "/var/lib/kubelet/config.json"
-	dbusRestartUnitMode          = "replace"
-	kubeletServiceUnit           = "kubelet.service"
+	defaultAuthDDropInPath = "/var/lib/kubelet/auth.d/global-pull-secret.json"
 
 	// Mounted secret file paths
 	originalPullSecretFilePath = "/etc/original-pull-secret/.dockerconfigjson"
 	globalPullSecretFilePath   = "/etc/global-pull-secret/.dockerconfigjson"
 
 	tickerPace = 30 * time.Second
-
-	// systemd job completion state as documented in go-systemd/dbus
-	systemdJobDone = "done" // Job completed successfully
 )
 
 var (
@@ -86,7 +60,7 @@ func NewRunCommand() *cobra.Command {
 	}
 
 	opts := syncGlobalPullSecretOptions{
-		kubeletConfigJsonPath: defaultKubeletConfigJsonPath,
+		authDDropInPath: defaultAuthDDropInPath,
 	}
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -123,9 +97,8 @@ func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 
 	// Create syncer
 	syncer := &GlobalPullSecretSyncer{
-		kubeletConfigJsonPath: o.kubeletConfigJsonPath,
-		log:                   logger,
-		kubeletRestarter:      &realKubeletRestarter{},
+		authDDropInPath: o.authDDropInPath,
+		log:             logger,
 	}
 
 	// Start the sync loop
@@ -198,7 +171,7 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 
 // checkAndFixFile reads the current file content and updates it if it differs from the desired content (global pull secret content).
 func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
-	s.log.Info("Checking Kubelet's config.json file content")
+	s.log.Info("Checking auth.d drop-in file content")
 
 	// Basic sanity check
 	if err := validateDockerConfigJSON(pullSecretBytes); err != nil {
@@ -206,80 +179,26 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 	}
 
 	// Read existing content if file exists
-	existingContent, err := readFileFunc(s.kubeletConfigJsonPath)
+	existingContent, err := readFileFunc(s.authDDropInPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
 	contentToWrite := pullSecretBytes
 
-	// Compare content ignoring trailing newlines to avoid unnecessary restarts
-	// when only the newline format differs
+	// Compare content ignoring trailing newlines
 	existingTrimmed := bytes.TrimRight(existingContent, "\n")
 	newTrimmed := bytes.TrimRight(contentToWrite, "\n")
 
 	// If actual content differs (ignoring trailing newlines), update the file
 	if !bytes.Equal(existingTrimmed, newTrimmed) {
 		s.log.Info("file content is different, updating it")
-		// Save original content for potential rollback
-		originalContent := existingContent
 
-		// Write the new content
-		if err := writeFileFunc(s.kubeletConfigJsonPath, contentToWrite, 0600); err != nil {
+		// Write the new content atomically
+		if err := writeFileFunc(s.authDDropInPath, contentToWrite, 0600); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
-		s.log.Info("Pull secret updated", "file", s.kubeletConfigJsonPath)
-
-		// Attempt to restart Kubelet with retries
-		maxRetries := 3
-		var lastErr error
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := s.kubeletRestarter.Restart(); err != nil {
-				lastErr = err
-				if attempt < maxRetries {
-					s.log.Info(fmt.Sprintf("Attempt %d failed, retrying...: %v", attempt, err))
-					time.Sleep(time.Duration(attempt) * time.Second)
-					continue
-				}
-			} else {
-				s.log.Info("Successfully restarted Kubelet", "attempt", attempt)
-				return nil
-			}
-		}
-
-		// If we reach this point, all retries failed - perform rollback
-		s.log.Info("Failed to restart Kubelet after some attempts, executing rollback", "maxRetries", maxRetries, "error", lastErr)
-		if err := writeFileFunc(s.kubeletConfigJsonPath, originalContent, 0600); err != nil {
-			return fmt.Errorf("2 errors happened: the kubelet restart failed after %d attempts and it failed to rollback the file: %w", maxRetries, err)
-		}
-		return fmt.Errorf("failed to restart kubelet after %d attempts, rolled back changes: %w", maxRetries, lastErr)
-	}
-
-	return nil
-}
-
-// signalKubeletToRestartProcess signals Kubelet to reload the config by restarting the kubelet.service.
-// This is done by sending a signal to systemd via dbus.
-func signalKubeletToRestartProcess() error {
-	conn, err := dbus.New()
-	if err != nil {
-		return fmt.Errorf("failed to connect to dbus: %w", err)
-	}
-	defer conn.Close()
-
-	return restartKubelet(conn)
-}
-
-func restartKubelet(conn dbusConn) error {
-	ch := make(chan string)
-	if _, err := conn.RestartUnit(kubeletServiceUnit, dbusRestartUnitMode, ch); err != nil {
-		return fmt.Errorf("failed to restart kubelet: %w", err)
-	}
-
-	// Wait for the result of the restart
-	result := <-ch
-	if result != systemdJobDone {
-		return fmt.Errorf("failed to restart kubelet, result: %s", result)
+		s.log.Info("Pull secret drop-in updated", "file", s.authDDropInPath)
 	}
 
 	return nil

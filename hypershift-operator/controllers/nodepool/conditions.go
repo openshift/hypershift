@@ -411,6 +411,11 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		return &ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
 
+	globalPullSecretRawConfig, err := r.generateGlobalPullSecretRawConfig(ctx, hcluster)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("failed to generate global pull secret raw config: %w", err)
+	}
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	resolvedRHELStream, err := GetRHELStreamForBootImage(ctx, r.Client, nodePool, releaseImage, osStreamsEnabled)
 	if err != nil {
@@ -423,7 +428,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		})
 		return &ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, globalPullSecretRawConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,

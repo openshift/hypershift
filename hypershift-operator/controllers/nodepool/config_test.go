@@ -482,7 +482,7 @@ spec:
 					resolvedStream = s
 				}
 			}
-			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream)
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "", "test-test", resolvedStream)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))

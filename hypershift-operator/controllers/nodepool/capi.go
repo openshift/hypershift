@@ -42,10 +42,6 @@ import (
 
 const (
 	interruptibleInstanceLabel = "hypershift.openshift.io/interruptible-instance"
-	// globalPSNodeLabel is the label applied to Nodes to indicate they are eligible for
-	// the GlobalPullSecret DaemonSet. Only Replace (MachineDeployment) nodes get this label;
-	// InPlace (MachineSet) nodes are excluded to avoid conflicts with Machine Config Daemon.
-	globalPSNodeLabel = "hypershift.openshift.io/nodepool-globalps-enabled"
 )
 
 // CAPI Knows how to reconcile all the CAPI resources for a unique token.
@@ -573,14 +569,6 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 			for k, v := range nodePool.Spec.NodeLabels {
 				labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
 				machine.Labels[labelKey] = v
-			}
-
-			// Propagate globalPS managed label to Machines so the HCCO Node controller
-			// applies it to Nodes. This enables the GlobalPullSecret DaemonSet to
-			// schedule on Replace nodes. Only AWS and Azure platforms support this.
-			if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform || nodePool.Spec.Platform.Type == hyperv1.AzurePlatform {
-				globalPSLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
-				machine.Labels[globalPSLabelKey] = "true"
 			}
 
 			taintsInJSON, err := taintsToJSON(nodePool.Spec.Taints)
