@@ -409,7 +409,7 @@ test: generate test-e2ev2-unit
 
 .PHONY: test-e2ev2-unit
 test-e2ev2-unit:
-	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/run-tests
+	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/lifecycle ./test/e2e/v2/cmd/run-tests
 
 # Run tests only for Go packages with changes relative to PULL_BASE_SHA.
 # Skips entirely if no .go files changed. No generate dependency (verify-quick handles it).
