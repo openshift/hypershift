@@ -1522,6 +1522,22 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		report.execute("ServiceAccountSigningKey", nonCritical, func() error {
 			return r.reconcileServiceAccountSigningKey(ctx, hcluster, controlPlaneNamespace.Name, createOrUpdate)
 		})
+	} else {
+		// Service account signing key is not configured. Clean up the synced
+		// secret and remove the stale condition if previously set.
+		report.execute("ServiceAccountSigningKeyCleanup", nonCritical, func() error {
+			staleSecret := controlplaneoperator.ServiceAccountSigningKeySecret(controlPlaneNamespace.Name)
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, staleSecret); err != nil {
+				return fmt.Errorf("failed to delete stale service account signing key secret: %w", err)
+			}
+			if meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidServiceAccountSigningKey)) != nil {
+				return statuspatching.PatchStatus(ctx, r.Client, hcluster, func() error {
+					meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.ValidServiceAccountSigningKey))
+					return nil
+				})
+			}
+			return nil
+		})
 	}
 
 	report.execute("UnmanagedEtcdMTLS", nonCritical, func() error {
@@ -2024,27 +2040,59 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// setPullSecretCondition records the outcome on the HostedCluster status.
+	// If persisting the status fails, it logs and continues — the sync error
+	// takes priority for the caller.
+	setPullSecretCondition := func(status metav1.ConditionStatus, reason, message string) {
+		if err := statuspatching.PatchStatusCondition(ctx, r.Client, hcluster, &hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.PullSecretSynced),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hcluster.Generation,
+		}); err != nil {
+			log.Error(err, "failed to patch PullSecretSynced condition")
+		}
+	}
+
 	var src corev1.Secret
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
+		if apierrors.IsNotFound(err) {
+			setPullSecretCondition(metav1.ConditionFalse, hyperv1.SecretNotFoundReason,
+				fmt.Sprintf("pull secret %q not found in namespace %q", hcluster.Spec.PullSecret.Name, hcluster.GetNamespace()))
+		}
 		return fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 	}
 	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
+
+	srcData, srcHasData := src.Data[".dockerconfigjson"]
+	if !srcHasData {
+		setPullSecretCondition(metav1.ConditionFalse, hyperv1.PullSecretInvalidReason,
+			fmt.Sprintf("pull secret %q must contain a .dockerconfigjson key", src.Name))
+		return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+	}
+
 	dst := controlplaneoperator.PullSecret(controlPlaneNamespace)
-	_, err := createOrUpdate(ctx, r.Client, dst, func() error {
-		srcData, srcHasData := src.Data[".dockerconfigjson"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-		}
+	if _, err := createOrUpdate(ctx, r.Client, dst, func() error {
 		dst.Type = corev1.SecretTypeDockerConfigJson
 		if dst.Data == nil {
 			dst.Data = map[string][]byte{}
 		}
 		dst.Data[".dockerconfigjson"] = srcData
 		return nil
-	})
-	return err
+	}); err != nil {
+		setPullSecretCondition(metav1.ConditionFalse, hyperv1.ReconcileErrorReason,
+			fmt.Sprintf("failed to sync pull secret to control plane namespace: %v", err))
+		return fmt.Errorf("failed to sync pull secret to control plane namespace: %w", err)
+	}
+
+	setPullSecretCondition(metav1.ConditionTrue, hyperv1.AsExpectedReason,
+		fmt.Sprintf("pull secret synced from secret %q", hcluster.Spec.PullSecret.Name))
+	return nil
 }
 
 // reconcileSecretEncryptionSync syncs secret encryption configuration from the
@@ -2183,39 +2231,78 @@ func (r *HostedClusterReconciler) reconcileAuditWebhookSync(
 }
 
 // reconcileSSHKeySync syncs the SSH key secret from the HostedCluster namespace
-// to the control plane namespace.
+// to the control plane namespace and reports the outcome via the SSHKeySynced
+// condition on the HostedCluster status.
 func (r *HostedClusterReconciler) reconcileSSHKeySync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
+	log := ctrl.LoggerFrom(ctx)
+
 	if len(hcluster.Spec.SSHKey.Name) == 0 {
+		// SSH key not configured. Clean up the previously synced secret and
+		// remove the condition if it was previously set.
 		dest := controlplaneoperator.SSHKey(controlPlaneNamespace)
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
 			return fmt.Errorf("failed to delete unused SSHKey secret: %w", err)
 		}
+		if meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SSHKeySynced)) != nil {
+			return statuspatching.PatchStatus(ctx, r.Client, hcluster, func() error {
+				meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.SSHKeySynced))
+				return nil
+			})
+		}
 		return nil
 	}
+
+	setSSHKeyCondition := func(status metav1.ConditionStatus, reason, message string) {
+		if err := statuspatching.PatchStatusCondition(ctx, r.Client, hcluster, &hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.SSHKeySynced),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hcluster.Generation,
+		}); err != nil {
+			log.Error(err, "failed to patch SSHKeySynced condition")
+		}
+	}
+
 	var src corev1.Secret
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &src); err != nil {
+		if apierrors.IsNotFound(err) {
+			setSSHKeyCondition(metav1.ConditionFalse, hyperv1.SecretNotFoundReason,
+				fmt.Sprintf("SSH key secret %q not found in namespace %q", hcluster.Spec.SSHKey.Name, hcluster.Namespace))
+		}
 		return fmt.Errorf("failed to get hostedcluster SSHKey secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 	}
 	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
+
+	srcData, srcHasData := src.Data["id_rsa.pub"]
+	if !srcHasData {
+		setSSHKeyCondition(metav1.ConditionFalse, hyperv1.SSHKeyInvalidReason,
+			fmt.Sprintf("SSH key secret %q must contain an id_rsa.pub key", src.Name))
+		return fmt.Errorf("hostedcluster SSHKey secret %q must have a id_rsa.pub key", src.Name)
+	}
+
 	dest := controlplaneoperator.SSHKey(controlPlaneNamespace)
-	_, err := createOrUpdate(ctx, r.Client, dest, func() error {
-		srcData, srcHasData := src.Data["id_rsa.pub"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster SSHKey secret %q must have a id_rsa.pub key", src.Name)
-		}
+	if _, err := createOrUpdate(ctx, r.Client, dest, func() error {
 		dest.Type = corev1.SecretTypeOpaque
 		if dest.Data == nil {
 			dest.Data = map[string][]byte{}
 		}
 		dest.Data["id_rsa.pub"] = srcData
 		return nil
-	})
-	return err
+	}); err != nil {
+		setSSHKeyCondition(metav1.ConditionFalse, hyperv1.ReconcileErrorReason,
+			fmt.Sprintf("failed to sync SSH key to control plane namespace: %v", err))
+		return fmt.Errorf("failed to sync SSH key to control plane namespace: %w", err)
+	}
+
+	setSSHKeyCondition(metav1.ConditionTrue, hyperv1.AsExpectedReason,
+		fmt.Sprintf("SSH key synced from secret %q", hcluster.Spec.SSHKey.Name))
+	return nil
 }
 
 // reconcileIngressDefaultCertSync syncs the user-provided ingress default
@@ -5545,10 +5632,41 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 }
 
 func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster, targetNamespace string, createOrUpdate upsert.CreateOrUpdateFN) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// setSAKeyCondition records the outcome on the HostedCluster status.
+	setSAKeyCondition := func(status metav1.ConditionStatus, reason, message string) {
+		if err := statuspatching.PatchStatusCondition(ctx, r.Client, hc, &hc.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidServiceAccountSigningKey),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hc.Generation,
+		}); err != nil {
+			log.Error(err, "failed to patch ValidServiceAccountSigningKey condition")
+		}
+	}
+
+	// Validate IssuerURL before attempting to read the key.
+	if hc.Spec.IssuerURL == "" {
+		setSAKeyCondition(metav1.ConditionFalse, hyperv1.IssuerURLNotSetReason,
+			"the IssuerURL must be set when specifying a service account signing key")
+		return fmt.Errorf("the IssuerURL must be set when specifying a service account signing key")
+	}
+
 	privateBytes, publicBytes, err := r.serviceAccountSigningKeyBytes(ctx, hc)
 	if err != nil {
+		// Distinguish not-found from invalid key.
+		if apierrors.IsNotFound(err) {
+			setSAKeyCondition(metav1.ConditionFalse, hyperv1.SecretNotFoundReason,
+				fmt.Sprintf("service account signing key secret %q not found in namespace %q", hc.Spec.ServiceAccountSigningKey.Name, hc.Namespace))
+		} else {
+			setSAKeyCondition(metav1.ConditionFalse, hyperv1.ServiceAccountSigningKeyInvalidReason,
+				fmt.Sprintf("invalid service account signing key: %v", err))
+		}
 		return err
 	}
+
 	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(targetNamespace)
 	_, err = createOrUpdate(ctx, r.Client, cpSigningKeySecret, func() error {
 		// If the private and public keys are the same as the existing ones, do nothing
@@ -5564,7 +5682,15 @@ func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.
 		cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPublicKey] = publicBytes
 		return nil
 	})
-	return err
+	if err != nil {
+		setSAKeyCondition(metav1.ConditionFalse, hyperv1.ReconcileErrorReason,
+			fmt.Sprintf("failed to sync service account signing key to control plane namespace: %v", err))
+		return fmt.Errorf("failed to sync service account signing key to control plane namespace: %w", err)
+	}
+
+	setSAKeyCondition(metav1.ConditionTrue, hyperv1.AsExpectedReason,
+		fmt.Sprintf("service account signing key synced from secret %q", hc.Spec.ServiceAccountSigningKey.Name))
+	return nil
 }
 
 func (r *HostedClusterReconciler) validateServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster) error {
