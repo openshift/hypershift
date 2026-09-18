@@ -131,7 +131,7 @@ The metrics-proxy dynamically discovers all ServiceMonitors and PodMonitors in t
 | kube-apiserver | 6443 | `apiserver_request_total`, `apiserver_request_duration_seconds` |
 | etcd | 2381 | `etcd_server_has_leader`, `etcd_disk_wal_fsync_duration_seconds` |
 | kube-controller-manager | 10257 | `workqueue_depth`, `node_collector_evictions_total` |
-| kube-scheduler | 10259 | HTTPS/mTLS: `/metrics`, `/metrics/resources` |
+| kube-scheduler | 10259 | HTTPS/mTLS: `/metrics` |
 | openshift-apiserver | 8443 | `apiserver_request_total` (OpenShift API) |
 | openshift-controller-manager | 8443 | Controller workqueue and sync metrics |
 | openshift-route-controller-manager | 8443 | Route controller metrics |
@@ -139,8 +139,6 @@ The metrics-proxy dynamically discovers all ServiceMonitors and PodMonitors in t
 | node-tuning-operator | 60000 | Tuning operator health metrics |
 | olm-operator | 8443 | `csv_succeeded`, operator lifecycle metrics |
 | catalog-operator | 8443 | Catalog source sync metrics |
-
-The kube-scheduler `/metrics/resources` endpoint requires guest-cluster RBAC. HyperShift reconciles the `hypershift-metrics-resources-reader` ClusterRole, which grants `get` access to that endpoint, and binds it to `system:serviceaccount:hypershift:prometheus`.
 
 **PodMonitor-based** (all metrics passed through, no filtering):
 
