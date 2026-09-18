@@ -91,14 +91,16 @@ func run(pass *analysis.Pass) (any, error) {
 			return
 		}
 
-		results.insertFieldTagInfo(field, extractTagInfo(field.Tag))
+		results.insertFieldTagInfo(field, extractTagInfo(field, field.Tag))
 	})
 
 	return results, nil
 }
 
+const emptyJSONTagPrefix = `json:"`
+
 //nolint:cyclop
-func extractTagInfo(tag *ast.BasicLit) FieldTagInfo {
+func extractTagInfo(field *ast.Field, tag *ast.BasicLit) FieldTagInfo {
 	if tag == nil || tag.Value == "" {
 		return FieldTagInfo{Missing: true}
 	}
@@ -115,6 +117,11 @@ func extractTagInfo(tag *ast.BasicLit) FieldTagInfo {
 	}
 
 	if tagValue == "" {
+		if field.Names == nil { // Embedded field with `json:""`
+			pos := tag.Pos() + token.Pos(strings.Index(tag.Value, emptyJSONTagPrefix)+len(emptyJSONTagPrefix))
+			return FieldTagInfo{Inline: true, RawValue: "", Pos: pos, End: pos + token.Pos(1)}
+		}
+
 		return FieldTagInfo{}
 	}
 
@@ -169,7 +176,7 @@ type FieldTagInfo struct {
 	// OmitZero is true if the field has the omitzero option in the json tag.
 	OmitZero bool
 
-	// Inline is true if the field has the inline option in the json tag.
+	// Inline is true if the json tag is ",inline", or if the field is embedded and the json tag is "".
 	Inline bool
 
 	// Missing is true when the field had no json tag.

@@ -18,6 +18,7 @@ package ssatags
 import (
 	"fmt"
 	"go/ast"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 
@@ -176,8 +177,7 @@ func (a *analyzer) checkListTypeSet(pass *analysis.Pass, field *ast.Field, quali
 		return
 	}
 
-	isObjectList := utils.IsObjectList(pass, field)
-	if !isObjectList {
+	if !isListOfNonScalars(pass, field) {
 		return
 	}
 
@@ -187,6 +187,47 @@ func (a *analyzer) checkListTypeSet(pass *analysis.Pass, field *ast.Field, quali
 	}
 
 	pass.Report(diagnostic)
+}
+
+// isListOfNonScalars reports whether the field is a slice containing non-scalars
+// such as structs, slices, and map. Returns false if the type is unknown.
+func isListOfNonScalars(pass *analysis.Pass, field *ast.Field) bool {
+	typeOf := pass.TypesInfo.TypeOf(field.Type)
+	if typeOf == nil {
+		return false
+	}
+
+	outer, ok := asSlice(typeOf)
+	if !ok {
+		return false
+	}
+
+	elem := outer.Elem()
+	if ptr, ok := elem.(*types.Pointer); ok {
+		elem = ptr.Elem()
+	}
+
+	switch elem.Underlying().(type) {
+	case *types.Struct, *types.Slice, *types.Array:
+		return true
+	}
+
+	return false
+}
+
+func asSlice(t types.Type) (*types.Slice, bool) {
+	for {
+		switch u := t.(type) {
+		case *types.Alias:
+			t = u.Underlying()
+		case *types.Named:
+			t = u.Underlying()
+		case *types.Slice:
+			return u, true
+		default:
+			return nil, false
+		}
+	}
 }
 
 func (a *analyzer) validateListMapKeys(pass *analysis.Pass, field *ast.Field, listMapKeyMarkers []markers.Marker, qualifiedFieldName string) {

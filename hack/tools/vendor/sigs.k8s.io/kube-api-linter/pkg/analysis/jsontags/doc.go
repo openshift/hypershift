@@ -27,5 +27,10 @@ to allow, for example, for fields like `requestTTLSeconds`.
 
 To disallow consecutive capital letters, the regex can be set to `^[a-z][a-z0-9]*(?:[A-Z][a-z0-9]+)*$`.
 The regex can be configured with the JSONTagRegex field in the JSONTagsConfig struct.
+
+The linter can also check that the json tag name matches the camelCase version of
+the Go field name by setting the FieldNameMatch field to "SuggestFix" or "Warn".
+This check uses identifier word-splitting heuristics and can be disabled by
+setting FieldNameMatch to "Ignore".
 */
 package jsontags
