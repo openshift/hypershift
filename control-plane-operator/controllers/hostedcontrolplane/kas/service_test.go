@@ -303,6 +303,124 @@ func TestReconcileServiceAzureInternalLB(t *testing.T) {
 	}
 }
 
+func TestReconcileServiceAzurePIPAnnotation(t *testing.T) {
+	// When an Azure (or KubeVirt-on-Azure) HCP with a public LB strategy has an infraID,
+	// ReconcileService should set the azure-pip-name annotation to "{infraID}-kas-pip".
+	// This forces the Azure cloud-provider to create a dedicated LB frontend, avoiding
+	// port 6443 collision with the management cluster's KAS.
+	testCases := []struct {
+		name          string
+		hcp           hyperv1.HostedControlPlane
+		expectPIPName string
+		expectNoPIP   bool
+	}{
+		{
+			name: "Azure public HCP with infraID sets azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "my-infra-123",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+						},
+					},
+				},
+			},
+			expectPIPName: "my-infra-123-kas-pip",
+		},
+		{
+			name: "KubeVirt-on-Azure public HCP sets azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ManagementPlatformAnnotation: string(hyperv1.AzurePlatform),
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "kv-azure-456",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectPIPName: "kv-azure-456-kas-pip",
+		},
+		{
+			name: "AWS HCP does not set azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "aws-infra-789",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectNoPIP: true,
+		},
+		{
+			name: "Azure HCP without infraID does not set azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+						},
+					},
+				},
+			},
+			expectNoPIP: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			svc := &corev1.Service{}
+			strategy := hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}
+			// Pass KASSVCLBAzurePort (7443) to simulate the production caller in
+			// reconcileAPIServerService, which defaults to 7443 for Azure.
+			err := ReconcileService(svc, &strategy, &v1.OwnerReference{}, config.KASSVCLBAzurePort, []string{}, &tc.hcp)
+			g.Expect(err).To(BeNil(), "ReconcileService should not return an error for %s", tc.name)
+			if tc.expectNoPIP {
+				g.Expect(svc.Annotations).ToNot(HaveKey(azureutil.PIPNameAnnotation),
+					"expected no azure-pip-name annotation for %s", tc.name)
+			} else {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(azureutil.PIPNameAnnotation, tc.expectPIPName),
+					"expected azure-pip-name annotation for %s", tc.name)
+				g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(config.KASSVCPort)),
+					"expected port 6443 when azure-pip-name is set for %s", tc.name)
+			}
+		})
+		// For PIP cases, also verify that port 6443 is preserved on update reconcile
+		// (simulating a subsequent ReconcileService call on an existing Service).
+		if !tc.expectNoPIP {
+			t.Run(tc.name+" update preserves port 6443", func(t *testing.T) {
+				g := NewWithT(t)
+				// Simulate an existing Service with the PIP annotation already set.
+				svc := &corev1.Service{
+					ObjectMeta: v1.ObjectMeta{
+						ResourceVersion: "1",
+						Annotations: map[string]string{
+							azureutil.PIPNameAnnotation: tc.expectPIPName,
+						},
+					},
+					Spec: corev1.ServiceSpec{
+						Ports: []corev1.ServicePort{{Port: int32(config.KASSVCPort)}},
+					},
+				}
+				strategy := hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}
+				err := ReconcileService(svc, &strategy, &v1.OwnerReference{}, config.KASSVCLBAzurePort, []string{}, &tc.hcp)
+				g.Expect(err).To(BeNil(), "ReconcileService update should not return an error for %s", tc.name)
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(azureutil.PIPNameAnnotation, tc.expectPIPName),
+					"azure-pip-name annotation should be preserved on update for %s", tc.name)
+				g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(config.KASSVCPort)),
+					"port 6443 should be preserved on update when azure-pip-name is set for %s", tc.name)
+			})
+		}
+	}
+}
+
 func TestReconcilePrivateService(t *testing.T) {
 	azureILBAnnotation := azureutil.InternalLoadBalancerAnnotation
 	awsCrossZoneAnnotation := "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"
