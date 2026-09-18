@@ -163,11 +163,6 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			ExtraArgs:               append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
 		},
 		{
-			Variant:                 "autoscaling",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               extraArgs,
-		},
-		{
 			Variant:                 "external-oidc",
 			InitialNodePoolReplicas: &oneInitialReplica,
 			ExtraArgs:               extraArgs,
@@ -392,21 +387,6 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 				},
 			},
 			{
-				Name: "autoscaling",
-				Steps: []TestGroup{
-					{
-						Name:        "autoscaling-nodepool-machineconfig",
-						Variant:     "autoscaling",
-						LabelFilter: "nodepool-machineconfig-rollout",
-					},
-					{
-						Name:        "autoscaling-balancing",
-						Variant:     "autoscaling",
-						LabelFilter: "nodepool-autoscaling-balancing",
-					},
-				},
-			},
-			{
 				Name: "oauth-lb",
 				Steps: []TestGroup{
 					{
@@ -418,7 +398,12 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 						Name:    "oauth-lb-nodepool-config",
 						Variant: "oauth-lb",
 						LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || " +
-							"nodepool-performance-profile || nodepool-mirror-config",
+							"nodepool-performance-profile || nodepool-mirror-config || nodepool-machineconfig-rollout",
+					},
+					{
+						Name:        "oauth-lb-autoscaling",
+						Variant:     "oauth-lb",
+						LabelFilter: "nodepool-autoscaling-balancing",
 					},
 				},
 			},
