@@ -11,6 +11,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -333,6 +334,15 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	nodePool := constructor(hyperv1.GCPPlatform, "")
 	if nodePool.Spec.Management.UpgradeType == "" {
 		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(0)
+		nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+			Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+			RollingUpdate: &hyperv1.RollingUpdate{
+				MaxSurge:       &maxSurge,
+				MaxUnavailable: &maxUnavailable,
+			},
+		}
 	}
 
 	machineType := o.MachineType
