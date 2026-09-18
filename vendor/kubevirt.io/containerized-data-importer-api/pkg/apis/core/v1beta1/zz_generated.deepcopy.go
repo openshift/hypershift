@@ -1057,6 +1057,11 @@ func (in *DataVolumeSourceHTTP) DeepCopyInto(out *DataVolumeSourceHTTP) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.InsecureSkipVerify != nil {
+		in, out := &in.InsecureSkipVerify, &out.InsecureSkipVerify
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 
