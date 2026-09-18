@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -21,6 +22,10 @@ import (
 
 func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
+	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	if err != nil {
+		return err
+	}
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.FeatureGate != nil {
 		featureGate := &configv1.FeatureGate{
@@ -53,6 +58,10 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetRegistryOverrides()),
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
+
+		if len(tlsArgs) > 0 {
+			c.Args = append(c.Args, tlsArgs...)
+		}
 
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "OPENSHIFT_IMG_OVERRIDES",

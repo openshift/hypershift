@@ -206,7 +206,13 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, h
 	}
 
 	if hcp != nil && a.payloadVersion != nil && (a.payloadVersion.Major >= 5 || (a.payloadVersion.Major == 4 && a.payloadVersion.Minor >= 23)) {
-		capoArgs = append(capoArgs, config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())...)
+		tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if err != nil {
+			return nil, err
+		}
+		if len(tlsArgs) > 0 {
+			capoArgs = append(capoArgs, tlsArgs...)
+		}
 	}
 
 	allowPrivilegeEscalation := false

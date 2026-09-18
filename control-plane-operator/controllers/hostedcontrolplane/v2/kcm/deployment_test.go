@@ -270,10 +270,12 @@ func TestAdaptDeployment(t *testing.T) {
 				tlsProfile := &configv1.TLSSecurityProfile{
 					Type: configv1.TLSProfileModernType,
 				}
-				minTLSVersion := config.MinTLSVersion(tlsProfile)
+				minTLSVersion, err := config.MinTLSVersion(tlsProfile)
+				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(container.Args).To(ContainElement(fmt.Sprintf("--tls-min-version=%s", minTLSVersion)))
 
-				cipherSuites := config.CipherSuites(tlsProfile)
+				cipherSuites, err := config.CipherSuites(tlsProfile)
+				g.Expect(err).ToNot(HaveOccurred())
 				if len(cipherSuites) > 0 {
 					g.Expect(container.Args).To(ContainElement(fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(cipherSuites, ","))))
 				}

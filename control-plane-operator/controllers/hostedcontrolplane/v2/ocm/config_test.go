@@ -74,7 +74,10 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 				t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
 			}
 
-			adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities, []string{"foo=true", "bar=false"}, nil)
+			err = adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities, []string{"foo=true", "bar=false"}, nil)
+			if err != nil {
+				t.Fatalf("failed to adapt config: %v", err)
+			}
 			configStr, err := k8sutil.SerializeResource(config, api.Scheme)
 			if err != nil {
 				t.Fatalf("failed to serialize openshift controller manager configuration: %v", err)
@@ -130,7 +133,10 @@ func TestAdaptConfig_PreservesExistingControllers(t *testing.T) {
 	config.ServingInfo = &v1.HTTPServingInfo{}
 
 	// Adapt config with ImageRegistry capability enabled (not explicitly disabled)
-	adaptConfig(config, hcp.Spec.Configuration, imageProvider, &v1.Build{}, nil, []string{}, existingControllersFromCluster)
+	err := adaptConfig(config, hcp.Spec.Configuration, imageProvider, &v1.Build{}, nil, []string{}, existingControllersFromCluster)
+	if err != nil {
+		t.Fatalf("failed to adapt config: %v", err)
+	}
 
 	// Verify that the Controllers field is preserved
 	if len(config.Controllers) != 2 {
@@ -173,7 +179,10 @@ func TestAdaptConfig_DisabledImageRegistryCapability(t *testing.T) {
 	config.ServingInfo = &v1.HTTPServingInfo{}
 
 	// Adapt config with ImageRegistry capability explicitly disabled
-	adaptConfig(config, hcp.Spec.Configuration, imageProvider, &v1.Build{}, hcp.Spec.Capabilities, []string{}, nil)
+	err := adaptConfig(config, hcp.Spec.Configuration, imageProvider, &v1.Build{}, hcp.Spec.Capabilities, []string{}, nil)
+	if err != nil {
+		t.Fatalf("failed to adapt config: %v", err)
+	}
 
 	// Verify that the Controllers field is set to disable pull secrets controller
 	if len(config.Controllers) != 2 {
