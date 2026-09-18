@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 86999514b8c6a2b846c9bad8ec5868199adc73859ce9336f6674cf1bd9d35e05
+    hypershift.openshift.io/desired-state-hash: 5e50761de847286ee35b746a1a9cbbe0bb2d74da3a29df50b4ebf7290f29fee0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ingress-operator
@@ -71,8 +71,6 @@ spec:
         - --image
         - $(IMAGE)
         - --haproxy-image
-        - 2.8=$(HAPROXY_28_IMAGE)
-        - --haproxy-image
         - 3.2=$(HAPROXY_32_IMAGE)
         - --default-haproxy-version
         - $(DEFAULT_HAPROXY_VERSION)
@@ -87,8 +85,6 @@ spec:
           value: 4.18.0
         - name: IMAGE
           value: haproxy-router
-        - name: HAPROXY_28_IMAGE
-          value: haproxy-router-haproxy28
         - name: HAPROXY_32_IMAGE
           value: haproxy-router-haproxy32
         - name: DEFAULT_HAPROXY_VERSION

@@ -27,8 +27,6 @@ spec:
         - --image
         - $(IMAGE)
         - --haproxy-image
-        - 2.8=$(HAPROXY_28_IMAGE)
-        - --haproxy-image
         - 3.2=$(HAPROXY_32_IMAGE)
         - --default-haproxy-version
         - $(DEFAULT_HAPROXY_VERSION)
@@ -42,8 +40,6 @@ spec:
         - name: RELEASE_VERSION
           value: ""
         - name: IMAGE
-          value: ""
-        - name: HAPROXY_28_IMAGE
           value: ""
         - name: HAPROXY_32_IMAGE
           value: ""

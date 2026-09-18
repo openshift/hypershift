@@ -19,9 +19,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			Name: "IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router"),
 		})
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name: "HAPROXY_28_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy28"),
-		})
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "HAPROXY_32_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy32"),
 		})
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
