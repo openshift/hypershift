@@ -271,7 +271,7 @@ github.com/IBM/networking-go-sdk/common
 github.com/IBM/networking-go-sdk/dnsrecordsv1
 github.com/IBM/networking-go-sdk/transitgatewayapisv1
 github.com/IBM/networking-go-sdk/zonesv1
-# github.com/IBM/platform-services-go-sdk v0.91.0
+# github.com/IBM/platform-services-go-sdk v0.94.2
 ## explicit; go 1.24.0
 github.com/IBM/platform-services-go-sdk/common
 github.com/IBM/platform-services-go-sdk/globalcatalogv1
@@ -1098,8 +1098,8 @@ github.com/openshift/client-go/user/applyconfigurations/internal
 github.com/openshift/client-go/user/applyconfigurations/user/v1
 github.com/openshift/client-go/user/clientset/versioned/scheme
 github.com/openshift/client-go/user/clientset/versioned/typed/user/v1
-# github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
-## explicit; go 1.23.0
+# github.com/openshift/cloud-credential-operator v0.0.0-20260909211152-d6277d496f28
+## explicit; go 1.26.0
 github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud

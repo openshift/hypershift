@@ -9,7 +9,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -54,7 +53,7 @@ func CreateShellScript(commands []string) string {
 }
 
 // CountNonDirectoryFiles counts files which are not a directory
-func CountNonDirectoryFiles(files []os.FileInfo) int {
+func CountNonDirectoryFiles(files []os.DirEntry) int {
 	NonDirectoryFiles := 0
 	for _, f := range files {
 		if !f.IsDir() {
@@ -76,7 +75,7 @@ spec:
 	clusterAuthFile := filepath.Join(targetDir, ManifestsDirName, "cluster-authentication-02-config.yaml")
 
 	fileData := fmt.Sprintf(clusterAuthenticationTemplate, issuerURL)
-	if err := ioutil.WriteFile(clusterAuthFile, []byte(fileData), 0600); err != nil {
+	if err := os.WriteFile(clusterAuthFile, []byte(fileData), 0600); err != nil {
 		return errors.Wrap(err, "failed to save cluster authentication file")
 	}
 	log.Printf("Wrote cluster authentication manifest at path %s", clusterAuthFile)
@@ -88,7 +87,7 @@ spec:
 // BuildJsonWebKeySet builds JSON web key set from the public key
 func BuildJsonWebKeySet(publicKeyPath string) ([]byte, error) {
 	log.Print("Reading public key")
-	publicKeyContent, err := ioutil.ReadFile(publicKeyPath)
+	publicKeyContent, err := os.ReadFile(publicKeyPath)
 
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read public key")
@@ -153,7 +152,7 @@ func KeyIDFromPublicKey(publicKey interface{}) (string, error) {
 // GetListOfCredentialsRequests decodes manifests in a given directory and returns a list of CredentialsRequests
 func GetListOfCredentialsRequests(dir string, enableTechPreview bool) ([]*credreqv1.CredentialsRequest, error) {
 	credRequests := make([]*credreqv1.CredentialsRequest, 0)
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
