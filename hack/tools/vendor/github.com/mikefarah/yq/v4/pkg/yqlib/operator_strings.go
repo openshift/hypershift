@@ -220,7 +220,7 @@ func getSubstituteParameters(d *dataTreeNavigator, block *ExpressionNode, contex
 		regEx = regExNodes.MatchingNodes.Front().Value.(*CandidateNode).Value
 	}
 
-	log.Debug("regEx %v", regEx)
+	log.Debugf("regEx %v", regEx)
 
 	replacementNodes, err := d.GetMatchingNodes(context, block.RHS)
 	if err != nil {
@@ -318,7 +318,7 @@ func getMatches(matchPrefs matchPreferences, regEx *regexp.Regexp, value string)
 		allIndices = [][]int{regEx.FindStringSubmatchIndex(value)}
 	}
 
-	log.Debug("allMatches, %v", allMatches)
+	log.Debugf("allMatches, %v", allMatches)
 	return allMatches, allIndices
 }
 
@@ -410,7 +410,7 @@ func extractMatchArguments(d *dataTreeNavigator, context Context, expressionNode
 			return nil, matchPrefs, fmt.Errorf(`'i' is not a valid option for match. To ignore case, use an expression like match("(?i)cat")`)
 		}
 		if len(paramText) > 0 {
-			return nil, matchPrefs, fmt.Errorf(`Unrecognised match params '%v', please see docs at https://mikefarah.gitbook.io/yq/operators/string-operators`, paramText)
+			return nil, matchPrefs, fmt.Errorf(`unrecognised match params '%v', please see docs at https://mikefarah.gitbook.io/yq/operators/string-operators`, paramText)
 		}
 	}
 
@@ -423,7 +423,7 @@ func extractMatchArguments(d *dataTreeNavigator, context Context, expressionNode
 	if regExNodes.MatchingNodes.Front() != nil {
 		regExStr = regExNodes.MatchingNodes.Front().Value.(*CandidateNode).Value
 	}
-	log.Debug("regEx %v", regExStr)
+	log.Debugf("regEx %v", regExStr)
 	regEx, err := regexp.Compile(regExStr)
 	return regEx, matchPrefs, err
 }
@@ -564,7 +564,7 @@ func split(value string, spltStr string) (Kind, string, []*CandidateNode) {
 	var contents []*CandidateNode
 
 	if value != "" {
-		log.Debug("going to spltStr[%v]", spltStr)
+		log.Debugf("going to spltStr[%v]", spltStr)
 		var newStrings = strings.Split(value, spltStr)
 		contents = make([]*CandidateNode, len(newStrings))
 
