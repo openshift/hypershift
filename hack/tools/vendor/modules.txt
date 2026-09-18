@@ -29,8 +29,8 @@ dev.gaijin.team/go/golib/fields
 # github.com/4meepo/tagalign v1.4.3
 ## explicit; go 1.22.0
 github.com/4meepo/tagalign
-# github.com/Abirdcfly/dupword v0.1.7
-## explicit; go 1.24.0
+# github.com/Abirdcfly/dupword v0.1.8
+## explicit; go 1.25.0
 github.com/Abirdcfly/dupword
 # github.com/AdminBenni/iota-mixing v1.0.0
 ## explicit; go 1.23.3
