@@ -12,8 +12,8 @@ require (
 	github.com/onsi/gomega v1.39.1
 	github.com/openshift/api/tools v0.0.0-20250915151906-94481d71bb6f
 	go.uber.org/mock v0.6.0
-	golang.org/x/mod v0.35.0
-	golang.org/x/tools v0.44.0
+	golang.org/x/mod v0.36.0
+	golang.org/x/tools v0.45.0
 	gotest.tools/gotestsum v1.13.0
 	honnef.co/go/tools v0.7.0
 	k8s.io/apiextensions-apiserver v0.34.2
@@ -72,7 +72,7 @@ require (
 	github.com/breml/bidichk v0.3.3 // indirect
 	github.com/breml/errchkjson v0.4.1 // indirect
 	github.com/butuzov/ireturn v0.4.0 // indirect
-	github.com/butuzov/mirror v1.3.0 // indirect
+	github.com/butuzov/mirror v1.3.3 // indirect
 	github.com/catenacyber/perfsprint v0.10.1 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.4 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
