@@ -26,7 +26,7 @@ dev.gaijin.team/go/exhaustruct/v4/internal/structure
 ## explicit; go 1.24
 dev.gaijin.team/go/golib/e
 dev.gaijin.team/go/golib/fields
-# github.com/4meepo/tagalign v1.4.3
+# github.com/4meepo/tagalign v1.4.4
 ## explicit; go 1.22.0
 github.com/4meepo/tagalign
 # github.com/Abirdcfly/dupword v0.1.7
