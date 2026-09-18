@@ -31,7 +31,7 @@ func TestReconcilePullSecretSync_Conditions(t *testing.T) {
 		expectReason    string
 	}{
 		{
-			name: "When pull secret exists with .dockerconfigjson, condition is True",
+			name: "When pull secret exists with .dockerconfigjson, it should set the condition True",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -48,7 +48,7 @@ func TestReconcilePullSecretSync_Conditions(t *testing.T) {
 			expectReason:    hyperv1.AsExpectedReason,
 		},
 		{
-			name: "When pull secret is missing, condition is False with SecretNotFound",
+			name: "When pull secret is missing, it should set the condition False with SecretNotFound",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -60,7 +60,7 @@ func TestReconcilePullSecretSync_Conditions(t *testing.T) {
 			expectReason:    hyperv1.SecretNotFoundReason,
 		},
 		{
-			name: "When pull secret exists without .dockerconfigjson, condition is False",
+			name: "When pull secret exists without .dockerconfigjson, it should set the condition False",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -76,7 +76,7 @@ func TestReconcilePullSecretSync_Conditions(t *testing.T) {
 			expectReason:    hyperv1.PullSecretInvalidReason,
 		},
 		{
-			name: "When Get fails with a transient error, no condition is set",
+			name: "When Get fails with a transient error, it should not set a condition",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -149,7 +149,7 @@ func TestReconcileSSHKeySync_Conditions(t *testing.T) {
 		expectReason    string
 	}{
 		{
-			name: "When sshKey is not set, condition is absent",
+			name: "When sshKey is not set, it should leave the condition absent",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -158,7 +158,7 @@ func TestReconcileSSHKeySync_Conditions(t *testing.T) {
 			},
 		},
 		{
-			name: "When sshKey secret exists with id_rsa.pub, condition is True",
+			name: "When sshKey secret exists with id_rsa.pub, it should set the condition True",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -173,7 +173,7 @@ func TestReconcileSSHKeySync_Conditions(t *testing.T) {
 			expectReason:    hyperv1.AsExpectedReason,
 		},
 		{
-			name: "When sshKey secret is missing, condition is False with SecretNotFound",
+			name: "When sshKey secret is missing, it should set the condition False with SecretNotFound",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -185,7 +185,7 @@ func TestReconcileSSHKeySync_Conditions(t *testing.T) {
 			expectReason:    hyperv1.SecretNotFoundReason,
 		},
 		{
-			name: "When sshKey secret exists without id_rsa.pub, condition is False",
+			name: "When sshKey secret exists without id_rsa.pub, it should set the condition False",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -201,7 +201,7 @@ func TestReconcileSSHKeySync_Conditions(t *testing.T) {
 			expectReason:    hyperv1.SSHKeyInvalidReason,
 		},
 		{
-			name: "When sshKey previously set then cleared, stale condition is removed",
+			name: "When sshKey previously set then cleared, it should remove the stale condition",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
 				Spec: hyperv1.HostedClusterSpec{
