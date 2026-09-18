@@ -19,7 +19,7 @@ require (
 	github.com/IBM/go-sdk-core/v5 v5.21.2
 	github.com/IBM/ibm-cos-sdk-go v1.12.4
 	github.com/IBM/networking-go-sdk v0.51.15
-	github.com/IBM/platform-services-go-sdk v0.91.0
+	github.com/IBM/platform-services-go-sdk v0.94.2
 	github.com/IBM/vpc-go-sdk v0.76.2
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go-v2 v1.43.0
@@ -65,7 +65,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openshift/api v0.0.0-20260820183036-3db6c4b03286
 	github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec
-	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
+	github.com/openshift/cloud-credential-operator v0.0.0-20260909211152-d6277d496f28
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd
