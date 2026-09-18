@@ -7,8 +7,8 @@
 # cel.dev/expr v0.25.2
 ## explicit; go 1.23.0
 cel.dev/expr
-# codeberg.org/chavacava/garif v0.2.0
-## explicit; go 1.23
+# codeberg.org/chavacava/garif v0.2.1
+## explicit; go 1.25
 codeberg.org/chavacava/garif
 # codeberg.org/polyfloyd/go-errorlint v1.9.0
 ## explicit; go 1.24.0
