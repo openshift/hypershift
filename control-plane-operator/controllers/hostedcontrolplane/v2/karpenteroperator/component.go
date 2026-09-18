@@ -61,6 +61,7 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 			KubeconfigSecretName:    "service-network-admin-kubeconfig",
 		}).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{}).
+		MonitorOperandsRolloutStatus().
 		Build()
 }
 

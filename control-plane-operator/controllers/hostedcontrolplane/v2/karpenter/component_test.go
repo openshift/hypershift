@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -17,6 +18,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"go.uber.org/mock/gomock"
 )
 
 func TestPredicate(t *testing.T) {
@@ -120,8 +123,15 @@ func TestAdaptDeployment(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			hcp.Annotations = tc.hcpAnnotations
 
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockImageProvider := imageprovider.NewMockReleaseImageProvider(ctrl)
+			mockImageProvider.EXPECT().Version().Return("4.18.0").AnyTimes()
+
 			cpContext := controlplanecomponent.WorkloadContext{
-				HCP: hcp,
+				HCP:                  hcp,
+				ReleaseImageProvider: mockImageProvider,
 			}
 
 			g := NewGomegaWithT(t)
@@ -131,6 +141,9 @@ func TestAdaptDeployment(t *testing.T) {
 
 			err = adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
+
+			// verify the release version annotation is set
+			g.Expect(deployment.Annotations).To(HaveKeyWithValue("release.openshift.io/version", "4.18.0"))
 
 			// verify the adapted deployment has expected fields
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(ContainElement(
