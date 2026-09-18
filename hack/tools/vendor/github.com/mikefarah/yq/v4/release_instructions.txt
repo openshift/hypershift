@@ -8,6 +8,22 @@
 - git push --tags
 - use github actions to publish docker and make github release
 - check github updated yq action in marketplace
+- update github-action/Dockerfile to pin the newly published docker image digest (must match the mikefarah/yq:4 manifest digest):
+    docker buildx imagetools inspect docker.io/mikefarah/yq:4 --format '{{printf "%s" .Manifest.Digest}}'
+  then update the FROM line in github-action/Dockerfile with the new digest:
+    FROM mikefarah/yq:4@<digest-from-above>
+- commit the Dockerfile change, then manually run the "Release Docker GitHub Action" workflow
+  (Actions -> Release Docker GitHub Action -> Run workflow)
+- update action.yml to pin the newly published github-action image digest (must match the mikefarah/yq:4-githubaction manifest digest):
+    docker buildx imagetools inspect docker.io/mikefarah/yq:4-githubaction --format '{{printf "%s" .Manifest.Digest}}'
+  then update the image line in action.yml with the new digest:
+    image: 'docker://mikefarah/yq:4-githubaction@<digest-from-above>'
+- commit the action.yml change and push
+
+// release artifacts are signed with cosign keyless signing (Sigstore)
+// users can verify with:
+//   cosign verify-blob --bundle checksums.bundle checksums
+// install cosign: brew install cosign  OR  go install github.com/sigstore/cosign/v2/cmd/cosign@v2.6.1
 
 
 - snapcraft
