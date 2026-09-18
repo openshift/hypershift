@@ -129,7 +129,7 @@ func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred())
 
 			computeService, err := compute.NewService(tc.Context,
-				option.WithCredentialsFile(credentialsFile),
+				option.WithAuthCredentialsFile(option.ExternalAccount, credentialsFile),
 				option.WithScopes(compute.ComputeScope),
 			)
 			Expect(err).NotTo(HaveOccurred(), "failed to create GCP Compute client")
