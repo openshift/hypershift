@@ -36,7 +36,7 @@ github.com/Abirdcfly/dupword
 ## explicit; go 1.23.3
 github.com/AdminBenni/iota-mixing/pkg/analyzer
 github.com/AdminBenni/iota-mixing/pkg/analyzer/flags
-# github.com/AlwxSin/noinlineerr v1.0.5
+# github.com/AlwxSin/noinlineerr v1.0.6
 ## explicit; go 1.23.0
 github.com/AlwxSin/noinlineerr
 # github.com/Antonboom/errname v1.1.1
