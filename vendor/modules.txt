@@ -456,7 +456,7 @@ github.com/aws/aws-sdk-go-v2/service/ssooidc/types
 github.com/aws/aws-sdk-go-v2/service/sts
 github.com/aws/aws-sdk-go-v2/service/sts/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/sts/types
-# github.com/aws/karpenter-provider-aws v1.8.6 => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
+# github.com/aws/karpenter-provider-aws v1.8.6 => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260902023531-9a54e1340b32
 ## explicit; go 1.25.8
 github.com/aws/karpenter-provider-aws/pkg/apis
 github.com/aws/karpenter-provider-aws/pkg/apis/v1
@@ -2815,5 +2815,5 @@ sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/kyaml
 # github.com/openshift/hypershift/api => ./api
-# github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
+# github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260902023531-9a54e1340b32
 # sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
