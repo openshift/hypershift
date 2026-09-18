@@ -10,7 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "azure",
 		Short:        "Creates basic functional HostedCluster resources on Azure",
@@ -34,7 +35,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		return core.CreateCluster(ctx, opts, azureOpts)
+		return core.CreateCluster(ctx, opts, azureOpts, clientProvider)
 	}
 
 	return cmd

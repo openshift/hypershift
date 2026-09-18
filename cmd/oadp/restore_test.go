@@ -2,17 +2,127 @@ package oadp
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
+	cmdutil "github.com/openshift/hypershift/cmd/util"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	"github.com/go-logr/logr"
 )
+
+func TestRunRestore(t *testing.T) {
+	tests := map[string]struct {
+		options   *CreateOptions
+		expectErr bool
+	}{
+		"When render mode has no client provider, it should render the restore object": {
+			options: &CreateOptions{
+				HCName:                 "test-cluster",
+				HCNamespace:            "clusters",
+				BackupName:             "test-backup",
+				ExistingResourcePolicy: "update",
+				Render:                 true,
+				Log:                    logr.Discard(),
+			},
+		},
+		"When no backup or schedule is provided, it should return a validation error": {
+			options:   &CreateOptions{ExistingResourcePolicy: "update"},
+			expectErr: true,
+		},
+		"When the existing resource policy is invalid, it should return a validation error": {
+			options: &CreateOptions{
+				BackupName:             "test-backup",
+				ExistingResourcePolicy: "invalid",
+			},
+			expectErr: true,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tt.options.RunRestore(t.Context())
+			if tt.expectErr {
+				NewWithT(t).Expect(err).To(HaveOccurred())
+				return
+			}
+			NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestPrepareClient(t *testing.T) {
+	controllerClient := fake.NewClientBuilder().Build()
+	tests := map[string]struct {
+		options        *CreateOptions
+		expectRendered bool
+		expectErr      bool
+	}{
+		"When a client is already set, it should reuse the client": {
+			options: &CreateOptions{Client: controllerClient},
+		},
+		"When render mode has no provider, it should continue without a client": {
+			options: &CreateOptions{Render: true},
+		},
+		"When normal mode has no provider, it should return an error": {
+			options:   &CreateOptions{},
+			expectErr: true,
+		},
+		"When client creation fails in normal mode, it should return the provider error": {
+			options: &CreateOptions{ClientProvider: &cmdutil.ClientProvider{
+				ControllerRuntimeClient: func(string) (crclient.Client, error) {
+					return nil, errors.New("client unavailable")
+				},
+			}},
+			expectErr: true,
+		},
+		"When client creation fails in render mode, it should render without a client": {
+			options: &CreateOptions{
+				HCName:      "test-cluster",
+				HCNamespace: "clusters",
+				BackupName:  "test-backup",
+				Render:      true,
+				Log:         logr.Discard(),
+				ClientProvider: &cmdutil.ClientProvider{
+					ControllerRuntimeClient: func(string) (crclient.Client, error) {
+						return nil, errors.New("client unavailable")
+					},
+				},
+			},
+			expectRendered: true,
+		},
+		"When client creation succeeds, it should store the client": {
+			options: &CreateOptions{ClientProvider: &cmdutil.ClientProvider{
+				ControllerRuntimeClient: func(string) (crclient.Client, error) {
+					return controllerClient, nil
+				},
+			}},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			rendered, err := tt.options.prepareClient()
+			g := NewWithT(t)
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(rendered).To(Equal(tt.expectRendered))
+		})
+	}
+}
 
 func TestGenerateRestoreObjectBasic(t *testing.T) {
 	type testCase struct {
@@ -421,4 +531,82 @@ func TestValidateRestoreName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateCluster(t *testing.T) {
+	t.Run("When no client is configured, it should skip cluster validation", func(t *testing.T) {
+		opts := &CreateOptions{BackupName: "test-backup"}
+		NewWithT(t).Expect(opts.validateCluster(t.Context())).ToNot(HaveOccurred())
+	})
+
+	t.Run("When the backup is missing in normal mode, it should return a backup validation error", func(t *testing.T) {
+		client := fake.NewClientBuilder().Build()
+		opts := &CreateOptions{
+			BackupName:    "test-backup",
+			OADPNamespace: "openshift-adp",
+			Client:        client,
+			Log:           logr.Discard(),
+		}
+
+		err := opts.validateCluster(t.Context())
+		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("backup validation failed")))
+	})
+
+	t.Run("When the backup is missing in render mode, it should continue rendering", func(t *testing.T) {
+		opts := &CreateOptions{
+			BackupName:    "test-backup",
+			OADPNamespace: "openshift-adp",
+			Client:        fake.NewClientBuilder().Build(),
+			Render:        true,
+			Log:           logr.Discard(),
+		}
+
+		NewWithT(t).Expect(opts.validateCluster(t.Context())).ToNot(HaveOccurred())
+	})
+}
+
+func TestCreateRestore(t *testing.T) {
+	t.Run("When restore creation succeeds, it should persist the generated restore", func(t *testing.T) {
+		g := NewWithT(t)
+		client := fake.NewClientBuilder().Build()
+		opts := &CreateOptions{
+			HCName:                 "test-cluster",
+			HCNamespace:            "clusters",
+			BackupName:             "test-backup",
+			OADPNamespace:          "openshift-adp",
+			ExistingResourcePolicy: "update",
+			Client:                 client,
+			Log:                    logr.Discard(),
+		}
+
+		err := opts.createRestore(t.Context())
+		g.Expect(err).ToNot(HaveOccurred())
+
+		restores := &unstructured.UnstructuredList{}
+		restores.SetAPIVersion("velero.io/v1")
+		restores.SetKind("RestoreList")
+		g.Expect(client.List(t.Context(), restores, crclient.InNamespace(opts.OADPNamespace))).ToNot(HaveOccurred())
+		g.Expect(restores.Items).To(HaveLen(1))
+		g.Expect(restores.Items[0].GetName()).To(HavePrefix("test-cluster-clusters-"))
+	})
+
+	t.Run("When restore creation fails, it should return the client error", func(t *testing.T) {
+		client := fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(context.Context, crclient.WithWatch, crclient.Object, ...crclient.CreateOption) error {
+				return errors.New("restore create failed")
+			},
+		}).Build()
+		opts := &CreateOptions{
+			HCName:                 "test-cluster",
+			HCNamespace:            "clusters",
+			BackupName:             "test-backup",
+			OADPNamespace:          "openshift-adp",
+			ExistingResourcePolicy: "update",
+			Client:                 client,
+			Log:                    logr.Discard(),
+		}
+
+		err := opts.createRestore(t.Context())
+		NewWithT(t).Expect(err).To(MatchError("failed to create restore resource: restore create failed"))
+	})
 }

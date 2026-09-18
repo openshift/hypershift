@@ -1,7 +1,9 @@
 package create
 
 import (
+	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/oadp"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster"
 	"github.com/openshift/hypershift/product-cli/cmd/iam"
 	"github.com/openshift/hypershift/product-cli/cmd/infra"
@@ -11,21 +13,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCommand() *cobra.Command {
+func NewCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "create",
 		Short:        "Commands for creating HostedClusters",
 		SilenceUsage: true,
 	}
 
-	cmd.AddCommand(oadp.NewCreateBackupCommand())
-	cmd.AddCommand(oadp.NewCreateRestoreCommand())
-	cmd.AddCommand(oadp.NewCreateScheduleCommand())
-	cmd.AddCommand(cluster.NewCreateCommands())
+	cmd.AddCommand(oadp.NewCreateBackupCommand(clientProvider))
+	cmd.AddCommand(oadp.NewCreateRestoreCommand(clientProvider))
+	cmd.AddCommand(oadp.NewCreateScheduleCommand(clientProvider))
+	cmd.AddCommand(cluster.NewCreateCommands(clientProvider))
 	cmd.AddCommand(iam.NewCreateCommands())
 	cmd.AddCommand(infra.NewCreateCommands())
-	cmd.AddCommand(kubeconfig.NewCreateCommand())
-	cmd.AddCommand(nodepool.NewCreateCommand())
+	cmd.AddCommand(kubeconfig.NewCreateCommand(clientProvider))
+	cmd.AddCommand(nodepool.NewCreateCommand(clientProvider))
 
 	return cmd
 }

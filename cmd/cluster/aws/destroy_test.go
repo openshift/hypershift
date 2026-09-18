@@ -1,15 +1,24 @@
 package aws
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	hyperapi "github.com/openshift/hypershift/support/api"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestValidateCredentialInfo(t *testing.T) {
+func TestValidateCredentialInfoWithoutClient(t *testing.T) {
 	tests := map[string]struct {
 		inputOptions *core.DestroyOptions
 		expectError  bool
@@ -48,10 +57,9 @@ func TestValidateCredentialInfo(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When CredentialSecretName is set and AWSCredentialsFile is not empty, it should try to validate the secret": {
+		"When CredentialSecretName is set and AWSCredentialsFile is not empty without a client, it should fail": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "my-secret",
-				Kubeconfig:           "/nonexistent/kubeconfig",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
 					Credentials: awsutil.AWSCredentialsOptions{
 						AWSCredentialsFile: "/some/creds",
@@ -60,10 +68,9 @@ func TestValidateCredentialInfo(t *testing.T) {
 			},
 			expectError: true,
 		},
-		"When CredentialSecretName is set and RoleArn is set, it should try to validate the secret": {
+		"When CredentialSecretName is set and RoleArn is set without a client, it should fail": {
 			inputOptions: &core.DestroyOptions{
 				CredentialSecretName: "my-secret",
-				Kubeconfig:           "/nonexistent/kubeconfig",
 				AWSPlatform: core.AWSPlatformDestroyOptions{
 					Credentials: awsutil.AWSCredentialsOptions{
 						AWSCredentialsFile: "",
@@ -78,7 +85,7 @@ func TestValidateCredentialInfo(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			options := test.inputOptions
-			err := ValidateCredentialInfo(options.AWSPlatform.Credentials, options.CredentialSecretName, options.Namespace, options.Kubeconfig)
+			err := ValidateCredentialInfo(context.Background(), options.AWSPlatform.Credentials, options.CredentialSecretName, options.Namespace, nil)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -86,4 +93,33 @@ func TestValidateCredentialInfo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateCredentialInfo(t *testing.T) {
+	g := NewWithT(t)
+	c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "clusters"},
+	}).Build()
+
+	err := ValidateCredentialInfo(
+		context.Background(),
+		awsutil.AWSCredentialsOptions{AWSCredentialsFile: "/some/creds"},
+		"my-secret", "clusters", c,
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+}
+
+func TestNewDestroyCommandClientProvider(t *testing.T) {
+	t.Run("When credential validation needs a client and the provider fails, it should return the provider error", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := &core.DestroyOptions{CredentialSecretName: "cloud-credentials", Namespace: "clusters"}
+		cmd := NewDestroyCommand(opts, &core.ClientProvider{
+			ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return nil, errors.New("management client unavailable")
+			},
+		})
+
+		err := cmd.Execute()
+		g.Expect(err).To(MatchError("management client unavailable"))
+	})
 }

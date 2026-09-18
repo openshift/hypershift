@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/install"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/metrics"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -16,6 +17,10 @@ import (
 // with the all the HyperShift CRDs. It will wait for the HyperShift Operator to be ready before it returns.
 func InstallHyperShiftOperator(ctx context.Context, opts HyperShiftOperatorInstallOptions) error {
 	installOpts := getInstallOptions(opts)
+	installOpts.ClientProvider = &cmdutil.ClientProvider{
+		ControllerRuntimeClient: cmdutil.GetClientWithKubeconfig,
+		Config:                  cmdutil.GetConfigWithKubeconfig,
+	}
 
 	if opts.DryRun {
 		installOpts.OutputFile = opts.DryRunDir + "/install-hypershift-operator.yaml"
@@ -31,7 +36,7 @@ func InstallHyperShiftOperator(ctx context.Context, opts HyperShiftOperatorInsta
 func GetHyperShiftOperatorImage(ctx context.Context, client crclient.Client, opts HyperShiftOperatorInstallOptions) (string, error) {
 	var image string
 	installOpts := getInstallOptions(opts)
-	deployment, err := install.WaitUntilAvailable(ctx, installOpts)
+	deployment, err := install.WaitUntilAvailable(ctx, installOpts, client)
 
 	if err != nil {
 		return image, err

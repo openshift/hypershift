@@ -24,7 +24,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	rawInfra, err := json.Marshal(&powervsinfra.Infra{
 		ID:                "fakeID",
@@ -118,7 +117,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, powerVSOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, powerVSOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 

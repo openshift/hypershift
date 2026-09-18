@@ -39,8 +39,10 @@ const (
 	destroyFinalizer = "openshift.io/destroy-cluster"
 )
 
-// DestroyPlatformSpecifics can be used to destroy platform specific resources which are unknown to hypershift
-type DestroyPlatformSpecifics = func(ctx context.Context, options *DestroyOptions) error
+// DestroyPlatformSpecifics can be used to destroy platform specific resources which are unknown to hypershift.
+// The management-cluster client is supplied so platform cleanup can reuse the
+// same client as the HostedCluster lifecycle.
+type DestroyPlatformSpecifics = func(ctx context.Context, options *DestroyOptions, client client.Client) error
 
 type DestroyOptions struct {
 	ClusterGracePeriod    time.Duration
@@ -96,12 +98,10 @@ type PowerVSPlatformDestroyOptions struct {
 	TransitGateway         string
 }
 
-func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
-	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
-	if err != nil {
-		return nil, err
+func GetCluster(ctx context.Context, c client.Client, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
+	if c == nil {
+		return nil, errors.New("management-cluster client is required")
 	}
-
 	var hostedCluster hyperv1.HostedCluster
 	if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
@@ -115,10 +115,9 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 	return &hostedCluster, nil
 }
 
-func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
-	c, err := util.GetClientWithKubeconfig(o.Kubeconfig)
-	if err != nil {
-		return err
+func DestroyCluster(ctx context.Context, c client.Client, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
+	if c == nil {
+		return errors.New("management-cluster client is required")
 	}
 	return destroyCluster(ctx, c, hostedCluster, o, destroyPlatformSpecifics)
 }
@@ -178,7 +177,7 @@ func destroyCluster(ctx context.Context, c client.Client, hostedCluster *hyperv1
 	}
 
 	if shouldDestroyPlatformSpecifics {
-		if err = destroyPlatformSpecifics(ctx, o); err != nil {
+		if err = destroyPlatformSpecifics(ctx, o, c); err != nil {
 			if err := returnOrForceLog(o, err, "Platform-specific cleanup failed with --force, continuing"); err != nil {
 				return err
 			}
