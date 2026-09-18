@@ -39354,6 +39354,7 @@ The metrics-proxy dynamically discovers all ServiceMonitors and PodMonitors in t
 | kube-apiserver | 6443 | `apiserver_request_total`, `apiserver_request_duration_seconds` |
 | etcd | 2381 | `etcd_server_has_leader`, `etcd_disk_wal_fsync_duration_seconds` |
 | kube-controller-manager | 10257 | `workqueue_depth`, `node_collector_evictions_total` |
+| kube-scheduler | 10259 | `scheduler_schedule_attempts_total`, `scheduler_pending_pods` |
 | openshift-apiserver | 8443 | `apiserver_request_total` (OpenShift API) |
 | openshift-controller-manager | 8443 | Controller workqueue and sync metrics |
 | openshift-route-controller-manager | 8443 | Route controller metrics |
