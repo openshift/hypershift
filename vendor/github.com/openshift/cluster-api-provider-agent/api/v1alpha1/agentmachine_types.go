@@ -18,7 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/errors"
 )
 
@@ -96,7 +96,7 @@ type AgentMachineStatus struct {
 
 	// Conditions defines current service state of the AgentMachine.
 	// +optional
-	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -112,13 +112,13 @@ type AgentMachine struct {
 	Status AgentMachineStatus `json:"status,omitempty"`
 }
 
-// GetConditions returns the observations of the operational state of the AWSMachine resource.
-func (r *AgentMachine) GetConditions() clusterv1.Conditions {
+// GetConditions returns the observations of the operational state of the AgentMachine resource.
+func (r *AgentMachine) GetConditions() []metav1.Condition {
 	return r.Status.Conditions
 }
 
-// SetConditions sets the underlying service state of the AWSMachine to the predescribed clusterv1.Conditions.
-func (r *AgentMachine) SetConditions(conditions clusterv1.Conditions) {
+// SetConditions sets the conditions for the AgentMachine.
+func (r *AgentMachine) SetConditions(conditions []metav1.Condition) {
 	r.Status.Conditions = conditions
 }
 
