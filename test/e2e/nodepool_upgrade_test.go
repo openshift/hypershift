@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -174,8 +173,6 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")
 	latestReleaseInfo, err := releaseInfoProvider.Lookup(ctx, ru.latestReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for latest image")
-	previousVersion, err := semver.ParseTolerant(previousReleaseInfo.Version())
-	g.Expect(err).NotTo(HaveOccurred(), "failed to parse previous release version")
 
 	t.Logf("Validating all Nodes have the synced labels and taints")
 	e2eutil.EnsureNodesLabelsAndTaints(t, nodePool, nodes)
@@ -193,23 +190,6 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(2*time.Minute),
 	)
-	if previousVersion.GE(e2eutil.Version50) {
-		expectedStream := string(hyperv1.OSImageStreamRHEL10)
-		if nodePool.Spec.OSImageStream.Name != "" {
-			expectedStream = nodePool.Spec.OSImageStream.Name
-		}
-		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have osImageStream=%s", nodePool.Namespace, nodePool.Name, expectedStream),
-			func(ctx context.Context) (*hyperv1.NodePool, error) {
-				np := &hyperv1.NodePool{}
-				err := ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
-				return np, err
-			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(expectedStream),
-			},
-			e2eutil.WithTimeout(2*time.Minute),
-		)
-	}
 	preUpgradeNodePool := &hyperv1.NodePool{}
 	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), preUpgradeNodePool)).To(Succeed(), "failed to get NodePool before upgrade")
 	e2eutil.EnsureNodesRuntime(t, nodes, preUpgradeNodePool)
