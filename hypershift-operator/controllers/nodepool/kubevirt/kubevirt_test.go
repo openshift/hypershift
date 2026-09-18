@@ -538,6 +538,57 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
+			name: "When HostedCluster has spec.labels, they should NOT appear in the template spec (propagated separately)",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+					Labels: map[string]string{
+						"custom-label-key": "custom-label-value",
+					},
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+						),
+					},
+				},
+			},
+		},
+		{
 			name: "When host device count has invalid value, it should fail validation",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
