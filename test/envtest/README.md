@@ -48,7 +48,7 @@ make test-envtest-api-all
 # Run only OCP versions (4.17–5.0; 5.0 is dual-versioned with 4.23 on Kubernetes 1.36)
 make test-envtest-ocp
 
-# Run only vanilla Kubernetes versions (1.31–1.36)
+# Run only vanilla Kubernetes versions (1.31–1.37)
 make test-envtest-kube
 
 # Run against a single version
