@@ -1,7 +1,10 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/bitfield/gotestdox.svg)](https://pkg.go.dev/github.com/bitfield/gotestdox)
 [![Go Report Card](https://goreportcard.com/badge/github.com/bitfield/gotestdox)](https://goreportcard.com/report/github.com/bitfield/gotestdox)
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge-flat.svg)](https://github.com/avelino/awesome-go)
-![Tests](https://github.com/bitfield/gotestdox/actions/workflows/test.yml/badge.svg)
+![CI](https://github.com/bitfield/gotestdox/actions/workflows/ci.yml/badge.svg)
+![Audit](https://github.com/bitfield/gotestdox/actions/workflows/audit.yml/badge.svg)
+
+[Subscribe to learn Go with me!](https://bitfieldconsulting.com/subscribe)
 
 ![Writing gopher logo](img/gotestdox.png)
 
@@ -176,7 +179,7 @@ It seems that I'm not the only one who finds this idea useful. I hear that `gote
 
 # Links
 
-- [Bitfield Consulting](https://bitfieldconsulting.com/)
+- [Bitfield Consulting](https://bitfieldconsulting.com/subscribe)
 - [Test names should be sentences](https://bitfieldconsulting.com/golang/test-names)
 - [The Power of Go: Tests](https://bitfieldconsulting.com/books/tests)
 
