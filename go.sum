@@ -592,8 +592,8 @@ github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6
 github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd/go.mod h1:LJ52oPrG92mf+tXCn+7WefygUWGDh2TK5bB3bzuKhEk=
 github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 h1:cHyxR+Y8rAMT6m1jQCaYGRwikqahI0OjjUDhFNf3ySQ=
 github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87/go.mod h1:DB/Mf2oTeiAmVVX1gN+NEqweonAPY0TKUwADizj8+ZA=
-github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c h1:zjx0HfNEsDkhUxvS+xX9z1LkHPd5GFS/BnhuuZiieUc=
-github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c/go.mod h1:pRBj1I04OkyiaBc+IrgNpaj4ikCZxCUnnYGoAYfKMAQ=
+github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260826023647-4205dc42edf8 h1:C4d62Ur5DDV2CKOD4Rhj7cHXcMjFurolYU3Jv28C7pc=
+github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260826023647-4205dc42edf8/go.mod h1:pRBj1I04OkyiaBc+IrgNpaj4ikCZxCUnnYGoAYfKMAQ=
 github.com/openshift/library-go v0.0.0-20260716164659-7926d144f96a h1:Sovnpe/R/QRqGjjjcOhwqD6V65nrTaNwv32B1HIgruk=
 github.com/openshift/library-go v0.0.0-20260716164659-7926d144f96a/go.mod h1:iWcB6wgeOhsByZAZGhmzBtEnrLQzABL0s3aeou8AmSI=
 github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b h1:KT/Lnx+xlPZ4cN9z58KGjTShfnr9FqRpXm1etTv158Q=
