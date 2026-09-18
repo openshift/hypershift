@@ -102,19 +102,19 @@ func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			getTestCtx().SkipIfNotPlatform(hyperv1.GCPPlatform)
 		})
 
-		It("should apply HostedCluster resource labels to PSC and router forwarding resources", func() {
+		It("should apply HostedCluster resource labels to PSC and router forwarding resources", Label("resource-labels"), func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", tc.ClusterNamespace, tc.ClusterName)
 			Expect(hc.Spec.Platform.GCP).NotTo(BeNil(), "HostedCluster %s/%s should have a GCP platform spec", hc.Namespace, hc.Name)
+			if len(hc.Spec.Platform.GCP.ResourceLabels) == 0 {
+				Skip("HostedCluster has no GCP resource labels configured")
+			}
 
 			expectedLabels := make(map[string]string, len(hc.Spec.Platform.GCP.ResourceLabels))
 			for _, label := range hc.Spec.Platform.GCP.ResourceLabels {
 				Expect(label.Value).NotTo(BeNil(), "GCP resource label %q should have a value", label.Key)
 				expectedLabels[label.Key] = *label.Value
-			}
-			if len(expectedLabels) == 0 {
-				Skip("HostedCluster has no GCP resource labels configured")
 			}
 
 			sharedDir := internal.GetEnvVarValue("SHARED_DIR")
@@ -123,10 +123,20 @@ func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			}
 			credentialsFile := filepath.Join(sharedDir, gcpWIFCredentialsFile)
 			if _, err := os.Stat(credentialsFile); err != nil {
-				Skip(fmt.Sprintf("GCP workload identity credentials are unavailable at %s: %v", credentialsFile, err))
+				if os.IsNotExist(err) {
+					Skip(fmt.Sprintf("GCP workload identity credentials are unavailable at %s", credentialsFile))
+				}
+				Expect(err).NotTo(HaveOccurred(), "failed to stat GCP workload identity credentials at %s", credentialsFile)
 			}
-			controlPlaneProjectID, err := readGCPProjectID(filepath.Join(sharedDir, gcpControlPlaneProjectIDFile))
-			Expect(err).NotTo(HaveOccurred())
+			controlPlaneProjectIDFile := filepath.Join(sharedDir, gcpControlPlaneProjectIDFile)
+			if _, err := os.Stat(controlPlaneProjectIDFile); err != nil {
+				if os.IsNotExist(err) {
+					Skip(fmt.Sprintf("GCP control-plane project ID is unavailable at %s", controlPlaneProjectIDFile))
+				}
+				Expect(err).NotTo(HaveOccurred(), "failed to stat GCP control-plane project ID at %s", controlPlaneProjectIDFile)
+			}
+			controlPlaneProjectID, err := readGCPProjectID(controlPlaneProjectIDFile)
+			Expect(err).NotTo(HaveOccurred(), "failed to read GCP control-plane project ID from %s", controlPlaneProjectIDFile)
 
 			computeService, err := compute.NewService(tc.Context,
 				option.WithAuthCredentialsFile(option.ExternalAccount, credentialsFile),
@@ -135,7 +145,8 @@ func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred(), "failed to create GCP Compute client")
 
 			pscList := &hyperv1.GCPPrivateServiceConnectList{}
-			Expect(tc.MgmtClient.List(tc.Context, pscList, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed())
+			Expect(tc.MgmtClient.List(tc.Context, pscList, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed(),
+				"failed to list GCPPrivateServiceConnect resources in namespace %s", tc.ControlPlaneNamespace)
 			Expect(pscList.Items).To(HaveLen(1), "expected exactly one GCPPrivateServiceConnect in namespace %s", tc.ControlPlaneNamespace)
 			serviceAttachmentName := pscList.Items[0].Status.ServiceAttachmentName
 			Expect(serviceAttachmentName).NotTo(BeEmpty(), "GCPPrivateServiceConnect %s should have ServiceAttachmentName set", pscList.Items[0].Name)
@@ -156,21 +167,32 @@ func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			assertGCPResourceLabels(pscForwardingRuleName, pscForwardingRule.Labels, expectedLabels)
 
 			routerService := &corev1.Service{}
-			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: "router"}, routerService)).To(Succeed())
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: "router"}, routerService)).To(Succeed(),
+				"failed to get router Service in namespace %s", tc.ControlPlaneNamespace)
 			backendServiceName := routerService.Annotations[backendServiceAnnotation]
 			Expect(backendServiceName).NotTo(BeEmpty(), "router Service should have %s annotation", backendServiceAnnotation)
 
-			managementForwardingRules, err := computeService.ForwardingRules.List(controlPlaneProjectID, region).Context(tc.Context).Do()
-			Expect(err).NotTo(HaveOccurred(), "failed to list management-project forwarding rules")
-			Expect(managementForwardingRules.Items).NotTo(BeEmpty(), "expected management-project forwarding rules in project %s", controlPlaneProjectID)
-
 			var routerForwardingRule *compute.ForwardingRule
-			for _, forwardingRule := range managementForwardingRules.Items {
-				if path.Base(forwardingRule.BackendService) == backendServiceName {
-					routerForwardingRule = forwardingRule
+			foundForwardingRules := false
+			pageToken := ""
+			for {
+				managementForwardingRules, err := computeService.ForwardingRules.List(controlPlaneProjectID, region).PageToken(pageToken).Context(tc.Context).Do()
+				Expect(err).NotTo(HaveOccurred(), "failed to list management-project forwarding rules")
+				if len(managementForwardingRules.Items) > 0 {
+					foundForwardingRules = true
+				}
+				for _, forwardingRule := range managementForwardingRules.Items {
+					if path.Base(forwardingRule.BackendService) == backendServiceName {
+						routerForwardingRule = forwardingRule
+						break
+					}
+				}
+				if routerForwardingRule != nil || managementForwardingRules.NextPageToken == "" {
 					break
 				}
+				pageToken = managementForwardingRules.NextPageToken
 			}
+			Expect(foundForwardingRules).To(BeTrue(), "expected management-project forwarding rules in project %s", controlPlaneProjectID)
 			Expect(routerForwardingRule).NotTo(BeNil(), "expected a management-project forwarding rule for router backend service %s", backendServiceName)
 			assertGCPResourceLabels(routerForwardingRule.Name, routerForwardingRule.Labels, expectedLabels)
 		})

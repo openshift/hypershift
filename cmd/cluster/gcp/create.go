@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -20,6 +21,11 @@ import (
 )
 
 var _ core.Platform = (*CreateOptions)(nil)
+
+var (
+	gcpResourceLabelKeyPattern   = regexp.MustCompile(`^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`)
+	gcpResourceLabelValuePattern = regexp.MustCompile(`^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`)
+)
 
 const (
 	SATokenIssuerSecret   = "sa-token-issuer-key"
@@ -347,6 +353,12 @@ func parseResourceLabels(labels []string) ([]hyperv1.GCPResourceLabel, error) {
 		key, value, found := strings.Cut(label, "=")
 		if !found || key == "" {
 			return nil, fmt.Errorf("invalid --%s value %q: expected key=value", flagResourceLabels, label)
+		}
+		if !gcpResourceLabelKeyPattern.MatchString(key) || (strings.HasPrefix(key, "goog") && key != "goog-partner-solution") {
+			return nil, fmt.Errorf("invalid --%s value %q: invalid label key", flagResourceLabels, label)
+		}
+		if !gcpResourceLabelValuePattern.MatchString(value) {
+			return nil, fmt.Errorf("invalid --%s value %q: invalid label value", flagResourceLabels, label)
 		}
 		if _, exists := seen[key]; exists {
 			return nil, fmt.Errorf("invalid --%s value %q: duplicate key %q", flagResourceLabels, label, key)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -79,10 +80,10 @@ func TestParseResourceLabels(t *testing.T) {
 		expectError string
 	}{
 		"When resource labels are valid, it should convert them to GCP resource labels": {
-			labels: []string{"environment=ci", "cost-center=1234", "empty="},
+			labels: []string{"environment=ci", "cost-center=cost1234", "empty="},
 			expected: []hyperv1.GCPResourceLabel{
 				{Key: "environment", Value: func() *string { value := "ci"; return &value }()},
-				{Key: "cost-center", Value: func() *string { value := "1234"; return &value }()},
+				{Key: "cost-center", Value: func() *string { value := "cost1234"; return &value }()},
 				{Key: "empty", Value: func() *string { value := ""; return &value }()},
 			},
 		},
@@ -97,6 +98,32 @@ func TestParseResourceLabels(t *testing.T) {
 		"When resource label keys are duplicated, it should return an error": {
 			labels:      []string{"environment=ci", "environment=test"},
 			expectError: "duplicate key",
+		},
+		"When a resource label key violates GCP requirements, it should return an error": {
+			labels:      []string{"UPPER=value"},
+			expectError: "invalid label key",
+		},
+		"When a resource label key uses a reserved goog prefix, it should return an error": {
+			labels:      []string{"goog-managed=value"},
+			expectError: "invalid label key",
+		},
+		"When a resource label value violates GCP requirements, it should return an error": {
+			labels:      []string{"environment=value=with-equals"},
+			expectError: "invalid label value",
+		},
+		"When a resource label key exceeds GCP limits, it should return an error": {
+			labels:      []string{strings.Repeat("a", 64) + "=value"},
+			expectError: "invalid label key",
+		},
+		"When a resource label value exceeds GCP limits, it should return an error": {
+			labels:      []string{"environment=" + strings.Repeat("a", 64)},
+			expectError: "invalid label value",
+		},
+		"When a resource label uses the Google partner exception, it should be accepted": {
+			labels: []string{"goog-partner-solution=openshift"},
+			expected: []hyperv1.GCPResourceLabel{
+				{Key: "goog-partner-solution", Value: func() *string { value := "openshift"; return &value }()},
+			},
 		},
 	}
 

@@ -48,19 +48,19 @@ func GCPComputeResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			getTestCtx().SkipIfNotPlatform(hyperv1.GCPPlatform)
 		})
 
-		It("should apply HostedCluster resource labels to VMs and their persistent disks", func() {
+		It("should apply HostedCluster resource labels to VMs and their persistent disks", Label("resource-labels"), func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", tc.ClusterNamespace, tc.ClusterName)
 			Expect(hc.Spec.Platform.GCP).NotTo(BeNil(), "HostedCluster %s/%s should have a GCP platform spec", hc.Namespace, hc.Name)
+			if len(hc.Spec.Platform.GCP.ResourceLabels) == 0 {
+				Skip("HostedCluster has no GCP resource labels configured")
+			}
 
 			expectedLabels := make(map[string]string, len(hc.Spec.Platform.GCP.ResourceLabels))
 			for _, label := range hc.Spec.Platform.GCP.ResourceLabels {
 				Expect(label.Value).NotTo(BeNil(), "GCP resource label %q should have a value", label.Key)
 				expectedLabels[label.Key] = *label.Value
-			}
-			if len(expectedLabels) == 0 {
-				Skip("HostedCluster has no GCP resource labels configured")
 			}
 
 			sharedDir := internal.GetEnvVarValue("SHARED_DIR")
@@ -69,7 +69,10 @@ func GCPComputeResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			}
 			credentialsFile := filepath.Join(sharedDir, gcpWIFCredentialsFile)
 			if _, err := os.Stat(credentialsFile); err != nil {
-				Skip(fmt.Sprintf("GCP workload identity credentials are unavailable at %s: %v", credentialsFile, err))
+				if os.IsNotExist(err) {
+					Skip(fmt.Sprintf("GCP workload identity credentials are unavailable at %s", credentialsFile))
+				}
+				Expect(err).NotTo(HaveOccurred(), "failed to stat GCP workload identity credentials at %s", credentialsFile)
 			}
 			computeService, err := compute.NewService(tc.Context,
 				option.WithAuthCredentialsFile(option.ExternalAccount, credentialsFile),
@@ -79,9 +82,9 @@ func GCPComputeResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), tc.Context, tc.MgmtClient, hc)
 			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to create a client for HostedCluster %s/%s", hc.Namespace, hc.Name)
 			nodes := &corev1.NodeList{}
-			Expect(hostedClusterClient.List(tc.Context, nodes)).To(Succeed())
+			Expect(hostedClusterClient.List(tc.Context, nodes)).To(Succeed(), "failed to list nodes in HostedCluster %s/%s", hc.Namespace, hc.Name)
 			Expect(nodes.Items).NotTo(BeEmpty(), "expected at least one hosted cluster node")
 
 			customerProjectID := hc.Spec.Platform.GCP.Project
