@@ -1,0 +1,22 @@
+# Overlay build: recompile ONLY the console bridge binary (with the
+# off-cluster -ca-file trust fix) and drop it into the stock release-payload
+# console image, reusing that image's frontend assets and CLI wiring verbatim.
+#
+# The build context must be the _console-research checkout (the openshift/console
+# clone on branch off-cluster-ca-file-trust). See console/build-console.sh.
+#
+# BASE_CONSOLE_IMAGE is the exact release-payload console digest we already run
+# (oc adm release info --image-for=console <release>), so everything except the
+# bridge binary is identical to stock.
+
+ARG BASE_CONSOLE_IMAGE
+
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-5.1 AS gobuilder
+WORKDIR /go/src/github.com/openshift/console/
+COPY . .
+RUN GOFLAGS=-mod=vendor CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags "-w -X github.com/openshift/console/pkg/version.Version=$(git describe --always --tags HEAD 2>/dev/null || echo dev-ca-file-fix)" \
+    -o /bin/bridge github.com/openshift/console/cmd/bridge
+
+FROM ${BASE_CONSOLE_IMAGE}
+COPY --from=gobuilder /bin/bridge /opt/bridge/bin/bridge

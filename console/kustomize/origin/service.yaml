@@ -1,0 +1,22 @@
+# Default 'console' service manifest.
+# The 'console' service will be pointing to the 'console' deployment.
+apiVersion: v1
+kind: Service
+metadata:
+  name: console
+  namespace: openshift-console
+  labels:
+    app: console
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: console-serving-cert
+spec:
+  ports:
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 8443
+  selector:
+    app: console
+    component: ui
+  type: ClusterIP
+  sessionAffinity: None

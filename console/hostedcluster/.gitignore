@@ -1,0 +1,8 @@
+# Contains a live private key extracted from patmarti-102447's sa-signing-key
+# secret. Never commit.
+sa-signing-key.yaml
+*kubeconfig
+
+# Guest cluster-admin bearer token used by the console bridge
+# (-user-auth=disabled spike). Never commit.
+console-guest-token.txt

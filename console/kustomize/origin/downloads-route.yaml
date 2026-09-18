@@ -1,0 +1,18 @@
+# Default 'downloads' route manifest.
+# The 'downloads' route will be pointing to the 'downloads' service. 
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  namespace: openshift-console
+  name: downloads
+spec:
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: downloads
+    weight: 100
+  wildcardPolicy: None

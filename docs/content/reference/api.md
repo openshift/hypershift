@@ -5399,6 +5399,10 @@ Once set, this field cannot be changed.</p>
 <p>disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
 Once set, this field cannot be changed.</p>
 <p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo;, &lsquo;Console&rsquo;, &lsquo;NodeTuning&rsquo;, &lsquo;Ingress&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
+<p>NOTE: The &ldquo;Ingress capability can only be disabled if Console capability is also disabled&rdquo; rule
+is enforced at the HostedClusterSpec level (see HostedClusterSpec) so it can be relaxed for the
+GCP platform, where the console runs control-plane-side and guest Ingress is intentionally absent
+(GCP-1219 console control-plane-side study). Field-level CEL here cannot see spec.platform.type.</p>
 </td>
 </tr>
 </tbody>
@@ -6501,6 +6505,18 @@ created in the customer VPC</p>
 </tr><tr><td><p>&#34;GCPEndpointAvailable&#34;</p></td>
 <td><p>GCPEndpointAvailable indicates whether the GCP PSC Endpoint has been
 created in the customer VPC</p>
+</td>
+</tr><tr><td><p>&#34;GCPFirewallRulesReady&#34;</p></td>
+<td><p>GCPFirewallRulesReady indicates whether the control-plane-operator has
+reconciled the managed GCP worker firewall rule (<infra-id>-internal-cluster)
+to its desired state.
+This reconcile is best-effort: expected, recoverable states such as missing
+Workload Identity Federation credentials, insufficient IAM permissions (the
+ctrlplane-op service account is missing roles/compute.securityAdmin), an
+unresolvable project/VPC, or an ownership conflict set this condition to
+False with an actionable message but do not fail the overall HCP reconcile.
+The next periodic reconcile converges automatically once the underlying
+condition clears.</p>
 </td>
 </tr><tr><td><p>&#34;GCPPrivateServiceConnectAvailable&#34;</p></td>
 <td><p>GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability</p>
@@ -8896,6 +8912,7 @@ This GSA requires the following IAM roles:
 - roles/dns.admin (DNS Admin - for managing DNS records)
 - roles/compute.networkAdmin (Compute Network Admin - for network management)
 - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
+- roles/compute.securityAdmin (Security Admin - for managing worker firewall rules)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -9716,6 +9733,10 @@ Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</
 <a href="#hypershift.openshift.io/v1beta1.HostedCluster">HostedCluster</a>)
 </p>
 <p>
+<p>TODO: Remove the validation that requires the Ingress capability to be disabled only when Console is also disabled, once OCPBUGS-58422 is resolved by the console team.
+Relaxed for the GCP platform (GCP-1219 console control-plane-side study): on GCP the console runs
+control-plane-side and guest Ingress is intentionally disabled, so Console may be enabled while
+Ingress is disabled. For all other platforms the original constraint still applies.</p>
 </p>
 <table>
 <thead>

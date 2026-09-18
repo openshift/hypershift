@@ -1,0 +1,174 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Phase 1 (Part 1) console overlay for the pat-console HostedCluster.
+# See CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PROGRESS.md (Phase 1).
+#
+# Values below come from the live pat-console HostedCluster/HostedControlPlane
+# (mgmt cluster dev-mgt-us-c1-p0917):
+#   - HCP namespace:  clusters-pat-console-pat-console
+#   - console host:   console.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
+#                      (covered by the existing external-api-cert wildcard secret
+#                      *.pat-console-user...  -> reuse it as-is, option (a); no
+#                      dedicated Certificate needed. Same principle as OAuth's
+#                      named-cert handling — mount the existing serving-cert
+#                      Secret directly, don't mint a new leaf cert per host
+#                      (v2/oauth/deployment.go:applyNamedCertificateMounts))
+#   - API domain:     api.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
+#   - console image:  resolved via
+#       oc adm release info --image-for=console \
+#         quay.io/openshift-release-dev/ocp-release@sha256:14350234fcd6c464fbf37c07679b653567b2d250be0d18132b79a621f164d719
+#     -> quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:93f39a224f8b86f25fa1395008a52f901e374e207a71c42956315560e2987f8d
+
+namespace: clusters-pat-console-pat-console
+
+resources:
+  - ../hypershift
+
+# Reusing the api-server wildcard cert (option (a)) instead of a dedicated
+# Certificate, so drop the base's certificate.yaml.
+patches:
+  - target:
+      kind: Certificate
+      name: console-serving-cert
+    patch: |
+      $patch: delete
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: console-serving-cert
+
+  - target:
+      kind: Deployment
+      name: downloads
+    patch: |
+      # Reuse the api-server wildcard secret for the TLS sidecar (same choice
+      # as the console Deployment above — the wildcard *.pat-console-user...
+      # covers the downloads host too).
+      - op: replace
+        path: /spec/template/spec/volumes/1/secret/secretName
+        value: external-api-cert
+      # A real (unused) cookie-secret so oauth-proxy starts. Auth is bypassed
+      # (-skip-auth-regex=^/), so this value is never used to sign anything;
+      # it just satisfies the flag's presence requirement. 32 bytes.
+      - op: replace
+        path: /spec/template/spec/containers/1/args/9
+        value: -cookie-secret=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+  - target:
+      kind: Deployment
+      name: console
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/args/1
+        value: -base-address=https://console.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net
+      - op: replace
+        path: /spec/template/spec/containers/0/args/4
+        value: -k8s-mode-off-cluster-endpoint=https://kube-apiserver.clusters-pat-console-pat-console.svc:6443
+      - op: replace
+        path: /spec/template/spec/containers/0/args/6
+        value: -k8s-public-endpoint=https://api.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net:6443
+      - op: replace
+        path: /spec/template/spec/containers/0/args/9
+        value: -user-auth-oidc-client-id=581003993532-kubhjbqnrc5iknkrc19cnvb67nj7qgbd.apps.googleusercontent.com
+      # Reuse the existing api-server wildcard secret instead of a
+      # dedicated console-serving-cert (see certificate.yaml delete above).
+      - op: replace
+        path: /spec/template/spec/volumes/0/secret/secretName
+        value: external-api-cert
+      # Phase 2: resolve the NO_PROXY placeholder to this HCP namespace so the
+      # guest KAS in-namespace ClusterIP dial stays direct (not tunneled through
+      # the socks5 sidecar). env[2] = NO_PROXY (env order: HTTP_PROXY,
+      # HTTPS_PROXY, NO_PROXY in the hypershift layer).
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: kube-apiserver.clusters-pat-console-pat-console.svc,localhost,127.0.0.1
+
+  # Phase 3: set the token-minter's guest-issuer audience for this cluster. The
+  # guest KAS accepts `console` SA tokens whose audience is this HCP's IssuerURL
+  # (matches hostedcluster.yaml spec.issuerURL). Name-keyed strategic merge so it
+  # survives container-ordering changes in the base overlay.
+  - target:
+      kind: Deployment
+      name: console
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: console
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: console-sa-token-minter
+                args:
+                  - --service-account-namespace=openshift-console
+                  - --service-account-name=console
+                  - --token-audience=https://oidc.int-reg-us-c1-nkcw.int.gcp-hcp.devshift.net/patmart-b3bb
+                  - --token-file=/var/run/console-sa/token
+                  - --kubeconfig=/etc/kubernetes/secrets/kubeconfig/kubeconfig
+
+# OIDC client secret for the bridge. apply.sh extracts .web.client_secret from
+# the intact OAuth client JSON into a gitignored .oidc-client-secret file that
+# this generator reads (key: clientSecret). `behavior: replace` swaps the
+# hypershift layer's REPLACE_WITH_OIDC_CLIENT_SECRET placeholder.
+secretGenerator:
+  - name: console-oidc-client-secret
+    behavior: replace
+    type: Opaque
+    files:
+      - clientSecret=.oidc-client-secret
+    options:
+      disableNameSuffixHash: true
+  # Session cookie keys — apply.sh generates .session-encryption-key (32B) and
+  # .session-authentication-key (64B) as gitignored random files.
+  - name: console-session
+    behavior: replace
+    type: Opaque
+    files:
+      - encryptionKey=.session-encryption-key
+      - authenticationKey=.session-authentication-key
+    options:
+      disableNameSuffixHash: true
+
+# Overrides the base's own (REPLACE_*) images: transformer, so this must
+# target the name the base already rewrote it to, not the original "console".
+images:
+  # Custom console image = stock release-payload console
+  # (ocp-v4.0-art-dev@sha256:93f39a2...) + the patched bridge binary (branch
+  # off-cluster-ca-file-trust in _console-research; built by
+  # console/build-console.sh). Two off-cluster TLS-trust fixes:
+  #   1. wire -ca-file into the off-cluster k8s proxy trust (drops
+  #      -k8s-mode-off-cluster-skip-verify-tls; verifies the guest KAS via
+  #      root-ca).
+  #   2. honor -service-ca-file for the off-cluster service proxies
+  #      (Thanos/Alertmanager/terminal/plugins) so they verify service-serving
+  #      certs signed by the service-ca, a different signer than the KAS CA
+  #      (Phase 2 monitoring). Falls back to -ca-file when unset.
+  #   3. request a refresh token for OIDC (access_type=offline + prompt=consent
+  #      in LoginFunc) so a session survives access-token expiry / pod restart /
+  #      cross-replica load-balancing — enables console replicas:2 (Phase 3).
+  # Revert to the stock digest once the fixes land upstream + in a release.
+  - name: REPLACE_CONSOLE_IMAGE_REGISTRY
+    newName: quay.io/patmarti/console
+    newTag: "260917140201"
+  # oauth-proxy (downloads TLS sidecar), resolved via
+  #   oc adm release info --image-for=oauth-proxy <release>
+  - name: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY
+    newName: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+    digest: sha256:41253fda8f43222f17f1b10b133847e6369b853591472095a6d170765f944745
+  # download-server = the release payload's cli-artifacts image (ships the oc
+  # binaries at /usr/share/openshift/...), NOT the console image. Resolved via
+  #   oc adm release info --image-for=cli-artifacts <release>
+  - name: REPLACE_DOWNLOADS_IMAGE_REGISTRY
+    newName: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+    digest: sha256:b520b5ae46c95b6fd45bd63d04d405dadf8f9b6d855134f617c078abe12fcd05
+  # CPO image for the Phase 2 konnectivity-proxy-socks5 sidecar (ships the
+  # control-plane-operator binary with the konnectivity-socks5-proxy subcommand).
+  # Pinned to the exact image this HCP's control-plane-operator + the live
+  # per-HCP catalog-operator socks5 sidecar already run, so the sidecar matches a
+  # proven-working shape. In productization this is injected by the CPO v2
+  # framework's InjectKonnectivityContainer, not hand-pinned here.
+  - name: REPLACE_CPO_IMAGE_REGISTRY
+    newName: quay.io/patmarti/hypershift-console-control-plane
+    newTag: "260917115254"
