@@ -21,6 +21,7 @@ hypershift create cluster gcp \
   --pull-secret=<path-to-pull-secret> \
   --project=<hosted-cluster-project-id> \
   --region=<region> \
+  --zone=<zone> \
   --network=<vpc-name> \
   --subnet=<subnet-name> \
   --private-service-connect-subnet=<psc-subnet> \
@@ -91,7 +92,7 @@ hypershift create cluster gcp \
 | `--external-dns-domain` | Yes | DNS domain for ExternalDNS-managed hostnames (API server, OAuth) |
 | `--feature-set` | Yes | Must be `TechPreviewNoUpgrade` for GCP platform |
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
-| `--zone` | No | GCP zone for nodes (default: `{region}-a`) |
+| `--zone` | Yes | GCP zone for nodes |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
 
 ## Monitor Cluster Creation
