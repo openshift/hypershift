@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	hyperapi "github.com/openshift/hypershift/support/api"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -14,6 +16,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/go-logr/logr"
 )
@@ -168,6 +171,11 @@ func TestIsResourceRegistered_PlatformGating(t *testing.T) {
 			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta2", Kind: "IBMVPCCluster"},
 			expected: false,
 		},
+		{
+			name:     "When IBM PowerVS CRD is not installed, it should return false for IBMPowerVSImage",
+			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "IBMPowerVSImage"},
+			expected: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -259,6 +267,96 @@ func TestFilterRegisteredResources(t *testing.T) {
 		_, err := filterRegisteredResources(logr.Discard(), scheme, errorDiscovery, candidates)
 		if err == nil {
 			t.Fatal("expected a discovery error, got nil")
+		}
+	})
+}
+
+func TestFilterRegisteredResources_PlatformResourcesIntegration(t *testing.T) {
+	// Use the actual platformResources slice and hyperapi.Scheme to verify
+	// that every entry resolves to a valid GVK and that filtering correctly
+	// includes only the resources whose CRDs are present on the API server.
+	awsOnlyDiscovery := &fakediscovery.FakeDiscovery{
+		Fake: &clientgotesting.Fake{
+			Resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+					APIResources: []metav1.APIResource{
+						{Kind: "AWSCluster"},
+						{Kind: "AWSMachine"},
+						{Kind: "AWSMachineTemplate"},
+					},
+				},
+				{
+					GroupVersion: "hypershift.openshift.io/v1beta1",
+					APIResources: []metav1.APIResource{
+						{Kind: "AWSEndpointService"},
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("When all GVKs in platformResources are resolved against hyperapi.Scheme, it should not error", func(t *testing.T) {
+		for _, resource := range platformResources {
+			_, err := apiutil.GVKForObject(resource, hyperapi.Scheme)
+			if err != nil {
+				t.Errorf("platformResources contains a type not registered in hyperapi.Scheme: %T — %v", resource, err)
+			}
+		}
+	})
+
+	t.Run("When filtering platformResources with an AWS-only MC, it should return only AWS resources", func(t *testing.T) {
+		result, err := filterRegisteredResources(logr.Discard(), hyperapi.Scheme, awsOnlyDiscovery, platformResources)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify that every returned resource is an AWS type
+		for _, resource := range result {
+			gvk, err := apiutil.GVKForObject(resource, hyperapi.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error resolving GVK: %v", err)
+			}
+			switch gvk.Kind {
+			case "AWSCluster", "AWSMachine", "AWSMachineTemplate", "AWSEndpointService":
+				// expected
+			default:
+				t.Errorf("unexpected non-AWS resource in filtered result: %s", gvk.Kind)
+			}
+		}
+
+		if len(result) != 4 {
+			t.Errorf("expected 4 AWS resources (AWSCluster, AWSMachine, AWSMachineTemplate, AWSEndpointService), got %d", len(result))
+		}
+	})
+
+	t.Run("When filtering platformResources with an AWS-only MC, it should exclude non-AWS resources", func(t *testing.T) {
+		result, err := filterRegisteredResources(logr.Discard(), hyperapi.Scheme, awsOnlyDiscovery, platformResources)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Build a set of returned kinds
+		returnedKinds := make(map[string]bool)
+		for _, resource := range result {
+			gvk, _ := apiutil.GVKForObject(resource, hyperapi.Scheme)
+			returnedKinds[gvk.Kind] = true
+		}
+
+		// These non-AWS types must NOT appear
+		excludedKinds := []string{
+			"AzureCluster", "AzureClusterIdentity", "AzureMachine", "AzureMachineTemplate",
+			"GCPCluster", "GCPMachine", "GCPMachineTemplate",
+			"IBMVPCCluster", "IBMVPCMachine", "IBMVPCMachineTemplate",
+			"IBMPowerVSCluster", "IBMPowerVSImage", "IBMPowerVSMachine", "IBMPowerVSMachineTemplate",
+			"OpenStackCluster", "OpenStackMachine", "OpenStackMachineTemplate", "OpenStackServer", "Image",
+			"AgentCluster", "AgentMachine", "AgentMachineTemplate",
+			"KubevirtCluster", "KubevirtMachine", "KubevirtMachineTemplate",
+		}
+		for _, kind := range excludedKinds {
+			if returnedKinds[kind] {
+				t.Errorf("non-AWS resource %s should have been excluded but was present in results", kind)
+			}
 		}
 	})
 }

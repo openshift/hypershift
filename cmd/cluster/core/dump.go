@@ -147,6 +147,7 @@ var (
 		&capiibm.IBMVPCMachineTemplate{},
 		// IBM PowerVS
 		&capiibm.IBMPowerVSCluster{},
+		&capiibm.IBMPowerVSImage{},
 		&capiibm.IBMPowerVSMachine{},
 		&capiibm.IBMPowerVSMachineTemplate{},
 		// OpenStack
