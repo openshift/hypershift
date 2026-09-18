@@ -41,6 +41,7 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 						StorageServiceAccount:         "storage@test-project-123.iam.gserviceaccount.com",
 						ImageRegistryServiceAccount:   "imageregistry@test-project-123.iam.gserviceaccount.com",
 						NetworkServiceAccount:         "network@test-project-123.iam.gserviceaccount.com",
+						ResourceLabels:                []string{"hypershift-e2e=resource-labels"},
 					},
 				},
 			},
@@ -66,6 +67,51 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage).To(Equal(hyperv1.GCPServiceAccountEmail("storage@test-project-123.iam.gserviceaccount.com")))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry).To(Equal(hyperv1.GCPServiceAccountEmail("imageregistry@test-project-123.iam.gserviceaccount.com")))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network).To(Equal(hyperv1.GCPServiceAccountEmail("network@test-project-123.iam.gserviceaccount.com")))
+	g.Expect(hostedCluster.Spec.Platform.GCP.ResourceLabels).To(Equal([]hyperv1.GCPResourceLabel{{
+		Key: "hypershift-e2e", Value: func() *string { value := "resource-labels"; return &value }(),
+	}}))
+}
+
+func TestParseResourceLabels(t *testing.T) {
+	tests := map[string]struct {
+		labels      []string
+		expected    []hyperv1.GCPResourceLabel
+		expectError string
+	}{
+		"When resource labels are valid, it should convert them to GCP resource labels": {
+			labels: []string{"environment=ci", "cost-center=1234", "empty="},
+			expected: []hyperv1.GCPResourceLabel{
+				{Key: "environment", Value: func() *string { value := "ci"; return &value }()},
+				{Key: "cost-center", Value: func() *string { value := "1234"; return &value }()},
+				{Key: "empty", Value: func() *string { value := ""; return &value }()},
+			},
+		},
+		"When a resource label has no value separator, it should return an error": {
+			labels:      []string{"environment"},
+			expectError: "expected key=value",
+		},
+		"When a resource label has an empty key, it should return an error": {
+			labels:      []string{"=ci"},
+			expectError: "expected key=value",
+		},
+		"When resource label keys are duplicated, it should return an error": {
+			labels:      []string{"environment=ci", "environment=test"},
+			expectError: "duplicate key",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			actual, err := parseResourceLabels(tc.labels)
+			if tc.expectError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectError)))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(actual).To(Equal(tc.expected))
+		})
+	}
 }
 
 func TestValidateGCPOptions(t *testing.T) {
