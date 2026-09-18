@@ -9,11 +9,14 @@ import (
 const (
 	DefaultGCPMachineTypeAMD64 = "n2-standard-4"
 	DefaultGCPMachineTypeARM64 = "t2a-standard-4"
+
+	GCPMachineTypeHelp = "GCP machine type for node instances (default: " +
+		DefaultGCPMachineTypeAMD64 + " for AMD64, " +
+		DefaultGCPMachineTypeARM64 + " for ARM64)"
 )
 
-// DefaultGCPMachineType returns appropriate machine type for architecture.
-// Returns n2-standard-4 for AMD64 and t2a-standard-4 (Tau T2A) for ARM64.
-// Returns empty string for unknown architectures.
+// DefaultGCPMachineType returns the default machine type for arch,
+// or an empty string if the architecture is unsupported.
 func DefaultGCPMachineType(arch string) string {
 	switch strings.ToLower(arch) {
 	case hyperv1.ArchitectureARM64:

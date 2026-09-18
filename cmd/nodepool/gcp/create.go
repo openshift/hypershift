@@ -62,7 +62,7 @@ type CompletedGCPNodePoolCreateOptions struct {
 }
 
 func BindDeveloperOptions(opts *RawGCPNodePoolCreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.MachineType, "machine-type", opts.MachineType, "The GCP machine type for node instances (e.g. n2-standard-4)")
+	flags.StringVar(&opts.MachineType, "machine-type", opts.MachineType, util.GCPMachineTypeHelp)
 	flags.StringVar(&opts.Zone, "zone", opts.Zone, "The GCP zone for node instances (e.g. us-central1-a)")
 	flags.StringVar(&opts.Subnet, "subnet", opts.Subnet, "The subnet name for node instances")
 	flags.Int32Var(&opts.BootDiskSize, "boot-disk-size", opts.BootDiskSize, "The size of the boot disk in GB (minimum 20)")
