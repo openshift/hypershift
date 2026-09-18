@@ -2287,7 +2287,7 @@ sigs.k8s.io/crdify/pkg/validators/version/served
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/kube-api-linter v0.0.0-20260206102632-39e3d06a2850
+# sigs.k8s.io/kube-api-linter v0.0.0-20260716143926-092fe0c72997
 ## explicit; go 1.24.0
 sigs.k8s.io/kube-api-linter
 sigs.k8s.io/kube-api-linter/pkg/analysis/arrayofstruct

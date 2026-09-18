@@ -43,6 +43,8 @@ func init() {
 		markers.KubebuilderMinPropertiesMarker,
 		markers.KubebuilderMinimumMarker,
 		markers.KubebuilderEnumMarker,
+		markers.KubebuilderExactlyOneOf,
+		markers.KubebuilderAtLeastOneOfMarker,
 	)
 }
 

@@ -58,5 +58,15 @@ func validateConfig(jtc *JSONTagsConfig, fldPath *field.Path) field.ErrorList {
 		}
 	}
 
+	switch jtc.FieldNameMatch {
+	case "", FieldNameMatchPolicySuggestFix, FieldNameMatchPolicyWarn, FieldNameMatchPolicyIgnore:
+	default:
+		fieldErrors = append(fieldErrors, field.Invalid(
+			fldPath.Child("fieldNameMatch"),
+			jtc.FieldNameMatch,
+			fmt.Sprintf("invalid value, must be one of %q, %q, %q or omitted", FieldNameMatchPolicySuggestFix, FieldNameMatchPolicyWarn, FieldNameMatchPolicyIgnore),
+		))
+	}
+
 	return fieldErrors
 }
