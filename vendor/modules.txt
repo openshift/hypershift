@@ -927,8 +927,8 @@ github.com/mitchellh/hashstructure/v2
 ## explicit; go 1.13
 github.com/moby/spdystream
 github.com/moby/spdystream/spdy
-# github.com/moby/sys/user v0.4.0
-## explicit; go 1.17
+# github.com/moby/sys/user v0.4.1
+## explicit; go 1.18
 github.com/moby/sys/user
 # github.com/moby/term v0.5.2
 ## explicit; go 1.18
