@@ -311,7 +311,7 @@ replace github.com/openshift/hypershift/api => ./api
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
 
-replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
+replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260826023647-4205dc42edf8
 
 // Temporary: NTO main requires kube-openapi v0.35.1 (fake tag that only resolves via NTO's own replace)
 replace k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
