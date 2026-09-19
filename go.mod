@@ -309,7 +309,7 @@ require (
 replace github.com/openshift/hypershift/api => ./api
 
 // Use our openshift version of karpenter instead of upstream
-replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
+replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260902023531-9a54e1340b32
 
 replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
 

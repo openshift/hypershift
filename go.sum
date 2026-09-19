@@ -578,8 +578,8 @@ github.com/opencontainers/selinux v1.13.0 h1:Zza88GWezyT7RLql12URvoxsbLfjFx988+L
 github.com/opencontainers/selinux v1.13.0/go.mod h1:XxWTed+A/s5NNq4GmYScVy+9jzXhGBVEOAyucdRUY8s=
 github.com/openshift/api v0.0.0-20260820183036-3db6c4b03286 h1:zz+Bfuhq9gAlbICRli8wk9CKgGmRMe5yQSxzvnmX73Q=
 github.com/openshift/api v0.0.0-20260820183036-3db6c4b03286/go.mod h1:k6qH5QOVa5GDln2VVm8Jz4NV3Z7R2SATHFLwGS6Wh3M=
-github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417 h1:b4vLxDvDmwESkz21ezCxIZOLRE8zk68gDjn4P4gvtbo=
-github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417/go.mod h1:K2x7H8k8k07WechkBHQ+sOr+6gPAkwILzVc7hYzODfY=
+github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260902023531-9a54e1340b32 h1:MhSf8Zorf1ZUEr8XNUSz0sbNHrxauUgqzZ2QBoSyVf0=
+github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260902023531-9a54e1340b32/go.mod h1:K2x7H8k8k07WechkBHQ+sOr+6gPAkwILzVc7hYzODfY=
 github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec h1:UDjX+mot5IVLpcChyBqLXG1oSB29s4UkqFmgNb0Xsqc=
 github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec/go.mod h1:iMHec0APKVjOH8GfL/RxddX8DuiuSvPlRe+s7KDqlyA=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3 h1:cr5nU1+O8sEvZHpAAk1mTTGu3NMbgj0dC2cFxFjwmzw=
