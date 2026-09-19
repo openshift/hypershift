@@ -72,7 +72,7 @@ type FeatureSetEnum struct {
 	EnumValues      []string `marker:"enum"`
 }
 
-func (m FeatureSetEnum) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (m FeatureSetEnum) ApplyToSchema(ctx *SchemaContext, schema *apiext.JSONSchemaProps) error {
 	if !RequiredFeatureSets.HasAny(m.FeatureSetNames...) {
 		return nil
 	}
@@ -101,7 +101,7 @@ type FeatureSetXValidation struct {
 	Message         string `marker:",optional"`
 }
 
-func (m FeatureSetXValidation) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (m FeatureSetXValidation) ApplyToSchema(ctx *SchemaContext, schema *apiext.JSONSchemaProps) error {
 	if !RequiredFeatureSets.HasAny(m.FeatureSetNames...) {
 		return nil
 	}
@@ -111,7 +111,7 @@ func (m FeatureSetXValidation) ApplyToSchema(schema *apiext.JSONSchemaProps) err
 		Message: m.Message,
 	}
 
-	return validation.ApplyToSchema(schema)
+	return validation.ApplyToSchema(ctx, schema)
 }
 
 // ApplyFirst means that this will be applied in the first run of markers.
@@ -131,7 +131,7 @@ type FeatureGateEnum struct {
 	EnumValues               []string `marker:"enum"`
 }
 
-func (m FeatureGateEnum) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (m FeatureGateEnum) ApplyToSchema(ctx *SchemaContext, schema *apiext.JSONSchemaProps) error {
 	if len(m.FeatureGateNames)+len(m.RequiredFeatureGateNames) == 0 {
 		return fmt.Errorf("marker %s requires at least one of featureGate or requiredFeatureGate", OpenShiftFeatureGateAwareEnumMarkerName)
 	}
@@ -174,7 +174,7 @@ type FeatureGateMaxItems struct {
 	MaxItems                 int      `marker:"maxItems"`
 }
 
-func (m FeatureGateMaxItems) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (m FeatureGateMaxItems) ApplyToSchema(ctx *SchemaContext, schema *apiext.JSONSchemaProps) error {
 	if len(m.FeatureGateNames)+len(m.RequiredFeatureGateNames) == 0 {
 		return fmt.Errorf("marker %s requires at least one of featureGate or requiredFeatureGate", OpenShiftFeatureGateAwareMaxItemsMarkerName)
 	}
@@ -208,7 +208,7 @@ type FeatureGateXValidation struct {
 	Message                  string `marker:",optional"`
 }
 
-func (m FeatureGateXValidation) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (m FeatureGateXValidation) ApplyToSchema(ctx *SchemaContext, schema *apiext.JSONSchemaProps) error {
 	if len(m.FeatureGateNames)+len(m.RequiredFeatureGateNames) == 0 {
 		return fmt.Errorf("marker %s requires at least one of featureGate or requiredFeatureGate", OpenShiftFeatureGateAwareXValidationMarkerName)
 	}
@@ -228,7 +228,7 @@ func (m FeatureGateXValidation) ApplyToSchema(schema *apiext.JSONSchemaProps) er
 		Message: m.Message,
 	}
 
-	return validation.ApplyToSchema(schema)
+	return validation.ApplyToSchema(ctx, schema)
 }
 
 // ApplyFirst means that this will be applied in the first run of markers.
