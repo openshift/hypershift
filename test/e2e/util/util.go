@@ -4528,8 +4528,8 @@ func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClien
 // matches the Authentication resource status from the hosted cluster
 func ValidateConfigurationStatus(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("ValidateConfigurationStatus", func(t *testing.T) {
-		// Configuration status was added in 4.21
-		AtLeast(t, Version421)
+		// Configuration status was added in 4.20
+		AtLeast(t, Version420)
 		g := NewWithT(t)
 
 		// Wait for both HCP and HC configuration status to be populated and validate consistency
