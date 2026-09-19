@@ -1033,18 +1033,14 @@ func capiStorageVersionForOpts(opts Options) string {
 func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
-		// Skip IPAM CRDs only when migration is disabled.
-		// During migration, IPAM CRDs must be updated to set v1beta2 as the storage version.
-		if opts.DisableCAPIMigration {
-			for crdName := range ipamCRDNames {
-				existing := &apiextensionsv1.CustomResourceDefinition{}
-				err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
-				if err == nil {
-					existingIPAMCRDs.Insert(crdName)
-					fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
-				} else if !apierrors.IsNotFound(err) {
-					return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
-				}
+		for crdName := range ipamCRDNames {
+			existing := &apiextensionsv1.CustomResourceDefinition{}
+			err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
+			if err == nil {
+				existingIPAMCRDs.Insert(crdName)
+				fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
+			} else if !apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
 			}
 		}
 	}
