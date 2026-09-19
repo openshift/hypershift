@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 3d64f364d30391b2fb3a322a2c060b1650abb8f33d9d429800f924c4639bed9e
+    hypershift.openshift.io/desired-state-hash: 8dfb4802dc404aefeebf32d40686277fa0df1a446707d4779d91efb978bf01b5
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -130,6 +130,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         image: availability-prober
         imagePullPolicy: IfNotPresent
@@ -143,6 +145,9 @@ spec:
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
         - mountPath: /var/kubeconfig
           name: kubeconfig
       - args:
@@ -435,6 +440,12 @@ spec:
         secret:
           defaultMode: 416
           secretName: cvo-server
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}
