@@ -78,6 +78,7 @@ func RegisterKarpenterTests(getTestCtx internal.TestContextGetter) {
 	KarpenterArbitrarySubnetTest(getTestCtx)
 	KarpenterKubeletPropagationTest(getTestCtx)
 	KarpenterAutoNodeLifecycleTest(getTestCtx)
+	KarpenterCPUOptionsNestedVirtualization(getTestCtx)
 	// This test intentionally leaves dangling resources so cluster teardown must
 	// force-terminate nodes despite a blocking PDB. It must run last.
 	KarpenterBillingConsolidationTest(getTestCtx)
@@ -1609,6 +1610,94 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 				},
 				e2eutil.WithTimeout(5*time.Minute),
 			)
+		})
+	})
+}
+
+func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGetter) {
+	Context("[Feature:AutoNode] AutoNode with CPUOptions enabled", func() {
+		BeforeEach(func() {
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+				Skip("AutoNode not configured on hosted cluster")
+			}
+		})
+
+		It("should provision EC2 instance with nested virtualization enabled", func() {
+			tc := getTestCtx()
+			ctx := tc.Context
+			t := GinkgoTB()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+			awsRegion := hc.Spec.Platform.AWS.Region
+
+			nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "cpu-options-enabled-test"},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					CPUOptions: hyperkarpenterv1.CPUOptions{
+						NestedVirtualization: hyperkarpenterv1.NestedVirtualizationEnabled,
+					},
+				},
+			}
+			Expect(hcClient.Create(ctx, nodeClass)).To(Succeed())
+			GinkgoWriter.Printf("Created OpenshiftEC2NodeClass %q with CPUOptions.NestedVirtualization=true", nodeClass.Name)
+			DeferCleanup(func() {
+				if err := hcClient.Delete(ctx, nodeClass); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete OpenshiftEC2NodeClass %s", nodeClass.Name)
+				}
+			})
+
+			// Verify CPUOptions propagated to the downstream EC2NodeClass.
+			Eventually(func(g Gomega) {
+				ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+				g.Expect(hcClient.Get(ctx, crclient.ObjectKey{Name: nodeClass.Name}, ec2NodeClass)).To(Succeed())
+				g.Expect(ec2NodeClass.Spec.CPUOptions).NotTo(BeNil(), "CPUOptions should be set")
+				g.Expect(ec2NodeClass.Spec.CPUOptions.NestedVirtualization).NotTo(BeNil(), "CPUOptions.NestedVirtualization should be set")
+				g.Expect(*ec2NodeClass.Spec.CPUOptions.NestedVirtualization).To(Equal("enabled"))
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+			testNodePool := baseNodePool("cpu-options-test", nodeClass.Name)
+			testNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
+				{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
+			}
+			testWorkLoads := testWorkload("cpu-options-web-app", 1, map[string]string{
+				karpenterv1.NodePoolLabelKey: testNodePool.Name,
+			})
+			testNodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name}
+
+			Expect(hcClient.Create(ctx, testWorkLoads)).To(Succeed())
+			DeferCleanup(func() {
+				if err := hcClient.Delete(ctx, testWorkLoads); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete Deployment %s", testWorkLoads.Name)
+				}
+			})
+			Expect(hcClient.Create(ctx, testNodePool)).To(Succeed())
+			DeferCleanup(func() {
+				if err := hcClient.Delete(ctx, testNodePool); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", testNodePool.Name)
+				}
+				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+			})
+
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+
+			ec2client := newEC2Client(awsCredsFile, awsRegion)
+			for _, node := range nodes {
+				instance, instanceID := describeEC2Instance(ctx, ec2client, node)
+				GinkgoWriter.Printf("Checking CpuOptions for node %s (instance %s)", node.Name, instanceID)
+				Expect(instance.CpuOptions).NotTo(BeNil(), "instance %s should have CpuOptions", instanceID)
+				Expect(instance.CpuOptions.NestedVirtualization).To(
+					Equal(ec2types.NestedVirtualizationSpecificationEnabled),
+					"instance %s should have NestedVirtualization=enabled", instanceID,
+				)
+				GinkgoWriter.Printf("Instance %s has CpuOptions.NestedVirtualization=%s", instanceID, instance.CpuOptions.NestedVirtualization)
+			}
 		})
 	})
 }

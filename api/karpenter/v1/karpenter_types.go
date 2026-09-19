@@ -284,6 +284,10 @@ type OpenshiftEC2NodeClassSpec struct {
 	// These settings are injected into the node's ignition configuration via MachineConfig.
 	// +optional
 	Kubelet KubeletConfiguration `json:"kubelet,omitzero"`
+
+	// cpuOptions defines the CPU options for the instance.
+	// +optional
+	CPUOptions CPUOptions `json:"cpuOptions,omitzero"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
@@ -614,6 +618,25 @@ const (
 	// the EC2 reclamation window. Only capacity-block reservations may be in this state.
 	CapacityReservationStateExpiring CapacityReservationState = "Expiring"
 )
+
+// NestedVirtualizationPolicy defines whether nested virtualization is enabled.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type NestedVirtualizationPolicy string
+
+const (
+	NestedVirtualizationEnabled  NestedVirtualizationPolicy = "Enabled"
+	NestedVirtualizationDisabled NestedVirtualizationPolicy = "Disabled"
+)
+
+// cpuOptions contains parameters for specifying the CPU configuration for provisioned nodes.
+// +kubebuilder:validation:MinProperties=1
+type CPUOptions struct {
+	// nestedVirtualization enables or disables nested virtualization on the AWS instances.
+	// When set to "Enabled", Karpenter filters instance types to only those reporting "nested-virtualization".
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self in ['Enabled','Disabled']",message="nestedVirtualization must be Enabled or Disabled"
+	NestedVirtualization NestedVirtualizationPolicy `json:"nestedVirtualization,omitempty"`
+}
 
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.
 // +kubebuilder:validation:MinProperties=1
