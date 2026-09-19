@@ -7,6 +7,6 @@ collections:
   - name: community.general
     version: "7.4.0"
   - name: containers.podman
-    version: "1.10.1"
+    version: "1.20.2"
   - name: amazon.aws
     version: ">=5.0.0"
