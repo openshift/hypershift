@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift/api
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/openshift/api v0.0.0-20260805160557-b61243060d5f
@@ -21,7 +21,7 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288 // indirect
+	k8s.io/kube-openapi v0.0.0-20260911184034-7970a1e230da // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.0 // indirect
