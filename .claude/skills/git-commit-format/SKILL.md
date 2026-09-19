@@ -65,10 +65,10 @@ Get credentials in this priority order:
 
 ### Commit-Message-Assisted-by Footer
 
-**ALWAYS include `Commit-Message-Assisted-by: Claude (via Claude Code)`** when Claude assists with creating or generating the commit message.
+**ALWAYS include a `Commit-Message-Assisted-by` footer** when an AI assistant helps create or generate the commit message. Use the format `<model> (via <harness>)` to identify the model and tool that assisted.
 
 ```
-Commit-Message-Assisted-by: Claude (via Claude Code)
+Commit-Message-Assisted-by: <model> (via <harness>)
 ```
 
 ## Gitlint Validation Rules
@@ -87,7 +87,7 @@ Commit-Message-Assisted-by: Claude (via Claude Code)
 docs: correct spelling of CHANGELOG
 
 Signed-off-by: Bryan Cox <brcox@redhat.com>
-Commit-Message-Assisted-by: Claude (via Claude Code)
+Commit-Message-Assisted-by: Sonnet (via Cursor)
 ```
 
 ### With scope
@@ -95,7 +95,7 @@ Commit-Message-Assisted-by: Claude (via Claude Code)
 feat(azure): add workload identity support
 
 Signed-off-by: Bryan Cox <brcox@redhat.com>
-Commit-Message-Assisted-by: Claude (via Claude Code)
+Commit-Message-Assisted-by: GPT-4o (via Copilot)
 ```
 
 ### Multi-paragraph with footers
@@ -114,6 +114,9 @@ Signed-off-by: Bryan Cox <brcox@redhat.com>
 Commit-Message-Assisted-by: Claude (via Claude Code)
 ```
 
+> **Note:** The examples above show various model and harness combinations.
+> Substitute the actual model and harness you are using.
+
 ## Quick Checklist
 
 When creating commits:
@@ -121,7 +124,7 @@ When creating commits:
 - [ ] Title under 120 characters
 - [ ] Body lines under 140 characters
 - [ ] Include `Signed-off-by` footer
-- [ ] Include `Commit-Message-Assisted-by: Claude (via Claude Code)` footer
+- [ ] Include `Commit-Message-Assisted-by: <model> (via <harness>)` footer
 - [ ] Validate with `make run-gitlint`
 - [ ] Use "!" or `BREAKING CHANGE` for breaking changes
 
