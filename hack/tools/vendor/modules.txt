@@ -330,7 +330,7 @@ github.com/fxamacker/cbor/v2
 # github.com/fzipp/gocyclo v0.6.0
 ## explicit; go 1.18
 github.com/fzipp/gocyclo
-# github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
+# github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344
 ## explicit
 github.com/ghodss/yaml
 # github.com/ghostiam/protogetter v0.3.20
