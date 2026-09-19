@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	clientgotesting "k8s.io/client-go/testing"
+
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/go-logr/logr"
 )
@@ -95,6 +103,238 @@ func TestIsResourceRegistered(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPlatformSpecificResources(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform hyperv1.PlatformType
+		want     []string
+	}{
+		{
+			name:     "When platform is AWS, it should return AWS infrastructure resources",
+			platform: hyperv1.AWSPlatform,
+			want: []string{
+				"awsmachine.infrastructure.cluster.x-k8s.io",
+				"awsmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"awscluster.infrastructure.cluster.x-k8s.io",
+				"awsendpointservice.hypershift.openshift.io",
+			},
+		},
+		{
+			name:     "When platform is Azure, it should return Azure infrastructure resources",
+			platform: hyperv1.AzurePlatform,
+			want: []string{
+				"azurecluster.infrastructure.cluster.x-k8s.io",
+				"azureclusteridentity.infrastructure.cluster.x-k8s.io",
+				"azuremachine.infrastructure.cluster.x-k8s.io",
+				"azuremachinetemplate.infrastructure.cluster.x-k8s.io",
+			},
+		},
+		{
+			name:     "When platform is GCP, it should return GCP infrastructure resources",
+			platform: hyperv1.GCPPlatform,
+			want: []string{
+				"gcpcluster.infrastructure.cluster.x-k8s.io",
+				"gcpmachine.infrastructure.cluster.x-k8s.io",
+				"gcpmachinetemplate.infrastructure.cluster.x-k8s.io",
+			},
+		},
+		{
+			name:     "When platform is IBMCloud, it should return IBM VPC infrastructure resources",
+			platform: hyperv1.IBMCloudPlatform,
+			want:     []string{"ibmvpccluster.infrastructure.cluster.x-k8s.io"},
+		},
+		{
+			name:     "When platform is PowerVS, it should return PowerVS infrastructure resources",
+			platform: hyperv1.PowerVSPlatform,
+			want: []string{
+				"ibmpowervscluster.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsimage.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachine.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachinetemplate.infrastructure.cluster.x-k8s.io",
+			},
+		},
+		{
+			name:     "When platform is OpenStack, it should return OpenStack infrastructure resources",
+			platform: hyperv1.OpenStackPlatform,
+			want: []string{
+				"openstackserver.infrastructure.cluster.x-k8s.io",
+				"openstackcluster.infrastructure.cluster.x-k8s.io",
+				"openstackmachine.infrastructure.cluster.x-k8s.io",
+				"openstackmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"image.openstack.k-orc.cloud",
+			},
+		},
+		{
+			name:     "When platform is Agent, it should return Agent infrastructure resources",
+			platform: hyperv1.AgentPlatform,
+			want: []string{
+				"agentmachine.capi-provider.agent-install.openshift.io",
+				"agentmachinetemplate.capi-provider.agent-install.openshift.io",
+				"agentcluster.capi-provider.agent-install.openshift.io",
+			},
+		},
+		{
+			name:     "When platform is KubeVirt, it should return KubeVirt infrastructure resources",
+			platform: hyperv1.KubevirtPlatform,
+			want: []string{
+				"kubevirtmachine.infrastructure.cluster.x-k8s.io",
+				"kubevirtmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"kubevirtcluster.infrastructure.cluster.x-k8s.io",
+			},
+		},
+		{
+			name:     "When platform is None, it should return no infrastructure resources",
+			platform: hyperv1.NonePlatform,
+			want:     []string{},
+		},
+		{
+			name:     "When platform is unknown, it should return all platform infrastructure resources",
+			platform: hyperv1.PlatformType(""),
+			want: []string{
+				"awsmachine.infrastructure.cluster.x-k8s.io",
+				"awsmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"awscluster.infrastructure.cluster.x-k8s.io",
+				"awsendpointservice.hypershift.openshift.io",
+				"azurecluster.infrastructure.cluster.x-k8s.io",
+				"azureclusteridentity.infrastructure.cluster.x-k8s.io",
+				"azuremachine.infrastructure.cluster.x-k8s.io",
+				"azuremachinetemplate.infrastructure.cluster.x-k8s.io",
+				"gcpcluster.infrastructure.cluster.x-k8s.io",
+				"gcpmachine.infrastructure.cluster.x-k8s.io",
+				"gcpmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"ibmvpccluster.infrastructure.cluster.x-k8s.io",
+				"ibmpowervscluster.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsimage.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachine.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"openstackserver.infrastructure.cluster.x-k8s.io",
+				"openstackcluster.infrastructure.cluster.x-k8s.io",
+				"openstackmachine.infrastructure.cluster.x-k8s.io",
+				"openstackmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"image.openstack.k-orc.cloud",
+				"agentmachine.capi-provider.agent-install.openshift.io",
+				"agentmachinetemplate.capi-provider.agent-install.openshift.io",
+				"agentcluster.capi-provider.agent-install.openshift.io",
+				"kubevirtmachine.infrastructure.cluster.x-k8s.io",
+				"kubevirtmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"kubevirtcluster.infrastructure.cluster.x-k8s.io",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := resourceTypes(platformSpecificResources(test.platform))
+			if fmt.Sprint(got) != fmt.Sprint(test.want) {
+				t.Fatalf("expected resource types %v, got %v", test.want, got)
+			}
+		})
+	}
+}
+
+func TestFilterRegisteredResources(t *testing.T) {
+	t.Run("When candidates mix registered and unregistered resources, it should keep only the registered ones", func(t *testing.T) {
+		c := crfake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+
+		// Resources the (fake) management cluster reports as registered.
+		fakeDiscoveryClient := &fakediscovery.FakeDiscovery{
+			Fake: &clientgotesting.Fake{
+				Resources: discoveryResourcesFor(t, c, []client.Object{
+					&capiaws.AWSMachine{},
+					&capiaws.AWSCluster{},
+				}),
+			},
+		}
+
+		candidates := []client.Object{
+			&capiaws.AWSMachine{},         // registered
+			&capiaws.AWSMachineTemplate{}, // not registered
+			&capiaws.AWSCluster{},         // registered
+			&hyperv1.AWSEndpointService{}, // not registered
+			&capiazure.AzureCluster{},     // registered on a different platform, absent here
+		}
+
+		got, err := filterRegisteredResources(c, fakeDiscoveryClient, candidates)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		want := []string{
+			"awsmachine.infrastructure.cluster.x-k8s.io",
+			"awscluster.infrastructure.cluster.x-k8s.io",
+		}
+		if fmt.Sprint(resourceTypes(got)) != fmt.Sprint(want) {
+			t.Fatalf("expected registered resource types %v, got %v", want, resourceTypes(got))
+		}
+	})
+}
+
+func TestDumpResources(t *testing.T) {
+	t.Run("When the hosted cluster has a platform, it should include base and registered platform/optional resources and exclude unregistered and other-platform resources", func(t *testing.T) {
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "example"},
+			Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+		}
+		c := crfake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hostedCluster).Build()
+
+		// AzureCluster is registered on the (fake) management cluster but must
+		// still be excluded because the hosted cluster is AWS. AWSMachine and
+		// ControlPlaneComponent are registered and should be kept.
+		fakeDiscoveryClient := &fakediscovery.FakeDiscovery{
+			Fake: &clientgotesting.Fake{
+				Resources: discoveryResourcesFor(t, c, []client.Object{
+					&capiaws.AWSMachine{},
+					&capiazure.AzureCluster{},
+					&hyperv1.ControlPlaneComponent{},
+				}),
+			},
+		}
+
+		opts := &DumpOptions{Namespace: "clusters", Name: "example", Log: logr.Discard()}
+		got, err := dumpResources(context.Background(), c, fakeDiscoveryClient, opts, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// coreResources and capiCoreResources are always included; the
+		// control-plane resources are always included; then only the registered
+		// platform/optional resources are appended.
+		want := append([]string{}, resourceTypes(coreResources)...)
+		want = append(want, resourceTypes(capiCoreResources)...)
+		want = append(want,
+			"hostedcontrolplane.hypershift.openshift.io",    // control-plane, always included
+			"poddisruptionbudget.policy",                    // control-plane, always included
+			"networkpolicy.networking.k8s.io",               // control-plane, always included
+			"awsmachine.infrastructure.cluster.x-k8s.io",    // AWS platform, registered
+			"controlplanecomponent.hypershift.openshift.io", // feature-gated, registered
+		)
+		if fmt.Sprint(resourceTypes(got)) != fmt.Sprint(want) {
+			t.Fatalf("expected resource types %v, got %v", want, resourceTypes(got))
+		}
+	})
+}
+
+// discoveryResourcesFor builds fake API discovery entries for the given objects
+// using the client's scheme, so filterRegisteredResources treats them as
+// registered on the cluster.
+func discoveryResourcesFor(t *testing.T, c client.Client, objs []client.Object) []*metav1.APIResourceList {
+	t.Helper()
+	byGroupVersion := map[string][]metav1.APIResource{}
+	for _, obj := range objs {
+		gvk, err := c.GroupVersionKindFor(obj)
+		if err != nil {
+			t.Fatalf("failed to get GVK for %T: %v", obj, err)
+		}
+		groupVersion := gvk.GroupVersion().String()
+		byGroupVersion[groupVersion] = append(byGroupVersion[groupVersion], metav1.APIResource{Kind: gvk.Kind})
+	}
+	lists := make([]*metav1.APIResourceList, 0, len(byGroupVersion))
+	for groupVersion, resources := range byGroupVersion {
+		lists = append(lists, &metav1.APIResourceList{GroupVersion: groupVersion, APIResources: resources})
+	}
+	return lists
 }
 
 func TestNewDumpCommand(t *testing.T) {
