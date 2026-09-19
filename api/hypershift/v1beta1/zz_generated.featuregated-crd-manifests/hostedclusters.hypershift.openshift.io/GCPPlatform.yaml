@@ -6138,6 +6138,7 @@ spec:
                                   - roles/dns.admin (DNS Admin - for managing DNS records)
                                   - roles/compute.networkAdmin (Compute Network Admin - for network management)
                                   - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
+                                  - roles/compute.securityAdmin (Security Admin - for managing worker firewall rules)
                                   See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
                                   Format: service-account-name@project-id.iam.gserviceaccount.com
 

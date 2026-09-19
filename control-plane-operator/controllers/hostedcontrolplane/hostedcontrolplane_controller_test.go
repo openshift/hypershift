@@ -5078,6 +5078,76 @@ func TestReconcileDefaultSecurityGroup_GenerationConflict(t *testing.T) {
 		"platform status should not be patched when generation changed underneath us")
 }
 
+func TestReconcileGCPWorkerFirewallRules(t *testing.T) {
+	t.Run("When the platform is not GCP, it should be a no-op and set no condition", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns", Generation: 1},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				InfraID:  "test-infra",
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{}},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcp).
+			WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+			Build()
+		ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+		r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+		g.Expect(r.reconcileGCPWorkerFirewallRules(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))).To(BeNil())
+	})
+
+	t.Run("When WIF credentials are unavailable, it should degrade gracefully without an aggregate error", func(t *testing.T) {
+		g := NewWithT(t)
+		// Ensure no WIF credentials are visible to the manager in this env.
+		t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns", Generation: 1},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				InfraID: "test-infra",
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.GCPPlatform,
+					GCP: &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network: hyperv1.GCPResourceReference{Name: "test-infra-network"},
+						},
+					},
+				},
+				Networking: hyperv1.ClusterNetworking{NetworkType: hyperv1.OVNKubernetes},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcp).
+			WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+			Build()
+		ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+		r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+		// No aggregate error: the reconcile must not be wedged.
+		g.Expect(r.reconcileGCPWorkerFirewallRules(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.GCPFirewallWaitingForCredentials))
+		g.Expect(cond.ObservedGeneration).To(Equal(int64(1)))
+	})
+}
+
 func TestHealthCheckKASEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

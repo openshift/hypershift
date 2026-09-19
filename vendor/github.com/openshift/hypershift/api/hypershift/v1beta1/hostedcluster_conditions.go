@@ -187,6 +187,18 @@ const (
 	// there are still pending cloud resources to be deleted that are using that SG.
 	AWSDefaultSecurityGroupDeleted ConditionType = "AWSDefaultSecurityGroupDeleted"
 
+	// GCPFirewallRulesReady indicates whether the control-plane-operator has
+	// reconciled the managed GCP worker firewall rule (<infra-id>-internal-cluster)
+	// to its desired state.
+	// This reconcile is best-effort: expected, recoverable states such as missing
+	// Workload Identity Federation credentials, insufficient IAM permissions (the
+	// ctrlplane-op service account is missing roles/compute.securityAdmin), an
+	// unresolvable project/VPC, or an ownership conflict set this condition to
+	// False with an actionable message but do not fail the overall HCP reconcile.
+	// The next periodic reconcile converges automatically once the underlying
+	// condition clears.
+	GCPFirewallRulesReady ConditionType = "GCPFirewallRulesReady"
+
 	// PlatformCredentialsFound indicates that credentials required for the
 	// desired platform are valid.
 	// A failure here is unlikely to resolve without the changing user input.
@@ -406,6 +418,23 @@ const (
 	AutoNodeNotConfiguredReason    = "AutoNodeNotConfigured"
 	AutoNodeProgressingReason      = "AutoNodeProgressing"
 	AutoNodeEvaluationFailedReason = "AutoNodeEvaluationFailed"
+
+	// Reasons for the GCPFirewallRulesReady condition.
+	// GCPFirewallInsufficientPermissions is set when the GCP API returns a 403,
+	// typically because the ctrlplane-op service account has not been granted
+	// roles/compute.securityAdmin. This is the primary existing-cluster case and
+	// is recoverable by re-running the IAM setup.
+	GCPFirewallInsufficientPermissions = "GCPFirewallInsufficientPermissions"
+	// GCPFirewallWaitingForCredentials is set when the Workload Identity Federation
+	// token is not yet available, so the Compute client cannot be built.
+	GCPFirewallWaitingForCredentials = "GCPFirewallWaitingForCredentials"
+	// GCPFirewallWaitingForInfra is set when the HCP's GCP project or VPC cannot
+	// yet be resolved.
+	GCPFirewallWaitingForInfra = "GCPFirewallWaitingForInfra"
+	// GCPFirewallOwnershipConflict is set when a same-named firewall rule exists
+	// but is not owned by (or is incompatible with) the control-plane-operator, so
+	// it is left untouched.
+	GCPFirewallOwnershipConflict = "GCPFirewallOwnershipConflict"
 
 	ReadOnlyRolloutInProgressReason = "ReadOnlyRolloutInProgress"
 	WritePromotionInProgressReason  = "WritePromotionInProgress"
