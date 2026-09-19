@@ -9,12 +9,14 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -30,7 +32,10 @@ const (
 
 func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	if karp.StandaloneKarpenterOperatorEnabled {
-		return karp.adaptStandaloneDeployment(cpContext, deployment)
+		if err := karp.adaptStandaloneDeployment(cpContext, deployment); err != nil {
+			return err
+		}
+		return karp.addStandaloneAdapterContainer(deployment)
 	}
 
 	hcp := cpContext.HCP
@@ -111,7 +116,7 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 		extraEnvVars = append(extraEnvVars,
 			corev1.EnvVar{
 				Name:  KarpenterImageAWSEnvVar,
-				Value: cpContext.ReleaseImageProvider.GetImage("aws-karpenter-provider-aws"),
+				Value: cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterProviderAWSImageName),
 			},
 			corev1.EnvVar{
 				Name:  "AWS_SHARED_CREDENTIALS_FILE",
@@ -140,7 +145,7 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 		extraEnvVars = append(extraEnvVars,
 			corev1.EnvVar{
 				Name:  KarpenterImageAzureEnvVar,
-				Value: cpContext.ReleaseImageProvider.GetImage("azure-karpenter-provider-azure"),
+				Value: cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterProviderAzureImageName),
 			},
 			corev1.EnvVar{
 				Name:  "AZURE_CLIENT_ID",
@@ -201,7 +206,7 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 		)
 	}
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		c.Image = cpContext.ReleaseImageProvider.GetImage("karpenter-operator")
+		c.Image = cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterOperatorImageName)
 		if override, exists := hcp.Annotations[hyperkarpenterv1.KarpenterOperatorImage]; exists && override != "" {
 			c.Image = override
 		}
@@ -234,6 +239,58 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 		c.Env = append(c.Env,
 			extraEnvVars...,
 		)
+	})
+
+	return nil
+}
+
+// addStandaloneAdapterContainer appends the HyperShift Karpenter adapter to the standalone Deployment.
+func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *appsv1.Deployment) error {
+	adapterEnv := []corev1.EnvVar{
+		{
+			Name: "MY_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
+			},
+		},
+		{
+			Name: "MY_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+		{
+			Name:  "KUBE_FEATURE_WatchListClient",
+			Value: "false",
+		},
+	}
+	proxy.SetEnvVars(&adapterEnv)
+
+	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
+		Name:    AdapterContainerName,
+		Image:   karp.HyperShiftOperatorImage,
+		Command: []string{"/usr/bin/karpenter-operator"},
+		Args: []string{
+			"--target-kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+			"--namespace=$(MY_NAMESPACE)",
+			"--control-plane-operator-image=" + karp.ControlPlaneOperatorImage,
+			"--hypershift-operator-image=" + karp.HyperShiftOperatorImage,
+			"--ignition-endpoint=" + karp.IgnitionEndpoint,
+			"--enable-standalone-karpenter-operator",
+		},
+		Env: adapterEnv,
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("60Mi"),
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "target-kubeconfig",
+				MountPath: "/mnt/kubeconfig",
+			},
+		},
 	})
 
 	return nil
