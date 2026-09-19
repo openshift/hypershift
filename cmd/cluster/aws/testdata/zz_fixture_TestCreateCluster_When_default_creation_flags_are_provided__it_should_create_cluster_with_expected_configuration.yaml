@@ -25,7 +25,6 @@ metadata:
   namespace: clusters
 spec:
   autoscaling: {}
-  capabilities: {}
   configuration:
     proxy:
       httpProxy: fakeProxyAddr
