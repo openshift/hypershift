@@ -1,8 +1,6 @@
 module github.com/openshift/hypershift/contrib/gomaxprocs-webhook
 
-go 1.24
-
-toolchain go1.24.0
+go 1.25
 
 require (
 	github.com/go-logr/logr v1.4.2
@@ -64,7 +62,7 @@ require (
 	k8s.io/client-go v0.32.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
-	k8s.io/utils v0.0.0-20260108192941-914a6e750570 // indirect
+	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 )
