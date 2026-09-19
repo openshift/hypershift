@@ -110,9 +110,10 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &capiv1.Machine{}, &handler.EnqueueRequestForObject{})); err != nil {
 		return fmt.Errorf("failed to watch Machines: %w", err)
 	}
-	go func() {
-		_ = kubevirtInfraCache.Start(ctx)
-	}()
+	// Manager owns cache lifecycle so Start() failures fail the HCCO process instead of being discarded.
+	if err := opts.Manager.Add(kubevirtInfraCache); err != nil {
+		return fmt.Errorf("failed to add kubevirt infra cache: %w", err)
+	}
 	allNodes := func(watchContext context.Context, obj client.Object) []reconcile.Request {
 		machineList := &capiv1.MachineList{}
 		if err := r.client.List(watchContext, machineList); err != nil {
