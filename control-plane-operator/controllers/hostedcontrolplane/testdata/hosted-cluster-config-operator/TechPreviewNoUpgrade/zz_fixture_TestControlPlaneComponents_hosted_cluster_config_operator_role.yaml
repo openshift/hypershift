@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 4fc839a16ba36d4b33dfecb2a7bbe7384751050448b3ef944a865a98ea27e63f
+    hypershift.openshift.io/desired-state-hash: afa794f84c904366dfcbf7c81c7d333842bb84a06b74dda42f18fe5397829228
   name: hosted-cluster-config-operator
   namespace: hcp-namespace
   ownerReferences:
@@ -84,6 +84,24 @@ rules:
   - ""
   resources:
   - secrets
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+- apiGroups:
+  - ""
+  resourceNames:
+  - combined-pull-secret
+  - kubeadmin-password
+  resources:
+  - secrets
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
   - services
   verbs:
   - get
