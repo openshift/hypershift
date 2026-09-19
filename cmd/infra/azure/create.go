@@ -324,6 +324,18 @@ func (o *CreateInfraOptions) createDNSAndLBResources(ctx context.Context, l logr
 		return err
 	}
 	l.Info("Successfully created guest cluster egress load balancer")
+
+	// Create a dedicated Public IP for the hosted cluster's kube-apiserver
+	// LoadBalancer frontend. This allows KAS to use standard port 6443 without
+	// colliding with the management cluster's KAS on the shared LB frontend.
+	// The PIP name "{infraID}-kas-pip" matches the annotation set by CPO's
+	// ReconcileService (azure-pip-name).
+	_, err = netMgr.CreatePublicIPAddressForKAS(ctx, resourceGroupName, o.InfraID, o.Location)
+	if err != nil {
+		return err
+	}
+	l.Info("Successfully created dedicated public IP for KAS load balancer frontend")
+
 	return nil
 }
 

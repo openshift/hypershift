@@ -303,6 +303,92 @@ func TestReconcileServiceAzureInternalLB(t *testing.T) {
 	}
 }
 
+func TestReconcileServiceAzurePIPAnnotation(t *testing.T) {
+	// When an Azure (or KubeVirt-on-Azure) HCP with a public LB strategy has an infraID,
+	// ReconcileService should set the azure-pip-name annotation to "{infraID}-kas-pip".
+	// This forces the Azure cloud-provider to create a dedicated LB frontend, avoiding
+	// port 6443 collision with the management cluster's KAS.
+	testCases := []struct {
+		name          string
+		hcp           hyperv1.HostedControlPlane
+		expectPIPName string
+		expectNoPIP   bool
+	}{
+		{
+			name: "Azure public HCP with infraID sets azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "my-infra-123",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+						},
+					},
+				},
+			},
+			expectPIPName: "my-infra-123-kas-pip",
+		},
+		{
+			name: "KubeVirt-on-Azure public HCP sets azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ManagementPlatformAnnotation: string(hyperv1.AzurePlatform),
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "kv-azure-456",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectPIPName: "kv-azure-456-kas-pip",
+		},
+		{
+			name: "AWS HCP does not set azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "aws-infra-789",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectNoPIP: true,
+		},
+		{
+			name: "Azure HCP without infraID does not set azure-pip-name",
+			hcp: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+						},
+					},
+				},
+			},
+			expectNoPIP: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			svc := &corev1.Service{}
+			strategy := hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}
+			err := ReconcileService(svc, &strategy, &v1.OwnerReference{}, config.KASSVCPort, []string{}, &tc.hcp)
+			g.Expect(err).To(BeNil())
+			if tc.expectNoPIP {
+				g.Expect(svc.Annotations).ToNot(HaveKey(azureutil.PIPNameAnnotation))
+			} else {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(azureutil.PIPNameAnnotation, tc.expectPIPName))
+			}
+		})
+	}
+}
+
 func TestReconcilePrivateService(t *testing.T) {
 	azureILBAnnotation := azureutil.InternalLoadBalancerAnnotation
 	awsCrossZoneAnnotation := "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"
