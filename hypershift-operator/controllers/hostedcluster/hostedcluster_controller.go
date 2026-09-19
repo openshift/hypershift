@@ -3877,33 +3877,6 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	return false, nil
 }
 
-// deleteGCPPrivateServiceConnect loops over GCPPrivateServiceConnectList items and sends a delete request for each.
-// It returns true if len(gcpPrivateServiceConnectList.Items) != 0.
-func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyperv1.HostedCluster, namespace string) (bool, error) {
-	log := ctrl.LoggerFrom(ctx)
-	var gcpPrivateServiceConnectList hyperv1.GCPPrivateServiceConnectList
-	if err := c.List(ctx, &gcpPrivateServiceConnectList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("error listing gcpprivateserviceconnects in namespace %s: %w", namespace, err)
-	}
-	for _, psc := range gcpPrivateServiceConnectList.Items {
-		if psc.DeletionTimestamp != nil {
-			continue
-		}
-
-		if err := c.Delete(ctx, &psc); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("error deleting gcpprivateserviceconnect %s in namespace %s: %w", psc.Name, namespace, err)
-		}
-	}
-
-	if len(gcpPrivateServiceConnectList.Items) != 0 {
-		// GCP PSC CRs may have finalizers and should not be terminated until the resources are removed
-		log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", namespace)
-		return true, nil
-	}
-
-	return false, nil
-}
-
 // deleteOpenStackOrcImages deletes all ORC Image CRs in the control plane namespace and waits for
 // them to be fully removed. ORC Images have a finalizer that is only removed after the controller
 // has deleted the corresponding Glance image. This must complete before the namespace is deleted,
@@ -4094,16 +4067,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 	}
 
-	if hc.Spec.Platform.Type == hyperv1.GCPPlatform {
-		exists, err := deleteGCPPrivateServiceConnect(ctx, r.Client, hc, controlPlaneNamespace)
-		if err != nil {
-			return false, err
-		}
-		if exists {
-			log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", controlPlaneNamespace)
-			return false, nil
-		}
-	}
+	// GCP PSC cleanup is now handled by CPO via HCP finalizer
+	// The CPO will detect HCP deletion, clean up GCP resources (forwarding rule, IP, DNS zones),
+	// and remove its finalizer before allowing HCP deletion to proceed.
+	// No explicit CR deletion needed here.
 
 	if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform {
 		exists, err := deleteOpenStackOrcImages(ctx, r.Client, controlPlaneNamespace)
