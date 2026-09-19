@@ -151,6 +151,11 @@ const (
 
 	resourceDeletionTimeout = 10 * time.Minute
 
+	// DefaultPrivateConnectivityCleanupTimeout is the default grace period for
+	// platform controllers to clean up private connectivity resources before CPO
+	// removes the HCP finalizer.
+	DefaultPrivateConnectivityCleanupTimeout = 10 * time.Minute
+
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
@@ -160,6 +165,12 @@ const (
 
 type HostedControlPlaneReconciler struct {
 	client.Client
+	apiReader client.Reader
+
+	// PrivateConnectivityCleanupTimeout controls how long HCP deletion waits for
+	// AWS PrivateLink or Azure Private Link cleanup to complete. A zero value uses
+	// DefaultPrivateConnectivityCleanupTimeout.
+	PrivateConnectivityCleanupTimeout time.Duration
 
 	GVKAccessChecker component.GVKAccessChecker
 
@@ -198,6 +209,9 @@ type HostedControlPlaneReconciler struct {
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
 	if r.clock == nil {
 		r.clock = clock.RealClock{}
+	}
+	if r.apiReader == nil {
+		r.apiReader = mgr.GetAPIReader()
 	}
 	r.setup(createOrUpdate)
 	b := ctrl.NewControllerManagedBy(mgr).
@@ -382,6 +396,8 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 }
 
 func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	allCleanupDone := true
+
 	condition := metav1.Condition{
 		Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
 	}
@@ -421,8 +437,24 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 			return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
 		}
 		if !done {
-			return ctrl.Result{RequeueAfter: time.Minute}, nil
+			allCleanupDone = false
 		}
+	}
+
+	if netutil.IsPrivateHCP(hostedControlPlane) &&
+		(hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform ||
+			hostedControlPlane.Spec.Platform.Type == hyperv1.AzurePlatform) {
+		done, err := r.waitForPrivateConnectivityCleanup(ctx, hostedControlPlane)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed waiting for private connectivity cleanup: %w", err)
+		}
+		if !done {
+			allCleanupDone = false
+		}
+	}
+
+	if !allCleanupDone {
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
 	if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
@@ -433,6 +465,86 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+// waitForPrivateConnectivityCleanup checks whether platform controllers have finished
+// cleaning up private connectivity resources (AWS PrivateLink, Azure PLS). Returns done=true
+// when the condition is set or the timeout has elapsed.
+func (r *HostedControlPlaneReconciler) waitForPrivateConnectivityCleanup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	log := ctrl.LoggerFrom(ctx).WithValues("hcp", hcp.Name)
+	cleanupTimeout := r.privateConnectivityCleanupTimeout()
+
+	cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.PrivateConnectivityCleanedUp))
+	if cond != nil {
+		if cond.Status == metav1.ConditionTrue {
+			return true, nil
+		}
+		if cond.Reason == hyperv1.PrivateConnectivityCleanupTimedOutReason {
+			return true, nil
+		}
+	}
+
+	if hcp.DeletionTimestamp == nil {
+		return true, nil
+	}
+
+	resourcesExist, err := r.privateConnectivityResourcesExist(ctx, hcp)
+	if err != nil {
+		return false, fmt.Errorf("failed to list private connectivity resources: %w", err)
+	}
+	if !resourcesExist {
+		log.Info("No private connectivity resources found, marking cleanup complete")
+		if err := conditions.PatchPrivateConnectivityCleanupCondition(ctx, r.Client, hcp, metav1.ConditionTrue, hyperv1.PrivateConnectivityCleanupCompleteReason, "No private connectivity resources found"); err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			return false, fmt.Errorf("failed to set private connectivity cleanup condition: %w", err)
+		}
+		return true, nil
+	}
+
+	elapsed := r.clock.Since(hcp.DeletionTimestamp.Time)
+	if elapsed > cleanupTimeout {
+		log.Info("Private connectivity cleanup timed out, proceeding with deletion", "elapsed", elapsed, "timeout", cleanupTimeout)
+		if err := conditions.PatchPrivateConnectivityCleanupCondition(ctx, r.Client, hcp, metav1.ConditionFalse, hyperv1.PrivateConnectivityCleanupTimedOutReason, fmt.Sprintf("Platform controller did not signal cleanup completion within %s", cleanupTimeout)); err != nil {
+			return false, fmt.Errorf("failed to set private connectivity cleanup timeout condition: %w", err)
+		}
+		return true, nil
+	}
+
+	log.Info("Waiting for private connectivity cleanup", "elapsed", elapsed, "timeout", cleanupTimeout)
+	return false, nil
+}
+
+func (r *HostedControlPlaneReconciler) privateConnectivityCleanupTimeout() time.Duration {
+	if r.PrivateConnectivityCleanupTimeout > 0 {
+		return r.PrivateConnectivityCleanupTimeout
+	}
+	return DefaultPrivateConnectivityCleanupTimeout
+}
+
+func (r *HostedControlPlaneReconciler) privateConnectivityResourcesExist(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	reader := r.apiReader
+	if reader == nil {
+		reader = r.Client
+	}
+
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		resources := &hyperv1.AWSEndpointServiceList{}
+		if err := reader.List(ctx, resources, client.InNamespace(hcp.Namespace)); err != nil {
+			return false, err
+		}
+		return len(resources.Items) > 0, nil
+	case hyperv1.AzurePlatform:
+		resources := &hyperv1.AzurePrivateLinkServiceList{}
+		if err := reader.List(ctx, resources, client.InNamespace(hcp.Namespace)); err != nil {
+			return false, err
+		}
+		return len(resources.Items) > 0, nil
+	default:
+		return true, nil
+	}
 }
 
 func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
