@@ -44,12 +44,16 @@ func TestTLSConfigForProbeRejectsUntrustedCertificates(t *testing.T) {
 
 	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsCfg}}
 
-	trustedResp, err := client.Get(trustedSrv.URL)
+	trustedReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, trustedSrv.URL, nil)
+	g.Expect(err).ToNot(HaveOccurred())
+	trustedResp, err := client.Do(trustedReq)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(trustedResp.StatusCode).To(Equal(http.StatusOK))
 	g.Expect(trustedResp.Body.Close()).To(Succeed())
 
-	_, err = client.Get(untrustedSrv.URL)
+	untrustedReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, untrustedSrv.URL, nil)
+	g.Expect(err).ToNot(HaveOccurred())
+	_, err = client.Do(untrustedReq)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("certificate"))
 }

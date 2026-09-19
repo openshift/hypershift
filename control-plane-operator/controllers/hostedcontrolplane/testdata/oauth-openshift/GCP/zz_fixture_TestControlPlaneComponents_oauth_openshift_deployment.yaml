@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d69c21759ea1a20a5ba6a617e388ba2c5857b36cd49d3220bb9dddcffc5b3090
+    hypershift.openshift.io/desired-state-hash: 7fd0017668a537a2bb36294310b22dcc43566aea4804e027ec2ae2a7219595d2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: oauth-openshift
@@ -280,6 +280,10 @@ spec:
             - ALL
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
       priorityClassName: hypershift-api-critical
       tolerations:
       - effect: NoSchedule
@@ -344,6 +348,12 @@ spec:
       - configMap:
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}
