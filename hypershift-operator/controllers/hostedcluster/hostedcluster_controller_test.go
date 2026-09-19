@@ -512,7 +512,7 @@ func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			updated := test.controlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.cluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(updated, &test.cluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -566,7 +566,7 @@ func TestReconcileHostedControlPlaneLabelSync(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Labels: test.hcpLabels},
 			}
-			err := reconcileHostedControlPlane(hcp, hc, false, false, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hcp, hc, false, false, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 
 			for key, val := range test.expectedLabels {
@@ -673,7 +673,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(updated, &test.Cluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -813,7 +813,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -872,7 +872,7 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 			g := NewGomegaWithT(t)
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
@@ -978,7 +978,7 @@ func TestReconcileHostedControlPlaneMonitoring(t *testing.T) {
 			hostedCluster.Spec.Monitoring = test.monitoring
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(hostedControlPlane.Spec.Monitoring).To(Equal(test.expectedMonitoring))
 			if test.expectAnnotationOnHCP {
@@ -998,6 +998,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 		hcAnnotations                     map[string]string
 		isAutoscalingNeeded               bool
 		isAWSNodeTerminationHandlerNeeded bool
+		isGCPNodeTerminationHandlerNeeded *bool
 		certRenewalAnnotations            map[string]string
 		expectedAnnotations               map[string]string
 	}
@@ -1233,6 +1234,42 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
+		{
+			name:                              "When GCP node termination handler is needed, it should not set disable annotation",
+			isGCPNodeTerminationHandlerNeeded: ptr.To(true),
+			hcAnnotations:                     map[string]string{},
+			hcpAnnotations:                    map[string]string{},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:                              "When GCP node termination handler is no longer needed, it should add disable annotation",
+			isGCPNodeTerminationHandlerNeeded: ptr.To(false),
+			hcAnnotations:                     map[string]string{},
+			hcpAnnotations:                    map[string]string{},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+				hyperv1.DisableGCPNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:                              "When GCP node termination handler becomes needed, it should remove existing disable annotation",
+			isGCPNodeTerminationHandlerNeeded: ptr.To(true),
+			hcAnnotations:                     map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.DisableGCPNodeTerminationHandlerAnnotation: "true",
+			},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -1244,7 +1281,11 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Annotations = tc.hcpAnnotations
 			hc.Annotations = tc.hcAnnotations
-			err := reconcileHostedControlPlaneAnnotations(hcp, hc, tc.isAutoscalingNeeded, tc.isAWSNodeTerminationHandlerNeeded, func() (map[string]string, error) { return tc.certRenewalAnnotations, nil })
+			isGCPNodeTerminationHandlerNeeded := true
+			if tc.isGCPNodeTerminationHandlerNeeded != nil {
+				isGCPNodeTerminationHandlerNeeded = *tc.isGCPNodeTerminationHandlerNeeded
+			}
+			err := reconcileHostedControlPlaneAnnotations(hcp, hc, tc.isAutoscalingNeeded, tc.isAWSNodeTerminationHandlerNeeded, isGCPNodeTerminationHandlerNeeded, func() (map[string]string, error) { return tc.certRenewalAnnotations, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(hcp.Annotations).To(Equal(tc.expectedAnnotations))
 		})
@@ -6889,6 +6930,132 @@ func TestIsAWSNodeTerminationHandlerNeeded(t *testing.T) {
 			}
 
 			result, err := reconciler.isAWSNodeTerminationHandlerNeeded(context.Background(), tc.hcluster)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestIsGCPNodeTerminationHandlerNeeded(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name           string
+		hcluster       *hyperv1.HostedCluster
+		nodePools      []crclient.Object
+		expectedResult bool
+	}{
+		{
+			name: "When platform is not GCP, it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "When GCP platform has no NodePools, it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform}},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "When GCP platform has a standard NodePool, it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform}},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "nodepool-standard", Namespace: "test-namespace"},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							GCP: &hyperv1.GCPNodePoolPlatform{ProvisioningModel: hyperv1.GCPProvisioningModelStandard},
+						},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "When GCP platform has a Spot NodePool, it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform}},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "nodepool-spot", Namespace: "test-namespace"},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							GCP: &hyperv1.GCPNodePoolPlatform{ProvisioningModel: hyperv1.GCPProvisioningModelSpot},
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When GCP platform has a Preemptible NodePool, it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform}},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "nodepool-preemptible", Namespace: "test-namespace"},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							GCP: &hyperv1.GCPNodePoolPlatform{ProvisioningModel: hyperv1.GCPProvisioningModelPreemptible},
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When GCP platform has an interruptible NodePool belonging to another cluster, it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform}},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "nodepool-spot", Namespace: "test-namespace"},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "different-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							GCP: &hyperv1.GCPNodePoolPlatform{ProvisioningModel: hyperv1.GCPProvisioningModelSpot},
+						},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tc.nodePools) > 0 {
+				clientBuilder = clientBuilder.WithObjects(tc.nodePools...)
+			}
+			client := clientBuilder.Build()
+
+			reconciler := &HostedClusterReconciler{Client: client}
+
+			result, err := reconciler.isGCPNodeTerminationHandlerNeeded(context.Background(), tc.hcluster)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expectedResult))
 		})
