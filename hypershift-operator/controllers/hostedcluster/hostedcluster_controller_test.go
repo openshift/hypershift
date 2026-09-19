@@ -9526,8 +9526,11 @@ func TestDestroyGracePeriod(t *testing.T) {
 func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 	const hcpDeprecationMessage = "The deprecated annotation is set; migrate to the field"
 
+	const metricsForwardingMessage = "The deprecated \"hypershift.openshift.io/enable-metrics-forwarding\" annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation"
+
 	testCases := []struct {
 		name            string
+		hcAnnotations   map[string]string
 		hcp             *hyperv1.HostedControlPlane
 		expectedStatus  metav1.ConditionStatus
 		expectedReason  string
@@ -9539,6 +9542,33 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.StatusUnknownReason,
 			expectedMessage: "The hosted control plane is not found",
+		},
+		{
+			name:            "When a HostedCluster-only deprecated annotation is set, it should set the condition to True without an HCP round-trip",
+			hcAnnotations:   map[string]string{hyperv1.EnableMetricsForwarding: "true"},
+			hcp:             nil,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: metricsForwardingMessage,
+		},
+		{
+			name:          "When both a HostedCluster-only and an HCP-detected deprecation are present, it should aggregate both messages",
+			hcAnnotations: map[string]string{hyperv1.EnableMetricsForwarding: "true"},
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: hcpDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: metricsForwardingMessage + "; " + hcpDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports a deprecated configuration, it should aggregate the message and set the condition to True",
@@ -9589,7 +9619,7 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			g := NewWithT(t)
 
 			hcluster := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Generation: 9},
+				ObjectMeta: metav1.ObjectMeta{Generation: 9, Annotations: tc.hcAnnotations},
 			}
 			r := &HostedClusterReconciler{}
 			r.reconcileDeprecatedConfigurationStatus(hcluster, tc.hcp)
