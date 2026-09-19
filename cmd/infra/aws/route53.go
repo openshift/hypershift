@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 )
 
 func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.Logger, client awsapi.ROUTE53API) (string, error) {
@@ -41,67 +43,154 @@ func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.L
 }
 
 func LookupZone(ctx context.Context, client awsapi.ROUTE53API, name string, isPrivateZone bool) (string, error) {
-	var res *route53types.HostedZone
-	f := func(resp *route53.ListHostedZonesOutput, lastPage bool) (shouldContinue bool) {
-		for idx, zone := range resp.HostedZones {
-			if zone.Config != nil && isPrivateZone == zone.Config.PrivateZone && strings.TrimSuffix(aws.ToString(zone.Name), ".") == strings.TrimSuffix(name, ".") {
-				res = &resp.HostedZones[idx]
-				return false
-			}
-		}
-		return !lastPage
+	zones, err := lookupZones(ctx, client, name, isPrivateZone)
+	if err != nil {
+		return "", err
 	}
+	if len(zones) == 0 {
+		return "", fmt.Errorf("hosted zone %s not found", name)
+	}
+	return cleanZoneID(aws.ToString(zones[0].Id)), nil
+}
+
+// lookupZones returns every hosted zone matching the name and visibility.
+// It intentionally visits all pages so callers can filter same-name zones by VPC association.
+func lookupZones(ctx context.Context, client awsapi.ROUTE53API, name string, isPrivateZone bool) ([]route53types.HostedZone, error) {
+	var zones []route53types.HostedZone
 	if err := retryRoute53WithBackoff(ctx, func() error {
-		paginator := route53.NewListHostedZonesPaginator(client, &route53.ListHostedZonesInput{})
+		var matches []route53types.HostedZone
+		seenTokens := map[string]struct{}{}
+		paginator := route53.NewListHostedZonesPaginator(client, &route53.ListHostedZonesInput{}, func(options *route53.ListHostedZonesPaginatorOptions) {
+			options.StopOnDuplicateToken = true
+		})
 		for paginator.HasMorePages() {
 			resp, err := paginator.NextPage(ctx)
 			if err != nil {
 				return err
 			}
-			if !f(resp, !paginator.HasMorePages()) {
-				break
+			nextToken := aws.ToString(resp.NextMarker)
+			if nextToken != "" {
+				if _, seen := seenTokens[nextToken]; seen {
+					return errors.New("duplicate pagination token")
+				}
+				seenTokens[nextToken] = struct{}{}
+			}
+			for _, zone := range resp.HostedZones {
+				if zone.Config != nil && isPrivateZone == zone.Config.PrivateZone && route53NamesEqual(aws.ToString(zone.Name), name) {
+					matches = append(matches, zone)
+				}
 			}
 		}
+		zones = matches
 		return nil
 	}); err != nil {
-		return "", fmt.Errorf("failed to list hosted zones: %w", err)
+		return nil, fmt.Errorf("failed to list hosted zones: %w", err)
 	}
-	if res == nil {
-		return "", fmt.Errorf("hosted zone %s not found", name)
-	}
-	return cleanZoneID(aws.ToString(res.Id)), nil
+	return zones, nil
 }
 
 func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client awsapi.ROUTE53API, name, vpcID string, authorizeAssociation bool, vpcOwnerClient awsapi.ROUTE53API, initialVPC string) (string, error) {
-	id, err := LookupZone(ctx, client, name, true)
-	if err == nil {
+	var id string
+	zones, err := lookupZones(ctx, client, name, true)
+	if err == nil && len(zones) > 0 {
+		vpcAssociationClient := client
+		if authorizeAssociation {
+			vpcAssociationClient = vpcOwnerClient
+		}
+		zoneIDs := make(map[string]struct{}, len(zones))
+		for _, zone := range zones {
+			zoneIDs[cleanZoneID(aws.ToString(zone.Id))] = struct{}{}
+		}
+		err = retryRoute53WithBackoff(ctx, func() error {
+			var err error
+			id, err = route53VPCMatchingHostedZone(ctx, vpcAssociationClient, &route53types.VPC{
+				VPCId:     aws.String(vpcID),
+				VPCRegion: route53types.VPCRegion(o.Region),
+			}, zoneIDs)
+			if err != nil {
+				return err
+			}
+			if id == "" {
+				// This error is intentionally retryable while Route53's VPC association visibility converges.
+				return fmt.Errorf("no matching hosted zone association is visible yet")
+			}
+			return nil
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to verify existing private hosted zone association: %w", err)
+		}
 		logger.Info("Found existing private zone", "name", name, "id", id)
-		err := setSOAMinimum(ctx, client, id, name)
+		err = setSOAMinimum(ctx, client, id, name)
 		if err != nil {
 			return "", err
 		}
 		return id, err
 	}
 
+	callerReference := uuid.NewString()
+	createRequest := &route53.CreateHostedZoneInput{
+		CallerReference: aws.String(callerReference),
+		Name:            aws.String(name),
+		HostedZoneConfig: &route53types.HostedZoneConfig{
+			PrivateZone: true,
+		},
+		VPC: &route53types.VPC{
+			VPCId:     aws.String(vpcID),
+			VPCRegion: route53types.VPCRegion(o.Region),
+		},
+	}
+	if authorizeAssociation {
+		createRequest.VPC.VPCId = aws.String(initialVPC)
+	}
+
 	var res *route53.CreateHostedZoneOutput
 	if err := retryRoute53WithBackoff(ctx, func() error {
-		callRef := fmt.Sprintf("%d", time.Now().Unix())
-		createRequest := &route53.CreateHostedZoneInput{
-			CallerReference: aws.String(callRef),
-			Name:            aws.String(name),
-			HostedZoneConfig: &route53types.HostedZoneConfig{
-				PrivateZone: true,
-			},
-			VPC: &route53types.VPC{
-				VPCId:     aws.String(vpcID),
-				VPCRegion: route53types.VPCRegion(o.Region),
-			},
-		}
-		if authorizeAssociation {
-			createRequest.VPC.VPCId = aws.String(initialVPC)
-		}
 		if output, err := client.CreateHostedZone(ctx, createRequest); err != nil {
-			return err
+			var alreadyExists *route53types.HostedZoneAlreadyExists
+			if !errors.As(err, &alreadyExists) {
+				return err
+			}
+
+			seenTokens := map[string]struct{}{}
+			paginator := route53.NewListHostedZonesPaginator(client, &route53.ListHostedZonesInput{}, func(options *route53.ListHostedZonesPaginatorOptions) {
+				options.StopOnDuplicateToken = true
+			})
+			for paginator.HasMorePages() {
+				page, err := paginator.NextPage(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to list hosted zones during duplicate-response recovery: %w", err)
+				}
+				for idx := range page.HostedZones {
+					zone := &page.HostedZones[idx]
+					if aws.ToString(zone.CallerReference) != callerReference {
+						continue
+					}
+					if zone.Config == nil || !zone.Config.PrivateZone || !route53NamesEqual(aws.ToString(zone.Name), name) {
+						return &nonRetryableRoute53Error{err: errors.New("cannot verify hosted zone ownership during duplicate-response recovery")}
+					}
+					// Use the zone owner's client because createRequest.VPC is the bootstrap initialVPC in
+					// the cross-account flow, not the target VPC owned by vpcAssociationClient.
+					associated, err := route53VPCContainsHostedZone(ctx, client, createRequest.VPC, aws.ToString(zone.Id))
+					if err != nil {
+						return fmt.Errorf("failed to verify hosted zone VPC association during duplicate-response recovery: %w", err)
+					}
+					if !associated {
+						// This error is intentionally retryable while Route53's hosted-zone association visibility converges.
+						return errors.New("cannot yet verify hosted zone VPC association during duplicate-response recovery")
+					}
+					res = &route53.CreateHostedZoneOutput{HostedZone: zone}
+					return nil
+				}
+				nextToken := aws.ToString(page.NextMarker)
+				if nextToken != "" {
+					if _, seen := seenTokens[nextToken]; seen {
+						return errors.New("duplicate pagination token")
+					}
+					seenTokens[nextToken] = struct{}{}
+				}
+			}
+			// This error is intentionally retryable while Route53's hosted-zone visibility converges.
+			return errors.New("cannot verify hosted zone ownership during duplicate-response recovery: no matching hosted zone found")
 		} else {
 			res = output
 			return nil
@@ -391,6 +480,64 @@ func cleanRecordName(name string) string {
 	return s
 }
 
+func route53NamesEqual(first, second string) bool {
+	first = strings.TrimSuffix(cleanRecordName(first), ".")
+	second = strings.TrimSuffix(cleanRecordName(second), ".")
+	return strings.EqualFold(first, second)
+}
+
+func route53VPCContainsHostedZone(ctx context.Context, client awsapi.ROUTE53API, expected *route53types.VPC, hostedZoneID string) (bool, error) {
+	id, err := route53VPCMatchingHostedZone(ctx, client, expected, map[string]struct{}{cleanZoneID(hostedZoneID): {}})
+	return id != "", err
+}
+
+func route53VPCMatchingHostedZone(ctx context.Context, client awsapi.ROUTE53API, expected *route53types.VPC, hostedZoneIDs map[string]struct{}) (string, error) {
+	if expected == nil {
+		return "", nil
+	}
+	input := &route53.ListHostedZonesByVPCInput{
+		VPCId:     expected.VPCId,
+		VPCRegion: expected.VPCRegion,
+	}
+	seenTokens := map[string]struct{}{}
+	for {
+		output, err := client.ListHostedZonesByVPC(ctx, input)
+		if err != nil {
+			return "", err
+		}
+		if output == nil {
+			return "", fmt.Errorf("unexpected empty ListHostedZonesByVPC response")
+		}
+		for _, zone := range output.HostedZoneSummaries {
+			id := cleanZoneID(aws.ToString(zone.HostedZoneId))
+			if _, exists := hostedZoneIDs[id]; exists {
+				return id, nil
+			}
+		}
+		nextToken := aws.ToString(output.NextToken)
+		if nextToken == "" {
+			return "", nil
+		}
+		if _, seen := seenTokens[nextToken]; seen {
+			return "", errors.New("duplicate pagination token")
+		}
+		seenTokens[nextToken] = struct{}{}
+		input.NextToken = output.NextToken
+	}
+}
+
+type nonRetryableRoute53Error struct {
+	err error
+}
+
+func (e *nonRetryableRoute53Error) Error() string {
+	return e.err.Error()
+}
+
+func (e *nonRetryableRoute53Error) Unwrap() error {
+	return e.err
+}
+
 func retryRoute53WithBackoff(ctx context.Context, fn func() error) error {
 	backoff := wait.Backoff{
 		Duration: 1 * time.Second,
@@ -398,6 +545,10 @@ func retryRoute53WithBackoff(ctx context.Context, fn func() error) error {
 		Factor:   1.5,
 	}
 	retriable := func(e error) bool {
+		var nonRetryableErr *nonRetryableRoute53Error
+		if errors.As(e, &nonRetryableErr) {
+			return false
+		}
 		select {
 		case <-ctx.Done():
 			return false
