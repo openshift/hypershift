@@ -44752,6 +44752,30 @@ If not specified, then Boot diagnostics will be disabled.</p>
 </tr>
 </tbody>
 </table>
+###AzureOutboundType { #hypershift.openshift.io/v1beta1.AzureOutboundType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureOutboundType specifies the outbound connectivity method for worker nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;LoadBalancer&#34;</p></td>
+<td><p>AzureOutboundTypeLoadBalancer uses an Azure Load Balancer with outbound rules for egress.</p>
+</td>
+</tr><tr><td><p>&#34;UserDefinedRouting&#34;</p></td>
+<td><p>AzureOutboundTypeUserDefinedRouting delegates outbound connectivity to the customer&rsquo;s egress mechanism.
+HyperShift disables Load Balancer outbound SNAT when this type is set.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1beta1.AzurePlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -44952,6 +44976,26 @@ This field is required when topology is Private or PublicAndPrivate, and must
 not be set when topology is Public.
 Once set at cluster creation, this field cannot be removed, and it cannot be
 added to an existing cluster that was created without it.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>outboundType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureOutboundType">
+AzureOutboundType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>outboundType specifies the outbound connectivity method for worker node traffic leaving the cluster.
+- LoadBalancer: outbound traffic uses an Azure Load Balancer with outbound rules.
+- UserDefinedRouting: outbound traffic is managed by the customer&rsquo;s egress mechanism (e.g. NAT gateway,
+virtual appliance). The customer must configure egress on their subnets before cluster creation.
+HyperShift disables outbound SNAT on the Load Balancer when this is set.
+When omitted, defaults to LoadBalancer behavior.
+Once set, this field is immutable.</p>
 </td>
 </tr>
 </tbody>

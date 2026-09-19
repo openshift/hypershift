@@ -36,6 +36,7 @@ type AzurePlatformSpecApplyConfiguration struct {
 	ContainerRegistry         *AzureContainerRegistryConfigApplyConfiguration     `json:"containerRegistry,omitempty"`
 	Topology                  *hypershiftv1beta1.AzureTopologyType                `json:"topology,omitempty"`
 	Private                   *AzurePrivateSpecApplyConfiguration                 `json:"private,omitempty"`
+	OutboundType              *hypershiftv1beta1.AzureOutboundType                `json:"outboundType,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
@@ -137,5 +138,13 @@ func (b *AzurePlatformSpecApplyConfiguration) WithTopology(value hypershiftv1bet
 // If called multiple times, the Private field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithPrivate(value *AzurePrivateSpecApplyConfiguration) *AzurePlatformSpecApplyConfiguration {
 	b.Private = value
+	return b
+}
+
+// WithOutboundType sets the OutboundType field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OutboundType field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithOutboundType(value hypershiftv1beta1.AzureOutboundType) *AzurePlatformSpecApplyConfiguration {
+	b.OutboundType = &value
 	return b
 }
