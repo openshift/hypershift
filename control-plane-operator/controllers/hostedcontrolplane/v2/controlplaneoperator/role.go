@@ -31,7 +31,8 @@ func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 		})
 	}
 
-	if cpContext.HCP.Spec.Platform.Type == hyperv1.GCPPlatform {
+	if cpContext.HCP.Spec.Platform.Type == hyperv1.GCPPlatform ||
+		cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform {
 		role.Rules = append(role.Rules, rbacv1.PolicyRule{
 			APIGroups: []string{"externaldns.k8s.io"},
 			Resources: []string{"dnsendpoints"},

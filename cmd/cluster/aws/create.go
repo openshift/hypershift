@@ -62,6 +62,7 @@ type RawCreateOptions struct {
 	AutoNode                         bool
 	UseROSAManagedPolicies           bool
 	SharedRole                       bool
+	ManagedDNS                       bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -272,6 +273,11 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			ResourceTags:   tags,
 			EndpointAccess: endpointAccess,
 		},
+	}
+	if o.ManagedDNS {
+		// An empty spec enables CPO-managed Route53 ingress DNS with all defaults.
+		// The field is gated by the AWSManagedDNS feature gate (TechPreviewNoUpgrade).
+		cluster.Spec.Platform.AWS.ManagedDNS = &hyperv1.AWSManagedDNSSpec{}
 	}
 	if o.AutoNode {
 		cluster.Spec.AutoNode = hyperv1.AutoNode{
@@ -511,6 +517,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
 	flags.BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 	flags.BoolVar(&opts.SharedRole, "shared-role", opts.SharedRole, "Create a single shared role with all role policies instead of individual component roles")
+	flags.BoolVar(&opts.ManagedDNS, "managed-dns", opts.ManagedDNS, "If true, enables CPO-managed Route53 ingress DNS (spec.platform.aws.managedDNS). Requires the AWSManagedDNS feature gate (TechPreviewNoUpgrade).")
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
 
@@ -590,6 +597,7 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 		CreateKarpenterRoleARN:       awsOpts.AutoNode,
 		UseROSAManagedPolicies:       awsOpts.UseROSAManagedPolicies,
 		SharedRole:                   awsOpts.SharedRole,
+		ManagedDNS:                   awsOpts.ManagedDNS,
 	}
 }
 
