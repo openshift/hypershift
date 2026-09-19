@@ -150,6 +150,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:2040/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=imageregistry.operator.openshift.io,v1,Config
         - --required-api=config.openshift.io,v1,Infrastructure
@@ -176,6 +178,9 @@ spec:
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
         - mountPath: /var/kubeconfig
           name: kubeconfig
       priorityClassName: hypershift-control-plane
@@ -212,6 +217,12 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

@@ -105,6 +105,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=operator.openshift.io,v1,DNS
         - --wait-for-labeled-pods-gone=openshift-dns-operator/name=dns-operator
