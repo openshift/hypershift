@@ -26,6 +26,7 @@ type ClusterSizingConfiguration struct {
 
 // ClusterSizingConfigurationSpec defines the desired state of ClusterSizingConfiguration
 type ClusterSizingConfigurationSpec struct {
+	// +kubebuilder:validation:MaxItems=64
 	// +listType=map
 	// +listMapKey=name
 	// +patchMergeKey=name
@@ -115,6 +116,11 @@ type NodeCountCriteria struct {
 
 // Effects configures the effects on a cluster considered part of a t-shirt size class.
 type Effects struct {
+	// containerResourcePolicy is an experimental, explicitly enabled policy for control plane
+	// container requests and Go runtime settings. When omitted, legacy sizing is unchanged.
+	// When enabled, it takes precedence over resourceRequests and kasGoMemLimit.
+	// +optional
+	ContainerResourcePolicy ContainerResourcePolicy `json:"containerResourcePolicy,omitzero"`
 
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Pattern=`^\d+(B|KiB|MiB|GiB|TiB)?$`
@@ -157,6 +163,114 @@ type Effects struct {
 	// +kubebuilder:validation:Optional
 	// MaximumMutatingRequestsInflight specifies the maximum mutating requests in flight for Kube APIServer
 	MaximumMutatingRequestsInflight *int `json:"maximumMutatingRequestsInflight,omitempty"`
+}
+
+// ContainerResourcePolicy defines an experimental resource policy for all regular and init
+// containers in control plane workloads. All defaults must be explicitly configured.
+// +kubebuilder:validation:XValidation:rule="has(self.memoryLimitMultiplier) != has(self.memoryLimitPercent)",message="exactly one of memoryLimitMultiplier or memoryLimitPercent is required"
+type ContainerResourcePolicy struct {
+	// defaultRequests specifies CPU and memory requests for containers without an override.
+	// +required
+	DefaultRequests ContainerRequests `json:"defaultRequests,omitzero"`
+
+	// goMemoryLimitPercent specifies GOMEMLIMIT as a percentage of the memory request.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	// +required
+	GoMemoryLimitPercent int32 `json:"goMemoryLimitPercent,omitempty"`
+
+	// memoryLimitMultiplier specifies the memory limit as a multiple of the memory request.
+	// Mutually exclusive with memoryLimitPercent.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=16
+	// +optional
+	MemoryLimitMultiplier int32 `json:"memoryLimitMultiplier,omitempty"`
+
+	// memoryLimitPercent specifies the memory limit as a percentage of the request,
+	// rounded up to whole MiB. Mutually exclusive with memoryLimitMultiplier.
+	// +kubebuilder:validation:Minimum=100
+	// +kubebuilder:validation:Maximum=1600
+	// +optional
+	MemoryLimitPercent int32 `json:"memoryLimitPercent,omitempty"`
+
+	// cpuLimitPolicy controls CPU limits for every projected regular and init container.
+	// None removes CPU limits. EqualsRequest sets CPU limits equal to CPU requests.
+	// When omitted, CPU limits are removed as with None.
+	// +optional
+	CPULimitPolicy CPULimitPolicy `json:"cpuLimitPolicy,omitempty"`
+
+	// containers specifies overrides identified by component workload name and container name.
+	// An override applies to either a regular or init container with that name.
+	// +listType=map
+	// +listMapKey=workload
+	// +listMapKey=container
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=256
+	// +optional
+	Containers []ContainerResources `json:"containers,omitempty"`
+}
+
+// CPULimitPolicy controls how CPU limits are set for control plane containers.
+// +kubebuilder:validation:Enum=None;EqualsRequest
+type CPULimitPolicy string
+
+const (
+	// CPULimitPolicyNone removes CPU limits.
+	CPULimitPolicyNone CPULimitPolicy = "None"
+	// CPULimitPolicyEqualsRequest sets CPU limits equal to CPU requests.
+	CPULimitPolicyEqualsRequest CPULimitPolicy = "EqualsRequest"
+)
+
+// ContainerRequests specifies an explicit, positive CPU and memory request budget.
+type ContainerRequests struct {
+	// cpu is the CPU request for the container.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:XValidation:rule="isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))",message="cpu must be a positive quantity"
+	// +required
+	CPU resource.Quantity `json:"cpu,omitempty"`
+
+	// memory is the memory request for the container.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:XValidation:rule="isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))",message="memory must be a positive quantity"
+	// +required
+	Memory resource.Quantity `json:"memory,omitempty"`
+}
+
+// ContainerResources overrides the resource policy for one named container in a component workload.
+type ContainerResources struct {
+	// workload is the exact component workload name, not a workload kind or generated pod name.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +required
+	Workload string `json:"workload,omitempty"`
+
+	// container is the exact name of a regular or init container in the workload.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +required
+	Container string `json:"container,omitempty"`
+
+	// requests replaces both default CPU and memory requests for this container.
+	// +required
+	Requests ContainerRequests `json:"requests,omitzero"`
+
+	// goMemoryLimitPercent overrides the policy percentage. Zero disables GOMEMLIMIT
+	// management for this container, for example for a non-Go binary. When omitted,
+	// the policy percentage applies.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	GoMemoryLimitPercent *int32 `json:"goMemoryLimitPercent,omitempty"`
+
+	// goMaxProcs overrides GOMAXPROCS for this container. When omitted, the existing
+	// manifest or Go runtime default is preserved. A zero Go value means unset
+	// and is omitted from JSON; explicitly supplied values must be between 1 and 1024.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=1024
+	// +optional
+	GoMaxProcs int32 `json:"goMaxProcs,omitempty"`
 }
 
 // Management configures behaviors of the management plane for a size class.

@@ -108,7 +108,7 @@ var (
 	}
 )
 
-func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContext, workloadObj T, existingResources map[string]corev1.ResourceRequirements) error {
+func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContext, workloadObj T, existingResources map[string]corev1.ResourceRequirements, previousPolicy bool) error {
 	hcp := cpContext.HCP
 
 	labels := workloadObj.GetLabels()
@@ -207,6 +207,10 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	// preserve existing resource requirements.
 	for idx, container := range podTemplateSpec.Spec.Containers {
 		if res, exist := existingResources[container.Name]; exist {
+			res = *res.DeepCopy()
+			if previousPolicy {
+				restoreGeneratedResources(&res, container.Resources)
+			}
 			podTemplateSpec.Spec.Containers[idx].Resources = res
 		}
 	}
@@ -224,11 +228,35 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	c.setControlPlaneIsolation(podTemplateSpec, hcp)
 	c.setColocation(podTemplateSpec, hcp)
 	c.applyRequestsOverrides(podTemplateSpec, hcp)
+	if err := ApplyContainerResourcePolicy(c.Name(), podTemplateSpec, hcp.Annotations); err != nil {
+		return err
+	}
 	if replicas > 1 && c.MultiZoneSpread() {
 		c.setMultizoneSpread(podTemplateSpec, hcp)
 	}
 
 	return nil
+}
+
+// restoreGeneratedResources replaces previous policy CPU/memory values while
+// keeping custom extended resources and other limits.
+func restoreGeneratedResources(resources *corev1.ResourceRequirements, generated corev1.ResourceRequirements) {
+	if resources.Requests == nil {
+		resources.Requests = corev1.ResourceList{}
+	}
+	if resources.Limits == nil {
+		resources.Limits = corev1.ResourceList{}
+	}
+	for _, key := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		delete(resources.Requests, key)
+		delete(resources.Limits, key)
+		if value, ok := generated.Requests[key]; ok {
+			resources.Requests[key] = value.DeepCopy()
+		}
+		if value, ok := generated.Limits[key]; ok {
+			resources.Limits[key] = value.DeepCopy()
+		}
+	}
 }
 
 func (c *controlPlaneWorkload[T]) setAnnotations(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
