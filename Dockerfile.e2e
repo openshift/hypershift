@@ -24,6 +24,9 @@ COPY --from=builder /hypershift/bin/create-guests /hypershift/bin/create-guests
 COPY --from=builder /hypershift/bin/run-tests /hypershift/bin/run-tests
 COPY --from=builder /hypershift/bin/destroy-guests /hypershift/bin/destroy-guests
 COPY --from=builder /hypershift/bin/dump-guests /hypershift/bin/dump-guests
+# Declarative test plans consumed through the TEST_PLAN env var. They are data,
+# not code, so they have to be copied into the final image explicitly.
+COPY --from=builder /hypershift/test/e2e/v2/testplans /hypershift/testplans
 COPY --from=builder /hypershift/hack/ci-test-e2e.sh /hypershift/hack/ci-test-e2e.sh
 COPY --from=builder /hypershift/hack/run-reqserving-e2e.sh /hypershift/hack/run-reqserving-e2e.sh
 

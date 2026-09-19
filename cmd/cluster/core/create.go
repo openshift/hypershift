@@ -93,6 +93,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
 	flags.StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
 	flags.StringVar(&opts.EtcdStorageSize, "etcd-storage-size", opts.EtcdStorageSize, "The storage size for etcd data volume. Example: 8Gi")
+	flags.StringArrayVar(&opts.EtcdShards, "etcd-shard", opts.EtcdShards, etcdShardFlagHelp)
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
@@ -137,6 +138,7 @@ type RawCreateOptions struct {
 	ControlPlaneOperatorImage        string
 	EtcdStorageClass                 string
 	EtcdStorageSize                  string
+	EtcdShards                       []string
 	FIPS                             bool
 	GenerateSSH                      bool
 	ImageContentSources              string
@@ -429,6 +431,11 @@ func applyEtcdConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) error 
 		}
 		cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size = &etcdStorageSize
 	}
+	shards, err := parseEtcdShards(opts.EtcdShards)
+	if err != nil {
+		return err
+	}
+	cluster.Spec.Etcd.Managed.Shards = shards
 	return nil
 }
 
@@ -752,6 +759,11 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, err
 	}
 	if err := opts.validateNetworkOptions(); err != nil {
+		return nil, err
+	}
+	// Parse the etcd shards early so malformed input fails before any
+	// infrastructure is created.
+	if _, err := parseEtcdShards(opts.EtcdShards); err != nil {
 		return nil, err
 	}
 

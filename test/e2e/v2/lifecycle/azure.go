@@ -167,6 +167,20 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			InitialNodePoolReplicas: &oneInitialReplica,
 			ExtraArgs:               extraArgs,
 		},
+		// Etcd sharding can only be configured at creation time, so it needs a
+		// dedicated cluster. This variant is deliberately absent from
+		// TestMatrix(): it is selected by the etcd sharding test plan
+		// (test/e2e/v2/testplans/azure-etcd-sharding.yaml) so the regular Azure
+		// job does not pay for an extra cluster. It also requires the HyperShift
+		// Operator to be installed with --tech-preview-no-upgrade.
+		{
+			Variant:                 "etcd-sharded",
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			ExtraArgs: append(append([]string{
+				// Shards run 3 replicas, which needs an HA control plane.
+				"--control-plane-availability-policy=HighlyAvailable",
+			}, extraArgs...), e2eutil.EtcdShardingCreateArgs("")...),
+		},
 	}
 }
 
