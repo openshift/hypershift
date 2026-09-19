@@ -9,7 +9,7 @@ RUN make hypershift \
   && make hypershift-operator \
   && make karpenter-operator
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8-1786380870
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 COPY --from=builder /hypershift/bin/hypershift \
   /hypershift/bin/hypershift-operator \
   /hypershift/bin/karpenter-operator \
