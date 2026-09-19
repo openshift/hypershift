@@ -379,6 +379,20 @@ func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSe
 }
 
 func (c *CAPI) Pause(ctx context.Context) error {
+	// Pause MachineHealthCheck(s) first to prevent remediation during the pause
+	// window. If MHC evaluates targets after MD/MS are paused but before MHC
+	// itself is paused, it could initiate unwanted remediation.
+	if c.nodePool.Spec.Management.AutoRepair {
+		if err := c.pauseMachineHealthCheck(ctx, c.machineHealthCheck()); err != nil {
+			return fmt.Errorf("error pausing MachineHealthCheck: %w", err)
+		}
+		if isSpotEnabled(c.nodePool) {
+			if err := c.pauseMachineHealthCheck(ctx, c.spotMachineHealthCheck()); err != nil {
+				return fmt.Errorf("error pausing spot MachineHealthCheck: %w", err)
+			}
+		}
+	}
+
 	// Pause MachineSet
 	if err := c.pauseMachineSet(ctx); err != nil {
 		return fmt.Errorf("error pausing MachineSet: %w", err)
@@ -406,10 +420,23 @@ func (c *CAPI) pauseMachineSet(ctx context.Context) error {
 	}
 	// FIXME: In future we may want to use the spec field instead
 	// https://github.com/kubernetes-sigs/cluster-api/issues/6966
-	// TODO: Also for paused to be complete we will need to pause all MHC if autorepair
-	// is enabled and remove the autoscaling labels from the MachineDeployment / Machineset
 	ms.Annotations[capiv1.PausedAnnotation] = "true"
 	return c.Update(ctx, ms)
+}
+
+func (c *CAPI) pauseMachineHealthCheck(ctx context.Context, mhc *capiv1.MachineHealthCheck) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(mhc), mhc)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineHealthCheck: %w", err)
+	}
+	if mhc.Annotations == nil {
+		mhc.Annotations = make(map[string]string)
+	}
+	mhc.Annotations[capiv1.PausedAnnotation] = "true"
+	return c.Update(ctx, mhc)
 }
 
 func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.MachineHealthCheck) error {
@@ -791,6 +818,8 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 		mhc.Annotations = map[string]string{}
 	}
 	mhc.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	// Remove any paused annotation so the MHC resumes when the NodePool is unpaused.
+	delete(mhc.Annotations, capiv1.PausedAnnotation)
 
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	timeoutSec := supportutil.ClampToInt32(timeOut.Seconds())
@@ -1245,6 +1274,8 @@ func (c *CAPI) reconcileSpotMachineHealthCheck(_ context.Context, mhc *capiv1.Ma
 		mhc.Annotations = map[string]string{}
 	}
 	mhc.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	// Remove any paused annotation so the MHC resumes when the NodePool is unpaused.
+	delete(mhc.Annotations, capiv1.PausedAnnotation)
 
 	// Spot instances need shorter timeouts for faster response to interruption
 	maxUnhealthy := intstr.FromString("100%")
