@@ -3,9 +3,55 @@ package gcputil
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
+
+// LBResourceLabelsAnnotation is the Service annotation read by the GCP cloud-controller-manager
+// (openshift/cloud-provider-gcp) to apply labels to the GCP forwarding rules
+// created for that Service.
+// Format: comma-separated "key=value" pairs, e.g. "goog-partner-solution=foo,env=prod".
+const LBResourceLabelsAnnotation = "cloud.google.com/load-balancer-resource-labels"
+
+// ResourceLabels converts the HCP GCP resource-label list to the map[string]string format
+// expected by GCP API calls (e.g. SetLabels on ForwardingRules, Addresses).
+// Returns nil when no labels are configured.
+func ResourceLabels(hcp *hyperv1.HostedControlPlane) map[string]string {
+	if hcp.Spec.Platform.GCP == nil || len(hcp.Spec.Platform.GCP.ResourceLabels) == 0 {
+		return nil
+	}
+	labels := make(map[string]string, len(hcp.Spec.Platform.GCP.ResourceLabels))
+	for _, l := range hcp.Spec.Platform.GCP.ResourceLabels {
+		v := ""
+		if l.Value != nil {
+			v = *l.Value
+		}
+		labels[l.Key] = v
+	}
+	return labels
+}
+
+// LBResourceLabelsAnnotationValue serializes a GCP resource-label map into the
+// comma-separated "key=value" string expected by LBResourceLabelsAnnotation.
+// Returns an empty string when labels is nil or empty.
+func LBResourceLabelsAnnotationValue(labels map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	// Sort keys for a deterministic annotation value.
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, k+"="+labels[k])
+	}
+	return strings.Join(pairs, ",")
+}
 
 // CredentialSource represents the credential source configuration for GCP external account credentials.
 type CredentialSource struct {
