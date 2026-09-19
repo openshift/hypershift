@@ -27,7 +27,7 @@ var (
 	}
 )
 
-func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, platformType hyperv1.PlatformType, isPrivate bool) error {
+func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, platformType hyperv1.PlatformType, isPrivate bool, disableExternalDNS bool) error {
 	ownerRef.ApplyTo(svc)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = oauthServerLabels
@@ -69,7 +69,11 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 			svc.Annotations = map[string]string{}
 		}
 		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
-			svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+			if !disableExternalDNS {
+				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+			} else {
+				delete(svc.Annotations, hyperv1.ExternalDNSHostnameAnnotation)
+			}
 		}
 		if isPrivate {
 			svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
