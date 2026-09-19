@@ -2,6 +2,7 @@ package cvo
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -256,6 +258,7 @@ func createTestContext(hcp *hyperv1.HostedControlPlane) component.WorkloadContex
 		Client:                fakeClient,
 		HCP:                   hcp,
 		ImageMetadataProvider: fakeImageProvider,
+		ReleaseImageProvider:  testutil.FakeImageProvider(testutil.WithVersion("4.23.0")),
 	}
 }
 
@@ -413,33 +416,53 @@ func TestAdaptDeployment(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
+		for _, release := range []struct {
+			version string
+			tls     bool
+		}{
+			{version: "4.21.32-candidate"},
+			{version: "4.21.32"},
+			{version: "4.22.0"},
+			{version: "4.23.0-rc.0", tls: true},
+			{version: "4.23.0", tls: true},
+			{version: "5.0.0", tls: true},
+			{version: "invalid"},
+			{version: ""},
+		} {
+			t.Run(fmt.Sprintf("%s/%s", tc.name, release.version), func(t *testing.T) {
+				t.Parallel()
+				g := NewWithT(t)
 
-			deployment, err := assets.LoadDeploymentManifest(ComponentName)
-			g.Expect(err).ToNot(HaveOccurred())
+				deployment, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
 
-			cpContext := createTestContext(tc.hcp)
+				cpContext := createTestContext(tc.hcp.DeepCopy())
+				cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion(release.version))
+				cpContext.UserReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion("4.21.32"))
 
-			cvo := &clusterVersionOperator{}
-			err = cvo.adaptDeployment(cpContext, deployment)
-			g.Expect(err).ToNot(HaveOccurred())
+				cvo := &clusterVersionOperator{}
+				err = cvo.adaptDeployment(cpContext, deployment)
+				if release.version == "invalid" || release.version == "" {
+					g.Expect(err).To(MatchError(ContainSubstring("failed to parse control plane release version")))
+					return
+				}
+				g.Expect(err).ToNot(HaveOccurred())
 
-			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
-			g.Expect(container).ToNot(BeNil())
+				container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
 
-			if tc.expectedTLSMinVersion != "" {
-				g.Expect(container.Args).To(ContainElement(tc.expectedTLSMinVersion))
-			} else {
-				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-min-version")))
-			}
+				if release.tls && tc.expectedTLSMinVersion != "" {
+					g.Expect(container.Args).To(ContainElement(tc.expectedTLSMinVersion))
+				} else {
+					g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-min-version")))
+				}
 
-			if tc.expectedCipherSuites != "" {
-				g.Expect(container.Args).To(ContainElement(tc.expectedCipherSuites))
-			} else {
-				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-cipher-suites")))
-			}
-		})
+				if release.tls && tc.expectedCipherSuites != "" {
+					g.Expect(container.Args).To(ContainElement(tc.expectedCipherSuites))
+				} else {
+					g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-cipher-suites")))
+				}
+			})
+		}
 	}
 }
