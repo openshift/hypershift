@@ -25,7 +25,7 @@ cloud.google.com/go/auth/oauth2adapt
 # cloud.google.com/go/compute/metadata v0.9.0
 ## explicit; go 1.24.0
 cloud.google.com/go/compute/metadata
-# cyphar.com/go-pathrs v0.2.1
+# cyphar.com/go-pathrs v0.2.5
 ## explicit; go 1.18
 cyphar.com/go-pathrs
 cyphar.com/go-pathrs/internal/fdutils
@@ -551,7 +551,7 @@ github.com/coreos/stream-metadata-go/stream/rhcos
 github.com/coreos/vcontext/path
 github.com/coreos/vcontext/report
 github.com/coreos/vcontext/tree
-# github.com/cyphar/filepath-securejoin v0.6.0
+# github.com/cyphar/filepath-securejoin v0.7.0
 ## explicit; go 1.18
 github.com/cyphar/filepath-securejoin/internal/consts
 github.com/cyphar/filepath-securejoin/pathrs-lite
