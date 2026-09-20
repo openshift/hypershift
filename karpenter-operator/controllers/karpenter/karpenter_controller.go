@@ -59,6 +59,7 @@ var (
 	crdEC2NodeClass = supportassets.MustCRD(assets.ReadFile, "karpenter.k8s.aws_ec2nodeclasses.yaml")
 	crdNodePool     = supportassets.MustCRD(assets.ReadFile, "karpenter.sh_nodepools.yaml")
 	crdNodeClaim    = supportassets.MustCRD(assets.ReadFile, "karpenter.sh_nodeclaims.yaml")
+	crdNodeOverlay  = supportassets.MustCRD(assets.ReadFile, "karpenter.sh_nodeoverlays.yaml")
 )
 
 type Reconciler struct {
@@ -96,7 +97,8 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 			switch o.GetName() {
 			case "ec2nodeclasses.karpenter.k8s.aws",
 				"nodepools.karpenter.sh",
-				"nodeclaims.karpenter.sh":
+				"nodeclaims.karpenter.sh",
+				"nodeoverlays.karpenter.sh":
 				return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
 			}
 			return nil
@@ -402,6 +404,7 @@ func (r *Reconciler) reconcileCRDs(ctx context.Context, onlyCreate bool) error {
 		crdEC2NodeClass,
 		crdNodePool,
 		crdNodeClaim,
+		crdNodeOverlay,
 	} {
 		crd := desired.DeepCopy()
 		if onlyCreate {
