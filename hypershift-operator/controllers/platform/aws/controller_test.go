@@ -2,7 +2,9 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/aws/smithy-go"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -188,6 +191,91 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 	}
 }
 
+func awsAPIError(code, message, requestID string) error {
+	return fmt.Errorf("operation error AWS: TestOp, https response error StatusCode: 400, RequestID: %s, %w",
+		requestID, &smithy.GenericAPIError{Code: code, Message: message, Fault: smithy.FaultClient})
+}
+
+func TestReconcileAWSEndpointServiceStatusPreservesAWSAPIError(t *testing.T) {
+	const requestID = "req-c8-test"
+	apiErr := awsAPIError("ValidationError", "NLB not found", requestID)
+
+	tests := []struct {
+		name                string
+		endpointServiceName string
+		setupELB            func(*awsapi.MockELBV2API)
+		setupEC2            func(*awsapi.MockEC2API)
+	}{
+		{
+			name: "When DescribeLoadBalancers returns an API error, it should preserve the request ID",
+			setupELB: func(elb *awsapi.MockELBV2API) {
+				elb.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(nil, apiErr)
+			},
+			setupEC2: func(ec2c *awsapi.MockEC2API) {},
+		},
+		{
+			name:                "When DescribeVpcEndpointServiceConfigurations returns an API error, it should preserve the request ID",
+			endpointServiceName: "com.amazonaws.vpce.us-east-1.vpce-svc-existing",
+			setupELB:            func(elb *awsapi.MockELBV2API) {},
+			setupEC2: func(ec2c *awsapi.MockEC2API) {
+				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(nil, apiErr)
+			},
+		},
+		{
+			name: "When CreateVpcEndpointServiceConfiguration InvalidParameter adoption fails, it should preserve the create error",
+			setupELB: func(elb *awsapi.MockELBV2API) {
+				elb.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
+					LoadBalancerArn: aws.String("lb-arn"),
+					State:           &elbv2types.LoadBalancerState{Code: elbv2types.LoadBalancerStateEnumActive},
+				}}}, nil)
+			},
+			setupEC2: func(ec2c *awsapi.MockEC2API) {
+				createErr := awsAPIError("InvalidParameter", "LBs are already associated", requestID)
+				ec2c.EXPECT().CreateVpcEndpointServiceConfiguration(gomock.Any(), gomock.Any()).Return(nil, createErr)
+				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("adoption list failed"))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			mockCtrl := gomock.NewController(t)
+			elbClient := awsapi.NewMockELBV2API(mockCtrl)
+			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+			test.setupELB(elbClient)
+			test.setupEC2(mockEC2)
+
+			r := AWSEndpointServiceReconciler{
+				Client:                        fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(),
+				ManagementClusterCapabilities: &capabilities.ManagementClusterCapabilities{},
+			}
+			awsES := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-ep", Namespace: "ns"},
+				Spec:       hyperv1.AWSEndpointServiceSpec{NetworkLoadBalancerName: "missing-nlb"},
+				Status:     hyperv1.AWSEndpointServiceStatus{EndpointServiceName: test.endpointServiceName},
+			}
+			err := r.reconcileAWSEndpointServiceStatus(t.Context(), awsES, &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							RolesRef: hyperv1.AWSRolesRef{ControlPlaneOperatorARN: "arn:aws:iam::role/fake"},
+						},
+					},
+				},
+			}, mockEC2, elbClient)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(requestID))
+			g.Expect(err.Error()).ToNot(Equal("ValidationError"))
+			g.Expect(err.Error()).ToNot(Equal("InvalidParameter"))
+			var got smithy.APIError
+			if errors.As(err, &got) {
+				g.Expect(got.ErrorCode()).To(BeElementOf("ValidationError", "InvalidParameter"))
+			}
+		})
+	}
+}
+
 func TestDeleteAWSEndpointService(t *testing.T) {
 	existingConnectionsDeleteOut := &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
 		Unsuccessful: []ec2types.UnsuccessfulItem{
@@ -202,15 +290,17 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		deleteOut    *ec2.DeleteVpcEndpointServiceConfigurationsOutput
-		deleteErr    error
-		describeOut  *ec2.DescribeVpcEndpointConnectionsOutput
-		describeErr  error
-		expectReject bool
-		rejectErr    error
-		expected     bool
-		expectErr    bool
+		name             string
+		deleteOut        *ec2.DeleteVpcEndpointServiceConfigurationsOutput
+		deleteErr        error
+		describeOut      *ec2.DescribeVpcEndpointConnectionsOutput
+		describeErr      error
+		expectReject     bool
+		rejectErr        error
+		expected         bool
+		expectErr        bool
+		wantErrContains  string
+		wantErrNotEquals string
 	}{
 		{
 			name: "When deletion succeeds, it should return completed",
@@ -340,6 +430,15 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr:   true,
 		},
 		{
+			name:             "When DescribeVpcEndpointConnections returns a smithy APIError, it should preserve the request ID",
+			deleteOut:        existingConnectionsDeleteOut,
+			describeErr:      awsAPIError("ValidationError", "describe failed", "req-c8-delete"),
+			expected:         false,
+			expectErr:        true,
+			wantErrContains:  "req-c8-delete",
+			wantErrNotEquals: "error code: ValidationError",
+		},
+		{
 			name:      "When RejectVpcEndpointConnections fails, it should return error",
 			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
@@ -383,6 +482,12 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			if err != nil {
 				if !test.expectErr {
 					t.Errorf("expected no err, got %v", err)
+				}
+				if test.wantErrContains != "" && !strings.Contains(err.Error(), test.wantErrContains) {
+					t.Errorf("expected error to contain %q, got %q", test.wantErrContains, err.Error())
+				}
+				if test.wantErrNotEquals != "" && err.Error() == test.wantErrNotEquals {
+					t.Errorf("error was stripped to %q", err.Error())
 				}
 			} else {
 				if test.expectErr {
