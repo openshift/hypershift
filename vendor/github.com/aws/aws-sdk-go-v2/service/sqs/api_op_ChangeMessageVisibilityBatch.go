@@ -4,9 +4,10 @@ package sqs
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Changes the visibility timeout of multiple messages. This is a batch version of ChangeMessageVisibility
@@ -50,6 +51,19 @@ type ChangeMessageVisibilityBatchInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ChangeMessageVisibilityBatchInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ChangeMessageVisibilityBatchRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ChangeMessageVisibilityBatchInput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeChangeMessageVisibilityBatchRequestEntryList(s, schemas.ChangeMessageVisibilityBatchRequest_Entries, v.Entries)
+	if v.QueueUrl != nil {
+		s.WriteString(schemas.ChangeMessageVisibilityBatchRequest_QueueUrl, *v.QueueUrl)
+	}
+}
+
 // For each message in the batch, the response contains a ChangeMessageVisibilityBatchResultEntry tag if the message
 // succeeds or a BatchResultErrorEntrytag if the message fails.
 type ChangeMessageVisibilityBatchOutput struct {
@@ -70,22 +84,35 @@ type ChangeMessageVisibilityBatchOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ChangeMessageVisibilityBatchOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ChangeMessageVisibilityBatchResult)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ChangeMessageVisibilityBatchOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeBatchResultErrorEntryList(s, schemas.ChangeMessageVisibilityBatchResult_Failed, v.Failed)
+	serializeChangeMessageVisibilityBatchResultEntryList(s, schemas.ChangeMessageVisibilityBatchResult_Successful, v.Successful)
+}
+func (v *ChangeMessageVisibilityBatchOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ChangeMessageVisibilityBatchResult, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ChangeMessageVisibilityBatchResult_Failed:
+			return deserializeBatchResultErrorEntryList(d, schemas.ChangeMessageVisibilityBatchResult_Failed, &v.Failed)
+		case schemas.ChangeMessageVisibilityBatchResult_Successful:
+			return deserializeChangeMessageVisibilityBatchResultEntryList(d, schemas.ChangeMessageVisibilityBatchResult_Successful, &v.Successful)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationChangeMessageVisibilityBatchMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson10_serializeOpChangeMessageVisibilityBatch{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ChangeMessageVisibilityBatch, schemas.ChangeMessageVisibilityBatchRequest, schemas.ChangeMessageVisibilityBatchResult)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson10_deserializeOpChangeMessageVisibilityBatch{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ChangeMessageVisibilityBatch, schemas.ChangeMessageVisibilityBatchRequest, schemas.ChangeMessageVisibilityBatchResult), output: &ChangeMessageVisibilityBatchOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -95,19 +122,10 @@ func (c *Client) addOperationChangeMessageVisibilityBatchMiddlewares(stack *midd
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpChangeMessageVisibilityBatchValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ChangeMessageVisibilityBatch"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

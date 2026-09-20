@@ -6,7 +6,6 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Modifies the specified attribute of the specified instance. You can specify
@@ -157,7 +156,7 @@ type ModifyInstanceAttributeInput struct {
 	// base64-encoding might be performed for you. For more information, see [Work with instance user data].
 	//
 	// [Work with instance user data]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-add-user-data.html
-	UserData *types.BlobAttributeValue
+	UserData *types.SecureBlobAttributeValue
 
 	// A new value for the attribute. Use only with the kernel , ramdisk , userData ,
 	// disableApiTermination , or instanceInitiatedShutdownBehavior attribute.
@@ -183,12 +182,6 @@ func (c *Client) addOperationModifyInstanceAttributeMiddlewares(stack *middlewar
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -198,19 +191,10 @@ func (c *Client) addOperationModifyInstanceAttributeMiddlewares(stack *middlewar
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpModifyInstanceAttributeValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ModifyInstanceAttribute"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

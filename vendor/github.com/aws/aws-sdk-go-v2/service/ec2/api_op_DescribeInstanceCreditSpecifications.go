@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Describes the credit option for CPU usage of the specified burstable
@@ -21,8 +20,8 @@ import (
 //
 // If you specify one or more instance IDs, Amazon EC2 returns the credit option (
 // standard or unlimited ) of those instances. If you specify an instance ID that
-// is not valid, such as an instance that is not a burstable performance instance,
-// an error is returned.
+// is not a burstable performance instance, Amazon EC2 returns the standard credit
+// option.
 //
 // Recently terminated instances might appear in the returned results. This
 // interval is usually less than one hour.
@@ -112,12 +111,6 @@ func (c *Client) addOperationDescribeInstanceCreditSpecificationsMiddlewares(sta
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -127,16 +120,7 @@ func (c *Client) addOperationDescribeInstanceCreditSpecificationsMiddlewares(sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "DescribeInstanceCreditSpecifications"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

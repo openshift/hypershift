@@ -4,9 +4,10 @@ package kms
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/kms/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a unique customer managed [KMS key] in your Amazon Web Services account and
@@ -507,6 +508,46 @@ type CreateKeyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateKeyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateKeyRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateKeyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.BypassPolicyLockoutSafetyCheck != false {
+		s.WriteBool(schemas.CreateKeyRequest_BypassPolicyLockoutSafetyCheck, v.BypassPolicyLockoutSafetyCheck)
+	}
+	if v.CustomKeyStoreId != nil {
+		s.WriteString(schemas.CreateKeyRequest_CustomKeyStoreId, *v.CustomKeyStoreId)
+	}
+	if v.CustomerMasterKeySpec != "" {
+		s.WriteString(schemas.CreateKeyRequest_CustomerMasterKeySpec, string(v.CustomerMasterKeySpec))
+	}
+	if v.Description != nil {
+		s.WriteString(schemas.CreateKeyRequest_Description, *v.Description)
+	}
+	if v.KeySpec != "" {
+		s.WriteString(schemas.CreateKeyRequest_KeySpec, string(v.KeySpec))
+	}
+	if v.KeyUsage != "" {
+		s.WriteString(schemas.CreateKeyRequest_KeyUsage, string(v.KeyUsage))
+	}
+	if v.MultiRegion != nil {
+		s.WriteBool(schemas.CreateKeyRequest_MultiRegion, *v.MultiRegion)
+	}
+	if v.Origin != "" {
+		s.WriteString(schemas.CreateKeyRequest_Origin, string(v.Origin))
+	}
+	if v.Policy != nil {
+		s.WriteString(schemas.CreateKeyRequest_Policy, *v.Policy)
+	}
+	serializeTagList(s, schemas.CreateKeyRequest_Tags, v.Tags)
+	if v.XksKeyId != nil {
+		s.WriteString(schemas.CreateKeyRequest_XksKeyId, *v.XksKeyId)
+	}
+}
+
 type CreateKeyOutput struct {
 
 	// Metadata associated with the KMS key.
@@ -518,22 +559,37 @@ type CreateKeyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateKeyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateKeyResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateKeyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.KeyMetadata != nil {
+		s.WriteStruct(schemas.CreateKeyResponse_KeyMetadata)
+		v.KeyMetadata.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *CreateKeyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateKeyResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreateKeyResponse_KeyMetadata:
+			v.KeyMetadata = &types.KeyMetadata{}
+			return v.KeyMetadata.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateKeyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpCreateKey{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateKey, schemas.CreateKeyRequest, schemas.CreateKeyResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpCreateKey{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateKey, schemas.CreateKeyRequest, schemas.CreateKeyResponse), output: &CreateKeyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -543,19 +599,10 @@ func (c *Client) addOperationCreateKeyMiddlewares(stack *middleware.Stack, optio
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateKeyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateKey"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

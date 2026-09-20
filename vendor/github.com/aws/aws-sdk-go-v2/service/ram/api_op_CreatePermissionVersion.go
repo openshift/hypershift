@@ -4,9 +4,10 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a new version of the specified customer managed permission. The new
@@ -88,6 +89,24 @@ type CreatePermissionVersionInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreatePermissionVersionInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreatePermissionVersionRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreatePermissionVersionInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.CreatePermissionVersionRequest_clientToken, *v.ClientToken)
+	}
+	if v.PermissionArn != nil {
+		s.WriteString(schemas.CreatePermissionVersionRequest_permissionArn, *v.PermissionArn)
+	}
+	if v.PolicyTemplate != nil {
+		s.WriteString(schemas.CreatePermissionVersionRequest_policyTemplate, *v.PolicyTemplate)
+	}
+}
+
 type CreatePermissionVersionOutput struct {
 
 	// The idempotency identifier associated with this request. If you want to repeat
@@ -105,22 +124,43 @@ type CreatePermissionVersionOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreatePermissionVersionOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreatePermissionVersionResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreatePermissionVersionOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.CreatePermissionVersionResponse_clientToken, *v.ClientToken)
+	}
+	if v.Permission != nil {
+		s.WriteStruct(schemas.CreatePermissionVersionResponse_permission)
+		v.Permission.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *CreatePermissionVersionOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreatePermissionVersionResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreatePermissionVersionResponse_clientToken:
+			v.ClientToken = new(string)
+			return d.ReadString(schemas.CreatePermissionVersionResponse_clientToken, v.ClientToken)
+		case schemas.CreatePermissionVersionResponse_permission:
+			v.Permission = &types.ResourceSharePermissionDetail{}
+			return v.Permission.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreatePermissionVersionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpCreatePermissionVersion{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreatePermissionVersion, schemas.CreatePermissionVersionRequest, schemas.CreatePermissionVersionResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpCreatePermissionVersion{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreatePermissionVersion, schemas.CreatePermissionVersionRequest, schemas.CreatePermissionVersionResponse), output: &CreatePermissionVersionOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -130,19 +170,10 @@ func (c *Client) addOperationCreatePermissionVersionMiddlewares(stack *middlewar
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreatePermissionVersionValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreatePermissionVersion"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

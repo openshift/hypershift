@@ -4,9 +4,10 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a resource share. You can provide a list of the [Amazon Resource Names (ARNs)] for the resources that
@@ -119,6 +120,34 @@ type CreateResourceShareInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateResourceShareInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateResourceShareRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateResourceShareInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.AllowExternalPrincipals != nil {
+		s.WriteBool(schemas.CreateResourceShareRequest_allowExternalPrincipals, *v.AllowExternalPrincipals)
+	}
+	if v.ClientToken != nil {
+		s.WriteString(schemas.CreateResourceShareRequest_clientToken, *v.ClientToken)
+	}
+	if v.Name != nil {
+		s.WriteString(schemas.CreateResourceShareRequest_name, *v.Name)
+	}
+	serializePermissionArnList(s, schemas.CreateResourceShareRequest_permissionArns, v.PermissionArns)
+	serializePrincipalArnOrIdList(s, schemas.CreateResourceShareRequest_principals, v.Principals)
+	serializeResourceArnList(s, schemas.CreateResourceShareRequest_resourceArns, v.ResourceArns)
+	if v.ResourceShareConfiguration != nil {
+		s.WriteStruct(schemas.CreateResourceShareRequest_resourceShareConfiguration)
+		v.ResourceShareConfiguration.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	serializeSourceArnOrAccountList(s, schemas.CreateResourceShareRequest_sources, v.Sources)
+	serializeTagList(s, schemas.CreateResourceShareRequest_tags, v.Tags)
+}
+
 type CreateResourceShareOutput struct {
 
 	// The idempotency identifier associated with this request. If you want to repeat
@@ -136,22 +165,43 @@ type CreateResourceShareOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *CreateResourceShareOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.CreateResourceShareResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *CreateResourceShareOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.CreateResourceShareResponse_clientToken, *v.ClientToken)
+	}
+	if v.ResourceShare != nil {
+		s.WriteStruct(schemas.CreateResourceShareResponse_resourceShare)
+		v.ResourceShare.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *CreateResourceShareOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.CreateResourceShareResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.CreateResourceShareResponse_clientToken:
+			v.ClientToken = new(string)
+			return d.ReadString(schemas.CreateResourceShareResponse_clientToken, v.ClientToken)
+		case schemas.CreateResourceShareResponse_resourceShare:
+			v.ResourceShare = &types.ResourceShare{}
+			return v.ResourceShare.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationCreateResourceShareMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpCreateResourceShare{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateResourceShare, schemas.CreateResourceShareRequest, schemas.CreateResourceShareResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpCreateResourceShare{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.CreateResourceShare, schemas.CreateResourceShareRequest, schemas.CreateResourceShareResponse), output: &CreateResourceShareOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -161,19 +211,10 @@ func (c *Client) addOperationCreateResourceShareMiddlewares(stack *middleware.St
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpCreateResourceShareValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateResourceShare"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

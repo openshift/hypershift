@@ -5,9 +5,10 @@ package ram
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Lists the RAM permissions that are associated with a resource share.
@@ -61,6 +62,24 @@ type ListResourceSharePermissionsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListResourceSharePermissionsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListResourceSharePermissionsRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListResourceSharePermissionsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.MaxResults != nil {
+		s.WriteInt32(schemas.ListResourceSharePermissionsRequest_maxResults, *v.MaxResults)
+	}
+	if v.NextToken != nil {
+		s.WriteString(schemas.ListResourceSharePermissionsRequest_nextToken, *v.NextToken)
+	}
+	if v.ResourceShareArn != nil {
+		s.WriteString(schemas.ListResourceSharePermissionsRequest_resourceShareArn, *v.ResourceShareArn)
+	}
+}
+
 type ListResourceSharePermissionsOutput struct {
 
 	// If present, this value indicates that more output is available than is included
@@ -80,22 +99,38 @@ type ListResourceSharePermissionsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ListResourceSharePermissionsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ListResourceSharePermissionsResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ListResourceSharePermissionsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.NextToken != nil {
+		s.WriteString(schemas.ListResourceSharePermissionsResponse_nextToken, *v.NextToken)
+	}
+	serializeResourceSharePermissionList(s, schemas.ListResourceSharePermissionsResponse_permissions, v.Permissions)
+}
+func (v *ListResourceSharePermissionsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ListResourceSharePermissionsResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ListResourceSharePermissionsResponse_nextToken:
+			v.NextToken = new(string)
+			return d.ReadString(schemas.ListResourceSharePermissionsResponse_nextToken, v.NextToken)
+		case schemas.ListResourceSharePermissionsResponse_permissions:
+			return deserializeResourceSharePermissionList(d, schemas.ListResourceSharePermissionsResponse_permissions, &v.Permissions)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationListResourceSharePermissionsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpListResourceSharePermissions{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListResourceSharePermissions, schemas.ListResourceSharePermissionsRequest, schemas.ListResourceSharePermissionsResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpListResourceSharePermissions{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ListResourceSharePermissions, schemas.ListResourceSharePermissionsRequest, schemas.ListResourceSharePermissionsResponse), output: &ListResourceSharePermissionsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -105,19 +140,10 @@ func (c *Client) addOperationListResourceSharePermissionsMiddlewares(stack *midd
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpListResourceSharePermissionsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ListResourceSharePermissions"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

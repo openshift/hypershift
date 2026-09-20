@@ -4,9 +4,10 @@ package kms
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/kms/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Changes the properties of a custom key store. You can use this operation to
@@ -240,6 +241,47 @@ type UpdateCustomKeyStoreInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateCustomKeyStoreInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateCustomKeyStoreRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateCustomKeyStoreInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.CloudHsmClusterId != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_CloudHsmClusterId, *v.CloudHsmClusterId)
+	}
+	if v.CustomKeyStoreId != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_CustomKeyStoreId, *v.CustomKeyStoreId)
+	}
+	if v.KeyStorePassword != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_KeyStorePassword, *v.KeyStorePassword)
+	}
+	if v.NewCustomKeyStoreName != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_NewCustomKeyStoreName, *v.NewCustomKeyStoreName)
+	}
+	if v.XksProxyAuthenticationCredential != nil {
+		s.WriteStruct(schemas.UpdateCustomKeyStoreRequest_XksProxyAuthenticationCredential)
+		v.XksProxyAuthenticationCredential.SerializeMembers(s)
+		s.CloseStruct()
+	}
+	if v.XksProxyConnectivity != "" {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_XksProxyConnectivity, string(v.XksProxyConnectivity))
+	}
+	if v.XksProxyUriEndpoint != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_XksProxyUriEndpoint, *v.XksProxyUriEndpoint)
+	}
+	if v.XksProxyUriPath != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_XksProxyUriPath, *v.XksProxyUriPath)
+	}
+	if v.XksProxyVpcEndpointServiceName != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_XksProxyVpcEndpointServiceName, *v.XksProxyVpcEndpointServiceName)
+	}
+	if v.XksProxyVpcEndpointServiceOwner != nil {
+		s.WriteString(schemas.UpdateCustomKeyStoreRequest_XksProxyVpcEndpointServiceOwner, *v.XksProxyVpcEndpointServiceOwner)
+	}
+}
+
 type UpdateCustomKeyStoreOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -247,22 +289,29 @@ type UpdateCustomKeyStoreOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *UpdateCustomKeyStoreOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.UpdateCustomKeyStoreResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *UpdateCustomKeyStoreOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *UpdateCustomKeyStoreOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.UpdateCustomKeyStoreResponse, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationUpdateCustomKeyStoreMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpUpdateCustomKeyStore{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateCustomKeyStore, schemas.UpdateCustomKeyStoreRequest, schemas.UpdateCustomKeyStoreResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpUpdateCustomKeyStore{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.UpdateCustomKeyStore, schemas.UpdateCustomKeyStoreRequest, schemas.UpdateCustomKeyStoreResponse), output: &UpdateCustomKeyStoreOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -272,19 +321,10 @@ func (c *Client) addOperationUpdateCustomKeyStoreMiddlewares(stack *middleware.S
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUpdateCustomKeyStoreValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "UpdateCustomKeyStore"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

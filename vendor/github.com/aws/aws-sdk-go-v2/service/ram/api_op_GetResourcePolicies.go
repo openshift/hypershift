@@ -5,8 +5,9 @@ package ram
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Retrieves the resource policies for the specified resources that you own and
@@ -63,6 +64,25 @@ type GetResourcePoliciesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetResourcePoliciesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetResourcePoliciesRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetResourcePoliciesInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.MaxResults != nil {
+		s.WriteInt32(schemas.GetResourcePoliciesRequest_maxResults, *v.MaxResults)
+	}
+	if v.NextToken != nil {
+		s.WriteString(schemas.GetResourcePoliciesRequest_nextToken, *v.NextToken)
+	}
+	if v.Principal != nil {
+		s.WriteString(schemas.GetResourcePoliciesRequest_principal, *v.Principal)
+	}
+	serializeResourceArnList(s, schemas.GetResourcePoliciesRequest_resourceArns, v.ResourceArns)
+}
+
 type GetResourcePoliciesOutput struct {
 
 	// If present, this value indicates that more output is available than is included
@@ -81,22 +101,38 @@ type GetResourcePoliciesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetResourcePoliciesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetResourcePoliciesResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetResourcePoliciesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.NextToken != nil {
+		s.WriteString(schemas.GetResourcePoliciesResponse_nextToken, *v.NextToken)
+	}
+	serializePolicyList(s, schemas.GetResourcePoliciesResponse_policies, v.Policies)
+}
+func (v *GetResourcePoliciesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetResourcePoliciesResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetResourcePoliciesResponse_nextToken:
+			v.NextToken = new(string)
+			return d.ReadString(schemas.GetResourcePoliciesResponse_nextToken, v.NextToken)
+		case schemas.GetResourcePoliciesResponse_policies:
+			return deserializePolicyList(d, schemas.GetResourcePoliciesResponse_policies, &v.Policies)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetResourcePoliciesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpGetResourcePolicies{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetResourcePolicies, schemas.GetResourcePoliciesRequest, schemas.GetResourcePoliciesResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpGetResourcePolicies{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetResourcePolicies, schemas.GetResourcePoliciesRequest, schemas.GetResourcePoliciesResponse), output: &GetResourcePoliciesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -106,19 +142,10 @@ func (c *Client) addOperationGetResourcePoliciesMiddlewares(stack *middleware.St
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetResourcePoliciesValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetResourcePolicies"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
