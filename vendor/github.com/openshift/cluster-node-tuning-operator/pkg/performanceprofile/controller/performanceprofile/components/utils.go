@@ -110,12 +110,16 @@ func (c *CPULists) GetShared() cpuset.CPUSet {
 	return c.sets["shared"]
 }
 
+func (c *CPULists) GetOvsDpdk() cpuset.CPUSet {
+	return c.sets["ovsDpdk"]
+}
+
 func (c *CPULists) GetSets() map[string]cpuset.CPUSet {
 	return c.sets
 }
 
 // NewCPULists parse text representations of reserved and isolated cpusets definition and returns a CPULists object
-func NewCPULists(reserved, isolated, offlined, shared string) (*CPULists, error) {
+func NewCPULists(reserved, isolated, offlined, shared, ovsDpdk string) (*CPULists, error) {
 	reservedSet, err := cpuset.Parse(reserved)
 	if err != nil {
 		return nil, err
@@ -132,12 +136,17 @@ func NewCPULists(reserved, isolated, offlined, shared string) (*CPULists, error)
 	if err != nil {
 		return nil, err
 	}
+	ovsDpdkSet, err := cpuset.Parse(ovsDpdk)
+	if err != nil {
+		return nil, err
+	}
 	return &CPULists{
 		sets: map[string]cpuset.CPUSet{
 			"reserved": reservedSet,
 			"isolated": isolatedSet,
 			"offlined": offlinedSet,
 			"shared":   sharedSet,
+			"ovsDpdk":  ovsDpdkSet,
 		},
 	}, nil
 }

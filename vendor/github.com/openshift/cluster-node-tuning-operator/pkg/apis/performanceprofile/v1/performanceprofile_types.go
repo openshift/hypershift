@@ -61,6 +61,10 @@ type PerformanceProfileSpec struct {
 	NodeSelector map[string]string `json:"nodeSelector"`
 	// RealTimeKernel defines a set of real time kernel related parameters. RT kernel won't be installed when not set.
 	RealTimeKernel *RealTimeKernel `json:"realTimeKernel,omitempty"`
+	// KernelPageSize defines the kernel page size. 4k is the default, 64k is only supported on aarch64
+	// +default="4k"
+	// +optional
+	KernelPageSize *KernelPageSize `json:"kernelPageSize,omitempty"`
 	// Additional kernel arguments.
 	// +optional
 	AdditionalKernelArgs []string `json:"additionalKernelArgs,omitempty"`
@@ -109,6 +113,17 @@ type CPU struct {
 	// Offline defines a set of CPUs that will be unused and set offline
 	// +optional
 	Offlined *CPUSet `json:"offlined,omitempty"`
+	// Shared defines a set of CPUs that will be shared among guaranteed workloads
+	// that needs additional cpus which are not exclusive,
+	// alongside the isolated, exclusive resources that are being used already by those workloads.
+	// +optional
+	Shared *CPUSet `json:"shared,omitempty"`
+	// OvsDpdk defines a set of CPUs dedicated for OVS-DPDK PMD (Poll Mode Driver)
+	// threads, fully isolated from the operating system and Kubernetes scheduling.
+	// WorkloadPartitioning or --strict-cpu-reservation kubelet CPUManager policy
+	// option is a prerequisite for this feature.
+	// +optional
+	OvsDpdk *CPUSet `json:"ovsDpdk,omitempty"`
 }
 
 // CPUfrequency defines cpu frequencies for isolated and reserved cpus
@@ -121,6 +136,12 @@ type HardwareTuning struct {
 	// ReservedCpuFreq defines a maximum frequency to be set across reserved cpus
 	ReservedCpuFreq *CPUfrequency `json:"reservedCpuFreq,omitempty"`
 }
+
+// KernelPageSize defines the size of the kernel pages.
+// The allowed values for this depend on CPU architecture
+// For x86/amd64, the only valid value is 4k.
+// For aarch64, the valid values are 4k, 64k.
+type KernelPageSize string
 
 // HugePageSize defines size of huge pages, can be 2M or 1G.
 type HugePageSize string
@@ -195,8 +216,12 @@ type WorkloadHints struct {
 	RealTime *bool `json:"realTime,omitempty"`
 	// +optional
 	// PerPodPowerManagement defines if the node should be configured in per pod power management.
-	// PerPodPowerManagement and HighPowerConsumption hints can not be enabled together.
+	// PerPodPowerManagement and HighPowerConsumption hints can not be enabled together. Defaults to false.
 	PerPodPowerManagement *bool `json:"perPodPowerManagement,omitempty"`
+	// +optional
+	// MixedCpus enables the mixed-cpu-node-plugin on the node.
+	// Defaults to false.
+	MixedCpus *bool `json:"mixedCpus,omitempty"`
 }
 
 // PerformanceProfileStatus defines the observed state of PerformanceProfile.
@@ -234,8 +259,4 @@ type PerformanceProfileList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []PerformanceProfile `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&PerformanceProfile{}, &PerformanceProfileList{})
 }
