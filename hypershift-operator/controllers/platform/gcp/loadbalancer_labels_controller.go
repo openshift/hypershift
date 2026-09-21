@@ -42,7 +42,7 @@ const (
 
 // RBAC permissions for GCPLoadBalancerLabelsReconciler.
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
-// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedcontrolplanes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedcontrolplanes,verbs=get;list;watch;patch
 
 // LoadBalancerLabelsComputeClient abstracts the Compute API calls used to label
 // management-project forwarding rules.
