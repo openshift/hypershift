@@ -104,7 +104,8 @@ func (o *ValidatedGCPNodePoolCreateOptions) Complete(_ context.Context, _ *core.
 	}, nil
 }
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions, clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	platformOpts := DefaultOptions()
 	cmd := &cobra.Command{
 		Use:          "gcp",
@@ -125,7 +126,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return coreOpts.CreateRunFunc(opts)(cmd, args)
+		return coreOpts.CreateRunFunc(opts, clientProvider)(cmd, args)
 	}
 
 	return cmd

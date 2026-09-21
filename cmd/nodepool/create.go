@@ -58,7 +58,7 @@ func NewCreateCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
 	cmd.AddCommand(aws.NewCreateCommand(opts, clientProvider))
 	cmd.AddCommand(agent.NewCreateCommand(opts, clientProvider))
 	cmd.AddCommand(azure.NewCreateCommand(opts, clientProvider))
-	cmd.AddCommand(gcp.NewCreateCommand(opts))
+	cmd.AddCommand(gcp.NewCreateCommand(opts, clientProvider))
 	cmd.AddCommand(powervs.NewCreateCommand(opts, clientProvider))
 	cmd.AddCommand(openstack.NewCreateCommand(opts, clientProvider))
 

@@ -542,7 +542,7 @@ func TestCreateClusterAutoNodeRequiresKarpenterClientID(t *testing.T) {
 	coreOpts.Render = true
 	coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-	err = core.CreateCluster(ctx, coreOpts, azureOpts)
+	err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("autoNode on Azure requires a Karpenter workload identity"))
 }
