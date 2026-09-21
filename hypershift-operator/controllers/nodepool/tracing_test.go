@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -130,6 +131,10 @@ func TestNodePoolReconcileTracingSpanAttributes(t *testing.T) {
 
 	r := &NodePoolReconciler{
 		Client: client,
+		// Management defaulting now fills in Replace, so reconcile proceeds past
+		// validation and can reach the error path, which records an event. Provide
+		// a recorder so that path does not panic on a nil recorder.
+		recorder: record.NewFakeRecorder(10),
 	}
 
 	// Reconcile — we don't care about the result, just that the span has
@@ -350,7 +355,13 @@ func TestNodePoolReconcileTracingSpanLinkFromTraceparent(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
 		WithObjects(hcluster, nodePool).WithStatusSubresource(nodePool).Build()
 
-	r := &NodePoolReconciler{Client: fakeClient}
+	r := &NodePoolReconciler{
+		Client: fakeClient,
+		// Management defaulting now fills in Replace, so reconcile proceeds past
+		// validation and can reach the error path, which records an event. Provide
+		// a recorder so that path does not panic on a nil recorder.
+		recorder: record.NewFakeRecorder(10),
+	}
 
 	_, _ = r.Reconcile(t.Context(), reconcile.Request{
 		NamespacedName: crclient.ObjectKeyFromObject(nodePool),
