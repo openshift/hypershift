@@ -1796,6 +1796,10 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 		}
 		deployment.Spec.Template.ObjectMeta.Labels["app"] = manifests.KASConnectionCheckerName
 
+		// No openshift.io/required-scc annotation: kube-system is exempt from SCC
+		// admission, so the annotation would be inert. Worse, if that exemption ever
+		// changed, restricted-v2 (MustRunAsRange) would reject the explicit UID below
+		// because it falls outside the namespace uid-range, breaking the checker.
 		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
 			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
@@ -1811,11 +1815,29 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 		automount := true
 		deployment.Spec.Template.Spec.AutomountServiceAccountToken = &automount
 
+		// kube-system is exempt from both SCC and Pod Security admission, so nothing
+		// assigns a UID for us and the cli image would otherwise run as root. The UID
+		// must be numeric: RunAsNonRoot alone would fail admission at the kubelet
+		// because the image declares no user. Same approach as konnectivity-agent,
+		// which also runs in kube-system.
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: ptr.To[int64](1000),
+		}
+
 		deployment.Spec.Template.Spec.Containers = []corev1.Container{
 			{
 				Name:    "connection-checker",
 				Image:   cliImage,
 				Command: []string{"/bin/sh", "-c", checkScript},
+				SecurityContext: &corev1.SecurityContext{
+					AllowPrivilegeEscalation: ptr.To(false),
+					ReadOnlyRootFilesystem:   ptr.To(true),
+					RunAsNonRoot:             ptr.To(true),
+					Capabilities: &corev1.Capabilities{
+						Drop: []corev1.Capability{"ALL"},
+					},
+				},
+				TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("5m"),
