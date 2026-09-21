@@ -115,6 +115,11 @@ spec:
   clusterName: test
   management:
     autoRepair: true
+    replace:
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
+      strategy: RollingUpdate
     upgradeType: Replace
   nodeDrainTimeout: 0s
   nodeVolumeDetachTimeout: 0s
