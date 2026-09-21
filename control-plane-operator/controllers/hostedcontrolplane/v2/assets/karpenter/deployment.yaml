@@ -5,7 +5,6 @@ metadata:
   namespace: HCP_NAMESPACE
   labels:
     app: karpenter
-    hypershift.openshift.io/managed-by: karpenter-operator
 spec:
   replicas: 1
   selector:
