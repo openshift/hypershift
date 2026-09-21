@@ -2,6 +2,7 @@ package gcpnodeterminationhandler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,12 +18,13 @@ import (
 type fakeDrainer struct {
 	called  bool
 	timeout time.Duration
+	err     error
 }
 
 func (d *fakeDrainer) Drain(_ context.Context, _ string, timeout time.Duration) error {
 	d.called = true
 	d.timeout = timeout
-	return nil
+	return d.err
 }
 
 func TestIsPreempted(t *testing.T) {
@@ -46,7 +48,9 @@ func TestIsPreempted(t *testing.T) {
 					t.Fatalf("expected Metadata-Flavor header Google, got %q", got)
 				}
 				w.WriteHeader(tc.statusCode)
-				_, _ = w.Write([]byte(tc.body))
+				if _, err := w.Write([]byte(tc.body)); err != nil {
+					t.Errorf("failed to write response body: %v", err)
+				}
 			}))
 			defer server.Close()
 
@@ -73,6 +77,8 @@ func TestHandlePreemption(t *testing.T) {
 	testCases := []struct {
 		name           string
 		node           *corev1.Node
+		drainErr       error
+		expectErr      bool
 		expectDrain    bool
 		expectTainted  bool
 		expectCordoned bool
@@ -85,23 +91,32 @@ func TestHandlePreemption(t *testing.T) {
 			expectCordoned: true,
 		},
 		{
-			name: "When node is already tainted, it should skip drain",
+			name: "When node is already tainted, it should still drain",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "node-1"},
 				Spec: corev1.NodeSpec{
 					Taints: []corev1.Taint{{Key: preemptedTaintKey, Effect: corev1.TaintEffectNoSchedule}},
 				},
 			},
-			expectDrain:    false,
+			expectDrain:    true,
 			expectTainted:  true,
-			expectCordoned: false,
+			expectCordoned: true,
+		},
+		{
+			name:           "When drain fails, it should return an error after marking the node",
+			node:           &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}},
+			drainErr:       errors.New("drain failed"),
+			expectErr:      true,
+			expectDrain:    true,
+			expectTainted:  true,
+			expectCordoned: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			client := fake.NewSimpleClientset(tc.node)
-			drainer := &fakeDrainer{}
+			drainer := &fakeDrainer{err: tc.drainErr}
 			h := &handler{
 				nodeName:     tc.node.Name,
 				drainTimeout: 20 * time.Second,
@@ -110,7 +125,11 @@ func TestHandlePreemption(t *testing.T) {
 				log:          logr.Discard(),
 			}
 
-			if err := h.handlePreemption(context.Background()); err != nil {
+			err := h.handlePreemption(context.Background())
+			if tc.expectErr && err == nil {
+				t.Fatalf("expected error")
+			}
+			if !tc.expectErr && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 

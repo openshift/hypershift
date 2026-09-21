@@ -3707,19 +3707,22 @@ func (r *reconciler) reconcileGCPNodeTerminationHandler(ctx context.Context, hcp
 	var errs []error
 
 	daemonSet := gcpnth.DaemonSet()
+	serviceAccount := gcpnth.ServiceAccount()
+	clusterRole := gcpnth.ClusterRole()
+	clusterRoleBinding := gcpnth.ClusterRoleBinding()
 	if _, disabled := hcp.Annotations[hyperv1.DisableGCPNodeTerminationHandlerAnnotation]; disabled {
-		if err := r.client.Delete(ctx, daemonSet); err != nil && !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("failed to delete %T %s: %w", daemonSet, daemonSet.Name, err))
+		for _, obj := range []client.Object{daemonSet, serviceAccount, clusterRole, clusterRoleBinding} {
+			if err := r.client.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %T %s: %w", obj, obj.GetName(), err))
+			}
 		}
 		return errs
 	}
 
-	serviceAccount := gcpnth.ServiceAccount()
 	if _, err := r.CreateOrUpdate(ctx, r.client, serviceAccount, func() error { return nil }); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", serviceAccount, serviceAccount.Name, err))
 	}
 
-	clusterRole := gcpnth.ClusterRole()
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRole, func() error {
 		clusterRole.Rules = []rbacv1.PolicyRule{
 			{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list", "watch", "patch", "update"}},
@@ -3732,7 +3735,6 @@ func (r *reconciler) reconcileGCPNodeTerminationHandler(ctx context.Context, hcp
 		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
 	}
 
-	clusterRoleBinding := gcpnth.ClusterRoleBinding()
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRoleBinding, func() error {
 		clusterRoleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
@@ -3764,6 +3766,9 @@ func (r *reconciler) reconcileGCPNodeTerminationHandler(ctx context.Context, hcp
 					},
 				},
 				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsUser: ptr.To[int64](1000),
+					},
 					ServiceAccountName: serviceAccount.Name,
 					NodeSelector:       map[string]string{"kubernetes.io/os": "linux"},
 					Tolerations: []corev1.Toleration{
@@ -3777,6 +3782,13 @@ func (r *reconciler) reconcileGCPNodeTerminationHandler(ctx context.Context, hcp
 							Image:   hccoImage,
 							Command: []string{"/usr/bin/control-plane-operator"},
 							Args:    []string{gcpnth.ComponentName},
+							SecurityContext: &corev1.SecurityContext{
+								AllowPrivilegeEscalation: ptr.To(false),
+								RunAsNonRoot:             ptr.To(true),
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{"ALL"},
+								},
+							},
 							Env: []corev1.EnvVar{
 								{
 									Name: "NODE_NAME",

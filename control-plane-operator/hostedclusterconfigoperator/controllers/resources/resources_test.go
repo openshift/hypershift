@@ -3896,19 +3896,26 @@ func TestReconcileGCPNodeTerminationHandler(t *testing.T) {
 		expectDaemonSet      bool
 		expectServiceAccount bool
 		expectClusterRole    bool
+		expectRoleBinding    bool
 	}{
 		{
 			name:                 "When GCP node termination handler is enabled, it should reconcile resources",
 			expectDaemonSet:      true,
 			expectServiceAccount: true,
 			expectClusterRole:    true,
+			expectRoleBinding:    true,
 		},
 		{
-			name: "When GCP node termination handler is disabled, it should delete the daemonset",
+			name: "When GCP node termination handler is disabled, it should delete all resources",
 			hcpAnnotations: map[string]string{
 				hyperv1.DisableGCPNodeTerminationHandlerAnnotation: "true",
 			},
-			existingObjects: []client.Object{gcpnth.DaemonSet()},
+			existingObjects: []client.Object{
+				gcpnth.DaemonSet(),
+				gcpnth.ServiceAccount(),
+				gcpnth.ClusterRole(),
+				gcpnth.ClusterRoleBinding(),
+			},
 			expectDaemonSet: false,
 		},
 	}
@@ -3933,6 +3940,15 @@ func TestReconcileGCPNodeTerminationHandler(t *testing.T) {
 			if tc.expectDaemonSet {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(daemonSet.Spec.Template.Spec.Containers[0].Image).To(Equal("test-hcco-image"))
+				g.Expect(daemonSet.Spec.Template.Spec.SecurityContext).ToNot(BeNil())
+				g.Expect(daemonSet.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To[int64](1000)))
+
+				container := daemonSet.Spec.Template.Spec.Containers[0]
+				g.Expect(container.SecurityContext).ToNot(BeNil())
+				g.Expect(container.SecurityContext.RunAsNonRoot).To(Equal(ptr.To(true)))
+				g.Expect(container.SecurityContext.AllowPrivilegeEscalation).To(Equal(ptr.To(false)))
+				g.Expect(container.SecurityContext.Capabilities).ToNot(BeNil())
+				g.Expect(container.SecurityContext.Capabilities.Drop).To(Equal([]corev1.Capability{"ALL"}))
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
@@ -3950,6 +3966,15 @@ func TestReconcileGCPNodeTerminationHandler(t *testing.T) {
 			if tc.expectClusterRole {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(clusterRole.Rules).To(ContainElement(rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"pods/eviction"}, Verbs: []string{"create"}}))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+
+			clusterRoleBinding := gcpnth.ClusterRoleBinding()
+			err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(clusterRoleBinding), clusterRoleBinding)
+			if tc.expectRoleBinding {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(clusterRoleBinding.Subjects).To(ContainElement(rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Namespace: gcpnth.ServiceAccount().Namespace, Name: gcpnth.ServiceAccount().Name}))
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}

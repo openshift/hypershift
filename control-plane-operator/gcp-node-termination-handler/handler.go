@@ -40,23 +40,14 @@ func (d *kubectlDrainer) Drain(ctx context.Context, nodeName string, timeout tim
 		DeleteEmptyDirData:  true,
 		GracePeriodSeconds:  -1,
 		Timeout:             timeout,
-		Out:                 logWriter{logFunc: d.log.Info},
-		ErrOut:              logWriter{logFunc: d.log.Info},
+		Out:                 io.Discard,
+		ErrOut:              io.Discard,
 		Ctx:                 ctx,
 	}
 	if err := drain.RunNodeDrain(drainer, nodeName); err != nil {
-		return fmt.Errorf("failed to drain node %s: %w", nodeName, err)
+		return fmt.Errorf("failed to drain node")
 	}
 	return nil
-}
-
-type logWriter struct {
-	logFunc func(string, ...interface{})
-}
-
-func (w logWriter) Write(p []byte) (int, error) {
-	w.logFunc(string(p))
-	return len(p), nil
 }
 
 type handler struct {
@@ -76,7 +67,7 @@ func (h *handler) run(ctx context.Context) error {
 		if err != nil {
 			h.log.Error(err, "Failed to check GCP preemption metadata")
 		} else if preempted {
-			h.log.Info("GCP preemption detected", "node", h.nodeName)
+			h.log.Info("GCP preemption detected")
 			if err := h.handlePreemption(ctx); err != nil {
 				return err
 			}
@@ -101,7 +92,7 @@ func (h *handler) isPreempted(ctx context.Context) (bool, error) {
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("metadata request failed")
 	}
 	defer resp.Body.Close()
 
@@ -110,7 +101,7 @@ func (h *handler) isPreempted(ctx context.Context) (bool, error) {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to read metadata response")
 	}
 
 	return strings.EqualFold(strings.TrimSpace(string(body)), "TRUE"), nil
@@ -120,37 +111,44 @@ func (h *handler) handlePreemption(ctx context.Context) error {
 	nodes := h.kubeClient.CoreV1().Nodes()
 	node, err := nodes.Get(ctx, h.nodeName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to get node %s: %w", h.nodeName, err)
-	}
-
-	if hasTaint(node, preemptedTaintKey) {
-		h.log.Info("Node is already marked preempted, skipping drain", "node", h.nodeName)
-		return nil
+		return fmt.Errorf("failed to get node")
 	}
 
 	updated := node.DeepCopy()
-	updated.Spec.Unschedulable = true
-	updated.Spec.Taints = append(updated.Spec.Taints, corev1.Taint{
-		Key:    preemptedTaintKey,
-		Effect: corev1.TaintEffectNoSchedule,
-	})
+	changed := false
+	if !updated.Spec.Unschedulable {
+		updated.Spec.Unschedulable = true
+		changed = true
+	}
+	if !hasTaint(updated, preemptedTaintKey) {
+		updated.Spec.Taints = append(updated.Spec.Taints, corev1.Taint{
+			Key:    preemptedTaintKey,
+			Effect: corev1.TaintEffectNoSchedule,
+		})
+		changed = true
+	}
 	if updated.Annotations == nil {
 		updated.Annotations = map[string]string{}
 	}
-	updated.Annotations[preemptionSignalKey] = time.Now().UTC().Format(time.RFC3339)
+	if _, ok := updated.Annotations[preemptionSignalKey]; !ok {
+		updated.Annotations[preemptionSignalKey] = time.Now().UTC().Format(time.RFC3339)
+		changed = true
+	}
 
-	if _, err := nodes.Update(ctx, updated, metav1.UpdateOptions{}); err != nil {
-		if apierrors.IsConflict(err) {
-			return fmt.Errorf("failed to update node %s due to conflict: %w", h.nodeName, err)
+	if changed {
+		if _, err := nodes.Update(ctx, updated, metav1.UpdateOptions{}); err != nil {
+			if apierrors.IsConflict(err) {
+				return fmt.Errorf("failed to update node due to conflict")
+			}
+			return fmt.Errorf("failed to mark node preempted")
 		}
-		return fmt.Errorf("failed to mark node %s preempted: %w", h.nodeName, err)
 	}
 
 	if err := h.drainer.Drain(ctx, h.nodeName, h.drainTimeout); err != nil {
 		return err
 	}
 
-	h.log.Info("Node drain completed", "node", h.nodeName)
+	h.log.Info("Node drain completed")
 	return nil
 }
 
