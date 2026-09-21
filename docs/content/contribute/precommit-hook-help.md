@@ -10,14 +10,17 @@ Once you have precommit installed on your machine([see this for more info](https
 ```shell
 % pre-commit install
 pre-commit installed at .git/hooks/pre-commit
+pre-commit installed at .git/hooks/commit-msg
 pre-commit installed at .git/hooks/pre-push
 ```
 
+Run `pre-commit install` again after pulling a configuration change so the `commit-msg` hook is installed.
+
 The hooks for each stage are defined in the `.pre-commit-config.yaml` file at the base of the HyperShift repo.
 
-## What runs on commit (pre-commit stage)
+## What runs before a commit (pre-commit and commit-msg stages)
 
-These are lightweight checks that run in ~10-30 seconds:
+These are lightweight checks that run in ~10-30 seconds during the `pre-commit` stage:
 
 - **check-merge-conflict** — scans for leftover merge conflict markers
 - **check-yaml** — validates YAML syntax
@@ -26,7 +29,12 @@ These are lightweight checks that run in ~10-30 seconds:
 - **cpo-containerfiles-in-sync** — ensures CPO container files stay in sync
 - **api-lint-fix** — auto-fixes import ordering in `api/` Go files
 - **main-lint-fix** — auto-fixes import ordering in root module Go files
+
 - **run-gitlint** — validates commit messages follow conventional commit format
+
+The `run-gitlint-commit-msg` hook also runs during the `commit-msg` stage. It validates the pending commit message
+supplied by Git, including messages used with `git commit --amend` or `git commit -F`, even when no files have
+changed. This catches title and body formatting issues before the commit is created.
 
 ## What runs on push (pre-push stage)
 
@@ -44,6 +52,7 @@ Sometimes it might be useful to turn off the precommit hooks briefly.
 ```shell
 % pre-commit uninstall
 pre-commit uninstalled
+commit-msg uninstalled
 pre-push uninstalled
 ```
 

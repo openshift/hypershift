@@ -697,6 +697,12 @@ else
 	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
 endif
 
+.PHONY: run-gitlint-commit-msg
+run-gitlint-commit-msg: $(GITLINT)
+	@test -n "$(COMMIT_MSG_FILE)" || { echo "COMMIT_MSG_FILE must be set" >&2; exit 1; }
+	@echo "Linting pending commit message from $(COMMIT_MSG_FILE)"
+	@$(GITLINT) --msg-filename "$(COMMIT_MSG_FILE)"
+
 .PHONY: cpo-container-sync
 cpo-container-sync:
 	@echo "Syncing CPO container images"
