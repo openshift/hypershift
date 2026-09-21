@@ -3,6 +3,8 @@ package gcp
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/support/testutil"
@@ -119,6 +121,11 @@ func TestCLIFlow(t *testing.T) {
 			if err := completedOpts.UpdateNodePool(ctx, nodePool, hcluster, nil); err != nil {
 				t.Fatalf("failed to update nodepool: %v", err)
 			}
+
+			// Verify zone is set in NodePool spec
+			g := NewGomegaWithT(t)
+			g.Expect(nodePool.Spec.Platform.GCP).NotTo(BeNil(), "GCP platform should be set")
+			g.Expect(nodePool.Spec.Platform.GCP.Zone).NotTo(BeEmpty(), "Zone should be set in NodePool")
 
 			// Compare with fixture
 			testutil.CompareWithFixture(t, nodePool.Spec.Platform.GCP)

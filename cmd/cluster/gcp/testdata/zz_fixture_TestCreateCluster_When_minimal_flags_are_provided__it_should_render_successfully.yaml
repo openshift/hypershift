@@ -83,3 +83,28 @@ status:
     host: ""
     port: 0
 ---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: example
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    gcp:
+      machineType: n2-standard-4
+      subnet: test-psc-subnet
+      zone: us-central1-a
+    type: GCP
+  release:
+    image: ""
+  replicas: 0
+status:
+  replicas: 0
+---

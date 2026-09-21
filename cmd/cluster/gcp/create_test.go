@@ -167,8 +167,9 @@ func TestCreateCluster(t *testing.T) {
 	}
 
 	for _, testCase := range []struct {
-		name string
-		args []string
+		name         string
+		args         []string
+		expectedZone string
 	}{
 		{
 			name: "When minimal flags are provided, it should render successfully",
@@ -187,10 +188,11 @@ func TestCreateCluster(t *testing.T) {
 				"--storage-service-account=storage@test-project-123.iam.gserviceaccount.com",
 				"--image-registry-service-account=imageregistry@test-project-123.iam.gserviceaccount.com",
 				"--network-service-account=network@test-project-123.iam.gserviceaccount.com",
-				"--node-pool-replicas=-1",
+				"--node-pool-replicas=0",
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
 			},
+			expectedZone: "us-central1-a",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -216,6 +218,11 @@ func TestCreateCluster(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
+
+			// Verify zone is set in NodePool
+			g := NewGomegaWithT(t)
+			g.Expect(string(manifests)).To(ContainSubstring("zone: " + testCase.expectedZone))
+
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
