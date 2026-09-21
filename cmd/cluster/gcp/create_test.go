@@ -74,6 +74,7 @@ func TestValidateGCPOptions(t *testing.T) {
 	validOpts := RawCreateOptions{
 		Project:                       "test-project-123",
 		Region:                        "us-central1",
+		Zone:                          "us-central1-a",
 		Network:                       "test-network",
 		PrivateServiceConnectSubnet:   "test-psc-subnet",
 		WorkloadIdentityProjectNumber: "123456789012",
@@ -127,6 +128,11 @@ func TestValidateGCPOptions(t *testing.T) {
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"network-service-account\" not set",
 		},
+		"When zone is missing, it should return an error": {
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount, NetworkServiceAccount: validOpts.NetworkServiceAccount},
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"zone\" not set",
+		},
 		"When all required fields are provided, it should succeed": {
 			opts:      validOpts,
 			expectErr: false,
@@ -169,6 +175,7 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--project=test-project-123",
 				"--region=us-central1",
+				"--zone=us-central1-a",
 				"--network=test-network",
 				"--private-service-connect-subnet=test-psc-subnet",
 				"--workload-identity-project-number=123456789012",

@@ -191,6 +191,7 @@ func TestUpdateNodePool(t *testing.T) {
 		opts := &RawGCPNodePoolCreateOptions{
 			GCPNodePoolCreateOptions: &GCPNodePoolCreateOptions{
 				BootDiskSize: -1,
+				Zone:         "us-central1-a",
 			},
 		}
 
@@ -200,6 +201,25 @@ func TestUpdateNodePool(t *testing.T) {
 		}
 
 		expectedError := "boot disk size cannot be negative: -1"
+		if err.Error() != expectedError {
+			t.Errorf("expected error %q, got %q", expectedError, err.Error())
+		}
+	})
+
+	t.Run("When zone is missing, validation should reject it", func(t *testing.T) {
+		ctx := t.Context()
+		opts := &RawGCPNodePoolCreateOptions{
+			GCPNodePoolCreateOptions: &GCPNodePoolCreateOptions{
+				Zone: "",
+			},
+		}
+
+		_, err := opts.Validate(ctx, nil)
+		if err == nil {
+			t.Fatal("expected error for missing zone")
+		}
+
+		expectedError := `required flag(s) "zone" not set`
 		if err.Error() != expectedError {
 			t.Errorf("expected error %q, got %q", expectedError, err.Error())
 		}
