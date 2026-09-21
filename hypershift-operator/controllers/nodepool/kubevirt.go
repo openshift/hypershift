@@ -164,6 +164,24 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 	return nil
 }
 
+func (r *NodePoolReconciler) propagateKubevirtLabels(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	uid := string(nodePool.GetUID())
+	var creds *hyperv1.KubevirtPlatformCredentials
+	if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
+		creds = hcluster.Spec.Platform.Kubevirt.Credentials
+	}
+	kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, creds, controlPlaneNamespace, hcluster.GetNamespace())
+	if err != nil {
+		return fmt.Errorf("failed to get KubeVirt infra client: %w", err)
+	}
+	infraNS := controlPlaneNamespace
+	if creds != nil && len(creds.InfraNamespace) > 0 {
+		infraNS = creds.InfraNamespace
+	}
+
+	return kubevirt.PropagateLabelsToInfraResources(ctx, kvInfraClient.GetInfraClient(), infraNS, nodePool.Name, hcluster.Spec.InfraID, hcluster.Spec.Labels)
+}
+
 func (c *CAPI) kubevirtMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capikubevirt.KubevirtMachineTemplate, error) {
 	nodePool := c.nodePool
 	spec, err := kubevirt.MachineTemplateSpec(nodePool, c.hostedCluster, c.releaseImage, nil, c.resolvedRHELStreamForBootImage)

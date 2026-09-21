@@ -458,6 +458,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if err := r.propagateKubevirtLabels(ctx, nodePool, hcluster, controlPlaneNamespace); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to propagate labels to KubeVirt resources: %w", err)
+		}
+	}
+
 	// Set scale-from-zero annotations if provider is configured and platform is supported
 	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
 	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
