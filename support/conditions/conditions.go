@@ -14,7 +14,6 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		hyperv1.HostedClusterAvailable:                metav1.ConditionTrue,
 		hyperv1.InfrastructureReady:                   metav1.ConditionTrue,
 		hyperv1.KubeAPIServerAvailable:                metav1.ConditionTrue,
-		hyperv1.IgnitionEndpointAvailable:             metav1.ConditionTrue,
 		hyperv1.EtcdAvailable:                         metav1.ConditionTrue,
 		hyperv1.ValidReleaseInfo:                      metav1.ConditionTrue,
 		hyperv1.ValidHostedClusterConfiguration:       metav1.ConditionTrue,
@@ -34,6 +33,14 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		hyperv1.HostedClusterProgressing:  metav1.ConditionFalse,
 		hyperv1.HostedClusterDegraded:     metav1.ConditionFalse,
 		hyperv1.ClusterVersionProgressing: metav1.ConditionFalse,
+	}
+
+	// The ignition server is only expected to be available when it has not been
+	// disabled via the DisableIgnitionServerAnnotation. When disabled, the
+	// control-plane-operator never creates the ignition server deployment and the
+	// hosted cluster controller does not set the IgnitionEndpointAvailable condition.
+	if _, disabled := hostedCluster.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !disabled {
+		conditions[hyperv1.IgnitionEndpointAvailable] = metav1.ConditionTrue
 	}
 
 	switch hostedCluster.Spec.Platform.Type {
