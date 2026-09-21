@@ -2,8 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 18fb2ad5102a41e7128d5b4a866ab16ccc59b8b1271193efc8ef7ae17665ee8f
+    hypershift.openshift.io/desired-state-hash: 6eabf8c619c312bcc7def3c861a9eb6e1830013505ad42769f795853eaa760ba
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:community-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
+      {"from":{"kind":"ImageStreamTag","name":"catalogs:community-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"rebuild-cache\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:community-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -147,8 +148,6 @@ spec:
       - args:
         - --catalog.from=/configs
         - --catalog.to=/extracted-catalog/catalog
-        - --cache.from=/tmp/cache
-        - --cache.to=/extracted-catalog/cache
         command:
         - /utilities/copy-content
         image: from:imagestream
@@ -165,6 +164,27 @@ spec:
         volumeMounts:
         - mountPath: /utilities
           name: utilities
+        - mountPath: /extracted-catalog
+          name: catalog-content
+      - args:
+        - serve
+        - /extracted-catalog/catalog
+        - --cache-dir=/extracted-catalog/cache
+        - --cache-only
+        command:
+        - /bin/opm
+        image: from:imagestream
+        name: rebuild-cache
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
         - mountPath: /extracted-catalog
           name: catalog-content
       nodeSelector:
