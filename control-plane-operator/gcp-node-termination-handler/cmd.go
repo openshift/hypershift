@@ -22,6 +22,7 @@ import (
 )
 
 const defaultMetadataURL = "http://metadata.google.internal/computeMetadata/v1/instance/preempted"
+const defaultMetadataTimeout = time.Second
 
 func NewStartCommand() *cobra.Command {
 	log.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
@@ -82,7 +83,7 @@ func NewStartCommand() *cobra.Command {
 			pollInterval: pollInterval,
 			drainTimeout: drainTimeout,
 			kubeClient:   kubeClient,
-			httpClient:   http.DefaultClient,
+			httpClient:   &http.Client{Timeout: defaultMetadataTimeout},
 			log:          l,
 		}
 		h.drainer = &kubectlDrainer{client: kubeClient, log: l}
