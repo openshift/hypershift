@@ -13,8 +13,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	hcpmanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
