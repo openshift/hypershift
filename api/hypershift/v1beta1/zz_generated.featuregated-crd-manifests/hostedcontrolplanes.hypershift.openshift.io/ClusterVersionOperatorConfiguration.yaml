@@ -6890,11 +6890,14 @@ spec:
                 : size(self.services) >= 4'
             - message: Services list must contain at least 'APIServer', 'OAuthServer',
                 and 'Konnectivity' (and 'Ignition' except on IBMCloud)
+              optionalOldSelf: true
               rule: 'self.platform.type == ''IBMCloud'' ? [''APIServer'', ''OAuthServer'',
                 ''Konnectivity''].all(requiredType, self.services.exists(s, s.service
                 == requiredType)) : [''APIServer'', ''OAuthServer'', ''Konnectivity'',
                 ''Ignition''].all(requiredType, self.services.exists(s, s.service
-                == requiredType))'
+                == requiredType)) || (oldSelf.hasValue() && ![''APIServer'', ''OAuthServer'',
+                ''Konnectivity'', ''Ignition''].all(requiredType, oldSelf.value().services.exists(s,
+                s.service == requiredType)))'
             - message: disableMultiNetwork can only be set to true when networkType
                 is 'Other'
               rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)

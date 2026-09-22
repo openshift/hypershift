@@ -7026,15 +7026,16 @@ spec:
                     (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname)
                     && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size()
                     <= 1)
-                - message: Each nodePort publishingStrategy 'nodePort' and 'hostname'
-                    must be unique within the Services list.
+                - message: Each nodePort publishingStrategy address and port must
+                    be unique within the Services list.
                   rule: self.filter(s, s.servicePublishingStrategy.type == 'NodePort'
                     && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address)
-                    && has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y,
-                    y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort)
-                    && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address
-                    == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port)
-                    && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port
+                    && has(s.servicePublishingStrategy.nodePort.port) && s.servicePublishingStrategy.nodePort.port
+                    > 0).all(x, self.filter(y, y.servicePublishingStrategy.type ==
+                    'NodePort' && (has(y.servicePublishingStrategy.nodePort) && has(y.servicePublishingStrategy.nodePort.address)
+                    && y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address
+                    && has(y.servicePublishingStrategy.nodePort.port) && y.servicePublishingStrategy.nodePort.port
+                    > 0 && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port
                     )).size() <= 1)
               sshKey:
                 description: |-
@@ -7121,11 +7122,14 @@ spec:
                 : size(self.services) >= 4'
             - message: Services list must contain at least 'APIServer', 'OAuthServer',
                 and 'Konnectivity' (and 'Ignition' except on IBMCloud)
+              optionalOldSelf: true
               rule: 'self.platform.type == ''IBMCloud'' ? [''APIServer'', ''OAuthServer'',
                 ''Konnectivity''].all(requiredType, self.services.exists(s, s.service
                 == requiredType)) : [''APIServer'', ''OAuthServer'', ''Konnectivity'',
                 ''Ignition''].all(requiredType, self.services.exists(s, s.service
-                == requiredType))'
+                == requiredType)) || (oldSelf.hasValue() && ![''APIServer'', ''OAuthServer'',
+                ''Konnectivity'', ''Ignition''].all(requiredType, oldSelf.value().services.exists(s,
+                s.service == requiredType)))'
             - message: Services is immutable. Changes might result in unpredictable
                 and disruptive behavior.
               rule: 'self.platform.type != "IBMCloud" ? self.services == oldSelf.services

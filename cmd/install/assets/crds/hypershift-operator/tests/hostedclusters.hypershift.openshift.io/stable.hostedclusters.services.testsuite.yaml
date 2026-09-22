@@ -379,6 +379,88 @@ tests:
               - servingCertificate:
                   name: my-cert
 
+
+  - name: When two NodePort services share an address with port 0 it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "192.0.2.10"
+              port: 0
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "192.0.2.10"
+              port: 0
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When two NodePort services share an address and positive port it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "192.0.2.10"
+              port: 30000
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "192.0.2.10"
+              port: 30000
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Each nodePort publishingStrategy address and port must be unique within the Services list."
+
   onUpdate:
   - name: When services publishing strategy type is changed it should fail
     initial: |
