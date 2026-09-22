@@ -427,8 +427,9 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 
 		// Guest cloud-resource cleanup has reached its terminal outcome. Tear down
 		// the managed GCP worker firewall rule before removing the finalizer, so it
-		// is gone before the CLI deletes the VPC network. Any failure/conflict
-		// (including WIF not yet available) retains the finalizer and retries.
+		// is gone before the CLI deletes the VPC network. Recoverable failures
+		// (including WIF not yet available) retain the finalizer and retry; an
+		// ownership conflict is a terminal skip so finalization is not blocked.
 		if err := r.destroyGCPWorkerFirewallRules(ctx, hostedControlPlane); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete GCP worker firewall rules: %w", err)
 		}
@@ -2965,9 +2966,11 @@ func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx conte
 }
 
 // destroyGCPWorkerFirewallRules deletes the managed GCP worker firewall rule
-// during HCP deletion. A missing rule is success. Any other failure/conflict
-// (including WIF credentials not yet being available) returns an error so the
-// caller retains the HCP finalizer and retries.
+// during HCP deletion. A missing rule is success, and an ownership conflict is a
+// terminal skip (the unowned rule is left untouched so finalization can
+// proceed). Any other failure (including WIF credentials not yet being
+// available) returns an error so the caller retains the HCP finalizer and
+// retries.
 func (r *HostedControlPlaneReconciler) destroyGCPWorkerFirewallRules(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	if hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
 		return nil

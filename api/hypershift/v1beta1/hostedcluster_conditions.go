@@ -435,6 +435,13 @@ const (
 	// but is not owned by (or is incompatible with) the control-plane-operator, so
 	// it is left untouched.
 	GCPFirewallOwnershipConflict = "GCPFirewallOwnershipConflict"
+	// GCPFirewallInvalidConfiguration is set when the derived firewall request is
+	// rejected for a reason that cannot succeed on retry (e.g. an infra ID that
+	// yields a firewall name over GCP's 63-character RFC1035 limit, or an
+	// otherwise malformed request). It requires a configuration or code change,
+	// not a retry, so it is reported as a terminal, actionable state rather than
+	// being masked as waiting for infrastructure.
+	GCPFirewallInvalidConfiguration = "GCPFirewallInvalidConfiguration"
 
 	ReadOnlyRolloutInProgressReason = "ReadOnlyRolloutInProgress"
 	WritePromotionInProgressReason  = "WritePromotionInProgress"

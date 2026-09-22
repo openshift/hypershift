@@ -3,11 +3,14 @@ package gcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/api/compute/v1"
@@ -111,13 +114,49 @@ func (f *fakeFirewallClient) WaitForGlobalOperation(_ context.Context, _, opName
 
 func testManager(client firewallClient) *FirewallManager {
 	return &FirewallManager{
-		projectID:    testProject,
-		network:      testNetwork,
-		infraID:      testInfraID,
-		networkType:  hyperv1.OVNKubernetes,
-		logger:       logr.Discard(),
-		newClient:    func(context.Context) (firewallClient, error) { return client, nil },
-		wifAvailable: func() (bool, error) { return true, nil },
+		projectID:     testProject,
+		network:       testNetwork,
+		infraID:       testInfraID,
+		networkType:   hyperv1.OVNKubernetes,
+		nodePortRange: testNodePortRange,
+		logger:        logr.Discard(),
+		newClient:     func(context.Context) (firewallClient, error) { return client, nil },
+		wifAvailable:  func() (bool, error) { return true, nil },
+	}
+}
+
+func TestServiceNodePortRange(t *testing.T) {
+	tests := []struct {
+		name          string
+		configuration *hyperv1.ClusterConfiguration
+		expected      string
+	}{
+		{
+			name:          "When configuration is nil, it should default",
+			configuration: nil,
+			expected:      config.DefaultServiceNodePortRange,
+		},
+		{
+			name:          "When the network config is nil, it should default",
+			configuration: &hyperv1.ClusterConfiguration{},
+			expected:      config.DefaultServiceNodePortRange,
+		},
+		{
+			name:          "When the range is empty, it should default",
+			configuration: &hyperv1.ClusterConfiguration{Network: &configv1.NetworkSpec{}},
+			expected:      config.DefaultServiceNodePortRange,
+		},
+		{
+			name:          "When a custom range is set, it should be used",
+			configuration: &hyperv1.ClusterConfiguration{Network: &configv1.NetworkSpec{ServiceNodePortRange: "25000-35000"}},
+			expected:      "25000-35000",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(serviceNodePortRange(tc.configuration)).To(Equal(tc.expected))
+		})
 	}
 }
 
@@ -142,7 +181,7 @@ func TestFirewallManagerReconcile(t *testing.T) {
 		g := NewWithT(t)
 		client := newFakeClient()
 		name := firewallRuleName(testInfraID)
-		existing := desiredFirewall(testInfraID, client.network.SelfLink, hyperv1.OVNKubernetes)
+		existing := desiredFirewall(testInfraID, client.network.SelfLink, hyperv1.OVNKubernetes, testNodePortRange)
 		existing.Network = client.network.SelfLink
 		marker, _ := ownershipMarker(testInfraID)
 		existing.Description = marker
@@ -158,7 +197,7 @@ func TestFirewallManagerReconcile(t *testing.T) {
 		g := NewWithT(t)
 		client := newFakeClient()
 		name := firewallRuleName(testInfraID)
-		existing := desiredFirewall(testInfraID, client.network.SelfLink, hyperv1.OVNKubernetes)
+		existing := desiredFirewall(testInfraID, client.network.SelfLink, hyperv1.OVNKubernetes, testNodePortRange)
 		existing.Network = client.network.SelfLink
 		marker, _ := ownershipMarker(testInfraID)
 		existing.Description = marker
@@ -170,6 +209,38 @@ func TestFirewallManagerReconcile(t *testing.T) {
 		g.Expect(client.patchCalled).To(BeTrue())
 		g.Expect(client.lastPatched.SourceRanges).To(BeEmpty())
 		g.Expect(client.lastPatched.ForceSendFields).To(ContainElement("SourceRanges"))
+	})
+
+	t.Run("When an owned rule uses incompatible selectors, it should patch them cleared", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		name := firewallRuleName(testInfraID)
+		marker, _ := ownershipMarker(testInfraID)
+		existing := desiredFirewall(testInfraID, client.network.SelfLink, hyperv1.OVNKubernetes, testNodePortRange)
+		existing.Network = client.network.SelfLink
+		existing.Description = marker
+		// Hand-edited into every mutually-exclusive selector mode at once.
+		existing.SourceRanges = []string{"10.0.0.0/8"}
+		existing.DestinationRanges = []string{"10.1.0.0/16"}
+		existing.SourceServiceAccounts = []string{"sa@" + testProject + ".iam.gserviceaccount.com"}
+		existing.TargetServiceAccounts = []string{"sa@" + testProject + ".iam.gserviceaccount.com"}
+		client.firewalls[name] = existing
+
+		res := testManager(client).Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeConverged))
+		g.Expect(client.patchCalled).To(BeTrue())
+		// The patch payload must clear every incompatible selector and force the
+		// fields on the wire so GCP does not reject tags alongside them.
+		g.Expect(client.lastPatched.SourceRanges).To(BeEmpty())
+		g.Expect(client.lastPatched.DestinationRanges).To(BeEmpty())
+		g.Expect(client.lastPatched.SourceServiceAccounts).To(BeEmpty())
+		g.Expect(client.lastPatched.TargetServiceAccounts).To(BeEmpty())
+		g.Expect(client.lastPatched.ForceSendFields).To(ContainElements(
+			"SourceRanges",
+			"DestinationRanges",
+			"SourceServiceAccounts",
+			"TargetServiceAccounts",
+		))
 	})
 
 	t.Run("When a same-named rule lacks the ownership marker, it should report a conflict and leave it untouched", func(t *testing.T) {
@@ -206,6 +277,50 @@ func TestFirewallManagerReconcile(t *testing.T) {
 		g.Expect(res.Status).To(Equal(OutcomeDegraded))
 		g.Expect(res.Reason).To(Equal(hyperv1.GCPFirewallOwnershipConflict))
 		g.Expect(client.patchCalled).To(BeFalse())
+	})
+
+	t.Run("When the derived firewall name is invalid, it should degrade with an invalid-configuration reason and make no API calls", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		m := testManager(client)
+		m.infraID = "infra-" + strings.Repeat("a", 60) // yields a name over the 63-char limit
+
+		res := m.Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeDegraded))
+		g.Expect(res.Reason).To(Equal(hyperv1.GCPFirewallInvalidConfiguration))
+		g.Expect(res.Err).To(BeNil())
+		g.Expect(client.insertCalled).To(BeFalse())
+		g.Expect(client.patchCalled).To(BeFalse())
+	})
+
+	t.Run("When the API returns a terminal 400, it should degrade with an invalid-configuration reason", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		client.insertErr = &googleapi.Error{
+			Code:    400,
+			Message: "Invalid value for field 'resource.targetTags'",
+			Errors:  []googleapi.ErrorItem{{Reason: "invalid"}},
+		}
+
+		res := testManager(client).Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeDegraded))
+		g.Expect(res.Reason).To(Equal(hyperv1.GCPFirewallInvalidConfiguration))
+		g.Expect(res.Err).To(BeNil())
+	})
+
+	t.Run("When the API returns a transient 400, it should degrade with a waiting-for-infra reason", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		client.insertErr = &googleapi.Error{
+			Code:    400,
+			Message: "The resource is not ready",
+			Errors:  []googleapi.ErrorItem{{Reason: "resourceNotReady"}},
+		}
+
+		res := testManager(client).Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeDegraded))
+		g.Expect(res.Reason).To(Equal(hyperv1.GCPFirewallWaitingForInfra))
+		g.Expect(res.Err).To(BeNil())
 	})
 
 	t.Run("When WIF credentials are unavailable, it should degrade without an aggregate error", func(t *testing.T) {
@@ -291,14 +406,31 @@ func TestFirewallManagerDelete(t *testing.T) {
 		g.Expect(client.deleteCalled).To(BeFalse())
 	})
 
-	t.Run("When the rule is not owned by CPO, it should error and not delete", func(t *testing.T) {
+	t.Run("When the rule is not owned by CPO, it should skip deletion terminally and not error", func(t *testing.T) {
 		g := NewWithT(t)
 		client := newFakeClient()
 		name := firewallRuleName(testInfraID)
 		client.firewalls[name] = &compute.Firewall{Name: name, Description: "not ours"}
 
+		// An ownership conflict is terminal: retrying can never change ownership,
+		// so Delete must not error (which would retain the finalizer forever). It
+		// leaves the rule untouched and lets deletion finish.
 		err := testManager(client).Delete(ctx)
-		g.Expect(err).To(HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(client.deleteCalled).To(BeFalse())
+		g.Expect(client.firewalls).To(HaveKey(name))
+	})
+
+	t.Run("When the derived name is invalid, it should skip deletion and not error", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		m := testManager(client)
+		m.infraID = "infra-" + strings.Repeat("a", 60)
+
+		// The rule could never have been created, so deletion is a no-op that must
+		// not wedge finalization.
+		err := m.Delete(ctx)
+		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(client.deleteCalled).To(BeFalse())
 	})
 
