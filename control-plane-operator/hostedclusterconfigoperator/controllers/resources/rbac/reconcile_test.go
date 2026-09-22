@@ -7,10 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/upsert"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -87,6 +89,58 @@ func expectedRBACResourceKeys(isAROHCP bool) []string {
 	return keys
 }
 
+func TestManifestAndReconcileGetKey(t *testing.T) {
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{
+			name: "When the manifest is cluster-scoped, it should use name and kind",
+			got: (manifestAndReconcile[*rbacv1.ClusterRole]{manifest: func() *rbacv1.ClusterRole {
+				return &rbacv1.ClusterRole{
+					TypeMeta: metav1.TypeMeta{Kind: "ClusterRole"},
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "example",
+					},
+				}
+			}}).getKey(),
+			want: "example/ClusterRole",
+		},
+		{
+			name: "When the manifest is namespaced, it should use namespace, name, and kind",
+			got: (manifestAndReconcile[*rbacv1.Role]{manifest: func() *rbacv1.Role {
+				return &rbacv1.Role{
+					TypeMeta: metav1.TypeMeta{Kind: "Role"},
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "example-ns",
+						Name:      "example",
+					},
+				}
+			}}).getKey(),
+			want: "example-ns/example/Role",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Fatalf("unexpected manifest key: got %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+
+	wantCapabilities := map[string]hyperv1.OptionalCapability{
+		"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRole":        hyperv1.IngressCapability,
+		"openshift-route-controller-manager/openshift-route-controllers/Role":                          hyperv1.IngressCapability,
+		"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRoleBinding": hyperv1.IngressCapability,
+		"openshift-route-controller-manager/openshift-route-controllers/RoleBinding":                   hyperv1.IngressCapability,
+	}
+	if !reflect.DeepEqual(RbacCapabilityMap, wantCapabilities) {
+		t.Fatalf("unexpected RBAC capability map: got %#v, want %#v", RbacCapabilityMap, wantCapabilities)
+	}
+}
+
 func TestReconcile(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -98,19 +152,16 @@ func TestReconcile(t *testing.T) {
 		wantIngress sets.Set[string]
 	}{
 		{
-			name: "When ingress is enabled for a non-ARO HCP, it should reconcile the base catalog in order",
-			params: ReconcileParams{
-				IngressEnabled: true,
-			},
+			name:        "When reconciling a non-ARO HCP, it should reconcile the base catalog in order",
+			params:      ReconcileParams{IngressEnabled: true},
 			want:        expectedRBACResourceKeys(false),
 			wantIngress: expectedIngressRBACResourceKeys(),
 		},
 		{
-			name: "When ingress is disabled, it should preserve the existing RBAC reconciliation behavior",
-			params: ReconcileParams{
-				IngressEnabled: false,
-			},
-			want: expectedRBACResourceKeys(false),
+			name:        "When Ingress is disabled, it should preserve existing RBAC reconciliation behavior",
+			params:      ReconcileParams{IngressEnabled: false},
+			want:        expectedRBACResourceKeys(false),
+			wantIngress: expectedIngressRBACResourceKeys(),
 		},
 		{
 			name: "When the HCP is ARO, it should append ARO-only resources after the base catalog",

@@ -323,6 +323,9 @@ func TestReconcileRBAC(t *testing.T) {
 			}
 			assertRBACObjectExists(manifests.CSRApproverClusterRole(), true)
 			assertRBACObjectExists(manifests.IngressToRouteControllerClusterRole(), tc.wantIngress)
+			assertRBACObjectExists(manifests.IngressToRouteControllerRole(), tc.wantIngress)
+			assertRBACObjectExists(manifests.IngressToRouteControllerClusterRoleBinding(), tc.wantIngress)
+			assertRBACObjectExists(manifests.IngressToRouteControllerRoleBinding(), tc.wantIngress)
 			assertRBACObjectExists(manifests.AzureDiskCSIDriverNodeServiceAccountRole(), tc.wantARO)
 		})
 	}
