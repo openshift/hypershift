@@ -15,7 +15,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -27,6 +26,38 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+type fakeNamespacedResourceDiscovery struct {
+	resources []*metav1.APIResourceList
+	err       error
+}
+
+func (d *fakeNamespacedResourceDiscovery) ServerPreferredNamespacedResources() ([]*metav1.APIResourceList, error) {
+	return d.resources, d.err
+}
+
+func testNamespacedResourceDiscovery() namespacedResourceDiscovery {
+	verbs := []string{"list", "delete", "patch"}
+	return &fakeNamespacedResourceDiscovery{resources: []*metav1.APIResourceList{
+		{GroupVersion: corev1.SchemeGroupVersion.String(), APIResources: []metav1.APIResource{
+			{Name: "services", Kind: "Service", Namespaced: true, Verbs: verbs},
+			{Name: "persistentvolumeclaims", Kind: "PersistentVolumeClaim", Namespaced: true, Verbs: verbs},
+		}},
+		{GroupVersion: appsv1.SchemeGroupVersion.String(), APIResources: []metav1.APIResource{
+			{Name: "deployments", Kind: "Deployment", Namespaced: true, Verbs: verbs},
+		}},
+		{GroupVersion: capzv1.GroupVersion.String(), APIResources: []metav1.APIResource{
+			{Name: "azuremachines", Kind: "AzureMachine", Namespaced: true, Verbs: verbs},
+		}},
+		{GroupVersion: capiv1.GroupVersion.String(), APIResources: []metav1.APIResource{
+			{Name: "clusters", Kind: "Cluster", Namespaced: true, Verbs: verbs},
+			{Name: "machines", Kind: "Machine", Namespaced: true, Verbs: verbs},
+		}},
+		{GroupVersion: hyperv1.GroupVersion.String(), APIResources: []metav1.APIResource{
+			{Name: "hostedcontrolplanes", Kind: "HostedControlPlane", Namespaced: true, Verbs: verbs},
+		}},
+	}}
+}
 
 func TestDestroyCluster(t *testing.T) {
 	t.Run("When HostedCluster is nil and platform specifics provided it should call destroyPlatformSpecifics", func(t *testing.T) {
@@ -53,7 +84,7 @@ func TestDestroyCluster(t *testing.T) {
 		}
 
 		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
-		err := destroyCluster(context.Background(), c, nil, opts, mockPlatformSpecifics)
+		err := destroyCluster(context.Background(), c, nil, nil, opts, mockPlatformSpecifics)
 
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(platformSpecificsCalled).To(BeTrue())
@@ -80,7 +111,7 @@ func TestDestroyCluster(t *testing.T) {
 		}
 
 		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
-		err := destroyCluster(context.Background(), c, nil, opts, mockPlatformSpecifics)
+		err := destroyCluster(context.Background(), c, nil, nil, opts, mockPlatformSpecifics)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(platformSpecificsCalled).To(BeTrue())
 	})
@@ -121,7 +152,7 @@ func TestDestroyCluster(t *testing.T) {
 		// Fake client store is intentionally empty — removeFinalizer() will get
 		// NotFound (the operator has already cleaned up) and return nil.
 		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
-		err := destroyCluster(context.Background(), c, hc, opts, mockPlatformSpecifics)
+		err := destroyCluster(context.Background(), c, nil, hc, opts, mockPlatformSpecifics)
 
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(platformSpecificsCalled).To(BeTrue())
@@ -162,7 +193,7 @@ func TestDestroyCluster(t *testing.T) {
 			Log:                log.Log,
 		}
 
-		err := destroyCluster(context.Background(), c, nil, opts, mockPlatformSpecifics)
+		err := destroyCluster(context.Background(), c, nil, nil, opts, mockPlatformSpecifics)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(platformSpecificsCalled).To(BeTrue())
 	})
@@ -244,6 +275,22 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			},
 		}
 
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "kube-apiserver",
+				Namespace:  cpNamespace,
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+		}
+
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "etcd-data",
+				Namespace:  cpNamespace,
+				Finalizers: []string{"kubernetes.io/pvc-protection"},
+			},
+		}
+
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: cpNamespace,
@@ -252,7 +299,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
-			WithObjects(hc, nodePool, unrelatedNodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, ns).
+			WithObjects(hc, nodePool, unrelatedNodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, service, pvc, ns).
 			Build()
 
 		opts := &DestroyOptions{
@@ -262,7 +309,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			Log:       log.Log,
 		}
 
-		err := forceRemoveAllFinalizers(ctx, hc, opts, c)
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, testNamespacedResourceDiscovery())
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify HC retains only the destroy finalizer
@@ -283,35 +330,24 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(unrelatedNP.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}))
 
-		// Verify HCP finalizers are gone
-		updatedHCP := &hyperv1.HostedControlPlane{}
-		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-cluster"}, updatedHCP)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updatedHCP.Finalizers).To(BeEmpty())
-
-		// Verify AzureMachine finalizers are gone
-		updatedAzMachine := &capzv1.AzureMachine{}
-		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-machine-azure-0"}, updatedAzMachine)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updatedAzMachine.Finalizers).To(BeEmpty())
-
-		// Verify CAPI Cluster finalizers are gone
-		updatedCluster := &capiv1.Cluster{}
-		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-cluster"}, updatedCluster)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updatedCluster.Finalizers).To(BeEmpty())
-
-		// Verify CAPI Machine finalizers are gone
-		updatedMachine := &capiv1.Machine{}
-		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-machine-0"}, updatedMachine)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updatedMachine.Finalizers).To(BeEmpty())
-
-		// Verify Deployment finalizers are gone
-		updatedDeploy := &appsv1.Deployment{}
-		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "capi-provider"}, updatedDeploy)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updatedDeploy.Finalizers).To(BeEmpty())
+		// Verify every namespaced object, including Service and PVC objects that
+		// were absent from the old fixed allowlist, is removed before namespace
+		// finalization.
+		for _, expected := range []struct {
+			name   string
+			object client.Object
+		}{
+			{name: "test-cluster", object: &hyperv1.HostedControlPlane{}},
+			{name: "test-machine-azure-0", object: &capzv1.AzureMachine{}},
+			{name: "test-cluster", object: &capiv1.Cluster{}},
+			{name: "test-machine-0", object: &capiv1.Machine{}},
+			{name: "capi-provider", object: &appsv1.Deployment{}},
+			{name: "kube-apiserver", object: &corev1.Service{}},
+			{name: "etcd-data", object: &corev1.PersistentVolumeClaim{}},
+		} {
+			err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: expected.name}, expected.object)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected %T %s to be deleted", expected.object, expected.name)
+		}
 	})
 
 	t.Run("When the control plane namespace is empty, it should succeed without errors", func(t *testing.T) {
@@ -337,7 +373,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			Log:       log.Log,
 		}
 
-		err := forceRemoveAllFinalizers(ctx, hc, opts, c)
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, testNamespacedResourceDiscovery())
 		g.Expect(err).ToNot(HaveOccurred())
 
 		updatedHC := &hyperv1.HostedCluster{}
@@ -416,22 +452,14 @@ func TestStripFinalizers(t *testing.T) {
 	})
 }
 
-func TestStripFinalizersFromList(t *testing.T) {
-	t.Run("When the CRD is not installed, it should succeed without errors", func(t *testing.T) {
+func TestCleanupNamespacedResources(t *testing.T) {
+	t.Run("When discovery is unavailable, it should fail closed before namespace finalization", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		ctx := context.Background()
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 
-		c := fake.NewClientBuilder().
-			WithScheme(hyperapi.Scheme).
-			WithInterceptorFuncs(interceptor.Funcs{
-				List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
-					return &apimeta.NoKindMatchError{GroupKind: capzv1.GroupVersion.WithKind("AzureMachine").GroupKind()}
-				},
-			}).
-			Build()
-
-		errs := stripFinalizersFromList(ctx, c, &capzv1.AzureMachineList{}, "test-ns", log.Log)
-		g.Expect(errs).To(BeEmpty())
+		errs := cleanupNamespacedResources(context.Background(), c, &fakeNamespacedResourceDiscovery{err: fmt.Errorf("discovery unavailable")}, "test-ns", log.Log)
+		g.Expect(errs).To(HaveLen(1))
+		g.Expect(errs[0].Error()).To(ContainSubstring("discovery unavailable"))
 	})
 }
 
@@ -510,7 +538,7 @@ func TestForceRemoveAllFinalizersErrors(t *testing.T) {
 			Log:       log.Log,
 		}
 
-		err := forceRemoveAllFinalizers(ctx, hc, opts, c)
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, testNamespacedResourceDiscovery())
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("force removal encountered"))
 		g.Expect(err.Error()).To(ContainSubstring("API server unavailable"))

@@ -12,23 +12,19 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
-
-	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/util/retry"
 
-	capaaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capzv1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -38,6 +34,10 @@ import (
 const (
 	destroyFinalizer = "openshift.io/destroy-cluster"
 )
+
+type namespacedResourceDiscovery interface {
+	ServerPreferredNamespacedResources() ([]*metav1.APIResourceList, error)
+}
 
 // DestroyPlatformSpecifics can be used to destroy platform specific resources which are unknown to hypershift
 type DestroyPlatformSpecifics = func(ctx context.Context, options *DestroyOptions) error
@@ -120,10 +120,23 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	if err != nil {
 		return err
 	}
-	return destroyCluster(ctx, c, hostedCluster, o, destroyPlatformSpecifics)
+
+	var resourceDiscovery namespacedResourceDiscovery
+	if o.ForceDestroy && destroyPlatformSpecifics != nil {
+		config, err := util.GetConfigWithKubeconfig(o.Kubeconfig)
+		if err != nil {
+			return fmt.Errorf("failed to create discovery config: %w", err)
+		}
+		resourceDiscovery, err = discovery.NewDiscoveryClientForConfig(config)
+		if err != nil {
+			return fmt.Errorf("failed to create discovery client: %w", err)
+		}
+	}
+
+	return destroyCluster(ctx, c, resourceDiscovery, hostedCluster, o, destroyPlatformSpecifics)
 }
 
-func destroyCluster(ctx context.Context, c client.Client, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
+func destroyCluster(ctx context.Context, c client.Client, resourceDiscovery namespacedResourceDiscovery, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
 	var err error
 	hostedClusterExists := hostedCluster != nil
 	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
@@ -170,7 +183,7 @@ func destroyCluster(ctx context.Context, c client.Client, hostedCluster *hyperv1
 				}
 				o.Log.Info("Grace period expired and --force is set, force-removing finalizers from all child resources",
 					"namespace", o.Namespace, "name", o.Name)
-				if forceErr := forceRemoveAllFinalizers(ctx, hostedCluster, o, c); forceErr != nil {
+				if forceErr := forceRemoveAllFinalizers(ctx, hostedCluster, o, c, resourceDiscovery); forceErr != nil {
 					o.Log.Error(forceErr, "Errors during force finalizer removal, continuing with platform cleanup")
 				}
 			}
@@ -278,32 +291,6 @@ func stripFinalizers(ctx context.Context, c client.Client, obj client.Object, lo
 	return nil
 }
 
-// stripFinalizersFromList lists objects of the given type in a namespace and strips all finalizers.
-// CRD-not-found errors are silently ignored so this works on clusters without the CRD installed.
-func stripFinalizersFromList(ctx context.Context, c client.Client, list client.ObjectList, namespace string, log logr.Logger) []error {
-	if err := c.List(ctx, list, client.InNamespace(namespace)); err != nil {
-		if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
-			return []error{fmt.Errorf("failed to list %T: %w", list, err)}
-		}
-		return nil
-	}
-	var errs []error
-	var count int
-	if err := meta.EachListItem(list, func(obj runtime.Object) error {
-		count++
-		if co, ok := obj.(client.Object); ok {
-			if err := stripFinalizers(ctx, c, co, log); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to iterate %T: %w", list, err))
-	}
-	log.Info("Processed resources", "type", fmt.Sprintf("%T", list), "namespace", namespace, "count", count)
-	return errs
-}
-
 func stripNodePoolFinalizers(ctx context.Context, c client.Client, namespace, clusterName string, log logr.Logger) []error {
 	nodePools := &hyperv1.NodePoolList{}
 	if err := c.List(ctx, nodePools, client.InNamespace(namespace)); err != nil {
@@ -329,37 +316,106 @@ func stripNodePoolFinalizers(ctx context.Context, c client.Client, namespace, cl
 	return errs
 }
 
-// forceRemoveAllFinalizers strips finalizers from all child resources in the
-// control plane namespace and NodePools in the HC namespace, then from the
-// HostedCluster itself (preserving the destroy finalizer for the normal
-// removal path). Resources are processed bottom-up so that Kubernetes garbage
-// collection can proceed as each layer is unblocked.
-func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+// cleanupNamespacedResources removes every namespaced object from namespace before
+// the namespace is finalized. Discovery is used instead of a fixed type allowlist
+// because extension resources can add finalizers that the destroy command does not
+// know about.
+func cleanupNamespacedResources(ctx context.Context, c client.Client, resourceDiscovery namespacedResourceDiscovery, namespace string, log logr.Logger) []error {
+	if resourceDiscovery == nil {
+		return []error{fmt.Errorf("namespaced resource discovery is not configured")}
+	}
+
+	apiResourceLists, err := resourceDiscovery.ServerPreferredNamespacedResources()
+	if err != nil {
+		return []error{fmt.Errorf("failed to discover namespaced resources: %w", err)}
+	}
+
+	var errs []error
+	for _, apiResourceList := range apiResourceLists {
+		groupVersion, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to parse discovered group version %q: %w", apiResourceList.GroupVersion, err))
+			continue
+		}
+
+		for _, apiResource := range apiResourceList.APIResources {
+			if strings.Contains(apiResource.Name, "/") || !supportsVerb(apiResource.Verbs, "list") || !supportsVerb(apiResource.Verbs, "delete") {
+				continue
+			}
+
+			resourceGVK := groupVersion.WithKind(apiResource.Kind)
+			if err := cleanupNamespacedResource(ctx, c, resourceGVK, apiResource, namespace, log); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errs
+}
+
+func cleanupNamespacedResource(ctx context.Context, c client.Client, resourceGVK schema.GroupVersionKind, apiResource metav1.APIResource, namespace string, log logr.Logger) error {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(resourceGVK.GroupVersion().WithKind(resourceGVK.Kind + "List"))
+
+	if err := c.List(ctx, list, client.InNamespace(namespace)); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || apierrors.IsMethodNotSupported(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to list %s in namespace %s: %w", resourceGVK, namespace, err)
+	}
+
+	for i := range list.Items {
+		obj := &list.Items[i]
+		if len(obj.GetFinalizers()) > 0 {
+			if !supportsVerb(apiResource.Verbs, "patch") {
+				return fmt.Errorf("resource %s does not support patching finalizers", resourceGVK)
+			}
+			if err := stripFinalizers(ctx, c, obj, log); err != nil {
+				return err
+			}
+		}
+		if err := c.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete %s %s/%s: %w", resourceGVK, namespace, obj.GetName(), err)
+		}
+	}
+
+	if err := wait.PollUntilContextTimeout(ctx, time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		remaining := &unstructured.UnstructuredList{}
+		remaining.SetGroupVersionKind(resourceGVK.GroupVersion().WithKind(resourceGVK.Kind + "List"))
+		if err := c.List(ctx, remaining, client.InNamespace(namespace)); err != nil {
+			if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || apierrors.IsMethodNotSupported(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		return len(remaining.Items) == 0, nil
+	}); err != nil {
+		return fmt.Errorf("namespaced resources of type %s remain in namespace %s: %w", resourceGVK, namespace, err)
+	}
+
+	log.Info("Deleted namespaced resources", "kind", resourceGVK, "namespace", namespace, "count", len(list.Items))
+	return nil
+}
+
+func supportsVerb(verbs metav1.Verbs, verb string) bool {
+	for _, supportedVerb := range verbs {
+		if supportedVerb == verb || supportedVerb == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// forceRemoveAllFinalizers strips finalizers from NodePools in the HC namespace,
+// removes all objects from the control-plane namespace, then from the HostedCluster
+// itself (preserving the destroy finalizer for the normal removal path).
+func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client, resourceDiscovery namespacedResourceDiscovery) error {
 	cpNamespace := manifests.HostedControlPlaneNamespace(o.Namespace, o.Name)
 	var errs []error
 
-	// Bottom-up: infra machines → CAPI machines → clusters → HCP → deployments.
-	// All provider-specific types are listed; stripFinalizersFromList silently
-	// skips CRDs that are not installed on the current cluster.
-	cpResources := []client.ObjectList{
-		&capaaws.AWSMachineList{},
-		&capaaws.AWSClusterList{},
-		&capzv1.AzureMachineList{},
-		&capzv1.AzureClusterList{},
-		&agentv1.AgentMachineList{},
-		&agentv1.AgentClusterList{},
-		&capikubevirt.KubevirtMachineList{},
-		&capikubevirt.KubevirtClusterList{},
-		&capiv1.MachineList{},
-		&capiv1.MachineSetList{},
-		&capiv1.MachineDeploymentList{},
-		&capiv1.ClusterList{},
-		&hyperv1.HostedControlPlaneList{},
-		&appsv1.DeploymentList{},
-	}
-	for _, list := range cpResources {
-		errs = append(errs, stripFinalizersFromList(ctx, c, list, cpNamespace, o.Log)...)
-	}
+	// Remove and wait for every discovered namespaced resource before clearing
+	// namespace spec.finalizers. This prevents the namespace finalizer bypass from
+	// leaving objects behind in etcd.
+	errs = append(errs, cleanupNamespacedResources(ctx, c, resourceDiscovery, cpNamespace, o.Log)...)
 
 	// NodePools live in the HC namespace, not the CP namespace
 	errs = append(errs, stripNodePoolFinalizers(ctx, c, o.Namespace, o.Name, o.Log)...)
@@ -386,6 +442,10 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 		} else {
 			o.Log.Info("Stripped non-destroy finalizers from HostedCluster", "namespace", o.Namespace, "name", o.Name)
 		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("force removal encountered %d error(s): %w", len(errs), errors.Join(errs...))
 	}
 
 	// Strip both metadata.finalizers and spec.finalizers from the control
