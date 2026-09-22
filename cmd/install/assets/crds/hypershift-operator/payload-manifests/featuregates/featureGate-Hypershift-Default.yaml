@@ -35,9 +35,6 @@
                     },
                     {
                         "name": "EtcdSharding"
-                    },
-                    {
-                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "enabled": [
@@ -60,6 +57,9 @@
                     },
                     {
                         "name": "OSStreams"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "version": ""
