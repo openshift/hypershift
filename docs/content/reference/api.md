@@ -8899,7 +8899,10 @@ string
 <td>
 <p>key is the short name of the pre-existing Resource Manager TagKey.
 TagKeys are scoped to the customer project identified by the GCP platform
-configuration.</p>
+configuration. It must be 1-256 characters, start and end with an ASCII
+letter or digit, and contain only ASCII letters, digits, dashes,
+underscores, or dots. Unlike labels, TagKeys do not have a reserved goog
+prefix.</p>
 </td>
 </tr>
 <tr>
@@ -8911,7 +8914,8 @@ string
 </td>
 <td>
 <p>value is the short name of the pre-existing Resource Manager TagValue for
-key. Exactly one value for a TagKey can be attached to a resource.</p>
+key. Exactly one value for a TagKey can be attached to a resource. It must
+meet the same naming requirements as key.</p>
 </td>
 </tr>
 </tbody>
