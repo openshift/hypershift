@@ -463,11 +463,11 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 				resourcesName:           resourcesName,
 				capiv1.ClusterNameLabel: capiClusterName,
 			},
-			// Annotations here propagate down to Machines
-			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
+			// The NodePool annotation identifies the owning NodePool. The release version
+			// is reconciled directly on each Machine from its immutable spec.version so
+			// old Machines keep their version during a rolling replacement.
 			Annotations: map[string]string{
-				nodePoolAnnotation:                       client.ObjectKeyFromObject(nodePool).String(),
-				hyperv1.NodePoolReleaseVersionAnnotation: c.Version(),
+				nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
 			},
 		},
 		Spec: capiv1.MachineSpec{
@@ -546,7 +546,7 @@ func setMachineDeploymentFailureDomain(nodePool *hyperv1.NodePool, machineDeploy
 	}
 }
 
-// propagateLabelsAndTaintsToMachines propagates label/taints directly into Machines
+// propagateLabelsAndTaintsToMachines propagates labels, taints, and release versions directly into Machines
 // to avoid a NodePool label/taints change triggering a rolling upgrade.
 // TODO(Alberto): drop this and rely on core in-place propagation once CAPI 1.4.0
 // https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
@@ -568,6 +568,15 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 			}
 			if machine.Annotations == nil {
 				machine.Annotations = make(map[string]string)
+			}
+			// Machine.spec.version is set from the NodePool release when the Machine is
+			// created and remains stable during a rolling replacement. Reconcile the
+			// annotation from that value instead of propagating a MachineDeployment
+			// template annotation to existing Machines.
+			if machine.Spec.Version != "" {
+				machine.Annotations[hyperv1.NodePoolReleaseVersionAnnotation] = machine.Spec.Version
+			} else {
+				delete(machine.Annotations, hyperv1.NodePoolReleaseVersionAnnotation)
 			}
 
 			for k, v := range nodePool.Spec.NodeLabels {
