@@ -1,6 +1,7 @@
 package gcp
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -45,23 +46,23 @@ func TestNewDestroyCommandFlagParsing(t *testing.T) {
 		expectedProjectID     string
 		expectedRegion        string
 	}{
-		"When preserve-iam is true": {
+		"When preserve-iam flag is set, it should be true": {
 			args:                []string{"--preserve-iam"},
 			expectedPreserveIAM: true,
 		},
-		"When preserve-infra is true": {
+		"When preserve-infra flag is set, it should be true": {
 			args:                  []string{"--preserve-infra"},
 			expectedPreserveInfra: true,
 		},
-		"When project-id is provided": {
+		"When project-id is provided, it should be captured": {
 			args:              []string{"--project-id", "test-project-123"},
 			expectedProjectID: "test-project-123",
 		},
-		"When region is provided": {
+		"When region is provided, it should be captured": {
 			args:           []string{"--region", "us-west1"},
 			expectedRegion: "us-west1",
 		},
-		"When all flags are provided": {
+		"When all flags are provided, it should capture all values": {
 			args:                  []string{"--preserve-iam", "--preserve-infra", "--project-id", "my-project", "--region", "europe-west1"},
 			expectedPreserveIAM:   true,
 			expectedPreserveInfra: true,
@@ -108,7 +109,7 @@ func TestExtractParameters(t *testing.T) {
 		expectedRegion   string
 		expectedInfraID  string
 	}{
-		"When HostedCluster has GCP platform spec": {
+		"When HostedCluster has GCP platform spec, it should extract all parameters": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "test-infra-123",
@@ -124,7 +125,7 @@ func TestExtractParameters(t *testing.T) {
 			expectedRegion:  "us-central1",
 			expectedInfraID: "test-infra-123",
 		},
-		"When HostedCluster is nil": {
+		"When HostedCluster is nil, it should use flag values": {
 			hostedCluster:    nil,
 			initialProjectID: "flag-project",
 			initialRegion:    "us-east1",
@@ -133,7 +134,7 @@ func TestExtractParameters(t *testing.T) {
 			expectedRegion:   "us-east1",
 			expectedInfraID:  "flag-infra",
 		},
-		"When HostedCluster overrides flag values": {
+		"When HostedCluster overrides flag values, it should use HostedCluster values": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "hc-infra",
@@ -177,6 +178,27 @@ func TestExtractParameters(t *testing.T) {
 	}
 }
 
+// Platform-specific destroy tests
+
+func TestDestroyPlatformSpecificsWithPreserveFlags(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	opts := &core.DestroyOptions{
+		InfraID: "test-infra",
+		Log:     log.Log,
+		GCPPlatform: core.GCPPlatformDestroyOptions{
+			ProjectID:     "test-project",
+			Region:        "us-central1",
+			PreserveIAM:   true,
+			PreserveInfra: true,
+		},
+	}
+
+	err := destroyPlatformSpecifics(context.Background(), opts)
+
+	g.Expect(err).To(BeNil(), "Should not error when preserve flags skip actual destroy calls")
+}
+
 // Validation tests
 
 func TestValidateInputs(t *testing.T) {
@@ -187,34 +209,34 @@ func TestValidateInputs(t *testing.T) {
 		expectError bool
 		errorSubstr string
 	}{
-		"When all required inputs are provided": {
+		"When all required inputs are provided, it should not return error": {
 			infraID:     "valid-infra",
 			projectID:   "valid-project",
 			region:      "us-central1",
 			expectError: false,
 		},
-		"When infraID is missing": {
+		"When infraID is missing, it should return an error": {
 			infraID:     "",
 			projectID:   "valid-project",
 			region:      "us-central1",
 			expectError: true,
 			errorSubstr: "infrastructure ID is required",
 		},
-		"When projectID is missing": {
+		"When projectID is missing, it should return an error": {
 			infraID:     "valid-infra",
 			projectID:   "",
 			region:      "us-central1",
 			expectError: true,
 			errorSubstr: "project ID is required",
 		},
-		"When region is missing": {
+		"When region is missing, it should return an error": {
 			infraID:     "valid-infra",
 			projectID:   "valid-project",
 			region:      "",
 			expectError: true,
 			errorSubstr: "region is required",
 		},
-		"When multiple inputs are missing": {
+		"When multiple inputs are missing, it should return combined error": {
 			infraID:     "",
 			projectID:   "",
 			region:      "",
