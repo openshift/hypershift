@@ -90,15 +90,15 @@ func testWidget(namespace, name string, finalizers ...string) *unstructured.Unst
 	return widget
 }
 
-func writeDestroyTestKubeconfig(t *testing.T) string {
+func writeDestroyTestKubeconfig(t *testing.T, clusterOptions string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kubeconfig")
-	content := `apiVersion: v1
+	content := fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     server: https://localhost:6443
-  name: test-cluster
+%s  name: test-cluster
 contexts:
 - context:
     cluster: test-cluster
@@ -109,7 +109,7 @@ users:
 - name: test-user
   user:
     token: test-token
-`
+`, clusterOptions)
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write kubeconfig: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestDestroyCluster(t *testing.T) {
 		opts := &DestroyOptions{
 			ClusterGracePeriod: 1 * time.Second,
 			ForceDestroy:       true,
-			Kubeconfig:         writeDestroyTestKubeconfig(t),
+			Kubeconfig:         writeDestroyTestKubeconfig(t, ""),
 			Name:               "test-cluster",
 			Namespace:          "clusters",
 			InfraID:            "test-infra",
@@ -157,6 +157,28 @@ func TestDestroyCluster(t *testing.T) {
 		})
 
 		g.Expect(err).To(MatchError(ContainSubstring("failed to create discovery config")))
+	})
+
+	t.Run("When force discovery client construction fails, it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Setenv("FAKE_CLIENT", "true")
+		platformSpecificsCalled := false
+		opts := &DestroyOptions{
+			ForceDestroy: true,
+			Kubeconfig: writeDestroyTestKubeconfig(t,
+				"    certificate-authority-data: bm90LWEtY2E=\n"),
+			Name:      "test-cluster",
+			Namespace: "clusters",
+			Log:       log.Log,
+		}
+
+		err := DestroyCluster(context.Background(), nil, opts, func(context.Context, *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		})
+
+		g.Expect(err).To(MatchError(ContainSubstring("failed to create discovery client")))
+		g.Expect(platformSpecificsCalled).To(BeFalse())
 	})
 
 	t.Run("When HostedCluster is nil and platform specifics provided it should call destroyPlatformSpecifics", func(t *testing.T) {
@@ -191,7 +213,7 @@ func TestDestroyCluster(t *testing.T) {
 		g.Expect(receivedOpts.AzurePlatform.Cloud).To(Equal("AzurePublicCloud"))
 	})
 
-	t.Run("When the grace period expires with force enabled, it should remove child finalizers before platform cleanup", func(t *testing.T) {
+	t.Run("When force cleanup fails after the grace period, it should continue with platform cleanup", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		hc := &hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -211,7 +233,7 @@ func TestDestroyCluster(t *testing.T) {
 			Log:                log.Log,
 		}
 
-		err := destroyCluster(context.Background(), c, &fakeNamespacedResourceDiscovery{}, hc, opts, func(context.Context, *DestroyOptions) error {
+		err := destroyCluster(context.Background(), c, &fakeNamespacedResourceDiscovery{err: fmt.Errorf("discovery unavailable")}, hc, opts, func(context.Context, *DestroyOptions) error {
 			platformSpecificsCalled = true
 			return nil
 		})
