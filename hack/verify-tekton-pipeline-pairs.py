@@ -93,13 +93,40 @@ def load(path):
         sys.exit(1)
 
 
-def normalise_cel(cel_text):
-    """Strip .tekton pipeline-file guard clauses from a CEL expression.
+def _find_balanced_paren(text, start):
+    """Return index past matching ')' for text[start]=='(', skipping string literals."""
+    depth = 1
+    i = start + 1
+    in_str = None
+    while i < len(text) and depth > 0:
+        c = text[i]
+        if in_str:
+            if c == '\\' and i + 1 < len(text):
+                i += 2
+                continue
+            if c == in_str:
+                in_str = None
+        else:
+            if c in ('"', "'"):
+                in_str = c
+            elif c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+        i += 1
+    return i if depth == 0 else None
 
-    Handles three guard forms:
+
+def normalise_cel(cel_text):
+    """Strip path-trigger clauses from a CEL expression, leaving only the base
+    conditions (event type, target branch) for cross-pair comparison.
+
+    Handles five guard forms:
       1. Legacy wildcard:  && ".tekton/***".pathChanged()  (positive or negated)
       2. Specific negated: && !".tekton/<file>.yaml".pathChanged()
       3. PR-branch block:  && (".tekton/<a>".pathChanged() || ".tekton/<b>".pathChanged())
+      4. Source-trigger OR block: && ("path".pathChanged() || ...)  with any paths
+      5. Complex blocks:   && (files.all.exists(...) || "path".pathChanged() || ...)
     """
     if cel_text is None:
         return ""
@@ -122,8 +149,39 @@ def normalise_cel(cel_text):
         ' ',
         normalized,
     )
+    # 4+5. Remove remaining AND-connected parenthesized source-path blocks.
+    #       Handles from-main files where the positive trigger group contains
+    #       non-.tekton/ source paths or files.all.exists() expressions.
+    #       Uses balanced-paren matching for nested expressions.
+    normalized = _strip_and_paren_blocks(normalized)
     # Collapse whitespace for comparison.
     return " ".join(normalized.split())
+
+
+def _strip_and_paren_blocks(text):
+    """Strip && (...) blocks containing .pathChanged() or files.all.exists()."""
+    result = []
+    i = 0
+    while i < len(text):
+        if text[i:i + 2] == '&&':
+            # Check if whitespace + '(' follows the &&
+            j = i + 2
+            while j < len(text) and text[j] in ' \t\n\r':
+                j += 1
+            if j < len(text) and text[j] == '(':
+                end = _find_balanced_paren(text, j)
+                if end is not None:
+                    block = text[j:end]
+                    if '.pathChanged()' in block or 'files.all.exists' in block:
+                        # Consume leading whitespace before &&
+                        while result and result[-1] in ' \t\n\r':
+                            result.pop()
+                        result.append(' ')
+                        i = end
+                        continue
+        result.append(text[i])
+        i += 1
+    return ''.join(result)
 
 
 def normalise_pipelineref(doc):
@@ -185,6 +243,17 @@ def check_pair(orig_path, from_main_path):
         errors.append(
             f"{fm_name}: CEL missing negated PR-branch pipeline guard "
             f"(!\"{orig_pipeline_file}\".pathChanged())"
+        )
+
+    # After checking the specific guards, normalise both CEL expressions
+    # (strip pipeline-file guard clauses) and verify the base expression
+    # (event, target_branch, source-path triggers) matches.
+    orig_normalised = normalise_cel(orig_cel)
+    fm_normalised = normalise_cel(fm_cel)
+    if orig_normalised != fm_normalised:
+        errors.append(
+            f"Normalised CEL mismatch between {orig_name} and {fm_name}: "
+            f"source-path triggers differ after stripping pipeline-file guards"
         )
 
     # ---- 3.  Compare everything else (minus expected diffs) ----

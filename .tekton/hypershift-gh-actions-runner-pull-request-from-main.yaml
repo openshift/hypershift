@@ -13,7 +13,6 @@ metadata:
       && target_branch == "main"
       && ("Dockerfile.github-actions-runner".pathChanged()
          || "contrib/ci/gocacheprog".pathChanged()
-         || ".tekton/hypershift-gh-actions-runner-pull-request.yaml".pathChanged()
          || ".tekton/hypershift-gh-actions-runner-pull-request-from-main.yaml".pathChanged())
       && !".tekton/pipelines/common-operator-build.yaml".pathChanged()
       && !".tekton/hypershift-gh-actions-runner-pull-request.yaml".pathChanged()
