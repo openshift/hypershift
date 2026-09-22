@@ -23,10 +23,11 @@ on:
         description: Space-separated list of allowed Claude tools
         type: string
         default: "Bash Read Write Edit Grep Glob WebFetch"
-      trusted-commands:
+      trusted-files:
         description: >-
-          Space-separated list of .claude/ files to load from the trusted main branch
-          (e.g. "commands/restructure-commits.md skills/git-commit-format/SKILL.md")
+          Space-separated list of repository-root-relative files to load from trusted
+          upstream/main (e.g. ".claude/skills/restructure-commits/SKILL.md
+          skills/git-commit-format/SKILL.md")
         type: string
         default: ""
 
@@ -86,27 +87,58 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Add upstream remote
-        env:
-          PR_REPO: ${{ steps.pr.outputs.repo }}
+      - name: Add trusted upstream remote
         run: |
-          if [[ "$PR_REPO" != "${{ github.repository }}" ]]; then
-            git remote add upstream "https://github.com/${{ github.repository }}.git"
-            git fetch upstream main
-            git update-ref refs/heads/main refs/remotes/upstream/main
-          fi
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "https://github.com/${{ github.repository }}.git"
+          git fetch --no-tags upstream main
 
-      - name: Load trusted commands from main
-        if: inputs.trusted-commands != ''
+      - name: Load trusted files from upstream/main
+        if: inputs.trusted-files != ''
         env:
-          TRUSTED_COMMANDS: ${{ inputs.trusted-commands }}
+          TRUSTED_FILES: ${{ inputs.trusted-files }}
         run: |
-          git rev-parse --verify refs/heads/main >/dev/null 2>&1 || git update-ref refs/heads/main refs/remotes/origin/main
-          for file in $TRUSTED_COMMANDS; do
-            echo "--- Loading .claude/$file from main ---"
-            git show "main:.claude/$file" >> /tmp/trusted-system-prompt.md
+          set -euo pipefail
+          TRUSTED_COMMIT="$(git rev-parse --verify 'refs/remotes/upstream/main^{commit}')"
+          echo "Trusted upstream/main commit: $TRUSTED_COMMIT"
+          : > /tmp/trusted-system-prompt.md
+          read -r -a trusted_files <<< "$TRUSTED_FILES"
+          for file in "${trusted_files[@]}"; do
+            case "$file" in
+              ""|/*|.|..|./*|../*|*/./*|*/../*|*/..)
+                echo "::error::Trusted file must be a repository-root-relative path without traversal: $file"
+                exit 1
+                ;;
+            esac
+            if ! git cat-file -e "$TRUSTED_COMMIT:$file"; then
+              echo "::error::Trusted file is absent from upstream/main: $file"
+              exit 1
+            fi
+            if [[ "$(git cat-file -t "$TRUSTED_COMMIT:$file")" != "blob" ]]; then
+              echo "::error::Trusted path is not a regular file: $file"
+              exit 1
+            fi
+            if ! git ls-tree --full-tree "$TRUSTED_COMMIT" -- "$file" | grep -Eq '^(100644|100755) blob[[:space:]]'; then
+              echo "::error::Trusted path is not a regular file: $file"
+              exit 1
+            fi
+            echo "--- Loading $file from trusted upstream/main ---"
+            git show "$TRUSTED_COMMIT:$file" >> /tmp/trusted-system-prompt.md
             printf '\n---\n' >> /tmp/trusted-system-prompt.md
           done
+
+      - name: Assert canonical trusted commit-format skill
+        if: inputs.trusted-files != '' && contains(inputs.trusted-files, 'skills/git-commit-format/SKILL.md')
+        run: |
+          set -euo pipefail
+          if ! grep -Fq '# Git Commit Message Formatting Rules' /tmp/trusted-system-prompt.md; then
+            echo '::error::Trusted prompt is missing the canonical commit-format skill'
+            exit 1
+          fi
+          if grep -Fq 'Read and follow the canonical commit-format policy' /tmp/trusted-system-prompt.md; then
+            echo '::error::Trusted prompt contains the local Claude adapter redirect'
+            exit 1
+          fi
 
       - name: Authenticate to GCP via WIF
         id: gcp-auth
