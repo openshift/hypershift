@@ -227,6 +227,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.GCPResourceLabelApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPResourceReference"):
 		return &hypershiftv1beta1.GCPResourceReferenceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPResourceTag"):
+		return &hypershiftv1beta1.GCPResourceTagApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPServiceAccountsEmails"):
 		return &hypershiftv1beta1.GCPServiceAccountsEmailsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPWorkloadIdentityConfig"):

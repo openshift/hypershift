@@ -8527,6 +8527,27 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </tr>
 <tr>
 <td>
+<code>resourceTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceTag">
+[]GCPResourceTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceTags are pre-existing Google Cloud Resource Manager tags to apply
+to supported GCP resources created for the cluster. Each entry identifies
+a project-scoped TagKey and TagValue by short name. HyperShift resolves the
+tag value using the customer project; users do not need to supply a
+namespaced tag value or a permanent tagValues/<id> identifier.</p>
+<p>TagKeys and TagValues must exist before they are referenced here.
+Attaching tags requires the relevant controller identity to have Tag User
+and resource-specific TagBinding permissions.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>workloadIdentity,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig">
@@ -8845,6 +8866,52 @@ Must conform to GCP resource naming standards: lowercase letters, numbers, and h
 Must start with a lowercase letter and end with a lowercase letter or number, max 63 characters.
 Pattern: &ldquo;^<a href="[-a-z0-9]*[a-z0-9]">a-z</a>?$&rdquo; (max 63 chars), per GCP naming requirements.
 See <a href="https://cloud.google.com/compute/docs/naming-resources">https://cloud.google.com/compute/docs/naming-resources</a> for details.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPResourceTag { #hypershift.openshift.io/v1beta1.GCPResourceTag }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
+HyperShift resolves the key and value in the customer project and attaches the
+resulting tag value to supported resources through TagBindings.
+See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>key is the short name of the pre-existing Resource Manager TagKey.
+TagKeys are scoped to the customer project identified by the GCP platform
+configuration.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>value is the short name of the pre-existing Resource Manager TagValue for
+key. Exactly one value for a TagKey can be attached to a resource.</p>
 </td>
 </tr>
 </tbody>

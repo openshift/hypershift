@@ -5897,6 +5897,63 @@ spec:
                         x-kubernetes-list-map-keys:
                         - key
                         x-kubernetes-list-type: map
+                      resourceTags:
+                        description: |-
+                          resourceTags are pre-existing Google Cloud Resource Manager tags to apply
+                          to supported GCP resources created for the cluster. Each entry identifies
+                          a project-scoped TagKey and TagValue by short name. HyperShift resolves the
+                          tag value using the customer project; users do not need to supply a
+                          namespaced tag value or a permanent tagValues/<id> identifier.
+
+                          TagKeys and TagValues must exist before they are referenced here.
+                          Attaching tags requires the relevant controller identity to have Tag User
+                          and resource-specific TagBinding permissions.
+                        items:
+                          description: |-
+                            GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
+                            HyperShift resolves the key and value in the customer project and attaches the
+                            resulting tag value to supported resources through TagBindings.
+                            See https://cloud.google.com/resource-manager/docs/tags/tags-overview.
+                          properties:
+                            key:
+                              description: |-
+                                key is the short name of the pre-existing Resource Manager TagKey.
+                                TagKeys are scoped to the customer project identified by the GCP platform
+                                configuration. It must be 1-256 characters, start and end with an ASCII
+                                letter or digit, and contain only ASCII letters, digits, dashes,
+                                underscores, or dots. Unlike labels, TagKeys do not have a reserved goog
+                                prefix.
+                              maxLength: 256
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: key must start and end with a letter or digit
+                                  and contain only letters, digits, dashes, underscores,
+                                  or dots
+                                rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9])?$')
+                            value:
+                              description: |-
+                                value is the short name of the pre-existing Resource Manager TagValue for
+                                key. Exactly one value for a TagKey can be attached to a resource. It must
+                                meet the same naming requirements as key.
+                              maxLength: 256
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: value must start and end with a letter or
+                                  digit and contain only letters, digits, dashes,
+                                  underscores, or dots
+                                rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9])?$')
+                          required:
+                          - key
+                          - value
+                          type: object
+                        maxItems: 50
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - key
+                        x-kubernetes-list-type: map
                       workloadIdentity:
                         description: |-
                           workloadIdentity configures Workload Identity Federation for the cluster.
