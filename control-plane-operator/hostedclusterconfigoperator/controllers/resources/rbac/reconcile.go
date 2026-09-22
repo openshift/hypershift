@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -13,14 +14,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var RbacCapabilityMap = map[string]hyperv1.OptionalCapability{
+	"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRole":        hyperv1.IngressCapability,
+	"openshift-route-controller-manager/openshift-route-controllers/Role":                          hyperv1.IngressCapability,
+	"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRoleBinding": hyperv1.IngressCapability,
+	"openshift-route-controller-manager/openshift-route-controllers/RoleBinding":                   hyperv1.IngressCapability,
+	// add others as needed
+}
+
 // ReconcileParams contains the policy facts needed to select the RBAC resources
 // for a hosted cluster. The RBAC package intentionally does not depend on the
 // HostedControlPlane object or the capability/platform detection helpers.
 type ReconcileParams struct {
-	// IngressEnabled is retained as a policy input for the root reconciler. The
-	// pre-extraction capability filter compared GVKs, but these manifest
-	// constructors do not set GVKs, so disabled Ingress still reconciled all
-	// RBAC resources. Keep that behavior unchanged.
 	IngressEnabled bool
 	IsAROHCP       bool
 }
@@ -41,8 +46,28 @@ func (m manifestAndReconcile[o]) upsert(ctx context.Context, c client.Client, cr
 	return nil
 }
 
+// getKey returns a unique identifier string for the manifest object,
+// combining Kind, Name, and optionally Namespace (if the object is namespaced).
+// This is useful for mapping capabilities to specific manifests while
+// avoiding conflicts between objects with the same name in different scopes
+// or of different kinds (e.g., Role vs RoleBinding).
+//
+// - For namespaced objects: "<namespace>/<name>/<kind>"
+// - For cluster-scoped objects: "<name>/<kind>"
+func (m manifestAndReconcile[o]) getKey() string {
+	obj := m.manifest()
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	ns := obj.GetNamespace()
+	name := obj.GetName()
+	if ns != "" {
+		return fmt.Sprintf("%s/%s/%s", ns, name, gvk.Kind)
+	}
+	return fmt.Sprintf("%s/%s", name, gvk.Kind) // cluster-scoped
+}
+
 type manifestReconciler interface {
 	upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
+	getKey() string
 }
 
 // Reconcile applies all applicable HCCO RBAC resources in their established
@@ -51,6 +76,11 @@ type manifestReconciler interface {
 func Reconcile(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, params ReconcileParams) error {
 	var errs []error
 	for _, resource := range resources(params.IsAROHCP) {
+		mKey := resource.getKey()
+		capability, found := RbacCapabilityMap[mKey]
+		if found && capability == hyperv1.IngressCapability && !params.IngressEnabled {
+			continue
+		}
 		if err := resource.upsert(ctx, c, createOrUpdate); err != nil {
 			errs = append(errs, err)
 		}
