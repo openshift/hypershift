@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 96be5f4080c9d854b5dbb2e453c1a086c8d70d331067000b2fd2b91fa78aea2c
+    hypershift.openshift.io/desired-state-hash: 57f83bc60fc65e0f6bf67171057f15f4aa67695d5c7ef14b4cbdf3e22599830e
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: olm-operator
@@ -135,6 +135,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-socks5
         resources:
           requests:
@@ -168,10 +169,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

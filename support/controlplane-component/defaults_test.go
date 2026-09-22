@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -285,6 +286,88 @@ func generateResources() (map[string]*corev1.Secret, map[string]*corev1.ConfigMa
 		configMaps[cm.Name] = cm
 	}
 	return secrets, configMaps
+}
+
+func TestEnforceImagePullPolicy(t *testing.T) {
+	tests := []struct {
+		name                 string
+		containers           []corev1.Container
+		expectedPullPolicies []corev1.PullPolicy
+		expectError          bool
+	}{
+		{
+			name: "When containers use non-latest images, it should set IfNotPresent pull policy",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234"},
+			},
+			expectedPullPolicies: []corev1.PullPolicy{corev1.PullIfNotPresent},
+		},
+		{
+			name: "When containers use latest images, it should set Always pull policy",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:latest"},
+			},
+			expectedPullPolicies: []corev1.PullPolicy{corev1.PullAlways},
+		},
+		{
+			name: "When a container has no image, it should return an error",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver"},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			err := enforceImagePullPolicy(test.containers)
+
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			for i := range test.containers {
+				g.Expect(test.containers[i].ImagePullPolicy).To(Equal(test.expectedPullPolicies[i]))
+			}
+		})
+	}
+}
+
+func TestEnforceReadOnlyRootFilesystem(t *testing.T) {
+	existingTmpMount := corev1.VolumeMount{Name: "existing-tmp", MountPath: podspec.PodTmpDirMountPath}
+	podSpec := &corev1.PodSpec{
+		InitContainers: []corev1.Container{
+			{Name: "init-bootstrap-render"},
+			{Name: "wait-for-etcd", VolumeMounts: []corev1.VolumeMount{existingTmpMount}},
+		},
+		Containers: []corev1.Container{
+			{Name: "kube-apiserver"},
+		},
+	}
+
+	enforceReadOnlyRootFilesystem(podSpec)
+
+	g := NewGomegaWithT(t)
+	g.Expect(podSpec.Volumes).To(ContainElement(corev1.Volume{
+		Name: podspec.PodTmpDirMountName,
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	}))
+
+	for _, container := range append(podSpec.InitContainers, podSpec.Containers...) {
+		g.Expect(container.SecurityContext).NotTo(BeNil(), "container %q should have a security context", container.Name)
+		g.Expect(container.SecurityContext.ReadOnlyRootFilesystem).To(HaveValue(BeTrue()), "container %q should have a read-only root filesystem", container.Name)
+		g.Expect(container.VolumeMounts).To(ContainElement(WithTransform(func(vm corev1.VolumeMount) string {
+			return vm.MountPath
+		}, Equal(podspec.PodTmpDirMountPath))), "container %q should mount writable tmpdir", container.Name)
+	}
+
+	g.Expect(podSpec.InitContainers[1].VolumeMounts).To(Equal([]corev1.VolumeMount{existingTmpMount}))
 }
 
 func TestSetControlPlaneIsolationNodeFailureTolerations(t *testing.T) {
@@ -837,7 +920,165 @@ func TestSetDefaultOptions(t *testing.T) {
 	})
 
 	releaseProvider := imageprovider.NewFromImages(map[string]string{
-		"hyperkube": "quay.io/test/hyperkube:latest",
+		"hyperkube":    "quay.io/test/hyperkube:latest",
+		"token-minter": "quay.io/openshift-release-dev/ocp-v4.0-art-dev:latest",
+	})
+
+	t.Run("When init containers are present, it should enforce image pull policy", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						InitContainers: []corev1.Container{
+							{Name: "wait-for-etcd", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234"},
+							{Name: "render-bootstrap", Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:latest"},
+						},
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[1].ImagePullPolicy).To(Equal(corev1.PullAlways))
+		g.Expect(deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(corev1.PullIfNotPresent),
+			"manifest containers should keep the image policy set before payload image replacement")
+	})
+
+	t.Run("When an init container has no image, it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						InitContainers: []corev1.Container{
+							{Name: "wait-for-etcd"},
+						},
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP:                  &hyperv1.HostedControlPlane{},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil)
+
+		g.Expect(err).To(MatchError("container wait-for-etcd has no image key specified"))
+	})
+
+	t.Run("When native sidecar token minter is injected, it should enforce image pull policy", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+			tokenMinterContainerOpts: &TokenMinterContainerOptions{
+				TokenType:               CloudToken,
+				ServiceAccountName:      "cloud-controller-manager",
+				ServiceAccountNameSpace: "kube-system",
+			},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform},
+				},
+			},
+			Client:                         fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider:           releaseProvider,
+			NativeSidecarContainersEnabled: true,
+		}, deployment, nil)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].Name).To(Equal("cloud-token-minter"))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].ImagePullPolicy).To(Equal(corev1.PullAlways))
+	})
+
+	t.Run("When one-shot token minter is injected, it should enforce image pull policy", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		workload := &controlPlaneWorkload[*appsv1.Deployment]{
+			name:             "kube-apiserver",
+			workloadProvider: &deploymentProvider{},
+			ComponentOptions: &testComponent{},
+			tokenMinterContainerOpts: &TokenMinterContainerOptions{
+				TokenType:               CloudToken,
+				ServiceAccountName:      "cloud-controller-manager",
+				ServiceAccountNameSpace: "kube-system",
+				OneShot:                 true,
+			},
+		}
+		deployment := &appsv1.Deployment{
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "kube-apiserver", Image: "hyperkube"},
+						},
+					},
+				},
+			},
+		}
+
+		err := workload.setDefaultOptions(ControlPlaneContext{
+			HCP: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform},
+				},
+			},
+			Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
+			ReleaseImageProvider: releaseProvider,
+		}, deployment, nil)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].Name).To(Equal("cloud-token-minter"))
+		g.Expect(deployment.Spec.Template.Spec.InitContainers[0].ImagePullPolicy).To(Equal(corev1.PullAlways))
 	})
 
 	resourceTests := []struct {
