@@ -101,30 +101,40 @@ var transientBadRequestReasons = map[string]struct{}{
 	normalizeReason("RESOURCE_IN_USE_BY_ANOTHER_RESOURCE"): {},
 }
 
-// isTransientBadRequest reports whether a 400 error carries a reason that can
-// plausibly succeed on retry.
+// isTransientBadRequest reports whether a 400 error can plausibly succeed on
+// retry. A response may carry several reasons; it is only transient when at
+// least one reason is present and every reason is transient. A single terminal
+// reason (e.g. an invalid field) means the request cannot succeed on retry, so a
+// mixed transient+terminal response is classified terminal rather than being
+// masked as waiting-for-infra.
 func isTransientBadRequest(err error) bool {
-	for _, reason := range errorReasons(err) {
-		if _, ok := transientBadRequestReasons[normalizeReason(reason)]; ok {
-			return true
+	reasons := errorReasons(err)
+	if len(reasons) == 0 {
+		return false
+	}
+	for _, reason := range reasons {
+		if _, ok := transientBadRequestReasons[normalizeReason(reason)]; !ok {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
-// errorReasons extracts the machine-readable reason strings from a GCP API
-// error, preferring the typed ErrorInfo.Reason exposed by apierror.APIError
-// (which the compute/v1 REST client wires up) and falling back to the legacy
-// free-form googleapi.Error.Errors[].Reason. The compute backend does not always
-// emit a structured ErrorInfo, so both surfaces are consulted.
+// errorReasons extracts the machine-readable reason strings describing a GCP API
+// error. The typed ErrorInfo.Reason exposed by apierror.APIError (which the
+// compute/v1 REST client wires up) and the legacy free-form
+// googleapi.Error.Errors[].Reason describe the *same* error, so they are not
+// unioned: when the structured reason is present it is authoritative and is
+// returned alone, otherwise every legacy reason item is returned. The compute
+// backend does not always emit a structured ErrorInfo, hence the fallback.
 func errorReasons(err error) []string {
-	var reasons []string
 	var apiErr *apierror.APIError
 	if errors.As(err, &apiErr) {
 		if r := apiErr.Reason(); r != "" {
-			reasons = append(reasons, r)
+			return []string{r}
 		}
 	}
+	var reasons []string
 	var googleErr *googleapi.Error
 	if errors.As(err, &googleErr) {
 		for _, e := range googleErr.Errors {
