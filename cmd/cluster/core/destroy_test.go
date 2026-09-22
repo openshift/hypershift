@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,10 +18,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
 
 	capzv1 "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -66,7 +70,95 @@ func testNamespacedResourceDiscovery() namespacedResourceDiscovery {
 	}}
 }
 
+func testWidget(namespace, name string, finalizers ...string) *unstructured.Unstructured {
+	widget := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": testWidgetGVK.GroupVersion().String(),
+		"kind":       testWidgetGVK.Kind,
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+			"finalizers": func() []interface{} {
+				result := make([]interface{}, len(finalizers))
+				for i := range finalizers {
+					result[i] = finalizers[i]
+				}
+				return result
+			}(),
+		},
+	}}
+	widget.SetGroupVersionKind(testWidgetGVK)
+	return widget
+}
+
+func writeDestroyTestKubeconfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	content := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:6443
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+    token: test-token
+`
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to write kubeconfig: %v", err)
+	}
+	return path
+}
+
 func TestDestroyCluster(t *testing.T) {
+	t.Run("When force destruction is requested, it should initialize discovery before cleanup", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Setenv("FAKE_CLIENT", "true")
+
+		platformSpecificsCalled := false
+		opts := &DestroyOptions{
+			ClusterGracePeriod: 1 * time.Second,
+			ForceDestroy:       true,
+			Kubeconfig:         writeDestroyTestKubeconfig(t),
+			Name:               "test-cluster",
+			Namespace:          "clusters",
+			InfraID:            "test-infra",
+			Log:                log.Log,
+		}
+
+		err := DestroyCluster(context.Background(), nil, opts, func(context.Context, *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(platformSpecificsCalled).To(BeTrue())
+	})
+
+	t.Run("When force discovery configuration is invalid, it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		t.Setenv("FAKE_CLIENT", "true")
+		opts := &DestroyOptions{
+			ForceDestroy: true,
+			Kubeconfig:   "/nonexistent/kubeconfig",
+			Name:         "test-cluster",
+			Namespace:    "clusters",
+			Log:          log.Log,
+		}
+
+		err := DestroyCluster(context.Background(), nil, opts, func(context.Context, *DestroyOptions) error {
+			return nil
+		})
+
+		g.Expect(err).To(MatchError(ContainSubstring("failed to create discovery config")))
+	})
+
 	t.Run("When HostedCluster is nil and platform specifics provided it should call destroyPlatformSpecifics", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
@@ -97,6 +189,35 @@ func TestDestroyCluster(t *testing.T) {
 		g.Expect(platformSpecificsCalled).To(BeTrue())
 		g.Expect(receivedOpts).ToNot(BeNil())
 		g.Expect(receivedOpts.AzurePlatform.Cloud).To(Equal("AzurePublicCloud"))
+	})
+
+	t.Run("When the grace period expires with force enabled, it should remove child finalizers before platform cleanup", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:  "clusters",
+				Name:       "test-cluster",
+				Finalizers: []string{"hypershift.openshift.io/finalizer"},
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc).Build()
+		platformSpecificsCalled := false
+		opts := &DestroyOptions{
+			ClusterGracePeriod: time.Nanosecond,
+			ForceDestroy:       true,
+			Name:               "test-cluster",
+			Namespace:          "clusters",
+			InfraID:            "test-infra",
+			Log:                log.Log,
+		}
+
+		err := destroyCluster(context.Background(), c, &fakeNamespacedResourceDiscovery{}, hc, opts, func(context.Context, *DestroyOptions) error {
+			platformSpecificsCalled = true
+			return nil
+		})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(platformSpecificsCalled).To(BeTrue())
 	})
 
 	t.Run("When kubeconfig is set it should use it for the client", func(t *testing.T) {
@@ -323,7 +444,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			WithInterceptorFuncs(interceptor.Funcs{
 				List: func(ctx context.Context, cl client.WithWatch, obj client.ObjectList, opts ...client.ListOption) error {
 					err := cl.List(ctx, obj, opts...)
-					if list, ok := obj.(*unstructured.UnstructuredList); ok && list.GroupVersionKind().GroupKind() == testWidgetGVK.GroupKind() {
+					if list, ok := obj.(*unstructured.UnstructuredList); ok && list.GroupVersionKind().GroupVersion() == testWidgetGVK.GroupVersion() && list.GroupVersionKind().Kind == testWidgetGVK.Kind+"List" {
 						operations = append(operations, fmt.Sprintf("widget-list-%d", len(list.Items)))
 					}
 					return err
@@ -416,6 +537,9 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		}
 		finalizeIndex := indexOf("namespace-finalize")
 		namespaceDeleteIndex := indexOf("namespace-delete")
+		for _, operation := range []string{"widget-patch", "widget-delete", "widget-list-0", "namespace-finalize", "namespace-delete"} {
+			g.Expect(indexOf(operation)).To(BeNumerically(">=", 0), "expected operation %q to be recorded", operation)
+		}
 		g.Expect(indexOf("widget-patch")).To(BeNumerically("<", finalizeIndex))
 		g.Expect(indexOf("widget-delete")).To(BeNumerically("<", finalizeIndex))
 		g.Expect(indexOf("widget-list-0")).To(BeNumerically("<", finalizeIndex))
@@ -527,7 +651,16 @@ func TestStripFinalizers(t *testing.T) {
 }
 
 func TestCleanupNamespacedResources(t *testing.T) {
-	t.Run("When discovery is unavailable, it should fail closed before namespace finalization", func(t *testing.T) {
+	t.Run("When discovery is nil, it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+
+		errs := cleanupNamespacedResources(context.Background(), c, nil, "test-ns", log.Log)
+		g.Expect(errs).To(HaveLen(1))
+		g.Expect(errs[0].Error()).To(ContainSubstring("not configured"))
+	})
+
+	t.Run("When discovery is unavailable, it should return an error without processing resources", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 
@@ -535,6 +668,249 @@ func TestCleanupNamespacedResources(t *testing.T) {
 		g.Expect(errs).To(HaveLen(1))
 		g.Expect(errs[0].Error()).To(ContainSubstring("discovery unavailable"))
 	})
+
+	t.Run("When discovery contains malformed and unsupported resources, it should clean supported resources and report malformed entries", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		widget := testWidget("test-ns", "test-widget", "example.com/widget-finalizer")
+		var deleteGrace int64 = -1
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(widget).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteOptions := client.DeleteOptions{}
+					for _, opt := range opts {
+						opt.ApplyToDelete(&deleteOptions)
+					}
+					if deleteOptions.GracePeriodSeconds != nil {
+						deleteGrace = *deleteOptions.GracePeriodSeconds
+					}
+					return cl.Delete(ctx, obj, opts...)
+				},
+			}).
+			Build()
+
+		resourceDiscovery := &fakeNamespacedResourceDiscovery{resources: []*metav1.APIResourceList{
+			{GroupVersion: "bad/group/version"},
+			{GroupVersion: testWidgetGVK.GroupVersion().String(), APIResources: []metav1.APIResource{
+				{Name: "widgets/status", Kind: testWidgetGVK.Kind, Verbs: []string{"list", "delete", "patch"}},
+				{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"list"}},
+				{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"delete"}},
+				{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"list", "delete", "patch"}},
+			}},
+		}}
+
+		errs := cleanupNamespacedResources(context.Background(), c, resourceDiscovery, "test-ns", log.Log)
+		g.Expect(errs).To(HaveLen(1))
+		g.Expect(errs[0].Error()).To(ContainSubstring("bad/group/version"))
+		g.Expect(deleteGrace).To(Equal(int64(0)))
+
+		deletedWidget := &unstructured.Unstructured{}
+		deletedWidget.SetGroupVersionKind(testWidgetGVK)
+		err := c.Get(context.Background(), types.NamespacedName{Namespace: "test-ns", Name: "test-widget"}, deletedWidget)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+
+	t.Run("When a supported resource cleanup fails, it should return the cleanup error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+				return fmt.Errorf("resource list failed")
+			},
+		}).Build()
+		resourceDiscovery := &fakeNamespacedResourceDiscovery{resources: []*metav1.APIResourceList{{
+			GroupVersion: testWidgetGVK.GroupVersion().String(),
+			APIResources: []metav1.APIResource{{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"list", "delete", "patch"}}},
+		}}}
+
+		errs := cleanupNamespacedResources(context.Background(), c, resourceDiscovery, "test-ns", log.Log)
+		g.Expect(errs).To(HaveLen(1))
+		g.Expect(errs[0].Error()).To(ContainSubstring("resource list failed"))
+	})
+
+	t.Run("When discovery is partial, it should clean returned resources but block namespace finalization", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		widget := testWidget("test-ns", "test-widget")
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(widget).Build()
+		resourceDiscovery := &fakeNamespacedResourceDiscovery{
+			resources: []*metav1.APIResourceList{{
+				GroupVersion: testWidgetGVK.GroupVersion().String(),
+				APIResources: []metav1.APIResource{{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"list", "delete", "patch"}}},
+			}},
+			err: &discovery.ErrGroupDiscoveryFailed{Groups: map[schema.GroupVersion]error{
+				{Group: "broken.example.com", Version: "v1"}: fmt.Errorf("group unavailable"),
+			}},
+		}
+
+		errs := cleanupNamespacedResources(context.Background(), c, resourceDiscovery, "test-ns", log.Log)
+		g.Expect(errs).To(HaveLen(1))
+		g.Expect(errs[0].Error()).To(ContainSubstring("partial namespaced resource discovery failed"))
+
+		deletedWidget := &unstructured.Unstructured{}
+		deletedWidget.SetGroupVersionKind(testWidgetGVK)
+		err := c.Get(context.Background(), types.NamespacedName{Namespace: "test-ns", Name: "test-widget"}, deletedWidget)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+}
+
+func TestCleanupNamespacedResource(t *testing.T) {
+	t.Run("When listing returns a not found, no match, or unsupported error, it should succeed", func(t *testing.T) {
+		tests := []struct {
+			name string
+			err  error
+		}{
+			{name: "not found", err: apierrors.NewNotFound(testWidgetGVK.GroupVersion().WithResource("widgets").GroupResource(), "")},
+			{name: "no match", err: &meta.NoResourceMatchError{PartialResource: testWidgetGVK.GroupVersion().WithResource("widgets")}},
+			{name: "method not supported", err: apierrors.NewMethodNotSupported(testWidgetGVK.GroupVersion().WithResource("widgets").GroupResource(), "list")},
+		}
+		for _, tc := range tests {
+			t.Run("When list returns "+tc.name+", it should ignore the unavailable resource", func(t *testing.T) {
+				g := NewGomegaWithT(t)
+				c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+					List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+						return tc.err
+					},
+				}).Build()
+
+				err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
+				g.Expect(err).ToNot(HaveOccurred())
+			})
+		}
+	})
+
+	t.Run("When listing returns an unexpected error, it should return the error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+				return fmt.Errorf("list failed")
+			},
+		}).Build()
+
+		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
+		g.Expect(err).To(MatchError(ContainSubstring("list failed")))
+	})
+
+	t.Run("When a resource has finalizers but does not support patching, it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(testWidget("test-ns", "test-widget", "example.com/widget-finalizer")).Build()
+
+		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete"}}, "test-ns", log.Log)
+		g.Expect(err).To(MatchError(ContainSubstring("does not support patching finalizers")))
+	})
+
+	t.Run("When patching finalizers fails, it should return the error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(testWidget("test-ns", "test-widget", "example.com/widget-finalizer")).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
+					return fmt.Errorf("patch failed")
+				},
+			}).
+			Build()
+
+		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
+		g.Expect(err).To(MatchError(ContainSubstring("patch failed")))
+	})
+
+	t.Run("When deleting a resource fails, it should return the error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(testWidget("test-ns", "test-widget")).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(context.Context, client.WithWatch, client.Object, ...client.DeleteOption) error {
+					return fmt.Errorf("delete failed")
+				},
+			}).
+			Build()
+
+		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
+		g.Expect(err).To(MatchError(ContainSubstring("delete failed")))
+	})
+
+	t.Run("When the empty-list poll returns an API absence error, it should complete successfully", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		listCalls := 0
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(testWidget("test-ns", "test-widget")).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+					listCalls++
+					if listCalls == 1 {
+						return cl.List(ctx, list, opts...)
+					}
+					return apierrors.NewNotFound(testWidgetGVK.GroupVersion().WithResource("widgets").GroupResource(), "")
+				},
+			}).
+			Build()
+
+		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(listCalls).To(Equal(2))
+	})
+
+	t.Run("When the empty-list poll returns an unexpected error, it should return the polling error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		listCalls := 0
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(testWidget("test-ns", "test-widget")).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+					listCalls++
+					if listCalls == 1 {
+						return cl.List(ctx, list, opts...)
+					}
+					return fmt.Errorf("poll list failed")
+				},
+			}).
+			Build()
+
+		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
+		g.Expect(err).To(MatchError(ContainSubstring("namespaced resources of type")))
+		g.Expect(err.Error()).To(ContainSubstring("poll list failed"))
+	})
+
+	t.Run("When resources remain until the polling context expires, it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(testWidget("test-ns", "test-widget")).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(context.Context, client.WithWatch, client.Object, ...client.DeleteOption) error {
+					return nil
+				},
+			}).
+			Build()
+
+		err := cleanupNamespacedResource(ctx, c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
+		g.Expect(err).To(MatchError(ContainSubstring("namespaced resources of type")))
+	})
+}
+
+func TestSupportsVerb(t *testing.T) {
+	tests := []struct {
+		name  string
+		verbs metav1.Verbs
+		verb  string
+		want  bool
+	}{
+		{name: "When the exact verb is present, it should return true", verbs: []string{"list"}, verb: "list", want: true},
+		{name: "When the wildcard verb is present, it should return true", verbs: []string{"*"}, verb: "delete", want: true},
+		{name: "When the verb is absent, it should return false", verbs: []string{"list"}, verb: "delete", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := supportsVerb(tc.verbs, tc.verb); got != tc.want {
+				t.Fatalf("supportsVerb(%v, %q) = %t, want %t", tc.verbs, tc.verb, got, tc.want)
+			}
+		})
+	}
 }
 
 func TestForceRemoveAllFinalizersDiscoveryError(t *testing.T) {
@@ -578,6 +954,122 @@ func TestForceRemoveAllFinalizersDiscoveryError(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}))
 	})
+
+	t.Run("When discovery is partial, it should clean known resources but not finalize the control plane namespace", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+		clusterName := "partial-discovery-cluster"
+		cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       clusterName,
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+			},
+		}
+		widget := testWidget(cpNamespace, "test-widget", "example.com/widget-finalizer")
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: cpNamespace},
+			Spec:       corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
+		}
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc, widget, ns).Build()
+		resourceDiscovery := &fakeNamespacedResourceDiscovery{
+			resources: []*metav1.APIResourceList{{
+				GroupVersion: testWidgetGVK.GroupVersion().String(),
+				APIResources: []metav1.APIResource{{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"list", "delete", "patch"}}},
+			}},
+			err: &discovery.ErrGroupDiscoveryFailed{Groups: map[schema.GroupVersion]error{
+				{Group: "broken.example.com", Version: "v1"}: fmt.Errorf("group unavailable"),
+			}},
+		}
+
+		opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, resourceDiscovery)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("partial namespaced resource discovery failed"))
+
+		deletedWidget := &unstructured.Unstructured{}
+		deletedWidget.SetGroupVersionKind(testWidgetGVK)
+		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-widget"}, deletedWidget)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+		updatedNamespace := &corev1.Namespace{}
+		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}))
+	})
+}
+
+func TestForceRemoveAllFinalizersNamespaceErrors(t *testing.T) {
+	for _, mode := range []string{"hostedcluster-get", "namespace-get", "namespace-patch", "namespace-finalize", "namespace-delete"} {
+		t.Run("When "+mode+" fails, it should return an aggregated error", func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ctx := context.Background()
+			clusterName := "namespace-error-cluster"
+			cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       clusterName,
+					Namespace:  "clusters",
+					Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+				},
+			}
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       cpNamespace,
+					Finalizers: []string{"namespace-finalizer"},
+				},
+				Spec: corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
+			}
+			operationError := fmt.Errorf("%s failed", mode)
+			c := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(hc, ns).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if mode == "hostedcluster-get" {
+							if _, ok := obj.(*hyperv1.HostedCluster); ok {
+								return operationError
+							}
+						}
+						if mode == "namespace-get" {
+							if _, ok := obj.(*corev1.Namespace); ok {
+								return operationError
+							}
+						}
+						return cl.Get(ctx, key, obj, opts...)
+					},
+					Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+						if mode == "namespace-patch" {
+							if _, ok := obj.(*corev1.Namespace); ok {
+								return operationError
+							}
+						}
+						return cl.Patch(ctx, obj, patch, opts...)
+					},
+					Delete: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if mode == "namespace-delete" {
+							if namespace, ok := obj.(*corev1.Namespace); ok && namespace.Name == cpNamespace {
+								return operationError
+							}
+						}
+						return cl.Delete(ctx, obj, opts...)
+					},
+					SubResourceUpdate: func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+						if mode == "namespace-finalize" && subResourceName == "finalize" {
+							return operationError
+						}
+						return cl.SubResource(subResourceName).Update(ctx, obj, opts...)
+					},
+				}).
+				Build()
+
+			opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
+			err := forceRemoveAllFinalizers(ctx, hc, opts, c, &fakeNamespacedResourceDiscovery{})
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(operationError.Error()))
+		})
+	}
 }
 
 func TestStripNodePoolFinalizers(t *testing.T) {

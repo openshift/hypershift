@@ -326,11 +326,15 @@ func cleanupNamespacedResources(ctx context.Context, c client.Client, resourceDi
 	}
 
 	apiResourceLists, err := resourceDiscovery.ServerPreferredNamespacedResources()
-	if err != nil {
+	var errs []error
+	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
 		return []error{fmt.Errorf("failed to discover namespaced resources: %w", err)}
 	}
+	if err != nil {
+		log.Error(err, "Partial namespaced resource discovery failed; namespace finalization will remain blocked")
+		errs = append(errs, fmt.Errorf("partial namespaced resource discovery failed: %w", err))
+	}
 
-	var errs []error
 	for _, apiResourceList := range apiResourceLists {
 		groupVersion, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
 		if err != nil {
@@ -373,7 +377,7 @@ func cleanupNamespacedResource(ctx context.Context, c client.Client, resourceGVK
 				return err
 			}
 		}
-		if err := c.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		if err := c.Delete(ctx, obj, client.GracePeriodSeconds(0)); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete %s %s/%s: %w", resourceGVK, namespace, obj.GetName(), err)
 		}
 	}
