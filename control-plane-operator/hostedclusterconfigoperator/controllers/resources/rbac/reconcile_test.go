@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -31,6 +32,15 @@ func recordingCreateOrUpdate(calls *[]string, failures map[int]error) upsert.Cre
 		}
 		return controllerutil.OperationResultCreated, nil
 	}
+}
+
+func expectedIngressRBACResourceKeys() sets.Set[string] {
+	return sets.New(
+		rbacResourceKey(hccomanifests.IngressToRouteControllerClusterRole()),
+		rbacResourceKey(hccomanifests.IngressToRouteControllerRole()),
+		rbacResourceKey(hccomanifests.IngressToRouteControllerClusterRoleBinding()),
+		rbacResourceKey(hccomanifests.IngressToRouteControllerRoleBinding()),
+	)
 }
 
 func expectedRBACResourceKeys(isAROHCP bool) []string {
@@ -80,33 +90,27 @@ func expectedRBACResourceKeys(isAROHCP bool) []string {
 func TestReconcile(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		params ReconcileParams
-		want   []string
+		name        string
+		params      ReconcileParams
+		failures    map[int]error
+		want        []string
+		wantErrors  []string
+		wantIngress sets.Set[string]
 	}{
 		{
 			name: "When ingress is enabled for a non-ARO HCP, it should reconcile the base catalog in order",
 			params: ReconcileParams{
 				IngressEnabled: true,
 			},
-			want: expectedRBACResourceKeys(false),
+			want:        expectedRBACResourceKeys(false),
+			wantIngress: expectedIngressRBACResourceKeys(),
 		},
 		{
-			name: "When ingress is disabled, it should omit all ingress resources while preserving order",
+			name: "When ingress is disabled, it should preserve the existing RBAC reconciliation behavior",
 			params: ReconcileParams{
 				IngressEnabled: false,
 			},
-			want: func() []string {
-				all := expectedRBACResourceKeys(false)
-				var want []string
-				for i, key := range all {
-					if i == 1 || i == 3 || i == 5 || i == 12 {
-						continue
-					}
-					want = append(want, key)
-				}
-				return want
-			}(),
+			want: expectedRBACResourceKeys(false),
 		},
 		{
 			name: "When the HCP is ARO, it should append ARO-only resources after the base catalog",
@@ -116,43 +120,42 @@ func TestReconcile(t *testing.T) {
 			},
 			want: expectedRBACResourceKeys(true),
 		},
+		{
+			name:       "When multiple resources fail, it should aggregate errors and continue reconciling later resources",
+			params:     ReconcileParams{IngressEnabled: true},
+			failures:   map[int]error{0: fmt.Errorf("first failure"), 2: fmt.Errorf("third failure")},
+			want:       expectedRBACResourceKeys(false),
+			wantErrors: []string{"first failure", "third failure"},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var calls []string
-			if err := Reconcile(t.Context(), nil, recordingCreateOrUpdate(&calls, nil), tc.params); err != nil {
+			err := Reconcile(t.Context(), nil, recordingCreateOrUpdate(&calls, tc.failures), tc.params)
+			if len(tc.wantErrors) == 0 && err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, wantError := range tc.wantErrors {
+				if err == nil || !strings.Contains(err.Error(), wantError) {
+					t.Fatalf("expected error containing %q, got %v", wantError, err)
+				}
 			}
 			if !reflect.DeepEqual(calls, tc.want) {
 				t.Fatalf("unexpected reconciliation order:\n got: %v\nwant: %v", calls, tc.want)
+			}
+			for key := range tc.wantIngress {
+				if !sets.New(calls...).Has(key) {
+					t.Errorf("expected ingress resource %q to be reconciled", key)
+				}
 			}
 		})
 	}
 }
 
-func TestReconcileAggregatesErrors(t *testing.T) {
-	t.Parallel()
-	var calls []string
-	want := expectedRBACResourceKeys(false)
-	err := Reconcile(t.Context(), nil, recordingCreateOrUpdate(&calls, map[int]error{
-		0: fmt.Errorf("first failure"),
-		2: fmt.Errorf("third failure"),
-	}), ReconcileParams{IngressEnabled: true})
-	if err == nil {
-		t.Fatal("expected aggregate error")
-	}
-	if !strings.Contains(err.Error(), "first failure") || !strings.Contains(err.Error(), "third failure") {
-		t.Fatalf("aggregate error did not contain all failures: %v", err)
-	}
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("later resources were not attempted after failures:\n got: %v\nwant: %v", calls, want)
-	}
-}
-
 func TestReconcileIngressToRouteControllerClusterRole(t *testing.T) {
-	t.Run("When reconciling it should preserve the ingress controller policy rules", func(t *testing.T) {
+	t.Run("When reconciling, it should preserve the ingress controller policy rules", func(t *testing.T) {
 		role := &rbacv1.ClusterRole{}
 		if err := ReconcileIngressToRouteControllerClusterRole(role); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -178,7 +181,7 @@ func TestReconcileIngressToRouteControllerClusterRole(t *testing.T) {
 }
 
 func TestReconcileCSRApproverClusterRoleBinding(t *testing.T) {
-	t.Run("When reconciling it should preserve autoupdate, role reference, and subject", func(t *testing.T) {
+	t.Run("When reconciling, it should preserve autoupdate, role reference, and subject", func(t *testing.T) {
 		binding := &rbacv1.ClusterRoleBinding{}
 		if err := ReconcileCSRApproverClusterRoleBinding(binding); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -204,7 +207,7 @@ func TestReconcileCSRApproverClusterRoleBinding(t *testing.T) {
 }
 
 func TestReconcileMetricsResourcesClusterRole(t *testing.T) {
-	t.Run("When reconciling it should set the correct policy rules", func(t *testing.T) {
+	t.Run("When reconciling, it should set the correct policy rules", func(t *testing.T) {
 		role := &rbacv1.ClusterRole{}
 		if err := ReconcileMetricsResourcesClusterRole(role); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -223,7 +226,7 @@ func TestReconcileMetricsResourcesClusterRole(t *testing.T) {
 }
 
 func TestReconcileMetricsResourcesClusterRoleBinding(t *testing.T) {
-	t.Run("When reconciling it should set the correct role ref and subjects", func(t *testing.T) {
+	t.Run("When reconciling, it should set the correct role ref and subjects", func(t *testing.T) {
 		binding := &rbacv1.ClusterRoleBinding{}
 		if err := ReconcileMetricsResourcesClusterRoleBinding(binding); err != nil {
 			t.Fatalf("unexpected error: %v", err)

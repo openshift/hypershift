@@ -17,14 +17,17 @@ import (
 // for a hosted cluster. The RBAC package intentionally does not depend on the
 // HostedControlPlane object or the capability/platform detection helpers.
 type ReconcileParams struct {
+	// IngressEnabled is retained as a policy input for the root reconciler. The
+	// pre-extraction capability filter compared GVKs, but these manifest
+	// constructors do not set GVKs, so disabled Ingress still reconciled all
+	// RBAC resources. Keep that behavior unchanged.
 	IngressEnabled bool
 	IsAROHCP       bool
 }
 
 type manifestAndReconcile[o client.Object] struct {
-	manifest        func() o
-	reconcile       func(o) error
-	requiresIngress bool
+	manifest  func() o
+	reconcile func(o) error
 }
 
 func (m manifestAndReconcile[o]) upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -38,12 +41,7 @@ func (m manifestAndReconcile[o]) upsert(ctx context.Context, c client.Client, cr
 	return nil
 }
 
-func (m manifestAndReconcile[o]) isApplicable(params ReconcileParams) bool {
-	return !m.requiresIngress || params.IngressEnabled
-}
-
 type manifestReconciler interface {
-	isApplicable(params ReconcileParams) bool
 	upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
 }
 
@@ -53,9 +51,6 @@ type manifestReconciler interface {
 func Reconcile(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, params ReconcileParams) error {
 	var errs []error
 	for _, resource := range resources(params.IsAROHCP) {
-		if !resource.isApplicable(params) {
-			continue
-		}
 		if err := resource.upsert(ctx, c, createOrUpdate); err != nil {
 			errs = append(errs, err)
 		}
@@ -67,13 +62,13 @@ func Reconcile(ctx context.Context, c client.Client, createOrUpdate upsert.Creat
 func resources(isAROHCP bool) []manifestReconciler {
 	resources := []manifestReconciler{
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.CSRApproverClusterRole, reconcile: ReconcileCSRApproverClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.IngressToRouteControllerClusterRole, reconcile: ReconcileIngressToRouteControllerClusterRole, requiresIngress: true},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.IngressToRouteControllerClusterRole, reconcile: ReconcileIngressToRouteControllerClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.NamespaceSecurityAllocationControllerClusterRole, reconcile: ReconcileNamespaceSecurityAllocationControllerClusterRole},
 
-		manifestAndReconcile[*rbacv1.Role]{manifest: hccomanifests.IngressToRouteControllerRole, reconcile: ReconcileReconcileIngressToRouteControllerRole, requiresIngress: true},
+		manifestAndReconcile[*rbacv1.Role]{manifest: hccomanifests.IngressToRouteControllerRole, reconcile: ReconcileReconcileIngressToRouteControllerRole},
 
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.CSRApproverClusterRoleBinding, reconcile: ReconcileCSRApproverClusterRoleBinding},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.IngressToRouteControllerClusterRoleBinding, reconcile: ReconcileIngressToRouteControllerClusterRoleBinding, requiresIngress: true},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.IngressToRouteControllerClusterRoleBinding, reconcile: ReconcileIngressToRouteControllerClusterRoleBinding},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.NodeBootstrapperClusterRoleBinding, reconcile: ReconcileNodeBootstrapperClusterRoleBinding},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.CSRRenewalClusterRoleBinding, reconcile: ReconcileCSRRenewalClusterRoleBinding},
@@ -81,7 +76,7 @@ func resources(isAROHCP bool) []manifestReconciler {
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.MetricsResourcesClusterRole, reconcile: ReconcileMetricsResourcesClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.MetricsResourcesClusterRoleBinding, reconcile: ReconcileMetricsResourcesClusterRoleBinding},
 
-		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: hccomanifests.IngressToRouteControllerRoleBinding, reconcile: ReconcileIngressToRouteControllerRoleBinding, requiresIngress: true},
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: hccomanifests.IngressToRouteControllerRoleBinding, reconcile: ReconcileIngressToRouteControllerRoleBinding},
 
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: hccomanifests.AuthenticatedReaderForAuthenticatedUserRolebinding, reconcile: ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding},
 

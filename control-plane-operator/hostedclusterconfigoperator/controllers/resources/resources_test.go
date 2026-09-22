@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
@@ -252,6 +253,7 @@ func TestReconcileRBAC(t *testing.T) {
 		isAROHCP       bool
 		wantIngress    bool
 		wantARO        bool
+		wantError      bool
 	}{
 		{
 			name:           "When ingress is enabled for a non-ARO HCP, it should reconcile base and ingress RBAC",
@@ -259,8 +261,9 @@ func TestReconcileRBAC(t *testing.T) {
 			wantIngress:    true,
 		},
 		{
-			name:           "When ingress is disabled, it should omit ingress RBAC while reconciling the base catalog",
+			name:           "When ingress is disabled, it should preserve existing ingress RBAC reconciliation behavior",
 			ingressEnabled: false,
+			wantIngress:    true,
 		},
 		{
 			name:           "When the HCP is ARO, it should reconcile the ARO-only RBAC resources",
@@ -268,6 +271,10 @@ func TestReconcileRBAC(t *testing.T) {
 			isAROHCP:       true,
 			wantIngress:    true,
 			wantARO:        true,
+		},
+		{
+			name:      "When CreateOrUpdate fails, it should return the reconciliation error",
+			wantError: true,
 		},
 	}
 
@@ -286,11 +293,22 @@ func TestReconcileRBAC(t *testing.T) {
 				}
 			}
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			createOrUpdateProvider := upsert.CreateOrUpdateProvider(&simpleCreateOrUpdater{})
+			if tc.wantError {
+				createOrUpdateProvider = &errorCreateOrUpdater{err: fmt.Errorf("injected CreateOrUpdate failure")}
+			}
 			r := &reconciler{
 				client:                 guestClient,
-				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				CreateOrUpdateProvider: createOrUpdateProvider,
 			}
-			if err := r.reconcileRBAC(t.Context(), hcp); err != nil {
+			err := r.reconcileRBAC(t.Context(), hcp)
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "injected CreateOrUpdate failure") {
+					t.Fatalf("expected CreateOrUpdate error, got: %v", err)
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
@@ -429,6 +447,14 @@ type simpleCreateOrUpdater struct{}
 
 func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 	return controllerutil.CreateOrUpdate(ctx, c, obj, f)
+}
+
+type errorCreateOrUpdater struct {
+	err error
+}
+
+func (p *errorCreateOrUpdater) CreateOrUpdate(context.Context, client.Client, client.Object, controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	return controllerutil.OperationResultNone, p.err
 }
 
 func TestReconcileIngressControllerCertSource(t *testing.T) {
