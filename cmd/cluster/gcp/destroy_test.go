@@ -47,7 +47,7 @@ func TestDestroyClusterExtractsParametersFromHostedCluster(t *testing.T) {
 			expectedRegion:   "us-east1",
 			expectedInfraID:  "flag-infra",
 		},
-		"When HostedCluster exists and flags are set, HC values should take precedence": {
+		"When HostedCluster exists and flags are set, it should use HostedCluster values": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "hc-infra",
@@ -191,9 +191,9 @@ func TestDestroyClusterPreserveFlagsDefaults(t *testing.T) {
 
 func TestDestroyClusterPreserveFlagsCombinations(t *testing.T) {
 	tests := map[string]struct {
-		preserveIAM   bool
-		preserveInfra bool
-		expectIAMLog  string
+		preserveIAM    bool
+		preserveInfra  bool
+		expectIAMLog   string
 		expectInfraLog string
 	}{
 		"When no preserve flags are set, both should be destroyed": {
