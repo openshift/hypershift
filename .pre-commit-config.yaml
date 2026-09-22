@@ -1,5 +1,5 @@
 default_stages: [pre-commit]
-default_install_hook_types: [pre-commit, pre-push, post-checkout]
+default_install_hook_types: [pre-commit, commit-msg, pre-push, post-checkout]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -56,6 +56,13 @@ repos:
         entry: make run-gitlint
         language: system
         stages: [pre-commit]
+      - id: run-gitlint-commit-msg
+        name: Run gitlint on commit message
+        description: Runs `make run-gitlint-commit-msg` to validate the pending commit message.
+        entry: bash -c 'make run-gitlint-commit-msg COMMIT_MSG_FILE="$1"' --
+        language: system
+        pass_filenames: true
+        stages: [commit-msg]
       - id: clean-stale-mocks
         name: Clean stale mock files
         description: Removes gitignored *_mock.go files that may be stale after a branch switch.
