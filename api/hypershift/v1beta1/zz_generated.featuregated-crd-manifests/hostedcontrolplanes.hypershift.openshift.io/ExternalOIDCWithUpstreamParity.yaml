@@ -7328,20 +7328,15 @@ spec:
             - sshKey
             type: object
             x-kubernetes-validations:
-            - message: spec.services in body should have at least 4 items or 3 for
-                IBMCloud
-              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
-                : size(self.services) >= 4'
-            - message: Services list must contain at least 'APIServer', 'OAuthServer',
-                and 'Konnectivity' (and 'Ignition' except on IBMCloud)
-              optionalOldSelf: true
-              rule: 'self.platform.type == ''IBMCloud'' ? [''APIServer'', ''OAuthServer'',
-                ''Konnectivity''].all(requiredType, self.services.exists(s, s.service
-                == requiredType)) : [''APIServer'', ''OAuthServer'', ''Konnectivity'',
-                ''Ignition''].all(requiredType, self.services.exists(s, s.service
-                == requiredType)) || (oldSelf.hasValue() && ![''APIServer'', ''OAuthServer'',
-                ''Konnectivity'', ''Ignition''].all(requiredType, oldSelf.value().services.exists(s,
-                s.service == requiredType)))'
+            - message: Services list must contain an APIServer service
+              rule: self.services.exists(s, s.service == 'APIServer')
+            - message: Services list must contain an OAuthServer service
+              rule: self.services.exists(s, s.service == 'OAuthServer')
+            - message: Services list must contain a Konnectivity service
+              rule: self.services.exists(s, s.service == 'Konnectivity')
+            - message: Services list must contain an Ignition service
+              rule: self.platform.type == 'IBMCloud' || self.services.exists(s, s.service
+                == 'Ignition')
             - message: disableMultiNetwork can only be set to true when networkType
                 is 'Other'
               rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)

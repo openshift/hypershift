@@ -154,7 +154,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "Services list must contain at least 'APIServer', 'OAuthServer', and 'Konnectivity' (and 'Ignition' except on IBMCloud)"
+    expectedError: "Services list must contain an Ignition service"
 
   - name: When two Route services share a hostname it should fail
     initial: |

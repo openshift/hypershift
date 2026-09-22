@@ -36,7 +36,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "spec.services in body should have at least 4 items or 3 for IBMCloud"
+    expectedError: "Services list must contain an APIServer service"
 
   - name: When servicePublishingStrategy is nodePort and addresses are valid hostname IPv4 and IPv6 it should pass
     initial: |
@@ -460,6 +460,34 @@ tests:
             type: Route
             route: {}
     expectedError: "Each nodePort publishingStrategy address and port must be unique within the Services list."
+
+  - name: When IBMCloud HostedCluster is missing Konnectivity it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: IBMCloud
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Services list must contain a Konnectivity service"
 
   onUpdate:
   - name: When services publishing strategy type is changed it should fail

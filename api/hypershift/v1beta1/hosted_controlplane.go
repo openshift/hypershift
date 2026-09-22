@@ -39,8 +39,10 @@ type HostedControlPlane struct {
 }
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
-// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
-// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? ['APIServer', 'OAuthServer', 'Konnectivity'].all(requiredType, self.services.exists(s, s.service == requiredType)) : ['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.services.exists(s, s.service == requiredType)) || (oldSelf.hasValue() && !['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, oldSelf.value().services.exists(s, s.service == requiredType)))",message="Services list must contain at least 'APIServer', 'OAuthServer', and 'Konnectivity' (and 'Ignition' except on IBMCloud)",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'APIServer')",message="Services list must contain an APIServer service"
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'OAuthServer')",message="Services list must contain an OAuthServer service"
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'Konnectivity')",message="Services list must contain a Konnectivity service"
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' || self.services.exists(s, s.service == 'Ignition')",message="Services list must contain an Ignition service"
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
 type HostedControlPlaneSpec struct {
