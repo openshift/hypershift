@@ -45,7 +45,23 @@ func TestBuildAzureMachineTemplate(t *testing.T) { ... }
 
 Do not use generic or disconnected test function names like `TestNodePoolFeatures`, `TestAzureIntegration`, or `TestVariousCases`.
 
-Each test function should map 1:1 to the function under test. If a function is complex enough to warrant many test cases, use table-driven tests within a single `Test<FunctionName>` function with the "When...it should..." naming for each case.
+Each production function or method must map to at most one top-level unit test function. If a function is complex enough to warrant many test cases, use table-driven tests or `t.Run` subtests within a single test function, with the "When...it should..." naming for each case.
+
+Prefer `Test<ReceiverType>_<MethodName>` for method tests so methods with common names such as `Reconcile`, `Validate`, and `Run` map unambiguously:
+
+```go
+// Testing (*NodePoolReconciler).Reconcile
+func TestNodePoolReconciler_Reconcile(t *testing.T) { ... }
+```
+
+For compatibility, `Test<ReceiverType><MethodName>` and `Test<MethodName>` are also accepted when they resolve to exactly one production method.
+
+The one-to-one rule applies to ordinary unit tests. It does not apply to `TestMain`, benchmarks, fuzz tests, examples, generated files, integration/e2e/envtest/request-serving entry points, or package-level behavioral tests that do not correspond to one production function. For an intentional exception that still exercises a production function, add a declaration-level suppression with a specific reason:
+
+```go
+//nolint:hypershiftlinter // testfuncstructure: validates compatibility across multiple functions
+func TestSerializationCompatibility(t *testing.T) { ... }
+```
 
 ## Test Placement
 

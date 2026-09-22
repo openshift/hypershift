@@ -30,7 +30,7 @@ relying on reviewer memory. That matters for several reasons:
 
 ## Analyzers
 
-The plugin ships 9 analyzers, scoped so each rule only fires where it applies.
+The plugin ships 10 analyzers, scoped so each rule only fires where it applies.
 
 ### Unit test conventions (`TESTING.md`, unit tests only)
 
@@ -38,6 +38,7 @@ The plugin ships 9 analyzers, scoped so each rule only fires where it applies.
 | -------------- | ----------------------------------------------------------------------------------------- |
 | `testcasename` | Test case name fields match `When <condition>, it should <expected behavior>`.            |
 | `testfuncname` | Test functions do not use the `Test_` prefix; use `TestFunctionName` instead.             |
+| `testfuncstructure` | Top-level unit tests map one-to-one to production functions and methods.            |
 
 ### E2E conventions (`test/e2e/v2/` only)
 
@@ -69,11 +70,52 @@ Relevant Makefile targets:
 - `make hypershift-lint-all` — run the enabled custom analyzers against the
   current tree.
 - `make lint` — run normal lint checks, including these analyzers.
-- `make test-linter` — run the analyzers' own unit tests
-  (`go test ./hypershiftlinter/analyzers/...`).
+- `make test-linter` — run the plugin and analyzers' unit tests
+  (`go test ./hypershiftlinter/...`).
 
 Each analyzer has [`analysistest`](https://pkg.go.dev/golang.org/x/tools/go/analysis/analysistest)-based
 unit tests with good/bad `testdata/` fixtures.
+
+## Unit test function structure and exceptions
+
+`testfuncstructure` maps ordinary `func TestXxx(*testing.T)` declarations to
+production functions and methods using package type information. Package
+functions use `Test<FunctionName>`. The preferred method form is
+`Test<ReceiverType>_<MethodName>`; a compact receiver form or bare method name
+is accepted only when it resolves unambiguously. Longer exact production names
+take precedence over scenario suffixes, so `TestReconcileErrors` maps to a real
+`ReconcileErrors` function before it can be treated as another `Reconcile`
+scenario.
+
+The analyzer is enabled by both the root and `api/` module lint configurations.
+
+When several top-level tests map to one production symbol, consolidate their
+scenarios into table cases or `t.Run` subtests under one test function. The
+analyzer does not infer runtime coverage or require tests for every production
+function. It ignores test-only helpers, package-level behavioral tests without
+a production-function call, special Go test entry points, generated files, and
+integration-style suites.
+
+For an intentional exception, use the golangci-lint plugin name on the test
+declaration and explain why no one-function mapping is appropriate:
+
+```go
+//nolint:hypershiftlinter // testfuncstructure: validates compatibility across multiple functions
+func TestSerializationCompatibility(t *testing.T) { ... }
+```
+
+`testfuncstructure` is an analyzer inside the `hypershiftlinter` plugin, not a
+standalone golangci-lint linter, so `//nolint:testfuncstructure` does not work.
+The suppression affects every `hypershiftlinter` diagnostic on that declaration;
+keep it declaration-scoped and specific.
+
+Existing findings present when this rule was enabled are listed exactly by
+package, file, and declaration in `analyzers/testfuncstructure/legacy.go`. These
+entries are migration debt, not approved patterns. New declarations remain
+enforced, including a new canonical declaration added beside a baselined split
+test. Remove an entry when its test is renamed or consolidated. An accepted
+limitation is that an existing declaration remains exempt while its baseline
+entry exists, even if its body changes.
 
 ## Status-writing enforcement and migration exceptions
 
