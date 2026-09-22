@@ -242,6 +242,28 @@ func TestParseSTSCredentialsFile(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "When given real-world STS credentials, it should preserve all credential fields",
+			fileContent: `{
+  "Credentials": {
+    "AccessKeyId": "ASIAIOSFODNN7EXAMPLE",
+    "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY",
+    "SessionToken": "FwoGZXIvYXdzEBYaDHExampleToken1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
+    "Expiration": "2025-01-30T12:00:00Z"
+  }
+}`,
+			validateCreds: func(t *testing.T, creds *aws.Credentials) {
+				if creds.AccessKeyID != "ASIAIOSFODNN7EXAMPLE" {
+					t.Errorf("Expected AccessKeyID ASIAIOSFODNN7EXAMPLE, got %s", creds.AccessKeyID)
+				}
+				if creds.SecretAccessKey == "" {
+					t.Error("Expected non-empty SecretAccessKey")
+				}
+				if creds.SessionToken == "" {
+					t.Error("Expected non-empty SessionToken")
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -293,50 +315,5 @@ func TestParseSTSCredentialsFile(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestParseSTSCredentialsFile_RealWorldFormat(t *testing.T) {
-	realWorldJSON := `{
-  "Credentials": {
-    "AccessKeyId": "ASIAIOSFODNN7EXAMPLE",
-    "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY",
-    "SessionToken": "FwoGZXIvYXdzEBYaDHExampleToken1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
-    "Expiration": "2025-01-30T12:00:00Z"
-  }
-}`
-
-	tmpFile, err := os.CreateTemp(t.TempDir(), "real-world-sts-*.json")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	defer tmpFile.Close()
-
-	if _, err := tmpFile.WriteString(realWorldJSON); err != nil {
-		t.Fatalf("Failed to write to temp file: %v", err)
-	}
-
-	creds, err := ParseSTSCredentialsFile(tmpFile.Name())
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-		return
-	}
-
-	if creds == nil {
-		t.Fatal("Expected non-nil credentials")
-		return
-	}
-
-	expectedAccessKey := "ASIAIOSFODNN7EXAMPLE"
-	if creds.AccessKeyID != expectedAccessKey {
-		t.Errorf("Expected AccessKeyID %s, got %s", expectedAccessKey, creds.AccessKeyID)
-	}
-
-	if creds.SecretAccessKey == "" {
-		t.Error("Expected non-empty SecretAccessKey")
-	}
-
-	if creds.SessionToken == "" {
-		t.Error("Expected non-empty SessionToken")
 	}
 }
