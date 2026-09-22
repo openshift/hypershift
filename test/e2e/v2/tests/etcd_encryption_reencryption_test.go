@@ -236,6 +236,7 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			alternateARN := internal.GetEnvVarValue("E2E_AWS_KMS_KEY_ARN_ALTERNATE")
+			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			priorHistoryLen := len(hc.Status.SecretEncryption.History)
 			patch := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"aws":{"activeKey":{"arn":%q}}}}}}`, alternateARN))
 			Expect(tc.MgmtClient.Patch(ctx, hc, crclient.RawPatch(types.MergePatchType, patch))).To(Succeed())
@@ -329,6 +330,7 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
+			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			priorHistoryLen := len(hc.Status.SecretEncryption.History)
 			patch := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, alternateVersion))
 			Expect(tc.MgmtClient.Patch(ctx, hc, crclient.RawPatch(types.MergePatchType, patch))).To(Succeed())
@@ -437,6 +439,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
 
 			By("Performing first key rotation: original -> alternate")
+			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			priorHistoryLen := len(hc.Status.SecretEncryption.History)
 			patch1 := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, alternateVersion))
 			Expect(tc.MgmtClient.Patch(ctx, hc, crclient.RawPatch(types.MergePatchType, patch1))).To(Succeed())
@@ -547,6 +550,7 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				}
 			})
 
+			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			priorHistoryLen := len(hc.Status.SecretEncryption.History)
 			patch := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"aescbc":{"activeKey":{"name":%q}}}}}`, newKeySecret.Name))
 			Expect(tc.MgmtClient.Patch(ctx, hc, crclient.RawPatch(types.MergePatchType, patch))).To(Succeed())
