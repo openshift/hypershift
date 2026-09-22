@@ -10,12 +10,14 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -31,6 +33,8 @@ type fakeNamespacedResourceDiscovery struct {
 	resources []*metav1.APIResourceList
 	err       error
 }
+
+var testWidgetGVK = schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: "Widget"}
 
 func (d *fakeNamespacedResourceDiscovery) ServerPreferredNamespacedResources() ([]*metav1.APIResourceList, error) {
 	return d.resources, d.err
@@ -55,6 +59,9 @@ func testNamespacedResourceDiscovery() namespacedResourceDiscovery {
 		}},
 		{GroupVersion: hyperv1.GroupVersion.String(), APIResources: []metav1.APIResource{
 			{Name: "hostedcontrolplanes", Kind: "HostedControlPlane", Namespaced: true, Verbs: verbs},
+		}},
+		{GroupVersion: testWidgetGVK.GroupVersion().String(), APIResources: []metav1.APIResource{
+			{Name: "widgets", Kind: testWidgetGVK.Kind, Namespaced: true, Verbs: verbs},
 		}},
 	}}
 }
@@ -275,6 +282,17 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			},
 		}
 
+		widget := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": testWidgetGVK.GroupVersion().String(),
+			"kind":       testWidgetGVK.Kind,
+			"metadata": map[string]interface{}{
+				"name":       "test-widget",
+				"namespace":  cpNamespace,
+				"finalizers": []interface{}{"example.com/widget-finalizer"},
+			},
+		}}
+		widget.SetGroupVersionKind(testWidgetGVK)
+
 		service := &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "kube-apiserver",
@@ -295,11 +313,46 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: cpNamespace,
 			},
+			Spec: corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
 		}
 
+		operations := []string{}
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
-			WithObjects(hc, nodePool, unrelatedNodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, service, pvc, ns).
+			WithObjects(hc, nodePool, unrelatedNodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, service, pvc, widget, ns).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, obj client.ObjectList, opts ...client.ListOption) error {
+					err := cl.List(ctx, obj, opts...)
+					if list, ok := obj.(*unstructured.UnstructuredList); ok && list.GroupVersionKind().GroupKind() == testWidgetGVK.GroupKind() {
+						operations = append(operations, fmt.Sprintf("widget-list-%d", len(list.Items)))
+					}
+					return err
+				},
+				Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					err := cl.Patch(ctx, obj, patch, opts...)
+					if obj.GetObjectKind().GroupVersionKind().GroupKind() == testWidgetGVK.GroupKind() {
+						operations = append(operations, "widget-patch")
+					}
+					return err
+				},
+				Delete: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					err := cl.Delete(ctx, obj, opts...)
+					if obj.GetObjectKind().GroupVersionKind().GroupKind() == testWidgetGVK.GroupKind() {
+						operations = append(operations, "widget-delete")
+					}
+					if namespace, ok := obj.(*corev1.Namespace); ok && namespace.Name == cpNamespace {
+						operations = append(operations, "namespace-delete")
+					}
+					return err
+				},
+				SubResourceUpdate: func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+					err := cl.SubResource(subResourceName).Update(ctx, obj, opts...)
+					if subResourceName == "finalize" {
+						operations = append(operations, "namespace-finalize")
+					}
+					return err
+				},
+			}).
 			Build()
 
 		opts := &DestroyOptions{
@@ -348,6 +401,27 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: expected.name}, expected.object)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected %T %s to be deleted", expected.object, expected.name)
 		}
+		updatedWidget := &unstructured.Unstructured{}
+		updatedWidget.SetGroupVersionKind(testWidgetGVK)
+		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-widget"}, updatedWidget)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected arbitrary unstructured Widget to be deleted")
+
+		indexOf := func(operation string) int {
+			for i, recorded := range operations {
+				if recorded == operation {
+					return i
+				}
+			}
+			return -1
+		}
+		finalizeIndex := indexOf("namespace-finalize")
+		namespaceDeleteIndex := indexOf("namespace-delete")
+		g.Expect(indexOf("widget-patch")).To(BeNumerically("<", finalizeIndex))
+		g.Expect(indexOf("widget-delete")).To(BeNumerically("<", finalizeIndex))
+		g.Expect(indexOf("widget-list-0")).To(BeNumerically("<", finalizeIndex))
+		g.Expect(indexOf("widget-patch")).To(BeNumerically("<", namespaceDeleteIndex))
+		g.Expect(indexOf("widget-delete")).To(BeNumerically("<", namespaceDeleteIndex))
+		g.Expect(indexOf("widget-list-0")).To(BeNumerically("<", namespaceDeleteIndex))
 	})
 
 	t.Run("When the control plane namespace is empty, it should succeed without errors", func(t *testing.T) {
@@ -460,6 +534,49 @@ func TestCleanupNamespacedResources(t *testing.T) {
 		errs := cleanupNamespacedResources(context.Background(), c, &fakeNamespacedResourceDiscovery{err: fmt.Errorf("discovery unavailable")}, "test-ns", log.Log)
 		g.Expect(errs).To(HaveLen(1))
 		g.Expect(errs[0].Error()).To(ContainSubstring("discovery unavailable"))
+	})
+}
+
+func TestForceRemoveAllFinalizersDiscoveryError(t *testing.T) {
+	t.Run("When discovery fails, it should not finalize the control plane namespace", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+		clusterName := "discovery-error-cluster"
+		cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       clusterName,
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+			},
+		}
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: cpNamespace},
+			Spec:       corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
+		}
+		operations := []string{}
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc, ns).
+			WithInterceptorFuncs(interceptor.Funcs{
+				SubResourceUpdate: func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+					if subResourceName == "finalize" {
+						operations = append(operations, "namespace-finalize")
+					}
+					return cl.SubResource(subResourceName).Update(ctx, obj, opts...)
+				},
+			}).
+			Build()
+
+		opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, &fakeNamespacedResourceDiscovery{err: fmt.Errorf("discovery unavailable")})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(operations).NotTo(ContainElement("namespace-finalize"))
+
+		updatedNamespace := &corev1.Namespace{}
+		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}))
 	})
 }
 
