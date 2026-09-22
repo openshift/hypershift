@@ -154,6 +154,13 @@ const (
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
+	cloudResourceCleanupRequeue = 10 * time.Second
+
+	// cloudResourceCleanupGracePeriod bounds how long reconcileDeletion holds the
+	// HCP finalizer waiting for cloud resource cleanup before proceeding anyway.
+	// Matches the hypershift-operator grace period.
+	cloudResourceCleanupGracePeriod = 10 * time.Minute
+
 	cpoAzureCredentials = "CPOAzureCredentials"
 	kmsAzureCredentials = "KMSAzureCredentials"
 )
@@ -381,58 +388,148 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 	return handlers
 }
 
-func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (ctrl.Result, error) {
-	condition := metav1.Condition{
-		Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
-	}
-	if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
-		if code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); destroyErr != nil {
-			condition.Message = "failed to delete AWS default security group"
-			if code == supportawsutil.DependencyViolation {
-				condition.Message = destroyErr.Error()
-			}
-			condition.Reason = hyperv1.AWSErrorReason
-			condition.Status = metav1.ConditionFalse
-			if err := statuspatching.PatchStatusCondition(ctx, r.Client, hostedControlPlane, &hostedControlPlane.Status.Conditions, condition); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
-			}
-
-			switch code {
-			case supportawsutil.UnauthorizedOperation:
-				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of unauthorized operation.")
-			case supportawsutil.InvalidIdentityToken:
-				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of invalid identity token (OIDC provider may be missing).")
-			case supportawsutil.DependencyViolation:
-				r.Log.Error(destroyErr, "Skipping AWS default security group deletion because of dependency violation.")
-			default:
-				return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
-			}
-		} else {
-			condition.Message = hyperv1.AllIsWellMessage
-			condition.Reason = hyperv1.AsExpectedReason
-			condition.Status = metav1.ConditionTrue
-			if err := statuspatching.PatchStatusCondition(ctx, r.Client, hostedControlPlane, &hostedControlPlane.Status.Conditions, condition); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition message: %v", err, condition.Message)
-			}
+func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	removed, err := r.ensureCloudResourcesDeleted(ctx, hcp)
+	if err != nil || !removed {
+		if !cloudResourceCleanupGraceExpired(hcp) {
+			// The teardown needs a token minted against the guest KAS, so requeue
+			// without removing the finalizer to keep KAS and the token-minter up
+			// until it finishes. A non-nil err backs off (RequeueAfter ignored).
+			return ctrl.Result{RequeueAfter: cloudResourceCleanupRequeue}, err
 		}
-
-		done, err := r.removeCloudResources(ctx, hostedControlPlane)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
-		}
-		if !done {
-			return ctrl.Result{RequeueAfter: time.Minute}, nil
-		}
+		// Grace period bounds the wait so cleanup errors can't block deletion forever.
+		r.Log.Error(err, "cloud resource cleanup did not complete within grace period; proceeding with HostedControlPlane deletion, resources may leak", "gracePeriod", cloudResourceCleanupGracePeriod)
 	}
 
-	if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
-		originalHCP := hostedControlPlane.DeepCopy()
-		controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
-		if err := r.Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+	if controllerutil.ContainsFinalizer(hcp, finalizer) {
+		originalHCP := hcp.DeepCopy()
+		controllerutil.RemoveFinalizer(hcp, finalizer)
+		if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+// cloudResourceCleanupGraceExpired reports whether a deleting HCP has waited longer
+// than cloudResourceCleanupGracePeriod for cloud resource cleanup to finish.
+func cloudResourceCleanupGraceExpired(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp.DeletionTimestamp != nil &&
+		time.Since(hcp.DeletionTimestamp.Time) > cloudResourceCleanupGracePeriod
+}
+
+// cleanupCloudResourcesRequested reports whether the guest cluster's cloud resources
+// (load balancers, volumes) should be cleaned up before the HCP is deleted.
+func cleanupCloudResourcesRequested(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true"
+}
+
+// ensureCloudResourcesDeleted performs cloud teardown for a deleting HCP. Guest-owned
+// resources (load balancers, volumes; gated by CleanupCloudResourcesAnnotation) are
+// cleaned up on every platform. AWS additionally removes the default worker security
+// group and the HCP-owned AWSEndpointServices.
+func (r *HostedControlPlaneReconciler) ensureCloudResourcesDeleted(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		return r.ensureAWSResourcesDeleted(ctx, hcp)
+	}
+
+	if !cleanupCloudResourcesRequested(hcp) {
+		return true, nil
+	}
+	removed, err := r.removeGuestCloudResources(ctx, hcp)
+	if err != nil {
+		return false, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
+	}
+	return removed, nil
+}
+
+// ensureAWSResourcesDeleted performs the AWS teardown for a deleting HCP: guest-owned
+// resources (gated by CleanupCloudResourcesAnnotation) and the always-removed HCP-owned
+// AWSEndpointServices. It reports removed=true only once everything is gone, or
+// immediately when the identity provider is explicitly invalid and cleanup can never
+// succeed.
+func (r *HostedControlPlaneReconciler) ensureAWSResourcesDeleted(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	if awsIdentityProviderInvalid(hcp) {
+		r.Log.Info("AWS identity provider is invalid; skipping cloud resource cleanup, resources may leak")
+		return true, nil
+	}
+
+	if cleanupCloudResourcesRequested(hcp) {
+		// AWS-specific default worker security group.
+		sgRemoved, err := r.destroyDefaultSecurityGroup(ctx, hcp)
+		if err != nil {
+			return false, err
+		}
+		// Platform-agnostic guest resources (load balancers, volumes).
+		resourcesRemoved, err := r.removeGuestCloudResources(ctx, hcp)
+		if err != nil {
+			return false, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
+		}
+		// Wait for guest resources to be gone before tearing down the PrivateLink
+		// endpoint services they may depend on for connectivity.
+		if !sgRemoved || !resourcesRemoved {
+			return false, nil
+		}
+	}
+
+	return r.ensureAWSEndpointServicesRemoved(ctx, hcp)
+}
+
+// destroyDefaultSecurityGroup deletes the default worker security group and records
+// the AWSDefaultSecurityGroupDeleted condition. Unauthorized, invalid-token, and
+// dependency-violation failures are transient during teardown, so it reports
+// done=false to retry rather than returning an error.
+func (r *HostedControlPlaneReconciler) destroyDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	condition := metav1.Condition{Type: string(hyperv1.AWSDefaultSecurityGroupDeleted)}
+	code, destroyErr := r.destroyAWSDefaultSecurityGroup(ctx, hcp)
+	if destroyErr == nil {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = hyperv1.AllIsWellMessage
+		if err := statuspatching.PatchStatusCondition(ctx, r.Client, hcp, &hcp.Status.Conditions, condition); err != nil {
+			return false, fmt.Errorf("failed to update status on hcp for security group deletion: %w", err)
+		}
+		return true, nil
+	}
+
+	condition.Status = metav1.ConditionFalse
+	condition.Reason = hyperv1.AWSErrorReason
+	condition.Message = "failed to delete AWS default security group"
+	if code == supportawsutil.DependencyViolation {
+		condition.Message = destroyErr.Error()
+	}
+	if err := statuspatching.PatchStatusCondition(ctx, r.Client, hcp, &hcp.Status.Conditions, condition); err != nil {
+		return false, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
+	}
+
+	switch code {
+	case supportawsutil.UnauthorizedOperation, supportawsutil.InvalidIdentityToken, supportawsutil.DependencyViolation:
+		r.Log.Error(destroyErr, "AWS default security group deletion incomplete, will retry", "code", code)
+		return false, nil
+	default:
+		return false, fmt.Errorf("failed to delete AWS default security group: %w", destroyErr)
+	}
+}
+
+// ensureAWSEndpointServicesRemoved deletes the namespace's AWSEndpointServices
+// and reports whether they are gone. The awsendpointservice controller removes
+// its finalizer once the VPC endpoint, security group, and DNS records are
+// cleaned up, so the resources disappear only after that cleanup completes.
+func (r *HostedControlPlaneReconciler) ensureAWSEndpointServicesRemoved(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	var awsEndpointServices hyperv1.AWSEndpointServiceList
+	if err := r.List(ctx, &awsEndpointServices, client.InNamespace(hcp.Namespace)); err != nil {
+		return false, fmt.Errorf("failed to list awsendpointservices: %w", err)
+	}
+	for i := range awsEndpointServices.Items {
+		ep := &awsEndpointServices.Items[i]
+		if ep.DeletionTimestamp != nil {
+			continue
+		}
+		if err := r.Delete(ctx, ep); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("failed to delete awsendpointservice %s: %w", ep.Name, err)
+		}
+	}
+	return len(awsEndpointServices.Items) == 0, nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
@@ -2669,15 +2766,7 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 	}, nil
 }
 
-func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlane) bool {
-	if msg, isValid := hasValidCloudCredentials(hcp); !isValid {
-		log.Info("Skipping hosted cluster cloud resources cleanup", "reason", msg)
-		return false
-	}
-	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true"
-}
-
-func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+func (r *HostedControlPlaneReconciler) removeGuestCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Removing cloud resources")
 
@@ -3118,15 +3207,16 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	return "", nil
 }
 
-func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
+// awsIdentityProviderInvalid reports whether the AWS identity provider is known
+// bad (ValidAWSIdentityProvider=False). Unknown is not treated as invalid: during
+// teardown the health check reads Unknown while KAS is down, but cleanup can still
+// succeed once KAS comes back up, so it must be retried rather than skipped.
+func awsIdentityProviderInvalid(hcp *hyperv1.HostedControlPlane) bool {
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
-		return "", true
+		return false
 	}
-	validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-	if validIdentityProvider != nil && validIdentityProvider.Status != metav1.ConditionTrue {
-		return "Invalid AWS identity provider", false
-	}
-	return "", true
+	c := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+	return c != nil && c.Status == metav1.ConditionFalse
 }
 
 func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
