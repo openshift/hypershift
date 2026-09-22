@@ -51,9 +51,10 @@ func TestLogLevelToKlogVerbosity(t *testing.T) {
 
 func TestLogLevelToEtcdLevel(t *testing.T) {
 	tests := []struct {
-		name     string
-		level    hyperv1.LogLevel
-		expected string
+		name        string
+		level       hyperv1.LogLevel
+		expected    string
+		expectPanic bool
 	}{
 		{
 			name:     "When LogLevel is empty, it should return etcd level info",
@@ -70,38 +71,28 @@ func TestLogLevelToEtcdLevel(t *testing.T) {
 			level:    hyperv1.Debug,
 			expected: "debug",
 		},
+		{
+			name:        "When LogLevel is Trace, it should panic",
+			level:       hyperv1.Trace,
+			expectPanic: true,
+		},
+		{
+			name:        "When LogLevel is TraceAll, it should panic",
+			level:       hyperv1.TraceAll,
+			expectPanic: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
+			if tt.expectPanic {
+				// Trace levels are rejected by etcd's API-level validation. Panic if
+				// one reaches this mapping through a non-CRD path.
+				g.Expect(func() { LogLevelToEtcdLevel(tt.level) }).To(Panic())
+				return
+			}
 			g.Expect(LogLevelToEtcdLevel(tt.level)).To(Equal(tt.expected))
-		})
-	}
-}
-
-func TestLogLevelToEtcdLevelPanicsOnUnsupported(t *testing.T) {
-	// Trace and TraceAll are valid LogLevel values but are not supported by etcd
-	// and are rejected at the API level (CEL). If one ever reaches this mapping
-	// (e.g. via a non-CRD path), it must panic rather than silently degrade.
-	tests := []struct {
-		name  string
-		level hyperv1.LogLevel
-	}{
-		{
-			name:  "When LogLevel is Trace, it should panic",
-			level: hyperv1.Trace,
-		},
-		{
-			name:  "When LogLevel is TraceAll, it should panic",
-			level: hyperv1.TraceAll,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-			g.Expect(func() { LogLevelToEtcdLevel(tt.level) }).To(Panic())
 		})
 	}
 }
