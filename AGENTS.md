@@ -20,7 +20,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Control plane operator** | [control-plane-operator/AGENTS.md](control-plane-operator/AGENTS.md) |
 | **HostedControlPlane status patching** | [control-plane-operator/AGENTS.md](control-plane-operator/AGENTS.md#hostedcontrolplane-status-patching) — never `Status().Update()`/unguarded `MergeFrom()` on HCP; use `support/statuspatching` |
 | **E2E v2 test framework** | [test/e2e/v2/AGENTS.md](test/e2e/v2/AGENTS.md) |
-| **Envtest (CEL validation tests)** | [test/envtest/README.md](test/envtest/README.md) — YAML-driven, runs across k8s 1.30–1.36, supports feature gate filtering |
+| **Envtest (CEL validation tests)** | [test/envtest/README.md](test/envtest/README.md) — YAML-driven, runs across k8s 1.31–1.37, supports feature gate filtering |
 | **CEL over webhooks** | [.claude/rules/webhook-validation.md](.claude/rules/webhook-validation.md) |
 | **Code formatting** | [DEVELOPMENT.md](DEVELOPMENT.md) — code quality commands and conventions |
 | **Unit test conventions** | [TESTING.md](TESTING.md) — naming, placement, and creation requirements |
