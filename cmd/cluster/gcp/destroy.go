@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	gcpinfra "github.com/openshift/hypershift/cmd/infra/gcp"
 	"github.com/openshift/hypershift/cmd/log"
@@ -49,7 +50,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 
 	// Destroy IAM first (unless --preserve-iam is set)
 	if !o.GCPPlatform.PreserveIAM {
-		o.Log.Info("Destroying IAM", "infraID", o.InfraID, "projectID", o.GCPPlatform.ProjectID)
+		o.Log.Info("Destroying IAM", "infraID", o.InfraID)
 		destroyIAMOpts := gcpinfra.DestroyIAMOptions{
 			ProjectID: o.GCPPlatform.ProjectID,
 			InfraID:   o.InfraID,
@@ -63,7 +64,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 
 	// Destroy infrastructure last (unless --preserve-infra is set)
 	if !o.GCPPlatform.PreserveInfra {
-		o.Log.Info("Destroying GCP infrastructure", "infraID", o.InfraID, "projectID", o.GCPPlatform.ProjectID, "region", o.GCPPlatform.Region)
+		o.Log.Info("Destroying GCP infrastructure", "infraID", o.InfraID)
 		destroyInfraOpts := gcpinfra.DestroyInfraOptions{
 			ProjectID: o.GCPPlatform.ProjectID,
 			Region:    o.GCPPlatform.Region,
@@ -79,13 +80,8 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	return errors.Join(errs...)
 }
 
-// DestroyCluster destroys a GCP HostedCluster and its associated infrastructure
-func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-	hostedCluster, err := core.GetCluster(ctx, o)
-	if err != nil {
-		return err
-	}
-
+// extractParameters extracts GCP parameters from HostedCluster into DestroyOptions
+func extractParameters(hostedCluster *hyperv1.HostedCluster, o *core.DestroyOptions) {
 	if hostedCluster != nil {
 		o.InfraID = hostedCluster.Spec.InfraID
 		if hostedCluster.Spec.Platform.GCP != nil {
@@ -93,8 +89,10 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 			o.GCPPlatform.Region = hostedCluster.Spec.Platform.GCP.Region
 		}
 	}
+}
 
-	// Validate required inputs
+// validateInputs validates required GCP destroy inputs
+func validateInputs(o *core.DestroyOptions) error {
 	var inputErrors []error
 	if len(o.InfraID) == 0 {
 		inputErrors = append(inputErrors, fmt.Errorf("infrastructure ID is required"))
@@ -107,6 +105,21 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	}
 	if err := errors.Join(inputErrors...); err != nil {
 		return fmt.Errorf("required inputs are missing: %w", err)
+	}
+	return nil
+}
+
+// DestroyCluster destroys a GCP HostedCluster and its associated infrastructure
+func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
+	hostedCluster, err := core.GetCluster(ctx, o)
+	if err != nil {
+		return err
+	}
+
+	extractParameters(hostedCluster, o)
+
+	if err := validateInputs(o); err != nil {
+		return err
 	}
 
 	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)

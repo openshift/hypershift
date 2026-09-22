@@ -82,18 +82,11 @@ func TestDestroyClusterExtractsParametersFromHostedCluster(t *testing.T) {
 				},
 			}
 
-			// Simulate the parameter extraction logic from DestroyCluster
-			if test.hostedCluster != nil {
-				opts.InfraID = test.hostedCluster.Spec.InfraID
-				if test.hostedCluster.Spec.Platform.GCP != nil {
-					opts.GCPPlatform.ProjectID = test.hostedCluster.Spec.Platform.GCP.Project
-					opts.GCPPlatform.Region = test.hostedCluster.Spec.Platform.GCP.Region
-				}
-			}
+			extractParameters(test.hostedCluster, opts)
 
-			g.Expect(opts.InfraID).To(Equal(test.expectedInfraID))
-			g.Expect(opts.GCPPlatform.ProjectID).To(Equal(test.expectedProject))
-			g.Expect(opts.GCPPlatform.Region).To(Equal(test.expectedRegion))
+			g.Expect(opts.InfraID).To(Equal(test.expectedInfraID), "InfraID should match expected value")
+			g.Expect(opts.GCPPlatform.ProjectID).To(Equal(test.expectedProject), "ProjectID should match expected value")
+			g.Expect(opts.GCPPlatform.Region).To(Equal(test.expectedRegion), "Region should match expected value")
 		})
 	}
 }
@@ -146,32 +139,21 @@ func TestDestroyClusterValidatesRequiredInputs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			// Simulate the validation logic from DestroyCluster
-			var inputErrors []error
-			if len(test.infraID) == 0 {
-				inputErrors = append(inputErrors, &validationError{msg: "infrastructure ID is required"})
-			}
-			if len(test.projectID) == 0 {
-				inputErrors = append(inputErrors, &validationError{msg: "project ID is required"})
-			}
-			if len(test.region) == 0 {
-				inputErrors = append(inputErrors, &validationError{msg: "region is required"})
+			opts := &core.DestroyOptions{
+				InfraID: test.infraID,
+				GCPPlatform: core.GCPPlatformDestroyOptions{
+					ProjectID: test.projectID,
+					Region:    test.region,
+				},
 			}
 
-			var err error
-			if len(inputErrors) > 0 {
-				combinedErr := inputErrors[0]
-				for i := 1; i < len(inputErrors); i++ {
-					combinedErr = &combinedValidationError{err1: combinedErr, err2: inputErrors[i]}
-				}
-				err = &requiredInputsError{inner: combinedErr}
-			}
+			err := validateInputs(opts)
 
 			if test.expectError {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(test.errorSubstr))
+				g.Expect(err).To(HaveOccurred(), "Should return validation error")
+				g.Expect(err.Error()).To(ContainSubstring(test.errorSubstr), "Error message should contain expected substring")
 			} else {
-				g.Expect(err).To(BeNil())
+				g.Expect(err).To(BeNil(), "Should not return error when all inputs valid")
 			}
 		})
 	}
@@ -241,29 +223,4 @@ func TestDestroyClusterPreserveFlagsCombinations(t *testing.T) {
 			// Here we just verify the flag values that drive the behavior
 		})
 	}
-}
-
-// Test helper types for validation simulation
-type validationError struct {
-	msg string
-}
-
-func (e *validationError) Error() string {
-	return e.msg
-}
-
-type combinedValidationError struct {
-	err1, err2 error
-}
-
-func (e *combinedValidationError) Error() string {
-	return e.err1.Error() + "\n" + e.err2.Error()
-}
-
-type requiredInputsError struct {
-	inner error
-}
-
-func (e *requiredInputsError) Error() string {
-	return "required inputs are missing: " + e.inner.Error()
 }
