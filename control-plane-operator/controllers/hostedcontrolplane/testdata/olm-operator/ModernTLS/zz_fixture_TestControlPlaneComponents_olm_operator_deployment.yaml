@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 0174bfb1b00cdb00333b7a5521c02ab71d72c52ae6a51c5ded39d33cfdcd91ad
+    hypershift.openshift.io/desired-state-hash: 54a3f798fff8e2f019f067924db409871c50549a8c44d342ffe20077bfa51bcd
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: olm-operator

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 86999514b8c6a2b846c9bad8ec5868199adc73859ce9336f6674cf1bd9d35e05
+    hypershift.openshift.io/desired-state-hash: 9cf945a94a11533b71c37fa3f0c0b930b1aa5f4a793c79c099fec40bfe4c64bc
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ingress-operator

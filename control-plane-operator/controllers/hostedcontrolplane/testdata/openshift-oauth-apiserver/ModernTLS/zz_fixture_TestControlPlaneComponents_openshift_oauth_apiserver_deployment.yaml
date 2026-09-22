@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 32aabe251cebd98bb29db6b3e4940d8f7a44d6c4156e96bae1fd320b3a02fb22
+    hypershift.openshift.io/desired-state-hash: 57c18784e095dbb146e29296335d876501096bcbdb27cb30da353f433814a21a
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver

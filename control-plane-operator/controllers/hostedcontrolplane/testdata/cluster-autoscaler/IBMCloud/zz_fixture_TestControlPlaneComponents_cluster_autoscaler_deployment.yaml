@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 4f3718e01b7ead01d070ed88ebf177fcb68a88da82cfbd6c760b0fa0e9768668
+    hypershift.openshift.io/desired-state-hash: 17cac1e79c728a6cee6dbe5ea3a50b4eeaf3b9c735f75b6b570ee88db89323e3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-autoscaler
