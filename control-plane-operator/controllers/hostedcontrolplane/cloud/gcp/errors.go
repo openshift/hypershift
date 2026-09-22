@@ -120,21 +120,21 @@ func isTransientBadRequest(err error) bool {
 	return true
 }
 
-// errorReasons extracts the machine-readable reason strings describing a GCP API
-// error. The typed ErrorInfo.Reason exposed by apierror.APIError (which the
-// compute/v1 REST client wires up) and the legacy free-form
-// googleapi.Error.Errors[].Reason describe the *same* error, so they are not
-// unioned: when the structured reason is present it is authoritative and is
-// returned alone, otherwise every legacy reason item is returned. The compute
-// backend does not always emit a structured ErrorInfo, hence the fallback.
+// errorReasons collects the machine-readable reason strings a GCP API error
+// carries, from both the structured ErrorInfo.Reason (exposed by
+// apierror.APIError, which the compute/v1 REST client wires up) and the legacy
+// free-form googleapi.Error.Errors[].Reason. These are distinct fields in the
+// response body (error.details[].reason vs error.errors[].reason) and either may
+// be absent, so both are consulted and the caller requires every reason to be
+// transient — a terminal signal on either surface makes the error terminal.
 func errorReasons(err error) []string {
+	var reasons []string
 	var apiErr *apierror.APIError
 	if errors.As(err, &apiErr) {
 		if r := apiErr.Reason(); r != "" {
-			return []string{r}
+			reasons = append(reasons, r)
 		}
 	}
-	var reasons []string
 	var googleErr *googleapi.Error
 	if errors.As(err, &googleErr) {
 		for _, e := range googleErr.Errors {
