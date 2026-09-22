@@ -1,0 +1,3 @@
+package scenarioonly
+
+func Reconcile() {}
