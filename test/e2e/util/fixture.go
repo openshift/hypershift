@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	clusterdump "github.com/openshift/hypershift/cmd/cluster/dump"
 	"github.com/openshift/hypershift/cmd/cluster/gcp"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
@@ -409,7 +410,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			return nil
 		}
 
-		noDumpGuestClusterPolicies := make(map[core.DumpGuestClusterPolicy]struct{})
+		noDumpGuestClusterPolicies := make(map[clusterdump.DumpGuestClusterPolicy]struct{})
 
 		switch hc.Spec.Platform.Type {
 		case hyperv1.AWSPlatform:
