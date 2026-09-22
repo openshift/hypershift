@@ -2,14 +2,20 @@ package gcp
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 )
+
+// testNodePortRange is the default NodePort range used across firewall tests.
+const testNodePortRange = "30000-32767"
 
 func TestDesiredFirewall(t *testing.T) {
 	const infraID = "example-abcde"
@@ -17,7 +23,7 @@ func TestDesiredFirewall(t *testing.T) {
 
 	t.Run("When network type is OVNKubernetes, it should include UDP 6081", func(t *testing.T) {
 		g := NewWithT(t)
-		fw := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes)
+		fw := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
 
 		g.Expect(fw.Name).To(Equal("example-abcde-internal-cluster"))
 		g.Expect(fw.Direction).To(Equal("INGRESS"))
@@ -27,9 +33,17 @@ func TestDesiredFirewall(t *testing.T) {
 		g.Expect(fw.TargetTags).To(ConsistOf("example-abcde-worker"))
 		g.Expect(fw.SourceRanges).To(BeEmpty())
 
-		// ForceSendFields must include Disabled and SourceRanges so disabled:false
-		// is sent on the wire and any injected CIDRs are cleared.
-		g.Expect(fw.ForceSendFields).To(ContainElements("Disabled", "SourceRanges"))
+		// ForceSendFields must include Disabled so disabled:false is sent on the
+		// wire, plus every mutually-exclusive selector field so a Patch of an
+		// owned rule clears any injected CIDRs or service-account selectors
+		// instead of leaving them alongside our tags (which GCP rejects with 400).
+		g.Expect(fw.ForceSendFields).To(ContainElements(
+			"Disabled",
+			"SourceRanges",
+			"DestinationRanges",
+			"SourceServiceAccounts",
+			"TargetServiceAccounts",
+		))
 
 		udp := allowedByProto(fw.Allowed, "udp")
 		g.Expect(udp).ToNot(BeNil())
@@ -43,13 +57,139 @@ func TestDesiredFirewall(t *testing.T) {
 
 	t.Run("When network type is not OVNKubernetes, it should omit UDP 6081", func(t *testing.T) {
 		g := NewWithT(t)
-		fw := desiredFirewall(infraID, netLink, hyperv1.Other)
+		fw := desiredFirewall(infraID, netLink, hyperv1.Other, testNodePortRange)
 
 		udp := allowedByProto(fw.Allowed, "udp")
 		g.Expect(udp).ToNot(BeNil())
 		g.Expect(udp.Ports).ToNot(ContainElement("6081"))
 		g.Expect(udp.Ports).To(ConsistOf("9000-9999", "30000-32767"))
 	})
+
+	t.Run("When the NodePort range is customized, it should use it for TCP and UDP", func(t *testing.T) {
+		g := NewWithT(t)
+		const customRange = "25000-35000"
+		fw := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, customRange)
+
+		tcp := allowedByProto(fw.Allowed, "tcp")
+		g.Expect(tcp).ToNot(BeNil())
+		g.Expect(tcp.Ports).To(ContainElement(customRange))
+		g.Expect(tcp.Ports).ToNot(ContainElement("30000-32767"))
+
+		udp := allowedByProto(fw.Allowed, "udp")
+		g.Expect(udp).ToNot(BeNil())
+		g.Expect(udp.Ports).To(ContainElement(customRange))
+		g.Expect(udp.Ports).ToNot(ContainElement("30000-32767"))
+		// The overlay port is still present alongside the custom range for OVN.
+		g.Expect(udp.Ports).To(ContainElement("6081"))
+	})
+}
+
+func TestIsTransientBadRequest(t *testing.T) {
+	tests := []struct {
+		name     string
+		reason   string
+		expected bool
+	}{
+		{
+			name:     "When the reason is RESOURCE_NOT_READY (upper snake), it should be transient",
+			reason:   "RESOURCE_NOT_READY",
+			expected: true,
+		},
+		{
+			name:     "When the reason is resourceNotReady (camel), it should be transient",
+			reason:   "resourceNotReady",
+			expected: true,
+		},
+		{
+			name:     "When the reason is RESOURCE_IN_USE_BY_ANOTHER_RESOURCE (catalog enum), it should be transient",
+			reason:   "RESOURCE_IN_USE_BY_ANOTHER_RESOURCE",
+			expected: true,
+		},
+		{
+			name:     "When the reason is resourceInUseByAnotherResource (compute v1 REST spelling), it should be transient",
+			reason:   "resourceInUseByAnotherResource",
+			expected: true,
+		},
+		{
+			name:     "When the reason is a validation error, it should be terminal",
+			reason:   "invalid",
+			expected: false,
+		},
+		{
+			name:     "When there is no reason, it should be terminal",
+			reason:   "",
+			expected: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := &googleapi.Error{Code: 400, Errors: []googleapi.ErrorItem{{Reason: tc.reason}}}
+			g.Expect(isTransientBadRequest(err)).To(Equal(tc.expected))
+		})
+	}
+
+	t.Run("When the typed ErrorInfo reason is transient, it should be transient", func(t *testing.T) {
+		g := NewWithT(t)
+		// Mirror exactly how the compute/v1 REST client surfaces a structured
+		// ErrorInfo: a *googleapi.Error whose JSON Body carries the v2 error schema
+		// with a google.rpc.ErrorInfo detail, wrapped in an apierror.APIError the
+		// same way gensupport.WrapError does on every compute .Do() call. The legacy
+		// Errors[].Reason is left non-transient to prove the typed ErrorInfo path
+		// (not the fallback) is what classifies it.
+		body := `{"error":{"code":400,"message":"resource not ready",` +
+			`"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo",` +
+			`"reason":"RESOURCE_NOT_READY","domain":"compute.googleapis.com"}]}}`
+		gErr := &googleapi.Error{Code: 400, Body: body, Errors: []googleapi.ErrorItem{{Reason: "badRequest"}}}
+		apiErr, ok := apierror.ParseError(gErr, false)
+		g.Expect(ok).To(BeTrue())
+		gErr.Wrap(apiErr)
+
+		// Sanity: the typed reason is extracted from the HTTP body, and the legacy
+		// fallback reason is terminal, so a match can only come from the typed path.
+		g.Expect(apiErr.Reason()).To(Equal("RESOURCE_NOT_READY"))
+		g.Expect(isTransientBadRequest(gErr)).To(BeTrue())
+	})
+}
+
+func TestValidateFirewallName(t *testing.T) {
+	tests := []struct {
+		name      string
+		fwName    string
+		wantError bool
+	}{
+		{
+			name:      "When the name is a valid RFC1035 name, it should pass",
+			fwName:    "example-abcde-internal-cluster",
+			wantError: false,
+		},
+		{
+			name:      "When the name exceeds 63 characters, it should fail",
+			fwName:    firewallRuleName("infra-" + strings.Repeat("a", 60)),
+			wantError: true,
+		},
+		{
+			name:      "When the name has uppercase letters, it should fail",
+			fwName:    "Example-internal-cluster",
+			wantError: true,
+		},
+		{
+			name:      "When the name starts with a digit, it should fail",
+			fwName:    "1example-internal-cluster",
+			wantError: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := validateFirewallName(tc.fwName)
+			if tc.wantError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
 }
 
 func allowedByProto(allowed []*compute.FirewallAllowed, proto string) *compute.FirewallAllowed {
@@ -147,6 +287,24 @@ func TestNetworkRefsEqual(t *testing.T) {
 			b:        "projects/my-project-123/global/networks/other-network",
 			expected: false,
 		},
+		{
+			name:     "When both are qualified with the same name but different projects, it should not be equal",
+			a:        "projects/project-a/global/networks/shared",
+			b:        "projects/project-b/global/networks/shared",
+			expected: false,
+		},
+		{
+			name:     "When one is a bare name matching the other's trailing name, it should be equal",
+			a:        "example-network",
+			b:        "projects/my-project-123/global/networks/example-network",
+			expected: true,
+		},
+		{
+			name:     "When a bare name differs from the other's trailing name, it should not be equal",
+			a:        "other-network",
+			b:        "projects/my-project-123/global/networks/example-network",
+			expected: false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,32 +317,53 @@ func TestNetworkRefsEqual(t *testing.T) {
 func TestFirewallMatchesDesired(t *testing.T) {
 	const infraID = "example-abcde"
 	const netLink = "projects/my-project-123/global/networks/example-abcde-network"
-	desired := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes)
+	desired := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
 
 	t.Run("When an existing rule equals desired, it should match", func(t *testing.T) {
 		g := NewWithT(t)
-		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes)
+		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
 		existing.Network = netLink
 		g.Expect(firewallMatchesDesired(existing, desired)).To(BeTrue())
 	})
 
 	t.Run("When an existing rule has injected source ranges, it should not match", func(t *testing.T) {
 		g := NewWithT(t)
-		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes)
+		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
 		existing.SourceRanges = []string{"10.0.0.0/8"}
+		g.Expect(firewallMatchesDesired(existing, desired)).To(BeFalse())
+	})
+
+	t.Run("When an existing rule has destination ranges, it should not match", func(t *testing.T) {
+		g := NewWithT(t)
+		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
+		existing.DestinationRanges = []string{"10.1.0.0/16"}
+		g.Expect(firewallMatchesDesired(existing, desired)).To(BeFalse())
+	})
+
+	t.Run("When an existing rule uses source service accounts, it should not match", func(t *testing.T) {
+		g := NewWithT(t)
+		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
+		existing.SourceServiceAccounts = []string{"sa@my-project-123.iam.gserviceaccount.com"}
+		g.Expect(firewallMatchesDesired(existing, desired)).To(BeFalse())
+	})
+
+	t.Run("When an existing rule uses target service accounts, it should not match", func(t *testing.T) {
+		g := NewWithT(t)
+		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
+		existing.TargetServiceAccounts = []string{"sa@my-project-123.iam.gserviceaccount.com"}
 		g.Expect(firewallMatchesDesired(existing, desired)).To(BeFalse())
 	})
 
 	t.Run("When an existing rule is disabled, it should not match", func(t *testing.T) {
 		g := NewWithT(t)
-		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes)
+		existing := desiredFirewall(infraID, netLink, hyperv1.OVNKubernetes, testNodePortRange)
 		existing.Disabled = true
 		g.Expect(firewallMatchesDesired(existing, desired)).To(BeFalse())
 	})
 
 	t.Run("When an existing rule is missing UDP 6081, it should not match", func(t *testing.T) {
 		g := NewWithT(t)
-		existing := desiredFirewall(infraID, netLink, hyperv1.Other)
+		existing := desiredFirewall(infraID, netLink, hyperv1.Other, testNodePortRange)
 		g.Expect(firewallMatchesDesired(existing, desired)).To(BeFalse())
 	})
 }

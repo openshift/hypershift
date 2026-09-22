@@ -3,6 +3,7 @@ package gcp
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -11,11 +12,21 @@ import (
 	"google.golang.org/api/compute/v1"
 )
 
+// rfc1035NameRegexp matches GCP's RFC1035 resource-name grammar: it must start
+// with a lowercase letter, contain only lowercase letters, digits, and hyphens,
+// and end with a letter or digit.
+var rfc1035NameRegexp = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
+
 const (
 	// managedByMarkerKey and infraIDMarkerKey are the JSON keys written into the
 	// firewall description to establish control-plane-operator ownership.
 	managedByMarkerKey = "hypershift.openshift.io/managed-by"
 	infraIDMarkerKey   = "hypershift.openshift.io/infra-id"
+
+	// maxFirewallNameLength is GCP's RFC1035 limit on firewall resource names. A
+	// derived name longer than this can never be created, so it is validated
+	// up-front rather than surfaced as a doomed 400.
+	maxFirewallNameLength = 63
 
 	// managedByValue is the value written under managedByMarkerKey.
 	managedByValue = "control-plane-operator"
@@ -31,6 +42,19 @@ const (
 // given infra ID.
 func firewallRuleName(infraID string) string {
 	return fmt.Sprintf("%s-internal-cluster", infraID)
+}
+
+// validateFirewallName checks that the derived firewall name satisfies GCP's
+// RFC1035 grammar and length limit. A violation can never be created, so it is a
+// terminal, actionable configuration error rather than a transient state.
+func validateFirewallName(name string) error {
+	if len(name) > maxFirewallNameLength {
+		return fmt.Errorf("firewall name %q is %d characters, exceeding GCP's %d-character RFC1035 limit", name, len(name), maxFirewallNameLength)
+	}
+	if !rfc1035NameRegexp.MatchString(name) {
+		return fmt.Errorf("firewall name %q does not match GCP's RFC1035 name grammar (lowercase letters, digits, and hyphens; must start with a letter)", name)
+	}
+	return nil
 }
 
 // workerTag returns the network tag applied to worker nodes, used as both the
@@ -67,17 +91,20 @@ func isOwnedBy(firewall *compute.Firewall, infraID string) bool {
 	return marker[managedByMarkerKey] == managedByValue && marker[infraIDMarkerKey] == infraID
 }
 
-// desiredAllowed returns the ALLOW rule set required by GCP-1221. UDP 6081
-// (Geneve overlay) is included only for OVNKubernetes.
-func desiredAllowed(networkType hyperv1.NetworkType) []*compute.FirewallAllowed {
-	udpPorts := []string{"9000-9999", "30000-32767"}
+// desiredAllowed returns the ALLOW rule set required by GCP-1221. The NodePort
+// range is the effective, possibly-customized spec.configuration.network.
+// serviceNodePortRange (already GCP "min-max" form) rather than a hard-coded
+// default, so custom ranges are not silently blocked. UDP 6081 (Geneve overlay)
+// is included only for OVNKubernetes.
+func desiredAllowed(networkType hyperv1.NetworkType, nodePortRange string) []*compute.FirewallAllowed {
+	udpPorts := []string{"9000-9999", nodePortRange}
 	if networkType == hyperv1.OVNKubernetes {
 		udpPorts = append(udpPorts, geneveOverlayPort)
 	}
 	return []*compute.FirewallAllowed{
 		{
 			IPProtocol: "tcp",
-			Ports:      []string{"10250", "9000-9999", "30000-32767"},
+			Ports:      []string{"10250", "9000-9999", nodePortRange},
 		},
 		{
 			IPProtocol: "udp",
@@ -89,23 +116,33 @@ func desiredAllowed(networkType hyperv1.NetworkType) []*compute.FirewallAllowed 
 // desiredFirewall builds the target firewall resource. The description (with the
 // ownership marker) is only written on create; updates never rewrite it, so the
 // marker acts as a stable ownership record.
-func desiredFirewall(infraID, networkSelfLink string, networkType hyperv1.NetworkType) *compute.Firewall {
+func desiredFirewall(infraID, networkSelfLink string, networkType hyperv1.NetworkType, nodePortRange string) *compute.Firewall {
 	tag := workerTag(infraID)
 	return &compute.Firewall{
 		Name:       firewallRuleName(infraID),
 		Network:    networkSelfLink,
 		Direction:  "INGRESS",
 		Priority:   firewallPriority,
-		Allowed:    desiredAllowed(networkType),
+		Allowed:    desiredAllowed(networkType, nodePortRange),
 		SourceTags: []string{tag},
 		TargetTags: []string{tag},
 		// Disabled is a meaningful false: send it explicitly so a previously
 		// disabled rule is re-enabled on update.
 		Disabled: false,
-		// SourceRanges must remain unset: the rule is tag-scoped with no
-		// machine/pod/PSC CIDR allowances. Clearing it on the wire (even when
-		// already empty) removes any injected CIDRs from an existing rule.
-		ForceSendFields: []string{"Disabled", "SourceRanges"},
+		// The managed rule is strictly tag-scoped. Every other (mutually
+		// exclusive) source/target selector must be cleared on the wire, even
+		// when already empty, so that a Patch of an owned rule that was
+		// hand-edited to use CIDRs or service accounts removes those incompatible
+		// selectors instead of adding tags alongside them (which GCP rejects with
+		// a persistent 400). All of these fields are omitempty, so they only
+		// clear when listed in ForceSendFields.
+		ForceSendFields: []string{
+			"Disabled",
+			"SourceRanges",
+			"DestinationRanges",
+			"SourceServiceAccounts",
+			"TargetServiceAccounts",
+		},
 	}
 }
 
@@ -128,9 +165,23 @@ func networkRefsEqual(a, b string) bool {
 	if na == nb {
 		return true
 	}
-	// Fall back to comparing the trailing network name so a bare name compares
-	// equal to a fully-qualified reference.
+	// The name-only fallback lets a bare network name compare equal to a
+	// fully-qualified reference. It must only apply when at least one operand is
+	// actually bare (no project/path qualifier): if both are qualified, they were
+	// already required to match exactly above, so two same-name references in
+	// different projects (e.g. projects/a/.../shared vs projects/b/.../shared)
+	// must NOT be treated as equal — that would let us patch a firewall in the
+	// wrong VPC/project.
+	if isQualifiedNetworkRef(na) && isQualifiedNetworkRef(nb) {
+		return false
+	}
 	return lastPathSegment(na) == lastPathSegment(nb) && lastPathSegment(na) != ""
+}
+
+// isQualifiedNetworkRef reports whether a normalized network reference carries a
+// project/path qualifier (as opposed to being a bare network name).
+func isQualifiedNetworkRef(ref string) bool {
+	return strings.Contains(ref, "/")
 }
 
 func lastPathSegment(s string) string {
@@ -169,7 +220,22 @@ func firewallMatchesDesired(existing, desired *compute.Firewall) bool {
 	if existing.Direction != "" && existing.Direction != desired.Direction {
 		return false
 	}
+	// The managed rule is strictly tag-scoped. Any other (mutually exclusive)
+	// source/target selector present on the existing rule is drift that must be
+	// cleared, so report a mismatch to trigger a repairing Patch. Skipping these
+	// checks would either leave incompatible selectors in place or let an
+	// otherwise-matching rule pass while still carrying a selector that conflicts
+	// with our tags.
 	if len(existing.SourceRanges) != 0 {
+		return false
+	}
+	if len(existing.DestinationRanges) != 0 {
+		return false
+	}
+	if len(existing.SourceServiceAccounts) != 0 {
+		return false
+	}
+	if len(existing.TargetServiceAccounts) != 0 {
 		return false
 	}
 	if !stringSetsEqual(existing.SourceTags, desired.SourceTags) {
