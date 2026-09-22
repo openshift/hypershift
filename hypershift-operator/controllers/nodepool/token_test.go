@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -1215,7 +1216,7 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 		},
 		{
 			name:     "when the user data secret is created for unsupported platform it should return an error",
-			platform: hyperv1.AzurePlatform,
+			platform: hyperv1.KubevirtPlatform,
 			region:   "us-east-1",
 			userDataSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1226,7 +1227,7 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "failed to get supported architectures: unsupported platform: Azure",
+			expectedError: "failed to get supported architectures: unsupported platform: KubeVirt",
 		},
 		{
 			name:       "When rhelStream is rhel-9 with single-stream payload, it should set AMI labels from StreamMetadata fallback",
@@ -1360,6 +1361,72 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 	}
 }
 
+func TestSetKarpenterAzureMarketplaceLabels(t *testing.T) {
+	testCases := []struct {
+		name           string
+		releaseImage   *releaseinfo.ReleaseImage
+		rhelStream     string
+		expectedLabels map[string]string
+		expectedError  string
+	}{
+		{
+			name: "resolves marketplace image from stream metadata",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.20.0"},
+				},
+				StreamMetadata: testAzureMarketplaceStream("x86_64",
+					"azureopenshift", "aro4", "aro_422-gen2", "422.87.20240312"),
+			},
+			rhelStream: "rhel-9",
+			expectedLabels: map[string]string{
+				hyperkarpenterv1.UserDataAzureMarketplacePublisherLabel: "azureopenshift",
+				hyperkarpenterv1.UserDataAzureMarketplaceOfferLabel:     "aro4",
+				hyperkarpenterv1.UserDataAzureMarketplaceSKULabel:       "aro_422-gen2",
+				hyperkarpenterv1.UserDataAzureMarketplaceVersionLabel:   "422.87.20240312",
+			},
+		},
+		{
+			name: "error when no marketplace metadata in stream",
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.20.0"},
+				},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						"x86_64": {},
+					},
+				},
+			},
+			rhelStream:    "rhel-9",
+			expectedError: "Azure Marketplace image was not resolved from release payload",
+		},
+	}
+
+	log := testr.New(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-secret",
+					Labels: map[string]string{},
+				},
+			}
+			err := setKarpenterAzureMarketplaceLabels(log, secret, tc.releaseImage, tc.rhelStream)
+			if tc.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			for labelKey, expectedVal := range tc.expectedLabels {
+				g.Expect(secret.Labels).To(HaveKeyWithValue(labelKey, expectedVal))
+			}
+		})
+	}
+}
+
 func TestReconcileUserDataSecret(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -1368,7 +1435,7 @@ func TestReconcileUserDataSecret(t *testing.T) {
 		expectedError  string
 	}{
 		{
-			name: "when platform is Azure and NodePool is managed by Karpenter, it should return an error",
+			name: "when platform is Azure and NodePool is managed by Karpenter, it should set marketplace labels",
 			token: &Token{
 				ConfigGenerator: &ConfigGenerator{
 					hostedCluster: &hyperv1.HostedCluster{
@@ -1389,15 +1456,38 @@ func TestReconcileUserDataSecret(t *testing.T) {
 					},
 					nodePool: &hyperv1.NodePool{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-nodepool",
+							Name:      "test-nodepool",
+							Namespace: "test-namespace",
 							Labels: map[string]string{
 								karpenterutil.ManagedByKarpenterLabel: "true",
 							},
 						},
+						Spec: hyperv1.NodePoolSpec{
+							Arch: hyperv1.ArchitectureAMD64,
+							Platform: hyperv1.NodePoolPlatform{
+								Type: hyperv1.AzurePlatform,
+								Azure: &hyperv1.AzureNodePoolPlatform{
+									Image: hyperv1.AzureVMImage{},
+								},
+							},
+						},
 					},
-					rolloutConfig: &rolloutConfig{},
+					rolloutConfig: &rolloutConfig{
+						releaseImage: &releaseinfo.ReleaseImage{
+							ImageStream: &imageapi.ImageStream{
+								ObjectMeta: metav1.ObjectMeta{Name: "4.20.0"},
+							},
+							StreamMetadata: testAzureMarketplaceStream("x86_64",
+								"azureopenshift", "aro4", "aro_422-gen2", "422.87.20240312"),
+						},
+					},
+					resolvedRHELStreamForBootImage: "rhel-9",
 				},
-				userData: &userData{},
+				userData: &userData{
+					caCert:                 []byte("test-ca-cert"),
+					ignitionServerEndpoint: "https://ignition.example.com",
+					proxy:                  &configv1.Proxy{},
+				},
 			},
 			userDataSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1408,7 +1498,6 @@ func TestReconcileUserDataSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "karpenter userData reconciliation is currently not supported for platform: Azure",
 		},
 	}
 

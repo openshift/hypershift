@@ -1697,7 +1697,7 @@ func TestAMISelectorTerms(t *testing.T) {
 		},
 		{
 			name:     "when user data secret is created for unsupported platform, and labels exist it should return an error",
-			platform: hyperv1.AzurePlatform,
+			platform: hyperv1.KubevirtPlatform,
 			userDataSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "user-data-secret",
@@ -1708,7 +1708,7 @@ func TestAMISelectorTerms(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "failed to get supported architectures: unsupported platform: Azure",
+			expectedError: "failed to get supported architectures: unsupported platform: KubeVirt",
 		},
 		{
 			name:     "when user data secret is created for supported platform, but no AMIs labels exist it should return an error",
