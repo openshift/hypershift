@@ -150,26 +150,39 @@ func TestIsTransientBadRequest(t *testing.T) {
 		g.Expect(isTransientBadRequest(err)).To(BeTrue())
 	})
 
-	t.Run("When the typed ErrorInfo reason is transient, it should be transient", func(t *testing.T) {
+	t.Run("When the transient reason is only in the structured ErrorInfo, it should be transient", func(t *testing.T) {
 		g := NewWithT(t)
-		// Mirror exactly how the compute/v1 REST client surfaces a structured
-		// ErrorInfo: a *googleapi.Error whose JSON Body carries the v2 error schema
-		// with a google.rpc.ErrorInfo detail, wrapped in an apierror.APIError the
-		// same way gensupport.WrapError does on every compute .Do() call. The legacy
-		// Errors[].Reason is left non-transient to prove the structured ErrorInfo is
-		// authoritative and used alone (not unioned with the legacy fallback).
+		// Mirror how the compute/v1 REST client surfaces a structured ErrorInfo: a
+		// *googleapi.Error whose JSON Body carries the v2 error schema with a
+		// google.rpc.ErrorInfo detail, wrapped in an apierror.APIError the same way
+		// gensupport.WrapError does on every compute .Do() call. Here the reason is
+		// only in the structured details (no legacy Errors[]), proving the structured
+		// surface is consulted.
 		body := `{"error":{"code":400,"message":"resource not ready",` +
 			`"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo",` +
 			`"reason":"RESOURCE_NOT_READY","domain":"compute.googleapis.com"}]}}`
-		gErr := &googleapi.Error{Code: 400, Body: body, Errors: []googleapi.ErrorItem{{Reason: "badRequest"}}}
+		gErr := &googleapi.Error{Code: 400, Body: body}
 		apiErr, ok := apierror.ParseError(gErr, false)
 		g.Expect(ok).To(BeTrue())
 		gErr.Wrap(apiErr)
 
-		// Sanity: the typed reason is extracted from the HTTP body, and the legacy
-		// fallback reason is terminal, so a match can only come from the typed path.
 		g.Expect(apiErr.Reason()).To(Equal("RESOURCE_NOT_READY"))
 		g.Expect(isTransientBadRequest(gErr)).To(BeTrue())
+	})
+
+	t.Run("When a terminal legacy reason accompanies a transient structured reason, it should be terminal", func(t *testing.T) {
+		g := NewWithT(t)
+		// Both surfaces are consulted and every reason must be transient, so a
+		// terminal reason on either surface makes the whole error terminal.
+		body := `{"error":{"code":400,"message":"resource not ready",` +
+			`"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo",` +
+			`"reason":"RESOURCE_NOT_READY","domain":"compute.googleapis.com"}]}}`
+		gErr := &googleapi.Error{Code: 400, Body: body, Errors: []googleapi.ErrorItem{{Reason: "invalid"}}}
+		apiErr, ok := apierror.ParseError(gErr, false)
+		g.Expect(ok).To(BeTrue())
+		gErr.Wrap(apiErr)
+
+		g.Expect(isTransientBadRequest(gErr)).To(BeFalse())
 	})
 }
 
