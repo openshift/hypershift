@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/support/api"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -20,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	fgtesting "k8s.io/component-base/featuregate/testing"
 	podsecurityadmissionv1 "k8s.io/pod-security-admission/admission/api/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -825,6 +827,93 @@ type componentVersionReleaseImageProvider struct {
 
 func (p *componentVersionReleaseImageProvider) ComponentVersions() (map[string]string, error) {
 	return p.componentVersions, p.componentError
+}
+
+func TestUsesExternalOIDCAsWebhook(t *testing.T) {
+	oidcAuthentication := &configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeOIDC}
+
+	t.Run("When authentication is not OIDC, it should not use the external OIDC webhook", func(t *testing.T) {
+		require.False(t, usesExternalOIDCAsWebhook(nil))
+		require.False(t, usesExternalOIDCAsWebhook(&configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeIntegratedOAuth}))
+	})
+
+	t.Run("When authentication is OIDC and the feature gate is disabled, it should not use the external OIDC webhook", func(t *testing.T) {
+		require.False(t, usesExternalOIDCAsWebhook(oidcAuthentication))
+	})
+
+	t.Run("When authentication is OIDC and the feature gate is enabled, it should use the external OIDC webhook", func(t *testing.T) {
+		fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.ExternalOIDCAsWebhook, true)
+
+		require.True(t, usesExternalOIDCAsWebhook(oidcAuthentication))
+	})
+}
+
+func TestAuthenticationConfigurationMode(t *testing.T) {
+	oidcAuthentication := &configv1.AuthenticationSpec{
+		Type: configv1.AuthenticationTypeOIDC,
+		OIDCProviders: []configv1.OIDCProvider{
+			{},
+		},
+	}
+
+	testCases := []struct {
+		name                  string
+		authentication        *configv1.AuthenticationSpec
+		enableExternalWebhook bool
+		expectTokenWebhook    bool
+		expectDirectOIDC      bool
+	}{
+		{
+			name:               "When authentication is not configured, it should use the TokenReview webhook",
+			expectTokenWebhook: true,
+		},
+		{
+			name: "When integrated OAuth is configured, it should use the TokenReview webhook",
+			authentication: &configv1.AuthenticationSpec{
+				Type: configv1.AuthenticationTypeIntegratedOAuth,
+			},
+			expectTokenWebhook: true,
+		},
+		{
+			name:             "When External OIDC webhook is disabled, it should use direct OIDC authentication configuration",
+			authentication:   oidcAuthentication,
+			expectDirectOIDC: true,
+		},
+		{
+			name:                  "When External OIDC webhook is enabled, it should use the TokenReview webhook",
+			authentication:        oidcAuthentication,
+			enableExternalWebhook: true,
+			expectTokenWebhook:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.ExternalOIDCAsWebhook, tc.enableExternalWebhook)
+
+			require.Equal(t, tc.expectTokenWebhook, usesTokenWebhookAuthenticator(tc.authentication))
+			require.Equal(t, tc.expectDirectOIDC, usesDirectOIDCAuthenticationConfig(tc.authentication))
+		})
+	}
+}
+
+func TestGenerateConfigWithExternalOIDCAsWebhook(t *testing.T) {
+	fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.ExternalOIDCAsWebhook, true)
+
+	kasConfig, err := generateConfig(KubeAPIServerConfigParams{
+		Authentication: &configv1.AuthenticationSpec{
+			Type: configv1.AuthenticationTypeOIDC,
+			OIDCProviders: []configv1.OIDCProvider{
+				{},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, kcpv1.Arguments{"/etc/kubernetes/auth-token-webhook/kubeconfig"}, kasConfig.APIServerArguments["authentication-token-webhook-config-file"])
+	require.Equal(t, kcpv1.Arguments{"v1"}, kasConfig.APIServerArguments["authentication-token-webhook-version"])
+	require.NotContains(t, kasConfig.APIServerArguments, "authentication-config")
+	require.Empty(t, kasConfig.AuthConfig.OAuthMetadataFile)
 }
 
 func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
