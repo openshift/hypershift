@@ -18,7 +18,7 @@ RUN make product-cli-release && \
     # Remove raw binaries, keep only tar.gz files \
     find ./bin -type f ! -name "*.tar.gz" -delete
 
-FROM registry.redhat.io/ubi9/nginx-124:1-1767745334
+FROM registry.redhat.io/ubi9/nginx-124:latest
 
 COPY --from=builder /hypershift/bin/ /opt/app-root/src/
 
