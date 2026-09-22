@@ -1,10 +1,129 @@
 package rbac
 
 import (
+	"context"
+	"fmt"
+
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/upsert"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ReconcileParams contains the policy facts needed to select the RBAC resources
+// for a hosted cluster. The RBAC package intentionally does not depend on the
+// HostedControlPlane object or the capability/platform detection helpers.
+type ReconcileParams struct {
+	IngressEnabled bool
+	IsAROHCP       bool
+}
+
+type manifestAndReconcile[o client.Object] struct {
+	manifest        func() o
+	reconcile       func(o) error
+	requiresIngress bool
+}
+
+func (m manifestAndReconcile[o]) upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	obj := m.manifest()
+	if _, err := createOrUpdate(ctx, c, obj, func() error {
+		return m.reconcile(obj)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %T %s: %w", obj, obj.GetName(), err)
+	}
+
+	return nil
+}
+
+func (m manifestAndReconcile[o]) isApplicable(params ReconcileParams) bool {
+	return !m.requiresIngress || params.IngressEnabled
+}
+
+type manifestReconciler interface {
+	isApplicable(params ReconcileParams) bool
+	upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
+}
+
+// Reconcile applies all applicable HCCO RBAC resources in their established
+// order. A failure for one resource does not prevent later resources from
+// being attempted.
+func Reconcile(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, params ReconcileParams) error {
+	var errs []error
+	for _, resource := range resources(params.IsAROHCP) {
+		if !resource.isApplicable(params) {
+			continue
+		}
+		if err := resource.upsert(ctx, c, createOrUpdate); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+func resources(isAROHCP bool) []manifestReconciler {
+	resources := []manifestReconciler{
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.CSRApproverClusterRole, reconcile: ReconcileCSRApproverClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.IngressToRouteControllerClusterRole, reconcile: ReconcileIngressToRouteControllerClusterRole, requiresIngress: true},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.NamespaceSecurityAllocationControllerClusterRole, reconcile: ReconcileNamespaceSecurityAllocationControllerClusterRole},
+
+		manifestAndReconcile[*rbacv1.Role]{manifest: hccomanifests.IngressToRouteControllerRole, reconcile: ReconcileReconcileIngressToRouteControllerRole, requiresIngress: true},
+
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.CSRApproverClusterRoleBinding, reconcile: ReconcileCSRApproverClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.IngressToRouteControllerClusterRoleBinding, reconcile: ReconcileIngressToRouteControllerClusterRoleBinding, requiresIngress: true},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.NodeBootstrapperClusterRoleBinding, reconcile: ReconcileNodeBootstrapperClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.CSRRenewalClusterRoleBinding, reconcile: ReconcileCSRRenewalClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.MetricsClientClusterRoleBinding, reconcile: ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.MetricsResourcesClusterRole, reconcile: ReconcileMetricsResourcesClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.MetricsResourcesClusterRoleBinding, reconcile: ReconcileMetricsResourcesClusterRoleBinding},
+
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: hccomanifests.IngressToRouteControllerRoleBinding, reconcile: ReconcileIngressToRouteControllerRoleBinding, requiresIngress: true},
+
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: hccomanifests.AuthenticatedReaderForAuthenticatedUserRolebinding, reconcile: ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding},
+
+		manifestAndReconcile[*rbacv1.Role]{manifest: hccomanifests.KCMLeaderElectionRole, reconcile: ReconcileKCMLeaderElectionRole},
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: hccomanifests.KCMLeaderElectionRoleBinding, reconcile: ReconcileKCMLeaderElectionRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.ImageTriggerControllerClusterRole, reconcile: ReconcileImageTriggerControllerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.ImageTriggerControllerClusterRoleBinding, reconcile: ReconcileImageTriggerControllerClusterRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.PodSecurityAdmissionLabelSyncerControllerClusterRole, reconcile: ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.PodSecurityAdmissionLabelSyncerControllerRoleBinding, reconcile: ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.PriviligedNamespacesPSALabelSyncerClusterRole, reconcile: ReconcilePriviligedNamespacesPSALabelSyncerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.PriviligedNamespacesPSALabelSyncerClusterRoleBinding, reconcile: ReconcilePriviligedNamespacesPSALabelSyncerClusterRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.DeployerClusterRole, reconcile: ReconcileDeployerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.DeployerClusterRoleBinding, reconcile: ReconcileDeployerClusterRoleBinding},
+
+		// ClusterRole and ClusterRoleBinding for useroauthaccesstokens referenced from https://github.com/openshift/cluster-authentication-operator/tree/bebf0fd3932be12594227b415fecd5d664611bc0/bindata/oauth-apiserver/RBAC
+		// Let this go by for now
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.UserOAuthClusterRole, reconcile: ReconcileUserOAuthClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.UserOAuthClusterRoleBinding, reconcile: ReconcileUserOAuthClusterRoleBinding},
+
+		manifestAndReconcile[*rbacv1.Role]{manifest: hccomanifests.KASConnectionCheckerRole, reconcile: ReconcileKASConnectionCheckerRole},
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: hccomanifests.KASConnectionCheckerRoleBinding, reconcile: ReconcileKASConnectionCheckerRoleBinding},
+	}
+
+	if isAROHCP {
+		resources = append(resources,
+			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.AzureDiskCSIDriverNodeServiceAccountRole, reconcile: ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRole},
+			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.AzureDiskCSIDriverNodeServiceAccountRoleBinding, reconcile: ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRoleBinding},
+
+			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.AzureFileCSIDriverNodeServiceAccountRole, reconcile: ReconcileAzureFileCSIDriverNodeServiceAccountClusterRole},
+			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.AzureFileCSIDriverNodeServiceAccountRoleBinding, reconcile: ReconcileAzureFileCSIDriverNodeServiceAccountClusterRoleBinding},
+
+			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: hccomanifests.CloudNetworkConfigControllerServiceAccountRole, reconcile: ReconcileCloudNetworkConfigControllerServiceAccountClusterRole},
+			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: hccomanifests.CloudNetworkConfigControllerServiceAccountRoleBinding, reconcile: ReconcileCloudNetworkConfigControllerServiceAccountClusterRoleBinding},
+		)
+	}
+
+	return resources
+}
 
 func ReconcileCSRApproverClusterRole(r *rbacv1.ClusterRole) error {
 	r.Rules = []rbacv1.PolicyRule{
