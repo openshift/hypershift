@@ -4530,12 +4530,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -4851,11 +4851,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -8225,12 +8225,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -8546,11 +8546,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -11477,12 +11477,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -11798,11 +11798,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -16803,12 +16803,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -17124,11 +17124,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -28449,12 +28449,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -28770,11 +28770,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -30144,12 +30144,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -30465,11 +30465,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -30763,12 +30763,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -31084,11 +31084,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 
@@ -32352,12 +32352,12 @@ In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in 
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -32673,11 +32673,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see Platform and NodePool eligibility)
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 

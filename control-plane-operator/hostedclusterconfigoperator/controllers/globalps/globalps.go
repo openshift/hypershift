@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 const (
@@ -62,7 +63,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req crreconcile.Request) (cr
 // - If at some point the user deletes the additional pull secret, the daemonSet will not be removed
 // If the PS doesn't exist, the HCCO doesn't do anything.
 //
-// IMPORTANT: The DaemonSet is ONLY deployed to nodes that are explicitly labeled as eligible.
+// IMPORTANT: The DaemonSet is ONLY deployed to nodes that are eligible (CAPI nodes explicitly labeled
+// as eligible or Karpenter-managed nodes, identified by the presence of the karpenter.sh/nodepool label).
 // Nodes belonging to NodePools using InPlace upgrade strategy are NOT labeled, preventing
 // conflicts between the DaemonSet's kubelet config modifications and Machine Config Daemon operations.
 func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
@@ -225,10 +227,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 					DNSPolicy:                    corev1.DNSDefault,
 					PriorityClassName:            openshiftUserCriticalPriorityClass,
 					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
-					// Use nodeSelector to only include nodes that are explicitly enabled for GlobalPullSecret
-					NodeSelector: map[string]string{
-						globalPSLabelKey: "true",
-					},
+					Affinity:                     buildGlobalPSNodeAffinity(),
 					Containers: []corev1.Container{
 						{
 							Name:            manifests.GlobalPullSecretDSName,
@@ -369,6 +368,36 @@ func additionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *
 		return false, nil, err
 	}
 	return true, additionalPullSecret, nil
+}
+
+// buildGlobalPSNodeAffinity creates node affinity to target CAPI nodes explicitly enabled
+// for GlobalPullSecret as well as Karpenter-managed nodes.
+func buildGlobalPSNodeAffinity() *corev1.Affinity {
+	return &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      globalPSLabelKey,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"true"},
+							},
+						},
+					},
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      karpenterv1.NodePoolLabelKey,
+								Operator: corev1.NodeSelectorOpExists,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 // Volume build functions for GlobalPullSecret DaemonSet
