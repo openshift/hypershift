@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/sippyannotation"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/testcasename"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/testfuncname"
+	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/testfuncstructure"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/vacuouspass"
 
 	"golang.org/x/tools/go/analysis"
@@ -62,6 +63,7 @@ func allAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
 		testcasename.Analyzer,
 		testfuncname.Analyzer,
+		testfuncstructure.Analyzer,
 		sippyannotation.Analyzer,
 		guestcluster.Analyzer,
 		contextbackground.Analyzer,
