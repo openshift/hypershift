@@ -87,6 +87,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
@@ -731,12 +732,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// control plane is initialized (ControlPlaneInitialized condition on the CAPI Cluster).
 	hostedControlPlane.Status.Initialization.ControlPlaneInitialized = ptr.To(true)
 
-	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if isPaused, duration := util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
 		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
 		return ctrl.Result{
 			RequeueAfter: duration,
@@ -798,7 +799,7 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Message: hyperv1.AllIsWellMessage,
 			Reason:  hyperv1.AsExpectedReason,
 		}
-		if util.HCPOAuthEnabled(hostedControlPlane) {
+		if reconcilerpolicy.HCPOAuthEnabled(hostedControlPlane) {
 			// JoinHostPort brackets IPv6 literals so url.Parse accepts the callback template.
 			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s/oauth2callback/[identity-provider-name]",
 				net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
@@ -1307,7 +1308,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		}
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		// Reconcile kubeadmin password
 		r.Log.Info("Reconciling kubeadmin password secret")
 		explicitOauthConfig := hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OAuth != nil
@@ -1534,7 +1535,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenshiftCerts(ctx context.Conte
 		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		openshiftOAuthAPIServerCertSecret := manifests.OpenShiftOAuthAPIServerCertSecret(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, openshiftOAuthAPIServerCertSecret, func() error {
 			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef)
@@ -2070,7 +2071,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile managed UserCA configMap: %w", err)
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		if err := r.reconcileOAuthCerts(ctx, hcp, p, createOrUpdate, rootCASecret, trustedCABundle); err != nil {
 			return err
 		}

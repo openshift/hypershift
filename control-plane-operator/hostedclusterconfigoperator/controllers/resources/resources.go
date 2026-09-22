@@ -52,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
@@ -156,7 +157,7 @@ type reconciler struct {
 	versions                  map[string]string
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
-	cleanupTracker            *util.CleanupTracker
+	cleanupTracker            *reconcilerpolicy.CleanupTracker
 
 	// exposed for unit test since GetLogs looks hard to be mocked
 	GetPodLogs func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
@@ -231,7 +232,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
-		cleanupTracker:            util.NewCleanupTracker(),
+		cleanupTracker:            reconcilerpolicy.NewCleanupTracker(),
 		GetPodLogs:                getPodLogs,
 	}})
 	if err != nil {
@@ -353,7 +354,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 		return r.reconcileDeletion(ctx, log, hcp)
 	}
 
-	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
@@ -795,7 +796,7 @@ func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hype
 		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		errs = append(errs, r.reconcileOAuthAPIServerResources(ctx, hcp, log)...)
 	}
 
@@ -895,7 +896,7 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		log.Info("reconciling oauth serving cert ca bundle")
 		if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
@@ -1532,7 +1533,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 
 func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
-	if !util.HCPOAuthEnabled(hcp) &&
+	if !reconcilerpolicy.HCPOAuthEnabled(hcp) &&
 		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
 
 		// Copy issuer CA configmap into openshift-config namespace

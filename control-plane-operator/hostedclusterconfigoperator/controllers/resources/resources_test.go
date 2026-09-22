@@ -22,9 +22,9 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	supportutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -1133,7 +1133,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupTracker:         supportutil.NewCleanupTracker(),
+				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
 			}
 			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
@@ -1210,7 +1210,7 @@ func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupTracker:         supportutil.NewCleanupTracker(),
+				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
 			}
 
 			remaining, skipReason, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
@@ -3826,7 +3826,7 @@ func TestReconcileDeletion(t *testing.T) {
 				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupTracker:         supportutil.NewCleanupTracker(),
+				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
 			}
 
 			if tt.expectCloudCleanup {
