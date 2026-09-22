@@ -73,6 +73,9 @@ spec:
           timeoutSeconds: 10
           successThreshold: 1
           failureThreshold: 30
+        # Minimum request for scheduling. No limits set; container can burst.
+        # CPO preserves live requests on reconcile — this only applies at creation.
+        # See docs/content/how-to/cluster-sizing-guidance.md for tuning options.
         resources:
           requests:
             cpu: 100m

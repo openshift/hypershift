@@ -21,6 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,7 +59,7 @@ func TestCAPIStorageVersionMigration(t *testing.T) {
 		// Verify pre-migration state: CAPI CRDs should have v1beta1 in storedVersions
 		g.Expect(t.Run("When checking pre-migration CRD state, it should have v1beta1 storedVersions", func(t *testing.T) {
 			g := gomega.NewWithT(t)
-			for _, crdName := range crdassets.CAPICRDNames() {
+			for _, crdName := range capiMigrationCRDNames() {
 				crd := &apiextensionsv1.CustomResourceDefinition{}
 				err := mc.Get(ctx, crclient.ObjectKey{Name: crdName}, crd)
 				g.Expect(err).ToNot(gomega.HaveOccurred(), "getting CRD %s", crdName)
@@ -67,6 +68,35 @@ func TestCAPIStorageVersionMigration(t *testing.T) {
 				t.Logf("CRD %s storedVersions: %v", crdName, crd.Status.StoredVersions)
 			}
 		})).To(gomega.BeTrue())
+
+		// Capture IPAM CRD state before migration — these must not be touched by the migrator.
+		type crdSnapshot struct {
+			storedVersions []string
+			annotation     string
+			hasAnnotation  bool
+		}
+		ipamCRDs := []string{
+			"ipaddressclaims.ipam.cluster.x-k8s.io",
+			"ipaddresses.ipam.cluster.x-k8s.io",
+		}
+		ipamPreMigration := make(map[string]crdSnapshot, len(ipamCRDs))
+		for _, crdName := range ipamCRDs {
+			crd := &apiextensionsv1.CustomResourceDefinition{}
+			if err := mc.Get(ctx, crclient.ObjectKey{Name: crdName}, crd); err != nil {
+				if apierrors.IsNotFound(err) {
+					t.Logf("IPAM CRD %s not found, skipping pre-migration snapshot", crdName)
+					continue
+				}
+				t.Fatalf("failed to get IPAM CRD %s: %v", crdName, err)
+			}
+			ann, has := crd.Annotations[capicrdmigrator.CRDMigrationObservedGenerationAnnotation]
+			ipamPreMigration[crdName] = crdSnapshot{
+				storedVersions: crd.Status.StoredVersions,
+				annotation:     ann,
+				hasAnnotation:  has,
+			}
+			t.Logf("IPAM CRD %s pre-migration: storedVersions=%v, hasAnnotation=%v", crdName, crd.Status.StoredVersions, has)
+		}
 
 		// Reinstall HO to trigger default v1beta2 storage migration
 		g.Expect(t.Run("When reinstalling HO with default CAPI migration, it should succeed", func(t *testing.T) {
@@ -79,7 +109,7 @@ func TestCAPIStorageVersionMigration(t *testing.T) {
 		// Wait for migration to complete: storedVersions should become ["v1beta2"] only
 		g.Expect(t.Run("When waiting for migration, it should update storedVersions to v1beta2", func(t *testing.T) {
 			gt := gomega.NewWithT(t)
-			for _, crdName := range crdassets.CAPICRDNames() {
+			for _, crdName := range capiMigrationCRDNames() {
 				t.Logf("Waiting for CRD %s storedVersions to be migrated", crdName)
 				gt.Eventually(func(g gomega.Gomega) {
 					crd := &apiextensionsv1.CustomResourceDefinition{}
@@ -94,7 +124,7 @@ func TestCAPIStorageVersionMigration(t *testing.T) {
 		// Verify migration annotation is set
 		g.Expect(t.Run("When checking migration annotations, it should have observed-generation set", func(t *testing.T) {
 			g := gomega.NewWithT(t)
-			for _, crdName := range crdassets.CAPICRDNames() {
+			for _, crdName := range capiMigrationCRDNames() {
 				crd := &apiextensionsv1.CustomResourceDefinition{}
 				err := mc.Get(ctx, crclient.ObjectKey{Name: crdName}, crd)
 				g.Expect(err).ToNot(gomega.HaveOccurred())
@@ -105,10 +135,30 @@ func TestCAPIStorageVersionMigration(t *testing.T) {
 			}
 		})).To(gomega.BeTrue())
 
+		// Verify IPAM CRDs were not modified by the migrator
+		g.Expect(t.Run("When checking IPAM CRDs after migration, they should be unchanged", func(t *testing.T) {
+			g := gomega.NewWithT(t)
+			for crdName, pre := range ipamPreMigration {
+				crd := &apiextensionsv1.CustomResourceDefinition{}
+				err := mc.Get(ctx, crclient.ObjectKey{Name: crdName}, crd)
+				g.Expect(err).ToNot(gomega.HaveOccurred(), "getting IPAM CRD %s", crdName)
+				g.Expect(crd.Status.StoredVersions).To(gomega.Equal(pre.storedVersions),
+					"IPAM CRD %s storedVersions should be unchanged after migration", crdName)
+				ann, has := crd.Annotations[capicrdmigrator.CRDMigrationObservedGenerationAnnotation]
+				g.Expect(has).To(gomega.Equal(pre.hasAnnotation),
+					"IPAM CRD %s migration annotation presence should be unchanged", crdName)
+				if has {
+					g.Expect(ann).To(gomega.Equal(pre.annotation),
+						"IPAM CRD %s migration annotation value should be unchanged", crdName)
+				}
+				t.Logf("IPAM CRD %s unchanged: storedVersions=%v", crdName, crd.Status.StoredVersions)
+			}
+		})).To(gomega.BeTrue())
+
 		// Verify migration status ConfigMap
 		g.Expect(t.Run("When checking migration status ConfigMap, it should report complete", func(t *testing.T) {
 			gt := gomega.NewWithT(t)
-			expectedTotal := len(crdassets.CAPICRDNames())
+			expectedTotal := len(capiMigrationCRDNames())
 			gt.Eventually(func(g gomega.Gomega) {
 				cm := &corev1.ConfigMap{}
 				err := mc.Get(ctx, crclient.ObjectKey{Namespace: "hypershift", Name: capicrdmigrator.StatusConfigMapName}, cm)
@@ -143,7 +193,7 @@ func TestCAPIStorageVersionMigration(t *testing.T) {
 		// Verify migration metrics
 		g.Expect(t.Run("When checking migration metrics, it should report accurate values", func(t *testing.T) {
 			gt := gomega.NewWithT(t)
-			expectedTotal := float64(len(crdassets.CAPICRDNames()))
+			expectedTotal := float64(len(capiMigrationCRDNames()))
 			gt.Eventually(func(g gomega.Gomega) {
 				mf, err := e2eutil.GetMetricsFromPod(ctx, mc, "operator", "operator", "hypershift", "9000")
 				g.Expect(err).ToNot(gomega.HaveOccurred(), "getting metrics from operator pod")
@@ -198,6 +248,22 @@ func TestCAPIStorageVersionMigration(t *testing.T) {
 			t.Log("Hosted cluster is still accessible after migration")
 		})).To(gomega.BeTrue())
 	}).WithHOUpgrade().Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "capi-storage-migration", globalOpts.ServiceAccountSigningKey)
+}
+
+// capiMigrationCRDNames returns the CAPI CRD names that participate in
+// storage version migration (excluding IPAM CRDs, which are not owned by HyperShift).
+func capiMigrationCRDNames() []string {
+	ipam := map[string]bool{
+		"ipaddressclaims.ipam.cluster.x-k8s.io": true,
+		"ipaddresses.ipam.cluster.x-k8s.io":     true,
+	}
+	var result []string
+	for _, name := range crdassets.CAPICRDNames() {
+		if !ipam[name] {
+			result = append(result, name)
+		}
+	}
+	return result
 }
 
 func findConditionInStatus(conditions []metav1.Condition, condType string) *metav1.Condition {
