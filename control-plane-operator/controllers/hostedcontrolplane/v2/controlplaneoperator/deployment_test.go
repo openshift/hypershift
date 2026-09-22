@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 
 	corev1 "k8s.io/api/core/v1"
@@ -157,6 +158,75 @@ func TestAdaptDeploymentWatchListClientEnv(t *testing.T) {
 			} else {
 				g.Expect(envVars).ToNot(ContainElement(HaveField("Name", "KUBE_FEATURE_WatchListClient")))
 			}
+		})
+	}
+}
+
+func TestAdaptDeploymentPlatformMonitoringEnv(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		enablePlatformMonitoring bool
+		expectedValue            string
+	}{
+		{
+			name:                     "When EnablePlatformMonitoring is true it should set the env var to 1",
+			enablePlatformMonitoring: true,
+			expectedValue:            "1",
+		},
+		{
+			name:                     "When EnablePlatformMonitoring is false it should explicitly set the env var to 0",
+			enablePlatformMonitoring: false,
+			expectedValue:            "0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters-test-cluster",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra-id",
+				},
+			}
+
+			cpo := &ControlPlaneOperatorOptions{
+				HostedCluster:            hc,
+				Image:                    "test-image:latest",
+				UtilitiesImage:           "utilities:latest",
+				HasUtilities:             true,
+				EnablePlatformMonitoring: tc.enablePlatformMonitoring,
+			}
+
+			cpContext := controlplanecomponent.WorkloadContext{
+				Context: t.Context(),
+				HCP:     hcp,
+			}
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			err = cpo.adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			envVars := deployment.Spec.Template.Spec.Containers[0].Env
+			expectedEnvVar := corev1.EnvVar{
+				Name:  config.EnablePlatformMonitoringEnvVar,
+				Value: tc.expectedValue,
+			}
+
+			g.Expect(envVars).To(ContainElement(expectedEnvVar))
 		})
 	}
 }

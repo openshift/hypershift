@@ -914,10 +914,11 @@ func TestBuildArgs(t *testing.T) {
 
 func TestBuildEnvVars(t *testing.T) {
 	tests := []struct {
-		name           string
-		deployment     HyperShiftOperatorDeployment
-		expectContains []corev1.EnvVar
-		expectAbsent   []string
+		name             string
+		deployment       HyperShiftOperatorDeployment
+		expectContains   []corev1.EnvVar
+		expectAbsent     []string
+		expectExactCount map[string]int
 	}{
 		{
 			name: "When TechPreviewNoUpgrade is enabled, it should include HYPERSHIFT_FEATURESET env var",
@@ -1041,6 +1042,51 @@ func TestBuildEnvVars(t *testing.T) {
 				"CAPI_STORAGE_VERSION",
 			},
 		},
+		{
+			name: "When EnablePlatformMonitoring is enabled, it should include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnablePlatformMonitoring: true,
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: config.EnablePlatformMonitoringEnvVar, Value: "1"},
+			},
+		},
+		{
+			name: "When EnablePlatformMonitoring is disabled, it should not include the env var",
+			deployment: HyperShiftOperatorDeployment{
+				EnablePlatformMonitoring: false,
+			},
+			expectAbsent: []string{
+				config.EnablePlatformMonitoringEnvVar,
+			},
+		},
+		{
+			name: "When AdditionalOperatorEnvVars tries to set the reserved platform monitoring env var while disabled, it should be rejected",
+			deployment: HyperShiftOperatorDeployment{
+				EnablePlatformMonitoring: false,
+				AdditionalOperatorEnvVars: map[string]string{
+					config.EnablePlatformMonitoringEnvVar: "1",
+				},
+			},
+			expectAbsent: []string{
+				config.EnablePlatformMonitoringEnvVar,
+			},
+		},
+		{
+			name: "When AdditionalOperatorEnvVars tries to override the reserved platform monitoring env var while enabled, the managed value wins",
+			deployment: HyperShiftOperatorDeployment{
+				EnablePlatformMonitoring: true,
+				AdditionalOperatorEnvVars: map[string]string{
+					config.EnablePlatformMonitoringEnvVar: "0",
+				},
+			},
+			expectContains: []corev1.EnvVar{
+				{Name: config.EnablePlatformMonitoringEnvVar, Value: "1"},
+			},
+			expectExactCount: map[string]int{
+				config.EnablePlatformMonitoringEnvVar: 1,
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -1049,6 +1095,15 @@ func TestBuildEnvVars(t *testing.T) {
 			envVars := tc.deployment.buildEnvVars()
 			for _, expected := range tc.expectContains {
 				g.Expect(envVars).To(ContainElement(expected))
+			}
+			for name, count := range tc.expectExactCount {
+				actual := 0
+				for _, env := range envVars {
+					if env.Name == name {
+						actual++
+					}
+				}
+				g.Expect(actual).To(Equal(count), "expected %d env var(s) named %q, got %d", count, name, actual)
 			}
 			for _, absent := range tc.expectAbsent {
 				for _, env := range envVars {
