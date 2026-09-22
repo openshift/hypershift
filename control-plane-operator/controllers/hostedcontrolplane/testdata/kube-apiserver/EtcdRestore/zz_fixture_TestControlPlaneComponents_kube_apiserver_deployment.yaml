@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a12a8fec89319ac09d4d325cd610ef12573e8de0db86a8f4726d662a121c49c2
+    hypershift.openshift.io/desired-state-hash: d59c9285e1312694bd818563fd17fe7e23f500ebe57e25746d9d311e3835407b
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -30,7 +30,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75741638a5741638a5741638a5741638a5794dc8cc8b110e88a2a4098ca2a4098ce7e69167
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e360eec75741638a5741638a5741638a5741638a5794dc8cc8b110e88a2a4098ca2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: kube-apiserver
@@ -140,8 +140,6 @@ spec:
           name: aggregator-crt
         - mountPath: /etc/kubernetes/audit
           name: audit-config
-        - mountPath: /etc/kubernetes/auth
-          name: auth-config
         - mountPath: /etc/kubernetes/auth-token-webhook
           name: auth-token-webhook-config
         - mountPath: /etc/kubernetes/certs/client-ca
@@ -526,10 +524,6 @@ spec:
           defaultMode: 420
           name: kas-config
         name: kas-config
-      - configMap:
-          defaultMode: 420
-          name: auth-config
-        name: auth-config
       - configMap:
           defaultMode: 420
           name: kas-audit-config

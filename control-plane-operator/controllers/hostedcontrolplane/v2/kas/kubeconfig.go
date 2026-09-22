@@ -284,6 +284,38 @@ func generateKubeConfig(ca, cert *corev1.Secret, url string) ([]byte, error) {
 	return clientcmd.Write(kubeCfg)
 }
 
+func generateAuthenticationTokenWebhookKubeconfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte, error) {
+	kubeCfg := clientcmdapi.Config{
+		Kind:       "Config",
+		APIVersion: "v1",
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"local-cluster": {
+				Server:                   url,
+				CertificateAuthorityData: caBytes,
+			},
+		},
+		Contexts: map[string]*clientcmdapi.Context{
+			"local-context": {
+				Cluster: "local-cluster",
+			},
+		},
+		CurrentContext: "local-context",
+	}
+
+	// The external OIDC webhook does not require client authentication, unlike the integrated OAuth API server.
+	if len(crtBytes) > 0 || len(keyBytes) > 0 {
+		kubeCfg.AuthInfos = map[string]*clientcmdapi.AuthInfo{
+			"openshift-authenticator": {
+				ClientCertificateData: crtBytes,
+				ClientKeyData:         keyBytes,
+			},
+		}
+		kubeCfg.Contexts["local-context"].AuthInfo = "openshift-authenticator"
+	}
+
+	return clientcmd.Write(kubeCfg)
+}
+
 func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret, url string) ([]byte, error) {
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(cert), cert); err != nil {
 		return nil, fmt.Errorf("failed to get cert secret %s: %w", cert.Name, err)

@@ -147,6 +147,57 @@ func TestGenerateKubeConfigWithServingCerts(t *testing.T) {
 	}
 }
 
+func TestGenerateAuthenticationTokenWebhookKubeconfig(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name             string
+		crtBytes         []byte
+		keyBytes         []byte
+		expectedAuthInfo string
+	}{
+		{
+			name:             "When client credentials are supplied, it should include them in the kubeconfig",
+			crtBytes:         []byte("client-cert"),
+			keyBytes:         []byte("client-key"),
+			expectedAuthInfo: "openshift-authenticator",
+		},
+		{
+			name: "When client credentials are not supplied, it should omit client authentication",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			kubeconfigBytes, err := generateAuthenticationTokenWebhookKubeconfig(
+				"https://webhook.example.com:443/apis/oauth.openshift.io/v1/tokenreviews",
+				tc.crtBytes,
+				tc.keyBytes,
+				[]byte("webhook-ca"),
+			)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			kubeconfig, err := clientcmd.Load(kubeconfigBytes)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(kubeconfig.Clusters["local-cluster"].Server).To(Equal("https://webhook.example.com:443/apis/oauth.openshift.io/v1/tokenreviews"))
+			g.Expect(kubeconfig.Clusters["local-cluster"].CertificateAuthorityData).To(Equal([]byte("webhook-ca")))
+			g.Expect(kubeconfig.Contexts["local-context"].AuthInfo).To(Equal(tc.expectedAuthInfo))
+
+			if tc.expectedAuthInfo == "" {
+				g.Expect(kubeconfig.AuthInfos).To(BeEmpty())
+				return
+			}
+
+			authInfo := kubeconfig.AuthInfos[tc.expectedAuthInfo]
+			g.Expect(authInfo.ClientCertificateData).To(Equal(tc.crtBytes))
+			g.Expect(authInfo.ClientKeyData).To(Equal(tc.keyBytes))
+		})
+	}
+}
+
 func TestGenerateKubeConfigWithServingCerts_WhenRootCAIsMissing(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)

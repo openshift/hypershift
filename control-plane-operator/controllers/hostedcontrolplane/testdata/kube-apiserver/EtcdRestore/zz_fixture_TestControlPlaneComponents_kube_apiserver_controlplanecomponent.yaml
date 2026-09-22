@@ -23,9 +23,6 @@ status:
     kind: ConfigMap
     name: kas-audit-config
   - group: ""
-    kind: ConfigMap
-    name: auth-config
-  - group: ""
     kind: Secret
     name: kas-authentication-token-webhook-config
   - group: ""

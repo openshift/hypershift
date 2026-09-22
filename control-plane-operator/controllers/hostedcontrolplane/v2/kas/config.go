@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -220,13 +221,11 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("egress-selector-config-file", cpath(egressSelectorConfigVolumeName, EgressSelectorConfigKey))
 	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p)...)
 	args.Set("disable-admission-plugins", disabledAdmissionPlugins(p)...)
-	if reconcilerpolicy.ConfigOAuthEnabled(p.Authentication) {
+	if usesTokenWebhookAuthenticator(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(authTokenWebhookConfigVolumeName, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
-	} else {
-		if p.Authentication != nil && len(p.Authentication.OIDCProviders) > 0 {
-			args.Set("authentication-config", cpath(authConfigVolumeName, AuthenticationConfigKey))
-		}
+	} else if usesDirectOIDCAuthenticationConfig(p.Authentication) {
+		args.Set("authentication-config", cpath(authConfigVolumeName, AuthenticationConfigKey))
 	}
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
@@ -506,4 +505,21 @@ func featureGateMapToSlice(gates map[string]string) []string {
 	slices.Sort(out)
 
 	return out
+}
+
+func usesExternalOIDCAsWebhook(auth *configv1.AuthenticationSpec) bool {
+	return auth != nil &&
+		auth.Type == configv1.AuthenticationTypeOIDC &&
+		featuregates.Gate().Enabled(featuregates.ExternalOIDCAsWebhook)
+}
+
+func usesTokenWebhookAuthenticator(auth *configv1.AuthenticationSpec) bool {
+	return reconcilerpolicy.ConfigOAuthEnabled(auth) || usesExternalOIDCAsWebhook(auth)
+}
+
+func usesDirectOIDCAuthenticationConfig(auth *configv1.AuthenticationSpec) bool {
+	return auth != nil &&
+		auth.Type == configv1.AuthenticationTypeOIDC &&
+		len(auth.OIDCProviders) > 0 &&
+		!usesExternalOIDCAsWebhook(auth)
 }
