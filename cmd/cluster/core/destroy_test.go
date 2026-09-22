@@ -625,6 +625,110 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred(), "empty namespace cleanup should complete")
 		g.Expect(updatedHC.Finalizers).To(Equal([]string{destroyFinalizer}), "the destroy finalizer should remain on the HostedCluster")
 	})
+
+	for _, mode := range []string{"hostedcluster-get", "namespace-get", "namespace-patch", "namespace-finalize", "namespace-delete"} {
+		t.Run("When "+mode+" fails, it should return an aggregated error", func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ctx := context.Background()
+			clusterName := "namespace-error-cluster"
+			cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       clusterName,
+					Namespace:  "clusters",
+					Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+				},
+			}
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       cpNamespace,
+					Finalizers: []string{"namespace-finalizer", "test.namespace/finalizer"},
+				},
+				Spec: corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
+			}
+			operationError := fmt.Errorf("%s failed", mode)
+			c := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(hc, ns).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if mode == "hostedcluster-get" {
+							if _, ok := obj.(*hyperv1.HostedCluster); ok {
+								return operationError
+							}
+						}
+						if mode == "namespace-get" {
+							if _, ok := obj.(*corev1.Namespace); ok {
+								return operationError
+							}
+						}
+						return cl.Get(ctx, key, obj, opts...)
+					},
+					Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+						if mode == "namespace-patch" {
+							if _, ok := obj.(*corev1.Namespace); ok {
+								return operationError
+							}
+						}
+						return cl.Patch(ctx, obj, patch, opts...)
+					},
+					Delete: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if mode == "namespace-delete" {
+							if namespace, ok := obj.(*corev1.Namespace); ok && namespace.Name == cpNamespace {
+								return operationError
+							}
+						}
+						return cl.Delete(ctx, obj, opts...)
+					},
+					SubResourceUpdate: func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+						if mode == "namespace-finalize" && subResourceName == "finalize" {
+							return operationError
+						}
+						return cl.SubResource(subResourceName).Update(ctx, obj, opts...)
+					},
+				}).
+				Build()
+
+			opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
+			err := forceRemoveAllFinalizers(ctx, hc, opts, c, &fakeNamespacedResourceDiscovery{})
+			g.Expect(err).To(HaveOccurred(), "namespace operation failures should be returned")
+			g.Expect(err.Error()).To(ContainSubstring("force removal encountered"), "aggregated cleanup errors should identify force removal")
+		})
+	}
+
+	t.Run("When client operations fail, it should return an aggregated error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+					return fmt.Errorf("API server unavailable")
+				},
+			}).
+			Build()
+
+		opts := &DestroyOptions{
+			Name:      "test-cluster",
+			Namespace: "clusters",
+			Log:       log.Log,
+		}
+
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, testNamespacedResourceDiscovery())
+		g.Expect(err).To(HaveOccurred(), "client operation failures should be returned")
+		g.Expect(err.Error()).To(ContainSubstring("force removal encountered"), "aggregated errors should identify force removal")
+		g.Expect(err.Error()).ToNot(ContainSubstring("API server unavailable"), "raw server response data should not be exposed")
+	})
 }
 
 func TestStripFinalizers(t *testing.T) {
@@ -1063,78 +1167,6 @@ func TestForceRemoveAllFinalizersDiscoveryError(t *testing.T) {
 	})
 }
 
-func TestForceRemoveAllFinalizersNamespaceErrors(t *testing.T) {
-	for _, mode := range []string{"hostedcluster-get", "namespace-get", "namespace-patch", "namespace-finalize", "namespace-delete"} {
-		t.Run("When "+mode+" fails, it should return an aggregated error", func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			ctx := context.Background()
-			clusterName := "namespace-error-cluster"
-			cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
-			hc := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       clusterName,
-					Namespace:  "clusters",
-					Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
-				},
-			}
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       cpNamespace,
-					Finalizers: []string{"namespace-finalizer", "test.namespace/finalizer"},
-				},
-				Spec: corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
-			}
-			operationError := fmt.Errorf("%s failed", mode)
-			c := fake.NewClientBuilder().
-				WithScheme(hyperapi.Scheme).
-				WithObjects(hc, ns).
-				WithInterceptorFuncs(interceptor.Funcs{
-					Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-						if mode == "hostedcluster-get" {
-							if _, ok := obj.(*hyperv1.HostedCluster); ok {
-								return operationError
-							}
-						}
-						if mode == "namespace-get" {
-							if _, ok := obj.(*corev1.Namespace); ok {
-								return operationError
-							}
-						}
-						return cl.Get(ctx, key, obj, opts...)
-					},
-					Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
-						if mode == "namespace-patch" {
-							if _, ok := obj.(*corev1.Namespace); ok {
-								return operationError
-							}
-						}
-						return cl.Patch(ctx, obj, patch, opts...)
-					},
-					Delete: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
-						if mode == "namespace-delete" {
-							if namespace, ok := obj.(*corev1.Namespace); ok && namespace.Name == cpNamespace {
-								return operationError
-							}
-						}
-						return cl.Delete(ctx, obj, opts...)
-					},
-					SubResourceUpdate: func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-						if mode == "namespace-finalize" && subResourceName == "finalize" {
-							return operationError
-						}
-						return cl.SubResource(subResourceName).Update(ctx, obj, opts...)
-					},
-				}).
-				Build()
-
-			opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
-			err := forceRemoveAllFinalizers(ctx, hc, opts, c, &fakeNamespacedResourceDiscovery{})
-			g.Expect(err).To(HaveOccurred(), "namespace operation failures should be returned")
-			g.Expect(err.Error()).To(ContainSubstring("force removal encountered"), "aggregated cleanup errors should identify force removal")
-		})
-	}
-}
-
 func TestStripNodePoolFinalizers(t *testing.T) {
 	t.Run("When NodePools belong to different HostedClusters, it should only strip finalizers from matching NodePools", func(t *testing.T) {
 		g := NewGomegaWithT(t)
@@ -1178,42 +1210,6 @@ func TestStripNodePoolFinalizers(t *testing.T) {
 		err = c.Get(ctx, client.ObjectKeyFromObject(unrelatedNodePool), updatedUnrelatedNodePool)
 		g.Expect(err).ToNot(HaveOccurred(), "the unrelated NodePool should be readable")
 		g.Expect(updatedUnrelatedNodePool.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}), "unrelated NodePool finalizers should be preserved")
-	})
-}
-
-func TestForceRemoveAllFinalizersErrors(t *testing.T) {
-	t.Run("When client operations fail, it should return an aggregated error", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		ctx := context.Background()
-
-		hc := &hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       "test-cluster",
-				Namespace:  "clusters",
-				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
-			},
-		}
-
-		c := fake.NewClientBuilder().
-			WithScheme(hyperapi.Scheme).
-			WithObjects(hc).
-			WithInterceptorFuncs(interceptor.Funcs{
-				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					return fmt.Errorf("API server unavailable")
-				},
-			}).
-			Build()
-
-		opts := &DestroyOptions{
-			Name:      "test-cluster",
-			Namespace: "clusters",
-			Log:       log.Log,
-		}
-
-		err := forceRemoveAllFinalizers(ctx, hc, opts, c, testNamespacedResourceDiscovery())
-		g.Expect(err).To(HaveOccurred(), "client operation failures should be returned")
-		g.Expect(err.Error()).To(ContainSubstring("force removal encountered"), "aggregated errors should identify force removal")
-		g.Expect(err.Error()).ToNot(ContainSubstring("API server unavailable"), "raw server response data should not be exposed")
 	})
 }
 
