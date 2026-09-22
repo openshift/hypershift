@@ -129,14 +129,35 @@ func TestIsTransientBadRequest(t *testing.T) {
 		})
 	}
 
+	t.Run("When a response mixes a transient and a terminal reason, it should be terminal", func(t *testing.T) {
+		g := NewWithT(t)
+		// A single terminal reason means the request cannot succeed on retry, so
+		// the whole response must be classified terminal even though one reason is
+		// transient.
+		err := &googleapi.Error{Code: 400, Errors: []googleapi.ErrorItem{
+			{Reason: "resourceNotReady"},
+			{Reason: "invalid"},
+		}}
+		g.Expect(isTransientBadRequest(err)).To(BeFalse())
+	})
+
+	t.Run("When a response has multiple transient reasons, it should be transient", func(t *testing.T) {
+		g := NewWithT(t)
+		err := &googleapi.Error{Code: 400, Errors: []googleapi.ErrorItem{
+			{Reason: "resourceNotReady"},
+			{Reason: "resourceInUseByAnotherResource"},
+		}}
+		g.Expect(isTransientBadRequest(err)).To(BeTrue())
+	})
+
 	t.Run("When the typed ErrorInfo reason is transient, it should be transient", func(t *testing.T) {
 		g := NewWithT(t)
 		// Mirror exactly how the compute/v1 REST client surfaces a structured
 		// ErrorInfo: a *googleapi.Error whose JSON Body carries the v2 error schema
 		// with a google.rpc.ErrorInfo detail, wrapped in an apierror.APIError the
 		// same way gensupport.WrapError does on every compute .Do() call. The legacy
-		// Errors[].Reason is left non-transient to prove the typed ErrorInfo path
-		// (not the fallback) is what classifies it.
+		// Errors[].Reason is left non-transient to prove the structured ErrorInfo is
+		// authoritative and used alone (not unioned with the legacy fallback).
 		body := `{"error":{"code":400,"message":"resource not ready",` +
 			`"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo",` +
 			`"reason":"RESOURCE_NOT_READY","domain":"compute.googleapis.com"}]}}`
