@@ -19,6 +19,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 var (
@@ -93,7 +94,8 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 			expectError:                false,
 			validateDaemonSet: func(t *testing.T, ds *appsv1.DaemonSet) {
 				g := NewWithT(t)
-				g.Expect(ds.Spec.Template.Spec.NodeSelector).To(HaveKeyWithValue(globalPSLabelKey, "true"))
+				g.Expect(ds.Spec.Template.Spec.NodeSelector).To(BeEmpty())
+				g.Expect(ds.Spec.Template.Spec.Affinity).To(Equal(buildGlobalPSNodeAffinity()))
 				g.Expect(ds.Spec.Template.Spec.Volumes).To(HaveLen(3)) // kubelet-config, dbus, original-pull-secret
 				hasGlobalSecret := false
 				for _, vol := range ds.Spec.Template.Spec.Volumes {
@@ -167,7 +169,8 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 			expectError:                false,
 			validateDaemonSet: func(t *testing.T, ds *appsv1.DaemonSet) {
 				g := NewWithT(t)
-				g.Expect(ds.Spec.Template.Spec.NodeSelector).To(HaveKeyWithValue(globalPSLabelKey, "true"))
+				g.Expect(ds.Spec.Template.Spec.NodeSelector).To(BeEmpty())
+				g.Expect(ds.Spec.Template.Spec.Affinity).To(Equal(buildGlobalPSNodeAffinity()))
 				g.Expect(ds.Spec.Template.Spec.Volumes).To(HaveLen(4)) // kubelet-config, dbus, original-pull-secret, global-pull-secret
 				hasGlobalSecret := false
 				for _, vol := range ds.Spec.Template.Spec.Volumes {
@@ -336,7 +339,8 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 			expectError:                false,
 			validateDaemonSet: func(t *testing.T, ds *appsv1.DaemonSet) {
 				g := NewWithT(t)
-				g.Expect(ds.Spec.Template.Spec.NodeSelector).To(HaveKeyWithValue(globalPSLabelKey, "true"))
+				g.Expect(ds.Spec.Template.Spec.NodeSelector).To(BeEmpty())
+				g.Expect(ds.Spec.Template.Spec.Affinity).To(Equal(buildGlobalPSNodeAffinity()))
 			},
 		},
 	}
@@ -709,4 +713,34 @@ func TestAdditionalPullSecretExists(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildGlobalPSNodeAffinity(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	affinity := buildGlobalPSNodeAffinity()
+	g.Expect(affinity).NotTo(BeNil())
+	g.Expect(affinity.NodeAffinity).NotTo(BeNil())
+	g.Expect(affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution).NotTo(BeNil())
+
+	terms := affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms
+	g.Expect(terms).To(HaveLen(2))
+
+	// Term 1: CAPI Replace nodes with hypershift.openshift.io/nodepool-globalps-enabled=true
+	g.Expect(terms[0].MatchExpressions).To(Equal([]corev1.NodeSelectorRequirement{
+		{
+			Key:      globalPSLabelKey,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"true"},
+		},
+	}))
+
+	// Term 2: Karpenter-managed nodes with karpenter.sh/nodepool label existing
+	g.Expect(terms[1].MatchExpressions).To(Equal([]corev1.NodeSelectorRequirement{
+		{
+			Key:      karpenterv1.NodePoolLabelKey,
+			Operator: corev1.NodeSelectorOpExists,
+		},
+	}))
 }

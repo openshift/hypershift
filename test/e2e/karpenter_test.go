@@ -22,12 +22,14 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
+	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	dto "github.com/prometheus/client_model/go"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -410,6 +412,11 @@ func TestKarpenter(t *testing.T) {
 			// Wait for nodes to be provisioned
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), testNodeLabels)
 			t.Logf("Karpenter nodes are ready")
+
+			// Verify global-pull-secret-syncer DaemonSet pod is scheduled and running on the Karpenter node
+			g.Expect(nodes[0].Labels).NotTo(HaveKey("hypershift.openshift.io/nodepool-globalps-enabled"),
+				"Karpenter node should not have legacy globalps workaround label")
+			waitForGlobalPSSyncerOnNode(t, ctx, guestClient, nodes[0].Name)
 
 			// Verify EC2 instances have the correct instance profile
 			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
@@ -1572,4 +1579,52 @@ func machineOSVersions(releaseImage *releaseinfo.ReleaseImage) []string {
 		}
 	}
 	return versions
+}
+
+// waitForGlobalPSSyncerOnNode verifies that the global-pull-secret-syncer DaemonSet pod is running on the specified node.
+func waitForGlobalPSSyncerOnNode(t *testing.T, ctx context.Context, client crclient.Client, nodeName string) {
+	t.Helper()
+
+	// Inspect DaemonSet nodeAffinity. External or older release payloads (e.g. e2e-aws-autonode, e2e-aws-5-0)
+	// run unpatched CPO images that lack the Karpenter nodeAffinity.
+	ds := &appsv1.DaemonSet{}
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: hccomanifests.GlobalPullSecretNamespace, Name: hccomanifests.GlobalPullSecretDSName}, ds); err != nil {
+		t.Logf("global-pull-secret-syncer DaemonSet not found in %s, skipping syncer node check: %v", hccomanifests.GlobalPullSecretNamespace, err)
+		return
+	}
+	hasKarpenterAffinity := false
+	if ds.Spec.Template.Spec.Affinity != nil &&
+		ds.Spec.Template.Spec.Affinity.NodeAffinity != nil &&
+		ds.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		for _, term := range ds.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
+			for _, expr := range term.MatchExpressions {
+				if expr.Key == karpenterv1.NodePoolLabelKey {
+					hasKarpenterAffinity = true
+					break
+				}
+			}
+		}
+	}
+	if !hasKarpenterAffinity {
+		t.Log("Skipping syncer pod check: global-pull-secret-syncer DaemonSet does not have karpenter.sh/nodepool affinity (running unpatched CPO payload)")
+		return
+	}
+
+	t.Log("Waiting for global-pull-secret-syncer pod to be running on Karpenter node")
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		pods := &corev1.PodList{}
+		if err := client.List(ctx, pods, crclient.InNamespace(hccomanifests.GlobalPullSecretNamespace), crclient.MatchingLabels{"name": hccomanifests.GlobalPullSecretDSName}); err != nil {
+			return false, err
+		}
+		for i := range pods.Items {
+			if pods.Items[i].Spec.NodeName == nodeName && pods.Items[i].Status.Phase == corev1.PodRunning {
+				t.Log("global-pull-secret-syncer pod is running on Karpenter node")
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("global-pull-secret-syncer pod failed to run on Karpenter node: %v", err)
+	}
 }
