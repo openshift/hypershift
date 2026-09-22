@@ -28,6 +28,7 @@ import (
 	"github.com/aws/smithy-go"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
 
@@ -205,21 +206,27 @@ func TestReconcileAWSEndpointServiceStatusPreservesAWSAPIError(t *testing.T) {
 		endpointServiceName string
 		setupELB            func(*awsapi.MockELBV2API)
 		setupEC2            func(*awsapi.MockEC2API)
+		wantMessageContains []string
+		wantAPIErrorCode    string
 	}{
 		{
 			name: "When DescribeLoadBalancers returns an API error, it should preserve the request ID",
 			setupELB: func(elb *awsapi.MockELBV2API) {
-				elb.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(nil, apiErr)
+				elb.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(nil, apiErr).AnyTimes()
 			},
-			setupEC2: func(ec2c *awsapi.MockEC2API) {},
+			setupEC2:            func(ec2c *awsapi.MockEC2API) {},
+			wantMessageContains: []string{requestID, "StatusCode: 400", "NLB not found"},
+			wantAPIErrorCode:    "ValidationError",
 		},
 		{
 			name:                "When DescribeVpcEndpointServiceConfigurations returns an API error, it should preserve the request ID",
 			endpointServiceName: "com.amazonaws.vpce.us-east-1.vpce-svc-existing",
 			setupELB:            func(elb *awsapi.MockELBV2API) {},
 			setupEC2: func(ec2c *awsapi.MockEC2API) {
-				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(nil, apiErr)
+				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(nil, apiErr).AnyTimes()
 			},
+			wantMessageContains: []string{requestID, "StatusCode: 400", "NLB not found"},
+			wantAPIErrorCode:    "ValidationError",
 		},
 		{
 			name: "When CreateVpcEndpointServiceConfiguration InvalidParameter adoption fails, it should preserve the create error",
@@ -227,13 +234,15 @@ func TestReconcileAWSEndpointServiceStatusPreservesAWSAPIError(t *testing.T) {
 				elb.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
 					LoadBalancerArn: aws.String("lb-arn"),
 					State:           &elbv2types.LoadBalancerState{Code: elbv2types.LoadBalancerStateEnumActive},
-				}}}, nil)
+				}}}, nil).AnyTimes()
 			},
 			setupEC2: func(ec2c *awsapi.MockEC2API) {
 				createErr := awsAPIError("InvalidParameter", "LBs are already associated", requestID)
-				ec2c.EXPECT().CreateVpcEndpointServiceConfiguration(gomock.Any(), gomock.Any()).Return(nil, createErr)
-				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("adoption list failed"))
+				ec2c.EXPECT().CreateVpcEndpointServiceConfiguration(gomock.Any(), gomock.Any()).Return(nil, createErr).AnyTimes()
+				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("adoption list failed")).AnyTimes()
 			},
+			wantMessageContains: []string{requestID, "StatusCode: 400", "LBs are already associated"},
+			wantAPIErrorCode:    "InvalidParameter",
 		},
 	}
 
@@ -246,16 +255,23 @@ func TestReconcileAWSEndpointServiceStatusPreservesAWSAPIError(t *testing.T) {
 			test.setupELB(elbClient)
 			test.setupEC2(mockEC2)
 
-			r := AWSEndpointServiceReconciler{
-				Client:                        fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(),
-				ManagementClusterCapabilities: &capabilities.ManagementClusterCapabilities{},
+			hcpNs := "test-ns-test-hc"
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-hc",
+					Namespace:   hcpNs,
+					Annotations: map[string]string{k8sutil.HostedClusterAnnotation: "test-ns/test-hc"},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							RolesRef: hyperv1.AWSRolesRef{ControlPlaneOperatorARN: "arn:aws:iam::role/fake"},
+						},
+					},
+				},
 			}
-			awsES := &hyperv1.AWSEndpointService{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-ep", Namespace: "ns"},
-				Spec:       hyperv1.AWSEndpointServiceSpec{NetworkLoadBalancerName: "missing-nlb"},
-				Status:     hyperv1.AWSEndpointServiceStatus{EndpointServiceName: test.endpointServiceName},
-			}
-			err := r.reconcileAWSEndpointServiceStatus(t.Context(), awsES, &hyperv1.HostedCluster{
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hc", Namespace: "test-ns"},
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
@@ -263,15 +279,55 @@ func TestReconcileAWSEndpointServiceStatusPreservesAWSAPIError(t *testing.T) {
 						},
 					},
 				},
-			}, mockEC2, elbClient)
-			g.Expect(err).To(HaveOccurred())
-			g.Expect(err.Error()).To(ContainSubstring(requestID))
-			g.Expect(err.Error()).ToNot(Equal("ValidationError"))
-			g.Expect(err.Error()).ToNot(Equal("InvalidParameter"))
-			var got smithy.APIError
-			if errors.As(err, &got) {
-				g.Expect(got.ErrorCode()).To(BeElementOf("ValidationError", "InvalidParameter"))
 			}
+			awsES := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-ep",
+					Namespace:  hcpNs,
+					Finalizers: []string{finalizer},
+				},
+				Spec:   hyperv1.AWSEndpointServiceSpec{NetworkLoadBalancerName: "missing-nlb"},
+				Status: hyperv1.AWSEndpointServiceStatus{EndpointServiceName: test.endpointServiceName},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(hcp, hc, awsES).
+				WithStatusSubresource(awsES).
+				Build()
+
+			r := &AWSEndpointServiceReconciler{
+				Client:                        fakeClient,
+				CreateOrUpdateProvider:        upsert.New(false),
+				ec2Client:                     mockEC2,
+				elbv2Client:                   elbClient,
+				ManagementClusterCapabilities: &capabilities.ManagementClusterCapabilities{},
+			}
+
+			ctx := log.IntoContext(t.Context(), testr.New(t))
+			result, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(awsES)})
+			g.Expect(err).NotTo(HaveOccurred(), "Reconcile should requeue AWS API errors instead of returning them")
+			g.Expect(result.RequeueAfter).To(BeNumerically(">", 0), "AWS API errors should requeue")
+
+			updated := &hyperv1.AWSEndpointService{}
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(awsES), updated)).To(Succeed())
+			cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AWSEndpointServiceAvailable))
+			g.Expect(cond).NotTo(BeNil(), "expected AWSEndpointServiceAvailable condition")
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse), "expected available=False on AWS API error")
+			g.Expect(cond.Reason).To(Equal(hyperv1.AWSErrorReason), "expected AWSError reason")
+			g.Expect(cond.Message).ToNot(Equal("ValidationError"), "condition must not be a bare error code")
+			g.Expect(cond.Message).ToNot(Equal("InvalidParameter"), "condition must not be a bare error code")
+			for _, want := range test.wantMessageContains {
+				g.Expect(cond.Message).To(ContainSubstring(want), "AWSError message should include %q", want)
+			}
+
+			// Reconcile copies the status helper error onto the condition; unwrap from the same string via a helper call.
+			statusErr := r.reconcileAWSEndpointServiceStatus(ctx, updated, hc, mockEC2, elbClient)
+			g.Expect(statusErr).To(HaveOccurred(), "status reconcile should still fail")
+			g.Expect(statusErr.Error()).To(Equal(cond.Message), "AWSError condition message should match the status error")
+			var got smithy.APIError
+			g.Expect(errors.As(statusErr, &got)).To(BeTrue(), "expected the returned error to preserve smithy.APIError")
+			g.Expect(got.ErrorCode()).To(Equal(test.wantAPIErrorCode))
 		})
 	}
 }
