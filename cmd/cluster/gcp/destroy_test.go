@@ -11,7 +11,94 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 )
 
-func TestDestroyClusterExtractsParametersFromHostedCluster(t *testing.T) {
+// Command construction tests
+
+func TestNewDestroyCommand(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	opts := &core.DestroyOptions{
+		Log: log.Log,
+	}
+
+	cmd := NewDestroyCommand(opts)
+
+	g.Expect(cmd).ToNot(BeNil(), "Command should be created")
+	g.Expect(cmd.Use).To(Equal("gcp"), "Command use should be 'gcp'")
+	g.Expect(cmd.Short).To(ContainSubstring("Destroys a GCP HostedCluster"), "Command should have description")
+
+	// Verify default values
+	g.Expect(opts.GCPPlatform.PreserveIAM).To(BeFalse(), "PreserveIAM should default to false")
+	g.Expect(opts.GCPPlatform.PreserveInfra).To(BeFalse(), "PreserveInfra should default to false")
+
+	// Verify flags are registered
+	g.Expect(cmd.Flags().Lookup("preserve-iam")).ToNot(BeNil(), "preserve-iam flag should be registered")
+	g.Expect(cmd.Flags().Lookup("preserve-infra")).ToNot(BeNil(), "preserve-infra flag should be registered")
+	g.Expect(cmd.Flags().Lookup("project-id")).ToNot(BeNil(), "project-id flag should be registered")
+	g.Expect(cmd.Flags().Lookup("region")).ToNot(BeNil(), "region flag should be registered")
+}
+
+func TestNewDestroyCommandFlagParsing(t *testing.T) {
+	tests := map[string]struct {
+		args                  []string
+		expectedPreserveIAM   bool
+		expectedPreserveInfra bool
+		expectedProjectID     string
+		expectedRegion        string
+	}{
+		"When preserve-iam is true": {
+			args:                []string{"--preserve-iam"},
+			expectedPreserveIAM: true,
+		},
+		"When preserve-infra is true": {
+			args:                  []string{"--preserve-infra"},
+			expectedPreserveInfra: true,
+		},
+		"When project-id is provided": {
+			args:              []string{"--project-id", "test-project-123"},
+			expectedProjectID: "test-project-123",
+		},
+		"When region is provided": {
+			args:           []string{"--region", "us-west1"},
+			expectedRegion: "us-west1",
+		},
+		"When all flags are provided": {
+			args:                  []string{"--preserve-iam", "--preserve-infra", "--project-id", "my-project", "--region", "europe-west1"},
+			expectedPreserveIAM:   true,
+			expectedPreserveInfra: true,
+			expectedProjectID:     "my-project",
+			expectedRegion:        "europe-west1",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			opts := &core.DestroyOptions{
+				Log: log.Log,
+			}
+
+			cmd := NewDestroyCommand(opts)
+			err := cmd.ParseFlags(test.args)
+			g.Expect(err).ToNot(HaveOccurred(), "Flags should parse without error")
+
+			g.Expect(opts.GCPPlatform.PreserveIAM).To(Equal(test.expectedPreserveIAM), "PreserveIAM should match")
+			g.Expect(opts.GCPPlatform.PreserveInfra).To(Equal(test.expectedPreserveInfra), "PreserveInfra should match")
+
+			if test.expectedProjectID != "" {
+				g.Expect(opts.GCPPlatform.ProjectID).To(Equal(test.expectedProjectID), "ProjectID should match")
+			}
+
+			if test.expectedRegion != "" {
+				g.Expect(opts.GCPPlatform.Region).To(Equal(test.expectedRegion), "Region should match")
+			}
+		})
+	}
+}
+
+// Parameter extraction tests
+
+func TestExtractParameters(t *testing.T) {
 	tests := map[string]struct {
 		hostedCluster    *hyperv1.HostedCluster
 		initialProjectID string
@@ -20,9 +107,8 @@ func TestDestroyClusterExtractsParametersFromHostedCluster(t *testing.T) {
 		expectedProject  string
 		expectedRegion   string
 		expectedInfraID  string
-		expectError      bool
 	}{
-		"When HostedCluster exists with GCP platform, it should extract all parameters": {
+		"When HostedCluster has GCP platform spec": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "test-infra-123",
@@ -38,7 +124,7 @@ func TestDestroyClusterExtractsParametersFromHostedCluster(t *testing.T) {
 			expectedRegion:  "us-central1",
 			expectedInfraID: "test-infra-123",
 		},
-		"When HostedCluster is nil and flags are set, it should use flag values": {
+		"When HostedCluster is nil": {
 			hostedCluster:    nil,
 			initialProjectID: "flag-project",
 			initialRegion:    "us-east1",
@@ -47,7 +133,7 @@ func TestDestroyClusterExtractsParametersFromHostedCluster(t *testing.T) {
 			expectedRegion:   "us-east1",
 			expectedInfraID:  "flag-infra",
 		},
-		"When HostedCluster exists and flags are set, it should use HostedCluster values": {
+		"When HostedCluster overrides flag values": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "hc-infra",
@@ -84,14 +170,16 @@ func TestDestroyClusterExtractsParametersFromHostedCluster(t *testing.T) {
 
 			extractParameters(test.hostedCluster, opts)
 
-			g.Expect(opts.InfraID).To(Equal(test.expectedInfraID), "InfraID should match expected value")
-			g.Expect(opts.GCPPlatform.ProjectID).To(Equal(test.expectedProject), "ProjectID should match expected value")
-			g.Expect(opts.GCPPlatform.Region).To(Equal(test.expectedRegion), "Region should match expected value")
+			g.Expect(opts.InfraID).To(Equal(test.expectedInfraID), "InfraID should match")
+			g.Expect(opts.GCPPlatform.ProjectID).To(Equal(test.expectedProject), "ProjectID should match")
+			g.Expect(opts.GCPPlatform.Region).To(Equal(test.expectedRegion), "Region should match")
 		})
 	}
 }
 
-func TestDestroyClusterValidatesRequiredInputs(t *testing.T) {
+// Validation tests
+
+func TestValidateInputs(t *testing.T) {
 	tests := map[string]struct {
 		infraID     string
 		projectID   string
@@ -99,34 +187,34 @@ func TestDestroyClusterValidatesRequiredInputs(t *testing.T) {
 		expectError bool
 		errorSubstr string
 	}{
-		"When all required inputs are provided, it should not error": {
+		"When all required inputs are provided": {
 			infraID:     "valid-infra",
 			projectID:   "valid-project",
 			region:      "us-central1",
 			expectError: false,
 		},
-		"When infraID is missing, it should return an error": {
+		"When infraID is missing": {
 			infraID:     "",
 			projectID:   "valid-project",
 			region:      "us-central1",
 			expectError: true,
 			errorSubstr: "infrastructure ID is required",
 		},
-		"When projectID is missing, it should return an error": {
+		"When projectID is missing": {
 			infraID:     "valid-infra",
 			projectID:   "",
 			region:      "us-central1",
 			expectError: true,
 			errorSubstr: "project ID is required",
 		},
-		"When region is missing, it should return an error": {
+		"When region is missing": {
 			infraID:     "valid-infra",
 			projectID:   "valid-project",
 			region:      "",
 			expectError: true,
 			errorSubstr: "region is required",
 		},
-		"When multiple inputs are missing, it should return combined error": {
+		"When multiple inputs are missing": {
 			infraID:     "",
 			projectID:   "",
 			region:      "",
@@ -155,72 +243,6 @@ func TestDestroyClusterValidatesRequiredInputs(t *testing.T) {
 			} else {
 				g.Expect(err).To(BeNil(), "Should not return error when all inputs valid")
 			}
-		})
-	}
-}
-
-func TestDestroyClusterPreserveFlagsDefaults(t *testing.T) {
-	g := NewGomegaWithT(t)
-
-	opts := core.GCPPlatformDestroyOptions{
-		PreserveIAM:   false,
-		PreserveInfra: false,
-	}
-
-	g.Expect(opts.PreserveIAM).To(BeFalse(), "PreserveIAM should default to false")
-	g.Expect(opts.PreserveInfra).To(BeFalse(), "PreserveInfra should default to false")
-}
-
-func TestDestroyClusterPreserveFlagsCombinations(t *testing.T) {
-	tests := map[string]struct {
-		preserveIAM    bool
-		preserveInfra  bool
-		expectIAMLog   string
-		expectInfraLog string
-	}{
-		"When no preserve flags are set, both should be destroyed": {
-			preserveIAM:    false,
-			preserveInfra:  false,
-			expectIAMLog:   "Destroying IAM",
-			expectInfraLog: "Destroying GCP infrastructure",
-		},
-		"When preserve-iam is set, IAM should be skipped": {
-			preserveIAM:    true,
-			preserveInfra:  false,
-			expectIAMLog:   "Skipping IAM destruction",
-			expectInfraLog: "Destroying GCP infrastructure",
-		},
-		"When preserve-infra is set, infrastructure should be skipped": {
-			preserveIAM:    false,
-			preserveInfra:  true,
-			expectIAMLog:   "Destroying IAM",
-			expectInfraLog: "Skipping infrastructure destruction",
-		},
-		"When both preserve flags are set, both should be skipped": {
-			preserveIAM:    true,
-			preserveInfra:  true,
-			expectIAMLog:   "Skipping IAM destruction",
-			expectInfraLog: "Skipping infrastructure destruction",
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			opts := &core.DestroyOptions{
-				GCPPlatform: core.GCPPlatformDestroyOptions{
-					PreserveIAM:   test.preserveIAM,
-					PreserveInfra: test.preserveInfra,
-				},
-			}
-
-			// Verify the flags are set correctly
-			g.Expect(opts.GCPPlatform.PreserveIAM).To(Equal(test.preserveIAM))
-			g.Expect(opts.GCPPlatform.PreserveInfra).To(Equal(test.preserveInfra))
-
-			// The actual log messages would be verified in integration tests
-			// Here we just verify the flag values that drive the behavior
 		})
 	}
 }
