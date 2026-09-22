@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/openshift/hypershift/support/certs"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -100,6 +102,11 @@ const (
 	// image in the release image.
 	AvailabilityProberImageName = "availability-prober"
 
+	availabilityProberRootCAConfigMap = "root-ca"
+	availabilityProberCAVolumeName    = "availability-prober-root-ca"
+	availabilityProberCAMountPath     = "/etc/availability-prober/ca"
+	availabilityProberCAFilePath      = availabilityProberCAMountPath + "/ca.crt"
+
 	// PodTmpDirMountName is a name for a volume created in each pod by the CPO that gives the pods containers a place to mount and write temporary files to.
 	PodTmpDirMountName = "tmp-dir"
 	// PodTmpDirMountPath is the path that each container created by the CPO will mount the volume PodTmpDirMountName at.
@@ -120,7 +127,28 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 			"availability-prober",
 			"--target",
 			target,
+			"--ca-file",
+			availabilityProberCAFilePath,
 		},
+		VolumeMounts: []corev1.VolumeMount{{
+			Name:      availabilityProberCAVolumeName,
+			MountPath: availabilityProberCAMountPath,
+			ReadOnly:  true,
+		}},
+	}
+	if FindVolume(availabilityProberCAVolumeName, spec.Volumes) == nil {
+		spec.Volumes = append(spec.Volumes, corev1.Volume{
+			Name: availabilityProberCAVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: availabilityProberRootCAConfigMap},
+					Items: []corev1.KeyToPath{{
+						Key:  certs.CASignerCertMapKey,
+						Path: certs.CASignerCertMapKey,
+					}},
+				},
+			},
+		})
 	}
 	if opts.KubeconfigVolumeName != "" {
 		availabilityProberContainer.VolumeMounts = append(availabilityProberContainer.VolumeMounts, corev1.VolumeMount{

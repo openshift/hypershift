@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a30d39e22a02898e02ca48b937642e50557a8c4d98464475f220a82c0b713ebe
+    hypershift.openshift.io/desired-state-hash: 121529164bd5e771ec092fc88170e305455a2a1df45e4fde1ac79ff90ff73fce
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-controller-manager
@@ -278,11 +278,17 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         image: availability-prober
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
       priorityClassName: hypershift-control-plane
       restartPolicy: Always
       schedulerName: default-scheduler
@@ -328,6 +334,12 @@ spec:
           defaultMode: 420
           name: recycler-config
         name: recycler-config
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

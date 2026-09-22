@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 962caa698fa70e3b5695e6879f67917b5b019f04b9de746d05586f5d42de46a1
+    hypershift.openshift.io/desired-state-hash: 7bb8cf142b96ef684161a349f4597ee72a0cc0d6934aaf97ab1c78248b901a8b
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: dns-operator
@@ -100,6 +100,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=operator.openshift.io,v1,DNS
         - --wait-for-labeled-pods-gone=openshift-dns-operator/name=dns-operator
@@ -109,6 +111,9 @@ spec:
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
         - mountPath: /var/kubeconfig
           name: service-account-kubeconfig
       priorityClassName: hypershift-control-plane
@@ -127,6 +132,12 @@ spec:
         secret:
           defaultMode: 416
           secretName: dns-operator-service-account-kubeconfig
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

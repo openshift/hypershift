@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 9484352646e6db73a0f3c5ae32cc91cbd2ed51f95387a093871c1a690e3a7649
+    hypershift.openshift.io/desired-state-hash: d9e699cf893b3dd2cc82770fd7b09f9666e561bc008cf93882c559954a813cd5
   labels:
     app: karpenter-operator
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -133,11 +133,17 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         image: availability-prober
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
       priorityClassName: hypershift-control-plane
       serviceAccountName: karpenter-operator
       terminationGracePeriodSeconds: 10
@@ -165,6 +171,12 @@ spec:
       - emptyDir:
           medium: Memory
         name: cloud-token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}
