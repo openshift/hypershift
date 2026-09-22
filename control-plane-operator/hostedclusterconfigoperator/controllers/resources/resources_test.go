@@ -35,7 +35,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -243,6 +242,71 @@ func TestReconcileErrorHandling(t *testing.T) {
 				t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
 			}
 		}
+	}
+}
+
+func TestReconcileRBAC(t *testing.T) {
+	tests := []struct {
+		name           string
+		ingressEnabled bool
+		isAROHCP       bool
+		wantIngress    bool
+		wantARO        bool
+	}{
+		{
+			name:           "When ingress is enabled for a non-ARO HCP, it should reconcile base and ingress RBAC",
+			ingressEnabled: true,
+			wantIngress:    true,
+		},
+		{
+			name:           "When ingress is disabled, it should omit ingress RBAC while reconciling the base catalog",
+			ingressEnabled: false,
+		},
+		{
+			name:           "When the HCP is ARO, it should reconcile the ARO-only RBAC resources",
+			ingressEnabled: true,
+			isAROHCP:       true,
+			wantIngress:    true,
+			wantARO:        true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := fakeHCP()
+			if !tc.ingressEnabled {
+				hcp.Spec.Capabilities = &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability}}
+			}
+			if tc.isAROHCP {
+				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+				hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					},
+				}
+			}
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			r := &reconciler{
+				client:                 guestClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+			if err := r.reconcileRBAC(t.Context(), hcp); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			assertRBACObjectExists := func(obj client.Object, wantExists bool) {
+				err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)
+				if wantExists && err != nil {
+					t.Fatalf("expected %T %s to exist: %v", obj, obj.GetName(), err)
+				}
+				if !wantExists && !apierrors.IsNotFound(err) {
+					t.Fatalf("expected %T %s to be absent, got: %v", obj, obj.GetName(), err)
+				}
+			}
+			assertRBACObjectExists(manifests.CSRApproverClusterRole(), true)
+			assertRBACObjectExists(manifests.IngressToRouteControllerClusterRole(), tc.wantIngress)
+			assertRBACObjectExists(manifests.AzureDiskCSIDriverNodeServiceAccountRole(), tc.wantARO)
+		})
 	}
 }
 
@@ -745,8 +809,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 		})
 	}
 }
-
-var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
 	t.Parallel()
