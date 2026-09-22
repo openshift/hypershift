@@ -14,6 +14,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -77,11 +78,12 @@ type clientBuilder func(ctx context.Context) (firewallClient, error)
 
 // FirewallManager reconciles the managed worker firewall rule for a single HCP.
 type FirewallManager struct {
-	projectID   string
-	network     string
-	infraID     string
-	networkType hyperv1.NetworkType
-	logger      logr.Logger
+	projectID     string
+	network       string
+	infraID       string
+	networkType   hyperv1.NetworkType
+	nodePortRange string
+	logger        logr.Logger
 
 	newClient clientBuilder
 	// wifAvailable reports whether WIF credentials are ready. It returns
@@ -98,14 +100,26 @@ func NewFirewallManager(hcp *hyperv1.HostedControlPlane, logger logr.Logger) (*F
 		return nil, fmt.Errorf("hostedcontrolplane has no GCP platform spec")
 	}
 	return &FirewallManager{
-		projectID:    hcp.Spec.Platform.GCP.Project,
-		network:      string(hcp.Spec.Platform.GCP.NetworkConfig.Network.Name),
-		infraID:      hcp.Spec.InfraID,
-		networkType:  hcp.Spec.Networking.NetworkType,
-		logger:       logger,
-		newClient:    newComputeFirewallClient,
-		wifAvailable: isWIFTokenAccessible,
+		projectID:     hcp.Spec.Platform.GCP.Project,
+		network:       string(hcp.Spec.Platform.GCP.NetworkConfig.Network.Name),
+		infraID:       hcp.Spec.InfraID,
+		networkType:   hcp.Spec.Networking.NetworkType,
+		nodePortRange: serviceNodePortRange(hcp.Spec.Configuration),
+		logger:        logger,
+		newClient:     newComputeFirewallClient,
+		wifAvailable:  isWIFTokenAccessible,
 	}, nil
+}
+
+// serviceNodePortRange returns the effective spec.configuration.network.
+// serviceNodePortRange, defaulting to the Kubernetes standard when unset. It
+// mirrors the defaulting used by the kube-apiserver params so the firewall
+// allowance matches the range KAS actually enforces.
+func serviceNodePortRange(configuration *hyperv1.ClusterConfiguration) string {
+	if configuration != nil && configuration.Network != nil && len(configuration.Network.ServiceNodePortRange) > 0 {
+		return configuration.Network.ServiceNodePortRange
+	}
+	return config.DefaultServiceNodePortRange
 }
 
 // validateInputs verifies the static configuration needed to build the desired
@@ -163,6 +177,15 @@ func (m *FirewallManager) Reconcile(ctx context.Context) Result {
 		return degradedResult(hyperv1.GCPFirewallWaitingForInfra, err.Error())
 	}
 
+	// Pre-validate derived values that can never succeed if malformed (e.g. an
+	// infra ID that yields an over-long firewall name), so they surface as an
+	// actionable invalid-configuration state instead of a doomed, endlessly
+	// retried 400.
+	if err := validateFirewallName(firewallRuleName(m.infraID)); err != nil {
+		m.logger.Info("WARNING: invalid GCP firewall configuration: " + err.Error())
+		return degradedResult(hyperv1.GCPFirewallInvalidConfiguration, err.Error())
+	}
+
 	client, err := m.getClient(ctx)
 	if err != nil {
 		if errors.Is(err, errWIFUnavailable) {
@@ -203,7 +226,7 @@ func (m *FirewallManager) Reconcile(ctx context.Context) Result {
 		return degradedResult(hyperv1.GCPFirewallOwnershipConflict, msg)
 	}
 
-	desired := desiredFirewall(m.infraID, networkSelfLink, m.networkType)
+	desired := desiredFirewall(m.infraID, networkSelfLink, m.networkType, m.nodePortRange)
 	if firewallMatchesDesired(existing, desired) {
 		return convergedResult()
 	}
@@ -214,7 +237,7 @@ func (m *FirewallManager) Reconcile(ctx context.Context) Result {
 // create inserts a new managed firewall rule (with the ownership marker in its
 // description), waits for the operation, and verifies convergence.
 func (m *FirewallManager) create(ctx context.Context, client firewallClient, networkSelfLink string) Result {
-	desired := desiredFirewall(m.infraID, networkSelfLink, m.networkType)
+	desired := desiredFirewall(m.infraID, networkSelfLink, m.networkType, m.nodePortRange)
 	marker, err := ownershipMarker(m.infraID)
 	if err != nil {
 		return errorResult(hyperv1.GCPFirewallWaitingForInfra, err)
@@ -294,12 +317,23 @@ func (m *FirewallManager) waitOp(ctx context.Context, client firewallClient, op 
 	return Result{}, true
 }
 
-// Delete removes the managed firewall rule, verifying ownership and
-// compatibility first. A missing rule is success. Any other failure/conflict
-// returns an error so the caller retains the finalizer and retries.
+// Delete removes the managed firewall rule, verifying ownership first. A missing
+// rule is success. An ownership conflict (a same-named rule without our marker)
+// is a terminal skip: it is logged and returns nil so the caller can finish
+// deletion, since retrying can never change the rule's ownership. Any other
+// failure returns an error so the caller retains the finalizer and retries.
 func (m *FirewallManager) Delete(ctx context.Context) error {
 	if err := m.validateInputs(); err != nil {
 		return fmt.Errorf("cannot delete firewall rule: %w", err)
+	}
+
+	// An invalid derived name (e.g. over the RFC1035 limit) means the rule could
+	// never have been created, so there is nothing to delete. Do not wedge
+	// finalization on a name that can never resolve to a real resource.
+	name := firewallRuleName(m.infraID)
+	if err := validateFirewallName(name); err != nil {
+		m.logger.Info("WARNING: skipping firewall deletion for invalid configuration: " + err.Error())
+		return nil
 	}
 
 	client, err := m.getClient(ctx)
@@ -307,7 +341,6 @@ func (m *FirewallManager) Delete(ctx context.Context) error {
 		return fmt.Errorf("cannot delete firewall rule: %w", err)
 	}
 
-	name := firewallRuleName(m.infraID)
 	getCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	existing, err := client.GetFirewall(getCtx, m.projectID, name)
 	cancel()
@@ -320,7 +353,12 @@ func (m *FirewallManager) Delete(ctx context.Context) error {
 	}
 
 	if !isOwnedBy(existing, m.infraID) {
-		return fmt.Errorf("firewall rule %q is not owned by control-plane-operator; refusing to delete", name)
+		// A same-named rule without our ownership marker is left untouched. This
+		// is a terminal conflict: retrying deletion can never change the rule's
+		// ownership, so returning an error here would retain the HCP finalizer
+		// forever. Log a warning and treat it as done so deletion can finish.
+		m.logger.Info("WARNING: firewall rule exists but is not owned by control-plane-operator; leaving it untouched and skipping deletion", "name", name)
+		return nil
 	}
 
 	m.logger.Info("Deleting managed worker firewall rule", "name", name)
