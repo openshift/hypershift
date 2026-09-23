@@ -1196,6 +1196,303 @@ tests:
             type: Route
             route: {}
 
+  - name: When a GCP resourceTag key is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: ""
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+    expectedError: "key must start and end with a letter or digit and contain only letters, digits, dashes, underscores, or dots"
+
+  - name: When a GCP resourceTag value is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: ""
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+    expectedError: "value must start and end with a letter or digit and contain only letters, digits, dashes, underscores, or dots"
+
+  - name: When a GCP resourceTag key starts with a non-alphanumeric character it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: -environment
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "key must start and end with a letter or digit and contain only letters, digits, dashes, underscores, or dots"
+
+  - name: When a GCP resourceTag value contains an invalid character it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: production/blue
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "value must start and end with a letter or digit and contain only letters, digits, dashes, underscores, or dots"
+
+  - name: When a GCP resourceTag value exceeds 256 characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Too long: may not be more than 256 bytes"
+
   - name: When GCP resourceTags contain duplicate keys it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
