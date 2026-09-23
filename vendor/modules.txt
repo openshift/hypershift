@@ -1104,8 +1104,8 @@ github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
 github.com/openshift/cloud-credential-operator/pkg/ibmcloud
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
-## explicit; go 1.25
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260920024600-9f24260ab058
+## explicit; go 1.25.7
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
 # github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675

@@ -18,7 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 type ClusterDeploymentReference struct {
@@ -70,10 +70,13 @@ type AgentClusterStatus struct {
 
 	// Conditions defines current service state of the ClusterDeployment.
 	// +optional
-	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// FailureDomains is a list of failure domain objects synced from the infrastructure provider.
-	FailureDomains clusterv1.FailureDomains `json:"failureDomains,omitempty"`
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	FailureDomains []clusterv1.FailureDomain `json:"failureDomains,omitempty"`
 }
 
 //+kubebuilder:object:root=true
