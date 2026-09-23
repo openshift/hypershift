@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -21,7 +22,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testingclock "k8s.io/utils/clock/testing"
+	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -597,6 +600,171 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			shouldKeepOldUserData, err := r.shouldKeepOldUserData(t.Context(), tc.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(shouldKeepOldUserData).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestLiveBootstrapSecretNames(t *testing.T) {
+	const (
+		hcNamespace = "clusters"
+		hcName      = "test-hc"
+		npName      = "workers"
+	)
+	cpNamespace := manifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+	liveUserData := "user-data-workers-legacyhash"
+	liveToken := "token-workers-legacyhash"
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcNamespace, Name: hcName},
+	}
+
+	testCases := []struct {
+		name           string
+		nodePool       *hyperv1.NodePool
+		objects        []client.Object
+		expectUserData string
+		expectToken    string
+		expectError    bool
+	}{
+		{
+			name: "When UpgradeType is Replace and MachineDeployment exists, it should return live bootstrap Secret names",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: hcNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: cpNamespace},
+					Spec: capiv1.MachineDeploymentSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								Bootstrap: capiv1.Bootstrap{
+									DataSecretName: ptr.To(liveUserData),
+								},
+							},
+						},
+					},
+				},
+			},
+			expectUserData: liveUserData,
+			expectToken:    liveToken,
+		},
+		{
+			name: "When UpgradeType is InPlace and MachineSet exists, it should return live bootstrap Secret names",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: hcNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: cpNamespace},
+					Spec: capiv1.MachineSetSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								Bootstrap: capiv1.Bootstrap{
+									DataSecretName: ptr.To(liveUserData),
+								},
+							},
+						},
+					},
+				},
+			},
+			expectUserData: liveUserData,
+			expectToken:    liveToken,
+		},
+		{
+			name: "When MachineDeployment is not found, it should return empty names",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: hcNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+					},
+				},
+			},
+		},
+		{
+			name: "When MachineSet is not found, it should return empty names",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: hcNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeInPlace,
+					},
+				},
+			},
+		},
+		{
+			name: "When bootstrap DataSecretName is empty, it should return empty names",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: hcNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: cpNamespace},
+				},
+			},
+		},
+		{
+			name: "When bootstrap Secret name does not use the expected user-data prefix, it should derive token name from TrimPrefix",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: hcNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+					},
+				},
+			},
+			objects: []client.Object{
+				&capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{Name: npName, Namespace: cpNamespace},
+					Spec: capiv1.MachineDeploymentSpec{
+						Template: capiv1.MachineTemplateSpec{
+							Spec: capiv1.MachineSpec{
+								Bootstrap: capiv1.Bootstrap{
+									DataSecretName: ptr.To("unexpected-bootstrap-name"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expectUserData: "unexpected-bootstrap-name",
+			expectToken:    "tokenunexpected-bootstrap-name",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			janitor := &secretJanitor{
+				NodePoolReconciler: &NodePoolReconciler{
+					Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build(),
+				},
+			}
+
+			userData, token, err := janitor.liveBootstrapSecretNames(t.Context(), tc.nodePool, hostedCluster)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(userData).To(Equal(tc.expectUserData))
+			g.Expect(token).To(Equal(tc.expectToken))
 		})
 	}
 }
