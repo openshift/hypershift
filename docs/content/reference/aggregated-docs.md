@@ -25691,12 +25691,14 @@ spec:
           value: production
 ```
 
-The TagKey and TagValue must exist in the customer project before the
-HostedCluster references them. Each key and value may be up to 256 characters,
-and up to 50 tags may be configured, matching Google Cloud's per-resource tag
-limit. The controller identity that attaches a tag must have Tag User and the
-resource-specific TagBinding permissions. HyperShift does not create TagKeys or
-TagValues as part of HostedCluster reconciliation.
+HyperShift resolves tags in the customer project during reconciliation. If a
+requested TagKey or TagValue does not exist or cannot be accessed, HyperShift
+cannot create its TagBinding until the condition is corrected. Each key and
+value may be up to 256 characters, and up to 50 tags may be configured,
+matching Google Cloud's per-resource tag limit. The controller identity that
+attaches a tag must have Tag User and the resource-specific TagBinding
+permissions. HyperShift does not create TagKeys or TagValues as part of
+HostedCluster reconciliation.
 
 ## CAPG Integration
 
@@ -49673,9 +49675,12 @@ to supported GCP resources created for the cluster. Each entry identifies
 a project-scoped TagKey and TagValue by short name. HyperShift resolves the
 tag value using the customer project; users do not need to supply a
 namespaced tag value or a permanent tagValues/<id> identifier.</p>
-<p>TagKeys and TagValues must exist before they are referenced here.
-Attaching tags requires the relevant controller identity to have Tag User
-and resource-specific TagBinding permissions.</p>
+<p>HyperShift resolves these tags during reconciliation. If a requested
+TagKey or TagValue does not exist in the customer project, or cannot be
+accessed, its TagBinding cannot be created until the condition is
+corrected. HyperShift does not create TagKeys or TagValues. Attaching tags
+requires the relevant controller identity to have Tag User and
+resource-specific TagBinding permissions.</p>
 </td>
 </tr>
 <tr>
