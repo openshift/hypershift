@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c589e9f0bdda1422dad7b7a717f00a2822d2b7933740326065f9b50fd25a8776
+    hypershift.openshift.io/desired-state-hash: ddbf44fbc3221e6dfc2e5aac447dc636abcb47bef5eb652c3aae411d42d5c82a
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-scheduler
@@ -87,6 +87,7 @@ spec:
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
         - --feature-gates=AWSEFSDriverVolumeMetrics=true
         - --feature-gates=AdditionalRoutingCapabilities=true
         - --feature-gates=AdminNetworkPolicy=true

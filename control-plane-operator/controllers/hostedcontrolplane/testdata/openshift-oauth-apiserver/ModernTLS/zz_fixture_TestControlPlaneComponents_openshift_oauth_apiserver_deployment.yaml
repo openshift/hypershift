@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 32aabe251cebd98bb29db6b3e4940d8f7a44d6c4156e96bae1fd320b3a02fb22
+    hypershift.openshift.io/desired-state-hash: 1817909444d76e7150932f2d151824960d3020822de048cec3f44cb5f06b7054
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -106,6 +106,7 @@ spec:
         - --api-audiences=https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
         - --etcd-servers=https://etcd-client:2379
         - --tls-min-version=VersionTLS13
+        - --tls-curve-preferences=4588,29,23,24
         - --v=2
         command:
         - /usr/bin/oauth-apiserver

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 1babe038bd737593b4e6b84c0bfbd931a96cce7d4703072b4e46c44362d77aed
+    hypershift.openshift.io/desired-state-hash: 78d6b301f1bd597de71df29d66e7d9571feff1e1cb22f427405a6c11b38b7957
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -107,6 +107,7 @@ spec:
         - --etcd-servers=https://etcd-client:2379
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
         - --v=2
         command:
         - /usr/bin/oauth-apiserver

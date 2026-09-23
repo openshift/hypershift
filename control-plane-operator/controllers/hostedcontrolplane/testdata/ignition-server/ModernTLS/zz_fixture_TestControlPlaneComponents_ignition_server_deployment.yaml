@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 94a640e26d4ce01fe2e8ca8faee7b937b51054f34fc73944cd88faf9875503ea
+    hypershift.openshift.io/desired-state-hash: d5fcb226b921d5a7e906e47022e82defea26cf87013320bde13cbf758be29dec
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server
@@ -92,6 +92,7 @@ spec:
         - --platform
         - AWS
         - --tls-min-version=VersionTLS13
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /usr/bin/control-plane-operator
         - ignition-server
