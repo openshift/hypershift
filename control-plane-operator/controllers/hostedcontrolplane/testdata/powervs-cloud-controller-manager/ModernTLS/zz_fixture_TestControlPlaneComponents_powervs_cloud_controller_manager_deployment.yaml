@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 39d7ff361855d4b715d62b51da3a994df4bc733c76e49e7fbfeb0a3a538fb6e4
+    hypershift.openshift.io/desired-state-hash: 8c58ef836e1a47a88d4794d713f22c14904fbb9ade5bb676ce5c8acb7c2671fa
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: powervs-cloud-controller-manager
@@ -73,6 +73,7 @@ spec:
         - --leader-elect-retry-period=26s
         - --kubeconfig=/etc/kubernetes/kubeconfig
         - --tls-min-version=VersionTLS13
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /bin/ibm-cloud-controller-manager
         env:

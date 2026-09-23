@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 21c4dc5b883bb487a9b5be4f42358b9f9e6ae21c0588049e3226b8d54f004513
+    hypershift.openshift.io/desired-state-hash: e2a25101abd3e8900300d5fa2642f939f763885bd12cce9be21e8adbfbc040ba
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openstack-cloud-controller-manager
@@ -80,6 +80,7 @@ spec:
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /usr/bin/openstack-cloud-controller-manager
         env:
