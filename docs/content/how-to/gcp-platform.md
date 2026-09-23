@@ -88,8 +88,7 @@ spec:
 
 Resource Manager tags are distinct from resource labels. Tags are pre-existing
 Google Cloud TagKey and TagValue objects that HyperShift attaches to supported
-resources by creating TagBindings. Define tags using their short names; do not
-use a namespaced tag value or a `tagValues/<id>` identifier:
+resources by creating TagBindings. Define tags using their short names:
 
 ```yaml
 spec:
