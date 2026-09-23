@@ -25555,7 +25555,7 @@ hypershift create cluster gcp \
 | `--external-dns-domain` | Yes | DNS domain for ExternalDNS-managed hostnames (API server, OAuth) |
 | `--feature-set` | Yes | Must be `TechPreviewNoUpgrade` for GCP platform |
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
-| `--zone` | Yes | GCP zone for nodes |
+| `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
 
 ## Monitor Cluster Creation
@@ -25965,7 +25965,7 @@ The job uses the `hypershift-gcp-gke-e2e` workflow defined in openshift/release:
 
 7. `hypershift-gcp-run-e2e` — Run TestCreateCluster
    - **Required:** Must pass `--e2e.gcp-zone` flag with a valid GCP zone (e.g. `us-central1-a`)
-   - The `--zone` flag is required for GCP cluster creation (no default fallback)
+   - The `--zone` flag is required when creating clusters with NodePools (`--node-pool-replicas >= 0`, the default)
 
 **Post phase:**
 

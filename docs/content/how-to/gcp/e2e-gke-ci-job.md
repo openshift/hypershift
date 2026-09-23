@@ -44,7 +44,7 @@ The job uses the `hypershift-gcp-gke-e2e` workflow defined in [openshift/release
 
 7. `hypershift-gcp-run-e2e` — Run TestCreateCluster
    - **Required:** Must pass `--e2e.gcp-zone` flag with a valid GCP zone (e.g. `us-central1-a`)
-   - The `--zone` flag is required for GCP cluster creation (no default fallback)
+   - The `--zone` flag is required when creating clusters with NodePools (`--node-pool-replicas >= 0`, the default)
 
 **Post phase:**
 

@@ -92,7 +92,7 @@ hypershift create cluster gcp \
 | `--external-dns-domain` | Yes | DNS domain for ExternalDNS-managed hostnames (API server, OAuth) |
 | `--feature-set` | Yes | Must be `TechPreviewNoUpgrade` for GCP platform |
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
-| `--zone` | Yes | GCP zone for nodes |
+| `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
 
 ## Monitor Cluster Creation

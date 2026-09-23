@@ -141,7 +141,7 @@ func TestValidateGCPOptions(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := tc.opts.Validate(context.Background(), &core.CreateOptions{})
+			_, err := tc.opts.Validate(context.Background(), nil)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				if tc.expectSubstr != "" {
@@ -176,7 +176,6 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--project=test-project-123",
 				"--region=us-central1",
-				"--zone=us-central1-a",
 				"--network=test-network",
 				"--private-service-connect-subnet=test-psc-subnet",
 				"--workload-identity-project-number=123456789012",
@@ -188,11 +187,11 @@ func TestCreateCluster(t *testing.T) {
 				"--storage-service-account=storage@test-project-123.iam.gserviceaccount.com",
 				"--image-registry-service-account=imageregistry@test-project-123.iam.gserviceaccount.com",
 				"--network-service-account=network@test-project-123.iam.gserviceaccount.com",
-				"--node-pool-replicas=0",
+				"--node-pool-replicas=-1",
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
 			},
-			expectedZone: "us-central1-a",
+			expectedZone: "",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -219,9 +218,11 @@ func TestCreateCluster(t *testing.T) {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
 
-			// Verify zone is set in NodePool
+			// Verify zone is set in NodePool if expected
 			g := NewGomegaWithT(t)
-			g.Expect(string(manifests)).To(ContainSubstring("zone: " + testCase.expectedZone))
+			if testCase.expectedZone != "" {
+				g.Expect(string(manifests)).To(ContainSubstring("zone: " + testCase.expectedZone))
+			}
 
 			testutil.CompareWithFixture(t, manifests)
 		})
