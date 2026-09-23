@@ -24,7 +24,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
 	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
 	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	"github.com/openshift/hypershift/support/assets"
