@@ -53,6 +53,19 @@
             "groupName": "Go dependencies (operator/control-plane)"
         },
         {
+            "description": "Group API Go module dependency updates on main branch",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                "api/go.mod"
+            ],
+            "groupName": "Go dependencies (api)"
+        },
+        {
             "description": "Group Go tooling dependency updates on main branch",
             "matchManagers": [
                 "gomod"
