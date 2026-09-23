@@ -5335,6 +5335,164 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 	}
 }
 
+func TestReconcileAzurePlatformStatus(t *testing.T) {
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	managedIdentitiesHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: "hcp-ns", ResourceVersion: "1"},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+							AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+								ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+									ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{Name: "kv", TenantID: "tid"},
+									CloudProvider:             hyperv1.ManagedIdentity{CredentialsSecretName: "cloud-provider-cert", ObjectEncoding: "utf-8"},
+									NodePoolManagement:        hyperv1.ManagedIdentity{CredentialsSecretName: "node-pool-mgmt-cert", ObjectEncoding: "utf-8"},
+									ControlPlaneOperator:      hyperv1.ManagedIdentity{CredentialsSecretName: "cpo-cert", ObjectEncoding: "utf-8"},
+									ImageRegistry:             hyperv1.ManagedIdentity{CredentialsSecretName: "image-registry-cert", ObjectEncoding: "utf-8"},
+									Ingress:                   hyperv1.ManagedIdentity{CredentialsSecretName: "ingress-cert", ObjectEncoding: "utf-8"},
+									Network:                   hyperv1.ManagedIdentity{CredentialsSecretName: "network-cert", ObjectEncoding: "utf-8"},
+									Disk:                      hyperv1.ManagedIdentity{CredentialsSecretName: "disk-cert", ObjectEncoding: "utf-8"},
+									File:                      hyperv1.ManagedIdentity{CredentialsSecretName: "file-cert", ObjectEncoding: "utf-8"},
+								},
+								DataPlane: hyperv1.DataPlaneManagedIdentities{
+									ImageRegistryMSIClientID: "img-reg-client-id",
+									DiskMSIClientID:          "disk-client-id",
+									FileMSIClientID:          "file-client-id",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	workloadIdentitiesHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: "hcp-ns", ResourceVersion: "1"},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+							AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+								CloudProvider:        hyperv1.WorkloadIdentity{ClientID: "cloud-provider-client-id"},
+								NodePoolManagement:   hyperv1.WorkloadIdentity{ClientID: "node-pool-mgmt-client-id"},
+								ControlPlaneOperator: hyperv1.WorkloadIdentity{ClientID: "cpo-client-id"},
+								ImageRegistry:        hyperv1.WorkloadIdentity{ClientID: "image-registry-client-id"},
+								Ingress:              hyperv1.WorkloadIdentity{ClientID: "ingress-client-id"},
+								Network:              hyperv1.WorkloadIdentity{ClientID: "network-client-id"},
+								Disk:                 hyperv1.WorkloadIdentity{ClientID: "disk-client-id"},
+								File:                 hyperv1.WorkloadIdentity{ClientID: "file-client-id"},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		hcp       *hyperv1.HostedControlPlane
+		wantAzure *hyperv1.AzurePlatformStatus // nil means Platform should be unset/empty
+	}{
+		{
+			name: "When auth mode is ManagedIdentities, it should populate ManagedIdentities status and clear WorkloadIdentities",
+			hcp:  managedIdentitiesHCP(),
+			wantAzure: &hyperv1.AzurePlatformStatus{
+				ManagedIdentities: hyperv1.AzureManagedIdentitiesStatus{
+					ControlPlane: hyperv1.AzureControlPlaneManagedIdentitiesStatus{
+						CloudProvider:        "cloud-provider-cert",
+						NodePoolManagement:   "node-pool-mgmt-cert",
+						ControlPlaneOperator: "cpo-cert",
+						ImageRegistry:        "image-registry-cert",
+						Ingress:              "ingress-cert",
+						Network:              "network-cert",
+						Disk:                 "disk-cert",
+						File:                 "file-cert",
+					},
+					DataPlane: hyperv1.AzureDataPlaneManagedIdentitiesStatus{
+						ImageRegistryClientID: "img-reg-client-id",
+						DiskClientID:          "disk-client-id",
+						FileClientID:          "file-client-id",
+					},
+				},
+			},
+		},
+		{
+			name: "When auth mode is WorkloadIdentities, it should populate WorkloadIdentities status and clear ManagedIdentities",
+			hcp:  workloadIdentitiesHCP(),
+			wantAzure: &hyperv1.AzurePlatformStatus{
+				WorkloadIdentities: hyperv1.AzureWorkloadIdentitiesStatus{
+					CloudProvider:        "cloud-provider-client-id",
+					NodePoolManagement:   "node-pool-mgmt-client-id",
+					ControlPlaneOperator: "cpo-client-id",
+					ImageRegistry:        "image-registry-client-id",
+					Ingress:              "ingress-client-id",
+					Network:              "network-client-id",
+					Disk:                 "disk-client-id",
+					File:                 "file-client-id",
+				},
+			},
+		},
+		{
+			name: "When platform is not Azure, it should not modify platform status",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: "hcp-ns", ResourceVersion: "1"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			wantAzure: nil,
+		},
+		{
+			name: "When ManagedIdentities pointer is nil, it should not panic and clear status",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := managedIdentitiesHCP()
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities = nil
+				return hcp
+			}(),
+			wantAzure: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+			r := &HostedControlPlaneReconciler{Client: c}
+
+			err := r.reconcileAzurePlatformStatus(ctx, tc.hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Fetch the updated HCP from the fake store to verify status was patched.
+			updated := &hyperv1.HostedControlPlane{}
+			g.Expect(c.Get(ctx, client.ObjectKeyFromObject(tc.hcp), updated)).To(Succeed())
+
+			if tc.wantAzure == nil {
+				if updated.Status.Platform != nil {
+					g.Expect(updated.Status.Platform.Azure).To(Equal(hyperv1.AzurePlatformStatus{}))
+				}
+				return
+			}
+
+			g.Expect(updated.Status.Platform).ToNot(BeNil())
+			g.Expect(updated.Status.Platform.Azure).To(Equal(*tc.wantAzure))
+		})
+	}
+}
+
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
 var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 

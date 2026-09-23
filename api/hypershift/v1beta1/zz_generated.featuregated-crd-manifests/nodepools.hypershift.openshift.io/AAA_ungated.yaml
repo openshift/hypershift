@@ -928,6 +928,7 @@ spec:
                             description: imageID is the Azure resource ID of a VHD
                               image to use to boot the Azure VMs from.
                             maxLength: 255
+                            minLength: 1
                             type: string
                           type:
                             description: |-

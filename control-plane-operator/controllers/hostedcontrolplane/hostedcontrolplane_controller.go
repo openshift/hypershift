@@ -1347,6 +1347,10 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile default security group: %w", err)
 	}
 
+	if err := r.reconcileAzurePlatformStatus(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to reconcile Azure platform status: %w", err)
+	}
+
 	cpContext := component.ControlPlaneContext{
 		Context:                        ctx,
 		Client:                         r.Client,
@@ -2899,6 +2903,80 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 	}
 
 	return creationErr
+}
+
+// reconcileAzurePlatformStatus mirrors the active Azure identity configuration from spec
+// into status, enabling consumers (e.g. the ARO RP) to observe which identities the
+// control plane operator is currently applying without re-deriving them from spec.
+//
+// The mutate callback reads directly from the re-fetched HCP's spec, so it is safe
+// to call on every reconcile and correct on conflict-retry.
+func (r *HostedControlPlaneReconciler) reconcileAzurePlatformStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+	return statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+		if hcp.Spec.Platform.Azure == nil {
+			return nil
+		}
+
+		// Build azureStatus from spec; only write to status when data is available.
+		var azureStatus *hyperv1.AzurePlatformStatus
+		authConfig := hcp.Spec.Platform.Azure.AzureAuthenticationConfig
+		switch authConfig.AzureAuthenticationConfigType {
+		case hyperv1.AzureAuthenticationTypeManagedIdentities:
+			if authConfig.ManagedIdentities == nil {
+				break
+			}
+			cp := authConfig.ManagedIdentities.ControlPlane
+			dp := authConfig.ManagedIdentities.DataPlane
+			azureStatus = &hyperv1.AzurePlatformStatus{
+				ManagedIdentities: hyperv1.AzureManagedIdentitiesStatus{
+					ControlPlane: hyperv1.AzureControlPlaneManagedIdentitiesStatus{
+						CloudProvider:        cp.CloudProvider.CredentialsSecretName,
+						NodePoolManagement:   cp.NodePoolManagement.CredentialsSecretName,
+						ControlPlaneOperator: cp.ControlPlaneOperator.CredentialsSecretName,
+						ImageRegistry:        cp.ImageRegistry.CredentialsSecretName,
+						Ingress:              cp.Ingress.CredentialsSecretName,
+						Network:              cp.Network.CredentialsSecretName,
+						Disk:                 cp.Disk.CredentialsSecretName,
+						File:                 cp.File.CredentialsSecretName,
+					},
+					DataPlane: hyperv1.AzureDataPlaneManagedIdentitiesStatus{
+						ImageRegistryClientID: dp.ImageRegistryMSIClientID,
+						DiskClientID:          dp.DiskMSIClientID,
+						FileClientID:          dp.FileMSIClientID,
+					},
+				},
+			}
+		case hyperv1.AzureAuthenticationTypeWorkloadIdentities:
+			if authConfig.WorkloadIdentities == nil {
+				break
+			}
+			wi := authConfig.WorkloadIdentities
+			azureStatus = &hyperv1.AzurePlatformStatus{
+				WorkloadIdentities: hyperv1.AzureWorkloadIdentitiesStatus{
+					CloudProvider:        string(wi.CloudProvider.ClientID),
+					NodePoolManagement:   string(wi.NodePoolManagement.ClientID),
+					ControlPlaneOperator: string(wi.ControlPlaneOperator.ClientID),
+					ImageRegistry:        string(wi.ImageRegistry.ClientID),
+					Ingress:              string(wi.Ingress.ClientID),
+					Network:              string(wi.Network.ClientID),
+					Disk:                 string(wi.Disk.ClientID),
+					File:                 string(wi.File.ClientID),
+				},
+			}
+		}
+
+		if azureStatus == nil {
+			return nil
+		}
+		if hcp.Status.Platform == nil {
+			hcp.Status.Platform = &hyperv1.PlatformStatus{}
+		}
+		hcp.Status.Platform.Azure = *azureStatus
+		return nil
+	})
 }
 
 func awsSecurityGroupFilters(infraID string) []ec2types.Filter {

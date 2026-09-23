@@ -3621,6 +3621,190 @@ UserAssignedManagedIdentity
 </td>
 </tr></tbody>
 </table>
+###AzureControlPlaneManagedIdentitiesStatus { #hypershift.openshift.io/v1beta1.AzureControlPlaneManagedIdentitiesStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureManagedIdentitiesStatus">AzureManagedIdentitiesStatus</a>)
+</p>
+<p>
+<p>AzureControlPlaneManagedIdentitiesStatus reflects the active Key Vault credential secret
+names for each control plane managed identity. Each field holds the credentialsSecretName
+value that the control plane operator is currently using for that component; this value
+changes when a managed identity rotation is applied.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cloudProvider</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cloudProvider is the Key Vault secret name of the managed identity currently applied
+to the Azure cloud provider (cloud controller manager).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagement</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodePoolManagement is the Key Vault secret name of the managed identity currently
+applied to the node pool management operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperator</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneOperator is the Key Vault secret name of the managed identity currently
+applied to the control plane operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageRegistry is the Key Vault secret name of the managed identity currently
+applied to the image registry operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingress is the Key Vault secret name of the managed identity currently
+applied to the ingress operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>network is the Key Vault secret name of the managed identity currently
+applied to the network operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disk</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>disk is the Key Vault secret name of the managed identity currently
+applied to the Azure disk CSI driver.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>file</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>file is the Key Vault secret name of the managed identity currently
+applied to the Azure file CSI driver.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureDataPlaneManagedIdentitiesStatus { #hypershift.openshift.io/v1beta1.AzureDataPlaneManagedIdentitiesStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureManagedIdentitiesStatus">AzureManagedIdentitiesStatus</a>)
+</p>
+<p>
+<p>AzureDataPlaneManagedIdentitiesStatus reflects the active MSI client IDs for data plane
+managed identities. These values are included in the ignition configuration applied to
+worker nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>imageRegistryClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageRegistryClientID is the MSI client ID currently applied to the image registry
+controller running on the data plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>diskClientID is the MSI client ID currently applied to the CSI disk driver running
+on the data plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fileClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>fileClientID is the MSI client ID currently applied to the CSI file driver running
+on the data plane.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureDiagnosticsStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType }
 <p>
 (<em>Appears on:</em>
@@ -3915,6 +4099,55 @@ and traffic must be routed through the private router (Swift).</p>
 <td><p>AzureKeyVaultPublic indicates the Key Vault is accessible via its public endpoint.</p>
 </td>
 </tr></tbody>
+</table>
+###AzureManagedIdentitiesStatus { #hypershift.openshift.io/v1beta1.AzureManagedIdentitiesStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformStatus">AzurePlatformStatus</a>)
+</p>
+<p>
+<p>AzureManagedIdentitiesStatus reflects the active managed identity credential references
+for control plane and data plane components.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>controlPlane,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureControlPlaneManagedIdentitiesStatus">
+AzureControlPlaneManagedIdentitiesStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlane contains the Key Vault credential secret names of the managed identities
+currently applied to control plane components.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dataPlane,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureDataPlaneManagedIdentitiesStatus">
+AzureDataPlaneManagedIdentitiesStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dataPlane contains the MSI client IDs of the managed identities currently applied
+to data plane components via the ignition configuration.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###AzureManagedIdentityResourceID { #hypershift.openshift.io/v1beta1.AzureManagedIdentityResourceID }
 <p>
@@ -4448,6 +4681,63 @@ This field is required when topology is Private or PublicAndPrivate, and must
 not be set when topology is Public.
 Once set at cluster creation, this field cannot be removed, and it cannot be
 added to an existing cluster that was created without it.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePlatformStatus { #hypershift.openshift.io/v1beta1.AzurePlatformStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformStatus">PlatformStatus</a>)
+</p>
+<p>
+<p>AzurePlatformStatus contains status specific to the Azure platform.
+It reflects the identity configuration that the control plane operator has applied,
+enabling consumers to observe which identities are actively in use without
+re-deriving them from spec.</p>
+<p>Note: this reflects configuration applied by the control plane operator, not a
+guarantee that pods are running with these credentials. Pod-level confirmation
+requires watching SecretProviderClassPodStatus objects (for ManagedIdentities) or
+Deployment rollout status (for WorkloadIdentities).</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>managedIdentities,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureManagedIdentitiesStatus">
+AzureManagedIdentitiesStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedIdentities reflects the credential secret names of the managed identities
+currently applied by the control plane operator to control plane and data plane
+components. Populated when the Azure authentication mode is ManagedIdentities.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentities,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentitiesStatus">
+AzureWorkloadIdentitiesStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentities reflects the client IDs of the federated workload identities
+currently applied by the control plane operator. Populated when the Azure
+authentication mode is WorkloadIdentities.</p>
 </td>
 </tr>
 </tbody>
@@ -5304,6 +5594,129 @@ WorkloadIdentity
 <em>(Optional)</em>
 <p>controlPlaneOperator is the client ID of a federated managed identity, associated with control-plane-operator,
 used in workload identity authentication for Azure Private Link Service operations.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureWorkloadIdentitiesStatus { #hypershift.openshift.io/v1beta1.AzureWorkloadIdentitiesStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformStatus">AzurePlatformStatus</a>)
+</p>
+<p>
+<p>AzureWorkloadIdentitiesStatus reflects the active client IDs for federated workload
+identities currently applied by the control plane operator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cloudProvider</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cloudProvider is the client ID of the workload identity currently applied to the
+Azure cloud provider (cloud controller manager).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagement</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodePoolManagement is the client ID of the workload identity currently applied to
+the node pool management operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperator</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneOperator is the client ID of the workload identity currently applied to
+the control plane operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageRegistry is the client ID of the workload identity currently applied to the
+image registry operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingress is the client ID of the workload identity currently applied to the ingress
+operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>network is the client ID of the workload identity currently applied to the network
+operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disk</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>disk is the client ID of the workload identity currently applied to the Azure disk
+CSI driver.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>file</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>file is the client ID of the workload identity currently applied to the Azure file
+CSI driver.</p>
 </td>
 </tr>
 </tbody>
@@ -16723,6 +17136,20 @@ AWSPlatformStatus
 <td>
 <em>(Optional)</em>
 <p>aws contains platform-specific status for AWS</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformStatus">
+AzurePlatformStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure contains platform-specific status for Azure</p>
 </td>
 </tr>
 </tbody>
