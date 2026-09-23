@@ -8321,7 +8321,7 @@ func TestDeleteOrcImagesDuringHostedClusterDeletion(t *testing.T) {
 	}
 }
 
-func TestDelete_WhenGCPPSCExists_ItShouldLeaveCleanupToTheCPO(t *testing.T) {
+func TestDelete_WhenGCPPSCExists_ItShouldDeleteAndWaitForCleanup(t *testing.T) {
 	g := NewWithT(t)
 	const (
 		hcNamespace = "test-namespace"
@@ -8355,11 +8355,12 @@ func TestDelete_WhenGCPPSCExists_ItShouldLeaveCleanupToTheCPO(t *testing.T) {
 
 	done, err := r.delete(t.Context(), hc)
 	g.Expect(err).ToNot(HaveOccurred(), "HostedCluster delete operation should not return an error")
-	g.Expect(done).To(BeFalse(), "deletion should wait for the HostedControlPlane")
+	g.Expect(done).To(BeFalse(), "deletion should wait for PSC cleanup to complete")
 
 	updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
-	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(psc), updatedPSC)).To(Succeed(), "should be able to get the GCPPrivateServiceConnect CR after HostedCluster deletion")
-	g.Expect(updatedPSC.Finalizers).To(ContainElement("hypershift.openshift.io/gcp-psc-customer"), "PSC CR finalizer should remain intact, allowing CPO to handle cleanup")
+	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(psc), updatedPSC)).To(Succeed(), "PSC CR should still exist while being deleted")
+	g.Expect(updatedPSC.DeletionTimestamp).ToNot(BeNil(), "PSC CR should be marked for deletion")
+	g.Expect(updatedPSC.Finalizers).To(ContainElement("hypershift.openshift.io/gcp-psc-customer"), "PSC finalizer should remain to allow CPO to clean up GCP resources")
 }
 
 func TestKasServingCertHashFromEndpoint(t *testing.T) {
