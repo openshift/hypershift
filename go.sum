@@ -584,8 +584,8 @@ github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec h1:UDjX+mot5IV
 github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec/go.mod h1:iMHec0APKVjOH8GfL/RxddX8DuiuSvPlRe+s7KDqlyA=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3 h1:cr5nU1+O8sEvZHpAAk1mTTGu3NMbgj0dC2cFxFjwmzw=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3/go.mod h1:WHi2cToOBZyHQea0Yq3qVnOQRl6OMTGBPJMi0c4/GS8=
-github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1 h1:TIHSRRDDxhbsziSrQcXORPyGu66yr1Fk8vLTCo7wY+Y=
-github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1/go.mod h1:/hEmyZ903PeqntDSxLgZcje96/2lC3PmvsnUABQpR8Q=
+github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260920024600-9f24260ab058 h1:NZQDxI9EPFR7Ul6E6UPvvPNjDHuqR0gqmh924xINUHc=
+github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260920024600-9f24260ab058/go.mod h1:86jezS+xVP1gU9SFJGl/hgSD01Chmqwf25Jp8pFwULo=
 github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675 h1:hPFyXtaR42wqKKGMVP4G7M2vmp5iBxBqKetMguh4Td0=
 github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675/go.mod h1:0tGCwMCgKq7KhJWDGr6Tsqqb6Sk3epz/b6tfFDFK1Ug=
 github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd h1:w3X/g0ZMDYvEKV1KtfytErPa88Ip2d8zFY03DNm+LaI=
