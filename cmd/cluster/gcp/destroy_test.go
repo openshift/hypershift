@@ -20,17 +20,17 @@ func TestNewDestroyCommand(t *testing.T) {
 
 	cmd := NewDestroyCommand(opts)
 
-	g.Expect(cmd).ToNot(BeNil())
-	g.Expect(cmd.Use).To(Equal("gcp"))
-	g.Expect(opts.GCPPlatform.PreserveIAM).To(BeFalse())
-	g.Expect(opts.GCPPlatform.PreserveInfra).To(BeFalse())
+	g.Expect(cmd).ToNot(BeNil(), "Command should be created")
+	g.Expect(cmd.Use).To(Equal("gcp"), "Command use should be 'gcp'")
+	g.Expect(opts.GCPPlatform.PreserveIAM).To(BeFalse(), "PreserveIAM should default to false")
+	g.Expect(opts.GCPPlatform.PreserveInfra).To(BeFalse(), "PreserveInfra should default to false")
 
 	err := cmd.ParseFlags([]string{"--preserve-iam", "--preserve-infra", "--project-id", "test-proj", "--region", "us-west1"})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(opts.GCPPlatform.PreserveIAM).To(BeTrue())
-	g.Expect(opts.GCPPlatform.PreserveInfra).To(BeTrue())
-	g.Expect(opts.GCPPlatform.ProjectID).To(Equal("test-proj"))
-	g.Expect(opts.GCPPlatform.Region).To(Equal("us-west1"))
+	g.Expect(err).ToNot(HaveOccurred(), "Flags should parse without error")
+	g.Expect(opts.GCPPlatform.PreserveIAM).To(BeTrue(), "PreserveIAM should be true after parsing --preserve-iam flag")
+	g.Expect(opts.GCPPlatform.PreserveInfra).To(BeTrue(), "PreserveInfra should be true after parsing --preserve-infra flag")
+	g.Expect(opts.GCPPlatform.ProjectID).To(Equal("test-proj"), "ProjectID should match parsed value")
+	g.Expect(opts.GCPPlatform.Region).To(Equal("us-west1"), "Region should match parsed value")
 }
 
 func TestExtractParameters(t *testing.T) {
@@ -80,9 +80,9 @@ func TestExtractParameters(t *testing.T) {
 
 			extractParameters(test.hostedCluster, test.initialOpts)
 
-			g.Expect(test.initialOpts.InfraID).To(Equal(test.expectedInfraID))
-			g.Expect(test.initialOpts.GCPPlatform.ProjectID).To(Equal(test.expectedProject))
-			g.Expect(test.initialOpts.GCPPlatform.Region).To(Equal(test.expectedRegion))
+			g.Expect(test.initialOpts.InfraID).To(Equal(test.expectedInfraID), "InfraID should match expected value")
+			g.Expect(test.initialOpts.GCPPlatform.ProjectID).To(Equal(test.expectedProject), "ProjectID should match expected value")
+			g.Expect(test.initialOpts.GCPPlatform.Region).To(Equal(test.expectedRegion), "Region should match expected value")
 		})
 	}
 }
@@ -242,9 +242,9 @@ func TestValidateInputs(t *testing.T) {
 			g := NewGomegaWithT(t)
 			err := validateInputs(test.opts)
 			if test.expectError {
-				g.Expect(err).To(HaveOccurred())
+				g.Expect(err).To(HaveOccurred(), "Should return validation error for missing inputs")
 			} else {
-				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(err).ToNot(HaveOccurred(), "Should not return error when all inputs are valid")
 			}
 		})
 	}

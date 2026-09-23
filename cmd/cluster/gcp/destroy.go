@@ -61,7 +61,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 
 	// Destroy IAM first (unless --preserve-iam is set)
 	if !o.GCPPlatform.PreserveIAM {
-		o.Log.Info("Destroying IAM", "infraID", o.InfraID)
+		o.Log.Info("Destroying IAM")
 		destroyIAMOpts := gcpinfra.DestroyIAMOptions{
 			ProjectID: o.GCPPlatform.ProjectID,
 			InfraID:   o.InfraID,
@@ -70,12 +70,12 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			errs = append(errs, fmt.Errorf("failed to destroy IAM: %w", err))
 		}
 	} else {
-		o.Log.Info("Skipping IAM destruction (preserve-iam flag set)", "infraID", o.InfraID)
+		o.Log.Info("Skipping IAM destruction (preserve-iam flag set)")
 	}
 
 	// Destroy infrastructure last (unless --preserve-infra is set)
 	if !o.GCPPlatform.PreserveInfra {
-		o.Log.Info("Destroying GCP infrastructure", "infraID", o.InfraID)
+		o.Log.Info("Destroying GCP infrastructure")
 		destroyInfraOpts := gcpinfra.DestroyInfraOptions{
 			ProjectID: o.GCPPlatform.ProjectID,
 			Region:    o.GCPPlatform.Region,
@@ -85,7 +85,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			errs = append(errs, fmt.Errorf("failed to destroy infrastructure: %w", err))
 		}
 	} else {
-		o.Log.Info("Skipping infrastructure destruction (preserve-infra flag set)", "infraID", o.InfraID)
+		o.Log.Info("Skipping infrastructure destruction (preserve-infra flag set)")
 	}
 
 	return errors.Join(errs...)
