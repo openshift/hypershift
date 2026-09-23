@@ -56,8 +56,7 @@ type GCPResourceTag struct {
 	// TagKeys are scoped to the customer project identified by the GCP platform
 	// configuration. It must be 1-256 characters, start and end with an ASCII
 	// letter or digit, and contain only ASCII letters, digits, dashes,
-	// underscores, or dots. Unlike labels, TagKeys do not have a reserved goog
-	// prefix.
+	// underscores, or dots.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
@@ -193,8 +192,7 @@ type GCPPlatformSpec struct {
 	// resourceTags are pre-existing Google Cloud Resource Manager tags to apply
 	// to supported GCP resources created for the cluster. Each entry identifies
 	// a project-scoped TagKey and TagValue by short name. HyperShift resolves the
-	// tag value using the customer project; users do not need to supply a
-	// namespaced tag value or a permanent tagValues/<id> identifier.
+	// tag value using the customer project.
 	//
 	// HyperShift resolves these tags during reconciliation. If a requested
 	// TagKey or TagValue does not exist in the customer project, or cannot be

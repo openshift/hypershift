@@ -1491,7 +1491,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "Too long: may not be more than 256 bytes"
+    expectedError: "value: Too long"
 
   - name: When GCP resourceTags contain duplicate keys it should fail
     initial: |
