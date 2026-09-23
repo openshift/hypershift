@@ -38,6 +38,20 @@ These orphans:
 4. In dry-run (the default) it only prints. With `-dry-run=false` it deletes the
    selected orphaned assignments (`DeleteByID`).
 
+### Safety guardrails
+
+- **Only deletes within the target subscription.** Assignments inherited from
+  management-group or root (tenant) scope are reported but never passed to
+  `DeleteByID`, since other subscriptions may rely on them.
+- **Min-age guard.** Assignments created within `-min-age` (default 24h) are
+  skipped, so a grant for a freshly-created principal that Microsoft Graph has not
+  yet propagated is not mistaken for an orphan and deleted.
+- **Non-zero exit on failure.** If any deletion fails, the remaining candidates
+  are still attempted and the command exits with an error.
+- **Minimal logging by default.** Raw principal IDs, the subscription ID, and full
+  ARM scopes are only logged under `-verbose`; the default output is aggregate
+  counts plus the assignment ID and role name being deleted.
+
 ## Usage
 
 ```bash
@@ -70,6 +84,7 @@ go build -o azure-orphaned-role-assignments .
 | `-scope-filter` | No | | Only consider assignments whose scope contains this substring (e.g. a resource group name) |
 | `-role-filter` | No | | Comma-separated role names to restrict to (substring, case-insensitive) |
 | `-principal-types` | No | `ServicePrincipal` | Comma-separated principal types to consider (e.g. `ServicePrincipal,User,Group`) |
+| `-min-age` | No | `24h` | Only consider assignments created at least this long ago (guards against Graph propagation lag). Set to `0` to disable. |
 
 ## Authentication
 
@@ -123,5 +138,7 @@ Always run with the default dry-run first and review the breakdown. Deletion is
 driven by principal existence in the directory, so a principal that is temporarily
 unresolvable (e.g. cross-tenant, or insufficient Graph permissions) could be
 misclassified — verify your identity has directory read access before deleting.
-Use `-scope-filter` / `-role-filter` to constrain cleanup to known-safe targets
-(such as the `os4-common` Key Vault grants) when in doubt.
+The `-min-age` guard mitigates propagation lag for freshly-created principals, but
+it is not a substitute for confirming Graph access. Use `-scope-filter` /
+`-role-filter` to constrain cleanup to known-safe targets (such as the
+`os4-common` Key Vault grants) when in doubt.

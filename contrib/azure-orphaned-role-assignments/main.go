@@ -28,9 +28,15 @@ type options struct {
 	roleFilter     string
 	scopeFilter    string
 	principalTypes string
+	minAge         time.Duration
 	dryRun         bool
 	verbose        bool
 }
+
+// apiTimeout bounds each individual Azure/Graph API call so a stalled request
+// cannot hang an unattended cleanup indefinitely. The parent context is still
+// used for signal-driven cancellation.
+const apiTimeout = 2 * time.Minute
 
 func main() {
 	opts := options{}
@@ -39,6 +45,7 @@ func main() {
 	flag.StringVar(&opts.roleFilter, "role-filter", "", "Comma-separated list of role definition names to restrict deletion to (optional; substring match, case-insensitive). If empty, all roles are considered.")
 	flag.StringVar(&opts.scopeFilter, "scope-filter", "", "Only consider assignments whose scope contains this substring, case-insensitive (optional, e.g. a resource group name)")
 	flag.StringVar(&opts.principalTypes, "principal-types", "ServicePrincipal", "Comma-separated principal types to consider for cleanup (e.g. ServicePrincipal,User,Group)")
+	flag.DurationVar(&opts.minAge, "min-age", 24*time.Hour, "Only consider assignments created at least this long ago. Guards against deleting grants for freshly-created principals that Microsoft Graph has not yet propagated. Set to 0 to disable.")
 	flag.BoolVar(&opts.dryRun, "dry-run", true, "If true, only print what would be deleted (default: true)")
 	flag.BoolVar(&opts.verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
@@ -71,6 +78,7 @@ type assignmentInfo struct {
 	principalType string
 	scope         string
 	roleName      string
+	createdOn     time.Time // zero if unknown
 }
 
 func run(ctx context.Context, opts options) error {
@@ -91,22 +99,55 @@ func run(ctx context.Context, opts options) error {
 		return fmt.Errorf("failed to create role definitions client: %w", err)
 	}
 
-	wantedTypes := parseCSVSet(opts.principalTypes)
-	roleFilters := parseCSVList(opts.roleFilter)
-	scopeFilter := strings.ToLower(opts.scopeFilter)
-
 	// 1. List every role assignment in the subscription and below (RG + resource scopes).
-	log.Printf("Listing all role assignments in subscription %s (this includes resource group and resource scopes)", opts.subscriptionID)
+	log.Print("Listing all role assignments in the target subscription (this includes resource group and resource scopes)")
+	if opts.verbose {
+		log.Printf("  subscription: %s", opts.subscriptionID)
+	}
+	all, principalIDs, err := listAllAssignments(ctx, raClient, rdClient)
+	if err != nil {
+		return err
+	}
+	log.Printf("Total role assignments in subscription (all scopes): %d", len(all))
+	reportByScopeKind(all)
 
+	// 2. Resolve which principals still exist in the directory via Microsoft Graph.
+	log.Printf("Resolving %d distinct principals against Microsoft Graph to detect deleted identities...", len(principalIDs))
+	existing, err := resolveExistingPrincipals(ctx, cred, principalIDs, opts.verbose)
+	if err != nil {
+		return fmt.Errorf("failed to resolve principals against Microsoft Graph: %w", err)
+	}
+	log.Printf("Principals still present in directory: %d; deleted (orphaned): %d", len(existing), len(principalIDs)-len(existing))
+
+	// 3. Select orphaned assignments matching the requested filters.
+	candidates := selectCandidates(all, existing, opts)
+	reportCandidates(candidates)
+	if len(candidates) == 0 {
+		log.Println("Nothing to do.")
+		return nil
+	}
+
+	// 4. Delete (or, in dry-run, just report).
+	return deleteCandidates(ctx, raClient, candidates, opts)
+}
+
+// listAllAssignments pages through every role assignment in the subscription
+// (including resource-group and resource scopes), resolving role names, and
+// returns the assignments plus the set of distinct principal IDs seen.
+func listAllAssignments(ctx context.Context, raClient *armauthorization.RoleAssignmentsClient, rdClient *armauthorization.RoleDefinitionsClient) ([]assignmentInfo, []string, error) {
 	var all []assignmentInfo
 	roleNameCache := map[string]string{}
 	principalIDSet := map[string]struct{}{}
 
 	pager := raClient.NewListForSubscriptionPager(nil)
 	for pager.More() {
-		page, err := pager.NextPage(ctx)
+		page, err := func() (armauthorization.RoleAssignmentsClientListForSubscriptionResponse, error) {
+			pageCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+			defer cancel()
+			return pager.NextPage(pageCtx)
+		}()
 		if err != nil {
-			return fmt.Errorf("failed to list role assignments: %w", err)
+			return nil, nil, fmt.Errorf("failed to list role assignments: %w", err)
 		}
 		for _, ra := range page.Value {
 			if ra.ID == nil || ra.Properties == nil || ra.Properties.PrincipalID == nil {
@@ -122,6 +163,9 @@ func run(ctx context.Context, opts options) error {
 			if ra.Properties.PrincipalType != nil {
 				info.principalType = string(*ra.Properties.PrincipalType)
 			}
+			if ra.Properties.CreatedOn != nil {
+				info.createdOn = *ra.Properties.CreatedOn
+			}
 			if ra.Properties.RoleDefinitionID != nil {
 				info.roleName = resolveRoleName(ctx, rdClient, *ra.Properties.RoleDefinitionID, roleNameCache)
 			}
@@ -130,24 +174,23 @@ func run(ctx context.Context, opts options) error {
 		}
 	}
 
-	log.Printf("Total role assignments in subscription (all scopes): %d", len(all))
-	reportByScopeKind(all)
-
-	// 2. Resolve which principals still exist in the directory via Microsoft Graph.
 	principalIDs := make([]string, 0, len(principalIDSet))
 	for id := range principalIDSet {
 		principalIDs = append(principalIDs, id)
 	}
-	log.Printf("Resolving %d distinct principals against Microsoft Graph to detect deleted identities...", len(principalIDs))
+	return all, principalIDs, nil
+}
 
-	existing, err := resolveExistingPrincipals(ctx, cred, principalIDs, opts.verbose)
-	if err != nil {
-		return fmt.Errorf("failed to resolve principals against Microsoft Graph: %w", err)
-	}
-	log.Printf("Principals still present in directory: %d; deleted (orphaned): %d", len(existing), len(principalIDs)-len(existing))
+// selectCandidates returns the orphaned assignments (principal absent from the
+// directory) that match the configured filters and are safe to delete, logging
+// how many were skipped for inherited scope or the min-age guard.
+func selectCandidates(all []assignmentInfo, existing map[string]struct{}, opts options) []assignmentInfo {
+	wantedTypes := parseCSVSet(opts.principalTypes)
+	roleFilters := parseCSVList(opts.roleFilter)
+	scopeFilter := strings.ToLower(opts.scopeFilter)
 
-	// 3. Select orphaned assignments matching the requested filters.
 	var candidates []assignmentInfo
+	var skippedInherited, skippedRecent int
 	for _, a := range all {
 		if _, ok := existing[a.principalID]; ok {
 			continue // principal still exists, not orphaned
@@ -163,18 +206,35 @@ func run(ctx context.Context, opts options) error {
 		if len(roleFilters) > 0 && !matchesAnySubstring(a.roleName, roleFilters) {
 			continue
 		}
+		// Only ever delete assignments at or beneath the target subscription.
+		// Inherited management-group/root grants surface in the listing but may be
+		// relied on by other subscriptions, so they are reported, never deleted.
+		if !isUnderSubscription(a.scope, opts.subscriptionID) {
+			skippedInherited++
+			continue
+		}
+		// Guard against deleting grants for freshly-created principals that Graph
+		// has not yet propagated: skip assignments newer than min-age.
+		if opts.minAge > 0 && !a.createdOn.IsZero() && time.Since(a.createdOn) < opts.minAge {
+			skippedRecent++
+			continue
+		}
 		candidates = append(candidates, a)
 	}
 
 	log.Printf("Orphaned role assignments selected for cleanup: %d", len(candidates))
-	reportCandidates(candidates)
-
-	if len(candidates) == 0 {
-		log.Println("Nothing to do.")
-		return nil
+	if skippedInherited > 0 {
+		log.Printf("Skipped %d orphaned assignments inherited from management-group/root scope (reported, never deleted)", skippedInherited)
 	}
+	if skippedRecent > 0 {
+		log.Printf("Skipped %d orphaned assignments created within the last %s (min-age guard)", skippedRecent, opts.minAge)
+	}
+	return candidates
+}
 
-	// 4. Delete (or, in dry-run, just report).
+// deleteCandidates deletes the selected assignments (or, in dry-run, only reports
+// them), attempting every candidate and returning an error if any deletion failed.
+func deleteCandidates(ctx context.Context, raClient *armauthorization.RoleAssignmentsClient, candidates []assignmentInfo, opts options) error {
 	var deleted, failed int
 	for _, a := range candidates {
 		if opts.dryRun {
@@ -184,9 +244,20 @@ func run(ctx context.Context, opts options) error {
 			}
 			continue
 		}
-		log.Printf("Deleting assignment %s (role=%q principal=%s scope=%s)", shortID(a.id), a.roleName, a.principalID, a.scope)
-		if _, err := raClient.DeleteByID(ctx, a.id, nil); err != nil {
-			log.Printf("  ERROR: failed to delete: %v", err)
+		// Default logging avoids raw principal IDs and full ARM scopes; -verbose
+		// includes them for auditing.
+		if opts.verbose {
+			log.Printf("Deleting assignment %s (role=%q principal=%s scope=%s)", shortID(a.id), a.roleName, a.principalID, a.scope)
+		} else {
+			log.Printf("Deleting orphaned assignment %s (role=%q)", shortID(a.id), a.roleName)
+		}
+		if err := func() error {
+			delCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+			defer cancel()
+			_, err := raClient.DeleteByID(delCtx, a.id, nil)
+			return err
+		}(); err != nil {
+			log.Printf("  ERROR: failed to delete assignment %s: %v", shortID(a.id), err)
 			failed++
 			continue
 		}
@@ -201,6 +272,9 @@ func run(ctx context.Context, opts options) error {
 		log.Printf("Deleted %d role assignments, %d failed", deleted, failed)
 	}
 
+	if failed > 0 {
+		return fmt.Errorf("%d of %d role assignment deletions failed", failed, deleted+failed)
+	}
 	return nil
 }
 
@@ -213,7 +287,9 @@ func resolveRoleName(ctx context.Context, client *armauthorization.RoleDefinitio
 	name := shortID(roleDefinitionID)
 	// GetByID takes the scope and the role definition ID; for a full definition ID
 	// the scope portion is ignored, so we can pass the ID as the resource ID.
-	resp, err := client.GetByID(ctx, roleDefinitionID, nil)
+	callCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+	defer cancel()
+	resp, err := client.GetByID(callCtx, roleDefinitionID, nil)
 	if err == nil && resp.Properties != nil && resp.Properties.RoleName != nil {
 		name = *resp.Properties.RoleName
 	}
@@ -230,7 +306,11 @@ func resolveExistingPrincipals(ctx context.Context, cred azcore.TokenCredential,
 		return existing, nil
 	}
 
-	tok, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{"https://graph.microsoft.com/.default"}})
+	tok, err := func() (azcore.AccessToken, error) {
+		tokCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+		defer cancel()
+		return cred.GetToken(tokCtx, policy.TokenRequestOptions{Scopes: []string{"https://graph.microsoft.com/.default"}})
+	}()
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire Microsoft Graph token: %w", err)
 	}
@@ -245,10 +325,15 @@ func resolveExistingPrincipals(ctx context.Context, cred azcore.TokenCredential,
 		}
 		batch := ids[start:end]
 
-		body, _ := json.Marshal(map[string]any{"ids": batch})
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		body, err := json.Marshal(map[string]any{"ids": batch})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal graph request: %w", err)
+		}
+		reqCtx, cancel := context.WithTimeout(ctx, apiTimeout)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
 			"https://graph.microsoft.com/v1.0/directoryObjects/getByIds", bytes.NewReader(body))
 		if err != nil {
+			cancel()
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+tok.Token)
@@ -256,10 +341,17 @@ func resolveExistingPrincipals(ctx context.Context, cred azcore.TokenCredential,
 
 		resp, err := client.Do(req)
 		if err != nil {
+			cancel()
 			return nil, fmt.Errorf("graph getByIds request failed: %w", err)
 		}
-		data, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		data, readErr := io.ReadAll(resp.Body)
+		if cerr := resp.Body.Close(); cerr != nil && readErr == nil {
+			readErr = cerr
+		}
+		cancel()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read graph response: %w", readErr)
+		}
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("graph getByIds returned %d: %s", resp.StatusCode, string(data))
 		}
@@ -281,6 +373,15 @@ func resolveExistingPrincipals(ctx context.Context, cred azcore.TokenCredential,
 	}
 
 	return existing, nil
+}
+
+// isUnderSubscription reports whether scope is the target subscription scope or a
+// resource group/resource beneath it. Management-group and root scopes are not,
+// so inherited grants are never selected for deletion.
+func isUnderSubscription(scope, subscriptionID string) bool {
+	s := strings.ToLower(scope)
+	prefix := "/subscriptions/" + strings.ToLower(subscriptionID)
+	return s == prefix || strings.HasPrefix(s, prefix+"/")
 }
 
 var rgRe = regexp.MustCompile(`(?i)/resourcegroups/([^/]+)`)
