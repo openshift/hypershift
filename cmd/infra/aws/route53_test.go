@@ -196,8 +196,10 @@ func TestLookupZone(t *testing.T) {
 				}),
 		)
 
-		_, err := LookupZone(cancelledCtx(), mockR53, testZoneName, false)
+		_, err := LookupZone(t.Context(), mockR53, testZoneName, false)
 		g.Expect(err).To(MatchError("failed to list hosted zones: duplicate pagination token"))
+		var nonRetryableErr *nonRetryableRoute53Error
+		g.Expect(errors.As(err, &nonRetryableErr)).To(BeTrue())
 		g.Expect(err.Error()).NotTo(ContainSubstring(firstToken))
 		g.Expect(err.Error()).NotTo(ContainSubstring(secondToken))
 	})
@@ -218,6 +220,19 @@ func TestCreatePrivateZone(t *testing.T) {
 		errorNotContains  []string
 		useCtx            func() context.Context
 	}{
+		{
+			name:     "When private zone lookup fails, it should return the lookup error without creating a hosted zone",
+			zoneName: testZoneName,
+			vpcID:    testVPCID,
+			useCtx:   cancelledCtx,
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(nil, errors.New("lookup failed"))
+			},
+			setupVPCOwnerMock: func(_ *awsapi.MockROUTE53API) {},
+			expectError:       true,
+			errorContains:     "failed to look up private hosted zone: failed to list hosted zones: lookup failed",
+		},
 		{
 			name:     "When the private zone already exists it should update the SOA minimum and return its ID",
 			zoneName: testZoneName,
@@ -615,8 +630,10 @@ func TestCreatePrivateZone(t *testing.T) {
 		)
 
 		o := &CreateInfraOptions{Region: "us-east-1"}
-		id, err := o.CreatePrivateZone(cancelledCtx(), logr.Discard(), mockR53, testZoneName, testVPCID, false, mockR53, "")
+		id, err := o.CreatePrivateZone(t.Context(), logr.Discard(), mockR53, testZoneName, testVPCID, false, mockR53, "")
 		g.Expect(err).To(MatchError("failed to create hosted zone: duplicate pagination token"))
+		var nonRetryableErr *nonRetryableRoute53Error
+		g.Expect(errors.As(err, &nonRetryableErr)).To(BeTrue())
 		g.Expect(err.Error()).NotTo(ContainSubstring(firstToken))
 		g.Expect(err.Error()).NotTo(ContainSubstring(secondToken))
 		g.Expect(err.Error()).NotTo(ContainSubstring(callerReference))
@@ -833,6 +850,8 @@ func TestRoute53VPCMatchingHostedZone(t *testing.T) {
 			VPCRegion: route53types.VPCRegionUsEast1,
 		}, map[string]struct{}{})
 		g.Expect(err).To(MatchError("duplicate pagination token"))
+		var nonRetryableErr *nonRetryableRoute53Error
+		g.Expect(errors.As(err, &nonRetryableErr)).To(BeTrue())
 		g.Expect(err.Error()).NotTo(ContainSubstring(firstToken))
 		g.Expect(err.Error()).NotTo(ContainSubstring(secondToken))
 	})

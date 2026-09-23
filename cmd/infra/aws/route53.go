@@ -71,7 +71,7 @@ func lookupZones(ctx context.Context, client awsapi.ROUTE53API, name string, isP
 			nextToken := aws.ToString(resp.NextMarker)
 			if nextToken != "" {
 				if _, seen := seenTokens[nextToken]; seen {
-					return errors.New("duplicate pagination token")
+					return &nonRetryableRoute53Error{err: errors.New("duplicate pagination token")}
 				}
 				seenTokens[nextToken] = struct{}{}
 			}
@@ -92,30 +92,15 @@ func lookupZones(ctx context.Context, client awsapi.ROUTE53API, name string, isP
 func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client awsapi.ROUTE53API, name, vpcID string, authorizeAssociation bool, vpcOwnerClient awsapi.ROUTE53API, initialVPC string) (string, error) {
 	var id string
 	zones, err := lookupZones(ctx, client, name, true)
-	if err == nil && len(zones) > 0 {
+	if err != nil {
+		return "", fmt.Errorf("failed to look up private hosted zone: %w", err)
+	}
+	if len(zones) > 0 {
 		vpcAssociationClient := client
 		if authorizeAssociation {
 			vpcAssociationClient = vpcOwnerClient
 		}
-		zoneIDs := make(map[string]struct{}, len(zones))
-		for _, zone := range zones {
-			zoneIDs[cleanZoneID(aws.ToString(zone.Id))] = struct{}{}
-		}
-		err = retryRoute53WithBackoff(ctx, func() error {
-			var err error
-			id, err = route53VPCMatchingHostedZone(ctx, vpcAssociationClient, &route53types.VPC{
-				VPCId:     aws.String(vpcID),
-				VPCRegion: route53types.VPCRegion(o.Region),
-			}, zoneIDs)
-			if err != nil {
-				return err
-			}
-			if id == "" {
-				// This error is intentionally retryable while Route53's VPC association visibility converges.
-				return fmt.Errorf("no matching hosted zone association is visible yet")
-			}
-			return nil
-		})
+		id, err = existingPrivateZoneForVPC(ctx, vpcAssociationClient, o.Region, vpcID, zones)
 		if err != nil {
 			return "", fmt.Errorf("failed to verify existing private hosted zone association: %w", err)
 		}
@@ -169,7 +154,7 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 						return &nonRetryableRoute53Error{err: errors.New("cannot verify hosted zone ownership during duplicate-response recovery")}
 					}
 					// Use the zone owner's client because createRequest.VPC is the bootstrap initialVPC in
-					// the cross-account flow, not the target VPC owned by vpcAssociationClient.
+					// the cross-account flow, not the target VPC operated on by vpcOwnerClient.
 					associated, err := route53VPCContainsHostedZone(ctx, client, createRequest.VPC, aws.ToString(zone.Id))
 					if err != nil {
 						return fmt.Errorf("failed to verify hosted zone VPC association during duplicate-response recovery: %w", err)
@@ -184,7 +169,7 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 				nextToken := aws.ToString(page.NextMarker)
 				if nextToken != "" {
 					if _, seen := seenTokens[nextToken]; seen {
-						return errors.New("duplicate pagination token")
+						return &nonRetryableRoute53Error{err: errors.New("duplicate pagination token")}
 					}
 					seenTokens[nextToken] = struct{}{}
 				}
@@ -261,6 +246,30 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 	}
 
 	return id, nil
+}
+
+func existingPrivateZoneForVPC(ctx context.Context, client awsapi.ROUTE53API, region, vpcID string, zones []route53types.HostedZone) (string, error) {
+	zoneIDs := make(map[string]struct{}, len(zones))
+	for _, zone := range zones {
+		zoneIDs[cleanZoneID(aws.ToString(zone.Id))] = struct{}{}
+	}
+	var id string
+	err := retryRoute53WithBackoff(ctx, func() error {
+		var err error
+		id, err = route53VPCMatchingHostedZone(ctx, client, &route53types.VPC{
+			VPCId:     aws.String(vpcID),
+			VPCRegion: route53types.VPCRegion(region),
+		}, zoneIDs)
+		if err != nil {
+			return err
+		}
+		if id == "" {
+			// This error is intentionally retryable while Route53's VPC association visibility converges.
+			return fmt.Errorf("no matching hosted zone association is visible yet")
+		}
+		return nil
+	})
+	return id, err
 }
 
 func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client awsapi.ROUTE53API) []error {
@@ -519,7 +528,7 @@ func route53VPCMatchingHostedZone(ctx context.Context, client awsapi.ROUTE53API,
 			return "", nil
 		}
 		if _, seen := seenTokens[nextToken]; seen {
-			return "", errors.New("duplicate pagination token")
+			return "", &nonRetryableRoute53Error{err: errors.New("duplicate pagination token")}
 		}
 		seenTokens[nextToken] = struct{}{}
 		input.NextToken = output.NextToken
