@@ -5,12 +5,23 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	gcpinfra "github.com/openshift/hypershift/cmd/infra/gcp"
 	"github.com/openshift/hypershift/cmd/log"
 
 	"github.com/spf13/cobra"
+)
+
+// Test stubs - production uses real implementation, tests can override
+var (
+	runDestroyIAM = func(ctx context.Context, opts gcpinfra.DestroyIAMOptions, log logr.Logger) error {
+		return opts.Run(ctx, log)
+	}
+	runDestroyInfra = func(ctx context.Context, opts gcpinfra.DestroyInfraOptions, log logr.Logger) error {
+		return opts.Run(ctx, log)
+	}
 )
 
 // NewDestroyCommand creates a new cobra command for destroying GCP clusters
@@ -55,7 +66,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			ProjectID: o.GCPPlatform.ProjectID,
 			InfraID:   o.InfraID,
 		}
-		if err := destroyIAMOpts.Run(ctx, o.Log); err != nil {
+		if err := runDestroyIAM(ctx, destroyIAMOpts, o.Log); err != nil {
 			errs = append(errs, fmt.Errorf("failed to destroy IAM: %w", err))
 		}
 	} else {
@@ -70,7 +81,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			Region:    o.GCPPlatform.Region,
 			InfraID:   o.InfraID,
 		}
-		if err := destroyInfraOpts.Run(ctx, o.Log); err != nil {
+		if err := runDestroyInfra(ctx, destroyInfraOpts, o.Log); err != nil {
 			errs = append(errs, fmt.Errorf("failed to destroy infrastructure: %w", err))
 		}
 	} else {
