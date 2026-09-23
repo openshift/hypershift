@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	gcpinfra "github.com/openshift/hypershift/cmd/infra/gcp"
 	"github.com/openshift/hypershift/cmd/log"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 

@@ -4,13 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	gcpinfra "github.com/openshift/hypershift/cmd/infra/gcp"
 	"github.com/openshift/hypershift/cmd/log"
+
+	"github.com/go-logr/logr"
 )
 
 func TestNewDestroyCommand(t *testing.T) {
@@ -24,7 +25,8 @@ func TestNewDestroyCommand(t *testing.T) {
 	g.Expect(opts.GCPPlatform.PreserveIAM).To(BeFalse())
 	g.Expect(opts.GCPPlatform.PreserveInfra).To(BeFalse())
 
-	cmd.ParseFlags([]string{"--preserve-iam", "--project-id", "test-proj", "--region", "us-west1"})
+	err := cmd.ParseFlags([]string{"--preserve-iam", "--project-id", "test-proj", "--region", "us-west1"})
+	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(opts.GCPPlatform.PreserveIAM).To(BeTrue())
 	g.Expect(opts.GCPPlatform.ProjectID).To(Equal("test-proj"))
 	g.Expect(opts.GCPPlatform.Region).To(Equal("us-west1"))
@@ -55,10 +57,10 @@ func TestExtractParameters(t *testing.T) {
 
 func TestDestroyPlatformSpecifics(t *testing.T) {
 	tests := map[string]struct {
-		preserveIAM        bool
-		preserveInfra      bool
-		expectIAMCalled    bool
-		expectInfraCalled  bool
+		preserveIAM       bool
+		preserveInfra     bool
+		expectIAMCalled   bool
+		expectInfraCalled bool
 	}{
 		"When both preserve flags are true, no destroy operations should run": {
 			preserveIAM:       true,
@@ -136,7 +138,7 @@ func TestValidateInputs(t *testing.T) {
 		opts        *core.DestroyOptions
 		expectError bool
 	}{
-		"valid inputs": {
+		"When all inputs provided, it should pass validation": {
 			opts: &core.DestroyOptions{
 				InfraID: "valid",
 				GCPPlatform: core.GCPPlatformDestroyOptions{
@@ -146,7 +148,7 @@ func TestValidateInputs(t *testing.T) {
 			},
 			expectError: false,
 		},
-		"missing inputs": {
+		"When inputs are missing, it should return error": {
 			opts:        &core.DestroyOptions{},
 			expectError: true,
 		},
