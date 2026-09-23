@@ -25,7 +25,7 @@ func TestAzureTestMatrix(t *testing.T) {
 	report := ginkgo.PreviewSpecs("hypershift-e2e")
 	g.Expect(report.SpecReports).NotTo(BeEmpty(), "unfiltered Ginkgo preview must contain registered specs")
 	matrix := lifecycle.NewAzurePlatformConfig("").TestMatrix()
-	validateAzureMatrixFilters(g, report.SpecReports, matrix)
+	validateTestMatrixFilters(g, "Azure", report.SpecReports, matrix)
 
 	junitFiles := testMatrixJUnitFiles(matrix)
 	g.Expect(junitFiles).To(HaveEach(Not(BeEmpty())),
@@ -56,10 +56,10 @@ func TestAzureTestMatrix(t *testing.T) {
 	}
 }
 
-func validateAzureMatrixFilters(g Gomega, specs types.SpecReports, matrix lifecycle.TestMatrix) {
+func validateTestMatrixFilters(g Gomega, platform string, specs types.SpecReports, matrix lifecycle.TestMatrix) {
 	validateGroup := func(group lifecycle.TestGroup) {
 		filter, err := types.ParseLabelFilter(group.LabelFilter)
-		g.Expect(err).NotTo(HaveOccurred(), "Azure test group %q must have a valid label filter", group.Name)
+		g.Expect(err).NotTo(HaveOccurred(), "%s test group %q must have a valid label filter", platform, group.Name)
 
 		matched := false
 		for _, spec := range specs {
@@ -68,7 +68,7 @@ func validateAzureMatrixFilters(g Gomega, specs types.SpecReports, matrix lifecy
 				break
 			}
 		}
-		g.Expect(matched).To(BeTrue(), "Azure test group %q must select at least one registered test", group.Name)
+		g.Expect(matched).To(BeTrue(), "%s test group %q must select at least one registered test", platform, group.Name)
 	}
 
 	for _, group := range matrix.Parallel {
