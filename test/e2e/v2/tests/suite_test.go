@@ -41,7 +41,7 @@ func TestE2EV2(t *testing.T) {
 	}
 
 	// Register fail handler with gomega
-	RegisterFailHandler(Fail)
+	RegisterFailHandler(internal.InformingAwareFailHandler)
 
 	// Run the ginkgo test suite
 	RunSpecs(t, "HyperShift End To End Test Suite")
