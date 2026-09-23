@@ -152,19 +152,18 @@ func run(ctx context.Context) error {
 	}
 
 	if !standaloneAdapter {
-		// MachineApprover was already migrated to standalone karpenter, don't enable in the adapter
+		// The standalone karpenter-operator approves CSRs and reconciles OpenshiftEC2NodeClasses, don't enable these in the adapter
 		mac := karpenter.MachineApproverController{}
 		if err := mac.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("failed to setup controller with manager: %w", err)
 		}
-	}
 
-	encr := nodeclass.EC2NodeClassReconciler{
-		Namespace:       namespace,
-		SkipUpstreamCRD: standaloneAdapter,
-	}
-	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
-		return fmt.Errorf("failed to setup controller with manager: %w", err)
+		encr := nodeclass.EC2NodeClassReconciler{
+			Namespace: namespace,
+		}
+		if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
+			return fmt.Errorf("failed to setup controller with manager: %w", err)
+		}
 	}
 
 	imageRegistryOverrides := map[string][]string{}
