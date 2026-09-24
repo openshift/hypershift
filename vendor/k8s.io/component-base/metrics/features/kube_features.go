@@ -26,7 +26,6 @@ const (
 	// owner: @richabanker
 	// kep: https://kep.k8s.io/5808
 	// alpha: v1.36
-	// beta: v1.37
 	//
 	// Enables native histogram support for Kubernetes metrics.
 	// When enabled, histogram metrics will be exposed in both classic
@@ -38,7 +37,6 @@ func featureGates() map[featuregate.Feature]featuregate.VersionedSpecs {
 	return map[featuregate.Feature]featuregate.VersionedSpecs{
 		NativeHistograms: {
 			{Version: version.MustParse("1.36"), Default: false, PreRelease: featuregate.Alpha},
-			{Version: version.MustParse("1.37"), Default: true, PreRelease: featuregate.Beta},
 		},
 	}
 }

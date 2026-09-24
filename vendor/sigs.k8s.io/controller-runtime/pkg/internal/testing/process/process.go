@@ -18,7 +18,6 @@ package process
 
 import (
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -128,8 +127,6 @@ func (ps *State) Init(name string) error {
 }
 
 type stopChannel chan struct{}
-
-var signalProcess = signalProcessImpl
 
 // CheckFlag checks the help output of this command for the presence of the given flag, specified
 // without the leading `--` (e.g. `CheckFlag("insecure-port")` checks for `--insecure-port`),
@@ -269,11 +266,10 @@ func (ps *State) Stop() error {
 	case <-ps.waitDone:
 		break
 	case <-timedOut:
-		timeoutErr := fmt.Errorf("timeout waiting for process %s to stop", path.Base(ps.Path))
 		if err := signalProcess(ps.Cmd.Process, syscall.SIGKILL); err != nil {
-			return errors.Join(timeoutErr, fmt.Errorf("unable to kill process %s: %w", ps.Path, err))
+			return fmt.Errorf("unable to kill process %s: %w", ps.Path, err)
 		}
-		return timeoutErr
+		return fmt.Errorf("timeout waiting for process %s to stop", path.Base(ps.Path))
 	}
 	ps.ready = false
 	return nil

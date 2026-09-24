@@ -22,8 +22,6 @@ limitations under the License.
 package extensionsv1beta1
 
 import (
-	unsafe "unsafe"
-
 	v1beta1 "k8s.io/api/extensions/v1beta1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -103,7 +101,7 @@ func Convert_scheme_Scale_To_v1beta1_Scale(in *scheme.Scale, out *v1beta1.Scale,
 }
 
 func autoConvert_v1beta1_ScaleSpec_To_scheme_ScaleSpec(in *v1beta1.ScaleSpec, out *scheme.ScaleSpec, s conversion.Scope) error {
-	*out = *(*scheme.ScaleSpec)(unsafe.Pointer(in))
+	out.Replicas = in.Replicas
 	return nil
 }
 
@@ -113,7 +111,7 @@ func Convert_v1beta1_ScaleSpec_To_scheme_ScaleSpec(in *v1beta1.ScaleSpec, out *s
 }
 
 func autoConvert_scheme_ScaleSpec_To_v1beta1_ScaleSpec(in *scheme.ScaleSpec, out *v1beta1.ScaleSpec, s conversion.Scope) error {
-	*out = *(*v1beta1.ScaleSpec)(unsafe.Pointer(in))
+	out.Replicas = in.Replicas
 	return nil
 }
 

@@ -264,23 +264,19 @@ func (cs *channel[object, request]) syncLoop(ctx context.Context) {
 	}
 }
 
-// TypedInformer is used to provide a source of events originating inside the cluster from Watches using generic
-// event handlers and predicates.
-type TypedInformer[object any, request comparable] struct {
+// Informer is used to provide a source of events originating inside the cluster from Watches (e.g. Pod Create).
+type Informer struct {
 	// Informer is the controller-runtime Informer
 	Informer   cache.Informer
-	Handler    handler.TypedEventHandler[object, request]
-	Predicates []predicate.TypedPredicate[object]
+	Handler    handler.EventHandler
+	Predicates []predicate.Predicate
 }
-
-// Informer is used to provide a source of events originating inside the cluster from Watches (e.g. Pod Create).
-type Informer = TypedInformer[client.Object, reconcile.Request]
 
 var _ Source = &Informer{}
 
 // Start is internal and should be called only by the Controller to register an EventHandler with the Informer
 // to enqueue reconcile.Requests.
-func (is *TypedInformer[object, request]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[request]) error {
+func (is *Informer) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) error {
 	// Informer should have been specified by the user.
 	if is.Informer == nil {
 		return fmt.Errorf("must specify Informer.Informer")
@@ -298,7 +294,7 @@ func (is *TypedInformer[object, request]) Start(ctx context.Context, queue workq
 	return nil
 }
 
-func (is *TypedInformer[object, request]) String() string {
+func (is *Informer) String() string {
 	return fmt.Sprintf("informer source: %p", is.Informer)
 }
 

@@ -90,7 +90,6 @@ func (c DelegatingAuthenticatorConfig) New() (authenticator.Request, *spec.Secur
 	}
 
 	if c.TokenAccessReviewClient != nil {
-		RegisterMetrics()
 		if c.WebhookRetryBackoff == nil {
 			return nil, nil, errors.New("retry backoff parameters for delegating authentication webhook has not been specified")
 		}

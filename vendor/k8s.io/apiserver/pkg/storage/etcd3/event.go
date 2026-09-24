@@ -18,8 +18,6 @@ package etcd3
 
 import (
 	"fmt"
-	"time"
-
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
@@ -43,21 +41,17 @@ type event struct {
 	// struct field to eliminate contention
 	// between startWatching and processEvent
 	isInitialEventsEndBookmark bool
-	// isInitialEvent indicates the event was generated from an initial state sync.
-	isInitialEvent bool
-	recordTime     time.Time
 }
 
 // parseKV converts a KeyValue retrieved from an initial sync() listing to a synthetic isCreated event.
 func parseKV(kv *mvccpb.KeyValue) *event {
 	return &event{
-		key:            string(kv.Key),
-		value:          kv.Value,
-		prevValue:      nil,
-		rev:            kv.ModRevision,
-		isDeleted:      false,
-		isCreated:      true,
-		isInitialEvent: true,
+		key:       string(kv.Key),
+		value:     kv.Value,
+		prevValue: nil,
+		rev:       kv.ModRevision,
+		isDeleted: false,
+		isCreated: true,
 	}
 }
 
@@ -68,12 +62,11 @@ func parseEvent(e *clientv3.Event) (*event, error) {
 
 	}
 	ret := &event{
-		key:        string(e.Kv.Key),
-		value:      e.Kv.Value,
-		rev:        e.Kv.ModRevision,
-		isDeleted:  e.Type == clientv3.EventTypeDelete,
-		isCreated:  e.IsCreate(),
-		recordTime: time.Now(),
+		key:       string(e.Kv.Key),
+		value:     e.Kv.Value,
+		rev:       e.Kv.ModRevision,
+		isDeleted: e.Type == clientv3.EventTypeDelete,
+		isCreated: e.IsCreate(),
 	}
 	if e.PrevKv != nil {
 		ret.prevValue = e.PrevKv.Value
@@ -85,6 +78,5 @@ func progressNotifyEvent(rev int64) *event {
 	return &event{
 		rev:              rev,
 		isProgressNotify: true,
-		recordTime:       time.Now(),
 	}
 }

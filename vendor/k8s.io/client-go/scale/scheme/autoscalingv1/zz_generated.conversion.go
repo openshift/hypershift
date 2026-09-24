@@ -22,8 +22,6 @@ limitations under the License.
 package autoscalingv1
 
 import (
-	unsafe "unsafe"
-
 	v1 "k8s.io/api/autoscaling/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -103,7 +101,7 @@ func Convert_scheme_Scale_To_v1_Scale(in *scheme.Scale, out *v1.Scale, s convers
 }
 
 func autoConvert_v1_ScaleSpec_To_scheme_ScaleSpec(in *v1.ScaleSpec, out *scheme.ScaleSpec, s conversion.Scope) error {
-	*out = *(*scheme.ScaleSpec)(unsafe.Pointer(in))
+	out.Replicas = in.Replicas
 	return nil
 }
 
@@ -113,7 +111,7 @@ func Convert_v1_ScaleSpec_To_scheme_ScaleSpec(in *v1.ScaleSpec, out *scheme.Scal
 }
 
 func autoConvert_scheme_ScaleSpec_To_v1_ScaleSpec(in *scheme.ScaleSpec, out *v1.ScaleSpec, s conversion.Scope) error {
-	*out = *(*v1.ScaleSpec)(unsafe.Pointer(in))
+	out.Replicas = in.Replicas
 	return nil
 }
 

@@ -17,71 +17,34 @@ limitations under the License.
 package cached
 
 import (
-	"context"
 	"sync"
 
 	"k8s.io/client-go/openapi"
 )
 
-type Client struct {
-	delegate openapi.ClientWithContext
+type client struct {
+	delegate openapi.Client
 
 	once   sync.Once
-	result map[string]openapi.GroupVersionWithContext
+	result map[string]openapi.GroupVersion
 	err    error
 }
 
-var (
-	//nolint:staticcheck // Intentionally using the old interface here.
-	_ openapi.Client            = &Client{}
-	_ openapi.ClientWithContext = &Client{}
-)
-
-// NewClientWithContext is a better alternative because it supports contextual logging and cancellation.
-//
-// Contextual logging: Use NewClientWithContext instead.
 func NewClient(other openapi.Client) openapi.Client {
-	return newClient(openapi.ToClientWithContext(other))
-}
-
-func NewClientWithContext(other openapi.ClientWithContext) *Client {
-	return newClient(other)
-}
-
-func newClient(other openapi.ClientWithContext) *Client {
-	return &Client{
+	return &client{
 		delegate: other,
 	}
 }
 
-// PathsWithContext is a better alternative because it supports contextual logging and cancellation.
-//
-// Contextual logging: Use PathsWithContext instead.
-func (c *Client) Paths() (map[string]openapi.GroupVersion, error) {
-	// For efficiency reasons in the *WithContext case this is a map to
-	// openapi.GroupVersionWithContext. But we know that all entries
-	// also implement openapi.GroupVersion.
-	resultWithContext, err := c.PathsWithContext(context.Background())
-	result := make(map[string]openapi.GroupVersion, len(resultWithContext))
-	for key, entry := range resultWithContext {
-		result[key] = entry.(openapi.GroupVersion)
-	}
-	return result, err
-}
-
-func (c *Client) PathsWithContext(ctx context.Context) (map[string]openapi.GroupVersionWithContext, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
+func (c *client) Paths() (map[string]openapi.GroupVersion, error) {
 	c.once.Do(func() {
-		uncached, err := c.delegate.PathsWithContext(ctx)
+		uncached, err := c.delegate.Paths()
 		if err != nil {
 			c.err = err
 			return
 		}
 
-		result := make(map[string]openapi.GroupVersionWithContext, len(uncached))
+		result := make(map[string]openapi.GroupVersion, len(uncached))
 		for k, v := range uncached {
 			result[k] = newGroupVersion(v)
 		}

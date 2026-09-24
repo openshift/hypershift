@@ -101,14 +101,14 @@ require (
 	gopkg.in/ini.v1 v1.67.3
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.37.0
-	k8s.io/apiextensions-apiserver v0.37.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/apiserver v0.37.0
+	k8s.io/api v0.36.3
+	k8s.io/apiextensions-apiserver v0.36.3
+	k8s.io/apimachinery v0.36.3
+	k8s.io/apiserver v0.36.3
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.7.1
 	k8s.io/cli-runtime v0.36.3
-	k8s.io/client-go v0.37.0
-	k8s.io/component-base v0.37.0
+	k8s.io/client-go v0.36.3
+	k8s.io/component-base v0.36.3
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kube-aggregator v0.36.3
@@ -125,7 +125,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
 	sigs.k8s.io/cluster-api-provider-openstack v0.14.8
-	sigs.k8s.io/controller-runtime v0.25.1
+	sigs.k8s.io/controller-runtime v0.24.1
 	sigs.k8s.io/karpenter v1.13.0
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96
 	sigs.k8s.io/secrets-store-csi-driver v1.6.1
@@ -293,7 +293,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	k8s.io/cloud-provider v0.36.2 // indirect
-	k8s.io/component-helpers v0.37.0 // indirect
+	k8s.io/component-helpers v0.36.3 // indirect
 	k8s.io/csi-translation-lib v0.36.2 // indirect
 	k8s.io/kms v0.37.0 // indirect
 	k8s.io/kube-openapi v0.35.1 // indirect

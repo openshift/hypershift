@@ -43,13 +43,7 @@ type WantsExternalKubeInformerFactory interface {
 	admission.InitializationValidator
 }
 
-// WantsUnconditionalAuthorizer defines a function which sets a narrower, conditions-unaware UnconditionalAuthorizer for admission plugins that need it.
-type WantsUnconditionalAuthorizer interface {
-	SetUnconditionalAuthorizer(authorizer.UnconditionalAuthorizer)
-	admission.InitializationValidator
-}
-
-// WantsAuthorizer defines a function which sets a standard, possibly conditions-aware Authorizer for admission plugins that need it.
+// WantsAuthorizer defines a function which sets Authorizer for admission plugins that need it.
 type WantsAuthorizer interface {
 	SetAuthorizer(authorizer.Authorizer)
 	admission.InitializationValidator

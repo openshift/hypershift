@@ -22,8 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/utils/clock"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -65,8 +63,6 @@ type cacheWatcher struct {
 	deadline            time.Time
 	allowWatchBookmarks bool
 	groupResource       schema.GroupResource
-	watcherMetrics      *metrics.WatcherMetricsObservers
-	clock               clock.Clock
 
 	// human readable identifier that helps assigning cacheWatcher
 	// instance with request
@@ -99,13 +95,8 @@ func newCacheWatcher(
 	deadline time.Time,
 	allowWatchBookmarks bool,
 	groupResource schema.GroupResource,
-	watcherMetrics *metrics.WatcherMetricsObservers,
-	clk clock.Clock,
 	identifier string,
 ) *cacheWatcher {
-	if clk == nil {
-		clk = clock.RealClock{}
-	}
 	return &cacheWatcher{
 		input:               make(chan *watchCacheEvent, chanSize),
 		result:              make(chan watch.Event, chanSize),
@@ -117,8 +108,6 @@ func newCacheWatcher(
 		deadline:            deadline,
 		allowWatchBookmarks: allowWatchBookmarks,
 		groupResource:       groupResource,
-		watcherMetrics:      watcherMetrics,
-		clock:               clk,
 		identifier:          identifier,
 	}
 }
@@ -412,13 +401,12 @@ func (c *cacheWatcher) convertToWatchEvent(event *watchCacheEvent) *watch.Event 
 }
 
 // NOTE: sendWatchCacheEvent is assumed to not modify <event> !!!
-func (c *cacheWatcher) sendWatchCacheEvent(event *watchCacheEvent) (builtAt, sentAt time.Time) {
+func (c *cacheWatcher) sendWatchCacheEvent(event *watchCacheEvent) {
 	watchEvent := c.convertToWatchEvent(event)
 	if watchEvent == nil {
 		// Watcher is not interested in that object.
-		return time.Time{}, time.Time{}
+		return
 	}
-	builtAt = c.clock.Now()
 
 	// We need to ensure that if we put event X to the c.result, all
 	// previous events were already put into it before, no matter whether
@@ -434,17 +422,15 @@ func (c *cacheWatcher) sendWatchCacheEvent(event *watchCacheEvent) (builtAt, sen
 	// events.
 	select {
 	case <-c.done:
-		return time.Time{}, time.Time{}
+		return
 	default:
 	}
 
 	select {
 	case c.result <- *watchEvent:
 		c.markBookmarkAfterRvSent(event)
-		sentAt = c.clock.Now()
 	case <-c.done:
 	}
-	return builtAt, sentAt
 }
 
 func (c *cacheWatcher) processInterval(ctx context.Context, cacheInterval *watchCacheInterval, resourceVersion uint64) {
@@ -550,22 +536,10 @@ func (c *cacheWatcher) process(ctx context.Context, resourceVersion uint64) {
 			// or a bookmark event with an RV equal to resourceVersion
 			// if we haven't sent one to the client
 			if event.ResourceVersion > resourceVersion || (event.Type == watch.Bookmark && event.ResourceVersion == resourceVersion && !c.wasBookmarkAfterRvSent()) {
-				builtAt, sentAt := c.sendWatchCacheEvent(event)
-				c.observeDispatchMetrics(event, builtAt, sentAt)
+				c.sendWatchCacheEvent(event)
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
-}
-
-func (c *cacheWatcher) observeDispatchMetrics(event *watchCacheEvent, builtAt, sentAt time.Time) {
-	if event.Type == watch.Bookmark || sentAt.IsZero() || event.RecordTime.IsZero() {
-		return
-	}
-	if !event.CacheReceived.IsZero() {
-		c.watcherMetrics.ObserveStage(metrics.StageStorageToCache, event.CacheReceived.Sub(event.RecordTime))
-	}
-	c.watcherMetrics.ObserveStage(metrics.StageCacheToWatcher, sentAt.Sub(builtAt))
-	c.watcherMetrics.ObserveStage(metrics.StageTotal, sentAt.Sub(event.RecordTime))
 }

@@ -22,8 +22,6 @@ limitations under the License.
 package appsv1beta2
 
 import (
-	unsafe "unsafe"
-
 	v1beta2 "k8s.io/api/apps/v1beta2"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -103,7 +101,7 @@ func Convert_scheme_Scale_To_v1beta2_Scale(in *scheme.Scale, out *v1beta2.Scale,
 }
 
 func autoConvert_v1beta2_ScaleSpec_To_scheme_ScaleSpec(in *v1beta2.ScaleSpec, out *scheme.ScaleSpec, s conversion.Scope) error {
-	*out = *(*scheme.ScaleSpec)(unsafe.Pointer(in))
+	out.Replicas = in.Replicas
 	return nil
 }
 
@@ -113,7 +111,7 @@ func Convert_v1beta2_ScaleSpec_To_scheme_ScaleSpec(in *v1beta2.ScaleSpec, out *s
 }
 
 func autoConvert_scheme_ScaleSpec_To_v1beta2_ScaleSpec(in *scheme.ScaleSpec, out *v1beta2.ScaleSpec, s conversion.Scope) error {
-	*out = *(*v1beta2.ScaleSpec)(unsafe.Pointer(in))
+	out.Replicas = in.Replicas
 	return nil
 }
 

@@ -30,7 +30,7 @@ import (
 )
 
 type Interface interface {
-	Discovery() discovery.DiscoveryInterfaces
+	Discovery() discovery.DiscoveryInterface
 	ApiextensionsV1() apiextensionsv1.ApiextensionsV1Interface
 	ApiextensionsV1beta1() apiextensionsv1beta1.ApiextensionsV1beta1Interface
 }
@@ -53,7 +53,7 @@ func (c *Clientset) ApiextensionsV1beta1() apiextensionsv1beta1.ApiextensionsV1b
 }
 
 // Discovery retrieves the DiscoveryClient
-func (c *Clientset) Discovery() discovery.DiscoveryInterfaces {
+func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 	if c == nil {
 		return nil
 	}

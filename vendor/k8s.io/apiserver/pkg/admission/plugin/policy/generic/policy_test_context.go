@@ -57,11 +57,10 @@ type Logger interface {
 // PolicyTestContext is everything you need to unit test a policy plugin
 type PolicyTestContext[P runtime.Object, B runtime.Object, E Evaluator] struct {
 	context.Context
-	Logger        Logger
-	Plugin        *Plugin[PolicyHook[P, B, E]]
-	Source        Source[PolicyHook[P, B, E]]
-	Start         func() error
-	DynamicClient dynamic.Interface
+	Logger Logger
+	Plugin *Plugin[PolicyHook[P, B, E]]
+	Source Source[PolicyHook[P, B, E]]
+	Start  func() error
 
 	scheme     *runtime.Scheme
 	restMapper *meta.DefaultRESTMapper
@@ -226,11 +225,10 @@ func NewPolicyTestContext[P, B runtime.Object, E Evaluator](
 	}
 
 	res := &PolicyTestContext[P, B, E]{
-		Logger:        logger,
-		Context:       testContext,
-		Plugin:        plugin,
-		Source:        source,
-		DynamicClient: dynamicClient,
+		Logger:  logger,
+		Context: testContext,
+		Plugin:  plugin,
+		Source:  source,
 
 		restMapper:              fakeRestMapper,
 		scheme:                  policySourceTestScheme,
@@ -643,14 +641,4 @@ type fakeAuthorizer struct{}
 
 func (f fakeAuthorizer) Authorize(ctx context.Context, a authorizer.Attributes) (authorizer.Decision, string, error) {
 	return authorizer.DecisionAllow, "", nil
-}
-
-// ConditionsAwareAuthorize is not conditions-aware, converts the Authorize decision.
-func (f fakeAuthorizer) ConditionsAwareAuthorize(ctx context.Context, a authorizer.Attributes) authorizer.ConditionsAwareDecision {
-	return authorizer.ConditionsAwareDecisionFromParts(f.Authorize(ctx, a))
-}
-
-// EvaluateConditions is not supported by this authorizer.
-func (fakeAuthorizer) EvaluateConditions(_ context.Context, _ authorizer.ConditionsAwareDecision, _ authorizer.ConditionsData) (authorizer.Decision, string, error) {
-	return authorizer.DecisionDeny, "", authorizer.ErrorConditionEvaluationNotSupported
 }

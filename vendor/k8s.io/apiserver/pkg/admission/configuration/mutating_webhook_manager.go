@@ -23,9 +23,7 @@ import (
 
 	v1 "k8s.io/api/admissionregistration/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission/plugin/webhook"
 	"k8s.io/apiserver/pkg/admission/plugin/webhook/generic"
 	"k8s.io/client-go/informers"
@@ -48,17 +46,15 @@ type mutatingWebhookConfigurationManager struct {
 	// This function is defined as field instead of a struct method to allow injection
 	// during tests
 	createMutatingWebhookAccessor mutatingWebhookAccessorCreator
-	excludedWebhookResources      sets.Set[schema.GroupResource]
 }
 
 var _ generic.Source = &mutatingWebhookConfigurationManager{}
 
-func NewMutatingWebhookConfigurationManager(f informers.SharedInformerFactory, excludedWebhookResources sets.Set[schema.GroupResource]) generic.Source {
+func NewMutatingWebhookConfigurationManager(f informers.SharedInformerFactory) generic.Source {
 	informer := f.Admissionregistration().V1().MutatingWebhookConfigurations()
 	manager := &mutatingWebhookConfigurationManager{
 		lister:                        informer.Lister(),
 		createMutatingWebhookAccessor: webhook.NewMutatingWebhookAccessor,
-		excludedWebhookResources:      excludedWebhookResources,
 	}
 	manager.lazy.Evaluate = manager.getConfiguration
 
@@ -136,8 +132,6 @@ func (m *mutatingWebhookConfigurationManager) getMutatingWebhookConfigurations(c
 			accessors = append(accessors, cachedConfigurationAccessors.([]webhook.WebhookAccessor)...)
 			continue
 		}
-
-		logExcludedResourcesForMutatingWebhook(c.Name, c.Webhooks, m.excludedWebhookResources)
 
 		// webhook names are not validated for uniqueness, so we check for duplicates and
 		// add a int suffix to distinguish between them

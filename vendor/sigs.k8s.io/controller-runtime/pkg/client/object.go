@@ -19,8 +19,6 @@ package client
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
-	"sigs.k8s.io/controller-runtime/pkg/cache/cacheapi"
 )
 
 // Object is a Kubernetes object, allows functions to work indistinctly with
@@ -44,7 +42,10 @@ import (
 // a `metadata` field).
 //
 // Notice that XYZList types are distinct: they implement ObjectList instead.
-type Object = cacheapi.Object
+type Object interface {
+	metav1.Object
+	runtime.Object
+}
 
 // ObjectList is a Kubernetes object list, allows functions to work
 // indistinctly with any resource that implements both runtime.Object and

@@ -70,7 +70,7 @@ func WithDefaulter[T runtime.Object](scheme *runtime.Scheme, defaulter Defaulter
 			new: func() T {
 				var zero T
 				typ := reflect.TypeOf(zero)
-				if typ.Kind() == reflect.Pointer {
+				if typ.Kind() == reflect.Ptr {
 					return reflect.New(typ.Elem()).Interface().(T)
 				}
 				return zero

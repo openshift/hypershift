@@ -18,7 +18,6 @@ package authenticatorfactory
 
 import (
 	"context"
-	"sync"
 
 	compbasemetrics "k8s.io/component-base/metrics"
 	"k8s.io/component-base/metrics/legacyregistry"
@@ -26,17 +25,11 @@ import (
 
 type registerables []compbasemetrics.Registerable
 
-var registerMetricsOnce sync.Once
-
-// RegisterMetrics registers the delegated authentication metrics with the legacy
-// registry. Do not use an init() function because feature gates (e.g., NativeHistograms)
-// must be parsed before the histogram metric is created and registered.
-func RegisterMetrics() {
-	registerMetricsOnce.Do(func() {
-		for _, metric := range metrics {
-			legacyregistry.MustRegister(metric)
-		}
-	})
+// init registers all metrics.
+func init() {
+	for _, metric := range metrics {
+		legacyregistry.MustRegister(metric)
+	}
 }
 
 var (

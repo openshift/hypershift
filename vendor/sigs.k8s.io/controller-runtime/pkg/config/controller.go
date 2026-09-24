@@ -44,14 +44,7 @@ type Controller struct {
 	// e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
 	GroupKindConcurrency map[string]int
 
-	// MaxConcurrentReconciles is the maximum number of concurrent reconciliations which can be run.
-	// Defaults to 1.
-	//
-	// This value is used as a default for controllers that do not specify their own value.
-	// Per-controller options take precedence over this setting.
-	//
-	// For more details on how concurrency works, see the MaxConcurrentReconciles
-	// field in pkg/controller.TypedOptions.
+	// MaxConcurrentReconciles is the maximum number of concurrent Reconciles which can be run. Defaults to 1.
 	MaxConcurrentReconciles int
 
 	// CacheSyncTimeout refers to the time limit set to wait for syncing caches.

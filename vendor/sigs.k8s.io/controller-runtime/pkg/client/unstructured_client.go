@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/apply"
 )
 
 var _ Reader = &unstructuredClient{}
+var _ Writer = &unstructuredClient{}
 
 type unstructuredClient struct {
 	resources  *clientRestResources
@@ -93,23 +93,26 @@ func (uc *unstructuredClient) Update(ctx context.Context, obj Object, opts ...Up
 }
 
 // Delete implements client.Client.
-func (uc *unstructuredClient) Delete(ctx context.Context, obj Object, opts ...DeleteOption) (*unstructured.Unstructured, error) {
+func (uc *unstructuredClient) Delete(ctx context.Context, obj Object, opts ...DeleteOption) error {
+	if _, ok := obj.(runtime.Unstructured); !ok {
+		return fmt.Errorf("unstructured client did not understand object: %T", obj)
+	}
+
 	o, err := uc.resources.getObjMeta(obj)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	deleteOpts := DeleteOptions{}
 	deleteOpts.ApplyOptions(opts)
 
-	response := &unstructured.Unstructured{}
-	return response, o.Delete().
+	return o.Delete().
 		NamespaceIfScoped(o.namespace, o.isNamespaced()).
 		Resource(o.resource()).
 		Name(o.name).
 		Body(deleteOpts.AsDeleteOptions()).
 		Do(ctx).
-		Into(response)
+		Error()
 }
 
 // DeleteAllOf implements client.Client.
