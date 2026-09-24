@@ -32,7 +32,7 @@ type KubeClientSetFactory func(kubeconfigPath string) (kubernetes.Interface, err
 type ConfigFactory func(kubeconfigPath string) (*rest.Config, error)
 
 // ImpersonatedClientFactory creates a controller-runtime client for an impersonated user.
-type ImpersonatedClientFactory func(userName string) (crclient.Client, error)
+type ImpersonatedClientFactory func(kubeconfigPath, userName string) (crclient.Client, error)
 
 // ClientProvider groups the management-cluster dependencies used by CLI commands.
 // Tests can replace individual factories with fake clients without changing the
@@ -113,11 +113,11 @@ func (p *ClientProvider) ConfigFor(kubeconfigPath string) (*rest.Config, error) 
 
 // ImpersonatedClientFor returns an impersonated client from the provider and
 // rejects missing or nil dependencies.
-func (p *ClientProvider) ImpersonatedClientFor(userName string) (crclient.Client, error) {
+func (p *ClientProvider) ImpersonatedClientFor(kubeconfigPath, userName string) (crclient.Client, error) {
 	if p == nil || p.ImpersonatedClient == nil {
 		return nil, fmt.Errorf("impersonated client provider is not configured")
 	}
-	client, err := p.ImpersonatedClient(userName)
+	client, err := p.ImpersonatedClient(kubeconfigPath, userName)
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +184,8 @@ func GetKubernetesClientSetWithKubeconfig(kubeconfigPath string) (kubernetes.Int
 }
 
 // GetImpersonatedClient creates a controller-runtime client for Kubernetes
-func GetImpersonatedClient(userName string) (crclient.Client, error) {
-	config, err := GetConfig()
+func GetImpersonatedClient(kubeconfigPath, userName string) (crclient.Client, error) {
+	config, err := GetConfigWithKubeconfig(kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}

@@ -428,7 +428,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
-			err = dump.DumpJournals(t, ctx, hc, artifactDir, opts.AWSPlatform.Credentials.AWSCredentialsFile)
+			err = dump.DumpJournals(t, ctx, hc, artifactDir, opts.AWSPlatform.Credentials.AWSCredentialsFile, opts.Kubeconfig)
 			if err != nil {
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}
