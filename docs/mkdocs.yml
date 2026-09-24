@@ -387,6 +387,7 @@ nav:
           - 'SecretProviderClass': reference/architecture/managed-azure/secretproviderclass-configuration.md
           - 'Pod Volume Mounts': reference/architecture/managed-azure/pod-volume-mounts.md
           - 'Authentication Flow': reference/architecture/managed-azure/azure-authentication-flow.md
+          - 'Identity Status Reporting': reference/architecture/managed-azure/identity-status-reporting.md
   - reference/api.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
