@@ -118,6 +118,23 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts Ser
 	return b
 }
 
+// WithGatedPreconditions gates component reconciliation on the specified HCP
+// conditions, with a gate that decides whether the conditions are enforced on a
+// given reconcile. When the gate returns true, the component does not create its
+// workload or report RolloutComplete=True until all listed conditions are True on
+// the HostedControlPlane. When the gate returns false, the conditions are skipped
+// (treated as met). A gate error aborts the reconcile and is retried. Use this
+// when a component depends on cluster-level state (an HCP condition) rather than
+// another component's operand readiness, and that dependency only applies under
+// conditions the component decides at runtime.
+func (b *controlPlaneWorkloadBuilder[T]) WithGatedPreconditions(gate PreconditionGate, preconditions ...Precondition) *controlPlaneWorkloadBuilder[T] {
+	b.workload.preconditionGroups = append(b.workload.preconditionGroups, preconditionGroup{
+		gate:       gate,
+		conditions: preconditions,
+	})
+	return b
+}
+
 // WithCustomOperandsRolloutCheckFunc allows to set a custom function to check the rollout status of operands.
 // This function should return true if the operands are ready, false otherwise.
 // TODO: This is a temporary solution, should be replaced by MonitorOperandsRolloutStatus() once we enforce a common label/annotation on all operands to provide more generic rollout check.

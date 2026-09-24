@@ -29,6 +29,24 @@ import (
 type NamedComponent interface {
 	Name() string
 }
+
+// Precondition is an HCP status condition type that must be True before a
+// component proceeds with reconciliation. A component with unmet preconditions
+// does not create its workload and reports RolloutComplete=False.
+type Precondition = hyperv1.ConditionType
+
+// PreconditionGate decides whether a group of preconditions is enforced on a given
+// reconcile. Returning true enforces the preconditions; returning false skips them
+// (treats them as met). An error aborts the reconcile and is retried.
+type PreconditionGate func(cpContext WorkloadContext) (bool, error)
+
+// preconditionGroup is a set of preconditions with the gate that decides whether
+// they are enforced on a given reconcile.
+type preconditionGroup struct {
+	gate       PreconditionGate
+	conditions []Precondition
+}
+
 type ControlPlaneComponent interface {
 	NamedComponent
 	Reconcile(cpContext ControlPlaneContext) error
@@ -137,6 +155,12 @@ type controlPlaneWorkload[T client.Object] struct {
 	// reconciliation will be blocked until all dependencies are available.
 	dependencies []string
 
+	// list of precondition groups: each group is a set of HCP conditions that must
+	// be True before this component reconciles, together with a gate deciding
+	// whether the group is enforced on a given reconcile.
+	// reconciliation will be blocked until all enforced preconditions are satisfied.
+	preconditionGroups []preconditionGroup
+
 	adapt func(cpContext WorkloadContext, obj T) error
 
 	// adapters for Secret, ConfigMap, Service, ServiceMonitor, etc.
@@ -189,13 +213,19 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 		}
 	}
 
+	unmetPreconditions, err := c.checkPreconditions(cpContext)
+	if err != nil {
+		return fmt.Errorf("failed checking preconditions: %w", err)
+	}
+
 	unavailableDependencies, err := c.checkDependencies(cpContext)
 	if err != nil {
 		return fmt.Errorf("failed checking for dependencies availability: %w", err)
 	}
 	var reconcilationError error
-	if len(unavailableDependencies) == 0 {
-		// reconcile only when all dependencies are available, and don't return error immediately so it can be included in the status condition first.
+	if len(unmetPreconditions) == 0 && len(unavailableDependencies) == 0 {
+		// reconcile only when all preconditions are satisfied and all dependencies are available,
+		// and don't return error immediately so it can be included in the status condition first.
 		reconcilationError = c.update(cpContext)
 	}
 
@@ -207,7 +237,7 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 	}
 
 	if _, err := controllerutil.CreateOrPatch(cpContext, cpContext.Client, component, func() error {
-		return c.reconcileComponentStatus(cpContext, component, unavailableDependencies, reconcilationError)
+		return c.reconcileComponentStatus(cpContext, component, unmetPreconditions, unavailableDependencies, reconcilationError)
 	}); err != nil {
 		return err
 	}
