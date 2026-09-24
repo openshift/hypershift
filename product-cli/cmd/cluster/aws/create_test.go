@@ -85,6 +85,7 @@ func TestNewCreateCommand(t *testing.T) {
 					"enable-proxy",
 					"enable-secure-proxy",
 					"endpoint-access",
+					"initial-storage-volumes-kms-key",
 					"instance-type",
 					"kms-key-arn",
 					"multi-arch",
