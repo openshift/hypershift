@@ -9,14 +9,15 @@ import (
 )
 
 type IngressParams struct {
-	IngressSubdomain  string
-	Replicas          int32
-	PlatformType      hyperv1.PlatformType
-	IsPrivate         bool
-	IBMCloudUPI       bool
-	AWSNLB            bool
-	LoadBalancerScope v1.LoadBalancerScope
-	LoadBalancerIP    string
+	IngressSubdomain   string
+	Replicas           int32
+	PlatformType       hyperv1.PlatformType
+	IsPrivate          bool
+	IBMCloudUPI        bool
+	AWSNLB             bool
+	LoadBalancerScope  v1.LoadBalancerScope
+	LoadBalancerIP     string
+	DefaultCertificate hyperv1.IngressDefaultCertificateReference
 }
 
 func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
@@ -48,14 +49,20 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 		loadBalancerIP = hcp.Spec.Platform.OpenStack.IngressFloatingIP
 	}
 
+	var defaultCertificate hyperv1.IngressDefaultCertificateReference
+	if hcp.Spec.OperatorConfiguration != nil && hcp.Spec.OperatorConfiguration.IngressOperator != nil {
+		defaultCertificate = hcp.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate
+	}
+
 	return &IngressParams{
-		IngressSubdomain:  globalconfig.IngressDomain(hcp),
-		Replicas:          replicas,
-		PlatformType:      hcp.Spec.Platform.Type,
-		IsPrivate:         isPrivate,
-		IBMCloudUPI:       ibmCloudUPI,
-		AWSNLB:            nlb,
-		LoadBalancerScope: loadBalancerScope,
-		LoadBalancerIP:    loadBalancerIP,
+		IngressSubdomain:   globalconfig.IngressDomain(hcp),
+		Replicas:           replicas,
+		PlatformType:       hcp.Spec.Platform.Type,
+		IsPrivate:          isPrivate,
+		IBMCloudUPI:        ibmCloudUPI,
+		AWSNLB:             nlb,
+		LoadBalancerScope:  loadBalancerScope,
+		LoadBalancerIP:     loadBalancerIP,
+		DefaultCertificate: defaultCertificate,
 	}
 }
