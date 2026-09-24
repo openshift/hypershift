@@ -6,10 +6,17 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 type fakeReleaseImageProvider struct{}
@@ -62,6 +69,83 @@ func TestAdaptDeploymentIBMCloudControllerSelection(t *testing.T) {
 	g.Expect(deployment.Spec.Template.Spec.Containers[0].Command).To(ContainElement(
 		"--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus",
 	))
+}
+
+func TestNewComponent(t *testing.T) {
+	t.Parallel()
+
+	g := NewWithT(t)
+	component := NewComponent(nil, nil, nil)
+	g.Expect(component).ToNot(BeNil())
+	g.Expect(component.Name()).To(Equal(ComponentName))
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform:     hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+		},
+	}
+	kubeAPIServerComponent := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: hcp.Namespace,
+		},
+		Status: hyperv1.ControlPlaneComponentStatus{
+			Version: "test-version",
+			Conditions: []metav1.Condition{
+				{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+				{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionTrue},
+			},
+		},
+	}
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:                        t.Context(),
+		HCP:                            hcp,
+		Client:                         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(kubeAPIServerComponent).Build(),
+		ApplyProvider:                  upsert.NewApplyProvider(false),
+		ReleaseImageProvider:           fakeReleaseImageProvider{},
+		SkipPredicate:                  true,
+		SkipCertificateSigning:         true,
+		OmitOwnerReference:             true,
+		NativeSidecarContainersEnabled: true,
+	}
+	g.Expect(component.Reconcile(cpContext)).To(Succeed())
+
+	deployment := &appsv1.Deployment{}
+	g.Expect(cpContext.Client.Get(t.Context(), client.ObjectKey{Namespace: hcp.Namespace, Name: ComponentName}, deployment)).To(Succeed())
+
+	var tokenMinter *corev1.Container
+	for i := range deployment.Spec.Template.Spec.InitContainers {
+		if deployment.Spec.Template.Spec.InitContainers[i].Name == "cloud-token-minter" {
+			tokenMinter = &deployment.Spec.Template.Spec.InitContainers[i]
+			break
+		}
+	}
+	g.Expect(tokenMinter).ToNot(BeNil())
+	g.Expect(tokenMinter.VolumeMounts).To(ContainElement(corev1.VolumeMount{
+		Name:      "cloud-token",
+		MountPath: config.CloudTokenMountPath,
+	}))
+
+	var cloudTokenVolume *corev1.Volume
+	for i := range deployment.Spec.Template.Spec.Volumes {
+		if deployment.Spec.Template.Spec.Volumes[i].Name == "cloud-token" {
+			cloudTokenVolume = &deployment.Spec.Template.Spec.Volumes[i]
+			break
+		}
+	}
+	g.Expect(cloudTokenVolume).ToNot(BeNil())
+	g.Expect(cloudTokenVolume.EmptyDir).ToNot(BeNil())
+	g.Expect(cloudTokenVolume.EmptyDir.Medium).To(Equal(corev1.StorageMediumMemory))
+	g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
+		Name:      "cloud-token",
+		MountPath: config.CloudTokenMountPath,
+	}))
+	g.Expect(deployment.Spec.Template.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"]).To(Equal("tmp-dir"))
 }
 
 func TestIsExternalInfraKubevirt(t *testing.T) {

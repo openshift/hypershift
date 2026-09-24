@@ -239,6 +239,60 @@ func TestPodSecretNames(t *testing.T) {
 	}
 }
 
+func TestSetAnnotations(t *testing.T) {
+	tests := []struct {
+		name               string
+		volumes            []corev1.Volume
+		excludedVolumes    []string
+		expectedAnnotation string
+	}{
+		{
+			name: "When a volume is excluded, it should omit it from the safe-eviction annotation",
+			volumes: []corev1.Volume{
+				{
+					Name: "cloud-token",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory},
+					},
+				},
+				{Name: "tmp-dir", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			},
+			excludedVolumes:    []string{"cloud-token"},
+			expectedAnnotation: "tmp-dir",
+		},
+		{
+			name: "When no volumes are excluded, it should include memory-backed emptyDir",
+			volumes: []corev1.Volume{
+				{Name: "cloud-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}},
+				{Name: "tmp-dir", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			},
+			expectedAnnotation: "cloud-token,tmp-dir",
+		},
+		{
+			name: "When a pod has hostPath and disk-backed emptyDir, it should include both in the safe-eviction annotation",
+			volumes: []corev1.Volume{
+				{Name: "host-data", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{}}},
+				{Name: "tmp-dir", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			},
+			expectedAnnotation: "host-data,tmp-dir",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			workloadBuilder := NewDeploymentComponent("test", nil)
+			workload := workloadBuilder.WithSafeToEvictLocalVolumeExclusions(test.excludedVolumes...).Build().(*controlPlaneWorkload[*appsv1.Deployment])
+			hcp := &hyperv1.HostedControlPlane{}
+			podTemplate := &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Volumes: test.volumes}}
+
+			workload.setAnnotations(podTemplate, hcp)
+
+			g.Expect(podTemplate.Annotations[podSafeToEvictLocalVolumesAnnotation]).To(Equal(test.expectedAnnotation))
+		})
+	}
+}
+
 func TestComputeResourceHashConsistency(t *testing.T) {
 	g := NewGomegaWithT(t)
 	for range 10 {

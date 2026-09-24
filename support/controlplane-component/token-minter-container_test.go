@@ -261,6 +261,7 @@ func TestInjectTokenMinterContainer(t *testing.T) {
 		g.Expect(podSpec.InitContainers[0].Name).To(Equal("apiserver-token-minter"))
 		g.Expect(podSpec.Containers).To(HaveLen(1), "cloud token should not be injected for non-cloud platform")
 	})
+
 }
 
 type fakeReleaseImageProvider struct {

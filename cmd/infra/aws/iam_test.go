@@ -607,7 +607,7 @@ func TestCreateOIDCResources(t *testing.T) {
 			}, nil)
 	}
 
-	t.Run("When using ROSA managed policies with separate roles it should only add the ingress inline policy", func(t *testing.T) {
+	t.Run("When using ROSA managed policies with separate roles it should add DescribeTags to the cloud controller role", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -620,7 +620,7 @@ func TestCreateOIDCResources(t *testing.T) {
 			DoAndReturn(func(_ context.Context, input *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
 				policyDocuments[*input.RoleName] = *input.PolicyDocument
 				return &iam.PutRolePolicyOutput{}, nil
-			}).Times(1)
+			}).Times(2)
 
 		opts := &CreateIAMOptions{
 			InfraID:                testInfraID,
@@ -635,12 +635,15 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(output.Roles.IngressARN).NotTo(Equal(output.Roles.KubeCloudControllerARN))
 
 		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
+		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
 		g.Expect(policyDocuments).To(HaveKey(ingressRoleName))
 		g.Expect(policyDocuments[ingressRoleName]).To(ContainSubstring("route53:ChangeResourceRecordSets"))
 		g.Expect(policyDocuments[ingressRoleName]).NotTo(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
+		g.Expect(policyDocuments).To(HaveKey(ccmRoleName))
+		g.Expect(policyDocuments[ccmRoleName]).To(ContainSubstring("elasticloadbalancing:DescribeTags"))
 	})
 
-	t.Run("When using ROSA managed policies with a shared role it should not add cloud controller permissions inline", func(t *testing.T) {
+	t.Run("When using ROSA managed policies with a shared role it should merge DescribeTags into the inline policy", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -675,6 +678,7 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(output).NotTo(BeNil())
 		g.Expect(output.Roles.IngressARN).To(Equal(output.Roles.KubeCloudControllerARN))
 		g.Expect(policyDocument).To(ContainSubstring("route53:ChangeResourceRecordSets"))
+		g.Expect(policyDocument).To(ContainSubstring("elasticloadbalancing:DescribeTags"))
 		g.Expect(policyDocument).NotTo(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
 	})
 }
