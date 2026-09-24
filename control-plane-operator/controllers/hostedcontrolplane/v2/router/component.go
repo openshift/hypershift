@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -14,6 +15,9 @@ import (
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -104,6 +108,40 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 	if len(missing) > 0 {
 		return fmt.Errorf("waiting for HCP router routes: %s", strings.Join(missing, ", "))
 	}
+
+	// Also verify that each route's backend Service has a ClusterIP assigned.
+	// If the Service exists but Kubernetes has not yet allocated a ClusterIP, the
+	// router ConfigMap would be generated with an empty destination IP and later
+	// updated once the ClusterIP is available, triggering an unnecessary rolling
+	// update of the router pods at a time when they are susceptible to Azure CNI
+	// DHCP timeouts.
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, name := range expected {
+		expectedSet[name] = struct{}{}
+	}
+	var missingIPs []string
+	for _, route := range routesByName {
+		if _, ok := expectedSet[route.Name]; !ok {
+			continue
+		}
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      route.Spec.To.Name,
+				Namespace: cpContext.HCP.Namespace,
+			},
+		}
+		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(svc), svc); err != nil {
+			return fmt.Errorf("failed to get service %s for route %s: %w", route.Spec.To.Name, route.Name, err)
+		}
+		if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+			missingIPs = append(missingIPs, route.Spec.To.Name)
+		}
+	}
+	if len(missingIPs) > 0 {
+		sort.Strings(missingIPs)
+		return fmt.Errorf("waiting for ClusterIP on services: %s", strings.Join(missingIPs, ", "))
+	}
+
 	return nil
 }
 
