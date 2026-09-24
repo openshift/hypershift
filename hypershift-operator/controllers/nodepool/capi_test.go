@@ -2554,6 +2554,122 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 	}
 }
 
+// TestReconcileSelectorDropsStaleLabels is a regression test for a runaway Machine-creation
+// bug: the MachineDeployment/MachineSet selector used to be mutated in place across reconciles
+// while the template labels were reassigned from scratch. When resourcesName changed (e.g. after
+// an infraID change) the selector kept the old key that the template no longer carried, so the
+// selector matched zero Machines and the MachineSet controller created Machines without bound.
+// The builders now rebuild the selector deterministically; this test asserts a pre-existing stale
+// key is dropped and the selector stays a strict subset of the template labels.
+func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
+	t.Parallel()
+
+	const (
+		capiClusterName       = "infra-id"
+		controlPlaneNamespace = "test-namespace-test-cluster"
+		// A plausible selector key left over from a previous resourcesName that the current
+		// template will not carry. It must differ from the current generateName output.
+		staleKey = "old-infra-id-test-cluster-deadbeef-test-nodepool"
+	)
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: "test-namespace"},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    ptr.To[int32](3),
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeReplace,
+				Replace: &hyperv1.ReplaceUpgrade{
+					Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+				},
+			},
+			Platform: hyperv1.NodePoolPlatform{Type: hyperv1.KubevirtPlatform},
+		},
+	}
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+		Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform}},
+	}
+
+	newCAPI := func(g *WithT) *CAPI {
+		c := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(nodePool, hostedCluster).
+			Build()
+		return &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					Client:                c,
+					hostedCluster:         hostedCluster,
+					nodePool:              nodePool,
+					controlplaneNamespace: controlPlaneNamespace,
+					rolloutConfig: &rolloutConfig{
+						releaseImage: &releaseinfo.ReleaseImage{
+							ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "target-version"}},
+						},
+					},
+				},
+				cpoCapabilities:        &CPOCapabilities{},
+				CreateOrUpdateProvider: upsert.New(false),
+			},
+			capiClusterName: capiClusterName,
+			ApplyProvider:   upsert.NewApplyProvider(false),
+		}
+	}
+
+	kvTemplate := &capikubevirt.KubevirtMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-kv-template", Namespace: controlPlaneNamespace},
+	}
+	log := ctrl.LoggerFrom(t.Context())
+
+	// assertSubset verifies every selector key is present in the template labels with a matching
+	// value. This is the invariant that guarantees Machines created from the template are adopted.
+	assertSubset := func(g *WithT, selector map[string]string, template map[string]string) {
+		g.Expect(selector).ToNot(HaveKey(staleKey), "stale selector key should have been dropped")
+		for k, v := range selector {
+			g.Expect(template).To(HaveKeyWithValue(k, v),
+				"selector key %q must be present in the template labels", k)
+		}
+	}
+
+	t.Run("MachineDeployment", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		capi := newCAPI(g)
+
+		md := &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: controlPlaneNamespace},
+			Spec: capiv1.MachineDeploymentSpec{
+				Selector: metav1.LabelSelector{MatchLabels: map[string]string{
+					capiv1.ClusterNameLabel: capiClusterName,
+					staleKey:                staleKey,
+				}},
+			},
+		}
+
+		g.Expect(capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)).To(Succeed())
+		assertSubset(g, md.Spec.Selector.MatchLabels, md.Spec.Template.Labels)
+	})
+
+	t.Run("MachineSet", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		capi := newCAPI(g)
+
+		ms := &capiv1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: controlPlaneNamespace},
+			Spec: capiv1.MachineSetSpec{
+				Selector: metav1.LabelSelector{MatchLabels: map[string]string{
+					staleKey: staleKey,
+				}},
+			},
+		}
+
+		g.Expect(capi.reconcileMachineSet(t.Context(), ms, kvTemplate)).To(Succeed())
+		assertSubset(g, ms.Spec.Selector.MatchLabels, ms.Spec.Template.Labels)
+	})
+}
+
 func TestPause(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
