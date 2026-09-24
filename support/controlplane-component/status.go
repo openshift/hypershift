@@ -100,7 +100,21 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 	return sets.List(unavailableDependencies), nil
 }
 
-func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlaneContext, component *hyperv1.ControlPlaneComponent, unavailableDependencies []string, reconcilationError error) error {
+// checkPreconditions returns the list of preconditions whose HCP condition is not
+// currently True. A component with unmet preconditions is not reconciled and reports
+// RolloutComplete=False until every precondition's condition becomes True.
+func (c *controlPlaneWorkload[T]) checkPreconditions(cpContext ControlPlaneContext) []Precondition {
+	var unmet []Precondition
+	for _, p := range c.preconditions {
+		condition := meta.FindStatusCondition(cpContext.HCP.Status.Conditions, string(p.ConditionType))
+		if condition == nil || condition.Status != metav1.ConditionTrue {
+			unmet = append(unmet, p)
+		}
+	}
+	return unmet
+}
+
+func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlaneContext, component *hyperv1.ControlPlaneComponent, unmetPreconditions []Precondition, unavailableDependencies []string, reconcilationError error) error {
 	workloadContrext := cpContext.workloadContext()
 	component.Status.Resources = []hyperv1.ComponentResource{}
 	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
@@ -137,7 +151,7 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 	}
 
 	c.setAvailableCondition(cpContext, &component.Status.Conditions)
-	rolloutStatus := c.setRolloutCompleteCondition(cpContext, &component.Status.Conditions, unavailableDependencies, reconcilationError)
+	rolloutStatus := c.setRolloutCompleteCondition(cpContext, &component.Status.Conditions, unmetPreconditions, unavailableDependencies, reconcilationError)
 	if rolloutStatus == metav1.ConditionTrue {
 		// set the version only if the rollout is complete
 		component.Status.Version = cpContext.ReleaseImageProvider.Version()
@@ -169,7 +183,25 @@ func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneCo
 	})
 }
 
-func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition, unavailableDependencies []string, reconcilationError error) metav1.ConditionStatus {
+func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition, unmetPreconditions []Precondition, unavailableDependencies []string, reconcilationError error) metav1.ConditionStatus {
+	if len(unmetPreconditions) > 0 {
+		descriptions := make([]string, 0, len(unmetPreconditions))
+		for _, p := range unmetPreconditions {
+			description := string(p.ConditionType)
+			if p.Context != "" {
+				description = fmt.Sprintf("%s (%s)", description, p.Context)
+			}
+			descriptions = append(descriptions, description)
+		}
+		meta.SetStatusCondition(conditions, metav1.Condition{
+			Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.WaitingForPreconditionsReason,
+			Message: fmt.Sprintf("Waiting for HCP conditions: %s", strings.Join(descriptions, ", ")),
+		})
+		return metav1.ConditionFalse
+	}
+
 	if len(unavailableDependencies) > 0 {
 		meta.SetStatusCondition(conditions, metav1.Condition{
 			Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),

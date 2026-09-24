@@ -23,6 +23,8 @@ const (
 
 	// WaitingForDependenciesReason indicates that there are unavailable dependencies blocking the ControlPlaneComponent reconciliation.
 	WaitingForDependenciesReason string = "WaitingForDependencies"
+	// WaitingForPreconditionsReason indicates that there are unmet HCP condition preconditions blocking the ControlPlaneComponent reconciliation.
+	WaitingForPreconditionsReason string = "WaitingForPreconditions"
 	// ReconciliationErrorReason indicates that there was an error during the reconciliation of the ControlPlaneComponent.
 	ReconciliationErrorReason string = "ReconciliationError"
 )
