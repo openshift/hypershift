@@ -42435,6 +42435,7 @@ ClusterConfiguration
 <p>configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
+<p>configuration.authentication.serviceAccountIssuer is ignored; use spec.issuerURL instead.</p>
 </td>
 </tr>
 <tr>
@@ -51762,6 +51763,7 @@ ClusterConfiguration
 <p>configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
+<p>configuration.authentication.serviceAccountIssuer is ignored; use spec.issuerURL instead.</p>
 </td>
 </tr>
 <tr>
