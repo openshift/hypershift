@@ -2592,6 +2592,11 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 	}
 
 	newCAPI := func(g *WithT) *CAPI {
+		// DeepCopy the shared fixtures so the parallel subtests below get independent
+		// objects. The fake client mutates each object's ResourceVersion while tracking
+		// it, which would otherwise be a data race across the concurrent subtests.
+		nodePool := nodePool.DeepCopy()
+		hostedCluster := hostedCluster.DeepCopy()
 		c := fake.NewClientBuilder().
 			WithScheme(api.Scheme).
 			WithObjects(nodePool, hostedCluster).
