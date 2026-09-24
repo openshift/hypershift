@@ -29,7 +29,7 @@ type router struct {
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
 func (k *router) IsRequestServing() bool {
-	return true
+	return false
 }
 
 // MultiZoneSpread implements controlplanecomponent.ComponentOptions.
