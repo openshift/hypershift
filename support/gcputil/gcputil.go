@@ -19,16 +19,27 @@ const LBResourceLabelsAnnotation = "cloud.google.com/load-balancer-resource-labe
 // expected by GCP API calls (e.g. SetLabels on ForwardingRules, Addresses).
 // Returns nil when no labels are configured.
 func ResourceLabels(hcp *hyperv1.HostedControlPlane) map[string]string {
-	if hcp.Spec.Platform.GCP == nil || len(hcp.Spec.Platform.GCP.ResourceLabels) == 0 {
+	if hcp.Spec.Platform.GCP == nil {
 		return nil
 	}
-	labels := make(map[string]string, len(hcp.Spec.Platform.GCP.ResourceLabels))
-	for _, l := range hcp.Spec.Platform.GCP.ResourceLabels {
-		v := ""
-		if l.Value != nil {
-			v = *l.Value
+	return ResourceLabelsToMap(hcp.Spec.Platform.GCP.ResourceLabels)
+}
+
+// ResourceLabelsToMap converts GCP resource labels to the map format expected
+// by GCP APIs. Labels without a value are represented by an empty string.
+// Returns nil when no labels are configured.
+func ResourceLabelsToMap(resourceLabels []hyperv1.GCPResourceLabel) map[string]string {
+	if len(resourceLabels) == 0 {
+		return nil
+	}
+
+	labels := make(map[string]string, len(resourceLabels))
+	for _, label := range resourceLabels {
+		value := ""
+		if label.Value != nil {
+			value = *label.Value
 		}
-		labels[l.Key] = v
+		labels[label.Key] = value
 	}
 	return labels
 }

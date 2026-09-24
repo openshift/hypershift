@@ -40,8 +40,28 @@ func TestApplyGCPLBServiceAnnotationsWebhookContainer(t *testing.T) {
 		"--tls-cert=/var/run/app/certs/tls.crt",
 		"--tls-key=/var/run/app/certs/tls.key",
 	}))
-	g.Expect(container.LivenessProbe).To(BeNil())
-	g.Expect(container.ReadinessProbe).To(BeNil())
+	g.Expect(container.Ports).To(ConsistOf(corev1.ContainerPort{
+		Name:          "healthz",
+		ContainerPort: gcpLBServiceAnnotationsWebhookHealthProbePort,
+		Protocol:      corev1.ProtocolTCP,
+	}))
+	g.Expect(container.StartupProbe).NotTo(BeNil())
+	g.Expect(container.StartupProbe.HTTPGet.Path).To(Equal("/healthz"))
+	g.Expect(container.StartupProbe.HTTPGet.Port.StrVal).To(Equal("healthz"))
+	g.Expect(container.StartupProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+	g.Expect(container.StartupProbe.PeriodSeconds).To(Equal(int32(10)))
+	g.Expect(container.StartupProbe.FailureThreshold).To(Equal(int32(30)))
+	g.Expect(container.LivenessProbe).NotTo(BeNil())
+	g.Expect(container.LivenessProbe.HTTPGet.Path).To(Equal("/healthz"))
+	g.Expect(container.LivenessProbe.HTTPGet.Port.StrVal).To(Equal("healthz"))
+	g.Expect(container.LivenessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+	g.Expect(container.LivenessProbe.PeriodSeconds).To(Equal(int32(20)))
+	g.Expect(container.ReadinessProbe).NotTo(BeNil())
+	g.Expect(container.ReadinessProbe.HTTPGet.Path).To(Equal("/readyz"))
+	g.Expect(container.ReadinessProbe.HTTPGet.Port.StrVal).To(Equal("healthz"))
+	g.Expect(container.ReadinessProbe.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+	g.Expect(container.ReadinessProbe.InitialDelaySeconds).To(Equal(int32(5)))
+	g.Expect(container.ReadinessProbe.PeriodSeconds).To(Equal(int32(10)))
 	g.Expect(container.VolumeMounts).To(ConsistOf(corev1.VolumeMount{
 		Name:      gcpLBServiceAnnotationsWebhookServingCertVolumeName,
 		MountPath: "/var/run/app/certs",

@@ -45,6 +45,7 @@ const (
 
 	gcpLBServiceAnnotationsWebhookServingCertVolumeName = "gcp-lb-service-annotations-webhook-serving-certs"
 	gcpLBServiceAnnotationsWebhookPort                  = 8443
+	gcpLBServiceAnnotationsWebhookHealthProbePort       = 8082
 )
 
 var azureWorkloadIdentityWebhookWaitForKASVersionTemplate = template.Must(template.New("azure-workload-identity-webhook").Parse(`set -u
@@ -544,6 +545,45 @@ func applyGCPLBServiceAnnotationsWebhookContainer(podSpec *corev1.PodSpec, hcp *
 				corev1.ResourceCPU:    resource.MustParse("5m"),
 				corev1.ResourceMemory: resource.MustParse("20Mi"),
 			},
+		},
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "healthz",
+				ContainerPort: gcpLBServiceAnnotationsWebhookHealthProbePort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromString("healthz"),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds:    10,
+			FailureThreshold: 30,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromString("healthz"),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds: 20,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/readyz",
+					Port:   intstr.FromString("healthz"),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       10,
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: gcpLBServiceAnnotationsWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},

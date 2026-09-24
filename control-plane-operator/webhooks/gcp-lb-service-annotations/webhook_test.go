@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -16,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func mustMarshal(t *testing.T, obj any) []byte {
@@ -27,20 +29,30 @@ func mustMarshal(t *testing.T, obj any) []byte {
 	return b
 }
 
-func makeRequest(t *testing.T, svc *corev1.Service) *admissionv1.AdmissionRequest {
+func makeRequest(t *testing.T, svc *corev1.Service) admission.Request {
 	t.Helper()
-	return &admissionv1.AdmissionRequest{
+	return admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{
+		UID:    "test-uid",
 		Kind:   metav1.GroupVersionKind{Kind: "Service"},
 		Object: runtime.RawExtension{Raw: mustMarshal(t, svc)},
+	}}
+}
+
+func handleRequest(t *testing.T, handler *serviceAnnotationHandler, req admission.Request) admission.Response {
+	t.Helper()
+	response := handler.Handle(t.Context(), req)
+	if err := response.Complete(req); err != nil {
+		t.Fatalf("complete admission response: %v", err)
 	}
+	return response
 }
 
 func TestMutate_WhenLabelsEmptyAndAnnotationAbsent_DoesNotPatch(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{Labels: ""}
+	handler := newServiceAnnotationHandler("")
 
 	svc := &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(resp.Patch).To(BeNil())
@@ -48,10 +60,10 @@ func TestMutate_WhenLabelsEmptyAndAnnotationAbsent_DoesNotPatch(t *testing.T) {
 
 func TestMutate_WhenNotLoadBalancer_DoesNotPatch(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{Labels: "goog-partner-solution=openshift"}
+	handler := newServiceAnnotationHandler("goog-partner-solution=openshift")
 
 	svc := &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(resp.Patch).To(BeNil())
@@ -59,13 +71,14 @@ func TestMutate_WhenNotLoadBalancer_DoesNotPatch(t *testing.T) {
 
 func TestMutate_WhenAnnotationAlreadyMatches_DoesNotPatch(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{Labels: "goog-partner-solution=openshift"}
+	labels := "goog-partner-solution=openshift"
+	handler := newServiceAnnotationHandler(labels)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{gcputil.LBResourceLabelsAnnotation: opts.Labels}},
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{gcputil.LBResourceLabelsAnnotation: labels}},
 		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 	}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(resp.Patch).To(BeNil())
@@ -73,7 +86,8 @@ func TestMutate_WhenAnnotationAlreadyMatches_DoesNotPatch(t *testing.T) {
 
 func TestMutate_WhenAnnotationIsStale_ReplacesIt(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{Labels: "env=prod,goog-partner-solution=openshift"}
+	labels := "env=prod,goog-partner-solution=openshift"
+	handler := newServiceAnnotationHandler(labels)
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
@@ -82,22 +96,22 @@ func TestMutate_WhenAnnotationIsStale_ReplacesIt(t *testing.T) {
 		}},
 		Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 	}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(string(resp.Patch)).To(ContainSubstring(`"op":"replace"`))
-	g.Expect(string(resp.Patch)).To(ContainSubstring(opts.Labels))
+	g.Expect(string(resp.Patch)).To(ContainSubstring(labels))
 }
 
 func TestMutate_WhenLabelsAreRemoved_RemovesAnnotation(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{}
+	handler := newServiceAnnotationHandler("")
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{gcputil.LBResourceLabelsAnnotation: "env=prod"}},
 		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 	}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(string(resp.Patch)).To(ContainSubstring(`"op":"remove"`))
@@ -105,46 +119,106 @@ func TestMutate_WhenLabelsAreRemoved_RemovesAnnotation(t *testing.T) {
 
 func TestMutate_WhenLabelsAreRemovedAndAnnotationIsEmpty_RemovesAnnotation(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{}
+	handler := newServiceAnnotationHandler("")
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{gcputil.LBResourceLabelsAnnotation: ""}},
 		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 	}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(string(resp.Patch)).To(ContainSubstring(`"op":"remove"`))
 }
 
 func TestHandleMutate_WhenRequestExceedsMaximumSize_ReturnsBadRequest(t *testing.T) {
-	opts := &Options{}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
-			"padding": strings.Repeat("x", maxAdmissionReviewSize),
+			"padding": strings.Repeat("x", 7*1024*1024),
 		}},
 		Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 	}
-	review := &admissionv1.AdmissionReview{Request: makeRequest(t, svc)}
+	admissionRequest := makeRequest(t, svc)
+	review := &admissionv1.AdmissionReview{Request: &admissionRequest.AdmissionRequest}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mutate", bytes.NewReader(mustMarshal(t, review)))
+	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
-	opts.handleMutate(resp, req)
+	(&admission.Webhook{Handler: newServiceAnnotationHandler("")}).ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusBadRequest {
-		t.Errorf("expected status %d, got %d", http.StatusBadRequest, resp.Code)
+	g := NewGomegaWithT(t)
+	g.Expect(resp.Code).To(Equal(http.StatusOK))
+	responseReview := &admissionv1.AdmissionReview{}
+	g.Expect(json.Unmarshal(resp.Body.Bytes(), responseReview)).To(Succeed())
+	g.Expect(responseReview.Response.Allowed).To(BeFalse())
+	g.Expect(responseReview.Response.Result.Code).To(Equal(int32(http.StatusRequestEntityTooLarge)))
+}
+
+func TestAdmissionWebhook(t *testing.T) {
+	t.Run("When an AdmissionReview has no request, it should deny the review without panicking", func(t *testing.T) {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mutate", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		(&admission.Webhook{Handler: newServiceAnnotationHandler("")}).ServeHTTP(resp, req)
+
+		g := NewGomegaWithT(t)
+		g.Expect(resp.Code).To(Equal(http.StatusOK))
+		responseReview := &admissionv1.AdmissionReview{}
+		g.Expect(json.Unmarshal(resp.Body.Bytes(), responseReview)).To(Succeed())
+		g.Expect(responseReview.Response.Allowed).To(BeFalse())
+		g.Expect(responseReview.Response.Result.Code).To(Equal(int32(http.StatusBadRequest)))
+	})
+}
+
+func TestNewHealthHandler(t *testing.T) {
+	tests := []struct {
+		name           string
+		admissionReady bool
+		path           string
+		expectedStatus int
+	}{
+		{
+			name:           "When the admission listener is not ready, it should report liveness",
+			path:           "/healthz",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "When the admission listener is not ready, it should report readiness as unavailable",
+			path:           "/readyz",
+			expectedStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:           "When the admission listener is ready, it should report readiness",
+			admissionReady: true,
+			path:           "/readyz",
+			expectedStatus: http.StatusOK,
+		},
 	}
-	if !strings.Contains(resp.Body.String(), "http: request body too large") {
-		t.Errorf("expected request body limit error, got %q", resp.Body.String())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			admissionReady := &atomic.Bool{}
+			admissionReady.Store(tt.admissionReady)
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil)
+			response := httptest.NewRecorder()
+
+			newHealthHandler(admissionReady).ServeHTTP(response, request)
+
+			if response.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, response.Code)
+			}
+		})
 	}
 }
 
 func TestMutate_WhenLoadBalancerWithNoAnnotations_InjectsAnnotation(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{Labels: "goog-partner-solution=isol_psn_0014m00001h31bnqaq_openshift"}
+	labels := "goog-partner-solution=isol_psn_0014m00001h31bnqaq_openshift"
+	handler := newServiceAnnotationHandler(labels)
 
 	svc := &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(resp.Patch).NotTo(BeNil())
@@ -156,12 +230,12 @@ func TestMutate_WhenLoadBalancerWithNoAnnotations_InjectsAnnotation(t *testing.T
 	g.Expect(ops[0]["path"]).To(Equal("/metadata/annotations"))
 	annotations, ok := ops[0]["value"].(map[string]any)
 	g.Expect(ok).To(BeTrue())
-	g.Expect(annotations[gcputil.LBResourceLabelsAnnotation]).To(Equal("goog-partner-solution=isol_psn_0014m00001h31bnqaq_openshift"))
+	g.Expect(annotations[gcputil.LBResourceLabelsAnnotation]).To(Equal(labels))
 }
 
 func TestMutate_WhenLoadBalancerWithExistingAnnotations_InjectsAnnotationKey(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{Labels: "goog-partner-solution=openshift"}
+	handler := newServiceAnnotationHandler("goog-partner-solution=openshift")
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -169,7 +243,7 @@ func TestMutate_WhenLoadBalancerWithExistingAnnotations_InjectsAnnotationKey(t *
 		},
 		Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 	}
-	resp := opts.mutate(makeRequest(t, svc))
+	resp := handleRequest(t, handler, makeRequest(t, svc))
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(resp.Patch).NotTo(BeNil())
@@ -185,33 +259,15 @@ func TestMutate_WhenLoadBalancerWithExistingAnnotations_InjectsAnnotationKey(t *
 
 func TestMutate_WhenKindIsNotService_DoesNotPatch(t *testing.T) {
 	g := NewGomegaWithT(t)
-	opts := &Options{Labels: "goog-partner-solution=openshift"}
+	handler := newServiceAnnotationHandler("goog-partner-solution=openshift")
 
-	req := &admissionv1.AdmissionRequest{
+	req := admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{
+		UID:    "test-uid",
 		Kind:   metav1.GroupVersionKind{Kind: "Pod"},
 		Object: runtime.RawExtension{Raw: mustMarshal(t, &corev1.Pod{})},
-	}
-	resp := opts.mutate(req)
+	}}
+	resp := handleRequest(t, handler, req)
 
 	g.Expect(resp.Allowed).To(BeTrue())
 	g.Expect(resp.Patch).To(BeNil())
-}
-
-func TestJSONPatchEscapeKey(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"simple", "simple"},
-		{"with/slash", "with~1slash"},
-		{"with~tilde", "with~0tilde"},
-		{"cloud.google.com/load-balancer-resource-labels", "cloud.google.com~1load-balancer-resource-labels"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			if got := jsonPatchEscapeKey(tt.input); got != tt.expected {
-				t.Errorf("jsonPatchEscapeKey(%q) = %q, want %q", tt.input, got, tt.expected)
-			}
-		})
-	}
 }

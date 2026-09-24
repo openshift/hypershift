@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	imageapi "github.com/openshift/api/image/v1"
@@ -769,6 +770,35 @@ func TestConfigureGCPMaintenanceBehavior(t *testing.T) {
 			g.Expect(result).To(Equal(tc.expectedBehavior))
 		})
 	}
+}
+
+func TestConfigureGCPLabels(t *testing.T) {
+	clusterLabels := []hyperv1.GCPResourceLabel{
+		{Key: "shared", Value: ptr.To("cluster")},
+		{Key: "cluster-empty"},
+		{Key: k8sutil.GCPLabelCluster, Value: ptr.To("user-cluster")},
+	}
+	nodePoolLabels := []hyperv1.GCPResourceLabel{
+		{Key: "shared", Value: ptr.To("nodepool")},
+		{Key: "nodepool-empty"},
+		{Key: k8sutil.GCPLabelInfraID, Value: ptr.To("user-infra")},
+	}
+
+	labels := configureGCPLabels(
+		&hyperv1.GCPPlatformSpec{ResourceLabels: clusterLabels},
+		&hyperv1.GCPNodePoolPlatform{ResourceLabels: nodePoolLabels},
+		"cluster-infra-id",
+		"cluster-name",
+	)
+
+	g := NewWithT(t)
+	g.Expect(labels).To(Equal(map[string]string{
+		"shared":                "nodepool",
+		"cluster-empty":         "",
+		"nodepool-empty":        "",
+		k8sutil.GCPLabelCluster: "cluster-name",
+		k8sutil.GCPLabelInfraID: "cluster-infra-id",
+	}))
 }
 
 func TestConfigureGCPNetworkTags(t *testing.T) {
