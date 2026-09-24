@@ -522,7 +522,35 @@ func TestHcpRouterRouteReady(t *testing.T) {
 	}
 }
 
-func TestEnsureHCPRouterRoutesExist(t *testing.T) {
+func readyRoute(name, svcName string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "test-ns",
+		},
+		Spec: routev1.RouteSpec{
+			Host: name + ".example.com",
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: svcName,
+			},
+		},
+	}
+}
+
+func readyService(name string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "test-ns",
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "10.0.0.1",
+		},
+	}
+}
+
+func testScheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	if err := routev1.Install(scheme); err != nil {
 		t.Fatalf("install Route scheme: %v", err)
@@ -530,34 +558,11 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatalf("install corev1 scheme: %v", err)
 	}
+	return scheme
+}
 
-	readyRoute := func(name, svcName string) *routev1.Route {
-		return &routev1.Route{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "test-ns",
-			},
-			Spec: routev1.RouteSpec{
-				Host: name + ".example.com",
-				To: routev1.RouteTargetReference{
-					Kind: "Service",
-					Name: svcName,
-				},
-			},
-		}
-	}
-
-	readyService := func(name string) *corev1.Service {
-		return &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "test-ns",
-			},
-			Spec: corev1.ServiceSpec{
-				ClusterIP: "10.0.0.1",
-			},
-		}
-	}
+func TestEnsureHCPRouterRoutesExist(t *testing.T) {
+	scheme := testScheme(t)
 
 	tests := []struct {
 		name        string
@@ -702,6 +707,20 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			},
 			expectedErr: "waiting for ClusterIP on services: ignition-server-proxy",
 		},
+		{
+			name: "When a route's backend service does not exist, it should return an error",
+			hcp:  aroHCP(),
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+			},
+			expectedErr: "failed to get service ignition-server-proxy for route ignition-server",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -719,48 +738,14 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			if tc.expectedErr == "" {
 				g.Expect(err).ToNot(HaveOccurred())
 			} else {
-				g.Expect(err).To(MatchError(tc.expectedErr))
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedErr)))
 			}
 		})
 	}
 }
 
 func TestRouterPredicate(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := routev1.Install(scheme); err != nil {
-		t.Fatalf("install Route scheme: %v", err)
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("install corev1 scheme: %v", err)
-	}
-
-	readyRoute := func(name, svcName string) *routev1.Route {
-		return &routev1.Route{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "test-ns",
-			},
-			Spec: routev1.RouteSpec{
-				Host: name + ".example.com",
-				To: routev1.RouteTargetReference{
-					Kind: "Service",
-					Name: svcName,
-				},
-			},
-		}
-	}
-
-	readyService := func(name string) *corev1.Service {
-		return &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: "test-ns",
-			},
-			Spec: corev1.ServiceSpec{
-				ClusterIP: "10.0.0.1",
-			},
-		}
-	}
+	scheme := testScheme(t)
 
 	tests := []struct {
 		name      string

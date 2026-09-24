@@ -17,7 +17,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -32,18 +31,8 @@ type router struct {
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
-// Although the router does serve requests, returning false here is intentional:
-// with 2 replicas, IsRequestServing=true causes SetReplicasAndStrategy to set
-// maxUnavailable=1, which allows a stuck replacement pod to reduce available
-// replicas to 0. Returning false keeps maxUnavailable=0 so at least one pod
-// remains available throughout the rolling update.
-//
-// The other effects of IsRequestServing (RequestServingComponentLabel pod label
-// and DedicatedRequestServingComponentsTopology node isolation) apply only to
-// AWS hosted clusters with the dedicated-request-serving-components topology
-// annotation and are not used for ARO HCP or other platforms.
 func (k *router) IsRequestServing() bool {
-	return false
+	return true
 }
 
 // MultiZoneSpread implements controlplanecomponent.ComponentOptions.
@@ -136,13 +125,9 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 		if _, ok := expectedSet[route.Name]; !ok {
 			continue
 		}
-		svc := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      route.Spec.To.Name,
-				Namespace: cpContext.HCP.Namespace,
-			},
-		}
-		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(svc), svc); err != nil {
+		svc := &corev1.Service{}
+		key := client.ObjectKey{Name: route.Spec.To.Name, Namespace: cpContext.HCP.Namespace}
+		if err := cpContext.Client.Get(cpContext, key, svc); err != nil {
 			return fmt.Errorf("failed to get service %s for route %s: %w", route.Spec.To.Name, route.Name, err)
 		}
 		if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
