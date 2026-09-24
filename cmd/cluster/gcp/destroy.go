@@ -111,7 +111,7 @@ func validateInputs(o *core.DestroyOptions) error {
 	if len(o.GCPPlatform.ProjectID) == 0 {
 		inputErrors = append(inputErrors, fmt.Errorf("project ID is required"))
 	}
-	if len(o.GCPPlatform.Region) == 0 {
+	if !o.GCPPlatform.PreserveInfra && len(o.GCPPlatform.Region) == 0 {
 		inputErrors = append(inputErrors, fmt.Errorf("region is required"))
 	}
 	if err := errors.Join(inputErrors...); err != nil {

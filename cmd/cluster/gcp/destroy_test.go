@@ -31,6 +31,14 @@ func TestNewDestroyCommand(t *testing.T) {
 	g.Expect(opts.GCPPlatform.PreserveInfra).To(BeTrue(), "PreserveInfra should be true after parsing --preserve-infra flag")
 	g.Expect(opts.GCPPlatform.ProjectID).To(Equal("test-proj"), "ProjectID should match parsed value")
 	g.Expect(opts.GCPPlatform.Region).To(Equal("us-west1"), "Region should match parsed value")
+
+	// Test --preserve-infra flag independently
+	optsInfra := &core.DestroyOptions{Log: log.Log}
+	cmdInfra := NewDestroyCommand(optsInfra)
+	err = cmdInfra.ParseFlags([]string{"--preserve-infra"})
+	g.Expect(err).ToNot(HaveOccurred(), "Should parse --preserve-infra flag without error")
+	g.Expect(optsInfra.GCPPlatform.PreserveInfra).To(BeTrue(), "PreserveInfra should be true after parsing --preserve-infra flag")
+	g.Expect(optsInfra.GCPPlatform.PreserveIAM).To(BeFalse(), "PreserveIAM should remain false when only --preserve-infra is set")
 }
 
 func TestExtractParameters(t *testing.T) {
@@ -166,17 +174,17 @@ func TestDestroyPlatformSpecifics(t *testing.T) {
 			// Verify call expectations
 			if test.expectIAMCalled {
 				g.Expect(capturedIAMOpts).ToNot(BeNil(), "IAM destroy should have been called")
-				g.Expect(capturedIAMOpts.ProjectID).To(Equal("test-project"))
-				g.Expect(capturedIAMOpts.InfraID).To(Equal("test-infra"))
+				g.Expect(capturedIAMOpts.ProjectID).To(Equal("test-project"), "Expected IAM destroy ProjectID to be test-project")
+				g.Expect(capturedIAMOpts.InfraID).To(Equal("test-infra"), "Expected IAM destroy InfraID to be test-infra")
 			} else {
 				g.Expect(capturedIAMOpts).To(BeNil(), "IAM destroy should not have been called")
 			}
 
 			if test.expectInfraCalled {
 				g.Expect(capturedInfraOpts).ToNot(BeNil(), "Infra destroy should have been called")
-				g.Expect(capturedInfraOpts.ProjectID).To(Equal("test-project"))
-				g.Expect(capturedInfraOpts.Region).To(Equal("us-central1"))
-				g.Expect(capturedInfraOpts.InfraID).To(Equal("test-infra"))
+				g.Expect(capturedInfraOpts.ProjectID).To(Equal("test-project"), "Expected infrastructure destroy ProjectID to be test-project")
+				g.Expect(capturedInfraOpts.Region).To(Equal("us-central1"), "Expected infrastructure destroy Region to be us-central1")
+				g.Expect(capturedInfraOpts.InfraID).To(Equal("test-infra"), "Expected infrastructure destroy InfraID to be test-infra")
 			} else {
 				g.Expect(capturedInfraOpts).To(BeNil(), "Infra destroy should not have been called")
 			}
@@ -234,6 +242,16 @@ func TestValidateInputs(t *testing.T) {
 		"When all inputs are missing, it should return error": {
 			opts:        &core.DestroyOptions{},
 			expectError: true,
+		},
+		"When Region is missing but PreserveInfra is true, it should pass validation": {
+			opts: &core.DestroyOptions{
+				InfraID: "valid",
+				GCPPlatform: core.GCPPlatformDestroyOptions{
+					ProjectID:     "proj",
+					PreserveInfra: true,
+				},
+			},
+			expectError: false,
 		},
 	}
 
