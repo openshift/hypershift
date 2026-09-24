@@ -2908,6 +2908,7 @@ type ClusterConfiguration struct {
 	// Note: the serviceAccountIssuer field within this configuration is ignored; the
 	// HostedCluster's spec.issuerURL is always used as the service account issuer instead.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="!has(self.serviceAccountIssuer) || self.serviceAccountIssuer == '' || (oldSelf.hasValue() && has(oldSelf.value().serviceAccountIssuer) && self.serviceAccountIssuer == oldSelf.value().serviceAccountIssuer)",message="serviceAccountIssuer is ignored by HyperShift; set spec.issuerURL instead and leave this field unset",fieldPath=".serviceAccountIssuer",optionalOldSelf=true
 	Authentication *configv1.AuthenticationSpec `json:"authentication,omitempty"`
 
 	// featureGate holds cluster-wide information about feature gates.
