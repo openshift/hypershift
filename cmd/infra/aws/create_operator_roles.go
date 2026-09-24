@@ -86,7 +86,7 @@ func NewCreateOperatorRolesCommand(clientProviders ...*util.ClientProvider) *cob
 			var err error
 			client, err = clientProvider.ControllerRuntimeClientFor("")
 			if err != nil {
-				return err
+				return fmt.Errorf("no --oidc-issuer-url or --instance-role-arn specified, and failed to connect to cluster for auto-discovery: %w", err)
 			}
 		}
 		if err := opts.Validate(cmd.Context(), client); err != nil {

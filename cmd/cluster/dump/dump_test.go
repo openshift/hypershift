@@ -40,7 +40,11 @@ func TestDumpOptionsManagementClient(t *testing.T) {
 		opts := &DumpOptions{
 			Client:        defaultClient,
 			ImpersonateAs: "test-user",
-			ClientProvider: &util.ClientProvider{ImpersonatedClient: func(user string) (client.Client, error) {
+			Kubeconfig:    "/tmp/management-kubeconfig",
+			ClientProvider: &util.ClientProvider{ImpersonatedClient: func(kubeconfig, user string) (client.Client, error) {
+				if kubeconfig != "/tmp/management-kubeconfig" {
+					return nil, errors.New("unexpected kubeconfig path")
+				}
 				if user != "test-user" {
 					return nil, errors.New("unexpected user")
 				}

@@ -174,8 +174,8 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 func TestRunInit(t *testing.T) {
 	t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
 
+	g := NewWithT(t)
 	err := runInit(t.Context(), logr.Discard())
-	if err == nil {
-		t.Fatal("expected invalid kubeconfig to stop initialization")
-	}
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("unable to get kubernetes config"))
 }
