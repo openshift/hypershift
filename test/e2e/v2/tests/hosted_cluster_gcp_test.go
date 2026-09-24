@@ -41,6 +41,29 @@ func RegisterHostedClusterGCPTests(getTestCtx internal.TestContextGetter) {
 	GCPComputeResourceLabelsTest(getTestCtx)
 }
 
+// newGCPComputeClient creates a Compute client using the workload identity
+// credentials made available to GCP E2E jobs.
+func newGCPComputeClient(tc *internal.TestContext) *compute.Service {
+	sharedDir := internal.GetEnvVarValue("SHARED_DIR")
+	if sharedDir == "" {
+		Skip("SHARED_DIR is required to access GCP workload identity credentials")
+	}
+	credentialsFile := filepath.Join(sharedDir, gcpWIFCredentialsFile)
+	if _, err := os.Stat(credentialsFile); err != nil {
+		if os.IsNotExist(err) {
+			Skip(fmt.Sprintf("GCP workload identity credentials are unavailable at %s", credentialsFile))
+		}
+		Expect(err).NotTo(HaveOccurred(), "failed to stat GCP workload identity credentials at %s", credentialsFile)
+	}
+
+	computeService, err := compute.NewService(tc.Context,
+		option.WithAuthCredentialsFile(option.ExternalAccount, credentialsFile),
+		option.WithScopes(compute.ComputeScope),
+	)
+	Expect(err).NotTo(HaveOccurred(), "failed to create GCP Compute client")
+	return computeService
+}
+
 // GCPComputeResourceLabelsTest validates labels on NodePool VMs and their persistent disks.
 func GCPComputeResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 	Context("GCP compute resource labels", Label("GCP", "resource-labels"), func() {
@@ -63,22 +86,7 @@ func GCPComputeResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 				expectedLabels[label.Key] = *label.Value
 			}
 
-			sharedDir := internal.GetEnvVarValue("SHARED_DIR")
-			if sharedDir == "" {
-				Skip("SHARED_DIR is required to access GCP workload identity credentials")
-			}
-			credentialsFile := filepath.Join(sharedDir, gcpWIFCredentialsFile)
-			if _, err := os.Stat(credentialsFile); err != nil {
-				if os.IsNotExist(err) {
-					Skip(fmt.Sprintf("GCP workload identity credentials are unavailable at %s", credentialsFile))
-				}
-				Expect(err).NotTo(HaveOccurred(), "failed to stat GCP workload identity credentials at %s", credentialsFile)
-			}
-			computeService, err := compute.NewService(tc.Context,
-				option.WithAuthCredentialsFile(option.ExternalAccount, credentialsFile),
-				option.WithScopes(compute.ComputeScope),
-			)
-			Expect(err).NotTo(HaveOccurred(), "failed to create GCP Compute client")
+			computeService := newGCPComputeClient(tc)
 
 			e2eutil.WaitForGuestKubeConfig(GinkgoTB(), tc.Context, tc.MgmtClient, hc)
 			hostedClusterClient, err := tc.GetHostedClusterClient(hc)

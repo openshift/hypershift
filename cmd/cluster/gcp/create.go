@@ -354,6 +354,7 @@ func parseResourceLabels(labels []string) ([]hyperv1.GCPResourceLabel, error) {
 		if !found || key == "" {
 			return nil, fmt.Errorf("invalid --%s value %q: expected key=value", flagResourceLabels, label)
 		}
+		// GCP reserves the goog prefix for its own use; goog-partner-solution is the documented exception.
 		if !gcpResourceLabelKeyPattern.MatchString(key) || (strings.HasPrefix(key, "goog") && key != "goog-partner-solution") {
 			return nil, fmt.Errorf("invalid --%s value %q: invalid label key", flagResourceLabels, label)
 		}

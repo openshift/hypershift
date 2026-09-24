@@ -34,7 +34,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"google.golang.org/api/compute/v1"
-	"google.golang.org/api/option"
 )
 
 const (
@@ -121,13 +120,6 @@ func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			if sharedDir == "" {
 				Skip("SHARED_DIR is required to access GCP workload identity credentials")
 			}
-			credentialsFile := filepath.Join(sharedDir, gcpWIFCredentialsFile)
-			if _, err := os.Stat(credentialsFile); err != nil {
-				if os.IsNotExist(err) {
-					Skip(fmt.Sprintf("GCP workload identity credentials are unavailable at %s", credentialsFile))
-				}
-				Expect(err).NotTo(HaveOccurred(), "failed to stat GCP workload identity credentials at %s", credentialsFile)
-			}
 			controlPlaneProjectIDFile := filepath.Join(sharedDir, gcpControlPlaneProjectIDFile)
 			if _, err := os.Stat(controlPlaneProjectIDFile); err != nil {
 				if os.IsNotExist(err) {
@@ -138,11 +130,7 @@ func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
 			controlPlaneProjectID, err := readGCPProjectID(controlPlaneProjectIDFile)
 			Expect(err).NotTo(HaveOccurred(), "failed to read GCP control-plane project ID from %s", controlPlaneProjectIDFile)
 
-			computeService, err := compute.NewService(tc.Context,
-				option.WithAuthCredentialsFile(option.ExternalAccount, credentialsFile),
-				option.WithScopes(compute.ComputeScope),
-			)
-			Expect(err).NotTo(HaveOccurred(), "failed to create GCP Compute client")
+			computeService := newGCPComputeClient(tc)
 
 			pscList := &hyperv1.GCPPrivateServiceConnectList{}
 			Expect(tc.MgmtClient.List(tc.Context, pscList, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed(),
