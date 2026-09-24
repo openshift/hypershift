@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: b6910fb241d1659eb49e09fe7e54a545c79e546529cab25d0c99c82c8d93c2c3
+    hypershift.openshift.io/desired-state-hash: 44719efc8aa4c2622b1d2f913c4f9086837ac181d28725bf1b6d81baa440b55c
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -345,7 +345,24 @@ spec:
         - --tls-key=/var/run/app/certs/tls.key
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: healthz
+            scheme: HTTP
+          periodSeconds: 20
         name: gcp-lb-service-annotations-webhook
+        ports:
+        - containerPort: 8082
+          name: healthz
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: healthz
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
           requests:
             cpu: 5m
@@ -357,6 +374,13 @@ spec:
             - ALL
           readOnlyRootFilesystem: true
           runAsNonRoot: true
+        startupProbe:
+          failureThreshold: 30
+          httpGet:
+            path: /healthz
+            port: healthz
+            scheme: HTTP
+          periodSeconds: 10
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/app/certs
