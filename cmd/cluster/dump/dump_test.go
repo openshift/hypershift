@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	clientgotesting "k8s.io/client-go/testing"
@@ -16,7 +16,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	crfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/go-logr/logr"
 )
@@ -105,260 +105,242 @@ func TestIsResourceRegistered(t *testing.T) {
 	}
 }
 
-func TestIsResourceRegistered_PlatformGating(t *testing.T) {
-	// Simulate an AWS-only management cluster where --limit-crd-install=AWS
-	// was used. Only AWS CAPI CRDs are registered; Azure, OpenStack, Agent,
-	// and KubeVirt CRDs are absent. The bulk inspect resource list must only
-	// include types whose CRDs are actually registered.
-	awsOnlyDiscovery := &fakediscovery.FakeDiscovery{
-		Fake: &clientgotesting.Fake{
-			Resources: []*metav1.APIResourceList{
-				{
-					GroupVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-					APIResources: []metav1.APIResource{
-						{Kind: "AWSMachine"},
-						{Kind: "AWSMachineTemplate"},
-						{Kind: "AWSCluster"},
-					},
-				},
-				{
-					GroupVersion: "hypershift.openshift.io/v1beta1",
-					APIResources: []metav1.APIResource{
-						{Kind: "AWSEndpointService"},
-					},
-				},
-			},
-		},
-	}
-
+func TestPlatformSpecificResources(t *testing.T) {
 	tests := []struct {
 		name     string
-		gvk      schema.GroupVersionKind
-		expected bool
+		platform hyperv1.PlatformType
+		want     []string
 	}{
 		{
-			name:     "When AWS CRD is registered, it should return true for AWSCluster",
-			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta2", Kind: "AWSCluster"},
-			expected: true,
+			name:     "When platform is AWS, it should return AWS infrastructure resources",
+			platform: hyperv1.AWSPlatform,
+			want: []string{
+				"awsmachine.infrastructure.cluster.x-k8s.io",
+				"awsmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"awscluster.infrastructure.cluster.x-k8s.io",
+				"awsendpointservice.hypershift.openshift.io",
+			},
 		},
 		{
-			name:     "When Azure CRD is not installed, it should return false for AzureCluster",
-			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "AzureCluster"},
-			expected: false,
+			name:     "When platform is Azure, it should return Azure infrastructure resources",
+			platform: hyperv1.AzurePlatform,
+			want: []string{
+				"azurecluster.infrastructure.cluster.x-k8s.io",
+				"azureclusteridentity.infrastructure.cluster.x-k8s.io",
+				"azuremachine.infrastructure.cluster.x-k8s.io",
+				"azuremachinetemplate.infrastructure.cluster.x-k8s.io",
+			},
 		},
 		{
-			name:     "When OpenStack CRD is not installed, it should return false for OpenStackCluster",
-			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "OpenStackCluster"},
-			expected: false,
+			name:     "When platform is GCP, it should return GCP infrastructure resources",
+			platform: hyperv1.GCPPlatform,
+			want: []string{
+				"gcpcluster.infrastructure.cluster.x-k8s.io",
+				"gcpmachine.infrastructure.cluster.x-k8s.io",
+				"gcpmachinetemplate.infrastructure.cluster.x-k8s.io",
+			},
 		},
 		{
-			name:     "When Agent CRD is not installed, it should return false for AgentCluster",
-			gvk:      schema.GroupVersionKind{Group: "capi-provider.agent-install.openshift.io", Version: "v1beta1", Kind: "AgentCluster"},
-			expected: false,
+			name:     "When platform is IBMCloud, it should return IBM VPC infrastructure resources",
+			platform: hyperv1.IBMCloudPlatform,
+			want: []string{
+				"ibmvpccluster.infrastructure.cluster.x-k8s.io",
+				"ibmvpcmachine.infrastructure.cluster.x-k8s.io",
+				"ibmvpcmachinetemplate.infrastructure.cluster.x-k8s.io",
+			},
 		},
 		{
-			name:     "When KubeVirt CRD is not installed, it should return false for KubevirtCluster",
-			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1alpha1", Kind: "KubevirtCluster"},
-			expected: false,
+			name:     "When platform is PowerVS, it should return PowerVS infrastructure resources",
+			platform: hyperv1.PowerVSPlatform,
+			want: []string{
+				"ibmpowervscluster.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsimage.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachine.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachinetemplate.infrastructure.cluster.x-k8s.io",
+			},
 		},
 		{
-			name:     "When GCP CRD is not installed, it should return false for GCPCluster",
-			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "GCPCluster"},
-			expected: false,
+			name:     "When platform is OpenStack, it should return OpenStack infrastructure resources",
+			platform: hyperv1.OpenStackPlatform,
+			want: []string{
+				"openstackserver.infrastructure.cluster.x-k8s.io",
+				"openstackcluster.infrastructure.cluster.x-k8s.io",
+				"openstackmachine.infrastructure.cluster.x-k8s.io",
+				"openstackmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"image.openstack.k-orc.cloud",
+			},
 		},
 		{
-			name:     "When IBM VPC CRD is not installed, it should return false for IBMVPCCluster",
-			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta2", Kind: "IBMVPCCluster"},
-			expected: false,
+			name:     "When platform is Agent, it should return Agent infrastructure resources",
+			platform: hyperv1.AgentPlatform,
+			want: []string{
+				"agentmachine.capi-provider.agent-install.openshift.io",
+				"agentmachinetemplate.capi-provider.agent-install.openshift.io",
+				"agentcluster.capi-provider.agent-install.openshift.io",
+			},
 		},
 		{
-			name:     "When IBM PowerVS CRD is not installed, it should return false for IBMPowerVSImage",
-			gvk:      schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta1", Kind: "IBMPowerVSImage"},
-			expected: false,
+			name:     "When platform is KubeVirt, it should return KubeVirt infrastructure resources",
+			platform: hyperv1.KubevirtPlatform,
+			want: []string{
+				"kubevirtmachine.infrastructure.cluster.x-k8s.io",
+				"kubevirtmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"kubevirtcluster.infrastructure.cluster.x-k8s.io",
+			},
+		},
+		{
+			name:     "When platform is None, it should return no infrastructure resources",
+			platform: hyperv1.NonePlatform,
+			want:     []string{},
+		},
+		{
+			name:     "When platform is unknown, it should return all platform infrastructure resources",
+			platform: hyperv1.PlatformType(""),
+			want: []string{
+				"awsmachine.infrastructure.cluster.x-k8s.io",
+				"awsmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"awscluster.infrastructure.cluster.x-k8s.io",
+				"awsendpointservice.hypershift.openshift.io",
+				"azurecluster.infrastructure.cluster.x-k8s.io",
+				"azureclusteridentity.infrastructure.cluster.x-k8s.io",
+				"azuremachine.infrastructure.cluster.x-k8s.io",
+				"azuremachinetemplate.infrastructure.cluster.x-k8s.io",
+				"gcpcluster.infrastructure.cluster.x-k8s.io",
+				"gcpmachine.infrastructure.cluster.x-k8s.io",
+				"gcpmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"ibmvpccluster.infrastructure.cluster.x-k8s.io",
+				"ibmvpcmachine.infrastructure.cluster.x-k8s.io",
+				"ibmvpcmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"ibmpowervscluster.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsimage.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachine.infrastructure.cluster.x-k8s.io",
+				"ibmpowervsmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"openstackserver.infrastructure.cluster.x-k8s.io",
+				"openstackcluster.infrastructure.cluster.x-k8s.io",
+				"openstackmachine.infrastructure.cluster.x-k8s.io",
+				"openstackmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"image.openstack.k-orc.cloud",
+				"agentmachine.capi-provider.agent-install.openshift.io",
+				"agentmachinetemplate.capi-provider.agent-install.openshift.io",
+				"agentcluster.capi-provider.agent-install.openshift.io",
+				"kubevirtmachine.infrastructure.cluster.x-k8s.io",
+				"kubevirtmachinetemplate.infrastructure.cluster.x-k8s.io",
+				"kubevirtcluster.infrastructure.cluster.x-k8s.io",
+			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result, err := isResourceRegistered(awsOnlyDiscovery, test.gvk)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result != test.expected {
-				t.Errorf("expected %v for %s, got %v", test.expected, test.gvk.Kind, result)
+			got := resourceTypes(platformSpecificResources(test.platform))
+			if fmt.Sprint(got) != fmt.Sprint(test.want) {
+				t.Fatalf("expected resource types %v, got %v", test.want, got)
 			}
 		})
 	}
 }
 
 func TestFilterRegisteredResources(t *testing.T) {
-	scheme := runtime.NewScheme()
-	// Register the actual CAPI types used by dump.go
-	if err := capiaws.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add AWS scheme: %v", err)
-	}
-	if err := capiazure.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add Azure scheme: %v", err)
-	}
+	t.Run("When candidates mix registered and unregistered resources, it should keep only the registered ones", func(t *testing.T) {
+		c := crfake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 
-	// Only AWS is registered on the API server
-	awsOnlyDiscovery := &fakediscovery.FakeDiscovery{
-		Fake: &clientgotesting.Fake{
-			Resources: []*metav1.APIResourceList{
-				{
-					GroupVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-					APIResources: []metav1.APIResource{
-						{Kind: "AWSCluster"},
-					},
-				},
+		// Resources the (fake) management cluster reports as registered.
+		fakeDiscoveryClient := &fakediscovery.FakeDiscovery{
+			Fake: &clientgotesting.Fake{
+				Resources: discoveryResourcesFor(t, c, []client.Object{
+					&capiaws.AWSMachine{},
+					&capiaws.AWSCluster{},
+				}),
 			},
-		},
-	}
+		}
 
-	candidates := []client.Object{&capiaws.AWSCluster{}, &capiazure.AzureCluster{}}
+		candidates := []client.Object{
+			&capiaws.AWSMachine{},         // registered
+			&capiaws.AWSMachineTemplate{}, // not registered
+			&capiaws.AWSCluster{},         // registered
+			&hyperv1.AWSEndpointService{}, // not registered
+			&capiazure.AzureCluster{},     // registered on a different platform, absent here
+		}
 
-	t.Run("When filtering with an AWS-only MC, it should return only AWS resources", func(t *testing.T) {
-		result, err := filterRegisteredResources(logr.Discard(), scheme, awsOnlyDiscovery, candidates)
+		got, err := filterRegisteredResources(c, fakeDiscoveryClient, candidates)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(result) != 1 {
-			t.Fatalf("expected 1 registered resource, got %d", len(result))
-		}
-		gvks, _, err := scheme.ObjectKinds(result[0])
-		if err != nil {
-			t.Fatalf("unexpected error resolving GVK: %v", err)
-		}
-		if gvks[0].Kind != "AWSCluster" {
-			t.Errorf("expected AWSCluster, got %s", gvks[0].Kind)
-		}
-	})
 
-	t.Run("When no resources are registered, it should return an empty list", func(t *testing.T) {
-		emptyDiscovery := &fakediscovery.FakeDiscovery{
-			Fake: &clientgotesting.Fake{},
+		want := []string{
+			"awsmachine.infrastructure.cluster.x-k8s.io",
+			"awscluster.infrastructure.cluster.x-k8s.io",
 		}
-		result, err := filterRegisteredResources(logr.Discard(), scheme, emptyDiscovery, candidates)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(result) != 0 {
-			t.Fatalf("expected 0 registered resources, got %d", len(result))
-		}
-	})
-
-	t.Run("When scheme cannot resolve GVK, it should return an error", func(t *testing.T) {
-		// Use a scheme that does NOT have CAPI types registered
-		emptyScheme := runtime.NewScheme()
-		_, err := filterRegisteredResources(logr.Discard(), emptyScheme, awsOnlyDiscovery, candidates)
-		if err == nil {
-			t.Fatal("expected an error for unregistered types, got nil")
-		}
-	})
-
-	t.Run("When discovery returns an unexpected error, it should propagate it", func(t *testing.T) {
-		// FakeDiscovery with a reactor that returns an error for ServerResourcesForGroupVersion
-		errorDiscovery := &fakediscovery.FakeDiscovery{
-			Fake: &clientgotesting.Fake{},
-		}
-		errorDiscovery.Fake.AddReactor("*", "*", func(action clientgotesting.Action) (bool, runtime.Object, error) {
-			return true, nil, fmt.Errorf("simulated discovery failure")
-		})
-		_, err := filterRegisteredResources(logr.Discard(), scheme, errorDiscovery, candidates)
-		if err == nil {
-			t.Fatal("expected a discovery error, got nil")
+		if fmt.Sprint(resourceTypes(got)) != fmt.Sprint(want) {
+			t.Fatalf("expected registered resource types %v, got %v", want, resourceTypes(got))
 		}
 	})
 }
 
-func TestFilterRegisteredResources_PlatformResourcesIntegration(t *testing.T) {
-	// Use the actual platformResources slice and hyperapi.Scheme to verify
-	// that every entry resolves to a valid GVK and that filtering correctly
-	// includes only the resources whose CRDs are present on the API server.
-	awsOnlyDiscovery := &fakediscovery.FakeDiscovery{
-		Fake: &clientgotesting.Fake{
-			Resources: []*metav1.APIResourceList{
-				{
-					GroupVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-					APIResources: []metav1.APIResource{
-						{Kind: "AWSCluster"},
-						{Kind: "AWSMachine"},
-						{Kind: "AWSMachineTemplate"},
-					},
-				},
-				{
-					GroupVersion: "hypershift.openshift.io/v1beta1",
-					APIResources: []metav1.APIResource{
-						{Kind: "AWSEndpointService"},
-					},
-				},
+func TestBuildDumpResourceList(t *testing.T) {
+	t.Run("When the hosted cluster has a platform, it should include base and registered platform/optional resources and exclude unregistered and other-platform resources", func(t *testing.T) {
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "example"},
+			Spec:       hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+		}
+		c := crfake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hostedCluster).Build()
+
+		// AzureCluster is registered on the (fake) management cluster but must
+		// still be excluded because the hosted cluster is AWS. AWSMachine and
+		// ControlPlaneComponent are registered and should be kept.
+		fakeDiscoveryClient := &fakediscovery.FakeDiscovery{
+			Fake: &clientgotesting.Fake{
+				Resources: discoveryResourcesFor(t, c, []client.Object{
+					&capiaws.AWSMachine{},
+					&capiazure.AzureCluster{},
+					&hyperv1.ControlPlaneComponent{},
+				}),
 			},
-		},
+		}
+
+		opts := &DumpOptions{Namespace: "clusters", Name: "example", Log: logr.Discard()}
+		got, err := buildDumpResourceList(context.Background(), c, fakeDiscoveryClient, opts, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// coreResources and capiCoreResources are always included; the
+		// control-plane resources are always included; then only the registered
+		// platform/optional resources are appended.
+		want := append([]string{}, resourceTypes(coreResources)...)
+		want = append(want, resourceTypes(capiCoreResources)...)
+		want = append(want,
+			"hostedcontrolplane.hypershift.openshift.io",    // control-plane, always included
+			"poddisruptionbudget.policy",                    // control-plane, always included
+			"networkpolicy.networking.k8s.io",               // control-plane, always included
+			"awsmachine.infrastructure.cluster.x-k8s.io",    // AWS platform, registered
+			"controlplanecomponent.hypershift.openshift.io", // feature-gated, registered
+		)
+		if fmt.Sprint(resourceTypes(got)) != fmt.Sprint(want) {
+			t.Fatalf("expected resource types %v, got %v", want, resourceTypes(got))
+		}
+	})
+}
+
+// discoveryResourcesFor builds fake API discovery entries for the given objects
+// using the client's scheme, so filterRegisteredResources treats them as
+// registered on the cluster.
+func discoveryResourcesFor(t *testing.T, c client.Client, objs []client.Object) []*metav1.APIResourceList {
+	t.Helper()
+	byGroupVersion := map[string][]metav1.APIResource{}
+	for _, obj := range objs {
+		gvk, err := c.GroupVersionKindFor(obj)
+		if err != nil {
+			t.Fatalf("failed to get GVK for %T: %v", obj, err)
+		}
+		groupVersion := gvk.GroupVersion().String()
+		byGroupVersion[groupVersion] = append(byGroupVersion[groupVersion], metav1.APIResource{Kind: gvk.Kind})
 	}
-
-	t.Run("When all GVKs in platformResources are resolved against hyperapi.Scheme, it should not error", func(t *testing.T) {
-		for _, resource := range platformResources {
-			_, err := apiutil.GVKForObject(resource, hyperapi.Scheme)
-			if err != nil {
-				t.Errorf("platformResources contains a type not registered in hyperapi.Scheme: %T — %v", resource, err)
-			}
-		}
-	})
-
-	t.Run("When filtering platformResources with an AWS-only MC, it should return only AWS resources", func(t *testing.T) {
-		result, err := filterRegisteredResources(logr.Discard(), hyperapi.Scheme, awsOnlyDiscovery, platformResources)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		// Verify that every returned resource is an AWS type
-		for _, resource := range result {
-			gvk, err := apiutil.GVKForObject(resource, hyperapi.Scheme)
-			if err != nil {
-				t.Fatalf("unexpected error resolving GVK: %v", err)
-			}
-			switch gvk.Kind {
-			case "AWSCluster", "AWSMachine", "AWSMachineTemplate", "AWSEndpointService":
-				// expected
-			default:
-				t.Errorf("unexpected non-AWS resource in filtered result: %s", gvk.Kind)
-			}
-		}
-
-		if len(result) != 4 {
-			t.Errorf("expected 4 AWS resources (AWSCluster, AWSMachine, AWSMachineTemplate, AWSEndpointService), got %d", len(result))
-		}
-	})
-
-	t.Run("When filtering platformResources with an AWS-only MC, it should exclude non-AWS resources", func(t *testing.T) {
-		result, err := filterRegisteredResources(logr.Discard(), hyperapi.Scheme, awsOnlyDiscovery, platformResources)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		// Build a set of returned kinds
-		returnedKinds := make(map[string]bool)
-		for _, resource := range result {
-			gvk, _ := apiutil.GVKForObject(resource, hyperapi.Scheme)
-			returnedKinds[gvk.Kind] = true
-		}
-
-		// These non-AWS types must NOT appear
-		excludedKinds := []string{
-			"AzureCluster", "AzureClusterIdentity", "AzureMachine", "AzureMachineTemplate",
-			"GCPCluster", "GCPMachine", "GCPMachineTemplate",
-			"IBMVPCCluster", "IBMVPCMachine", "IBMVPCMachineTemplate",
-			"IBMPowerVSCluster", "IBMPowerVSImage", "IBMPowerVSMachine", "IBMPowerVSMachineTemplate",
-			"OpenStackCluster", "OpenStackMachine", "OpenStackMachineTemplate", "OpenStackServer", "Image",
-			"AgentCluster", "AgentMachine", "AgentMachineTemplate",
-			"KubevirtCluster", "KubevirtMachine", "KubevirtMachineTemplate",
-		}
-		for _, kind := range excludedKinds {
-			if returnedKinds[kind] {
-				t.Errorf("non-AWS resource %s should have been excluded but was present in results", kind)
-			}
-		}
-	})
+	lists := make([]*metav1.APIResourceList, 0, len(byGroupVersion))
+	for groupVersion, resources := range byGroupVersion {
+		lists = append(lists, &metav1.APIResourceList{GroupVersion: groupVersion, APIResources: resources})
+	}
+	return lists
 }
 
 func TestNewDumpCommand(t *testing.T) {
