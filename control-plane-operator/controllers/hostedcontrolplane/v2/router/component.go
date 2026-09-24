@@ -28,6 +28,11 @@ type router struct {
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
+// Although the router does serve requests, returning false here is intentional:
+// with 2 replicas, IsRequestServing=true causes SetReplicasAndStrategy to set
+// maxUnavailable=1, which allows a stuck replacement pod to reduce available
+// replicas to 0. Returning false keeps maxUnavailable=0 so at least one pod
+// remains available throughout the rolling update.
 func (k *router) IsRequestServing() bool {
 	return false
 }
