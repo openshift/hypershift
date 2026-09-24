@@ -55,7 +55,11 @@ func TestCreateCluster(t *testing.T) {
 
 	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version419) && (globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform) {
 		// Configure Ingress Operator with custom endpointPublishingStrategy before cluster creation
+		originalBeforeApply := clusterOpts.BeforeApply
 		clusterOpts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
 			switch hc := o.(type) {
 			case *hyperv1.HostedCluster:
 				if hc.Spec.OperatorConfiguration == nil {
