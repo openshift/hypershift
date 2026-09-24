@@ -50,12 +50,12 @@ require (
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/sync v0.15.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/term v0.32.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/term v0.34.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
@@ -76,3 +76,5 @@ require (
 
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.43.0-sec.4
