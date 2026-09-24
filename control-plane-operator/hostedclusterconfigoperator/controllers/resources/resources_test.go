@@ -1,7 +1,10 @@
 package resources
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -19,6 +22,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	kasconst "github.com/openshift/hypershift/pkg/kas"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
+	awsapi "github.com/openshift/hypershift/support/awsapi"
+	awsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -32,6 +37,13 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/aws/smithy-go"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +69,9 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -66,6 +81,38 @@ type testClient struct {
 	createCount     int
 	getErrorCount   int
 	randomGetErrors bool
+}
+
+type kubeAPIServerGetErrorClient struct {
+	client.Client
+	err error
+}
+
+func (c *kubeAPIServerGetErrorClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*appsv1.Deployment); ok && key.Name == "kube-apiserver" {
+		return c.err
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+type persistentVolumeListErrorClient struct {
+	client.Client
+	err error
+}
+
+func (c *persistentVolumeListErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*corev1.PersistentVolumeList); ok {
+		return c.err
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+type errorCreateOrUpdater struct {
+	err error
+}
+
+func (p *errorCreateOrUpdater) CreateOrUpdate(context.Context, client.Client, client.Object, controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	return controllerutil.OperationResultNone, p.err
 }
 
 var randomSource = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -758,6 +805,9 @@ func TestDestroyCloudResources(t *testing.T) {
 				Name:      "test-hcp",
 				Namespace: "test-namespace",
 			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+			},
 			Status: hyperv1.HostedControlPlaneStatus{
 				Conditions: []metav1.Condition{
 					{
@@ -965,7 +1015,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			verify: verifyIngressControllersRemoved,
 		},
 		{
-			name: "When service load balancers exist, it should remove load balancers but preserve ClusterIP services",
+			name: "When Azure Service load balancers exist, it should remove them but preserve ClusterIP services",
 			existing: []client.Object{
 				serviceLoadBalancer("foo"),
 				serviceLoadBalancer("bar"),
@@ -1030,6 +1080,7 @@ func TestDestroyCloudResources(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			awsLoadBalancerCleanupCalls := 0
 			fakeHCP := fakeHostedControlPlane()
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existing...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingUncached...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
@@ -1047,9 +1098,14 @@ func TestDestroyCloudResources(t *testing.T) {
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
+				awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+					awsLoadBalancerCleanupCalls++
+					return true, nil
+				},
 			}
 			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(awsLoadBalancerCleanupCalls).To(Equal(0), "Azure cleanup should use the Kubernetes Service path")
 			verifyCleanupWebhook(g, guestClient, fakeHCP)
 			if test.verify != nil {
 				test.verify(g, guestClient, uncachedClient)
@@ -1059,6 +1115,1851 @@ func TestDestroyCloudResources(t *testing.T) {
 			} else {
 				verifyNotDoneCond(g, cpClient)
 			}
+		})
+	}
+}
+
+func TestDestroyCloudResources_WhenPlatformIsAWS_ItShouldUseDirectLoadBalancerCleanup(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.CloudResourcesDestroyed),
+					Status: metav1.ConditionFalse,
+				},
+			},
+		},
+	}
+
+	lbService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-loadbalancer",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeLoadBalancer,
+		},
+		Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+			Hostname: "my-loadbalancer-123.us-east-1.elb.amazonaws.com",
+		}}}},
+	}
+
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(lbService).Build()
+	kasDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: fakeHCP.Namespace,
+		},
+	}
+	cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP, kasDeployment).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	cleanupCalled := false
+
+	r := &reconciler{
+		client:                 guestClient,
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		cpClient:               cpClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
+		awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+			cleanupCalled = true
+			return true, nil
+		},
+	}
+
+	remaining, _, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(remaining.Has("loadbalancers")).To(BeFalse(), "AWS should not track loadbalancers in remaining set")
+	g.Expect(cleanupCalled).To(BeTrue())
+
+	// AWS cleanup should not wait for a cloud-controller finalizer on the Service.
+	svc := &corev1.Service{}
+	err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(lbService), svc)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+}
+
+func TestDestroyCloudResources_WhenAWSCleanupHasConnectionError_ItShouldNotLogRawError(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	const endpointHost = "internal-elb.example"
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Conditions: []metav1.Condition{{
+				Type:   string(hyperv1.CloudResourcesDestroyed),
+				Status: metav1.ConditionFalse,
+			}},
+		},
+	}
+	lbService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-loadbalancer", Namespace: "default"},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+			Hostname: "my-loadbalancer-123.us-east-1.elb.amazonaws.com",
+		}}}},
+	}
+
+	var logOutput bytes.Buffer
+	logCore := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&logOutput), zapcore.InfoLevel)
+	ctx := logr.NewContext(t.Context(), zapr.NewLogger(zap.New(logCore)))
+	awsErr := &mockNetError{
+		error:   fmt.Errorf("request to https://%s:443 failed: connection refused", endpointHost),
+		timeout: true,
+	}
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(lbService).Build()
+	cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+		fakeHCP,
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: fakeHCP.Namespace}},
+	).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	r := &reconciler{
+		client:                 guestClient,
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		cpClient:               cpClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
+		awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+			return false, awsErr
+		},
+	}
+
+	remaining, _, err := r.ensureCloudResourcesDestroyed(ctx, fakeHCP)
+	g.Expect(err).To(HaveOccurred())
+	aggregate, ok := err.(interface{ Errors() []error })
+	g.Expect(ok).To(BeTrue())
+	g.Expect(aggregate.Errors()).To(HaveLen(1))
+	var returnedErr *mockNetError
+	g.Expect(errors.As(aggregate.Errors()[0], &returnedErr)).To(BeTrue(), "the original error should remain available through Unwrap")
+	g.Expect(returnedErr).To(BeIdenticalTo(awsErr))
+	g.Expect(remaining.Has("loadbalancers")).To(BeTrue())
+	g.Expect(r.cleanupTracker.GetFailureCount(client.ObjectKeyFromObject(fakeHCP).String())).To(Equal(1), "the component wrapper should preserve connection-error classification")
+	g.Expect(err.Error()).NotTo(ContainSubstring(endpointHost))
+	g.Expect(logOutput.String()).NotTo(ContainSubstring(endpointHost))
+}
+
+func TestDestroyCloudResources_WhenCleanupEligibilityCheckFails_ItShouldRedactErrorFromConditionAndLog(t *testing.T) {
+	const endpointHost = "private-kas-endpoint.example"
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-namespace", UID: "cleanup-eligibility-hcp-uid"},
+		Status: hyperv1.HostedControlPlaneStatus{Conditions: []metav1.Condition{{
+			Type: string(hyperv1.CloudResourcesDestroyed), Status: metav1.ConditionFalse,
+		}}},
+	}
+	managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+		fakeHCP,
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: fakeHCP.Namespace}},
+	).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	cpClient := &kubeAPIServerGetErrorClient{
+		Client: managementClient,
+		err:    fmt.Errorf("request to https://%s:6443 failed", endpointHost),
+	}
+	var logOutput bytes.Buffer
+	logCore := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&logOutput), zapcore.InfoLevel)
+	ctx := logr.NewContext(t.Context(), zapr.NewLogger(zap.New(logCore)))
+	r := &reconciler{
+		client:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		uncachedClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		cpClient:       cpClient,
+		cleanupTracker: reconcilerpolicy.NewCleanupTracker(),
+	}
+
+	_, err := r.destroyCloudResources(ctx, fakeHCP)
+	g := NewGomegaWithT(t)
+	g.Expect(err).ToNot(HaveOccurred())
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(managementClient.Get(t.Context(), client.ObjectKeyFromObject(fakeHCP), updatedHCP)).To(Succeed())
+	condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+	g.Expect(condition).ToNot(BeNil())
+	g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+	g.Expect(condition.Message).To(ContainSubstring("cleanup eligibility check failed"))
+	g.Expect(condition.Message).NotTo(ContainSubstring(endpointHost))
+	g.Expect(logOutput.String()).NotTo(ContainSubstring(endpointHost))
+}
+
+func TestDestroyCloudResources_WhenResourceCreationBlockingReturnsWrappedConnectionError_ItShouldTrackFailureAndRedactDetails(t *testing.T) {
+	const endpointHost = "private-guest-endpoint.example"
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-namespace", UID: "resource-creation-hcp-uid"},
+		Status: hyperv1.HostedControlPlaneStatus{Conditions: []metav1.Condition{{
+			Type: string(hyperv1.CloudResourcesDestroyed), Status: metav1.ConditionFalse,
+		}}},
+	}
+	managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+		fakeHCP,
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: fakeHCP.Namespace}},
+	).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	var logOutput bytes.Buffer
+	logCore := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&logOutput), zapcore.InfoLevel)
+	ctx := logr.NewContext(t.Context(), zapr.NewLogger(zap.New(logCore)))
+	tracker := reconcilerpolicy.NewCleanupTracker()
+	r := &reconciler{
+		client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		cpClient:               managementClient,
+		CreateOrUpdateProvider: &errorCreateOrUpdater{err: fmt.Errorf("request to https://%s:6443 failed: %w", endpointHost, &mockNetError{error: errors.New("connection refused"), timeout: true})},
+		cleanupTracker:         tracker,
+	}
+
+	_, err := r.destroyCloudResources(ctx, fakeHCP)
+	g := NewGomegaWithT(t)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(tracker.GetFailureCount(client.ObjectKeyFromObject(fakeHCP).String())).To(Equal(1), "the component wrapper must preserve wrapped connection-error classification")
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(managementClient.Get(t.Context(), client.ObjectKeyFromObject(fakeHCP), updatedHCP)).To(Succeed())
+	condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+	g.Expect(condition).ToNot(BeNil())
+	g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+	g.Expect(condition.Message).To(ContainSubstring("resource creation blocking failed"))
+	g.Expect(condition.Message).NotTo(ContainSubstring(endpointHost))
+	g.Expect(condition.Message).NotTo(ContainSubstring("connection refused"))
+	g.Expect(logOutput.String()).NotTo(ContainSubstring(endpointHost))
+	g.Expect(logOutput.String()).NotTo(ContainSubstring("connection refused"))
+}
+
+func TestNewAWSLoadBalancerClients(t *testing.T) {
+	tests := []struct {
+		name              string
+		platform          *hyperv1.AWSPlatformSpec
+		wantError         string
+		wantELBEndpoint   *string
+		wantELBV2Endpoint *string
+	}{
+		{
+			name:      "When AWS configuration is missing, it should return an error",
+			wantError: "AWS platform configuration is missing",
+		},
+		{
+			name: "When region is missing, it should return an error",
+			platform: &hyperv1.AWSPlatformSpec{
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+			wantError: "AWS region cannot be empty",
+		},
+		{
+			name: "When cloud controller role is missing, it should return an error",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+			},
+			wantError: "AWS role ARN cannot be empty",
+		},
+		{
+			name: "When both roles are configured, it should create clients with default endpoints",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+		},
+		{
+			name: "When AWS service endpoints are configured, it should apply them to the clients",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				ServiceEndpoints: []hyperv1.AWSServiceEndpoint{
+					{Name: awsElasticLoadBalancingServiceName, URL: "https://elb.example.com"},
+				},
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+			wantELBEndpoint:   ptr.To("https://elb.example.com"),
+			wantELBV2Endpoint: ptr.To("https://elb.example.com"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{}
+			if test.platform != nil {
+				hcp.Spec.Platform.AWS = test.platform
+			}
+			clients, err := newAWSLoadBalancerClients(t.Context(), hcp)
+			if test.wantError != "" {
+				NewGomegaWithT(t).Expect(err).To(MatchError(ContainSubstring(test.wantError)))
+				return
+			}
+
+			g := NewGomegaWithT(t)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(clients.ELB).ToNot(BeNil())
+			g.Expect(clients.ELBV2).ToNot(BeNil())
+			g.Expect(clients.ELB.(*elasticloadbalancing.Client).Options().BaseEndpoint).To(Equal(test.wantELBEndpoint))
+			g.Expect(clients.ELBV2.(*elasticloadbalancingv2.Client).Options().BaseEndpoint).To(Equal(test.wantELBV2Endpoint))
+		})
+	}
+}
+
+func TestAWSServiceEndpoint(t *testing.T) {
+	tests := []struct {
+		name        string
+		endpoints   []hyperv1.AWSServiceEndpoint
+		serviceName string
+		want        string
+	}{
+		{
+			name:        "When the service is present, it should return its URL",
+			serviceName: "service-a",
+			endpoints: []hyperv1.AWSServiceEndpoint{
+				{Name: "service-a", URL: "https://service-a.example.com"},
+			},
+			want: "https://service-a.example.com",
+		},
+		{
+			name:        "When the service is absent, it should return an empty URL",
+			serviceName: "service-b",
+			endpoints: []hyperv1.AWSServiceEndpoint{
+				{Name: "service-a", URL: "https://service-a.example.com"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(awsServiceEndpoint(test.endpoints, test.serviceName)).To(Equal(test.want))
+		})
+	}
+}
+
+type progressTestELBClient struct {
+	awsapi.ELBAPI
+	name              string
+	vpcID             string
+	infraID           string
+	present           bool
+	describeCalls     int
+	describeTagsCalls int
+	describeErr       error
+	describeTagsErr   error
+	deleteErr         error
+	deleteCalls       int
+}
+
+func (c *progressTestELBClient) DescribeLoadBalancers(context.Context, *elasticloadbalancing.DescribeLoadBalancersInput, ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancersOutput, error) {
+	c.describeCalls++
+	if c.describeErr != nil {
+		return nil, c.describeErr
+	}
+	output := &elasticloadbalancing.DescribeLoadBalancersOutput{}
+	if c.present {
+		output.LoadBalancerDescriptions = []elbtypes.LoadBalancerDescription{{LoadBalancerName: ptr.To(c.name), VPCId: ptr.To(c.vpcID)}}
+	}
+	return output, nil
+}
+
+func (c *progressTestELBClient) DescribeTags(context.Context, *elasticloadbalancing.DescribeTagsInput, ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeTagsOutput, error) {
+	c.describeTagsCalls++
+	if c.describeTagsErr != nil {
+		return nil, c.describeTagsErr
+	}
+	return &elasticloadbalancing.DescribeTagsOutput{TagDescriptions: []elbtypes.TagDescription{{
+		LoadBalancerName: ptr.To(c.name),
+		Tags:             []elbtypes.Tag{{Key: ptr.To("kubernetes.io/cluster/" + c.infraID), Value: ptr.To("owned")}},
+	}}}, nil
+}
+
+func (c *progressTestELBClient) DeleteLoadBalancer(context.Context, *elasticloadbalancing.DeleteLoadBalancerInput, ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DeleteLoadBalancerOutput, error) {
+	c.deleteCalls++
+	if c.deleteErr != nil {
+		return nil, c.deleteErr
+	}
+	c.present = false
+	return &elasticloadbalancing.DeleteLoadBalancerOutput{}, nil
+}
+
+type progressTestELBV2Client struct {
+	awsapi.ELBV2API
+	loadBalancerDescribeCalls int
+	targetGroupScanCalls      int
+	targetGroupErrors         []error
+}
+
+func (c *progressTestELBV2Client) DescribeLoadBalancers(context.Context, *elasticloadbalancingv2.DescribeLoadBalancersInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error) {
+	c.loadBalancerDescribeCalls++
+	return &elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil
+}
+
+func (c *progressTestELBV2Client) DescribeTargetGroups(context.Context, *elasticloadbalancingv2.DescribeTargetGroupsInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupsOutput, error) {
+	c.targetGroupScanCalls++
+	if len(c.targetGroupErrors) > 0 {
+		err := c.targetGroupErrors[0]
+		c.targetGroupErrors = c.targetGroupErrors[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &elasticloadbalancingv2.DescribeTargetGroupsOutput{}, nil
+}
+
+type progressRecordedV2Client struct {
+	awsapi.ELBV2API
+	name                 string
+	arn                  string
+	vpcID                string
+	infraID              string
+	targetGroupARN       string
+	listenerARN          string
+	loadBalancerPresent  bool
+	targetGroupPresent   bool
+	targetGroupScanErrs  []error
+	targetGroupScanCalls int
+	deleteOrder          []string
+}
+
+func (c *progressRecordedV2Client) DescribeLoadBalancers(_ context.Context, input *elasticloadbalancingv2.DescribeLoadBalancersInput, _ ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error) {
+	if len(input.LoadBalancerArns) > 0 {
+		if c.loadBalancerPresent && input.LoadBalancerArns[0] == c.arn {
+			return &elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
+				LoadBalancerName: aws.String(c.name), LoadBalancerArn: aws.String(c.arn), VpcId: aws.String(c.vpcID),
+			}}}, nil
+		}
+		return nil, &smithy.GenericAPIError{Code: "LoadBalancerNotFound", Message: "not found"}
+	}
+	if len(input.Names) > 0 && c.loadBalancerPresent && input.Names[0] == c.name {
+		return &elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
+			LoadBalancerName: aws.String(c.name), LoadBalancerArn: aws.String(c.arn), VpcId: aws.String(c.vpcID),
+		}}}, nil
+	}
+	return &elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil
+}
+
+func (c *progressRecordedV2Client) DescribeTags(_ context.Context, input *elasticloadbalancingv2.DescribeTagsInput, _ ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTagsOutput, error) {
+	descriptions := make([]elbv2types.TagDescription, 0, len(input.ResourceArns))
+	for _, arn := range input.ResourceArns {
+		descriptions = append(descriptions, elbv2types.TagDescription{
+			ResourceArn: aws.String(arn),
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + c.infraID), Value: aws.String("owned")}},
+		})
+	}
+	return &elasticloadbalancingv2.DescribeTagsOutput{TagDescriptions: descriptions}, nil
+}
+
+func (c *progressRecordedV2Client) DescribeTargetGroups(_ context.Context, input *elasticloadbalancingv2.DescribeTargetGroupsInput, _ ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupsOutput, error) {
+	if input.LoadBalancerArn != nil {
+		if c.loadBalancerPresent && c.targetGroupPresent {
+			return &elasticloadbalancingv2.DescribeTargetGroupsOutput{TargetGroups: []elbv2types.TargetGroup{{
+				TargetGroupArn: aws.String(c.targetGroupARN), VpcId: aws.String(c.vpcID), LoadBalancerArns: []string{c.arn},
+			}}}, nil
+		}
+		return &elasticloadbalancingv2.DescribeTargetGroupsOutput{}, nil
+	}
+	if len(input.TargetGroupArns) > 0 {
+		if c.targetGroupPresent && input.TargetGroupArns[0] == c.targetGroupARN {
+			return &elasticloadbalancingv2.DescribeTargetGroupsOutput{TargetGroups: []elbv2types.TargetGroup{{
+				TargetGroupArn: aws.String(c.targetGroupARN), VpcId: aws.String(c.vpcID),
+			}}}, nil
+		}
+		return nil, &smithy.GenericAPIError{Code: "TargetGroupNotFound", Message: "not found"}
+	}
+	c.targetGroupScanCalls++
+	if len(c.targetGroupScanErrs) > 0 {
+		err := c.targetGroupScanErrs[0]
+		c.targetGroupScanErrs = c.targetGroupScanErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &elasticloadbalancingv2.DescribeTargetGroupsOutput{}, nil
+}
+
+func (c *progressRecordedV2Client) DescribeListeners(_ context.Context, _ *elasticloadbalancingv2.DescribeListenersInput, _ ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeListenersOutput, error) {
+	if c.loadBalancerPresent {
+		return &elasticloadbalancingv2.DescribeListenersOutput{Listeners: []elbv2types.Listener{{ListenerArn: aws.String(c.listenerARN)}}}, nil
+	}
+	return &elasticloadbalancingv2.DescribeListenersOutput{}, nil
+}
+
+func (c *progressRecordedV2Client) DeleteListener(context.Context, *elasticloadbalancingv2.DeleteListenerInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteListenerOutput, error) {
+	c.deleteOrder = append(c.deleteOrder, "listener")
+	return &elasticloadbalancingv2.DeleteListenerOutput{}, nil
+}
+
+func (c *progressRecordedV2Client) DeleteTargetGroup(context.Context, *elasticloadbalancingv2.DeleteTargetGroupInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteTargetGroupOutput, error) {
+	c.deleteOrder = append(c.deleteOrder, "target-group")
+	c.targetGroupPresent = false
+	return &elasticloadbalancingv2.DeleteTargetGroupOutput{}, nil
+}
+
+func (c *progressRecordedV2Client) DeleteLoadBalancer(context.Context, *elasticloadbalancingv2.DeleteLoadBalancerInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteLoadBalancerOutput, error) {
+	c.deleteOrder = append(c.deleteOrder, "load-balancer")
+	c.loadBalancerPresent = false
+	return &elasticloadbalancingv2.DeleteLoadBalancerOutput{}, nil
+}
+
+type failingProgressWriteClient struct {
+	client.Client
+	err error
+}
+
+type staleProgressReadClient struct {
+	client.Client
+	staleProgressConfigMapReads bool
+}
+
+func (c *staleProgressReadClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if c.staleProgressConfigMapReads {
+		if _, ok := obj.(*corev1.ConfigMap); ok {
+			return apierrors.NewNotFound(schema.GroupResource{Resource: "configmaps"}, key.Name)
+		}
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func (c *failingProgressWriteClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if _, ok := obj.(*corev1.ConfigMap); ok {
+		return c.err
+	}
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+func (c *failingProgressWriteClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if _, ok := obj.(*corev1.ConfigMap); ok {
+		return c.err
+	}
+	return c.Client.Update(ctx, obj, opts...)
+}
+
+func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-hcp", UID: "hcp-uid"},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "infra-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region:              "us-east-1",
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-owned"},
+				},
+			},
+		},
+	}
+
+	t.Run("When AWS client initialization fails, it should retain the Service and retry on the next cleanup pass", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+
+		factoryCalls := 0
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			awsLoadBalancerClientFactory: func(context.Context, *hyperv1.HostedControlPlane) (awsutil.LoadBalancerClients, error) {
+				factoryCalls++
+				return awsutil.LoadBalancerClients{}, fmt.Errorf("projected token is not ready")
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("failed to configure AWS load balancer clients"))
+		g.Expect(r.awsLoadBalancerClients.ELB).To(BeNil())
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
+
+		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("failed to configure AWS load balancer clients"))
+		g.Expect(factoryCalls).To(Equal(2))
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
+	})
+
+	t.Run("When AWS configuration is invalid for a named Service, it should return an error", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		removed, err := (&reconciler{client: guestClient, cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build()}).ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("failed to configure AWS load balancer clients"))
+	})
+
+	t.Run("When AWS cleanup fails, it should retain load balancer Services for retry", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		r := &reconciler{
+			client: guestClient,
+			awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+				return false, fmt.Errorf("AWS cleanup failed")
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("cloud resource cleanup failed; error details were omitted to avoid exposing sensitive resource or endpoint information"))
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
+	})
+
+	t.Run("When AWS cleanup is still in progress, it should retain resolved load balancer Services", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		r := &reconciler{
+			client: guestClient,
+			awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+				return false, nil
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
+	})
+
+	t.Run("When no load balancer Services exist, it should report cleanup complete", func(t *testing.T) {
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		factoryCalls := 0
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			awsLoadBalancerClientFactory: func(context.Context, *hyperv1.HostedControlPlane) (awsutil.LoadBalancerClients, error) {
+				factoryCalls++
+				return awsutil.LoadBalancerClients{}, nil
+			},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(r.awsLoadBalancerClients.ELB).To(BeNil())
+		g.Expect(r.awsLoadBalancerClients.ELBV2).To(BeNil())
+		g.Expect(factoryCalls).To(Equal(0))
+	})
+
+	t.Run("When the AWS VPC is unavailable and the Service finalizer is stuck, it should leave cleanup pending", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		hcpWithoutVPC := hcp.DeepCopy()
+		hcpWithoutVPC.Spec.Platform.AWS.CloudProviderConfig = nil
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "load-balancer", Namespace: "default", UID: "service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		elbClient := awsapi.NewMockELBAPI(ctrl)
+		elbv2Client := awsapi.NewMockELBV2API(ctrl)
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcpWithoutVPC)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS VPC configuration is missing; Kubernetes cleanup was requested, but AWS load balancer ownership cannot be verified and AWS resources may remain"))
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remaining.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+	})
+
+	t.Run("When a load balancer Service has no hostname or cleanup finalizer, it should be deleted through Kubernetes", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "pending", Namespace: "default"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		elbClient := awsapi.NewMockELBAPI(ctrl)
+		elbv2Client := awsapi.NewMockELBV2API(ctrl)
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+	})
+
+	for _, test := range []struct {
+		name              string
+		withEmptyProgress bool
+	}{
+		{
+			name: "When a pending Service has a cleanup finalizer but no ingress, it should wait without AWS calls",
+		},
+		{
+			name:              "When a pending Service has an empty persisted proof, it should retire the proof without AWS calls",
+			withEmptyProgress: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "pending",
+					Namespace:  "default",
+					UID:        "pending-service-uid",
+					Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+				},
+				Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			}
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+			ctrl := gomock.NewController(t)
+			elbClient := awsapi.NewMockELBAPI(ctrl)
+			elbv2Client := awsapi.NewMockELBV2API(ctrl)
+			elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+			elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+			elbv2Client.EXPECT().DescribeTargetGroups(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+			var managementObjects []client.Object
+			if test.withEmptyProgress {
+				progress := awsLoadBalancerCleanupProgress{
+					HCPUID:  hcp.UID,
+					InfraID: hcp.Spec.InfraID,
+					Region:  hcp.Spec.Platform.AWS.Region,
+					VPCID:   hcp.Spec.Platform.AWS.CloudProviderConfig.VPC,
+					Services: map[string]awsLoadBalancerServiceProof{
+						string(service.UID): {Namespace: service.Namespace, Name: service.Name},
+					},
+				}
+				serialized, err := json.Marshal(progress)
+				if err != nil {
+					t.Fatal(err)
+				}
+				managementObjects = append(managementObjects, &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)},
+					Data:       map[string]string{awsLoadBalancerProgressDataKey: string(serialized)},
+				})
+			}
+			managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(managementObjects...).Build()
+			factoryCalls := 0
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               managementClient,
+				awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+				awsLoadBalancerClientFactory: func(context.Context, *hyperv1.HostedControlPlane) (awsutil.LoadBalancerClients, error) {
+					factoryCalls++
+					return awsutil.LoadBalancerClients{}, nil
+				},
+			}
+
+			removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+			g := NewGomegaWithT(t)
+			g.Expect(removed).To(BeFalse())
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(factoryCalls).To(BeZero())
+			remaining := &corev1.Service{}
+			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+			g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+			g.Expect(remaining.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+			progressConfigMap := &corev1.ConfigMap{}
+			progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+			g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, progressConfigMap))).To(BeTrue())
+		})
+	}
+
+	t.Run("When a Service has a custom load balancer class and finalizer, it should wait for that controller to finish cleanup", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "custom-class",
+				Namespace:  "default",
+				Finalizers: []string{"example.com/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:              corev1.ServiceTypeLoadBalancer,
+				LoadBalancerClass: ptr.To("example.com/custom-lb"),
+			},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		r := &reconciler{client: guestClient, cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build()}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).ToNot(HaveOccurred())
+
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remaining.Finalizers).To(ContainElement("example.com/load-balancer-cleanup"))
+	})
+
+	t.Run("When one Service is pending, it should delete known Services and wait for its cleanup finalizer", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		knownService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "known", Namespace: "default", UID: "known-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		pendingService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "pending",
+				Namespace:  "default",
+				UID:        "pending-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(knownService, pendingService).Build()
+		elbClient := awsapi.NewMockELBAPI(ctrl)
+		elbv2Client := awsapi.NewMockELBV2API(ctrl)
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancing.DescribeLoadBalancersInput{
+			LoadBalancerNames: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancing.DescribeLoadBalancersOutput{
+			LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{{LoadBalancerName: ptr.To("cluster-lb"), VPCId: ptr.To("vpc-owned")}},
+		}, nil).Times(2)
+		elbClient.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancing.DescribeTagsInput{
+			LoadBalancerNames: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
+			TagDescriptions: []elbtypes.TagDescription{{
+				LoadBalancerName: ptr.To("cluster-lb"),
+				Tags:             []elbtypes.Tag{{Key: ptr.To("kubernetes.io/cluster/infra-id"), Value: ptr.To("owned")}},
+			}},
+		}, nil).Times(2)
+		elbClient.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancing.DeleteLoadBalancerInput{
+			LoadBalancerName: ptr.To("cluster-lb"),
+		}, gomock.Any()).Return(&elasticloadbalancing.DeleteLoadBalancerOutput{}, nil)
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancing.DescribeLoadBalancersInput{
+			LoadBalancerNames: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancing.DescribeLoadBalancersOutput{}, nil)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+			Names: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil)
+		elbv2Client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{}, nil)
+
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB:   elbClient,
+				ELBV2: elbv2Client,
+			},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(knownService), &corev1.Service{}))).To(BeTrue())
+		remainingPendingService := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(pendingService), remainingPendingService)).To(Succeed())
+		g.Expect(remainingPendingService.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remainingPendingService.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+	})
+
+	t.Run("When direct AWS deletion is verified, it should not wait for a stuck Service finalizer", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "load-balancer",
+				Namespace:  "default",
+				UID:        "verified-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		elbv2Client := &progressTestELBV2Client{}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.deleteCalls).To(Equal(1))
+
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remaining.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+
+		progressConfigMap := &corev1.ConfigMap{}
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
+		g.Expect(progressConfigMap.OwnerReferences).To(BeEmpty())
+		progress := &awsLoadBalancerCleanupProgress{}
+		g.Expect(json.Unmarshal([]byte(progressConfigMap.Data[awsLoadBalancerProgressDataKey]), progress)).To(Succeed())
+		g.Expect(progress.Services[string(service.UID)].Candidates).To(ConsistOf(awsLoadBalancerCandidate{
+			Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			Name:     "cluster-lb",
+			Region:   "us-east-1",
+		}))
+		g.Expect(progress.Services[string(service.UID)].Identities).To(ConsistOf(awsutil.LoadBalancerIdentity{
+			Name: "cluster-lb", Type: awsutil.ClassicLoadBalancerResource, VPCID: "vpc-owned",
+		}))
+	})
+
+	t.Run("When a hostname appears after a finalizer-only pass, it should record the candidate and allow verified cleanup", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "load-balancer", Namespace: "default", UID: "late-hostname-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(&corev1.Service{}).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		elbv2Client := &progressTestELBV2Client{}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.describeCalls).To(BeZero())
+		g.Expect(elbClient.deleteCalls).To(BeZero())
+		g.Expect(elbv2Client.targetGroupScanCalls).To(BeZero())
+
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
+
+		updatedService := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), updatedService)).To(Succeed())
+		updatedService.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com"}}
+		g.Expect(guestClient.Status().Update(t.Context(), updatedService)).To(Succeed())
+
+		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(removed).To(BeTrue())
+		g.Expect(elbClient.deleteCalls).To(Equal(1))
+
+		progressConfigMap := &corev1.ConfigMap{}
+		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
+		progress := &awsLoadBalancerCleanupProgress{}
+		g.Expect(json.Unmarshal([]byte(progressConfigMap.Data[awsLoadBalancerProgressDataKey]), progress)).To(Succeed())
+		g.Expect(progress.Services[string(service.UID)].Candidates).To(ConsistOf(awsLoadBalancerCandidate{
+			Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com", Name: "cluster-lb", Region: "us-east-1",
+		}))
+	})
+
+	t.Run("When a finalizer-only Service disappears, it should complete without AWS proof or scanning", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "pending", Namespace: "default", UID: "unresolved-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{}
+		elbv2Client := &progressTestELBV2Client{}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+		g := NewGomegaWithT(t)
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.describeCalls).To(BeZero())
+		g.Expect(elbClient.deleteCalls).To(BeZero())
+		g.Expect(elbv2Client.targetGroupScanCalls).To(BeZero())
+
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
+
+		terminatingService := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), terminatingService)).To(Succeed())
+		terminatingService.Finalizers = nil
+		g.Expect(guestClient.Update(t.Context(), terminatingService)).To(Succeed())
+		if getErr := guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), terminatingService); getErr == nil {
+			g.Expect(guestClient.Delete(t.Context(), terminatingService)).To(Succeed())
+		}
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+
+		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.describeCalls).To(Equal(0))
+		g.Expect(elbClient.deleteCalls).To(Equal(0))
+		g.Expect(elbv2Client.targetGroupScanCalls).To(BeZero())
+		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
+	})
+
+	t.Run("When the write-ahead record cannot be persisted, it should not call AWS or delete the Service", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "write-failure-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		elbv2Client := &progressTestELBV2Client{}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               &failingProgressWriteClient{Client: managementClient, err: errors.New("management API unavailable")},
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("failed to persist AWS load balancer cleanup candidates; no AWS deletion was attempted"))
+		g.Expect(elbClient.describeCalls).To(Equal(0))
+		g.Expect(elbClient.deleteCalls).To(Equal(0))
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeTrue())
+	})
+
+	t.Run("When a verified identity cannot be persisted, it should not delete the AWS resource", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "identity-write-failure-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		progress := &awsLoadBalancerCleanupProgress{
+			HCPUID: hcp.UID, InfraID: hcp.Spec.InfraID, Region: "us-east-1", VPCID: "vpc-owned",
+			Services: map[string]awsLoadBalancerServiceProof{
+				string(service.UID): {
+					Namespace: service.Namespace, Name: service.Name,
+					Candidates: []awsLoadBalancerCandidate{{
+						Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com", Name: "cluster-lb", Region: "us-east-1",
+					}},
+				},
+			},
+		}
+		serializedProgress, err := json.Marshal(progress)
+		g := NewGomegaWithT(t)
+		g.Expect(err).ToNot(HaveOccurred())
+		progressConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)},
+			Data:       map[string]string{awsLoadBalancerProgressDataKey: string(serializedProgress)},
+		}
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(progressConfigMap).Build()
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: &failingProgressWriteClient{Client: managementClient, err: errors.New("management API unavailable")},
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("failed to persist verified AWS identities; no AWS deletion was attempted"))
+		g.Expect(elbClient.deleteCalls).To(Equal(0))
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeTrue())
+	})
+
+	t.Run("When DescribeTags is denied, it should use Kubernetes fallback without exposing AWS endpoint details", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "load-balancer",
+				Namespace:  "default",
+				UID:        "tag-denial-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		elbClient := &progressTestELBClient{
+			name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true,
+			describeTagsErr: &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "request sent to https://private-endpoint.example"},
+		}
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(errors.Is(err, awsutil.ErrDescribeTagsAccessDenied)).To(BeTrue())
+		g.Expect(err.Error()).To(ContainSubstring("elasticloadbalancing:DescribeTags"))
+		g.Expect(err.Error()).NotTo(ContainSubstring("private-endpoint.example"))
+		g.Expect(fmt.Sprintf("Error: %v", err)).NotTo(ContainSubstring("private-endpoint.example"))
+		g.Expect(elbClient.deleteCalls).To(Equal(0))
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remaining.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+	})
+
+	t.Run("When deleting AWS resources is denied, it should return an error without Kubernetes fallback", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "load-balancer",
+				Namespace:  "default",
+				UID:        "delete-denial-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		deleteErr := &smithy.GenericAPIError{Code: "AccessDenied", Message: "request sent to https://private-endpoint.example was denied"}
+		elbClient := &progressTestELBClient{
+			name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true, deleteErr: deleteErr,
+		}
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS load balancer deletion failed; resources may remain"))
+		g.Expect(errors.Is(err, deleteErr)).To(BeTrue())
+		g.Expect(fmt.Sprintf("Error: %v", err)).NotTo(ContainSubstring("private-endpoint.example"))
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeTrue())
+		g.Expect(remaining.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+	})
+
+	t.Run("When target-group scanning fails after deletion, it should use the recorded identity on retry", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "retry-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		cachedManagementClient := &staleProgressReadClient{Client: managementClient}
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		elbv2Client := &progressTestELBV2Client{targetGroupErrors: []error{errors.New("scan failed at https://private-endpoint.example"), nil}}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               cachedManagementClient,
+			cpAPIReader:            managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS orphan target-group cleanup failed; resources may remain"))
+		g.Expect(err.Error()).NotTo(ContainSubstring("private-endpoint.example"))
+		g.Expect(elbClient.deleteCalls).To(Equal(1))
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+
+		progressConfigMap := &corev1.ConfigMap{}
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
+
+		cachedManagementClient.staleProgressConfigMapReads = true
+		g.Expect(apierrors.IsNotFound(cachedManagementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
+		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.deleteCalls).To(Equal(1))
+		g.Expect(elbv2Client.targetGroupScanCalls).To(Equal(2))
+		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
+	})
+
+	t.Run("When a recorded ELBV2 ARN is NotFound on retry, it should verify that exact resource after the orphan scan", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "v2-load-balancer", Namespace: "default", UID: "v2-retry-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "v2-cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		const (
+			lbName      = "v2-cluster-lb"
+			lbARN       = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/v2-cluster-lb/abcdef"
+			targetGroup = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/v2-cluster-tg/abcdef"
+			listenerARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/v2-cluster-lb/abcdef/ghijkl"
+		)
+		elbClient := &progressTestELBClient{
+			name: lbName, describeErr: &smithy.GenericAPIError{Code: "LoadBalancerNotFound", Message: "classic ELB not found"},
+		}
+		elbv2Client := &progressRecordedV2Client{
+			name: lbName, arn: lbARN, vpcID: "vpc-owned", infraID: "infra-id",
+			targetGroupARN: targetGroup, listenerARN: listenerARN,
+			loadBalancerPresent: true, targetGroupPresent: true,
+			targetGroupScanErrs: []error{errors.New("orphan scan failed"), nil},
+		}
+		r := &reconciler{
+			client:      guestClient,
+			cpClient:    managementClient,
+			cpAPIReader: managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: elbv2Client,
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS orphan target-group cleanup failed; resources may remain"))
+		g.Expect(elbClient.describeCalls).To(BeNumerically(">", 0), "classic ELB NotFound must not invalidate the matching ELBV2 load balancer")
+		g.Expect(elbv2Client.deleteOrder).To(Equal([]string{"listener", "target-group", "load-balancer"}))
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		progressConfigMap := &corev1.ConfigMap{}
+		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
+		progress := &awsLoadBalancerCleanupProgress{}
+		g.Expect(json.Unmarshal([]byte(progressConfigMap.Data[awsLoadBalancerProgressDataKey]), progress)).To(Succeed())
+		g.Expect(progress.Services[string(service.UID)].Identities).To(ConsistOf(awsutil.LoadBalancerIdentity{
+			Name: lbName, Type: awsutil.V2LoadBalancerResource, ARN: lbARN, VPCID: "vpc-owned",
+		}))
+
+		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbv2Client.deleteOrder).To(Equal([]string{"listener", "target-group", "load-balancer"}), "retrying a recorded NotFound identity must not issue a second deletion")
+		g.Expect(elbv2Client.targetGroupScanCalls).To(Equal(2))
+		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
+	})
+
+	t.Run("When the CCM removes an unverified load balancer before retry, it should retire the absent candidate after the orphan scan", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "load-balancer",
+				Namespace:  "default",
+				UID:        "ccm-cleanup-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{
+			name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true,
+			describeTagsErr: &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "DescribeTags denied"},
+		}
+		elbv2Client := &progressTestELBV2Client{}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+		g := NewGomegaWithT(t)
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(errors.Is(err, awsutil.ErrDescribeTagsAccessDenied)).To(BeTrue())
+		g.Expect(elbClient.deleteCalls).To(BeZero())
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remaining.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+
+		elbClient.present = false
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		remaining.Finalizers = nil
+		g.Expect(guestClient.Update(t.Context(), remaining)).To(Succeed())
+		if err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining); err == nil {
+			g.Expect(guestClient.Delete(t.Context(), remaining)).To(Succeed())
+		}
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+
+		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.deleteCalls).To(BeZero())
+		g.Expect(elbv2Client.targetGroupScanCalls).To(Equal(2))
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
+	})
+
+	t.Run("When a derived AWS name is absent without a recorded identity, it should remain unverified", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "unrecorded-notfound-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id"}
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS load balancer ownership could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
+		g.Expect(elbClient.deleteCalls).To(Equal(0))
+		progressConfigMap := &corev1.ConfigMap{}
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
+	})
+
+	t.Run("When only one ingress candidate is verifiable, it should not mark the Service cleanup complete", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "mixed-ingress-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{
+				{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com"},
+				{Hostname: "lb.example.com"},
+			}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
+		g.Expect(elbClient.deleteCalls).To(Equal(1), "only the positively identified AWS resource should be deleted")
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+		progressConfigMap := &corev1.ConfigMap{}
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
+		progress := &awsLoadBalancerCleanupProgress{}
+		g.Expect(json.Unmarshal([]byte(progressConfigMap.Data[awsLoadBalancerProgressDataKey]), progress)).To(Succeed())
+		g.Expect(progress.Services[string(service.UID)].Candidates).To(ConsistOf(
+			awsLoadBalancerCandidate{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com", Name: "cluster-lb", Region: "us-east-1"},
+			awsLoadBalancerCandidate{Hostname: "lb.example.com"},
+		))
+	})
+
+	t.Run("When a custom load balancer class is added after AWS proof is recorded, it should wait for that controller", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "load-balancer", Namespace: "default", UID: "class-change-service-uid",
+				Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		elbv2Client := &progressTestELBV2Client{}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.deleteCalls).To(Equal(1))
+
+		updatedService := &corev1.Service{}
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), updatedService)).To(Succeed())
+		updatedService.Spec.LoadBalancerClass = ptr.To("example.com/custom-lb")
+		updatedService.Finalizers = []string{"example.com/custom-lb-cleanup"}
+		g.Expect(guestClient.Update(t.Context(), updatedService)).To(Succeed())
+
+		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.deleteCalls).To(Equal(1), "historical AWS proof must not bypass the current Service class")
+		g.Expect(elbv2Client.targetGroupScanCalls).To(Equal(1), "classed Services must use Kubernetes cleanup rather than another AWS scan")
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), updatedService)).To(Succeed())
+		g.Expect(updatedService.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(updatedService.Finalizers).To(ContainElement("example.com/custom-lb-cleanup"))
+	})
+
+	t.Run("When AWS hostnames share a derived name across regions, it should keep the unmatched candidate pending", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "multi-region-service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{
+				{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com"},
+				{Hostname: "cluster-lb-456.us-west-2.elb.amazonaws.com"},
+			}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		r := &reconciler{
+			client:   guestClient,
+			cpClient: managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
+		g.Expect(elbClient.deleteCalls).To(Equal(1), "only the configured-region load balancer should be acted on")
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+
+		progressConfigMap := &corev1.ConfigMap{}
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
+		progress := &awsLoadBalancerCleanupProgress{}
+		g.Expect(json.Unmarshal([]byte(progressConfigMap.Data[awsLoadBalancerProgressDataKey]), progress)).To(Succeed())
+		g.Expect(progress.Services[string(service.UID)].Candidates).To(ConsistOf(
+			awsLoadBalancerCandidate{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com", Name: "cluster-lb", Region: "us-east-1"},
+			awsLoadBalancerCandidate{Hostname: "cluster-lb-456.us-west-2.elb.amazonaws.com", Name: "cluster-lb", Region: "us-west-2"},
+		))
+	})
+
+	t.Run("When a finalizer-backed unresolved ingress disappears, it should retire proof after the orphan scan succeeds", func(t *testing.T) {
+		ctx := t.Context()
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "unresolved-load-balancer", Namespace: "default", UID: "unresolved-service-uid",
+				Finalizers: []string{kubernetesLoadBalancerCleanupFinalizer},
+			},
+			Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "lb.example.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		elbClient := &progressTestELBClient{}
+		elbv2Client := &progressTestELBV2Client{}
+		r := &reconciler{
+			client:                 guestClient,
+			cpClient:               managementClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
+		g.Expect(elbClient.describeCalls).To(BeZero(), "unresolvable names must not trigger named ELB calls")
+		g.Expect(elbClient.deleteCalls).To(BeZero())
+		g.Expect(elbv2Client.loadBalancerDescribeCalls).To(BeZero(), "unresolvable names must not trigger named ELBv2 calls")
+		g.Expect(elbv2Client.targetGroupScanCalls).To(BeNumerically(">", 0), "a persisted proof requires the guarded orphan target-group scan")
+
+		remaining := &corev1.Service{}
+		g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(service), remaining)).To(Succeed())
+		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
+		g.Expect(remaining.Finalizers).To(ContainElement(kubernetesLoadBalancerCleanupFinalizer))
+		progressConfigMap := &corev1.ConfigMap{}
+		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+		g.Expect(managementClient.Get(ctx, progressKey, progressConfigMap)).To(Succeed())
+		progress := &awsLoadBalancerCleanupProgress{}
+		g.Expect(json.Unmarshal([]byte(progressConfigMap.Data[awsLoadBalancerProgressDataKey]), progress)).To(Succeed())
+		g.Expect(progress.Services[string(service.UID)].LoadBalancerCleanupFinalizerObserved).To(BeTrue())
+
+		remaining.Finalizers = nil
+		g.Expect(guestClient.Update(ctx, remaining)).To(Succeed())
+		if getErr := guestClient.Get(ctx, client.ObjectKeyFromObject(service), &corev1.Service{}); getErr == nil {
+			g.Expect(guestClient.Delete(ctx, remaining)).To(Succeed())
+		} else {
+			g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue())
+		}
+
+		removed, err = r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(elbClient.describeCalls).To(BeZero())
+		g.Expect(elbClient.deleteCalls).To(BeZero())
+		g.Expect(elbv2Client.loadBalancerDescribeCalls).To(BeZero())
+		g.Expect(apierrors.IsNotFound(managementClient.Get(ctx, progressKey, progressConfigMap))).To(BeTrue())
+	})
+
+	for _, test := range []struct {
+		name              string
+		candidate         awsLoadBalancerCandidate
+		finalizerObserved bool
+	}{
+		{
+			name:      "When an unresolved candidate has no finalizer evidence, it should remain pending after Service deletion",
+			candidate: awsLoadBalancerCandidate{Hostname: "lb.example.com"},
+		},
+		{
+			name:              "When an AWS candidate belongs to another region, it should remain pending despite finalizer evidence",
+			candidate:         awsLoadBalancerCandidate{Hostname: "cluster-lb-123.us-west-2.elb.amazonaws.com", Name: "cluster-lb", Region: "us-west-2"},
+			finalizerObserved: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			progress := awsLoadBalancerCleanupProgress{
+				HCPUID:  hcp.UID,
+				InfraID: hcp.Spec.InfraID,
+				Region:  hcp.Spec.Platform.AWS.Region,
+				VPCID:   hcp.Spec.Platform.AWS.CloudProviderConfig.VPC,
+				Services: map[string]awsLoadBalancerServiceProof{
+					"unresolved-service-uid": {
+						Namespace:                            "default",
+						Name:                                 "unresolved-load-balancer",
+						Candidates:                           []awsLoadBalancerCandidate{test.candidate},
+						LoadBalancerCleanupFinalizerObserved: test.finalizerObserved,
+					},
+				},
+			}
+			serialized, err := json.Marshal(progress)
+			if err != nil {
+				t.Fatal(err)
+			}
+			progressConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)},
+				Data:       map[string]string{awsLoadBalancerProgressDataKey: string(serialized)},
+			}
+			managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(progressConfigMap).Build()
+			elbClient := &progressTestELBClient{}
+			elbv2Client := &progressTestELBV2Client{}
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				cpClient:               managementClient,
+				awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+			}
+
+			removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
+			g := NewGomegaWithT(t)
+			g.Expect(removed).To(BeFalse())
+			g.Expect(err).To(MatchError("AWS load balancer ownership or deletion could not be verified; Kubernetes cleanup was requested and AWS resources may remain"))
+			g.Expect(elbClient.describeCalls).To(BeZero())
+			g.Expect(elbClient.deleteCalls).To(BeZero())
+			g.Expect(elbv2Client.loadBalancerDescribeCalls).To(BeZero())
+			g.Expect(elbv2Client.targetGroupScanCalls).To(BeNumerically(">", 0))
+			g.Expect(managementClient.Get(ctx, client.ObjectKeyFromObject(progressConfigMap), &corev1.ConfigMap{})).To(Succeed())
+		})
+	}
+}
+
+func TestDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
+	const endpoint = "private-endpoint.example"
+	tests := []struct {
+		name                string
+		describeTagsErr     error
+		cleanupErr          error
+		persistentVolumeErr error
+		wantMessage         string
+		wantComponents      []string
+	}{
+		{
+			name:            "When DescribeTags is denied, it should preserve the specific safe explanation",
+			describeTagsErr: &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "request sent to https://" + endpoint},
+			wantMessage:     "AWS load balancer ownership verification was denied; the delegated role needs elasticloadbalancing:DescribeTags, Kubernetes cleanup was requested, and AWS resources may remain",
+			wantComponents:  []string{"AWS load balancer cleanup failed"},
+		},
+		{
+			name:        "When a raw cleanup error contains endpoint details, it should publish a generic safe message",
+			cleanupErr:  fmt.Errorf("request sent to https://%s", endpoint),
+			wantMessage: "cloud resource cleanup failed; error details were omitted to avoid exposing sensitive resource or endpoint information",
+			wantComponents: []string{
+				"AWS load balancer cleanup failed",
+			},
+		},
+		{
+			name: "When DescribeTags and deletion errors are mixed, it should publish safe combined guidance",
+			cleanupErr: errors.Join(
+				fmt.Errorf("request sent to https://%s", endpoint),
+				awsutil.ErrDescribeTagsAccessDenied,
+				errors.New("DeleteLoadBalancer failed"),
+			),
+			wantMessage:    "AWS cleanup remains incomplete; the delegated role needs elasticloadbalancing:DescribeTags, and other cleanup failures or ownership issues may also be present",
+			wantComponents: []string{"AWS load balancer cleanup failed"},
+		},
+		{
+			name:                "When AWS tag verification and persistent volume cleanup both fail, it should report both components safely",
+			describeTagsErr:     &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "request sent to https://" + endpoint},
+			persistentVolumeErr: fmt.Errorf("request sent to https://%s/volume", endpoint),
+			wantMessage:         "AWS load balancer ownership verification was denied; the delegated role needs elasticloadbalancing:DescribeTags, Kubernetes cleanup was requested, and AWS resources may remain",
+			wantComponents: []string{
+				"AWS load balancer cleanup failed",
+				"persistent volume cleanup failed",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-hcp", UID: "condition-redaction-hcp-uid"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "infra-id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{Region: "us-east-1", CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-owned"}},
+					},
+					Capabilities: &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{
+						hyperv1.IngressCapability, hyperv1.ImageRegistryCapability,
+					}},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{Conditions: []metav1.Condition{{
+					Type: string(hyperv1.CloudResourcesDestroyed), Status: metav1.ConditionFalse,
+				}}},
+			}
+			var guestObjects []client.Object
+			var awsClients awsutil.LoadBalancerClients
+			if test.describeTagsErr != nil {
+				service := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "load-balancer", Namespace: "default", UID: "condition-redaction-service-uid",
+						Finalizers: []string{"service.kubernetes.io/load-balancer-cleanup"},
+					},
+					Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+					Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+						Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+					}}}},
+				}
+				guestObjects = append(guestObjects, service)
+				elbClient := &progressTestELBClient{
+					name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true,
+					describeTagsErr: test.describeTagsErr,
+				}
+				awsClients = awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: &progressTestELBV2Client{}}
+			}
+			var guestClient client.Client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(guestObjects...).Build()
+			if test.persistentVolumeErr != nil {
+				guestClient = &persistentVolumeListErrorClient{Client: guestClient, err: test.persistentVolumeErr}
+			}
+			managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				hcp,
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: hcp.Namespace}},
+			).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			r := &reconciler{
+				client:                 guestClient,
+				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				cpClient:               managementClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
+				awsLoadBalancerClients: awsClients,
+			}
+			if test.cleanupErr != nil {
+				r.awsLoadBalancerCleanup = func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+					return false, test.cleanupErr
+				}
+			}
+
+			result, err := r.destroyCloudResources(t.Context(), hcp)
+			g := NewGomegaWithT(t)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result.RequeueAfter).To(Equal(30 * time.Second))
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			g.Expect(managementClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP)).To(Succeed())
+			condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Message).To(ContainSubstring(test.wantMessage))
+			for _, component := range test.wantComponents {
+				g.Expect(condition.Message).To(ContainSubstring(component))
+			}
+			g.Expect(condition.Message).NotTo(ContainSubstring(endpoint))
+		})
+	}
+}
+
+func TestCollectCloudResourceCleanupError(t *testing.T) {
+	g := NewGomegaWithT(t)
+	clients := awsutil.LoadBalancerClients{
+		ELB: &progressTestELBClient{
+			name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true,
+			describeTagsErr: &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "DescribeTags denied"},
+		},
+		ELBV2: &progressTestELBV2Client{},
+	}
+	observations, err := awsutil.InspectLoadBalancersByName(
+		t.Context(), clients,
+		awsutil.LoadBalancerSelector{VPCID: "vpc-owned", InfraID: "infra-id"},
+		[]string{"cluster-lb"},
+	)
+	g.Expect(err).NotTo(HaveOccurred())
+	describeTagsErr := observations["cluster-lb"].Err
+	g.Expect(describeTagsErr).NotTo(BeNil())
+	g.Expect(awsutil.IsOnlyDescribeTagsAccessDenied(describeTagsErr)).To(BeTrue())
+
+	tests := []struct {
+		name                  string
+		err                   error
+		wantDescribeTagErrors int
+		wantAWSErrors         int
+		wantOtherErrors       int
+	}{
+		{
+			name:                  "When AWS cleanup fails only because DescribeTags is denied, it should count a tag denial",
+			err:                   describeTagsErr,
+			wantDescribeTagErrors: 1,
+		},
+		{
+			name:                  "When DescribeTags denial adds an ownership marker, it should keep the tag-denial classification",
+			err:                   errors.Join(describeTagsErr, awsutil.ErrLoadBalancerOwnershipUnverified),
+			wantDescribeTagErrors: 1,
+		},
+		{
+			name:                  "When DescribeTags and deletion both fail, it should count each failure",
+			err:                   errors.Join(describeTagsErr, errors.New("DeleteLoadBalancer failed")),
+			wantDescribeTagErrors: 1,
+			wantAWSErrors:         1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			summary := cloudResourceCleanupErrorSummary{components: map[cloudResourceCleanupComponent]struct{}{}}
+			collectCloudResourceCleanupError(
+				withCloudResourceCleanupComponent(cloudResourceCleanupComponentAWSLoadBalancers, test.err),
+				"", &summary,
+			)
+
+			g := NewGomegaWithT(t)
+			g.Expect(summary.awsDescribeTagsDenials).To(Equal(test.wantDescribeTagErrors))
+			g.Expect(summary.awsOtherFailures).To(Equal(test.wantAWSErrors))
+			g.Expect(summary.otherFailures).To(Equal(test.wantOtherErrors))
+		})
+	}
+}
+
+func TestLoadBalancerNamesFromServices(t *testing.T) {
+	tests := []struct {
+		name                string
+		services            []corev1.Service
+		want                []string
+		wantClassedServices int
+		wantPendingServices int
+	}{
+		{
+			name: "When Services have AWS hostnames, it should return unique load balancer names",
+			services: []corev1.Service{
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "internal-cluster-lb-123.us-east-1.elb.amazonaws.com"}}}}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "cluster-lb-456.us-east-1.elb.amazonaws.com"}}}}},
+				{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-lb-789.us-east-1.elb.amazonaws.com"}}}}},
+				{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-label-lb-789.us-east-1.elb.amazonaws.com"}}}}},
+			},
+			want: []string{"cluster-lb"},
+		},
+		{
+			name:                "When a LoadBalancer Service has no hostname, it should be returned for Kubernetes cleanup",
+			services:            []corev1.Service{{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}},
+			wantPendingServices: 1,
+		},
+		{
+			name: "When a LoadBalancer Service has a non-AWS hostname, it should be returned for Kubernetes cleanup",
+			services: []corev1.Service{{
+				Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+				Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+					Hostname: "lb.example.com",
+				}}}},
+			}},
+			wantPendingServices: 1,
+		},
+		{
+			name: "When only some ingress hostnames resolve to AWS names, it should keep the Service pending",
+			services: []corev1.Service{{
+				Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+				Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{
+					{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com"},
+					{Hostname: "lb.example.com"},
+				}}},
+			}},
+			want:                []string{"cluster-lb"},
+			wantPendingServices: 1,
+		},
+		{
+			name: "When a Service has a custom load balancer class, it should defer cloud cleanup to that controller",
+			services: []corev1.Service{{Spec: corev1.ServiceSpec{
+				Type:              corev1.ServiceTypeLoadBalancer,
+				LoadBalancerClass: ptr.To("example.com/custom-lb"),
+			}}},
+			wantClassedServices: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			names, _, servicesWithLoadBalancerClass, servicesWithoutNames := loadBalancerNamesFromServices(test.services)
+			NewGomegaWithT(t).Expect(names).To(ConsistOf(test.want))
+			NewGomegaWithT(t).Expect(servicesWithLoadBalancerClass).To(HaveLen(test.wantClassedServices))
+			NewGomegaWithT(t).Expect(servicesWithoutNames).To(HaveLen(test.wantPendingServices))
 		})
 	}
 }

@@ -30,6 +30,7 @@ type ELBAPI interface {
 	DescribeLoadBalancerAttributes(ctx context.Context, input *elasticloadbalancing.DescribeLoadBalancerAttributesInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancerAttributesOutput, error)
 	DescribeLoadBalancerPolicies(ctx context.Context, input *elasticloadbalancing.DescribeLoadBalancerPoliciesInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancerPoliciesOutput, error)
 	DescribeLoadBalancers(ctx context.Context, input *elasticloadbalancing.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancersOutput, error)
+	DescribeTags(ctx context.Context, input *elasticloadbalancing.DescribeTagsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeTagsOutput, error)
 	DetachLoadBalancerFromSubnets(ctx context.Context, input *elasticloadbalancing.DetachLoadBalancerFromSubnetsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DetachLoadBalancerFromSubnetsOutput, error)
 	ModifyLoadBalancerAttributes(ctx context.Context, input *elasticloadbalancing.ModifyLoadBalancerAttributesInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.ModifyLoadBalancerAttributesOutput, error)
 	RegisterInstancesWithLoadBalancer(ctx context.Context, input *elasticloadbalancing.RegisterInstancesWithLoadBalancerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.RegisterInstancesWithLoadBalancerOutput, error)

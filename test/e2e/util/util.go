@@ -1787,6 +1787,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"cluster-network-operator":               "app",
 			"cluster-version-operator":               "app",
 			"control-plane-operator":                 "app",
+			"hosted-cluster-config-operator":         "app",
 			"ignition-server":                        "app",
 			"ingress-operator":                       "app",
 			"kube-apiserver":                         "app",

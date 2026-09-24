@@ -607,7 +607,40 @@ func TestCreateOIDCResources(t *testing.T) {
 			}, nil)
 	}
 
-	t.Run("When using ROSA managed policies with separate roles it should only add the ingress inline policy", func(t *testing.T) {
+	t.Run("When creating inline policies, it should grant DescribeTags to the cloud controller role", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockIAM := awsapi.NewMockIAMAPI(ctrl)
+
+		mockOIDCProviderLookup(mockIAM)
+		mockIAM.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, noSuchEntity()).Times(7)
+		mockIAM.EXPECT().CreateRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, input *iam.CreateRoleInput, _ ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
+				return &iam.CreateRoleOutput{Role: &iamtypes.Role{
+					RoleName: input.RoleName,
+					Arn:      aws.String("arn:aws:iam::123456789012:role/" + aws.ToString(input.RoleName)),
+				}}, nil
+			}).Times(7)
+
+		policyDocuments := map[string]string{}
+		mockIAM.EXPECT().PutRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, input *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
+				policyDocuments[aws.ToString(input.RoleName)] = aws.ToString(input.PolicyDocument)
+				return &iam.PutRolePolicyOutput{}, nil
+			}).Times(7)
+
+		opts := &CreateIAMOptions{InfraID: testInfraID, IssuerURL: testIssuerURL}
+		output, err := opts.CreateOIDCResources(context.Background(), mockIAM, logr.Discard(), false)
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(output).NotTo(BeNil())
+		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
+		g.Expect(policyDocuments).To(HaveKey(ccmRoleName))
+		g.Expect(policyDocuments[ccmRoleName]).To(ContainSubstring("elasticloadbalancing:DescribeTags"))
+	})
+
+	t.Run("When using ROSA managed policies with separate roles it should add DescribeTags to the cloud controller role", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -620,7 +653,7 @@ func TestCreateOIDCResources(t *testing.T) {
 			DoAndReturn(func(_ context.Context, input *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
 				policyDocuments[*input.RoleName] = *input.PolicyDocument
 				return &iam.PutRolePolicyOutput{}, nil
-			}).Times(1)
+			}).Times(2)
 
 		opts := &CreateIAMOptions{
 			InfraID:                testInfraID,
@@ -635,12 +668,16 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(output.Roles.IngressARN).NotTo(Equal(output.Roles.KubeCloudControllerARN))
 
 		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
+		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
 		g.Expect(policyDocuments).To(HaveKey(ingressRoleName))
 		g.Expect(policyDocuments[ingressRoleName]).To(ContainSubstring("route53:ChangeResourceRecordSets"))
 		g.Expect(policyDocuments[ingressRoleName]).NotTo(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
+		g.Expect(policyDocuments[ingressRoleName]).NotTo(ContainSubstring("elasticloadbalancing:DescribeTags"))
+		g.Expect(policyDocuments).To(HaveKey(ccmRoleName))
+		g.Expect(policyDocuments[ccmRoleName]).To(ContainSubstring("elasticloadbalancing:DescribeTags"))
 	})
 
-	t.Run("When using ROSA managed policies with a shared role it should not add cloud controller permissions inline", func(t *testing.T) {
+	t.Run("When using ROSA managed policies with a shared role it should merge DescribeTags into the inline policy", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -675,7 +712,40 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(output).NotTo(BeNil())
 		g.Expect(output.Roles.IngressARN).To(Equal(output.Roles.KubeCloudControllerARN))
 		g.Expect(policyDocument).To(ContainSubstring("route53:ChangeResourceRecordSets"))
+		g.Expect(policyDocument).To(ContainSubstring("elasticloadbalancing:DescribeTags"))
 		g.Expect(policyDocument).NotTo(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
+	})
+
+	t.Run("When applying the combined ROSA shared-role policy fails, it should report both permission sets", func(t *testing.T) {
+		g := NewWithT(t)
+		ctrl := gomock.NewController(t)
+		mockIAM := awsapi.NewMockIAMAPI(ctrl)
+
+		mockOIDCProviderLookup(mockIAM)
+
+		sharedRoleName := testInfraID + "-shared-role"
+		mockIAM.EXPECT().GetRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, noSuchEntity())
+		mockIAM.EXPECT().CreateRole(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.CreateRoleOutput{Role: testRole(sharedRoleName)}, nil)
+		mockIAM.EXPECT().AttachRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&iam.AttachRolePolicyOutput{}, nil).Times(7)
+		mockIAM.EXPECT().PutRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, errors.New("put policy failed"))
+
+		opts := &CreateIAMOptions{
+			InfraID:                testInfraID,
+			IssuerURL:              testIssuerURL,
+			BaseDomain:             baseDomain,
+			UseROSAManagedPolicies: true,
+			SharedRole:             true,
+		}
+		_, err := opts.CreateOIDCResources(context.Background(), mockIAM, logr.Discard(), false)
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to create shared role policy"))
+		g.Expect(err.Error()).To(ContainSubstring("combined ingress and cloud controller permissions"))
+		g.Expect(err.Error()).To(ContainSubstring("put policy failed"))
 	})
 }
 

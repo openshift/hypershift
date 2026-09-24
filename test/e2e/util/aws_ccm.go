@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
@@ -158,7 +159,7 @@ func EnsureAWSCCMWithCustomizations(t *testing.T, ctx context.Context, cfg *AWSC
 			)
 			t.Logf("LoadBalancer provisioned with hostname: %s", lbHostname)
 
-			lbName := extractLoadBalancerNameFromHostname(lbHostname)
+			lbName := supportawsutil.LoadBalancerNameFromHostname(lbHostname)
 			g.Expect(lbName).NotTo(gomega.BeEmpty(), "load balancer name should be extracted from hostname")
 			t.Logf("Extracted load balancer name: %s", lbName)
 
@@ -209,24 +210,4 @@ func EnsureAWSCCMWithCustomizations(t *testing.T, ctx context.Context, cfg *AWSC
 			}
 		})
 	})
-}
-
-// extractLoadBalancerNameFromHostname extracts the load balancer name from the DNS hostname.
-// The hostname is in the format of <name>-<id>.elb.<region>.amazonaws.com.
-// The function drops only the last hyphen segment.
-// Example:
-// - Input: "e2e-v7-fnt8p-ext-9a316db0952d7e14.elb.us-east-1.amazonaws.com"
-// - Output: "e2e-v7-fnt8p-ext"
-// - Input: "af1c7bcc09ce1420db0292d91f0dad1f-f4ad6ce6794c3afd.elb.us-east-1.amazonaws.com"
-// - Output: "af1c7bcc09ce1420db0292d91f0dad1f"
-// - Input: "a7f9d8c870a2b44c39d9565e2ec22e81-1194117244.us-east-1.elb.amazonaws.com"
-// - Output: "a7f9d8c870a2b44c39d9565e2ec22e81"
-func extractLoadBalancerNameFromHostname(hostname string) string {
-	firstLabel := strings.SplitN(hostname, ".", 2)[0]
-	firstLabel = strings.TrimPrefix(firstLabel, "internal-")
-	lastHyphen := strings.LastIndex(firstLabel, "-")
-	if lastHyphen == -1 {
-		return firstLabel
-	}
-	return firstLabel[:lastHyphen]
 }
