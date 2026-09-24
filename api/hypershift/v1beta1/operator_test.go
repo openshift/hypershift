@@ -3,15 +3,10 @@ package v1beta1
 import (
 	"encoding/json"
 	"testing"
-
-	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
-// ingressOperatorSpecNMinus1 represents the previous version of IngressOperatorSpec
-// without the DefaultCertificate field.
-type ingressOperatorSpecNMinus1 struct {
-	EndpointPublishingStrategy json.RawMessage `json:"endpointPublishingStrategy,omitempty"` //nolint:kubeapilinter
-}
+// ingressOperatorSpecNMinus1 represents a reader that does not know the new ingress fields.
+type ingressOperatorSpecNMinus1 struct{}
 
 func TestIngressOperatorSpecSerializationCompatibility(t *testing.T) {
 	tests := []struct {
@@ -35,14 +30,6 @@ func TestIngressOperatorSpecSerializationCompatibility(t *testing.T) {
 			},
 			expectedJSON:  `{"defaultCertificate":{"name":"my-cert"}}`,
 			nMinus1Result: ingressOperatorSpecNMinus1{},
-		},
-		{
-			name:         "When N-1 data carries EndpointPublishingStrategy it should survive the round-trip into N",
-			current:      IngressOperatorSpec{},
-			expectedJSON: `{}`,
-			nMinus1Result: ingressOperatorSpecNMinus1{
-				EndpointPublishingStrategy: json.RawMessage(`{"type":"LoadBalancerService"}`),
-			},
 		},
 	}
 
@@ -74,18 +61,34 @@ func TestIngressOperatorSpecSerializationCompatibility(t *testing.T) {
 			if roundTrip.DefaultCertificate.Name != "" {
 				t.Errorf("expected DefaultCertificate to be zero after N-1 round-trip, got %+v", roundTrip.DefaultCertificate)
 			}
-
-			// Sibling fields written by N-1 must survive into N unchanged; otherwise
-			// the round-trip would silently drop data the enhancement requires to be
-			// preserved.
-			if len(tt.nMinus1Result.EndpointPublishingStrategy) > 0 {
-				if roundTrip.EndpointPublishingStrategy == nil {
-					t.Errorf("expected EndpointPublishingStrategy to survive N-1 -> N round-trip, got nil")
-				} else if roundTrip.EndpointPublishingStrategy.Type != operatorv1.LoadBalancerServiceStrategyType {
-					t.Errorf("expected EndpointPublishingStrategy.Type %q to survive N-1 -> N round-trip, got %q",
-						operatorv1.LoadBalancerServiceStrategyType, roundTrip.EndpointPublishingStrategy.Type)
-				}
-			}
 		})
 	}
+}
+
+func TestOperatorConfigurationSerializationCompatibility(t *testing.T) {
+	t.Run("When an older reader ignores ingress configuration it should preserve sibling operator configuration", func(t *testing.T) {
+		// Release 4.20 did not have IngressOperatorSpec before this backport.
+		type previousOperatorConfiguration struct {
+			ClusterNetworkOperator *ClusterNetworkOperatorSpec `json:"clusterNetworkOperator,omitempty"`
+		}
+		data := []byte(`{"clusterNetworkOperator":{"disableMultiNetwork":true},"ingressOperator":{"defaultCertificate":{"name":"my-cert"}}}`)
+		var previous previousOperatorConfiguration
+		if err := json.Unmarshal(data, &previous); err != nil {
+			t.Fatalf("older reader failed to deserialize new configuration: %v", err)
+		}
+		previousData, err := json.Marshal(previous)
+		if err != nil {
+			t.Fatalf("failed to serialize previous configuration: %v", err)
+		}
+		var current OperatorConfiguration
+		if err := json.Unmarshal(previousData, &current); err != nil {
+			t.Fatalf("failed to deserialize previous configuration: %v", err)
+		}
+		if current.IngressOperator != nil {
+			t.Errorf("expected ingress configuration to be omitted by the older reader, got %+v", current.IngressOperator)
+		}
+		if current.ClusterNetworkOperator == nil || current.ClusterNetworkOperator.DisableMultiNetwork == nil || !*current.ClusterNetworkOperator.DisableMultiNetwork {
+			t.Errorf("expected sibling cluster network configuration to survive, got %+v", current.ClusterNetworkOperator)
+		}
+	})
 }

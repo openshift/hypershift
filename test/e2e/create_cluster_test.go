@@ -1877,6 +1877,7 @@ func TestCreateCluster(t *testing.T) {
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
+		testIngressDefaultCertificate(t, ctx, mgtClient, hostedCluster)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
 			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
@@ -2128,6 +2129,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure ingress component is disabled
 		e2eutil.EnsureIngressCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
+		testIngressDefaultCertificate(t, ctx, mgtClient, hostedCluster)
 
 		// ensure CNO operator configuration changes are properly handled
 		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
