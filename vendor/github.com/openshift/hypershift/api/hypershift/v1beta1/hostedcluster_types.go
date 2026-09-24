@@ -550,6 +550,9 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
+// +kubebuilder:validation:XValidation:rule="self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue() == oldSelf.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()",message="initialKMSKeyARN can only be set when the HostedCluster is created and cannot be added or removed afterwards"
+// +kubebuilder:validation:XValidation:rule="!self.?operatorConfiguration.?csiDriverOperator.?aws.hasValue() || self.platform.type == 'AWS'",message="csiDriverOperator.aws can only be set when platform.type is AWS"
+// +kubebuilder:validation:XValidation:rule="!self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue() || !has(self.platform.aws) || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split(':')[3] == self.platform.aws.region",message="initialKMSKeyARN must be in the same region as the cluster (platform.aws.region)"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -3032,6 +3035,14 @@ type OperatorConfiguration struct {
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`
+
+	// csiDriverOperator configures the CSI drivers of the hosted cluster.
+	// Settings are grouped by platform.
+	//
+	// When omitted, the CSI drivers use their default configuration.
+	//
+	// +optional
+	CSIDriverOperator CSIDriverOperatorSpec `json:"csiDriverOperator,omitzero"`
 }
 
 // +genclient
