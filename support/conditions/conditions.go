@@ -2,6 +2,7 @@ package conditions
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 	support "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +58,9 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 	case hyperv1.AzurePlatform:
 		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.Azure == nil {
 			// Azure KMS is not configured
+			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
+		} else if azureutil.IsAroHCPByHC(hostedCluster) && hostedCluster.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate {
+			// CPO cannot validate a private Key Vault from the management cluster.
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
 		} else {
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionTrue
