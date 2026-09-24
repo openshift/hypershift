@@ -293,6 +293,36 @@ const (
 	// keeps serving and the HostedCluster does not become degraded.
 	// The condition is absent when no defaultCertificate is configured.
 	IngressDefaultCertificateSynced ConditionType = "IngressDefaultCertificateSynced"
+
+	// PullSecretSynced indicates whether the pull secret referenced by
+	// spec.pullSecret has been found, validated, and synced from the HostedCluster
+	// namespace into the control plane namespace.
+	// **True** means the referenced Secret was found, contains a .dockerconfigjson
+	// key, and its data was synced.
+	// **False** means the referenced Secret is missing or does not contain the
+	// required .dockerconfigjson key.
+	// This condition is always present because pullSecret is a required field.
+	PullSecretSynced ConditionType = "PullSecretSynced"
+
+	// SSHKeySynced indicates whether the SSH key secret referenced by
+	// spec.sshKey has been found, validated, and synced from the HostedCluster
+	// namespace into the control plane namespace.
+	// **True** means the referenced Secret was found, contains an id_rsa.pub key,
+	// and its data was synced.
+	// **False** means the referenced Secret is missing or does not contain the
+	// required id_rsa.pub key.
+	// The condition is absent when no sshKey is configured.
+	SSHKeySynced ConditionType = "SSHKeySynced"
+
+	// ValidServiceAccountSigningKey indicates whether the service account signing
+	// key secret referenced by spec.serviceAccountSigningKey is valid and has been
+	// synced to the control plane namespace.
+	// **True** means the referenced Secret was found, contains a valid PEM private
+	// key, the IssuerURL is set, and the key was synced.
+	// **False** means the referenced Secret is missing, does not contain a valid
+	// key, or the IssuerURL is not set.
+	// The condition is absent when no serviceAccountSigningKey is configured.
+	ValidServiceAccountSigningKey ConditionType = "ValidServiceAccountSigningKey"
 )
 
 // Reasons for PublicEndpointExposed condition.
@@ -382,6 +412,22 @@ const (
 	// ingress certificate is configured on a platform whose ingress controller does
 	// not consume it (e.g. IBM Cloud), so the certificate is intentionally not synced.
 	IngressDefaultCertificatePlatformNotSupportedReason = "PlatformNotSupported"
+
+	// PullSecretInvalidReason is used when the referenced pull secret Secret
+	// exists but does not contain the required .dockerconfigjson key.
+	PullSecretInvalidReason = "InvalidPullSecret"
+
+	// SSHKeyInvalidReason is used when the referenced SSH key Secret exists but
+	// does not contain the required id_rsa.pub key.
+	SSHKeyInvalidReason = "InvalidSSHKey"
+
+	// ServiceAccountSigningKeyInvalidReason is used when the referenced service
+	// account signing key Secret exists but does not contain a valid PEM private key.
+	ServiceAccountSigningKeyInvalidReason = "InvalidServiceAccountSigningKey"
+
+	// IssuerURLNotSetReason is used when a service account signing key is
+	// configured but the required IssuerURL is not set.
+	IssuerURLNotSetReason = "IssuerURLNotSet"
 
 	CloudResourcesCleanupSkippedReason = "CloudResourcesCleanupSkipped"
 

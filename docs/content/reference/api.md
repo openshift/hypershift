@@ -6597,6 +6597,16 @@ currently configured and exposed for this cluster via the management
 cluster&rsquo;s shared ingress. Status reflects observed state: True means
 public endpoints are reachable, False means they are not.</p>
 </td>
+</tr><tr><td><p>&#34;PullSecretSynced&#34;</p></td>
+<td><p>PullSecretSynced indicates whether the pull secret referenced by
+spec.pullSecret has been found, validated, and synced from the HostedCluster
+namespace into the control plane namespace.
+<strong>True</strong> means the referenced Secret was found, contains a .dockerconfigjson
+key, and its data was synced.
+<strong>False</strong> means the referenced Secret is missing or does not contain the
+required .dockerconfigjson key.
+This condition is always present because pullSecret is a required field.</p>
+</td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
 <td><p>ReconciliationActive indicates if reconciliation of the HostedCluster is
 active or paused hostedCluster.spec.pausedUntil.</p>
@@ -6605,6 +6615,16 @@ active or paused hostedCluster.spec.pausedUntil.</p>
 <td><p>ReconciliationSucceeded indicates if the HostedCluster reconciliation
 succeeded.
 A failure here often means a software bug or a non-stable cluster.</p>
+</td>
+</tr><tr><td><p>&#34;SSHKeySynced&#34;</p></td>
+<td><p>SSHKeySynced indicates whether the SSH key secret referenced by
+spec.sshKey has been found, validated, and synced from the HostedCluster
+namespace into the control plane namespace.
+<strong>True</strong> means the referenced Secret was found, contains an id_rsa.pub key,
+and its data was synced.
+<strong>False</strong> means the referenced Secret is missing or does not contain the
+required id_rsa.pub key.
+The condition is absent when no sshKey is configured.</p>
 </td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
@@ -6705,6 +6725,16 @@ A failure here is unlikely to resolve without the changing user input.</p>
 </tr><tr><td><p>&#34;ValidReleaseInfo&#34;</p></td>
 <td><p>ValidReleaseInfo bubbles up the same condition from HCP. It indicates if the release contains all the images used by hypershift
 and reports missing images if any.</p>
+</td>
+</tr><tr><td><p>&#34;ValidServiceAccountSigningKey&#34;</p></td>
+<td><p>ValidServiceAccountSigningKey indicates whether the service account signing
+key secret referenced by spec.serviceAccountSigningKey is valid and has been
+synced to the control plane namespace.
+<strong>True</strong> means the referenced Secret was found, contains a valid PEM private
+key, the IssuerURL is set, and the key was synced.
+<strong>False</strong> means the referenced Secret is missing, does not contain a valid
+key, or the IssuerURL is not set.
+The condition is absent when no serviceAccountSigningKey is configured.</p>
 </td>
 </tr></tbody>
 </table>
