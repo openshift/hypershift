@@ -1,6 +1,7 @@
 package controlplanecomponent
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -115,6 +116,23 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectTokenMinterContainer(opts TokenMi
 // and the volume mounts for that secret within the given mountPath.
 func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts ServiceAccountKubeConfigOpts) *controlPlaneWorkloadBuilder[T] {
 	b.workload.serviceAccountKubeConfigOpts = &opts
+	return b
+}
+
+// WithGatedPreconditions gates component reconciliation on the specified HCP
+// conditions, with a gate that decides whether the conditions are enforced on a
+// given reconcile. When the gate returns true, the component does not create its
+// workload or report RolloutComplete=True until all listed conditions are True on
+// the HostedControlPlane. When the gate returns false, the conditions are skipped
+// (treated as met). A gate error aborts the reconcile and is retried. Use this
+// when a component depends on cluster-level state (an HCP condition) rather than
+// another component's operand readiness, and that dependency only applies under
+// conditions the component decides at runtime.
+func (b *controlPlaneWorkloadBuilder[T]) WithGatedPreconditions(gate PreconditionGate, preconditions ...hyperv1.ConditionType) *controlPlaneWorkloadBuilder[T] {
+	b.workload.preconditionGroups = append(b.workload.preconditionGroups, preconditionGroup{
+		gate:       gate,
+		conditions: preconditions,
+	})
 	return b
 }
 
