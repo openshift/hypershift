@@ -99,6 +99,11 @@ spec:
           value: production
 ```
 
+Tag keys and values can contain UTF-8 Unicode characters, except single quotes
+(`'`), double quotes (`"`), backslashes (`\`), and forward slashes (`/`). A tag
+value must begin with an alphanumeric character. Keys and values can each be up
+to 256 characters long.
+
 HyperShift resolves tags in the customer project during reconciliation. If a
 requested TagKey or TagValue does not exist or cannot be accessed, HyperShift
 cannot create its TagBinding until the condition is corrected. Each key and

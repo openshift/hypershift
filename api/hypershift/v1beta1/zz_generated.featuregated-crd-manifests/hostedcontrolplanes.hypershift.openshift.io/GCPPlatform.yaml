@@ -5921,30 +5921,33 @@ spec:
                               description: |-
                                 key is the short name of the pre-existing Resource Manager TagKey.
                                 TagKeys are scoped to the customer project identified by the GCP platform
-                                configuration. It must be 1-256 characters, start and end with an ASCII
-                                letter or digit, and contain only ASCII letters, digits, dashes,
-                                underscores, or dots.
+                                configuration. It must be 1-256 characters and may contain UTF-8 Unicode
+                                characters other than single quotes, double quotes, backslashes, or forward
+                                slashes.
                               maxLength: 256
                               minLength: 1
                               type: string
                               x-kubernetes-validations:
-                              - message: key must start and end with a letter or digit
-                                  and contain only letters, digits, dashes, underscores,
-                                  or dots
-                                rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9])?$')
+                              - message: key may contain UTF-8 Unicode characters
+                                  except single quotes, double quotes, backslashes,
+                                  or forward slashes
+                                rule: self.matches('^[^\\x27\\x22\\\\/]+$')
                             value:
                               description: |-
                                 value is the short name of the pre-existing Resource Manager TagValue for
                                 key. Exactly one value for a TagKey can be attached to a resource. It must
-                                meet the same naming requirements as key.
+                                be 1-256 characters, start with a Unicode letter or number, and may contain
+                                UTF-8 Unicode characters other than single quotes, double quotes,
+                                backslashes, or forward slashes.
                               maxLength: 256
                               minLength: 1
                               type: string
                               x-kubernetes-validations:
-                              - message: value must start and end with a letter or
-                                  digit and contain only letters, digits, dashes,
-                                  underscores, or dots
-                                rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,254}[a-zA-Z0-9])?$')
+                              - message: value must start with a letter or number
+                                  and may contain UTF-8 Unicode characters except
+                                  single quotes, double quotes, backslashes, or forward
+                                  slashes
+                                rule: self.matches('^[\\p{L}\\p{N}][^\\x27\\x22\\\\/]*$')
                           required:
                           - key
                           - value
