@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/podspec"
 
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,6 +75,13 @@ func NewComponent() component.ControlPlaneComponent {
 			component.EnableForPlatform(hyperv1.GCPPlatform),
 		).
 		WithDependencies(oapiv2.ComponentName).
+		// Gate the CSO on the HCCO's reconciliation having succeeded so the HCCO
+		// creates the ClusterCSIDriver (with the KMS key when configured) before
+		// the CSO starts. The gate enforces this ordering only on the initial
+		// rollout (while the CSO workload does not exist yet); once the workload
+		// exists, later updates and upgrades are not gated by the condition. This
+		// preserves ordering for all clusters, not only those with a KMS key set.
+		WithGatedPreconditions(enforceOrderingUntilCSOExists, hyperv1.ConfigOperatorReconciliationSucceeded).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "guest-kubeconfig",
 			RequiredAPIs: []schema.GroupVersionKind{
@@ -86,6 +94,23 @@ func NewComponent() component.ControlPlaneComponent {
 
 func isStorageAndCSIManaged(cpContext component.WorkloadContext) (bool, error) {
 	return component.IsStorageAndCSIManaged(cpContext.HCP.Spec.Platform.Type), nil
+}
+
+// enforceOrderingUntilCSOExists gates the ConfigOperatorReconciliationSucceeded
+// precondition on the CSO workload not existing yet. It returns true while the CSO
+// Deployment is absent, so the precondition orders the first rollout after the
+// HCCO (which creates the ClusterCSIDriver). Once the Deployment exists it returns
+// false, so later updates and upgrades are not blocked by the condition.
+func enforceOrderingUntilCSOExists(cpContext component.WorkloadContext) (bool, error) {
+	deployment := &appsv1.Deployment{}
+	err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: ComponentName}, deployment)
+	if apierrors.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
