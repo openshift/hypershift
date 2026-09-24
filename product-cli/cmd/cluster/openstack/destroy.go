@@ -1,8 +1,6 @@
 package openstack
 
 import (
-	"context"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -23,15 +21,8 @@ func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.Clien
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithCancel(cmd.Context())
-		defer cancel()
-
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT)
+		defer stop()
 
 		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
 		if err != nil {

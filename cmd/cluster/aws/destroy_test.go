@@ -119,6 +119,7 @@ func TestNewDestroyCommandClientProvider(t *testing.T) {
 			},
 		})
 
+		cmd.SetArgs([]string{})
 		err := cmd.Execute()
 		g.Expect(err).To(MatchError("management client unavailable"))
 	})

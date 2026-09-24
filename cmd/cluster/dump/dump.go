@@ -176,9 +176,9 @@ func (opts *DumpOptions) managementClient() (client.Client, error) {
 		err error
 	)
 	if opts.ImpersonateAs != "" {
-		c, err = opts.ClientProvider.ImpersonatedClientFor(opts.ImpersonateAs)
+		c, err = opts.ClientProvider.ImpersonatedClientFor(opts.Kubeconfig, opts.ImpersonateAs)
 	} else {
-		c, err = opts.ClientProvider.ControllerRuntimeClientFor("")
+		c, err = opts.ClientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
 	}
 	if err != nil {
 		return nil, err

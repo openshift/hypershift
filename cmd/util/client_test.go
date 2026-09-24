@@ -135,23 +135,23 @@ func TestClientProviderErrors(t *testing.T) {
 		NewWithT(t).Expect(err).To(MatchError("REST config provider returned a nil config"))
 	})
 	t.Run("When impersonated client provider is missing, it should return an error", func(t *testing.T) {
-		_, err := (&ClientProvider{}).ImpersonatedClientFor("test-user")
+		_, err := (&ClientProvider{}).ImpersonatedClientFor("", "test-user")
 		NewWithT(t).Expect(err).To(HaveOccurred())
 	})
 	t.Run("When impersonated client factory returns an error, it should propagate it", func(t *testing.T) {
 		_, err := (&ClientProvider{
-			ImpersonatedClient: func(string) (client.Client, error) {
+			ImpersonatedClient: func(string, string) (client.Client, error) {
 				return nil, errors.New("impersonated client factory failed")
 			},
-		}).ImpersonatedClientFor("test-user")
+		}).ImpersonatedClientFor("", "test-user")
 		NewWithT(t).Expect(err).To(MatchError("impersonated client factory failed"))
 	})
 	t.Run("When impersonated client factory returns nil, it should return an error", func(t *testing.T) {
 		_, err := (&ClientProvider{
-			ImpersonatedClient: func(string) (client.Client, error) {
+			ImpersonatedClient: func(string, string) (client.Client, error) {
 				return nil, nil
 			},
-		}).ImpersonatedClientFor("test-user")
+		}).ImpersonatedClientFor("", "test-user")
 		NewWithT(t).Expect(err).To(MatchError("impersonated client provider returned a nil client"))
 	})
 }
@@ -188,12 +188,12 @@ func TestImpersonatedClientFor(t *testing.T) {
 	g := NewWithT(t)
 	controllerClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 	provider := &ClientProvider{
-		ImpersonatedClient: func(_ string) (client.Client, error) {
+		ImpersonatedClient: func(_, _ string) (client.Client, error) {
 			return controllerClient, nil
 		},
 	}
 
-	got, err := provider.ImpersonatedClientFor("test-user")
+	got, err := provider.ImpersonatedClientFor("", "test-user")
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(got).To(Equal(controllerClient))
 }
