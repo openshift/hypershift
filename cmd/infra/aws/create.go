@@ -674,7 +674,7 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 		ResourceArns: subnetArns,
 		Tags: []ramtypes.Tag{
 			{
-				Key:   aws.String(clusterTag(o.InfraID)),
+				Key:   aws.String(supportawsutil.ClusterTag(o.InfraID)),
 				Value: aws.String(clusterTagValue),
 			},
 			{
