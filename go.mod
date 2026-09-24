@@ -293,7 +293,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	k8s.io/cloud-provider v0.36.2 // indirect
-	k8s.io/component-helpers v0.36.3 // indirect
+	k8s.io/component-helpers v0.37.0 // indirect
 	k8s.io/csi-translation-lib v0.36.2 // indirect
 	k8s.io/kms v0.37.0 // indirect
 	k8s.io/kube-openapi v0.35.1 // indirect

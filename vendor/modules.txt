@@ -2473,7 +2473,7 @@ k8s.io/component-base/tracing
 k8s.io/component-base/tracing/api/v1
 k8s.io/component-base/version
 k8s.io/component-base/zpages/features
-# k8s.io/component-helpers v0.36.3
+# k8s.io/component-helpers v0.37.0
 ## explicit; go 1.26.0
 k8s.io/component-helpers/resource
 # k8s.io/csi-translation-lib v0.36.2

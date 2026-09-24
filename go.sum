@@ -996,8 +996,8 @@ k8s.io/cloud-provider v0.36.2/go.mod h1:mVFXxKcbigdGOUebI2zPvzRLfqstkPtdpVy46sqo
 k8s.io/code-generator v0.23.3/go.mod h1:S0Q1JVA+kSzTI1oUvbKAxZY/DYbA/ZUb4Uknog12ETk=
 k8s.io/component-base v0.37.0 h1:3SdSa4+itMdFTDFTeR8CxKGmSTSMXFlKL4ky8OqjguM=
 k8s.io/component-base v0.37.0/go.mod h1:LjOebp4R9y6LODWZQv102ZQxGheLcDO2ZJLAw6bbh4I=
-k8s.io/component-helpers v0.36.3 h1:hya22S0Mto0SlHaiD4kMIi817f/tK7uTMsShxrDKQaY=
-k8s.io/component-helpers v0.36.3/go.mod h1:QjREK1lOFXR+jxTqzrtHgOtzUc2s9sm8zuFSiK+TW+c=
+k8s.io/component-helpers v0.37.0 h1:tPz4goLftoiUBfYWZgPlP4Srkd/PciNz9q+0ReOfyxY=
+k8s.io/component-helpers v0.37.0/go.mod h1:wDAmi8hduKu3YGqKg5a0wxCpoql39DkTmdQ60bpLpkc=
 k8s.io/csi-translation-lib v0.36.2 h1:zyLEZVINzEWklyCkYr+vrkYLdl4MRk7S4o+dfYf773s=
 k8s.io/csi-translation-lib v0.36.2/go.mod h1:Y5JVlILJen6SJtjCLoXbhVIaXebwKxNh+C5w19Nk+eE=
 k8s.io/gengo v0.0.0-20210813121822-485abfe95c7c/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
