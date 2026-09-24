@@ -3999,6 +3999,59 @@ spec:
                     - message: ovnKubernetesConfig is immutable once set and cannot
                         be removed
                       rule: '!has(oldSelf.ovnKubernetesConfig) || has(self.ovnKubernetesConfig)'
+                  csiDriverConfig:
+                    description: |-
+                      csiDriverConfig specifies configuration for the CSI driver operator in the hosted cluster.
+                      This allows configuring platform-specific CSI driver behavior such as KMS encryption
+                      for the default StorageClass.
+                      Once set, this field cannot be removed.
+                    minProperties: 1
+                    properties:
+                      aws:
+                        description: |-
+                          aws specifies configuration for the AWS EBS CSI driver operator.
+                          Once set, this field cannot be removed.
+                        minProperties: 1
+                        properties:
+                          initialKMSKeyARN:
+                            description: |-
+                              initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+                              created by the default StorageClass. When set, new PersistentVolumes
+                              provisioned by the default StorageClass are encrypted with this key
+                              instead of the AWS account's default EBS encryption key.
+
+                              When omitted, no KMS encryption is configured on the default StorageClass.
+                              EBS volumes use the AWS account's default encryption settings.
+
+                              The value may be either the ARN or Alias ARN of a KMS key in the format:
+                                arn:<partition>:kms:<region>:<account-id>:(key|alias)/<resource-id>
+
+                              When set, must be between 1 and 2048 characters.
+
+                              This field is applied at cluster creation time only and is immutable
+                              once set. Day-2 changes to storage encryption should be made directly
+                              on the ClusterCSIDriver resource in the guest cluster.
+
+                              The StorageARN role in AWSRolesRef must have kms:Decrypt,
+                              kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+                              permissions on the specified key.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: 'initialKMSKeyARN must be a valid AWS KMS key
+                                ARN in the format: arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>'
+                              rule: matches(self, '^arn:(aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f):kms:[a-z0-9-]+:[0-9]{12}:(key|alias)/.+$')
+                            - message: initialKMSKeyARN is immutable
+                              rule: self == oldSelf
+                        type: object
+                        x-kubernetes-validations:
+                        - message: initialKMSKeyARN cannot be removed once set
+                          rule: '!has(oldSelf.initialKMSKeyARN) || has(self.initialKMSKeyARN)'
+                    type: object
+                    x-kubernetes-validations:
+                    - message: aws is immutable once set and cannot be removed
+                      rule: '!has(oldSelf.aws) || has(self.aws)'
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
@@ -4770,6 +4823,9 @@ spec:
                         x-kubernetes-preserve-unknown-fields: true
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: csiDriverConfig is immutable once set and cannot be removed
+                  rule: '!has(oldSelf.csiDriverConfig) || has(self.csiDriverConfig)'
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
@@ -7541,6 +7597,16 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
             - message: secretEncryption cannot be removed once configured
               rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
+            - message: initialKMSKeyARN cannot be added after creation
+              rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.csiDriverConfig)
+                || !has(self.operatorConfiguration.csiDriverConfig.aws) || !has(self.operatorConfiguration.csiDriverConfig.aws.initialKMSKeyARN)
+                || (has(oldSelf.operatorConfiguration) && has(oldSelf.operatorConfiguration.csiDriverConfig)
+                && has(oldSelf.operatorConfiguration.csiDriverConfig.aws) && has(oldSelf.operatorConfiguration.csiDriverConfig.aws.initialKMSKeyARN))'
+            - message: operatorConfiguration cannot be removed when initialKMSKeyARN
+                is set
+              rule: '!has(oldSelf.operatorConfiguration) || !has(oldSelf.operatorConfiguration.csiDriverConfig)
+                || !has(oldSelf.operatorConfiguration.csiDriverConfig.aws) || !has(oldSelf.operatorConfiguration.csiDriverConfig.aws.initialKMSKeyARN)
+                || has(self.operatorConfiguration)'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:

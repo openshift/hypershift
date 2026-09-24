@@ -538,6 +538,8 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
+// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.csiDriverConfig) || !has(self.operatorConfiguration.csiDriverConfig.aws) || !has(self.operatorConfiguration.csiDriverConfig.aws.initialKMSKeyARN) || (has(oldSelf.operatorConfiguration) && has(oldSelf.operatorConfiguration.csiDriverConfig) && has(oldSelf.operatorConfiguration.csiDriverConfig.aws) && has(oldSelf.operatorConfiguration.csiDriverConfig.aws.initialKMSKeyARN))",message="initialKMSKeyARN cannot be added after creation"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.operatorConfiguration) || !has(oldSelf.operatorConfiguration.csiDriverConfig) || !has(oldSelf.operatorConfiguration.csiDriverConfig.aws) || !has(oldSelf.operatorConfiguration.csiDriverConfig.aws.initialKMSKeyARN) || has(self.operatorConfiguration)",message="operatorConfiguration cannot be removed when initialKMSKeyARN is set"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -2907,6 +2909,8 @@ type ClusterConfiguration struct {
 }
 
 // OperatorConfiguration specifies configuration for individual OCP operators in the cluster.
+// Once the csiDriverConfig field is set, it cannot be removed.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.csiDriverConfig) || has(self.csiDriverConfig)",message="csiDriverConfig is immutable once set and cannot be removed"
 type OperatorConfiguration struct {
 	// clusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.
 	//
@@ -2998,6 +3002,14 @@ type OperatorConfiguration struct {
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`
+
+	// csiDriverConfig specifies configuration for the CSI driver operator in the hosted cluster.
+	// This allows configuring platform-specific CSI driver behavior such as KMS encryption
+	// for the default StorageClass.
+	// Once set, this field cannot be removed.
+	//
+	// +optional
+	CSIDriverConfig CSIDriverOperatorConfig `json:"csiDriverConfig,omitzero,omitempty"`
 }
 
 // +genclient
