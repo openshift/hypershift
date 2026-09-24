@@ -327,8 +327,27 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	if opts.CertDir != "" {
+		// Migrate legacy service-ca resources first, before creating certs.
+		// This ensures that if a service-ca managed serving cert exists, it is deleted
+		// before EnsureWebhookCerts runs. Otherwise, EnsureWebhookCerts would see the
+		// existing cert and skip creation, then the migration would delete it, leaving
+		// no valid cert for the webhook to serve.
+		if err := webhookcerts.EnsureLegacyServiceCAMigration(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName); err != nil {
+			return fmt.Errorf("failed to migrate legacy service-ca resources: %w", err)
+		}
+
+		// Create or verify webhook certs exist. If the migration deleted a service-ca
+		// cert above, this will create a new one signed by the self-managed CA.
 		if err := webhookcerts.EnsureWebhookCerts(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName); err != nil {
 			return fmt.Errorf("failed to bootstrap webhook certs: %w", err)
+		}
+
+		// Patch CRD conversion webhook caBundles before starting the manager.
+		// This prevents a deadlock where CAPI informers cannot sync due to missing
+		// caBundles, blocking the cache and preventing the webhookcerts controller
+		// from ever starting to patch the CRDs.
+		if err := webhookcerts.EnsureCRDConversionWebhookCABundles(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName); err != nil {
+			return fmt.Errorf("failed to bootstrap CRD conversion webhook caBundles: %w", err)
 		}
 	}
 

@@ -152,30 +152,7 @@ func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 // patchCRDsCABundle patches the caBundle on all CRDs whose conversion webhook points to our service.
 func (r *WebhookCertReconciler) patchCRDsCABundle(ctx context.Context, caBundle []byte) error {
-	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
-	if err := r.Client.List(ctx, crdList); err != nil {
-		return fmt.Errorf("failed to list CRDs: %w", err)
-	}
-
-	for i := range crdList.Items {
-		crd := &crdList.Items[i]
-		if crd.Spec.Conversion == nil || crd.Spec.Conversion.Webhook == nil || crd.Spec.Conversion.Webhook.ClientConfig == nil {
-			continue
-		}
-		svc := crd.Spec.Conversion.Webhook.ClientConfig.Service
-		if svc == nil || svc.Name != r.ServiceName || svc.Namespace != r.Namespace {
-			continue
-		}
-		if bytes.Equal(crd.Spec.Conversion.Webhook.ClientConfig.CABundle, caBundle) {
-			continue
-		}
-		patch := client.MergeFrom(crd.DeepCopy())
-		crd.Spec.Conversion.Webhook.ClientConfig.CABundle = caBundle
-		if err := r.Client.Patch(ctx, crd, patch); err != nil {
-			return fmt.Errorf("failed to patch CRD %s caBundle: %w", crd.Name, err)
-		}
-	}
-	return nil
+	return patchCRDConversionWebhookCABundles(ctx, r.Client, r.Namespace, r.ServiceName, caBundle)
 }
 
 // removeInjectCABundleAnnotation removes the service-ca inject-cabundle annotation from
@@ -421,4 +398,169 @@ func certsExist(ctx context.Context, c client.Client, namespace string) bool {
 		return false
 	}
 	return len(serving.Data[corev1.TLSCertKey]) > 0 && len(serving.Data[corev1.TLSPrivateKeyKey]) > 0
+}
+
+// EnsureLegacyServiceCAMigration handles the migration from service-ca managed certs to self-managed certs
+// during bootstrap. This must be called before patching CRD bundles to avoid a situation where:
+//   - A legacy service-ca serving cert exists alongside a self-managed CA
+//   - CRD bundles get patched to trust the self-managed CA
+//   - But the webhook still serves the service-ca cert
+//   - Conversion-dependent informers fail to sync, preventing the webhookcerts controller from starting
+//
+// This function removes service-ca annotations and deletes service-ca managed serving certs so the
+// webhook will serve a cert signed by the self-managed CA that matches the patched CRD bundles.
+func EnsureLegacyServiceCAMigration(ctx context.Context, c client.Client, namespace, serviceName string) error {
+	log := ctrl.LoggerFrom(ctx).WithName("service-ca-migration-bootstrap")
+
+	// Remove service-ca annotations from the operator Service.
+	svc := &corev1.Service{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: serviceName}, svc); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get operator service: %w", err)
+		}
+	} else {
+		changed := false
+		for _, annotation := range []string{serviceCABetaAnnotation, serviceCAAlphaAnnotation} {
+			if _, ok := svc.Annotations[annotation]; ok {
+				delete(svc.Annotations, annotation)
+				changed = true
+			}
+		}
+		if changed {
+			if err := c.Update(ctx, svc); err != nil {
+				return fmt.Errorf("failed to remove service-ca annotations from operator service: %w", err)
+			}
+			log.Info("Removed service-ca annotations from operator service")
+		}
+	}
+
+	// Remove inject-cabundle annotation from webhook configurations.
+	if err := removeInjectCABundleAnnotationBootstrap(ctx, c, log); err != nil {
+		return err
+	}
+
+	// Delete service-ca managed serving cert so it will be recreated with the self-managed CA.
+	existingSecret := &corev1.Secret{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ServingCertSecretName}, existingSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get existing serving cert secret: %w", err)
+		}
+	} else if isServiceCAManaged(existingSecret) {
+		if err := c.Delete(ctx, existingSecret); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete service-ca managed serving cert secret: %w", err)
+		}
+		log.Info("Deleted service-ca managed serving cert secret")
+	}
+
+	return nil
+}
+
+// removeInjectCABundleAnnotationBootstrap removes the service-ca inject-cabundle annotation from
+// webhook configurations during bootstrap. This is similar to removeInjectCABundleAnnotation but
+// uses a client.Client instead of a controller-runtime client.
+func removeInjectCABundleAnnotationBootstrap(ctx context.Context, c client.Client, log logr.Logger) error {
+	mwc := &admissionregistrationv1.MutatingWebhookConfiguration{}
+	if err := c.Get(ctx, client.ObjectKey{Name: webhookConfigName}, mwc); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get MutatingWebhookConfiguration: %w", err)
+		}
+	} else if _, ok := mwc.Annotations[injectCABundleAnnotation]; ok {
+		delete(mwc.Annotations, injectCABundleAnnotation)
+		if err := c.Update(ctx, mwc); err != nil {
+			return fmt.Errorf("failed to remove %s annotation from MutatingWebhookConfiguration: %w", injectCABundleAnnotation, err)
+		}
+		log.Info("Removed inject-cabundle annotation from MutatingWebhookConfiguration")
+	}
+
+	vwc := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+	if err := c.Get(ctx, client.ObjectKey{Name: webhookConfigName}, vwc); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get ValidatingWebhookConfiguration: %w", err)
+		}
+	} else if _, ok := vwc.Annotations[injectCABundleAnnotation]; ok {
+		delete(vwc.Annotations, injectCABundleAnnotation)
+		if err := c.Update(ctx, vwc); err != nil {
+			return fmt.Errorf("failed to remove %s annotation from ValidatingWebhookConfiguration: %w", injectCABundleAnnotation, err)
+		}
+		log.Info("Removed inject-cabundle annotation from ValidatingWebhookConfiguration")
+	}
+
+	return nil
+}
+
+// patchCRDConversionWebhookCABundles patches the caBundle field on all CRDs with conversion
+// webhooks pointing to the specified service. This is the shared implementation used by both
+// the bootstrap function and the reconciler.
+func patchCRDConversionWebhookCABundles(ctx context.Context, c client.Client, namespace, serviceName string, caBundle []byte) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
+	if err := c.List(ctx, crdList); err != nil {
+		return fmt.Errorf("failed to list CRDs: %w", err)
+	}
+
+	patchedCount := 0
+	for i := range crdList.Items {
+		crd := &crdList.Items[i]
+
+		// Skip CRDs without conversion webhooks.
+		if crd.Spec.Conversion == nil || crd.Spec.Conversion.Webhook == nil || crd.Spec.Conversion.Webhook.ClientConfig == nil {
+			continue
+		}
+
+		// Skip CRDs whose conversion webhook doesn't point to our service.
+		svc := crd.Spec.Conversion.Webhook.ClientConfig.Service
+		if svc == nil || svc.Name != serviceName || svc.Namespace != namespace {
+			continue
+		}
+
+		// Skip CRDs that already have the correct caBundle.
+		if bytes.Equal(crd.Spec.Conversion.Webhook.ClientConfig.CABundle, caBundle) {
+			continue
+		}
+
+		// Patch the caBundle.
+		patch := client.MergeFrom(crd.DeepCopy())
+		crd.Spec.Conversion.Webhook.ClientConfig.CABundle = caBundle
+		if err := c.Patch(ctx, crd, patch); err != nil {
+			return fmt.Errorf("failed to patch CRD %s caBundle: %w", crd.Name, err)
+		}
+		patchedCount++
+		log.Info("Patched CRD conversion webhook caBundle", "crd", crd.Name)
+	}
+
+	if patchedCount > 0 {
+		log.Info("CRD conversion webhook caBundles patched", "count", patchedCount)
+	}
+	return nil
+}
+
+// EnsureCRDConversionWebhookCABundles patches the caBundle field on all CRDs with conversion
+// webhooks pointing to the HyperShift operator service. This must be called during bootstrap,
+// before the controller manager starts, to avoid a deadlock where:
+//   - CAPI CRDs have conversion webhooks but no caBundle
+//   - Informers cannot sync because conversion webhook TLS verification fails
+//   - Controller manager waits for cache sync before starting controllers
+//   - Webhookcerts controller never starts, so CRDs never get patched
+//
+// This function breaks the deadlock by patching CRDs synchronously before informers start.
+func EnsureCRDConversionWebhookCABundles(ctx context.Context, c client.Client, namespace, serviceName string) error {
+	log := ctrl.LoggerFrom(ctx).WithName("crd-cabundle-bootstrap")
+
+	// Get the CA bundle from the webhook-serving-ca secret.
+	ca := &corev1.Secret{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: CASecretName}, ca); err != nil {
+		return fmt.Errorf("failed to get webhook CA secret: %w", err)
+	}
+	caBundle := ca.Data[certs.CASignerCertMapKey]
+	if len(caBundle) == 0 {
+		return fmt.Errorf("webhook CA secret exists but has empty caBundle")
+	}
+
+	if err := patchCRDConversionWebhookCABundles(ctx, c, namespace, serviceName, caBundle); err != nil {
+		return err
+	}
+
+	log.Info("All CRD conversion webhook caBundles up to date")
+	return nil
 }
