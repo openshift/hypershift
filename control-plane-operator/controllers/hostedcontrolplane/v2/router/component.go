@@ -37,6 +37,11 @@ type router struct {
 // maxUnavailable=1, which allows a stuck replacement pod to reduce available
 // replicas to 0. Returning false keeps maxUnavailable=0 so at least one pod
 // remains available throughout the rolling update.
+//
+// The other effects of IsRequestServing (RequestServingComponentLabel pod label
+// and DedicatedRequestServingComponentsTopology node isolation) apply only to
+// AWS hosted clusters with the dedicated-request-serving-components topology
+// annotation and are not used for ARO HCP or other platforms.
 func (k *router) IsRequestServing() bool {
 	return false
 }
@@ -115,6 +120,13 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 	// updated once the ClusterIP is available, triggering an unnecessary rolling
 	// update of the router pods at a time when they are susceptible to Azure CNI
 	// DHCP timeouts.
+	//
+	// We check only the routes in expectedSet (the ARO HCP required routes) rather
+	// than every route in the namespace. Routes outside this set (e.g. external KAS
+	// routes, metrics-forwarder) either do not exist yet — in which case adaptConfig
+	// also skips them — or are not created for ARO HCP at all. The critical window
+	// is the initial Deployment creation: once the router is running with a stable
+	// ConfigMap, subsequent route arrivals are handled by live reconciliation.
 	expectedSet := make(map[string]struct{}, len(expected))
 	for _, name := range expected {
 		expectedSet[name] = struct{}{}
