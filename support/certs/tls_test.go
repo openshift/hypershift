@@ -7,6 +7,7 @@ import (
 	"net"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,6 +147,37 @@ func fuzzer() *fuzz.Fuzzer {
 		)
 }
 
+func TestValidateKeyPairRejectsMalformedIP(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When config has a malformed IP address, it should fail validation", func(t *testing.T) {
+		caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}
+		caKey, caCert, err := certs.GenerateSelfSignedCertificate(&caCfg)
+		if err != nil {
+			t.Fatalf("failed to generate CA: %v", err)
+		}
+
+		cfg := &certs.CertCfg{
+			Subject:     pkix.Name{CommonName: "test", OrganizationalUnit: []string{"ou"}},
+			IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("10.0.0.1")},
+		}
+		key, cert, err := certs.GenerateSignedCertificate(caKey, caCert, cfg)
+		if err != nil {
+			t.Fatalf("GenerateSignedCertificate failed: %v", err)
+		}
+
+		cfg.IPAddresses = append(cfg.IPAddresses, net.IP{1, 2, 3})
+
+		err = certs.ValidateKeyPair(certs.PrivateKeyToPem(key), certs.CertToPem(cert), cfg, 0)
+		if err == nil {
+			t.Fatal("ValidateKeyPair returned a nil error, should have detected the malformed IP")
+		}
+		if !strings.Contains(err.Error(), "ip addresses") {
+			t.Fatalf("expected error about ip addresses, got: %v", err)
+		}
+	})
+}
+
 func TestValidateKeyPairItempotency(t *testing.T) {
 	t.Parallel()
 	caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}
@@ -167,6 +199,87 @@ func TestValidateKeyPairItempotency(t *testing.T) {
 
 			if err := certs.ValidateKeyPair(certs.PrivateKeyToPem(key), certs.CertToPem(cert), cfg, 0); err != nil {
 				t.Errorf("validation failed when config was unchanged: %v", err)
+			}
+		})
+	}
+}
+
+// TestReconcileSignedCertIdempotentWithDualStackIPs asserts that repeated
+// ReconcileSignedCert calls with the same ipv4-only or dual-stack IPs leave
+// tls.crt unchanged.
+func TestReconcileSignedCertIdempotentWithDualStackIPs(t *testing.T) {
+	t.Parallel()
+
+	ca := &corev1.Secret{Type: corev1.SecretTypeTLS}
+	if err := certs.ReconcileSelfSignedCA(ca, "root-ca", "ou"); err != nil {
+		t.Fatalf("failed to reconcile CA: %v", err)
+	}
+
+	dnsNames := []string{
+		"localhost",
+		"kubernetes",
+		"kubernetes.default",
+		"kubernetes.default.svc",
+		"kubernetes.default.svc.cluster.local",
+	}
+
+	testCases := []struct {
+		name string
+		ips  []string
+	}{
+		{
+			name: "When IPs are IPv4-only, it should not regenerate the certificate",
+			ips:  []string{"127.0.0.1", "172.31.0.1", "172.20.0.1"},
+		},
+		{
+			// Mirrors dual-stack serviceNetwork SANs that trigger KAS cert churn.
+			name: "When IPs are dual-stack, it should not regenerate the certificate",
+			ips:  []string{"127.0.0.1", "0:0:0:0:0:0:0:1", "172.31.0.1", "2001:780:1c6:601::1", "172.20.0.1"},
+		},
+	}
+
+	const reconcileIterations = 2
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			secret := &corev1.Secret{Type: corev1.SecretTypeTLS}
+			var firstCert, firstKey []byte
+
+			for i := 0; i < reconcileIterations; i++ {
+				if err := certs.ReconcileSignedCert(
+					secret,
+					ca,
+					"kubernetes",
+					[]string{"kubernetes"},
+					pki.X509UsageServerAuth,
+					corev1.TLSCertKey,
+					corev1.TLSPrivateKeyKey,
+					"",
+					dnsNames,
+					tc.ips,
+				); err != nil {
+					t.Fatalf("ReconcileSignedCert iteration %d failed: %v", i, err)
+				}
+
+				cert := secret.Data[corev1.TLSCertKey]
+				key := secret.Data[corev1.TLSPrivateKeyKey]
+				if len(cert) == 0 || len(key) == 0 {
+					t.Fatalf("iteration %d did not populate tls.crt/tls.key", i)
+				}
+
+				if i == 0 {
+					firstCert = append([]byte(nil), cert...)
+					firstKey = append([]byte(nil), key...)
+					continue
+				}
+
+				// Later iterations revalidate; they must be a no-op.
+				if !bytes.Equal(firstCert, cert) {
+					t.Fatalf("iteration %d regenerated tls.crt for %s (revalidation should have been a no-op)", i, tc.name)
+				}
+				if !bytes.Equal(firstKey, key) {
+					t.Fatalf("iteration %d regenerated tls.key for %s (revalidation should have been a no-op)", i, tc.name)
+				}
 			}
 		})
 	}
