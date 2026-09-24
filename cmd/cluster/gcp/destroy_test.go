@@ -2,6 +2,8 @@ package gcp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -215,7 +217,102 @@ func TestDestroyPlatformSpecifics(t *testing.T) {
 
 			// Verify call order when both are called
 			if test.expectIAMCalled && test.expectInfraCalled {
-				g.Expect(callOrder).To(Equal([]string{"IAM", "Infra"}), "IAM should be destroyed before infrastructure")
+				g.Expect(callOrder).To(Equal([]string{"Infra", "IAM"}), "Infrastructure should be destroyed before IAM")
+			}
+		})
+	}
+}
+
+func TestDestroyPlatformSpecificsErrorHandling(t *testing.T) {
+	iamErr := fmt.Errorf("IAM cleanup failed")
+	infraErr := fmt.Errorf("infrastructure cleanup failed")
+
+	tests := map[string]struct {
+		iamErr            error
+		infraErr          error
+		expectIAMError    bool
+		expectInfraError  bool
+		expectInfraCalled bool
+	}{
+		"When IAM cleanup fails, infrastructure cleanup should still run": {
+			iamErr:            iamErr,
+			infraErr:          nil,
+			expectIAMError:    true,
+			expectInfraError:  false,
+			expectInfraCalled: true,
+		},
+		"When infrastructure cleanup fails, error should be returned": {
+			iamErr:            nil,
+			infraErr:          infraErr,
+			expectIAMError:    false,
+			expectInfraError:  true,
+			expectInfraCalled: true,
+		},
+		"When both cleanups fail, both errors should be returned": {
+			iamErr:            iamErr,
+			infraErr:          infraErr,
+			expectIAMError:    true,
+			expectInfraError:  true,
+			expectInfraCalled: true,
+		},
+		"When both cleanups succeed, no error should be returned": {
+			iamErr:            nil,
+			infraErr:          nil,
+			expectIAMError:    false,
+			expectInfraError:  false,
+			expectInfraCalled: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			infraCalled := false
+
+			// Stub out the destroy functions
+			originalIAM := runDestroyIAM
+			originalInfra := runDestroyInfra
+			defer func() {
+				runDestroyIAM = originalIAM
+				runDestroyInfra = originalInfra
+			}()
+
+			runDestroyIAM = func(ctx context.Context, opts gcpinfra.DestroyIAMOptions, log logr.Logger) error {
+				return test.iamErr
+			}
+			runDestroyInfra = func(ctx context.Context, opts gcpinfra.DestroyInfraOptions, log logr.Logger) error {
+				infraCalled = true
+				return test.infraErr
+			}
+
+			opts := &core.DestroyOptions{
+				InfraID: "test-infra",
+				Log:     log.Log,
+				GCPPlatform: core.GCPPlatformDestroyOptions{
+					ProjectID:     "test-project",
+					Region:        "us-central1",
+					PreserveIAM:   false,
+					PreserveInfra: false,
+				},
+			}
+
+			err := destroyPlatformSpecifics(context.Background(), opts)
+
+			// Verify infrastructure was called even if IAM failed
+			if test.expectInfraCalled {
+				g.Expect(infraCalled).To(BeTrue(), "Infrastructure cleanup should run even when IAM fails")
+			}
+
+			// Verify errors using errors.Is
+			if test.expectIAMError {
+				g.Expect(errors.Is(err, iamErr)).To(BeTrue(), "Returned error should contain IAM error")
+			}
+			if test.expectInfraError {
+				g.Expect(errors.Is(err, infraErr)).To(BeTrue(), "Returned error should contain infrastructure error")
+			}
+			if !test.expectIAMError && !test.expectInfraError {
+				g.Expect(err).To(BeNil(), "Should not return error when both cleanups succeed")
 			}
 		})
 	}

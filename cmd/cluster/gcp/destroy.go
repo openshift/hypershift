@@ -55,25 +55,11 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 }
 
 // destroyPlatformSpecifics destroys GCP infrastructure and IAM resources.
-// Destroy order mirrors reverse of creation: IAM first (identities/permissions layer), then infrastructure (base networking layer).
+// Destroy order mirrors reverse of creation: infrastructure first (networking), then IAM last (identities/permissions).
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
 	var errs []error
 
-	// Destroy IAM first (unless --preserve-iam is set)
-	if !o.GCPPlatform.PreserveIAM {
-		o.Log.Info("Destroying IAM")
-		destroyIAMOpts := gcpinfra.DestroyIAMOptions{
-			ProjectID: o.GCPPlatform.ProjectID,
-			InfraID:   o.InfraID,
-		}
-		if err := runDestroyIAM(ctx, destroyIAMOpts, o.Log); err != nil {
-			errs = append(errs, fmt.Errorf("failed to destroy IAM: %w", err))
-		}
-	} else {
-		o.Log.Info("Skipping IAM destruction (preserve-iam flag set)")
-	}
-
-	// Destroy infrastructure last (unless --preserve-infra is set)
+	// Destroy infrastructure first (unless --preserve-infra is set)
 	if !o.GCPPlatform.PreserveInfra {
 		o.Log.Info("Destroying GCP infrastructure")
 		destroyInfraOpts := gcpinfra.DestroyInfraOptions{
@@ -86,6 +72,20 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		}
 	} else {
 		o.Log.Info("Skipping infrastructure destruction (preserve-infra flag set)")
+	}
+
+	// Destroy IAM last (unless --preserve-iam is set)
+	if !o.GCPPlatform.PreserveIAM {
+		o.Log.Info("Destroying IAM")
+		destroyIAMOpts := gcpinfra.DestroyIAMOptions{
+			ProjectID: o.GCPPlatform.ProjectID,
+			InfraID:   o.InfraID,
+		}
+		if err := runDestroyIAM(ctx, destroyIAMOpts, o.Log); err != nil {
+			errs = append(errs, fmt.Errorf("failed to destroy IAM: %w", err))
+		}
+	} else {
+		o.Log.Info("Skipping IAM destruction (preserve-iam flag set)")
 	}
 
 	return errors.Join(errs...)
