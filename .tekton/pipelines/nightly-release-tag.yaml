@@ -51,7 +51,7 @@ spec:
   # --- trusted-artifacts plumbing (consumed by collect-data, apply-mapping and the restore step) ---
   - name: ociStorage
     type: string
-    default: quay.io/konflux-ci/release-service-trusted-artifacts
+    default: quay.io/acm-d/release-service-trusted-artifacts
   - name: dataDir
     type: string
     default: /var/workdir/release
