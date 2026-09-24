@@ -74,6 +74,13 @@ func NewComponent() component.ControlPlaneComponent {
 			component.EnableForPlatform(hyperv1.GCPPlatform),
 		).
 		WithDependencies(oapiv2.ComponentName).
+		// Gate the CSO on the HCCO's reconciliation having succeeded so the HCCO
+		// creates the ClusterCSIDriver (with the KMS key when configured) before
+		// the CSO starts. This preserves ordering for all clusters, not only those
+		// with a KMS key set.
+		WithPreconditions(component.Precondition{
+			ConditionType: hyperv1.ConfigOperatorReconciliationSucceeded,
+		}).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "guest-kubeconfig",
 			RequiredAPIs: []schema.GroupVersionKind{
