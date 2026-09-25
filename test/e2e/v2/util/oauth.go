@@ -27,10 +27,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
-	configmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
+	hcpmanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+	configmanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
+	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -296,7 +296,7 @@ func validateClusterPostIDP(ctx context.Context, client crclient.Client, hostedC
 	if err := client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment); err != nil {
 		return err
 	}
-	if _, ok := oauthDeployment.Spec.Template.ObjectMeta.Annotations[oauth.KubeadminSecretHashAnnotation]; ok {
+	if _, ok := oauthDeployment.Spec.Template.ObjectMeta.Annotations[pkgoauth.KubeadminSecretHashAnnotation]; ok {
 		return fmt.Errorf("OAuth deployment still has kubeadmin password hash annotation")
 	}
 	return nil

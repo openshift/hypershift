@@ -27,11 +27,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -110,7 +109,7 @@ func ensureAPIServerAllowedCIDRs(ctx context.Context, mgmtClient crclient.Client
 			}
 			return hcp, nil
 		},
-		[]e2eutil.Predicate[*hyperv1.HostedControlPlane]{
+		[]Predicate[*hyperv1.HostedControlPlane]{
 			func(hcp *hyperv1.HostedControlPlane) (bool, string, error) {
 				if hcp.Spec.Networking.APIServer == nil {
 					return false, "HCP APIServer networking should be set", nil
@@ -140,7 +139,7 @@ func ensureAPIServerAllowedCIDRs(ctx context.Context, mgmtClient crclient.Client
 				err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(targetSvc), svc)
 				return svc, err
 			},
-			[]e2eutil.Predicate[*corev1.Service]{
+			[]Predicate[*corev1.Service]{
 				func(svc *corev1.Service) (bool, string, error) {
 					actualSourceRanges := slices.Clone(svc.Spec.LoadBalancerSourceRanges)
 					slices.Sort(actualSourceRanges)

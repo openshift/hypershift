@@ -23,8 +23,6 @@ import (
 	"testing"
 	"time"
 
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,7 +41,7 @@ func TestEventuallyObjectRetriesGetterErrors(t *testing.T) {
 			return nil, errors.New("object is not available yet")
 		}
 		return object, nil
-	}, []e2eutil.Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
+	}, []Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
 		return true, "ConfigMap is available", nil
 	}}, WithInterval(time.Millisecond), WithTimeout(time.Second))
 	if err != nil {
@@ -58,7 +56,7 @@ func TestEventuallyObjectReturnsPredicateError(t *testing.T) {
 	wantErr := errors.New("predicate failed")
 	err := EventuallyObject(t.Context(), "ConfigMap predicate", func(context.Context) (*corev1.ConfigMap, error) {
 		return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "example"}}, nil
-	}, []e2eutil.Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
+	}, []Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
 		return false, "", wantErr
 	}}, WithoutConditionDump(), WithInterval(time.Millisecond), WithTimeout(time.Second))
 	if !errors.Is(err, wantErr) {
@@ -69,7 +67,7 @@ func TestEventuallyObjectReturnsPredicateError(t *testing.T) {
 func TestEventuallyObjectReturnsTimeoutError(t *testing.T) {
 	err := EventuallyObject(t.Context(), "ConfigMap to become ready", func(context.Context) (*corev1.ConfigMap, error) {
 		return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "example"}}, nil
-	}, []e2eutil.Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
+	}, []Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
 		return false, "ConfigMap is not ready", nil
 	}}, WithoutConditionDump(), WithInterval(time.Millisecond), WithTimeout(10*time.Millisecond))
 	if err == nil {
@@ -90,9 +88,9 @@ func TestEventuallyObjectsEvaluatesGroupAndObjectPredicates(t *testing.T) {
 			return objects[:1], nil
 		}
 		return objects, nil
-	}, []e2eutil.Predicate[[]*corev1.ConfigMap]{func(items []*corev1.ConfigMap) (bool, string, error) {
+	}, []Predicate[[]*corev1.ConfigMap]{func(items []*corev1.ConfigMap) (bool, string, error) {
 		return len(items) == 2, "expected two ConfigMaps", nil
-	}}, []e2eutil.Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
+	}}, []Predicate[*corev1.ConfigMap]{func(obj *corev1.ConfigMap) (bool, string, error) {
 		return obj.Name != "", "ConfigMap has a name", nil
 	}}, WithInterval(time.Millisecond), WithTimeout(time.Second))
 	if err != nil {

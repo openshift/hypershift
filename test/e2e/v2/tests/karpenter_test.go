@@ -194,7 +194,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 						err := hcClient.Get(ctx, crclient.ObjectKey{Name: crdName}, crd)
 						return crd, err
 					},
-					nil,
+					[]v2util.Predicate[*apiextensionsv1.CustomResourceDefinition](nil),
 					v2util.WithTimeout(2*time.Minute),
 				)).To(Succeed())
 			}

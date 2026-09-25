@@ -26,8 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	"github.com/openshift/hypershift/pkg/manifests"
+	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
@@ -790,7 +790,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 					want, got := 1, len(configMaps)
 					return want == got, fmt.Sprintf("expected %d KubeletConfig ConfigMaps, got %d", want, got), nil
 				},
-			}, nil,
+			}, []v2util.Predicate[*corev1.ConfigMap](nil),
 			v2util.WithTimeout(20*time.Minute),
 			v2util.WithInterval(5*time.Second),
 		)).To(Succeed())
@@ -1167,7 +1167,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					want, got := 0, len(configMaps)
 					return want == got, fmt.Sprintf("expected %d PerformanceProfile ConfigMaps, got %d", want, got), nil
 				},
-			}, nil,
+			}, []v2util.Predicate[*corev1.ConfigMap](nil),
 			v2util.WithTimeout(20*time.Minute),
 			v2util.WithInterval(5*time.Second),
 		)).To(Succeed())
@@ -1460,7 +1460,7 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 				want, got := expectedCount, len(readyPods)
 				return want == got, fmt.Sprintf("expected %d ready Pods, got %d", want, got), nil
 			},
-		}, nil,
+		}, []v2util.Predicate[*corev1.Pod](nil),
 		v2util.WithTimeout(timeout),
 		v2util.WithInterval(5*time.Second),
 	)).To(Succeed())
