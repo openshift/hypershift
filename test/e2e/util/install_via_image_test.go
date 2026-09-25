@@ -34,6 +34,40 @@ func containsFlagValue(args []string, flag, value string) bool {
 	return false
 }
 
+func supportedInstallerFlagsForTest() map[string]struct{} {
+	flags := []string{
+		"--hypershift-image",
+		"--wait-until-available",
+		"--platform-monitoring",
+		"--enable-ci-debug-output",
+		"--enable-size-tagging",
+		"--enable-cpo-overrides",
+		"--disable-capi-migration",
+		"--enable-dedicated-request-serving-isolation",
+		"--enable-etcd-recovery",
+		"--oidc-storage-provider-s3-bucket-name",
+		"--oidc-storage-provider-s3-region",
+		"--oidc-storage-provider-s3-secret",
+		"--private-platform",
+		"--aws-private-secret",
+		"--aws-private-region",
+		"--external-dns-provider",
+		"--external-dns-domain-filter",
+		externalDNSIntervalFlag,
+		"--external-dns-secret",
+		"--azure-private-secret",
+		"--azure-pls-resource-group",
+		"--gcp-project",
+		"--gcp-region",
+		"--external-dns-google-project",
+	}
+	supported := make(map[string]struct{}, len(flags))
+	for _, flag := range flags {
+		supported[flag] = struct{}{}
+	}
+	return supported
+}
+
 func TestBuildInstallerArgs(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -42,6 +76,8 @@ func TestBuildInstallerArgs(t *testing.T) {
 		expectFlags    []string
 		expectPairs    [][2]string
 		notExpectFlags []string
+		supportedFlags map[string]struct{}
+		wantErr        bool
 	}{
 		{
 			name: "When AWS platform with OIDC S3 and private platform and ExternalDNS, it should include all AWS flags",
@@ -230,11 +266,51 @@ func TestBuildInstallerArgs(t *testing.T) {
 				"--disable-capi-migration",
 			},
 		},
+		{
+			name: "When target image lacks external DNS interval, it should use the CLI default",
+			opts: HyperShiftOperatorInstallOptions{
+				HyperShiftOperatorLatestImage: "quay.io/openshift/hypershift:release-4.21",
+				Platform:                      hyperv1.AWSPlatform,
+				ExternalDNSProvider:           "aws",
+				ExternalDNSDomainFilter:       "example.com",
+			},
+			secrets: &credentialSecretNames{externalDNS: "hypershift-installer-external-dns"},
+			supportedFlags: func() map[string]struct{} {
+				flags := supportedInstallerFlagsForTest()
+				delete(flags, externalDNSIntervalFlag)
+				return flags
+			}(),
+			notExpectFlags: []string{externalDNSIntervalFlag},
+		},
+		{
+			name: "When target image lacks a requested flag, it should return an error",
+			opts: HyperShiftOperatorInstallOptions{
+				HyperShiftOperatorLatestImage: "quay.io/openshift/hypershift:release-4.21",
+				Platform:                      hyperv1.AWSPlatform,
+				PlatformMonitoring:            "All",
+			},
+			secrets: &credentialSecretNames{},
+			supportedFlags: func() map[string]struct{} {
+				flags := supportedInstallerFlagsForTest()
+				delete(flags, "--platform-monitoring")
+				return flags
+			}(),
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			args := buildInstallerArgs(tc.opts, tc.secrets)
+			if tc.supportedFlags == nil {
+				tc.supportedFlags = supportedInstallerFlagsForTest()
+			}
+			args, err := buildInstallerArgs(tc.opts, tc.secrets, tc.supportedFlags)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("buildInstallerArgs() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
 
 			for _, flag := range tc.expectFlags {
 				if !containsFlag(args, flag) {
@@ -249,6 +325,66 @@ func TestBuildInstallerArgs(t *testing.T) {
 			for _, flag := range tc.notExpectFlags {
 				if containsFlag(args, flag) {
 					t.Errorf("unexpected flag %q found in args: %v", flag, args)
+				}
+			}
+		})
+	}
+}
+
+func TestParseInstallerHelpFlags(t *testing.T) {
+	tests := []struct {
+		name         string
+		help         string
+		wantFlags    []string
+		notWantFlags []string
+		wantErr      bool
+	}{
+		{
+			name: "When help output is from an older image, it should return only advertised flags",
+			help: `Usage:
+  hypershift install [flags]
+
+Flags:
+      --hypershift-image string   image to install
+      --external-dns-provider string   DNS provider
+
+Global Flags:
+  -h, --help   help for install
+`,
+			wantFlags:    []string{"--hypershift-image", "--external-dns-provider", "--help"},
+			notWantFlags: []string{externalDNSIntervalFlag},
+		},
+		{
+			name: "When help output advertises external DNS interval, it should recognize the flag",
+			help: `Flags:
+      --external-dns-interval duration   refresh period
+`,
+			wantFlags: []string{externalDNSIntervalFlag},
+		},
+		{
+			name:    "When help output has no flag section, it should return an error",
+			help:    "Usage: hypershift install [flags]\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			flags, err := parseInstallerHelpFlags(tc.help)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("parseInstallerHelpFlags() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			for _, flag := range tc.wantFlags {
+				if _, ok := flags[flag]; !ok {
+					t.Errorf("expected advertised flag %q missing from %v", flag, flags)
+				}
+			}
+			for _, flag := range tc.notWantFlags {
+				if _, ok := flags[flag]; ok {
+					t.Errorf("unexpected advertised flag %q in %v", flag, flags)
 				}
 			}
 		})

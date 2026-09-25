@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -14,6 +16,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -24,6 +27,10 @@ import (
 const (
 	installerNamespace = "hypershift"
 	installerName      = "hypershift-installer"
+	// Explicit list of flags that might be skipped by the installer if not supported by older images.
+	// This is to prevent situation that unsupported flags are arbitrarily skipped by the installer
+	// because this could change the nature of the test unexpectedly.
+	externalDNSIntervalFlag = "--external-dns-interval"
 )
 
 // installViaOperatorImage creates a Kubernetes Job that runs `hypershift install`
@@ -48,8 +55,17 @@ func installViaOperatorImage(ctx context.Context, opts HyperShiftOperatorInstall
 	if err := ensureInstallerRBAC(ctx, client); err != nil {
 		return fmt.Errorf("creating installer RBAC: %w", err)
 	}
+	defer cleanupInstaller(ctx, client)
 
-	args := buildInstallerArgs(opts, secretNames)
+	supportedFlags, err := discoverInstallerFlags(ctx, client, opts.HyperShiftOperatorLatestImage)
+	if err != nil {
+		return fmt.Errorf("discovering installer flags from image: %w", err)
+	}
+
+	args, err := buildInstallerArgs(opts, secretNames, supportedFlags)
+	if err != nil {
+		return fmt.Errorf("building installer arguments: %w", err)
+	}
 
 	if err := createInstallerJob(ctx, client, opts.HyperShiftOperatorLatestImage, args); err != nil {
 		return fmt.Errorf("creating installer job: %w", err)
@@ -57,7 +73,6 @@ func installViaOperatorImage(ctx context.Context, opts HyperShiftOperatorInstall
 
 	waitErr := waitForInstallerJob(ctx, client)
 	logInstallerPodOutput(ctx)
-	cleanupInstaller(ctx, client)
 	if waitErr != nil {
 		return fmt.Errorf("installer job failed: %w", waitErr)
 	}
@@ -221,7 +236,7 @@ func ensureInstallerRBAC(ctx context.Context, client crclient.Client) error {
 	return nil
 }
 
-func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credentialSecretNames) []string {
+func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credentialSecretNames, supportedFlags map[string]struct{}) ([]string, error) {
 	args := []string{
 		"install",
 		"--hypershift-image", opts.HyperShiftOperatorLatestImage,
@@ -271,8 +286,10 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
-				"--external-dns-interval", "3m",
 			)
+			if _, supported := supportedFlags[externalDNSIntervalFlag]; supported {
+				args = append(args, externalDNSIntervalFlag, "3m")
+			}
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
 			}
@@ -291,8 +308,10 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
-				"--external-dns-interval", "3m",
 			)
+			if _, supported := supportedFlags[externalDNSIntervalFlag]; supported {
+				args = append(args, externalDNSIntervalFlag, "3m")
+			}
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
 			}
@@ -311,8 +330,10 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
-				"--external-dns-interval", "3m",
 			)
+			if _, supported := supportedFlags[externalDNSIntervalFlag]; supported {
+				args = append(args, externalDNSIntervalFlag, "3m")
+			}
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
 			}
@@ -330,14 +351,89 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 		}
 	}
 
-	return args
+	if err := validateInstallerArgs(args, supportedFlags); err != nil {
+		return nil, err
+	}
+	return args, nil
+}
+
+func validateInstallerArgs(args []string, supportedFlags map[string]struct{}) error {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "--") {
+			continue
+		}
+		flag := strings.SplitN(arg, "=", 2)[0]
+		if _, supported := supportedFlags[flag]; !supported {
+			return fmt.Errorf("target image does not advertise requested installer flag %s", flag)
+		}
+	}
+	return nil
+}
+
+var installerHelpFlagLine = regexp.MustCompile(`(?:^|,\s*)(--[A-Za-z0-9][A-Za-z0-9-]*)(?:[=\s]|$)`)
+
+func parseInstallerHelpFlags(help string) (map[string]struct{}, error) {
+	flags := make(map[string]struct{})
+	inFlagSection := false
+	for _, line := range strings.Split(help, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch trimmed {
+		case "Flags:", "Global Flags:":
+			inFlagSection = true
+			continue
+		}
+		if !inFlagSection || trimmed == "" {
+			continue
+		}
+		if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(trimmed, "-") {
+			inFlagSection = false
+			continue
+		}
+		for _, match := range installerHelpFlagLine.FindAllStringSubmatch(trimmed, -1) {
+			flags[match[1]] = struct{}{}
+		}
+	}
+	if len(flags) == 0 {
+		return nil, fmt.Errorf("help output did not contain any advertised flags")
+	}
+	return flags, nil
+}
+
+func discoverInstallerFlags(ctx context.Context, client crclient.Client, image string) (map[string]struct{}, error) {
+	probeJobName := fmt.Sprintf("%s-probe-%s", installerName, uuid.NewUUID())
+	if err := createNamedInstallerJob(ctx, client, probeJobName, image, []string{"install", "--help"}); err != nil {
+		return nil, fmt.Errorf("creating help probe job: %w", err)
+	}
+	defer deleteInstallerJob(ctx, client, probeJobName)
+
+	waitErr := waitForNamedInstallerJob(ctx, client, probeJobName)
+	helpOutput, logErr := getInstallerPodOutput(ctx, probeJobName)
+	if waitErr != nil {
+		if logErr != nil {
+			return nil, fmt.Errorf("help probe job failed: %w; retrieving probe logs: %v", waitErr, logErr)
+		}
+		return nil, fmt.Errorf("help probe job failed: %w; output:\n%s", waitErr, helpOutput)
+	}
+	if logErr != nil {
+		return nil, fmt.Errorf("retrieving help probe output: %w", logErr)
+	}
+
+	flags, err := parseInstallerHelpFlags(helpOutput)
+	if err != nil {
+		return nil, fmt.Errorf("parsing help output: %w; output:\n%s", err, helpOutput)
+	}
+	return flags, nil
 }
 
 func createInstallerJob(ctx context.Context, client crclient.Client, image string, args []string) error {
+	return createNamedInstallerJob(ctx, client, installerName, image, args)
+}
+
+func createNamedInstallerJob(ctx context.Context, client crclient.Client, jobName, image string, args []string) error {
 	// Delete any previous installer job
 	existing := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      installerName,
+			Name:      jobName,
 			Namespace: installerNamespace,
 		},
 	}
@@ -362,7 +458,7 @@ func createInstallerJob(ctx context.Context, client crclient.Client, image strin
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      installerName,
+			Name:      jobName,
 			Namespace: installerNamespace,
 		},
 		Spec: batchv1.JobSpec{
@@ -388,11 +484,15 @@ func createInstallerJob(ctx context.Context, client crclient.Client, image strin
 }
 
 func waitForInstallerJob(ctx context.Context, client crclient.Client) error {
+	return waitForNamedInstallerJob(ctx, client, installerName)
+}
+
+func waitForNamedInstallerJob(ctx context.Context, client crclient.Client, jobName string) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	job := &batchv1.Job{}
-	key := crclient.ObjectKey{Name: installerName, Namespace: installerNamespace}
+	key := crclient.ObjectKey{Name: jobName, Namespace: installerNamespace}
 
 	return wait.PollUntilContextCancel(waitCtx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, key, job); err != nil {
@@ -405,7 +505,7 @@ func waitForInstallerJob(ctx context.Context, client crclient.Client) error {
 				return true, nil
 			}
 			if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
-				return false, fmt.Errorf("installer job failed: %s", c.Message)
+				return false, fmt.Errorf("job %s failed (%s): %s", jobName, c.Reason, c.Message)
 			}
 		}
 
@@ -415,22 +515,28 @@ func waitForInstallerJob(ctx context.Context, client crclient.Client) error {
 }
 
 func logInstallerPodOutput(ctx context.Context) {
+	if _, err := getInstallerPodOutput(ctx, installerName); err != nil {
+		fmt.Printf("Failed to retrieve installer pod output: %v\n", err)
+	}
+}
+
+func getInstallerPodOutput(ctx context.Context, jobName string) (string, error) {
 	cfg, err := GetConfig()
 	if err != nil {
-		fmt.Printf("Failed to get config for installer logs: %v\n", err)
-		return
+		return "", fmt.Errorf("getting config for installer logs: %w", err)
 	}
 	kubeClient, err := kubeclient.NewForConfig(cfg)
 	if err != nil {
-		fmt.Printf("Failed to create client for installer logs: %v\n", err)
-		return
+		return "", fmt.Errorf("creating client for installer logs: %w", err)
 	}
 	pods, err := kubeClient.CoreV1().Pods(installerNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "job-name=" + installerName,
+		LabelSelector: "job-name=" + jobName,
 	})
-	if err != nil || len(pods.Items) == 0 {
-		fmt.Printf("No installer pods found for log retrieval\n")
-		return
+	if err != nil {
+		return "", fmt.Errorf("listing pods for job %s: %w", jobName, err)
+	}
+	if len(pods.Items) == 0 {
+		return "", fmt.Errorf("no pods found for job %s", jobName)
 	}
 
 	artifactDir := os.Getenv("ARTIFACT_DIR")
@@ -443,15 +549,22 @@ func logInstallerPodOutput(ctx context.Context) {
 		}
 	}
 
+	var output strings.Builder
+	var firstLogErr error
 	for _, pod := range pods.Items {
 		for _, container := range pod.Spec.Containers {
 			req := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name})
 			logs, err := req.DoRaw(ctx)
 			if err != nil {
 				fmt.Printf("Failed to get logs from pod %s container %s: %v\n", pod.Name, container.Name, err)
+				if firstLogErr == nil {
+					firstLogErr = fmt.Errorf("getting logs from pod %s container %s: %w", pod.Name, container.Name, err)
+				}
 				continue
 			}
 			fmt.Printf("=== Installer pod %s/%s logs ===\n%s\n", pod.Name, container.Name, string(logs))
+			output.Write(logs)
+			output.WriteByte('\n')
 			if logsDir != "" {
 				logFile := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name))
 				if writeErr := os.WriteFile(logFile, logs, 0644); writeErr != nil {
@@ -460,16 +573,24 @@ func logInstallerPodOutput(ctx context.Context) {
 			}
 		}
 	}
+	if firstLogErr != nil {
+		return output.String(), firstLogErr
+	}
+	return output.String(), nil
 }
 
-func cleanupInstaller(ctx context.Context, client crclient.Client) {
+func deleteInstallerJob(ctx context.Context, client crclient.Client, jobName string) {
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      installerName,
+			Name:      jobName,
 			Namespace: installerNamespace,
 		},
 	}
 	_ = client.Delete(ctx, job, crclient.PropagationPolicy(metav1.DeletePropagationBackground))
+}
+
+func cleanupInstaller(ctx context.Context, client crclient.Client) {
+	deleteInstallerJob(ctx, client, installerName)
 
 	crb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: installerName},
