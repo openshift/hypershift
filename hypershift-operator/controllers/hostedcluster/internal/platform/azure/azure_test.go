@@ -326,9 +326,6 @@ func TestReconcileCredentials(t *testing.T) {
 					Ingress: hyperv1.WorkloadIdentity{
 						ClientID: "ingress-client-id",
 					},
-					ImageRegistry: hyperv1.WorkloadIdentity{
-						ClientID: "registry-client-id",
-					},
 					Disk: hyperv1.WorkloadIdentity{
 						ClientID: "disk-client-id",
 					},

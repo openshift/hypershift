@@ -67,16 +67,21 @@ func TestSetupOperandCredentials(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		managedAzure   bool
-		disableIngress bool
-		expectIngress  bool
-		expectValues   map[client.ObjectKey]string
+		name                      string
+		managedAzure              bool
+		disableIngress            bool
+		disableImageRegistry      bool
+		omitImageRegistryIdentity bool
+		expectIngress             bool
+		expectImageRegistry       bool
+		expectValues              map[client.ObjectKey]string
+		expectError               string
 	}{
 		{
-			name:          "managed azure uses placeholder ingress and MSI ids",
-			managedAzure:  true,
-			expectIngress: true,
+			name:                "managed azure uses placeholder ingress and MSI ids",
+			managedAzure:        true,
+			expectIngress:       true,
+			expectImageRegistry: true,
 			expectValues: map[client.ObjectKey]string{
 				{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}:         placeholderClientID,
 				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}: "disk-msi",
@@ -85,9 +90,10 @@ func TestSetupOperandCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:          "self-managed azure uses workload identity client ids",
-			managedAzure:  false,
-			expectIngress: true,
+			name:                "self-managed azure uses workload identity client ids",
+			managedAzure:        false,
+			expectIngress:       true,
+			expectImageRegistry: true,
 			expectValues: map[client.ObjectKey]string{
 				{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}:         "ingress-id",
 				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}: "disk-id",
@@ -96,15 +102,54 @@ func TestSetupOperandCredentials(t *testing.T) {
 			},
 		},
 		{
-			name:           "ingress capability disabled skips ingress secret only",
-			managedAzure:   false,
-			disableIngress: true,
-			expectIngress:  false,
+			name:                "ingress capability disabled skips ingress secret only",
+			managedAzure:        false,
+			disableIngress:      true,
+			expectIngress:       false,
+			expectImageRegistry: true,
 			expectValues: map[client.ObjectKey]string{
 				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}: "disk-id",
 				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}: "file-id",
 				{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}: "registry-id",
 			},
+		},
+		{
+			name:                      "When self-managed Azure disables ImageRegistry it should allow the workload identity to be omitted",
+			managedAzure:              false,
+			disableImageRegistry:      true,
+			omitImageRegistryIdentity: true,
+			expectIngress:             true,
+			expectImageRegistry:       false,
+			expectValues: map[client.ObjectKey]string{
+				{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}:         "ingress-id",
+				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}: "disk-id",
+				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}: "file-id",
+			},
+		},
+		{
+			name:                      "When managed Azure disables ImageRegistry it should allow the data-plane client ID to be omitted",
+			managedAzure:              true,
+			disableImageRegistry:      true,
+			omitImageRegistryIdentity: true,
+			expectIngress:             true,
+			expectImageRegistry:       false,
+			expectValues: map[client.ObjectKey]string{
+				{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}:         placeholderClientID,
+				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}: "disk-msi",
+				{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}: "file-msi",
+			},
+		},
+		{
+			name:                      "When managed Azure enables ImageRegistry without a data-plane identity, it should return an error before reconciling secrets",
+			managedAzure:              true,
+			omitImageRegistryIdentity: true,
+			expectError:               "managed Azure image registry client ID is required when the ImageRegistry capability is enabled",
+		},
+		{
+			name:                      "When self-managed Azure enables ImageRegistry without a workload identity, it should return an error before reconciling secrets",
+			managedAzure:              false,
+			omitImageRegistryIdentity: true,
+			expectError:               "azure image registry workload identity is required when the ImageRegistry capability is enabled",
 		},
 	}
 
@@ -114,11 +159,32 @@ func TestSetupOperandCredentials(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 
 			hcp := makeHCP(tc.managedAzure)
+			if tc.omitImageRegistryIdentity {
+				if tc.managedAzure {
+					hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID = ""
+				} else {
+					hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ImageRegistry = hyperv1.WorkloadIdentity{}
+				}
+			}
+			disabledCapabilities := []hyperv1.OptionalCapability{}
 			if tc.disableIngress {
-				hcp.Spec.Capabilities = &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability}}
+				disabledCapabilities = append(disabledCapabilities, hyperv1.IngressCapability)
+			}
+			if tc.disableImageRegistry {
+				disabledCapabilities = append(disabledCapabilities, hyperv1.ImageRegistryCapability)
+			}
+			if len(disabledCapabilities) > 0 {
+				hcp.Spec.Capabilities = &hyperv1.Capabilities{Disabled: disabledCapabilities}
 			}
 
 			errs := SetupOperandCredentials(t.Context(), c, upsert.New(false), hcp, baseSecretData, tc.managedAzure)
+			if tc.expectError != "" {
+				g.Expect(errs).To(ConsistOf(MatchError(tc.expectError)))
+				secretList := &corev1.SecretList{}
+				g.Expect(c.List(t.Context(), secretList)).To(Succeed())
+				g.Expect(secretList.Items).To(BeEmpty())
+				return
+			}
 			g.Expect(errs).To(BeEmpty())
 
 			// Verify expected secrets and their azure_client_id values, and that base data is preserved
@@ -137,6 +203,15 @@ func TestSetupOperandCredentials(t *testing.T) {
 			err := c.Get(t.Context(), ingressKey, &ingressSecret)
 
 			if tc.expectIngress {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+			}
+
+			imageRegistryKey := client.ObjectKey{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}
+			var imageRegistrySecret corev1.Secret
+			err = c.Get(t.Context(), imageRegistryKey, &imageRegistrySecret)
+			if tc.expectImageRegistry {
 				g.Expect(err).ToNot(HaveOccurred())
 			} else {
 				g.Expect(err).To(HaveOccurred())
