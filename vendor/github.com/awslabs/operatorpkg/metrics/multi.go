@@ -38,6 +38,20 @@ func (mc *MultiCounter) Reset() {
 	}
 }
 
+func (mc *MultiCounter) Labels() []Label {
+	if len(mc.counters) == 0 {
+		return nil
+	}
+	return mc.counters[0].Labels()
+}
+
+func (mc *MultiCounter) Stage() Stage {
+	if len(mc.counters) == 0 {
+		return ""
+	}
+	return mc.counters[0].Stage()
+}
+
 type MultiGauge struct {
 	gauges []GaugeMetric
 }
@@ -70,6 +84,20 @@ func (mg *MultiGauge) Reset() {
 	}
 }
 
+func (mg *MultiGauge) Labels() []Label {
+	if len(mg.gauges) == 0 {
+		return nil
+	}
+	return mg.gauges[0].Labels()
+}
+
+func (mg *MultiGauge) Stage() Stage {
+	if len(mg.gauges) == 0 {
+		return ""
+	}
+	return mg.gauges[0].Stage()
+}
+
 type MultiObservation struct {
 	observations []ObservationMetric
 }
@@ -100,4 +128,18 @@ func (mo *MultiObservation) Reset() {
 	for _, o := range mo.observations {
 		o.Reset()
 	}
+}
+
+func (mo *MultiObservation) Labels() []Label {
+	if len(mo.observations) == 0 {
+		return nil
+	}
+	return mo.observations[0].Labels()
+}
+
+func (mo *MultiObservation) Stage() Stage {
+	if len(mo.observations) == 0 {
+		return ""
+	}
+	return mo.observations[0].Stage()
 }
