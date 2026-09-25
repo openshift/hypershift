@@ -45,7 +45,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/client-go/discovery"
@@ -62,7 +61,6 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
@@ -104,6 +102,15 @@ var (
 		&corev1.Service{},
 	}
 
+	// capiCoreResources holds the core CAPI resources, dumped on every platform
+	// alongside coreResources.
+	capiCoreResources = []client.Object{
+		&capiv1.Cluster{},
+		&capiv1.MachineDeployment{},
+		&capiv1.Machine{},
+		&capiv1.MachineSet{},
+	}
+
 	ocpResources = []client.Object{
 		&routev1.Route{},
 		&imagev1.ImageStream{},
@@ -120,50 +127,6 @@ var (
 		&karpenterv1.NodePool{},
 		&awskarpenterv1.EC2NodeClass{},
 		&hyperkarpenterv1.OpenshiftEC2NodeClass{},
-	}
-
-	// platformResources are platform-specific CAPI provider resources that are
-	// only present when the corresponding platform CRDs are installed (e.g. via
-	// --limit-crd-install). They are gated behind discovery at runtime to avoid
-	// failing the entire bulk inspect when a platform's CRDs are absent.
-	platformResources = []client.Object{
-		// AWS
-		&capiaws.AWSMachine{},
-		&capiaws.AWSMachineTemplate{},
-		&capiaws.AWSCluster{},
-		&hyperv1.AWSEndpointService{},
-		// Azure
-		&capiazure.AzureCluster{},
-		&capiazure.AzureClusterIdentity{},
-		&capiazure.AzureMachine{},
-		&capiazure.AzureMachineTemplate{},
-		// GCP
-		&capigcp.GCPCluster{},
-		&capigcp.GCPMachine{},
-		&capigcp.GCPMachineTemplate{},
-		// IBM Cloud VPC
-		&capiibm.IBMVPCCluster{},
-		&capiibm.IBMVPCMachine{},
-		&capiibm.IBMVPCMachineTemplate{},
-		// IBM PowerVS
-		&capiibm.IBMPowerVSCluster{},
-		&capiibm.IBMPowerVSImage{},
-		&capiibm.IBMPowerVSMachine{},
-		&capiibm.IBMPowerVSMachineTemplate{},
-		// OpenStack
-		&capiopenstackv1alpha1.OpenStackServer{},
-		&capiopenstackv1beta1.OpenStackCluster{},
-		&capiopenstackv1beta1.OpenStackMachine{},
-		&capiopenstackv1beta1.OpenStackMachineTemplate{},
-		&orcv1alpha1.Image{},
-		// Agent
-		&agentv1.AgentMachine{},
-		&agentv1.AgentMachineTemplate{},
-		&agentv1.AgentCluster{},
-		// KubeVirt CAPI
-		&capikubevirt.KubevirtMachine{},
-		&capikubevirt.KubevirtMachineTemplate{},
-		&capikubevirt.KubevirtCluster{},
 	}
 
 	monitoringResources = []client.Object{
@@ -495,56 +458,33 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	cmd.Run(ctx, objectType(&corev1.Node{}))
 
-	cmd.Run(ctx, objectType(&scheduling.ClusterSizingConfiguration{}))
-
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name)
 
 	kubevirtExternalInfraClusters, localKubevirtInUse := shouldDumpKubevirt(nodePools)
 
-	resources := append(coreResources,
-		&capiv1.Cluster{},
-		&capiv1.MachineDeployment{},
-		&capiv1.Machine{},
-		&capiv1.MachineSet{},
-		&hyperv1.HostedControlPlane{},
-		&policyv1.PodDisruptionBudget{},
-		&networkingv1.NetworkPolicy{},
-	)
-
-	// These resources are not required to exist since they
-	// are live behind a feature gate. Therefore, we'll
-	// check whether they are registered in the management
-	// cluster before dumping them.
-	featureGatedResources := []client.Object{
-		&hyperv1.ControlPlaneComponent{},
-		&secretsstorev1.SecretProviderClass{},
-	}
-
-	controlPlaneAutoscalingResources := []client.Object{
-		&vpaautoscalingv1.VerticalPodAutoscaler{},
-	}
-
-	// The management cluster may not be an OpenShift cluster and may only have
-	// a subset of platform CRDs installed (--limit-crd-install). Only dump
-	// resource types that are actually registered to avoid oc adm inspect
-	// failures that would discard the entire bulk inspect output.
+	// The management cluster may not be an OpenShift cluster.
+	// Only dump registered OpenShift GVKs to avoid errors.
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	kubeDiscoveryClient := kubeClient.Discovery()
-	optionalResources := append(platformResources, featureGatedResources...)
-	optionalResources = append(optionalResources, ocpResources...)
-	optionalResources = append(optionalResources, monitoringResources...)
-	optionalResources = append(optionalResources, controlPlaneAutoscalingResources...)
-	registered, err := filterRegisteredResources(opts.Log, c.Scheme(), kubeDiscoveryClient, optionalResources)
+
+	// ClusterSizingConfiguration is cluster-scoped, so it is dumped on its own
+	// rather than as part of the per-namespace resource list below.
+	clusterSizingConfiguration := &scheduling.ClusterSizingConfiguration{}
+	clusterSizingConfigurationRegistered, err := isObjectRegistered(c, kubeDiscoveryClient, clusterSizingConfiguration)
 	if err != nil {
 		return err
 	}
-	resources = append(resources, registered...)
-
-	if localKubevirtInUse {
-		resources = append(resources, kubevirtResources...)
+	if clusterSizingConfigurationRegistered {
+		cmd.Run(ctx, objectType(clusterSizingConfiguration))
 	}
 
-	resourceList := strings.Join(resourceTypes(resources), ",")
+	resources, err := buildDumpResourceList(ctx, c, kubeDiscoveryClient, opts, localKubevirtInUse)
+	if err != nil {
+		return err
+	}
+
+	resourceTypeNames := resourceTypes(resources)
+	resourceList := strings.Join(resourceTypeNames, ",")
 	if opts.AgentNamespace != "" {
 		// Additional Agent platform resources
 		resourceList += ",clusterdeployment.hive.openshift.io,agentclusterinstall.extensions.hive.openshift.io"
@@ -651,11 +591,20 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 	// TODO(maxcao13): move this to the management cluster dump once we do Karpenter API namespacing work.
 	// https://issues.redhat.com/browse/AUTOSCALE-268
 	// Dump Karpenter resources if they exist in the guest cluster.
-	registeredKarpenterResources, err := filterRegisteredResources(log, hyperapi.Scheme, kubeDiscoveryClient, karpenterResources)
-	if err != nil {
-		return err
+	for _, resource := range karpenterResources {
+		gvks, _, err := hyperapi.Scheme.ObjectKinds(resource)
+		if err != nil || len(gvks) == 0 {
+			return fmt.Errorf("failed to resolve GVK for %T: %w", resource, err)
+		}
+		gvk := gvks[0]
+		resourceRegistered, err := isResourceRegistered(kubeDiscoveryClient, gvk)
+		if err != nil {
+			return err
+		}
+		if resourceRegistered {
+			resources = append(resources, resource)
+		}
 	}
-	resources = append(resources, registeredKarpenterResources...)
 
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.Run(ctx, resourceList)
@@ -991,29 +940,6 @@ func shouldDumpKubevirt(nodePools []*hyperv1.NodePool) ([]kubevirtExtCluster, bo
 	return kubevirtInExternalInfras, localKubevirtInUse
 }
 
-// filterRegisteredResources returns only the resources whose GVKs are actually
-// registered on the API server. This prevents oc adm inspect from failing when
-// platform CRDs are absent (e.g. --limit-crd-install).
-func filterRegisteredResources(log logr.Logger, scheme *runtime.Scheme, discoveryClient discovery.DiscoveryInterface, candidates []client.Object) ([]client.Object, error) {
-	var registered []client.Object
-	for _, resource := range candidates {
-		gvk, err := apiutil.GVKForObject(resource, scheme)
-		if err != nil {
-			return nil, err
-		}
-		found, err := isResourceRegistered(discoveryClient, gvk)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			registered = append(registered, resource)
-			continue
-		}
-		log.V(4).Info("skipping resource not registered on API server", "gvk", gvk)
-	}
-	return registered, nil
-}
-
 func isResourceRegistered(discoveryClient discovery.DiscoveryInterface, gvk schema.GroupVersionKind) (bool, error) {
 	apiResourceLists, err := discoveryClient.ServerResourcesForGroupVersion(gvk.GroupVersion().String())
 	if err != nil {
@@ -1028,4 +954,172 @@ func isResourceRegistered(discoveryClient discovery.DiscoveryInterface, gvk sche
 		}
 	}
 	return false, nil
+}
+
+// platformTypeForDump returns the HostedCluster's platform type so only that
+// platform's infrastructure resources are dumped. If the HostedCluster cannot
+// be read (e.g. mid-deletion or a transient API error), it returns an empty
+// platform type, which yields every platform's resources; API discovery then
+// filters them to the CRDs actually registered on the cluster. This keeps the
+// dump working even when the HostedCluster itself is inaccessible.
+func platformTypeForDump(ctx context.Context, c client.Client, opts *DumpOptions) hyperv1.PlatformType {
+	hostedCluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+		opts.Log.Error(err, "Cannot get hosted cluster; dumping resources for all platforms", "namespace", opts.Namespace, "name", opts.Name)
+		return ""
+	}
+	return hostedCluster.Spec.Platform.Type
+}
+
+// isObjectRegistered reports whether the object's GVK is registered on the
+// management cluster.
+func isObjectRegistered(c client.Client, discoveryClient discovery.DiscoveryInterface, obj client.Object) (bool, error) {
+	gvk, err := c.GroupVersionKindFor(obj)
+	if err != nil {
+		return false, err
+	}
+	return isResourceRegistered(discoveryClient, gvk)
+}
+
+// filterRegisteredResources returns the subset of candidates whose GVKs are
+// registered on the management cluster, so oc adm inspect is only asked for
+// resource types that exist.
+func filterRegisteredResources(c client.Client, discoveryClient discovery.DiscoveryInterface, candidates []client.Object) ([]client.Object, error) {
+	registered := make([]client.Object, 0, len(candidates))
+	for _, resource := range candidates {
+		resourceRegistered, err := isObjectRegistered(c, discoveryClient, resource)
+		if err != nil {
+			return nil, err
+		}
+		if resourceRegistered {
+			registered = append(registered, resource)
+		}
+	}
+	return registered, nil
+}
+
+// buildDumpResourceList builds the complete list of resource types oc adm inspect
+// should collect for the per-namespace dump. The core, CAPI-core and
+// control-plane resources are always included; the platform-specific and
+// feature-gated/optional resources are added only when they are actually
+// registered on the management cluster. The platform is read from the
+// HostedCluster (see platformTypeForDump), so only that platform's
+// infrastructure resources are requested; discovery filtering then drops
+// anything the management cluster does not know about. KubeVirt resources are
+// added only when a NodePool uses the local KubeVirt provider. This keeps oc adm
+// inspect from failing atomically when a wrong-platform or feature-gated CRD is
+// absent.
+func buildDumpResourceList(ctx context.Context, c client.Client, discoveryClient discovery.DiscoveryInterface, opts *DumpOptions, localKubevirtInUse bool) ([]client.Object, error) {
+	platformType := platformTypeForDump(ctx, c, opts)
+
+	resources := append([]client.Object{}, coreResources...)
+	resources = append(resources, capiCoreResources...)
+	resources = append(resources,
+		&hyperv1.HostedControlPlane{},
+		&policyv1.PodDisruptionBudget{},
+		&networkingv1.NetworkPolicy{},
+	)
+
+	// These resources are not required to exist since they live behind a feature
+	// gate. We only dump them when registered on the management cluster.
+	featureGatedResources := []client.Object{
+		&hyperv1.ControlPlaneComponent{},
+		&secretsstorev1.SecretProviderClass{},
+	}
+	controlPlaneAutoscalingResources := []client.Object{
+		&vpaautoscalingv1.VerticalPodAutoscaler{},
+	}
+
+	candidates := append([]client.Object{}, platformSpecificResources(platformType)...)
+	candidates = append(candidates, featureGatedResources...)
+	candidates = append(candidates, ocpResources...)
+	candidates = append(candidates, monitoringResources...)
+	candidates = append(candidates, controlPlaneAutoscalingResources...)
+	registered, err := filterRegisteredResources(c, discoveryClient, candidates)
+	if err != nil {
+		return nil, err
+	}
+	resources = append(resources, registered...)
+
+	if localKubevirtInUse {
+		resources = append(resources, kubevirtResources...)
+	}
+	return resources, nil
+}
+
+// platformSpecificResources returns only the infrastructure resources that can
+// belong to the HostedCluster's platform. Each resource is checked against API
+// discovery before it is added to the dump, since some platform CRDs are
+// optional on the management cluster.
+func platformSpecificResources(platformType hyperv1.PlatformType) []client.Object {
+	resourcesByPlatform := []struct {
+		platform  hyperv1.PlatformType
+		resources []client.Object
+	}{
+		{hyperv1.AWSPlatform, []client.Object{
+			&capiaws.AWSMachine{},
+			&capiaws.AWSMachineTemplate{},
+			&capiaws.AWSCluster{},
+			&hyperv1.AWSEndpointService{},
+		}},
+		{hyperv1.AzurePlatform, []client.Object{
+			&capiazure.AzureCluster{},
+			&capiazure.AzureClusterIdentity{},
+			&capiazure.AzureMachine{},
+			&capiazure.AzureMachineTemplate{},
+		}},
+		{hyperv1.GCPPlatform, []client.Object{
+			&capigcp.GCPCluster{},
+			&capigcp.GCPMachine{},
+			&capigcp.GCPMachineTemplate{},
+		}},
+		{hyperv1.IBMCloudPlatform, []client.Object{
+			&capiibm.IBMVPCCluster{},
+			&capiibm.IBMVPCMachine{},
+			&capiibm.IBMVPCMachineTemplate{},
+		}},
+		{hyperv1.PowerVSPlatform, []client.Object{
+			&capiibm.IBMPowerVSCluster{},
+			&capiibm.IBMPowerVSImage{},
+			&capiibm.IBMPowerVSMachine{},
+			&capiibm.IBMPowerVSMachineTemplate{},
+		}},
+		{hyperv1.OpenStackPlatform, []client.Object{
+			&capiopenstackv1alpha1.OpenStackServer{},
+			&capiopenstackv1beta1.OpenStackCluster{},
+			&capiopenstackv1beta1.OpenStackMachine{},
+			&capiopenstackv1beta1.OpenStackMachineTemplate{},
+			&orcv1alpha1.Image{},
+		}},
+		{hyperv1.AgentPlatform, []client.Object{
+			&agentv1.AgentMachine{},
+			&agentv1.AgentMachineTemplate{},
+			&agentv1.AgentCluster{},
+		}},
+		{hyperv1.KubevirtPlatform, []client.Object{
+			&capikubevirt.KubevirtMachine{},
+			&capikubevirt.KubevirtMachineTemplate{},
+			&capikubevirt.KubevirtCluster{},
+		}},
+	}
+
+	if platformType == hyperv1.NonePlatform {
+		// The None platform has no infrastructure provider resources.
+		return nil
+	}
+
+	for _, platform := range resourcesByPlatform {
+		if platform.platform == platformType {
+			return platform.resources
+		}
+	}
+
+	// The platform is unknown (e.g. the HostedCluster could not be read).
+	// Return every platform's resources; the caller gates each one against API
+	// discovery, so only CRDs registered on the cluster are dumped.
+	var all []client.Object
+	for _, platform := range resourcesByPlatform {
+		all = append(all, platform.resources...)
+	}
+	return all
 }
