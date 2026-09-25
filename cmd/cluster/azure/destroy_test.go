@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -16,7 +17,24 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func TestNewDestroyCommandClientProvider(t *testing.T) {
+	t.Run("When management client creation fails, it should return the provider error", func(t *testing.T) {
+		g := NewWithT(t)
+		cmd := NewDestroyCommand(&core.DestroyOptions{}, &core.ClientProvider{
+			ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return nil, errors.New("management client unavailable")
+			},
+		})
+
+		cmd.SetArgs([]string{"--azure-creds=creds", "--dns-zone-rg-name=zone"})
+		err := cmd.Execute()
+		g.Expect(err).To(MatchError("management client unavailable"))
+	})
+}
 
 func TestDestroyClusterSetsCloudFromHostedCluster(t *testing.T) {
 	tests := map[string]struct {

@@ -34,8 +34,10 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/set"
 
@@ -928,6 +930,29 @@ func TestRenderHyperShiftOperator(t *testing.T) {
 
 	g.Expect(RenderHyperShiftOperator(t.Context(), &buf, &opts)).To(Succeed())
 	g.Expect(buf.Len()).To(BeNumerically(">", 0))
+}
+
+func TestInstallHyperShiftOperator(t *testing.T) {
+	t.Run("When no client provider is supplied, it should use default kubeconfig resolution", func(t *testing.T) {
+		g := NewWithT(t)
+		kubeconfig := filepath.Join(t.TempDir(), "invalid-kubeconfig")
+		g.Expect(os.WriteFile(kubeconfig, []byte("not a kubeconfig"), 0o600)).To(Succeed())
+		t.Setenv("KUBECONFIG", kubeconfig)
+
+		opts := NewInstallOptionsWithDefaults()
+		opts.ClientProvider = nil
+		err := InstallHyperShiftOperator(t.Context(), io.Discard, opts)
+		g.Expect(err).To(MatchError(ContainSubstring("unable to get kubernetes config")))
+	})
+
+	t.Run("When the supplied client provider is incomplete, it should return a configuration error", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := NewInstallOptionsWithDefaults()
+		opts.ClientProvider = &cmdutil.ClientProvider{}
+
+		err := InstallHyperShiftOperator(t.Context(), io.Discard, opts)
+		g.Expect(err).To(MatchError("controller-runtime client provider is not configured"))
+	})
 }
 
 func TestRenderOutputsScope(t *testing.T) {
@@ -2227,6 +2252,17 @@ func TestSetupExternalDNSErrors(t *testing.T) {
 		}).Build()
 		_, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, client)
 		NewWithT(t).Expect(err).To(MatchError("proxy lookup failed"))
+	})
+
+	t.Run("When the proxy API is unavailable, it should continue without a proxy", func(t *testing.T) {
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "config.openshift.io", Kind: "Proxy"}}
+			},
+		}).Build()
+		objects, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
 	})
 
 	t.Run("When client acquisition fails during rendering, it should continue without a proxy", func(t *testing.T) {

@@ -3,7 +3,6 @@ package openstack
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -26,27 +25,21 @@ func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.Clien
 	}
 
 	logger := log.Log
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT)
+		defer stop()
 
 		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
 		if err != nil {
 			logger.Error(err, "Failed to create management cluster client")
-			os.Exit(1)
+			return err
 		}
 
 		if err := DestroyCluster(ctx, opts, client); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd

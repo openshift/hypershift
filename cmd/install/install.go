@@ -47,6 +47,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -545,7 +546,10 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		return err
 	}
 
-	if opts.ClientProvider == nil || opts.ClientProvider.ControllerRuntimeClient == nil {
+	if opts.ClientProvider == nil {
+		opts.ClientProvider = util.DefaultClientProvider()
+	}
+	if opts.ClientProvider.ControllerRuntimeClient == nil {
 		return fmt.Errorf("controller-runtime client provider is not configured")
 	}
 	client, err := opts.ClientProvider.ControllerRuntimeClientFor("")
@@ -1459,7 +1463,7 @@ func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *core
 	if client != nil {
 		candidate := &configv1.Proxy{}
 		if err := client.Get(ctx, crclient.ObjectKey{Name: "cluster"}, candidate); err != nil {
-			if !apierrors.IsNotFound(err) {
+			if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
 				return nil, err
 			}
 		} else {
