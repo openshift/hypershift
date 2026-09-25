@@ -88,6 +88,11 @@ const (
 	// A failure here is unlikely to resolve without the changing user input.
 	ValidHostedClusterConfiguration ConditionType = "ValidConfiguration"
 
+	// ValidUserLabels indicates whether all user-provided labels can be propagated to
+	// control-plane workloads. When False, invalid or reserved labels are ignored and
+	// reconciliation continues.
+	ValidUserLabels ConditionType = "ValidUserLabels"
+
 	// SupportedHostedCluster indicates whether a HostedCluster is supported by
 	// the current configuration of the hypershift-operator.
 	// e.g. If HostedCluster requests endpointAcess Private but the hypershift-operator
@@ -375,6 +380,7 @@ const (
 	FromClusterVersionReason = "FromClusterVersion"
 
 	InvalidConfigurationReason            = "InvalidConfiguration"
+	InvalidUserLabelsReason               = "InvalidUserLabels"
 	KubeconfigWaitingForCreateReason      = "KubeconfigWaitingForCreate"
 	UnsupportedHostedClusterReason        = "UnsupportedHostedCluster"
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"

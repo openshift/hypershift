@@ -101,8 +101,8 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
@@ -171,6 +171,8 @@ var (
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
+
+	Recorder record.EventRecorder
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
@@ -247,6 +249,7 @@ type HostedClusterReconciler struct {
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
 
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider, metricsSet metrics.MetricsSet, operatorNamespace string) error {
+	r.Recorder = mgr.GetEventRecorderFor("hostedcluster-controller")
 	if r.Clock == nil {
 		r.Clock = clock.RealClock{}
 	}
@@ -1113,6 +1116,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
+
+	r.reconcileUserLabels(hcluster)
 
 	// Set SupportedHostedCluster condition
 	{
@@ -3086,7 +3091,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.AutoNode = hcluster.Spec.AutoNode
 	hcp.Spec.NodeSelector = hcluster.Spec.NodeSelector
 	hcp.Spec.Tolerations = hcluster.Spec.Tolerations
-	hcp.Spec.Labels = hcluster.Spec.Labels
+	hcp.Spec.Labels, _ = controlplanecomponent.FilterUserLabels(hcluster.Spec.Labels)
 	hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
 
 	// Pass through Platform spec.
@@ -4538,11 +4543,6 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
-	// TODO: remove when API CEL validation is enabled.
-	if err := validateLabels(hc); err != nil {
-		errs = append(errs, err...)
-	}
-
 	if err := r.validateOCPConfigurations(ctx, hc, r.Client); err != nil {
 		errs = append(errs, err)
 	}
@@ -4550,19 +4550,24 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 	return utilerrors.NewAggregate(errs)
 }
 
-func validateLabels(hc *hyperv1.HostedCluster) []error {
-	var errs []error
-	for key, value := range hc.Spec.Labels {
-		if validationErrs := validation.IsQualifiedName(key); len(errs) != 0 {
-			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
-		}
-
-		if validationErrs := validation.IsValidLabelValue(value); len(errs) != 0 {
-			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
+func (r *HostedClusterReconciler) reconcileUserLabels(hcluster *hyperv1.HostedCluster) {
+	_, warnings := controlplanecomponent.FilterUserLabels(hcluster.Spec.Labels)
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidUserLabels),
+		ObservedGeneration: hcluster.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "All user labels are valid",
+	}
+	if len(warnings) > 0 {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.InvalidUserLabelsReason
+		condition.Message = fmt.Sprintf("Ignoring invalid spec.labels: %s", strings.Join(warnings, "; "))
+		if r.Recorder != nil {
+			r.Recorder.Eventf(hcluster, corev1.EventTypeWarning, hyperv1.InvalidUserLabelsReason, "%s", condition.Message)
 		}
 	}
-
-	return errs
+	meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 }
 
 func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster) []error {

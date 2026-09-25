@@ -65,6 +65,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
@@ -92,6 +93,80 @@ import (
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zapcore"
 )
+
+func TestHostedClusterReconciler_ReconcileUserLabels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		labels          map[string]string
+		useRecorder     bool
+		expectedEvent   string
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		{
+			name:            "When labels are valid it should report the condition as true without an event",
+			labels:          map[string]string{"team": "platform"},
+			useRecorder:     true,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "All user labels are valid",
+		},
+		{
+			name:            "When labels are invalid it should report the condition as false and emit a warning event",
+			labels:          map[string]string{"control-plane": "attacker"},
+			useRecorder:     true,
+			expectedEvent:   `Warning InvalidUserLabels Ignoring invalid spec.labels: label "control-plane" is reserved for HyperShift control-plane use`,
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidUserLabelsReason,
+			expectedMessage: `Ignoring invalid spec.labels: label "control-plane" is reserved for HyperShift control-plane use`,
+		},
+		{
+			name:            "When no recorder is configured it should set the condition without panicking",
+			labels:          map[string]string{"control-plane": "attacker"},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidUserLabelsReason,
+			expectedMessage: `Ignoring invalid spec.labels: label "control-plane" is reserved for HyperShift control-plane use`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var fakeRecorder *record.FakeRecorder
+			var eventRecorder record.EventRecorder
+			if tt.useRecorder {
+				fakeRecorder = record.NewFakeRecorder(1)
+				eventRecorder = fakeRecorder
+			}
+			reconciler := &HostedClusterReconciler{Recorder: eventRecorder}
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+				Spec:       hyperv1.HostedClusterSpec{Labels: tt.labels},
+			}
+
+			reconciler.reconcileUserLabels(hcluster)
+
+			g := NewWithT(t)
+			condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidUserLabels))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(tt.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tt.expectedReason))
+			g.Expect(condition.Message).To(Equal(tt.expectedMessage))
+			g.Expect(condition.ObservedGeneration).To(Equal(hcluster.Generation))
+			if tt.expectedEvent == "" {
+				if fakeRecorder != nil {
+					g.Expect(fakeRecorder.Events).To(BeEmpty())
+				}
+				return
+			}
+			g.Expect(fakeRecorder.Events).To(Receive(Equal(tt.expectedEvent)))
+		})
+	}
+}
 
 var (
 	Now   = metav1.NewTime(time.Now())
@@ -582,6 +657,26 @@ func TestReconcileHostedControlPlaneLabelSync(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When HC spec labels contain invalid or reserved keys, it should only sync valid labels to HCP", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hc := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Labels: map[string]string{
+					"team":                              "platform",
+					"control-plane":                     "attacker",
+					"not/a valid key":                   "attacker",
+					"invalid-value":                     "attacker/value",
+					config.NeedMetricsServerAccessLabel: "attacker",
+				},
+			},
+		}
+		hcp := &hyperv1.HostedControlPlane{}
+
+		err := reconcileHostedControlPlane(hcp, hc, true, true, func() (map[string]string, error) { return nil, nil })
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(hcp.Spec.Labels).To(Equal(map[string]string{"team": "platform"}))
+	})
 }
 
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {

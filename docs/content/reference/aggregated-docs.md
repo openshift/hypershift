@@ -44247,10 +44247,10 @@ map[string]string
 <p>labels when specified, define what custom labels are added to the hcp pods.
 Changing this day 2 will cause a rollout of all hcp pods.
 Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
-Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
-<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
--kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
-TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+Kubernetes label keys consist of an optional DNS subdomain prefix and a name segment. The prefix is at most 253 characters in total, each dot-separated DNS label in the prefix is at most 63 characters, and the name segment is at most 63 characters; therefore the whole key is at most 317 characters. Prefix labels start and end with lowercase alphanumeric characters and may contain hyphens. Name segments start and end with alphanumeric characters and may contain dashes, underscores, and dots.
+Values should be empty or Kubernetes label values of at most 63 characters, using alphanumeric characters, dashes, underscores, and dots, and beginning and ending with an alphanumeric character when non-empty. Invalid values are ignored when labels are propagated to control-plane workloads.
+Operator-owned control-plane label keys are reserved and cannot be supplied here. This includes app, control-plane, name, k8s-app, olm.catalogSource, infrastructure.openshift.io/cloud-controller-manager, hypershift.openshift.io/need-management-kas-access, hypershift.openshift.io/need-metrics-server-access, hypershift.openshift.io/control-plane-component, hypershift.openshift.io/request-serving-component, hypershift.openshift.io/hosted-control-plane, and hypershift.openshift.io/managed-by. Invalid or reserved keys stored before validation was enabled are ignored when labels are propagated to control-plane workloads.
+See <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a>.</p>
 </td>
 </tr>
 <tr>
@@ -50421,6 +50421,11 @@ A failure here is unlikely to resolve without the changing user input.</p>
 <td><p>ValidReleaseInfo bubbles up the same condition from HCP. It indicates if the release contains all the images used by hypershift
 and reports missing images if any.</p>
 </td>
+</tr><tr><td><p>&#34;ValidUserLabels&#34;</p></td>
+<td><p>ValidUserLabels indicates whether all user-provided labels can be propagated to
+control-plane workloads. When False, invalid or reserved labels are ignored and
+reconciliation continues.</p>
+</td>
 </tr></tbody>
 </table>
 ###ConfigMapReference { #hypershift.openshift.io/v1beta1.ConfigMapReference }
@@ -54136,10 +54141,10 @@ map[string]string
 <p>labels when specified, define what custom labels are added to the hcp pods.
 Changing this day 2 will cause a rollout of all hcp pods.
 Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
-Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
-<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
--kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
-TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+Kubernetes label keys consist of an optional DNS subdomain prefix and a name segment. The prefix is at most 253 characters in total, each dot-separated DNS label in the prefix is at most 63 characters, and the name segment is at most 63 characters; therefore the whole key is at most 317 characters. Prefix labels start and end with lowercase alphanumeric characters and may contain hyphens. Name segments start and end with alphanumeric characters and may contain dashes, underscores, and dots.
+Values should be empty or Kubernetes label values of at most 63 characters, using alphanumeric characters, dashes, underscores, and dots, and beginning and ending with an alphanumeric character when non-empty. Invalid values are ignored when labels are propagated to control-plane workloads.
+Operator-owned control-plane label keys are reserved and cannot be supplied here. This includes app, control-plane, name, k8s-app, olm.catalogSource, infrastructure.openshift.io/cloud-controller-manager, hypershift.openshift.io/need-management-kas-access, hypershift.openshift.io/need-metrics-server-access, hypershift.openshift.io/control-plane-component, hypershift.openshift.io/request-serving-component, hypershift.openshift.io/hosted-control-plane, and hypershift.openshift.io/managed-by. Invalid or reserved keys stored before validation was enabled are ignored when labels are propagated to control-plane workloads.
+See <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a>.</p>
 </td>
 </tr>
 <tr>
@@ -54952,10 +54957,10 @@ map[string]string
 <p>labels when specified, define what custom labels are added to the hcp pods.
 Changing this day 2 will cause a rollout of all hcp pods.
 Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
-Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
-<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
--kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
-TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+Kubernetes label keys consist of an optional DNS subdomain prefix and a name segment. The prefix is at most 253 characters in total, each dot-separated DNS label in the prefix is at most 63 characters, and the name segment is at most 63 characters; therefore the whole key is at most 317 characters. Prefix labels start and end with lowercase alphanumeric characters and may contain hyphens. Name segments start and end with alphanumeric characters and may contain dashes, underscores, and dots.
+Values should be empty or Kubernetes label values of at most 63 characters, using alphanumeric characters, dashes, underscores, and dots, and beginning and ending with an alphanumeric character when non-empty. Invalid values are ignored when labels are propagated to control-plane workloads.
+Operator-owned control-plane label keys are reserved and cannot be supplied here. This includes app, control-plane, name, k8s-app, olm.catalogSource, infrastructure.openshift.io/cloud-controller-manager, hypershift.openshift.io/need-management-kas-access, hypershift.openshift.io/need-metrics-server-access, hypershift.openshift.io/control-plane-component, hypershift.openshift.io/request-serving-component, hypershift.openshift.io/hosted-control-plane, and hypershift.openshift.io/managed-by. Invalid or reserved keys stored before validation was enabled are ignored when labels are propagated to control-plane workloads.
+See <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a>.</p>
 </td>
 </tr>
 <tr>
