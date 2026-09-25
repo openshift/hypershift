@@ -47,6 +47,36 @@ type GCPResourceLabel struct {
 	Value *string `json:"value,omitempty"`
 }
 
+// GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
+// HyperShift resolves the key and value in the customer project and attaches the
+// resulting tag value to supported resources through TagBindings.
+// See https://cloud.google.com/resource-manager/docs/tags/tags-overview.
+type GCPResourceTag struct {
+	// key is the short name of the pre-existing Resource Manager TagKey.
+	// TagKeys are scoped to the customer project identified by the GCP platform
+	// configuration. It must be 1-256 characters and may contain UTF-8 Unicode
+	// characters other than single quotes, double quotes, backslashes, or forward
+	// slashes.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[^\\\\x27\\\\x22\\\\\\\\/]+$')",message="key may contain UTF-8 Unicode characters except single quotes, double quotes, backslashes, or forward slashes"
+	Key string `json:"key,omitempty"`
+
+	// value is the short name of the pre-existing Resource Manager TagValue for
+	// key. Exactly one value for a TagKey can be attached to a resource. It must
+	// be 1-256 characters, start with a Unicode letter or number, and may contain
+	// UTF-8 Unicode characters other than single quotes, double quotes,
+	// backslashes, or forward slashes.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[\\\\p{L}\\\\p{N}][^\\\\x27\\\\x22\\\\\\\\/]*$')",message="value must start with a letter or number and may contain UTF-8 Unicode characters except single quotes, double quotes, backslashes, or forward slashes"
+	Value string `json:"value,omitempty"`
+}
+
 // GCPEndpointAccessType defines the endpoint access type for GCP clusters.
 // Equivalent to AWS EndpointAccessType but adapted for GCP networking model.
 type GCPEndpointAccessType string
@@ -160,6 +190,25 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
+
+	// resourceTags are pre-existing Google Cloud Resource Manager tags to apply
+	// to supported GCP resources created for the cluster. Each entry identifies
+	// a project-scoped TagKey and TagValue by short name. HyperShift resolves the
+	// tag value using the customer project.
+	//
+	// HyperShift resolves these tags during reconciliation. If a requested
+	// TagKey or TagValue does not exist in the customer project, or cannot be
+	// accessed, its TagBinding cannot be created until the condition is
+	// corrected. HyperShift does not create TagKeys or TagValues. Attaching tags
+	// requires the relevant controller identity to have Tag User and
+	// resource-specific TagBinding permissions.
+	//
+	// +optional
+	// +listType=map
+	// +listMapKey=key
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
+	ResourceTags []GCPResourceTag `json:"resourceTags,omitempty"`
 
 	// workloadIdentity configures Workload Identity Federation for the cluster.
 	// This enables secure, short-lived token-based authentication without storing

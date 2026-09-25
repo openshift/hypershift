@@ -84,6 +84,35 @@ spec:
           value: engineering
 ```
 
+### Resource Manager Tags
+
+Resource Manager tags are distinct from resource labels. Tags are pre-existing
+Google Cloud TagKey and TagValue objects that HyperShift attaches to supported
+resources by creating TagBindings. Define tags using their short names:
+
+```yaml
+spec:
+  platform:
+    gcp:
+      resourceTags:
+        - key: environment
+          value: production
+```
+
+Tag keys and values can contain UTF-8 Unicode characters, except single quotes
+(`'`), double quotes (`"`), backslashes (`\`), and forward slashes (`/`). A tag
+value must begin with an alphanumeric character. Keys and values can each be up
+to 256 characters long.
+
+HyperShift resolves tags in the customer project during reconciliation. If a
+requested TagKey or TagValue does not exist or cannot be accessed, HyperShift
+cannot create its TagBinding until the condition is corrected. Each key and
+value may be up to 256 characters, and up to 50 tags may be configured,
+matching Google Cloud's per-resource tag limit. The controller identity that
+attaches a tag must have Tag User and the resource-specific TagBinding
+permissions. HyperShift does not create TagKeys or TagValues as part of
+HostedCluster reconciliation.
+
 ## CAPG Integration
 
 ### Controller Deployment
