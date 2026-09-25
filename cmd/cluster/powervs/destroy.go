@@ -3,7 +3,6 @@ package powervs
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -13,10 +12,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "powervs",
 		Short:        "Destroys a HostedCluster and its resources on PowerVS",
@@ -49,28 +51,28 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	_ = cmd.Flags().MarkHidden("transit-gateway")
 
 	logger := log.Log
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT)
+		defer stop()
 
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := DestroyCluster(ctx, opts); err != nil {
-			logger.Error(err, "Failed to destroy cluster")
-			os.Exit(1)
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			logger.Error(err, "Failed to create management cluster client")
+			return err
 		}
+
+		if err := DestroyCluster(ctx, opts, client); err != nil {
+			logger.Error(err, "Failed to destroy cluster")
+			return err
+		}
+		return nil
 	}
 
 	return cmd
 }
 
-func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-	hostedCluster, err := core.GetCluster(ctx, o)
+func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
+	hostedCluster, err := core.GetCluster(ctx, client, o)
 	if err != nil {
 		return err
 	}
@@ -112,10 +114,10 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		return fmt.Errorf("required inputs are missing: %w", err)
 	}
 
-	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
+	return core.DestroyCluster(ctx, client, hostedCluster, o, destroyPlatformSpecifics)
 }
 
-func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
+func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions, _ crclient.Client) error {
 	return (&powervsinfra.DestroyInfraOptions{
 		Name:                   o.Name,
 		Namespace:              o.Namespace,

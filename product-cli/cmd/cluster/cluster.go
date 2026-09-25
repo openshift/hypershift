@@ -16,9 +16,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCreateCommands() *cobra.Command {
+func NewCreateCommands(clientProviders ...*core.ClientProvider) *cobra.Command {
 	opts := core.DefaultOptions()
 	opts.ControlPlaneAvailabilityPolicy = string(v1beta1.HighlyAvailable)
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 
 	cmd := &cobra.Command{
 		Use:          "cluster",
@@ -30,16 +31,17 @@ func NewCreateCommands() *cobra.Command {
 
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
-	cmd.AddCommand(agent.NewCreateCommand(opts))
-	cmd.AddCommand(aws.NewCreateCommand(opts))
-	cmd.AddCommand(azure.NewCreateCommand(opts))
-	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
-	cmd.AddCommand(openstack.NewCreateCommand(opts))
+	cmd.AddCommand(agent.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(aws.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(azure.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(kubevirt.NewCreateCommand(opts, clientProvider))
+	cmd.AddCommand(openstack.NewCreateCommand(opts, clientProvider))
 
 	return cmd
 }
 
-func NewDestroyCommands() *cobra.Command {
+func NewDestroyCommands(clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 
 	opts := &core.DestroyOptions{
 		ClusterGracePeriod:    10 * time.Minute,
@@ -64,11 +66,11 @@ func NewDestroyCommands() *cobra.Command {
 
 	_ = cmd.MarkPersistentFlagRequired("name")
 
-	cmd.AddCommand(agent.NewDestroyCommand(opts))
-	cmd.AddCommand(aws.NewDestroyCommand(opts))
-	cmd.AddCommand(azure.NewDestroyCommand(opts))
-	cmd.AddCommand(kubevirt.NewDestroyCommand(opts))
-	cmd.AddCommand(openstack.NewDestroyCommand(opts))
+	cmd.AddCommand(agent.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(aws.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(azure.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(kubevirt.NewDestroyCommand(opts, clientProvider))
+	cmd.AddCommand(openstack.NewDestroyCommand(opts, clientProvider))
 
 	return cmd
 }

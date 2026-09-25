@@ -16,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
@@ -30,7 +32,8 @@ type DestroyBastionOpts struct {
 	AWSSecretKey       string
 }
 
-func NewDestroyCommand() *cobra.Command {
+func NewDestroyCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	opts := DestroyBastionOpts{
 		Namespace: "clusters",
 	}
@@ -56,7 +59,15 @@ func NewDestroyCommand() *cobra.Command {
 			_ = cmd.Usage()
 			return nil
 		}
-		if err := opts.Run(cmd.Context(), logger); err != nil {
+		var client crclient.Client
+		if opts.Name != "" {
+			var err error
+			client, err = clientProvider.ControllerRuntimeClientFor("")
+			if err != nil {
+				return err
+			}
+		}
+		if err := opts.Run(cmd.Context(), logger, client); err != nil {
 			logger.Error(err, "Failed to create bastion")
 			return err
 		} else {
@@ -84,19 +95,18 @@ func (o *DestroyBastionOpts) Validate() error {
 	return nil
 }
 
-func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error {
+func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger, client crclient.Client) error {
 
 	var infraID, region string
 
 	if len(o.Name) > 0 {
 		// Find HostedCluster and get AWS creds
-		c, err := util.GetClient()
-		if err != nil {
-			return err
+		if client == nil {
+			return fmt.Errorf("management-cluster client is required when a hosted cluster name is specified")
 		}
 
 		var hostedCluster hyperv1.HostedCluster
-		if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
+		if err := client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 			return fmt.Errorf("failed to get hostedcluster: %w", err)
 		}
 		if hostedCluster.Spec.Platform.AWS == nil {

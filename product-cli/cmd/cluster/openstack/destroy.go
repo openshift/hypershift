@@ -1,8 +1,6 @@
 package openstack
 
 import (
-	"context"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -13,7 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "openstack",
 		Short:        "Destroys a HostedCluster and its associated infrastructure on OpenStack platform",
@@ -21,21 +20,21 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	}
 
 	logger := log.Log
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT)
+		defer stop()
 
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := openstack.DestroyCluster(ctx, opts); err != nil {
-			logger.Error(err, "Failed to destroy cluster")
-			os.Exit(1)
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			logger.Error(err, "Failed to create management cluster client")
+			return err
 		}
+
+		if err := openstack.DestroyCluster(ctx, opts, client); err != nil {
+			logger.Error(err, "Failed to destroy cluster")
+			return err
+		}
+		return nil
 	}
 
 	return cmd

@@ -21,6 +21,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
+type testPlatformOptions struct{}
+
+func (testPlatformOptions) UpdateNodePool(context.Context, *hyperv1.NodePool, *hyperv1.HostedCluster, client.Client) error {
+	return nil
+}
+
+func (testPlatformOptions) Type() hyperv1.PlatformType {
+	return hyperv1.NonePlatform
+}
+
 func TestValidateHostedClusterPayloadSupportsNodePoolCPUArch(t *testing.T) {
 	for _, testCase := range []struct {
 		name                     string
@@ -281,4 +291,32 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(Equal("NodePool minor version 4.14 is less than 4.15, which is the minimum NodePool version compatible with the 4.18 HostedCluster"))
 	})
+}
+
+func TestCreateNodePool(t *testing.T) {
+	g := NewWithT(t)
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "clusters",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hostedCluster).Build()
+	opts := &CreateNodePoolOptions{
+		Name:        "test-nodepool",
+		Namespace:   hostedCluster.Namespace,
+		ClusterName: hostedCluster.Name,
+		Replicas:    1,
+		Arch:        hyperv1.ArchitectureAMD64,
+	}
+
+	err := opts.CreateNodePool(t.Context(), testPlatformOptions{}, c)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	nodePool := &hyperv1.NodePool{}
+	g.Expect(c.Get(t.Context(), client.ObjectKey{Namespace: opts.Namespace, Name: opts.Name}, nodePool)).To(Succeed())
+	g.Expect(nodePool.Spec.ClusterName).To(Equal(opts.ClusterName))
 }

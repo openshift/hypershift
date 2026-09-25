@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -18,10 +20,12 @@ import (
 	aws "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/metrics"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,8 +34,10 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/set"
 
@@ -898,6 +904,54 @@ func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
 			}
 		}
 		g.Expect(nonWebhookSecretCount).To(BeNumerically(">", 0), "expected at least one non-webhook secret to be rendered")
+	})
+}
+
+func TestRenderHyperShiftOperator(t *testing.T) {
+	g := NewGomegaWithT(t)
+	pullSecretFile := filepath.Join(t.TempDir(), "pull-secret.json")
+	g.Expect(os.WriteFile(pullSecretFile, []byte(`{"auths":{}}`), 0o600)).To(Succeed())
+	var buf bytes.Buffer
+	opts := NewInstallOptionsWithDefaults()
+	opts.PrivatePlatform = string(hyperv1.NonePlatform)
+	opts.ExternalDNSProvider = "aws"
+	opts.ExternalDNSRoleARN = "arn:aws:iam::123456789012:role/external-dns"
+	opts.ExternalDNSDomainFilter = "example.com"
+	opts.AWSRoleCredentialSource = aws.CredentialSourceWebIdentity
+	opts.PullSecretFile = pullSecretFile
+	opts.ClientProvider = &cmdutil.ClientProvider{
+		ControllerRuntimeClient: func(_ string) (crclient.Client, error) {
+			return nil, fmt.Errorf("client intentionally unavailable")
+		},
+	}
+	opts.Format = RenderFormatYaml
+	opts.OutputTypes = string(OutputResources)
+	opts.RenderSensitive = true
+
+	g.Expect(RenderHyperShiftOperator(t.Context(), &buf, &opts)).To(Succeed())
+	g.Expect(buf.Len()).To(BeNumerically(">", 0))
+}
+
+func TestInstallHyperShiftOperator(t *testing.T) {
+	t.Run("When no client provider is supplied, it should use default kubeconfig resolution", func(t *testing.T) {
+		g := NewWithT(t)
+		kubeconfig := filepath.Join(t.TempDir(), "invalid-kubeconfig")
+		g.Expect(os.WriteFile(kubeconfig, []byte("not a kubeconfig"), 0o600)).To(Succeed())
+		t.Setenv("KUBECONFIG", kubeconfig)
+
+		opts := NewInstallOptionsWithDefaults()
+		opts.ClientProvider = nil
+		err := InstallHyperShiftOperator(t.Context(), io.Discard, opts)
+		g.Expect(err).To(MatchError(ContainSubstring("unable to get kubernetes config")))
+	})
+
+	t.Run("When the supplied client provider is incomplete, it should return a configuration error", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := NewInstallOptionsWithDefaults()
+		opts.ClientProvider = &cmdutil.ClientProvider{}
+
+		err := InstallHyperShiftOperator(t.Context(), io.Discard, opts)
+		g.Expect(err).To(MatchError("controller-runtime client provider is not configured"))
 	})
 }
 
@@ -2155,7 +2209,8 @@ func TestSetupExternalDNS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
-			objects, err := setupExternalDNS(context.Background(), tc.opts, ns)
+			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+			objects, err := setupExternalDNS(context.Background(), tc.opts, ns, client)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(len(objects)).To(BeNumerically(">=", tc.minResourceCount))
 
@@ -2176,6 +2231,61 @@ func TestSetupExternalDNS(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When the client is unavailable, it should still generate external DNS resources", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		objects, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(objects).NotTo(BeEmpty())
+	})
+}
+
+func TestSetupExternalDNSErrors(t *testing.T) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+
+	t.Run("When proxy lookup returns a non-NotFound error, it should return the error", func(t *testing.T) {
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return errors.New("proxy lookup failed")
+			},
+		}).Build()
+		_, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).To(MatchError("proxy lookup failed"))
+	})
+
+	t.Run("When the proxy API is unavailable, it should continue without a proxy", func(t *testing.T) {
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "config.openshift.io", Kind: "Proxy"}}
+			},
+		}).Build()
+		objects, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
+	})
+
+	t.Run("When client acquisition fails during rendering, it should continue without a proxy", func(t *testing.T) {
+		opts := Options{
+			ExternalDNSProvider: "aws",
+			ClientProvider: &cmdutil.ClientProvider{
+				ControllerRuntimeClient: func(string) (crclient.Client, error) {
+					return nil, errors.New("client acquisition failed")
+				},
+			},
+		}
+		objects, err := setupExternalDNS(context.Background(), opts, ns, nil)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
+	})
+
+	t.Run("When the proxy exists, it should continue generating external DNS resources", func(t *testing.T) {
+		proxy := &configv1.Proxy{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(proxy).Build()
+		objects, err := setupExternalDNS(context.Background(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
+	})
 }
 
 func TestValidateImageConfig(t *testing.T) {
