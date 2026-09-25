@@ -528,17 +528,19 @@ func (t *Token) effectiveSecrets(outdated bool) (*corev1.Secret, *corev1.Secret)
 }
 
 func (t *Token) secretsForHash(hash string) (*corev1.Secret, *corev1.Secret) {
-	return &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: t.controlplaneNamespace,
-				Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.nodePool.GetName(), hash),
-			},
-		}, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: t.controlplaneNamespace,
-				Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.nodePool.GetName(), hash),
-			},
-		}
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: t.controlplaneNamespace,
+			Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.nodePool.GetName(), hash),
+		},
+	}
+	userDataSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: t.controlplaneNamespace,
+			Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.nodePool.GetName(), hash),
+		},
+	}
+	return tokenSecret, userDataSecret
 }
 
 const UserDataSecrePrefix = "user-data"

@@ -45,6 +45,10 @@ validations:
     enforcement: Warn
   - name: maxItems
     enforcement: Warn
+  - name: minProperties
+    enforcement: Warn
+  - name: maxProperties
+    enforcement: Warn
   - name: minimum
     enforcement: Warn
   - name: maximum

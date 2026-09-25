@@ -93,6 +93,58 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+func TestValidateLabels(t *testing.T) {
+	tests := []struct {
+		name                   string
+		labels                 map[string]hyperv1.LabelValue
+		expectedErrorSubstring string
+	}{
+		{
+			name:   "When key and value are valid it should pass",
+			labels: map[string]hyperv1.LabelValue{"team": "platform"},
+		},
+		{
+			name:   "When value is empty it should pass",
+			labels: map[string]hyperv1.LabelValue{"team": ""},
+		},
+		{
+			name:                   "When key is invalid it should return an error",
+			labels:                 map[string]hyperv1.LabelValue{"not/a valid key": "platform"},
+			expectedErrorSubstring: "name part",
+		},
+		{
+			name:                   "When value is invalid it should return an error",
+			labels:                 map[string]hyperv1.LabelValue{"team": "invalid/value"},
+			expectedErrorSubstring: "a valid label must",
+		},
+		{
+			name:                   "When key is management KAS access it should return an error",
+			labels:                 map[string]hyperv1.LabelValue{config.NeedManagementKASAccessLabel: "true"},
+			expectedErrorSubstring: "reserved for HyperShift control-plane use",
+		},
+		{
+			name:                   "When key is an operator network-policy selector it should return an error",
+			labels:                 map[string]hyperv1.LabelValue{"app": "kube-apiserver"},
+			expectedErrorSubstring: "reserved for HyperShift control-plane use",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validateLabels(&hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Labels: tt.labels}})
+			if tt.expectedErrorSubstring == "" {
+				if len(errs) != 0 {
+					t.Fatalf("expected labels to be valid, got %v", errs)
+				}
+				return
+			}
+			if len(errs) == 0 || !strings.Contains(errs[0].Error(), tt.expectedErrorSubstring) {
+				t.Fatalf("expected an error containing %q, got %v", tt.expectedErrorSubstring, errs)
+			}
+		})
+	}
+}
+
 var (
 	Now   = metav1.NewTime(time.Now())
 	Later = metav1.NewTime(Now.Add(5 * time.Minute))
