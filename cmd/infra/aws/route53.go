@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 )
 
 func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.Logger, client awsapi.ROUTE53API) (string, error) {
@@ -83,9 +84,9 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 		return id, err
 	}
 
+	callRef := uuid.NewString()
 	var res *route53.CreateHostedZoneOutput
 	if err := retryRoute53WithBackoff(ctx, func() error {
-		callRef := fmt.Sprintf("%d", time.Now().Unix())
 		createRequest := &route53.CreateHostedZoneInput{
 			CallerReference: aws.String(callRef),
 			Name:            aws.String(name),

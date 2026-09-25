@@ -23,6 +23,9 @@ status:
     kind: ConfigMap
     name: openshift-apiserver-audit
   - group: ""
+    kind: Secret
+    name: combined-pull-secret
+  - group: ""
     kind: ConfigMap
     name: openshift-apiserver
   - group: policy

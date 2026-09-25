@@ -54,7 +54,7 @@ make staticcheck              # Run staticcheck on core packages
 make fmt                      # Format code
 make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
-make run-gitlint              # Validate commit message format
+make run-gitlint              # Validate commit message format across a commit range
 make pre-commit               # Full pre-PR gate (build, e2e compile, verify, test)
 ```
 
@@ -124,7 +124,8 @@ The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses
 
 ## Commit Messages
 
-Use conventional commit format. Validate with `make run-gitlint`. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
+Use conventional commit format. The installed `commit-msg` hook validates the pending message automatically; use
+`make run-gitlint` to validate a commit range. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
 
 ```
 <type>(<scope>): <description>

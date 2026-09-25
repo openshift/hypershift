@@ -28,7 +28,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
 	hcpmanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 )

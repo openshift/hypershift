@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -19,6 +20,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 var (
@@ -35,12 +37,14 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 		hccoImage                  string
 		expectGlobalSecretExists   bool
 		expectOriginalSecretExists bool
+		expectCombinedSecretExists bool
 		expectDaemonSetExists      bool
 		expectServiceAccountExists bool
 		expectError                bool
 		validateDaemonSet          func(*testing.T, *appsv1.DaemonSet)
 		validateGlobalSecret       func(*testing.T, *corev1.Secret)
 		validateOriginalSecret     func(*testing.T, *corev1.Secret)
+		validateCombinedSecret     func(*testing.T, *corev1.Secret)
 		validateServiceAccount     func(*testing.T, *corev1.ServiceAccount)
 	}{
 		{
@@ -53,6 +57,16 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 						Name:      "pull-secret",
 						Namespace: "test-hcp",
 					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"registry1.io": validAuth}),
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "combined-pull-secret",
+						Namespace: "test-hcp",
+					},
+					Type: corev1.SecretTypeDockerConfigJson,
 					Data: map[string][]byte{
 						corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"registry1.io": validAuth}),
 					},
@@ -88,6 +102,7 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 			},
 			expectGlobalSecretExists:   false,
 			expectOriginalSecretExists: true,
+			expectCombinedSecretExists: true,
 			expectDaemonSetExists:      true,
 			expectServiceAccountExists: true,
 			expectError:                false,
@@ -107,6 +122,16 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 				g := NewWithT(t)
 				g.Expect(secret.Data).To(HaveKey(corev1.DockerConfigJsonKey))
 			},
+			validateCombinedSecret: func(t *testing.T, secret *corev1.Secret) {
+				g := NewWithT(t)
+				g.Expect(secret.Data).To(HaveKey(corev1.DockerConfigJsonKey))
+				var dockerConfigJSON map[string]any
+				err := json.Unmarshal(secret.Data[corev1.DockerConfigJsonKey], &dockerConfigJSON)
+				g.Expect(err).NotTo(HaveOccurred())
+				auths := dockerConfigJSON["auths"].(map[string]any)
+				g.Expect(auths).To(HaveKey("registry1.io"))
+				g.Expect(auths).NotTo(HaveKey("registry2.io"), "combined-pull-secret should only contain original registries when no additional secret exists")
+			},
 		},
 		{
 			name:         "When original pull secret and valid additional pull secret exist, it should merge secrets and create daemonset with global secret",
@@ -118,6 +143,16 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 						Name:      "pull-secret",
 						Namespace: "test-hcp",
 					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"registry1.io": validAuth}),
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "combined-pull-secret",
+						Namespace: "test-hcp",
+					},
+					Type: corev1.SecretTypeDockerConfigJson,
 					Data: map[string][]byte{
 						corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"registry1.io": validAuth}),
 					},
@@ -162,6 +197,7 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 			},
 			expectGlobalSecretExists:   true,
 			expectOriginalSecretExists: true,
+			expectCombinedSecretExists: true,
 			expectDaemonSetExists:      true,
 			expectServiceAccountExists: true,
 			expectError:                false,
@@ -187,6 +223,70 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 				auths := dockerConfigJSON["auths"].(map[string]any)
 				g.Expect(auths).To(HaveKey("registry1.io"))
 				g.Expect(auths).To(HaveKey("registry2.io"))
+			},
+			validateCombinedSecret: func(t *testing.T, secret *corev1.Secret) {
+				g := NewWithT(t)
+				g.Expect(secret.Data).To(HaveKey(corev1.DockerConfigJsonKey))
+				var dockerConfigJSON map[string]any
+				err := json.Unmarshal(secret.Data[corev1.DockerConfigJsonKey], &dockerConfigJSON)
+				g.Expect(err).NotTo(HaveOccurred())
+				auths := dockerConfigJSON["auths"].(map[string]any)
+				g.Expect(auths).To(HaveKey("registry1.io"))
+				g.Expect(auths).To(HaveKey("registry2.io"))
+			},
+		},
+		{
+			name:         "When combined-pull-secret does not yet exist during upgrade skew, it should skip update and still reconcile daemonset",
+			hcpNamespace: "test-hcp",
+			hccoImage:    "test-image:latest",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pull-secret",
+						Namespace: "test-hcp",
+					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"registry1.io": validAuth}),
+					},
+				},
+			},
+			nodeObjects: []client.Object{
+				&corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node-1",
+					},
+				},
+				&capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machineset",
+						Namespace: "test-hcp",
+					},
+					Spec: capiv1.MachineSetSpec{
+						Selector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"machineset": "test"},
+						},
+					},
+				},
+				&capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machine",
+						Namespace: "test-hcp",
+						Labels:    map[string]string{"machineset": "test"},
+					},
+					Status: capiv1.MachineStatus{
+						NodeRef: capiv1.MachineNodeReference{Name: "test-node-1"},
+					},
+				},
+			},
+			expectGlobalSecretExists:   false,
+			expectOriginalSecretExists: true,
+			expectCombinedSecretExists: false,
+			expectDaemonSetExists:      true,
+			expectServiceAccountExists: true,
+			expectError:                false,
+			validateDaemonSet: func(t *testing.T, ds *appsv1.DaemonSet) {
+				g := NewWithT(t)
+				g.Expect(ds.Spec.Template.Spec.Volumes).To(HaveLen(3))
 			},
 		},
 		{
@@ -297,6 +397,16 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 						corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"registry1.io": validAuth}),
 					},
 				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "combined-pull-secret",
+						Namespace: "test-hcp",
+					},
+					Type: corev1.SecretTypeDockerConfigJson,
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: composePullSecretBytes(map[string]string{"registry1.io": validAuth}),
+					},
+				},
 			},
 			nodeObjects: []client.Object{
 				&corev1.Node{
@@ -331,6 +441,7 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 			},
 			expectGlobalSecretExists:   false,
 			expectOriginalSecretExists: true,
+			expectCombinedSecretExists: true,
 			expectDaemonSetExists:      true,
 			expectServiceAccountExists: true,
 			expectError:                false,
@@ -414,6 +525,21 @@ func TestReconcileGlobalPullSecret(t *testing.T) {
 				g.Expect(err).NotTo(HaveOccurred())
 				if tt.validateOriginalSecret != nil {
 					tt.validateOriginalSecret(t, originalSecret)
+				}
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+
+			// Verify combined pull secret in HCP namespace
+			combinedSecret := &corev1.Secret{}
+			err = cpClient.Get(context.Background(), client.ObjectKey{
+				Name:      "combined-pull-secret",
+				Namespace: tt.hcpNamespace,
+			}, combinedSecret)
+			if tt.expectCombinedSecretExists {
+				g.Expect(err).NotTo(HaveOccurred())
+				if tt.validateCombinedSecret != nil {
+					tt.validateCombinedSecret(t, combinedSecret)
 				}
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
@@ -570,6 +696,30 @@ func TestMergePullSecrets(t *testing.T) {
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			wantErr:          false,
 		},
+		{
+			name:             "When original secret is missing auths key, it should return error",
+			originalSecret:   []byte(`{}`),
+			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			wantErr:          true,
+		},
+		{
+			name:             "When additional secret is missing auths key, it should return error",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			additionalSecret: []byte(`{}`),
+			wantErr:          true,
+		},
+		{
+			name:             "When original secret auths is not an object, it should return error",
+			originalSecret:   []byte(`{"auths": "invalid"}`),
+			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			wantErr:          true,
+		},
+		{
+			name:             "When additional secret auths is an array, it should return error",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			additionalSecret: []byte(`{"auths": ["invalid"]}`),
+			wantErr:          true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -582,6 +732,79 @@ func TestMergePullSecrets(t *testing.T) {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(result).To(Equal(tt.expectedResult))
 			}
+		})
+	}
+}
+
+func TestSyncCombinedPullSecret(t *testing.T) {
+	pullSecretBytes := composePullSecretBytes(map[string]string{"registry1.io": validAuth})
+
+	tests := []struct {
+		name            string
+		existingObjects []client.Object
+		interceptors    interceptor.Funcs
+		expectErr       bool
+		errContains     string
+	}{
+		{
+			name:      "When secret does not exist, it should skip update and return nil",
+			expectErr: false,
+		},
+		{
+			name: "When Get fails with non-NotFound error, it should return error",
+			interceptors: interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					return fmt.Errorf("api server unavailable")
+				},
+			},
+			expectErr:   true,
+			errContains: "failed to get combined pull secret",
+		},
+		{
+			name: "When secret exists and Update fails, it should return error",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "combined-pull-secret",
+						Namespace: "test-hcp",
+					},
+				},
+			},
+			interceptors: interceptor.Funcs{
+				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+					return fmt.Errorf("conflict")
+				},
+			},
+			expectErr:   true,
+			errContains: "failed to update combined pull secret",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			scheme := runtime.NewScheme()
+			_ = corev1.AddToScheme(scheme)
+
+			builder := fake.NewClientBuilder().WithScheme(scheme)
+			if len(tt.existingObjects) > 0 {
+				builder = builder.WithObjects(tt.existingObjects...)
+			}
+			cpClient := builder.WithInterceptorFuncs(tt.interceptors).Build()
+
+			reconciler := &Reconciler{
+				cpClient:     cpClient,
+				hcpNamespace: "test-hcp",
+			}
+
+			err := reconciler.syncCombinedPullSecret(context.Background(), pullSecretBytes)
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errContains))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
 		})
 	}
 }

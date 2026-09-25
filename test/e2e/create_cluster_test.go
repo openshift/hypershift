@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
@@ -49,13 +49,17 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 		clusterOpts.NodePoolReplicas = 1
 	}
-	if !e2eutil.IsLessThan(e2eutil.Version418) {
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 	}
 
-	if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version419) && (globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform) {
 		// Configure Ingress Operator with custom endpointPublishingStrategy before cluster creation
+		originalBeforeApply := clusterOpts.BeforeApply
 		clusterOpts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
 			switch hc := o.(type) {
 			case *hyperv1.HostedCluster:
 				if hc.Spec.OperatorConfiguration == nil {
@@ -75,8 +79,24 @@ func TestCreateCluster(t *testing.T) {
 		}
 	}
 
-	clusterOpts.PodsLabels = map[string]string{
-		"hypershift-e2e-test-label": "test",
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version419) {
+		clusterOpts.PodsLabels = map[string]string{
+			"hypershift-e2e-test-label": "test",
+		}
+	}
+	if e2eutil.IsLessThan(e2eutil.Version417) {
+		// nodeVolumeDetachTimeout was added to the NodePool API in 4.17.
+		// Do not send it to older release-branch CRDs, even though the main
+		// test binary includes the field in its NodePool type.
+		originalBeforeApply := clusterOpts.BeforeApply
+		clusterOpts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
+			if nodePool, ok := o.(*hyperv1.NodePool); ok {
+				nodePool.Spec.NodeVolumeDetachTimeout = nil
+			}
+		}
 	}
 	clusterOpts.Tolerations = []string{"key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule"}
 
@@ -124,6 +144,7 @@ func TestCreateCluster(t *testing.T) {
 		}
 
 		e2eutil.EnsureMetricsForwarderWorking(t, ctx, mgtClient, hostedCluster)
+		e2eutil.ValidateCPOMetrics(t, ctx, mgtClient, hostedCluster)
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
 		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
