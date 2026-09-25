@@ -7295,8 +7295,9 @@ spec:
                                     - objectEncoding
                                     type: object
                                   imageRegistry:
-                                    description: imageRegistry is a pre-existing managed
-                                      identity associated with the cluster-image-registry-operator.
+                                    description: |-
+                                      imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
+                                      This field is required when the ImageRegistry capability is enabled.
                                     properties:
                                       clientID:
                                         description: |-
@@ -7557,13 +7558,13 @@ spec:
                                   imageRegistryMSIClientID:
                                     description: |-
                                       imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
-                                      registry controller.
+                                      registry controller. This field is required when the ImageRegistry capability is enabled.
                                     maxLength: 255
+                                    minLength: 1
                                     type: string
                                 required:
                                 - diskMSIClientID
                                 - fileMSIClientID
-                                - imageRegistryMSIClientID
                                 type: object
                             required:
                             - controlPlane
@@ -7665,6 +7666,7 @@ spec:
                                 description: |-
                                   imageRegistry is the client ID of a federated managed identity, associated with cluster-image-registry-operator, used in
                                   workload identity authentication.
+                                  This field is required when the ImageRegistry capability is enabled.
                                 properties:
                                   clientID:
                                     description: clientID is client ID of a federated
@@ -7749,7 +7751,6 @@ spec:
                             - cloudProvider
                             - disk
                             - file
-                            - imageRegistry
                             - ingress
                             - network
                             - nodePoolManagement

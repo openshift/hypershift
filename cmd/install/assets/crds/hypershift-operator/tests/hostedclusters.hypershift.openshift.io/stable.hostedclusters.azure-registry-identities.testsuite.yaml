@@ -1,0 +1,357 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster Azure registry identity validation"
+crdName: hostedclusters.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  - name: When workload identities omit imageRegistry while the capability is enabled it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Azure workloadIdentities.imageRegistry is required when the ImageRegistry capability is enabled"
+  - name: When workload identities omit imageRegistry while the capability is disabled it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          disabled:
+          - ImageRegistry
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+  - name: When managed identities omit controlPlane.imageRegistry while the capability is enabled it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    credentialsSecretName: cloudProvider-secret
+                    objectEncoding: utf-8
+                  nodePoolManagement:
+                    credentialsSecretName: nodePoolManagement-secret
+                    objectEncoding: utf-8
+                  controlPlaneOperator:
+                    credentialsSecretName: controlPlaneOperator-secret
+                    objectEncoding: utf-8
+                  ingress:
+                    credentialsSecretName: ingress-secret
+                    objectEncoding: utf-8
+                  network:
+                    credentialsSecretName: network-secret
+                    objectEncoding: utf-8
+                  disk:
+                    credentialsSecretName: disk-secret
+                    objectEncoding: utf-8
+                  file:
+                    credentialsSecretName: file-secret
+                    objectEncoding: utf-8
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Azure managedIdentities.controlPlane.imageRegistry is required when the ImageRegistry capability is enabled"
+  - name: When managed identities omit dataPlane.imageRegistryMSIClientID while the capability is enabled it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    credentialsSecretName: cloudProvider-secret
+                    objectEncoding: utf-8
+                  nodePoolManagement:
+                    credentialsSecretName: nodePoolManagement-secret
+                    objectEncoding: utf-8
+                  controlPlaneOperator:
+                    credentialsSecretName: controlPlaneOperator-secret
+                    objectEncoding: utf-8
+                  imageRegistry:
+                    credentialsSecretName: imageRegistry-secret
+                    objectEncoding: utf-8
+                  ingress:
+                    credentialsSecretName: ingress-secret
+                    objectEncoding: utf-8
+                  network:
+                    credentialsSecretName: network-secret
+                    objectEncoding: utf-8
+                  disk:
+                    credentialsSecretName: disk-secret
+                    objectEncoding: utf-8
+                  file:
+                    credentialsSecretName: file-secret
+                    objectEncoding: utf-8
+                dataPlane:
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Azure managedIdentities.dataPlane.imageRegistryMSIClientID is required when the ImageRegistry capability is enabled"
+  - name: When managed identities omit registry identities while the capability is disabled it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          disabled:
+          - ImageRegistry
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault:
+                    name: test-kv
+                    tenantID: "87654321-4321-8765-2109-876543210987"
+                  cloudProvider:
+                    credentialsSecretName: cloudProvider-secret
+                    objectEncoding: utf-8
+                  nodePoolManagement:
+                    credentialsSecretName: nodePoolManagement-secret
+                    objectEncoding: utf-8
+                  controlPlaneOperator:
+                    credentialsSecretName: controlPlaneOperator-secret
+                    objectEncoding: utf-8
+                  ingress:
+                    credentialsSecretName: ingress-secret
+                    objectEncoding: utf-8
+                  network:
+                    credentialsSecretName: network-secret
+                    objectEncoding: utf-8
+                  disk:
+                    credentialsSecretName: disk-secret
+                    objectEncoding: utf-8
+                  file:
+                    credentialsSecretName: file-secret
+                    objectEncoding: utf-8
+                dataPlane:
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}

@@ -622,8 +622,10 @@ type AzureContainerRegistryCredentialConfig struct {
 type AzureWorkloadIdentities struct {
 	// imageRegistry is the client ID of a federated managed identity, associated with cluster-image-registry-operator, used in
 	// workload identity authentication.
-	// +required
-	ImageRegistry WorkloadIdentity `json:"imageRegistry"`
+	// This field is required when the ImageRegistry capability is enabled.
+	//
+	// +optional
+	ImageRegistry WorkloadIdentity `json:"imageRegistry,omitzero"`
 
 	// ingress is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
 	// workload identity authentication.
@@ -854,9 +856,10 @@ type ControlPlaneManagedIdentities struct {
 	ControlPlaneOperator ManagedIdentity `json:"controlPlaneOperator"`
 
 	// imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
+	// This field is required when the ImageRegistry capability is enabled.
 	//
 	// +optional
-	ImageRegistry ManagedIdentity `json:"imageRegistry"`
+	ImageRegistry ManagedIdentity `json:"imageRegistry,omitzero"`
 
 	// ingress is a pre-existing managed identity associated with the cluster-ingress-operator.
 	//
@@ -883,11 +886,12 @@ type ControlPlaneManagedIdentities struct {
 // authenticate with Azure's API.
 type DataPlaneManagedIdentities struct {
 	// imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
-	//registry controller.
+	// registry controller. This field is required when the ImageRegistry capability is enabled.
 	//
-	// +required
+	// +optional
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
-	ImageRegistryMSIClientID string `json:"imageRegistryMSIClientID"`
+	ImageRegistryMSIClientID string `json:"imageRegistryMSIClientID,omitempty"`
 
 	// diskMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI Disk driver.
 	//
