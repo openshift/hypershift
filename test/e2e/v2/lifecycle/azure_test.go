@@ -10,7 +10,7 @@ import (
 func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 	t.Parallel()
 
-	specs := (&AzurePlatformConfig{}).ClusterSpecs("release-image", "n1-image")
+	specs := (&AzurePlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 	specsByVariant := make(map[string]ClusterSpec, len(specs))
 	for _, spec := range specs {
 		specsByVariant[spec.Variant] = spec
@@ -79,7 +79,7 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 func TestAzureOAuthLBPrivateExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	specs := (&AzurePlatformConfig{}).ClusterSpecs("release-image", "n1-image")
+	specs := (&AzurePlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 	var spec *ClusterSpec
 	for i := range specs {
 		if specs[i].Variant == "oauth-lb-private" {
