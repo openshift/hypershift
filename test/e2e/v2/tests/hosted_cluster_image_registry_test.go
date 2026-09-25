@@ -202,12 +202,14 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 	When("the ImageRegistry capability is disabled", func() {
 		var (
 			tc                  *internal.TestContext
+			hc                  *hyperv1.HostedCluster
 			hostedClusterClient crclient.Client
 		)
 
 		BeforeEach(func() {
 			tc = getTestCtx()
-			hc, err := tc.GetHostedCluster()
+			var err error
+			hc, err = tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
 			isDisabled := false
@@ -245,6 +247,33 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 			}
 			Expect(apierrors.IsNotFound(err)).To(BeTrue(),
 				"openshift-image-registry namespace should not exist when ImageRegistry capability is disabled")
+		})
+
+		It("should omit Azure image registry identities", Label("Azure"), func() {
+			if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+				Skip("Azure image registry identity omission test is only for Azure platform")
+			}
+			Expect(hc.Spec.Platform.Azure).NotTo(BeNil(),
+				"Azure platform spec should be set for HostedCluster %s/%s", hc.Namespace, hc.Name)
+
+			authConfig := hc.Spec.Platform.Azure.AzureAuthenticationConfig
+			switch authConfig.AzureAuthenticationConfigType {
+			case hyperv1.AzureAuthenticationTypeManagedIdentities:
+				Expect(authConfig.ManagedIdentities).NotTo(BeNil(),
+					"managed identities should be set for HostedCluster %s/%s", hc.Namespace, hc.Name)
+				Expect(authConfig.ManagedIdentities.ControlPlane.ImageRegistry).To(BeZero(),
+					"control-plane image registry identity should be omitted for HostedCluster %s/%s", hc.Namespace, hc.Name)
+				Expect(authConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID).To(BeEmpty(),
+					"data-plane image registry identity should be omitted for HostedCluster %s/%s", hc.Namespace, hc.Name)
+			case hyperv1.AzureAuthenticationTypeWorkloadIdentities:
+				Expect(authConfig.WorkloadIdentities).NotTo(BeNil(),
+					"workload identities should be set for HostedCluster %s/%s", hc.Namespace, hc.Name)
+				Expect(authConfig.WorkloadIdentities.ImageRegistry).To(BeZero(),
+					"image registry workload identity should be omitted for HostedCluster %s/%s", hc.Namespace, hc.Name)
+			default:
+				Fail(fmt.Sprintf("unexpected Azure authentication type %q for HostedCluster %s/%s",
+					authConfig.AzureAuthenticationConfigType, hc.Namespace, hc.Name))
+			}
 		})
 
 		It("should not add ImagePullSecrets to default service accounts", func() {
