@@ -47,6 +47,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -545,7 +546,10 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		return err
 	}
 
-	if opts.ClientProvider == nil || opts.ClientProvider.ControllerRuntimeClient == nil {
+	if opts.ClientProvider == nil {
+		opts.ClientProvider = util.DefaultClientProvider()
+	}
+	if opts.ClientProvider.ControllerRuntimeClient == nil {
 		return fmt.Errorf("controller-runtime client provider is not configured")
 	}
 	client, err := opts.ClientProvider.ControllerRuntimeClientFor("")
@@ -1446,21 +1450,13 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 func setupExternalDNS(ctx context.Context, opts Options, operatorNamespace *corev1.Namespace, client crclient.Client) ([]crclient.Object, error) {
 	var objects []crclient.Object
 
-	// Proxy lookup is best-effort only when no management client is available for offline rendering.
-	if client == nil && opts.ClientProvider != nil {
-		var err error
-		client, err = opts.ClientProvider.ControllerRuntimeClientFor("")
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: unable to acquire management-cluster client while rendering ExternalDNS resources: %v\n", err)
-			client = nil
-		}
-	}
+	// A nil client means the caller intentionally requested offline rendering.
 	var proxy *configv1.Proxy
 	if client != nil {
 		candidate := &configv1.Proxy{}
 		if err := client.Get(ctx, crclient.ObjectKey{Name: "cluster"}, candidate); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return nil, err
+			if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: unable to retrieve management-cluster proxy for ExternalDNS, continuing without proxy: %v\n", err)
 			}
 		} else {
 			proxy = candidate
