@@ -578,8 +578,8 @@ github.com/opencontainers/selinux v1.13.0 h1:Zza88GWezyT7RLql12URvoxsbLfjFx988+L
 github.com/opencontainers/selinux v1.13.0/go.mod h1:XxWTed+A/s5NNq4GmYScVy+9jzXhGBVEOAyucdRUY8s=
 github.com/openshift/api v0.0.0-20260820183036-3db6c4b03286 h1:zz+Bfuhq9gAlbICRli8wk9CKgGmRMe5yQSxzvnmX73Q=
 github.com/openshift/api v0.0.0-20260820183036-3db6c4b03286/go.mod h1:k6qH5QOVa5GDln2VVm8Jz4NV3Z7R2SATHFLwGS6Wh3M=
-github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417 h1:b4vLxDvDmwESkz21ezCxIZOLRE8zk68gDjn4P4gvtbo=
-github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417/go.mod h1:K2x7H8k8k07WechkBHQ+sOr+6gPAkwILzVc7hYzODfY=
+github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260921222023-27c9527374d3 h1:2B7oinMhppqhD15n/ND5E2o6uFYUApcV/XcdCBo+vd0=
+github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260921222023-27c9527374d3/go.mod h1:dRVpTwV5GsxzEQlp0z9U/TKxGMLMm/sCEAL9Xj1M8+U=
 github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec h1:UDjX+mot5IVLpcChyBqLXG1oSB29s4UkqFmgNb0Xsqc=
 github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec/go.mod h1:iMHec0APKVjOH8GfL/RxddX8DuiuSvPlRe+s7KDqlyA=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3 h1:cr5nU1+O8sEvZHpAAk1mTTGu3NMbgj0dC2cFxFjwmzw=
@@ -941,8 +941,8 @@ google.golang.org/protobuf v1.24.0/go.mod h1:r/3tXBNzIEhYS9I1OUVjXDlt8tc493IdKGj
 google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
 google.golang.org/protobuf v1.26.0/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
 google.golang.org/protobuf v1.27.1/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
-google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af h1:+5/Sw3GsDNlEmu7TfklWKPdQ0Ykja5VEmq2i817+jbI=
-google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
+google.golang.org/protobuf v1.36.12 h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=
+google.golang.org/protobuf v1.36.12/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
 gopkg.in/alecthomas/kingpin.v2 v2.2.6/go.mod h1:FMv+mEhP44yOT+4EoQTLFTRgOQ1FBLkstjWtayDeSgw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
