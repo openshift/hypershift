@@ -256,6 +256,66 @@ func TestEnsureIPAddress(t *testing.T) {
 	assert.Equal(t, 2, getCalls)
 }
 
+func TestEnsureIPAddressCreatesAddressWithLabels(t *testing.T) {
+	const (
+		customerProject       = "customer-project"
+		region                = "us-central1"
+		serviceAttachmentName = "private-router-psc-sa"
+		ipName                = serviceAttachmentName + "-ip"
+	)
+
+	getCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/addresses/"+ipName):
+			getCalls++
+			if getCalls == 1 {
+				http.Error(w, `{"error":{"code":404,"message":"not found"}}`, http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(`{"name":"private-router-psc-sa-ip","address":"10.0.0.10"}`))
+		case req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/addresses"):
+			var address compute.Address
+			require.NoError(t, json.NewDecoder(req.Body).Decode(&address))
+			assert.Equal(t, ipName, address.Name)
+			assert.Equal(t, "INTERNAL", address.AddressType)
+			assert.Equal(t, "projects/customer-project/regions/us-central1/subnetworks/psc-subnet", address.Subnetwork)
+			assert.Equal(t, map[string]string{"managed": "new"}, address.Labels)
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	gcpService, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, hyperv1.AddToScheme(scheme))
+	gcpPSC := &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{Name: "psc", Namespace: "clusters-example"},
+		Status:     hyperv1.GCPPrivateServiceConnectStatus{ServiceAttachmentName: serviceAttachmentName},
+	}
+	reconciler := &GCPPrivateServiceConnectReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gcpPSC).WithObjects(gcpPSC).Build(),
+	}
+	hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
+		GCP: &hyperv1.GCPPlatformSpec{NetworkConfig: hyperv1.GCPNetworkConfig{
+			PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "psc-subnet"},
+		}},
+	}}}
+
+	result, err := reconciler.ensureIPAddress(context.Background(), gcpPSC, hcp, gcpService, customerProject, region, map[string]string{"managed": "new"}, nil, logr.Discard())
+	require.NoError(t, err)
+	assert.True(t, result.IsZero())
+	assert.Equal(t, 2, getCalls)
+
+	updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+	require.NoError(t, reconciler.Get(context.Background(), client.ObjectKeyFromObject(gcpPSC), updatedPSC))
+	assert.Equal(t, "10.0.0.10", updatedPSC.Status.EndpointIP)
+}
+
 func TestWaitForRegionalOperation(t *testing.T) {
 	tests := []struct {
 		name           string

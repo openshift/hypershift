@@ -126,6 +126,30 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			wantRequeueAfter: labelOperationRetry,
 		},
 		{
+			name: "When one router forwarding rule is current and the other needs labels, it should update the latter",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "goog-partner-solution", Value: ptr.To("isol_psn_0014m00001h31bnqaq_openshift")},
+			},
+			service:        routerService(namespace, backendServiceName),
+			privateService: routerServiceNamed(namespace, privateRouterServiceName, "k8s2-example-private-router-abc123"),
+			forwardingRules: []*compute.ForwardingRule{
+				{
+					Name:             "router-forwarding-rule",
+					BackendService:   "https://www.googleapis.com/compute/v1/projects/project/regions/us-east1/backendServices/" + backendServiceName,
+					LabelFingerprint: "fingerprint",
+				},
+				{
+					Name:           "private-router-forwarding-rule",
+					BackendService: "https://www.googleapis.com/compute/v1/projects/project/regions/us-east1/backendServices/k8s2-example-private-router-abc123",
+					Labels:         map[string]string{"goog-partner-solution": "isol_psn_0014m00001h31bnqaq_openshift"},
+				},
+			},
+			wantSetCalls:     1,
+			wantSetCallNames: []string{"router-forwarding-rule"},
+			wantLabels:       map[string]string{"goog-partner-solution": "isol_psn_0014m00001h31bnqaq_openshift"},
+			wantRequeueAfter: labelOperationRetry,
+		},
+		{
 			name:       "When HostedControlPlane reconciliation is paused, it should requeue without updating labels",
 			wantPaused: true,
 		},
