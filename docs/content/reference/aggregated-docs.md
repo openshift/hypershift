@@ -25684,7 +25684,7 @@ The `hypershift create iam gcp` command creates WIF resources in the hosted clus
 - **Workload Identity Pool** — Container for workload identity providers
 - **OIDC Provider** — Links the hosted cluster's Kubernetes OIDC issuer to GCP IAM
 - **Service Accounts** — GCP service accounts for hosted cluster components:
-  - `controlplane` — Control Plane Operator (DNS admin, network admin, security admin, compute viewer). The `roles/compute.securityAdmin` role lets CPO reconcile the worker firewall rule (`<infra-id>-internal-cluster`).
+  - `ctrlplane-op` — Control Plane Operator (DNS admin, network admin, security admin, compute viewer). The `roles/compute.securityAdmin` role lets CPO reconcile the worker firewall rule (`<infra-id>-internal-cluster`).
   - `nodepool` — CAPG controller (compute instance admin, network admin)
   - `cloud-controller` — Cloud Controller Manager (load balancer admin, security admin, compute viewer)
   - `storage` — GCP PD CSI Driver (storage admin, instance admin)
@@ -25866,8 +25866,12 @@ scoped by the `<infra-id>-worker` network tag as **both** source and target
 
 | Protocol | Ports |
 |----------|-------|
-| TCP | `10250`, `9000-9999`, `30000-32767` |
-| UDP | `9000-9999`, `30000-32767`; plus `6081` for `OVNKubernetes` (Geneve overlay) |
+| TCP | `10250`, `9000-9999`, the effective NodePort range |
+| UDP | `9000-9999`, the effective NodePort range; plus `6081` for `OVNKubernetes` (Geneve overlay) |
+
+The NodePort range is `spec.configuration.network.serviceNodePortRange` on the
+HostedCluster, defaulting to `30000-32767` (the same default kube-apiserver
+uses) when unset.
 
 CPO uses its mounted Workload Identity Federation credentials to reconcile the
 rule and requires the `roles/compute.securityAdmin` role on the `ctrlplane-op`
