@@ -64,14 +64,14 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openshift/api v0.0.0-20260820183036-3db6c4b03286
-	github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec
+	github.com/openshift/client-go v0.0.0-20260721124015-35d8f3c0e847
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
-	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
+	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20260826113213-e4f426dcd988
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20260224085943-34e30acde920
-	github.com/openshift/library-go v0.0.0-20260716164659-7926d144f96a
+	github.com/openshift/library-go v0.0.0-20260722123119-050c1a9af6bb
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
 	github.com/operator-framework/api v0.45.0
 	github.com/pkg/errors v0.9.1

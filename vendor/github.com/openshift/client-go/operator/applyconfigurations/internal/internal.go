@@ -2193,6 +2193,10 @@ var schemaYAML = typed.YAMLObject(`types:
           keys:
           - nodeName
           - keyId
+    - name: preflight
+      type:
+        namedType: com.github.openshift.api.operator.v1.KMSPreflightCheck
+      default: {}
 - name: com.github.openshift.api.operator.v1.KMSPluginHealthReport
   map:
     fields:
@@ -2209,6 +2213,28 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
     - name: nodeName
+      type:
+        scalar: string
+    - name: status
+      type:
+        scalar: string
+- name: com.github.openshift.api.operator.v1.KMSPreflightCheck
+  map:
+    fields:
+    - name: observedConfigHash
+      type:
+        scalar: string
+    - name: result
+      type:
+        namedType: com.github.openshift.api.operator.v1.KMSPreflightResult
+      default: {}
+- name: com.github.openshift.api.operator.v1.KMSPreflightResult
+  map:
+    fields:
+    - name: configHash
+      type:
+        scalar: string
+    - name: remoteKeyID
       type:
         scalar: string
     - name: status
