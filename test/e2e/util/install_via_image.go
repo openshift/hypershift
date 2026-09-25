@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -21,10 +23,121 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type installerFlagPolicy uint8
+
 const (
-	installerNamespace = "hypershift"
-	installerName      = "hypershift-installer"
+	installerFlagRequired installerFlagPolicy = iota
+	installerFlagOptionalOnOlderImages
 )
+
+const (
+	installerNamespace        = "hypershift"
+	installerName             = "hypershift-installer"
+	optionalInstallerFlagsEnv = "HYPERSHIFT_OPTIONAL_INSTALLER_FLAGS"
+	installerBinaryEnv        = "HYPERSHIFT_INSTALLER_BINARY"
+)
+
+// Every flag emitted by buildInstallerArgs must have an explicit compatibility
+// policy. The installer wrapper skips only flags marked optional when the
+// target image does not advertise them.
+var installerFlagPolicies = map[string]installerFlagPolicy{
+	"--hypershift-image":                           installerFlagRequired,
+	"--wait-until-available":                       installerFlagRequired,
+	"--platform-monitoring":                        installerFlagRequired,
+	"--enable-ci-debug-output":                     installerFlagRequired,
+	"--enable-size-tagging":                        installerFlagRequired,
+	"--enable-cpo-overrides":                       installerFlagRequired,
+	"--disable-capi-migration":                     installerFlagRequired,
+	"--enable-dedicated-request-serving-isolation": installerFlagRequired,
+	"--enable-etcd-recovery":                       installerFlagRequired,
+	"--oidc-storage-provider-s3-bucket-name":       installerFlagRequired,
+	"--oidc-storage-provider-s3-region":            installerFlagRequired,
+	"--oidc-storage-provider-s3-secret":            installerFlagRequired,
+	"--private-platform":                           installerFlagRequired,
+	"--aws-private-secret":                         installerFlagRequired,
+	"--aws-private-region":                         installerFlagRequired,
+	"--external-dns-provider":                      installerFlagRequired,
+	"--external-dns-domain-filter":                 installerFlagRequired,
+	"--external-dns-interval":                      installerFlagOptionalOnOlderImages,
+	"--external-dns-secret":                        installerFlagRequired,
+	"--azure-private-secret":                       installerFlagRequired,
+	"--azure-pls-resource-group":                   installerFlagRequired,
+	"--gcp-project":                                installerFlagRequired,
+	"--gcp-region":                                 installerFlagRequired,
+	"--external-dns-google-project":                installerFlagRequired,
+}
+
+// The wrapper discovers capabilities and filters args in the same container
+// that performs installation, avoiding a separate probe Job.
+const installerFlagFilterScript = `set -euo pipefail
+
+HYPERSHIFT=${HYPERSHIFT_INSTALLER_BINARY:-/usr/bin/hypershift}
+subcommand=${1:?missing installer subcommand}
+shift
+if [[ "$subcommand" != "install" ]]; then
+  echo "installer wrapper only supports install" >&2
+  exit 2
+fi
+
+if ! INSTALL_HELP=$("$HYPERSHIFT" "$subcommand" --help 2>&1); then
+  echo "failed to inspect installer flags" >&2
+  exit 1
+fi
+
+has_flag() {
+  local flag=$1
+  [[ "$flag" =~ ^--[[:alnum:]][[:alnum:]-]*$ ]] || return 1
+  grep -Eq -- "(^|[[:space:],])${flag}([[:space:],=]|$)" <<< "$INSTALL_HELP"
+}
+
+declare -A optional_flags=()
+while IFS= read -r flag; do
+  [[ -n "$flag" ]] && optional_flags["$flag"]=1
+done <<< "${HYPERSHIFT_OPTIONAL_INSTALLER_FLAGS:-}"
+
+is_optional_flag() {
+  [[ ${optional_flags["$1"]+present} ]]
+}
+
+filtered_args=()
+while (($#)); do
+  arg=$1
+  shift
+
+  case "$arg" in
+    --*=*)
+      flag=${arg%%=*}
+      if has_flag "$flag"; then
+        filtered_args+=("$arg")
+      elif ! is_optional_flag "$flag"; then
+        echo "target installer does not support a required flag" >&2
+        exit 1
+      fi
+      ;;
+    --*)
+      if has_flag "$arg"; then
+        filtered_args+=("$arg")
+        if (($#)) && [[ $1 != --* ]]; then
+          filtered_args+=("$1")
+          shift
+        fi
+      elif is_optional_flag "$arg"; then
+        if (($#)) && [[ $1 != --* ]]; then
+          shift
+        fi
+      else
+        echo "target installer does not support a required flag" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      filtered_args+=("$arg")
+      ;;
+  esac
+done
+
+exec "$HYPERSHIFT" "$subcommand" "${filtered_args[@]}"
+`
 
 // installViaOperatorImage creates a Kubernetes Job that runs `hypershift install`
 // from the operator image itself. This ensures the CLI binary and embedded CRDs
@@ -48,8 +161,12 @@ func installViaOperatorImage(ctx context.Context, opts HyperShiftOperatorInstall
 	if err := ensureInstallerRBAC(ctx, client); err != nil {
 		return fmt.Errorf("creating installer RBAC: %w", err)
 	}
+	defer cleanupInstaller(ctx, client)
 
-	args := buildInstallerArgs(opts, secretNames)
+	args, err := buildInstallerArgs(opts, secretNames)
+	if err != nil {
+		return fmt.Errorf("building installer arguments: %w", err)
+	}
 
 	if err := createInstallerJob(ctx, client, opts.HyperShiftOperatorLatestImage, args); err != nil {
 		return fmt.Errorf("creating installer job: %w", err)
@@ -57,7 +174,6 @@ func installViaOperatorImage(ctx context.Context, opts HyperShiftOperatorInstall
 
 	waitErr := waitForInstallerJob(ctx, client)
 	logInstallerPodOutput(ctx)
-	cleanupInstaller(ctx, client)
 	if waitErr != nil {
 		return fmt.Errorf("installer job failed: %w", waitErr)
 	}
@@ -221,7 +337,7 @@ func ensureInstallerRBAC(ctx context.Context, client crclient.Client) error {
 	return nil
 }
 
-func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credentialSecretNames) []string {
+func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credentialSecretNames) ([]string, error) {
 	args := []string{
 		"install",
 		"--hypershift-image", opts.HyperShiftOperatorLatestImage,
@@ -330,14 +446,45 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 		}
 	}
 
-	return args
+	if err := validateInstallerArgs(args); err != nil {
+		return nil, err
+	}
+	return args, nil
+}
+
+func validateInstallerArgs(args []string) error {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "--") {
+			continue
+		}
+		flag := strings.SplitN(arg, "=", 2)[0]
+		if _, registered := installerFlagPolicies[flag]; !registered {
+			return fmt.Errorf("installer flag %s has no compatibility policy", flag)
+		}
+	}
+	return nil
+}
+
+func optionalInstallerFlags() []string {
+	flags := make([]string, 0)
+	for flag, policy := range installerFlagPolicies {
+		if policy == installerFlagOptionalOnOlderImages {
+			flags = append(flags, flag)
+		}
+	}
+	sort.Strings(flags)
+	return flags
 }
 
 func createInstallerJob(ctx context.Context, client crclient.Client, image string, args []string) error {
+	return createNamedInstallerJob(ctx, client, installerName, image, args)
+}
+
+func createNamedInstallerJob(ctx context.Context, client crclient.Client, jobName, image string, args []string) error {
 	// Delete any previous installer job
 	existing := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      installerName,
+			Name:      jobName,
 			Namespace: installerNamespace,
 		},
 	}
@@ -362,7 +509,7 @@ func createInstallerJob(ctx context.Context, client crclient.Client, image strin
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      installerName,
+			Name:      jobName,
 			Namespace: installerNamespace,
 		},
 		Spec: batchv1.JobSpec{
@@ -375,8 +522,12 @@ func createInstallerJob(ctx context.Context, client crclient.Client, image strin
 						{
 							Name:    "installer",
 							Image:   image,
-							Command: []string{"/usr/bin/hypershift"},
-							Args:    args,
+							Command: []string{"/bin/bash", "-c"},
+							Args:    append([]string{installerFlagFilterScript, "installer-wrapper"}, args...),
+							Env: []corev1.EnvVar{{
+								Name:  optionalInstallerFlagsEnv,
+								Value: strings.Join(optionalInstallerFlags(), "\n"),
+							}},
 						},
 					},
 				},
@@ -388,11 +539,15 @@ func createInstallerJob(ctx context.Context, client crclient.Client, image strin
 }
 
 func waitForInstallerJob(ctx context.Context, client crclient.Client) error {
+	return waitForNamedInstallerJob(ctx, client, installerName)
+}
+
+func waitForNamedInstallerJob(ctx context.Context, client crclient.Client, jobName string) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	job := &batchv1.Job{}
-	key := crclient.ObjectKey{Name: installerName, Namespace: installerNamespace}
+	key := crclient.ObjectKey{Name: jobName, Namespace: installerNamespace}
 
 	return wait.PollUntilContextCancel(waitCtx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, key, job); err != nil {
@@ -405,7 +560,7 @@ func waitForInstallerJob(ctx context.Context, client crclient.Client) error {
 				return true, nil
 			}
 			if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
-				return false, fmt.Errorf("installer job failed: %s", c.Message)
+				return false, fmt.Errorf("job %s failed (%s): %s", jobName, c.Reason, c.Message)
 			}
 		}
 
@@ -462,14 +617,18 @@ func logInstallerPodOutput(ctx context.Context) {
 	}
 }
 
-func cleanupInstaller(ctx context.Context, client crclient.Client) {
+func deleteInstallerJob(ctx context.Context, client crclient.Client, jobName string) {
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      installerName,
+			Name:      jobName,
 			Namespace: installerNamespace,
 		},
 	}
 	_ = client.Delete(ctx, job, crclient.PropagationPolicy(metav1.DeletePropagationBackground))
+}
+
+func cleanupInstaller(ctx context.Context, client crclient.Client) {
+	deleteInstallerJob(ctx, client, installerName)
 
 	crb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: installerName},
