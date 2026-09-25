@@ -65,10 +65,13 @@ type cachedClientProvider struct {
 
 func newCachedClientProvider(provider *ClientProvider, kubeconfig string) *ClientProvider {
 	cached := &cachedClientProvider{provider: provider, kubeconfig: kubeconfig}
-	return &ClientProvider{
-		ControllerRuntimeClient: cached.controllerRuntimeClient,
-		KubernetesClientSet:     cached.kubernetesClientSet,
+	result := &ClientProvider{}
+	if provider != nil {
+		*result = *provider
 	}
+	result.ControllerRuntimeClient = cached.controllerRuntimeClient
+	result.KubernetesClientSet = cached.kubernetesClientSet
+	return result
 }
 
 func (p *cachedClientProvider) controllerRuntimeClient(_ string) (crclient.Client, error) {

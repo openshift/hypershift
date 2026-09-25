@@ -27,6 +27,7 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	kubeclient "k8s.io/client-go/kubernetes"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -170,6 +171,31 @@ func TestCachedClientProvider(t *testing.T) {
 		g := NewWithT(t)
 		g.Expect(firstErr).To(MatchError("typed Kubernetes client provider is not configured"))
 		g.Expect(secondErr).To(MatchError("typed Kubernetes client provider is not configured"))
+	})
+
+	t.Run("When config and impersonation factories are configured, it should preserve them", func(t *testing.T) {
+		g := NewWithT(t)
+		wantConfig := &rest.Config{Host: "https://management.example.com"}
+		wantClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		provider := newCachedClientProvider(&ClientProvider{
+			Config: func(kubeconfig string) (*rest.Config, error) {
+				g.Expect(kubeconfig).To(Equal("config.kubeconfig"))
+				return wantConfig, nil
+			},
+			ImpersonatedClient: func(kubeconfig, userName string) (crclient.Client, error) {
+				g.Expect(kubeconfig).To(Equal("impersonated.kubeconfig"))
+				g.Expect(userName).To(Equal("test-user"))
+				return wantClient, nil
+			},
+		}, "management.kubeconfig")
+
+		gotConfig, err := provider.ConfigFor("config.kubeconfig")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(gotConfig).To(BeIdenticalTo(wantConfig))
+
+		gotClient, err := provider.ImpersonatedClientFor("impersonated.kubeconfig", "test-user")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(gotClient).To(BeIdenticalTo(wantClient))
 	})
 }
 

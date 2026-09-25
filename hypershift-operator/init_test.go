@@ -173,6 +173,8 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 
 func TestRunInit(t *testing.T) {
 	t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 
 	g := NewWithT(t)
 	err := runInit(t.Context(), logr.Discard())
