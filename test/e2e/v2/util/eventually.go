@@ -25,8 +25,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -51,7 +49,7 @@ type EventuallyOptions struct {
 	immediate bool
 
 	dumpConditions      bool
-	filterConditionDump []e2eutil.Condition
+	filterConditionDump []Condition
 }
 
 // EventuallyOption configures v2 asynchronous polling behavior.
@@ -89,7 +87,7 @@ func WithoutConditionDump() EventuallyOption {
 
 // WithFilteredConditionDump limits failure condition logging to matching
 // conditions.
-func WithFilteredConditionDump(matchers ...e2eutil.Condition) EventuallyOption {
+func WithFilteredConditionDump(matchers ...Condition) EventuallyOption {
 	return func(o *EventuallyOptions) {
 		o.filterConditionDump = append(o.filterConditionDump, matchers...)
 	}
@@ -98,7 +96,7 @@ func WithFilteredConditionDump(matchers ...e2eutil.Condition) EventuallyOption {
 // EventuallyObject polls until all predicates are fulfilled for an object.
 // It returns an error instead of signaling failure through testing.TB, so the
 // caller can report the failure through the v2 Ginkgo assertion path.
-func EventuallyObject[T client.Object](ctx context.Context, objective string, getter func(context.Context) (T, error), predicates []e2eutil.Predicate[T], options ...EventuallyOption) error {
+func EventuallyObject[T client.Object, P ~func(T) (bool, string, error)](ctx context.Context, objective string, getter func(context.Context) (T, error), predicates []P, options ...EventuallyOption) error {
 	opts := defaultEventuallyOptions()
 	for _, option := range options {
 		option(opts)
@@ -172,7 +170,7 @@ func EventuallyObject[T client.Object](ctx context.Context, objective string, ge
 // EventuallyObjects polls until the group predicates and all per-object
 // predicates are fulfilled for a collection of objects. It returns an error
 // instead of signaling failure through testing.TB.
-func EventuallyObjects[T client.Object](ctx context.Context, objective string, getter func(context.Context) ([]T, error), groupPredicates []e2eutil.Predicate[[]T], predicates []e2eutil.Predicate[T], options ...EventuallyOption) error {
+func EventuallyObjects[T client.Object, GP ~func([]T) (bool, string, error), P ~func(T) (bool, string, error)](ctx context.Context, objective string, getter func(context.Context) ([]T, error), groupPredicates []GP, predicates []P, options ...EventuallyOption) error {
 	opts := defaultEventuallyOptions()
 	for _, option := range options {
 		option(opts)
@@ -308,7 +306,7 @@ type predicateResult struct {
 	reason string
 }
 
-func evaluatePredicates[T any](object T, predicates []e2eutil.Predicate[T]) ([]predicateResult, error) {
+func evaluatePredicates[T any, P ~func(T) (bool, string, error)](object T, predicates []P) ([]predicateResult, error) {
 	if reflect.TypeOf(object).Kind() != reflect.Slice && (reflect.ValueOf(object).IsZero() || reflect.ValueOf(object).Elem().IsZero()) {
 		panic(fmt.Sprintf("programmer error: can't evaluate predicates on empty object %#v", object))
 	}
@@ -371,7 +369,7 @@ func printStatus[T client.Object](lastTimestamp time.Time, object T, done bool, 
 	}
 }
 
-func evaluateCollectionPredicates[T client.Object](objects []T, groupPredicates []e2eutil.Predicate[[]T], predicates []e2eutil.Predicate[T]) (map[types.NamespacedName][]predicateResult, error) {
+func evaluateCollectionPredicates[T client.Object, GP ~func([]T) (bool, string, error), P ~func(T) (bool, string, error)](objects []T, groupPredicates []GP, predicates []P) (map[types.NamespacedName][]predicateResult, error) {
 	currentResults := map[types.NamespacedName][]predicateResult{}
 	groupResults, err := evaluatePredicates(objects, groupPredicates)
 	if err != nil {
@@ -433,8 +431,8 @@ func printCollectionStatus[T client.Object](lastTimestamp time.Time, done bool, 
 	}
 }
 
-func logConditions(object client.Object, filters []e2eutil.Condition) error {
-	conditions, err := e2eutil.Conditions(object)
+func logConditions(object client.Object, filters []Condition) error {
+	conditions, err := Conditions(object)
 	if err != nil {
 		return fmt.Errorf("failed to extract conditions from %T %s/%s: %w", object, object.GetNamespace(), object.GetName(), err)
 	}

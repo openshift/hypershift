@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
@@ -67,7 +66,7 @@ func ValidateIngressOperatorConfiguration(ctx context.Context, guestClient crcli
 			}, ingressController)
 			return ingressController, err
 		},
-		[]e2eutil.Predicate[*operatorv1.IngressController]{
+		[]Predicate[*operatorv1.IngressController]{
 			func(ic *operatorv1.IngressController) (bool, string, error) {
 				if ic.Spec.EndpointPublishingStrategy == nil {
 					return false, "EndpointPublishingStrategy is nil in IngressController", nil

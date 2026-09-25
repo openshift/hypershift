@@ -228,7 +228,7 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 				}
 				return items, err
 			},
-			nil,
+			[]v2util.Predicate[[]*corev1.Pod](nil),
 			[]e2eutil.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (bool, string, error) {
 				for _, previousPod := range etcdPods.Items {
 					if previousPod.Namespace == pod.Namespace && previousPod.Name == pod.Name {
@@ -427,7 +427,7 @@ func createMarkerConfigMap(ctx context.Context, client crclient.Client) *corev1.
 		func(ctx context.Context) (*corev1.ConfigMap, error) {
 			err := client.Create(ctx, cm)
 			return cm, err
-		}, nil,
+		}, []v2util.Predicate[*corev1.ConfigMap](nil),
 	)).To(Succeed())
 	GinkgoWriter.Printf("Created marker ConfigMap %s/%s\n", cm.Namespace, cm.Name)
 	return cm

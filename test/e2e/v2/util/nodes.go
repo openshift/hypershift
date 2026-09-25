@@ -22,7 +22,6 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,8 +32,8 @@ import (
 
 // NodePoolPollOptions configures a v2 node-readiness wait.
 type NodePoolPollOptions struct {
-	collectionPredicates []e2eutil.Predicate[[]*corev1.Node]
-	predicates           []e2eutil.Predicate[*corev1.Node]
+	collectionPredicates []Predicate[[]*corev1.Node]
+	predicates           []Predicate[*corev1.Node]
 	clientOpts           []crclient.ListOption
 	suffix               string
 }
@@ -43,14 +42,14 @@ type NodePoolPollOptions struct {
 type NodePoolPollOption func(*NodePoolPollOptions)
 
 // WithCollectionPredicates adds predicates evaluated against the complete node collection.
-func WithCollectionPredicates(predicates ...e2eutil.Predicate[[]*corev1.Node]) NodePoolPollOption {
+func WithCollectionPredicates(predicates ...Predicate[[]*corev1.Node]) NodePoolPollOption {
 	return func(options *NodePoolPollOptions) {
 		options.collectionPredicates = predicates
 	}
 }
 
 // WithPredicates adds predicates evaluated against each node.
-func WithPredicates(predicates ...e2eutil.Predicate[*corev1.Node]) NodePoolPollOption {
+func WithPredicates(predicates ...Predicate[*corev1.Node]) NodePoolPollOption {
 	return func(options *NodePoolPollOptions) {
 		options.predicates = predicates
 	}
@@ -110,8 +109,8 @@ func WaitForNodePoolConfigUpdateCompleteWithPlatform(ctx context.Context, client
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
 			return nodePool, err
 		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{
-			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+		[]Predicate[*hyperv1.NodePool]{
+			ConditionPredicate[*hyperv1.NodePool](Condition{
 				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
 				Status: metav1.ConditionTrue,
 			}),
@@ -128,8 +127,8 @@ func WaitForNodePoolConfigUpdateCompleteWithPlatform(ctx context.Context, client
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
 			return nodePool, err
 		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{
-			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+		[]Predicate[*hyperv1.NodePool]{
+			ConditionPredicate[*hyperv1.NodePool](Condition{
 				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
 				Status: metav1.ConditionFalse,
 			}),
@@ -168,14 +167,14 @@ func WaitForNReadyNodesWithOptions(ctx context.Context, client crclient.Client, 
 			}
 			return items, err
 		},
-		append([]e2eutil.Predicate[[]*corev1.Node]{
+		append([]Predicate[[]*corev1.Node]{
 			func(nodes []*corev1.Node) (bool, string, error) {
 				want, got := int(n), len(nodes)
 				return want == got, fmt.Sprintf("expected %d nodes, got %d", want, got), nil
 			},
 		}, options.collectionPredicates...),
-		append([]e2eutil.Predicate[*corev1.Node]{
-			e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
+		append([]Predicate[*corev1.Node]{
+			ConditionPredicate[*corev1.Node](Condition{
 				Type:   string(corev1.NodeReady),
 				Status: metav1.ConditionTrue,
 			}),

@@ -161,7 +161,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 						return false, "no AzurePrivateLinkService has a PLS alias yet", nil
 					},
 				},
-				nil,
+				[]v2util.Predicate[*hyperv1.AzurePrivateLinkService](nil),
 				v2util.WithTimeout(15*time.Minute),
 				v2util.WithInterval(15*time.Second),
 			)).To(Succeed())
@@ -186,7 +186,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 						return false, "no AzurePrivateLinkService has a Private Endpoint IP yet", nil
 					},
 				},
-				nil,
+				[]v2util.Predicate[*hyperv1.AzurePrivateLinkService](nil),
 				v2util.WithTimeout(15*time.Minute),
 				v2util.WithInterval(15*time.Second),
 			)).To(Succeed())
@@ -211,7 +211,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 						return false, "no AzurePrivateLinkService has a Private DNS Zone ID yet", nil
 					},
 				},
-				nil,
+				[]v2util.Predicate[*hyperv1.AzurePrivateLinkService](nil),
 				v2util.WithTimeout(15*time.Minute),
 				v2util.WithInterval(15*time.Second),
 			)).To(Succeed())
@@ -344,7 +344,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 				[]e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService]{
 					plsExistsPredicate(),
 				},
-				nil,
+				[]v2util.Predicate[*hyperv1.AzurePrivateLinkService](nil),
 				v2util.WithTimeout(2*time.Minute),
 			)).To(Succeed())
 
@@ -422,7 +422,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 				[]e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService]{
 					plsExistsPredicate(),
 				},
-				nil,
+				[]v2util.Predicate[*hyperv1.AzurePrivateLinkService](nil),
 				v2util.WithTimeout(2*time.Minute),
 			)).To(Succeed())
 
