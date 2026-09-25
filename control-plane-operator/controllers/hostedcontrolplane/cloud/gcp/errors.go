@@ -61,20 +61,32 @@ func (m *FirewallManager) classify(err error, context string) Result {
 
 // classifyOpError maps a failed global operation to a Result. Operation errors
 // carry per-error codes (e.g. PERMISSION_DENIED, QUOTA_EXCEEDED) rather than
-// HTTP status, so classification is based on those codes.
+// HTTP status, so classification is based on those codes. An operation can
+// carry multiple errors; it is only degraded (recoverable) when every one is a
+// known-recoverable code. A single unrecognized code (e.g. INVALID_FIELD_VALUE)
+// alongside a recoverable one means the operation can never succeed on retry,
+// so the whole result must be terminal rather than masked as transient.
 func (m *FirewallManager) classifyOpError(op *compute.Operation, action string) Result {
 	msg := fmt.Sprintf("firewall %s operation failed: %s", action, formatOperationErrors(op.Error.Errors))
+	if len(op.Error.Errors) == 0 {
+		return errorResult(hyperv1.GCPFirewallWaitingForInfra, errors.New(msg))
+	}
+	permissionDenied := false
 	for _, e := range op.Error.Errors {
 		switch e.Code {
 		case "PERMISSION_DENIED", "FORBIDDEN":
-			m.logger.Info("WARNING: " + msg)
-			return degradedResult(hyperv1.GCPFirewallInsufficientPermissions, msg)
+			permissionDenied = true
 		case "QUOTA_EXCEEDED", "RATE_LIMIT_EXCEEDED", "RESOURCE_NOT_READY":
-			m.logger.Info("WARNING: " + msg)
-			return degradedResult(hyperv1.GCPFirewallWaitingForInfra, msg)
+			// recoverable; keep checking the rest.
+		default:
+			return errorResult(hyperv1.GCPFirewallWaitingForInfra, errors.New(msg))
 		}
 	}
-	return errorResult(hyperv1.GCPFirewallWaitingForInfra, errors.New(msg))
+	m.logger.Info("WARNING: " + msg)
+	if permissionDenied {
+		return degradedResult(hyperv1.GCPFirewallInsufficientPermissions, msg)
+	}
+	return degradedResult(hyperv1.GCPFirewallWaitingForInfra, msg)
 }
 
 // transientBadRequestReasons are GCP Compute 400 error reasons that can
