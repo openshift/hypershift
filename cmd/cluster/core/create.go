@@ -553,7 +553,10 @@ func applySchedulingConfig(cluster *hyperv1.HostedCluster, opts *CreateOptions) 
 		cluster.Spec.NodeSelector = opts.NodeSelector
 	}
 	if opts.PodsLabels != nil {
-		cluster.Spec.Labels = opts.PodsLabels
+		cluster.Spec.Labels = make(map[string]hyperv1.LabelValue, len(opts.PodsLabels))
+		for key, value := range opts.PodsLabels {
+			cluster.Spec.Labels[key] = hyperv1.LabelValue(value)
+		}
 	}
 }
 

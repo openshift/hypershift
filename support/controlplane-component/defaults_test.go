@@ -8,10 +8,12 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/config"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
@@ -992,6 +994,97 @@ func TestSetDefaultOptions(t *testing.T) {
 			} else {
 				g.Expect(deployment.Spec.Template.Annotations).NotTo(HaveKey(hyperv1.RestartDateAnnotation))
 			}
+		})
+	}
+}
+
+type operatorLabelOwnershipTestComponent struct{}
+
+func (*operatorLabelOwnershipTestComponent) IsRequestServing() bool {
+	return true
+}
+
+func (*operatorLabelOwnershipTestComponent) MultiZoneSpread() bool {
+	return false
+}
+
+func (*operatorLabelOwnershipTestComponent) NeedsManagementKASAccess() bool {
+	return true
+}
+
+func TestSetLabelsProtectsOperatorOwnedLabels(t *testing.T) {
+	tests := []struct {
+		name                 string
+		componentOptions     ComponentOptions
+		initialLabels        map[string]string
+		expectedKASLabel     string
+		expectedRequestLabel string
+	}{
+		{
+			name:                 "When the component needs management KAS access it should retain operator labels",
+			componentOptions:     &operatorLabelOwnershipTestComponent{},
+			initialLabels:        map[string]string{"team": "operator", "app": "operator", "k8s-app": "operator", "olm.catalogSource": "operator", "infrastructure.openshift.io/cloud-controller-manager": "operator", config.NeedMetricsServerAccessLabel: "operator", colocationLabelKey: "operator", ManagedByLabel: "operator"},
+			expectedKASLabel:     "true",
+			expectedRequestLabel: "true",
+		},
+		{
+			name:                 "When the component does not need management KAS access it should not gain it from user labels",
+			componentOptions:     &testComponent{},
+			initialLabels:        map[string]string{"team": "operator", "app": "operator", "k8s-app": "operator", "olm.catalogSource": "operator", "infrastructure.openshift.io/cloud-controller-manager": "operator", config.NeedMetricsServerAccessLabel: "operator", colocationLabelKey: "operator", ManagedByLabel: "operator"},
+			expectedKASLabel:     "",
+			expectedRequestLabel: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			workload := &controlPlaneWorkload[*appsv1.Deployment]{
+				name:             "test-component",
+				workloadProvider: &deploymentProvider{},
+				ComponentOptions: tt.componentOptions,
+			}
+			podTemplate := &corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: tt.initialLabels}}
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Labels: map[string]hyperv1.LabelValue{
+						"team":              "platform",
+						"app":               "attacker",
+						"name":              "attacker",
+						"k8s-app":           "attacker",
+						"olm.catalogSource": "attacker",
+						"infrastructure.openshift.io/cloud-controller-manager": "attacker",
+						config.NeedManagementKASAccessLabel:                    "false",
+						config.NeedMetricsServerAccessLabel:                    "attacker",
+						hyperv1.ControlPlaneComponentLabel:                     "attacker",
+						hyperv1.RequestServingComponentLabel:                   "false",
+						colocationLabelKey:                                     "attacker",
+						ManagedByLabel:                                         "attacker",
+					},
+				},
+			}
+
+			workload.setLabels(podTemplate, hcp)
+
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue("team", "platform"))
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue("app", "operator"))
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue("k8s-app", "operator"))
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue("olm.catalogSource", "operator"))
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue("infrastructure.openshift.io/cloud-controller-manager", "operator"))
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneComponentLabel, "test-component"))
+			if tt.expectedKASLabel == "" {
+				g.Expect(podTemplate.Labels).NotTo(HaveKey("hypershift.openshift.io/need-management-kas-access"))
+			} else {
+				g.Expect(podTemplate.Labels).To(HaveKeyWithValue("hypershift.openshift.io/need-management-kas-access", tt.expectedKASLabel))
+			}
+			if tt.expectedRequestLabel == "" {
+				g.Expect(podTemplate.Labels).NotTo(HaveKey(hyperv1.RequestServingComponentLabel))
+			} else {
+				g.Expect(podTemplate.Labels).To(HaveKeyWithValue(hyperv1.RequestServingComponentLabel, tt.expectedRequestLabel))
+			}
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue(config.NeedMetricsServerAccessLabel, "operator"))
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue(colocationLabelKey, "operator"))
+			g.Expect(podTemplate.Labels).To(HaveKeyWithValue(ManagedByLabel, "operator"))
 		})
 	}
 }

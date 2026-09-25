@@ -120,6 +120,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
@@ -1135,6 +1136,10 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if errs := validateLabels(hcp); len(errs) != 0 {
+		return utilerrors.NewAggregate(errs)
+	}
+
 	for _, svc := range hcp.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
@@ -1154,6 +1159,24 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 	}
 
 	return nil
+}
+
+func validateLabels(hcp *hyperv1.HostedControlPlane) []error {
+	var errs []error
+	for key, value := range hcp.Spec.Labels {
+		if component.IsOperatorOwnedLabelKey(key) {
+			errs = append(errs, fmt.Errorf("label key %q is reserved for HyperShift control-plane use", key))
+		}
+
+		if validationErrs := validation.IsQualifiedName(key); len(validationErrs) != 0 {
+			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
+		}
+
+		if validationErrs := validation.IsValidLabelValue(string(value)); len(validationErrs) != 0 {
+			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
+		}
+	}
+	return errs
 }
 
 func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
