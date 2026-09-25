@@ -788,6 +788,28 @@ func TestRouterPredicate(t *testing.T) {
 			expectErr: true,
 		},
 		{
+			name: "When ARO HCP has a service with no ClusterIP, predicate should return false with error",
+			hcp:  aroHCP(),
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ignition-server-proxy",
+						Namespace: "test-ns",
+					},
+					Spec: corev1.ServiceSpec{},
+				},
+			},
+			expected:  false,
+			expectErr: true,
+		},
+		{
 			name: "When AWS has private endpoint access, it should return true without route checks",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
