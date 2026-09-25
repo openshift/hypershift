@@ -1,5 +1,5 @@
 /**
- * (C) Copyright IBM Corp. 2025.
+ * (C) Copyright IBM Corp. 2026.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -187,7 +187,12 @@ func (transitGatewayApis *TransitGatewayApisV1) DisableRetries() {
 }
 
 // ListTransitGateways : Retrieves all Transit Gateways
-// List all Transit Gateways in account the caller is authorized to view.
+// List all Transit Gateways in the account the caller is authorized to view. Use the `limit` (integer, 1–100, default
+// 50) and `start` (string token) parameters to page through results. Optionally filter by `redundancy_group` name. Each
+// `TransitGateway` in the response includes: `id`, `name`, `crn`, `location`,
+// `status` (pending, available, deleting, deleted, failed), `global` (boolean),
+// `created_at`, `updated_at`, `resource_group`, and optionally `redundancy_group`,
+// `redundancy_group_id`, `gre_enhanced_route_propagation`, and `connection_needs_attention`.
 func (transitGatewayApis *TransitGatewayApisV1) ListTransitGateways(listTransitGatewaysOptions *ListTransitGatewaysOptions) (result *TransitGatewayCollection, response *core.DetailedResponse, err error) {
 	result, response, err = transitGatewayApis.ListTransitGatewaysWithContext(context.Background(), listTransitGatewaysOptions)
 	err = core.RepurposeSDKProblem(err, "")
@@ -228,6 +233,9 @@ func (transitGatewayApis *TransitGatewayApisV1) ListTransitGatewaysWithContext(c
 	if listTransitGatewaysOptions.Start != nil {
 		builder.AddQuery("start", fmt.Sprint(*listTransitGatewaysOptions.Start))
 	}
+	if listTransitGatewaysOptions.RedundancyGroup != nil {
+		builder.AddQuery("redundancy_group", fmt.Sprint(*listTransitGatewaysOptions.RedundancyGroup))
+	}
 
 	request, err := builder.Build()
 	if err != nil {
@@ -255,7 +263,12 @@ func (transitGatewayApis *TransitGatewayApisV1) ListTransitGatewaysWithContext(c
 }
 
 // CreateTransitGateway : Creates a Transit Gateway
-// Create a Transit Gateway based on the supplied input template.
+// Create a Transit Gateway based on the supplied input template. Required fields: `name` (string, 1–60 chars),
+// `location` (IBM Cloud region, e.g. us-south). Optional fields: `global` (boolean, enables cross-region routing),
+// `resource_group` (object with `id`), `redundancy_group` (string, name of the redundancy group to join),
+// `redundancy_group_id` (string, ID of an existing redundancy group in the account),
+// `gre_enhanced_route_propagation` (boolean). Either `redundancy_group` or `redundancy_group_id` can be provided, but
+// not both. Returns a `TransitGateway` object. Initial `status` will be `pending` while provisioning.
 func (transitGatewayApis *TransitGatewayApisV1) CreateTransitGateway(createTransitGatewayOptions *CreateTransitGatewayOptions) (result *TransitGateway, response *core.DetailedResponse, err error) {
 	result, response, err = transitGatewayApis.CreateTransitGatewayWithContext(context.Background(), createTransitGatewayOptions)
 	err = core.RepurposeSDKProblem(err, "")
@@ -310,6 +323,12 @@ func (transitGatewayApis *TransitGatewayApisV1) CreateTransitGatewayWithContext(
 	if createTransitGatewayOptions.GreEnhancedRoutePropagation != nil {
 		body["gre_enhanced_route_propagation"] = createTransitGatewayOptions.GreEnhancedRoutePropagation
 	}
+	if createTransitGatewayOptions.RedundancyGroup != nil {
+		body["redundancy_group"] = createTransitGatewayOptions.RedundancyGroup
+	}
+	if createTransitGatewayOptions.RedundancyGroupID != nil {
+		body["redundancy_group_id"] = createTransitGatewayOptions.RedundancyGroupID
+	}
 	if createTransitGatewayOptions.ResourceGroup != nil {
 		body["resource_group"] = createTransitGatewayOptions.ResourceGroup
 	}
@@ -345,8 +364,8 @@ func (transitGatewayApis *TransitGatewayApisV1) CreateTransitGatewayWithContext(
 }
 
 // DeleteTransitGateway : Deletes specified Transit Gateway
-// This request deletes a Transit Gateway. This operation cannot be reversed. For this request to succeed, the Transit
-// Gateway must not contain connections.
+// Delete a Transit Gateway specified by its `id` path parameter. This operation cannot be reversed. The gateway must
+// have no attached connections before it can be deleted; remove all connections first.
 func (transitGatewayApis *TransitGatewayApisV1) DeleteTransitGateway(deleteTransitGatewayOptions *DeleteTransitGatewayOptions) (response *core.DetailedResponse, err error) {
 	response, err = transitGatewayApis.DeleteTransitGatewayWithContext(context.Background(), deleteTransitGatewayOptions)
 	err = core.RepurposeSDKProblem(err, "")
@@ -407,7 +426,10 @@ func (transitGatewayApis *TransitGatewayApisV1) DeleteTransitGatewayWithContext(
 }
 
 // GetTransitGateway : Retrieves specified Transit Gateway
-// This request retrieves a single Transit Gateway specified by the identifier in the URL.
+// Retrieve a single Transit Gateway specified by its `id` path parameter. Returns a `TransitGateway` object containing:
+// `id`, `name`, `crn`, `location`,
+// `status`, `global`, `created_at`, `updated_at`, `resource_group`, and optionally
+// `redundancy_group`, `redundancy_group_id`, `gre_enhanced_route_propagation`, and `connection_needs_attention`.
 func (transitGatewayApis *TransitGatewayApisV1) GetTransitGateway(getTransitGatewayOptions *GetTransitGatewayOptions) (result *TransitGateway, response *core.DetailedResponse, err error) {
 	result, response, err = transitGatewayApis.GetTransitGatewayWithContext(context.Background(), getTransitGatewayOptions)
 	err = core.RepurposeSDKProblem(err, "")
@@ -478,7 +500,9 @@ func (transitGatewayApis *TransitGatewayApisV1) GetTransitGatewayWithContext(ctx
 }
 
 // UpdateTransitGateway : Updates specified Transit Gateway
-// This request updates a Transit Gateway's name and/or global flag.
+// Update a Transit Gateway specified by its `id` path parameter. Updatable fields: `name` (string), `global` (boolean),
+// `redundancy_group` (string, assigns the gateway to a redundancy group), `gre_enhanced_route_propagation` (boolean).
+// Returns the updated `TransitGateway` object.
 func (transitGatewayApis *TransitGatewayApisV1) UpdateTransitGateway(updateTransitGatewayOptions *UpdateTransitGatewayOptions) (result *TransitGateway, response *core.DetailedResponse, err error) {
 	result, response, err = transitGatewayApis.UpdateTransitGatewayWithContext(context.Background(), updateTransitGatewayOptions)
 	err = core.RepurposeSDKProblem(err, "")
@@ -534,6 +558,9 @@ func (transitGatewayApis *TransitGatewayApisV1) UpdateTransitGatewayWithContext(
 	if updateTransitGatewayOptions.Name != nil {
 		body["name"] = updateTransitGatewayOptions.Name
 	}
+	if updateTransitGatewayOptions.RedundancyGroup != nil {
+		body["redundancy_group"] = updateTransitGatewayOptions.RedundancyGroup
+	}
 	_, err = builder.SetBodyContentJSON(body)
 	if err != nil {
 		err = core.SDKErrorf(err, "", "set-json-body-error", common.GetComponentInfo())
@@ -566,7 +593,11 @@ func (transitGatewayApis *TransitGatewayApisV1) UpdateTransitGatewayWithContext(
 }
 
 // ListConnections : Retrieves all connections
-// List all transit gateway connections associated with this account.
+// List all transit gateway connections associated with this account. Results can be filtered by `network_id` or
+// `network_type`. Use the `limit` and `start` parameters to page through large result sets. The response includes a
+// `TransitConnection` object for each connection, containing fields such as `id`, `name`, `network_type`,
+// `status`, `created_at`, `updated_at`, and optionally `prefix_filters`, `request_status`, and `transit_gateway`
+// reference.
 func (transitGatewayApis *TransitGatewayApisV1) ListConnections(listConnectionsOptions *ListConnectionsOptions) (result *TransitConnectionCollection, response *core.DetailedResponse, err error) {
 	result, response, err = transitGatewayApis.ListConnectionsWithContext(context.Background(), listConnectionsOptions)
 	err = core.RepurposeSDKProblem(err, "")
@@ -2340,6 +2371,220 @@ func (transitGatewayApis *TransitGatewayApisV1) GetTransitGatewayRouteReportWith
 
 	return
 }
+
+// ListRedundancyGroups : Lists all redundancy groups in the account
+// List all redundancy groups for the account.
+func (transitGatewayApis *TransitGatewayApisV1) ListRedundancyGroups(listRedundancyGroupsOptions *ListRedundancyGroupsOptions) (result *RedundancyGroupCollection, response *core.DetailedResponse, err error) {
+	result, response, err = transitGatewayApis.ListRedundancyGroupsWithContext(context.Background(), listRedundancyGroupsOptions)
+	err = core.RepurposeSDKProblem(err, "")
+	return
+}
+
+// ListRedundancyGroupsWithContext is an alternate form of the ListRedundancyGroups method which supports a Context parameter
+func (transitGatewayApis *TransitGatewayApisV1) ListRedundancyGroupsWithContext(ctx context.Context, listRedundancyGroupsOptions *ListRedundancyGroupsOptions) (result *RedundancyGroupCollection, response *core.DetailedResponse, err error) {
+	err = core.ValidateStruct(listRedundancyGroupsOptions, "listRedundancyGroupsOptions")
+	if err != nil {
+		err = core.SDKErrorf(err, "", "struct-validation-error", common.GetComponentInfo())
+		return
+	}
+
+	builder := core.NewRequestBuilder(core.GET)
+	builder = builder.WithContext(ctx)
+	builder.EnableGzipCompression = transitGatewayApis.GetEnableGzipCompression()
+	_, err = builder.ResolveRequestURL(transitGatewayApis.Service.Options.URL, `/redundancy_groups`, nil)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "url-resolve-error", common.GetComponentInfo())
+		return
+	}
+
+	sdkHeaders := common.GetSdkHeaders("transit_gateway_apis", "V1", "ListRedundancyGroups")
+	for headerName, headerValue := range sdkHeaders {
+		builder.AddHeader(headerName, headerValue)
+	}
+
+	for headerName, headerValue := range listRedundancyGroupsOptions.Headers {
+		builder.AddHeader(headerName, headerValue)
+	}
+	builder.AddHeader("Accept", "application/json")
+
+	builder.AddQuery("version", fmt.Sprint(*transitGatewayApis.Version))
+	if listRedundancyGroupsOptions.Name != nil {
+		builder.AddQuery("name", fmt.Sprint(*listRedundancyGroupsOptions.Name))
+	}
+
+	request, err := builder.Build()
+	if err != nil {
+		err = core.SDKErrorf(err, "", "build-error", common.GetComponentInfo())
+		return
+	}
+
+	var rawResponse map[string]json.RawMessage
+	response, err = transitGatewayApis.Service.Request(request, &rawResponse)
+	if err != nil {
+		core.EnrichHTTPProblem(err, "list_redundancy_groups", getServiceComponentInfo())
+		err = core.SDKErrorf(err, "", "http-request-err", common.GetComponentInfo())
+		return
+	}
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalRedundancyGroupCollection)
+		if err != nil {
+			err = core.SDKErrorf(err, "", "unmarshal-resp-error", common.GetComponentInfo())
+			return
+		}
+		response.Result = result
+	}
+
+	return
+}
+
+// GetRedundancyGroup : Retrieves specified redundancy group
+// Retrieves a single redundancy group specified by the identifier in the URL.
+func (transitGatewayApis *TransitGatewayApisV1) GetRedundancyGroup(getRedundancyGroupOptions *GetRedundancyGroupOptions) (result *RedundancyGroup, response *core.DetailedResponse, err error) {
+	result, response, err = transitGatewayApis.GetRedundancyGroupWithContext(context.Background(), getRedundancyGroupOptions)
+	err = core.RepurposeSDKProblem(err, "")
+	return
+}
+
+// GetRedundancyGroupWithContext is an alternate form of the GetRedundancyGroup method which supports a Context parameter
+func (transitGatewayApis *TransitGatewayApisV1) GetRedundancyGroupWithContext(ctx context.Context, getRedundancyGroupOptions *GetRedundancyGroupOptions) (result *RedundancyGroup, response *core.DetailedResponse, err error) {
+	err = core.ValidateNotNil(getRedundancyGroupOptions, "getRedundancyGroupOptions cannot be nil")
+	if err != nil {
+		err = core.SDKErrorf(err, "", "unexpected-nil-param", common.GetComponentInfo())
+		return
+	}
+	err = core.ValidateStruct(getRedundancyGroupOptions, "getRedundancyGroupOptions")
+	if err != nil {
+		err = core.SDKErrorf(err, "", "struct-validation-error", common.GetComponentInfo())
+		return
+	}
+
+	pathParamsMap := map[string]string{
+		"id": *getRedundancyGroupOptions.ID,
+	}
+
+	builder := core.NewRequestBuilder(core.GET)
+	builder = builder.WithContext(ctx)
+	builder.EnableGzipCompression = transitGatewayApis.GetEnableGzipCompression()
+	_, err = builder.ResolveRequestURL(transitGatewayApis.Service.Options.URL, `/redundancy_groups/{id}`, pathParamsMap)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "url-resolve-error", common.GetComponentInfo())
+		return
+	}
+
+	sdkHeaders := common.GetSdkHeaders("transit_gateway_apis", "V1", "GetRedundancyGroup")
+	for headerName, headerValue := range sdkHeaders {
+		builder.AddHeader(headerName, headerValue)
+	}
+
+	for headerName, headerValue := range getRedundancyGroupOptions.Headers {
+		builder.AddHeader(headerName, headerValue)
+	}
+	builder.AddHeader("Accept", "application/json")
+
+	builder.AddQuery("version", fmt.Sprint(*transitGatewayApis.Version))
+
+	request, err := builder.Build()
+	if err != nil {
+		err = core.SDKErrorf(err, "", "build-error", common.GetComponentInfo())
+		return
+	}
+
+	var rawResponse map[string]json.RawMessage
+	response, err = transitGatewayApis.Service.Request(request, &rawResponse)
+	if err != nil {
+		core.EnrichHTTPProblem(err, "get_redundancy_group", getServiceComponentInfo())
+		err = core.SDKErrorf(err, "", "http-request-err", common.GetComponentInfo())
+		return
+	}
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalRedundancyGroup)
+		if err != nil {
+			err = core.SDKErrorf(err, "", "unmarshal-resp-error", common.GetComponentInfo())
+			return
+		}
+		response.Result = result
+	}
+
+	return
+}
+
+// UpdateRedundancyGroup : Updates a redundancy group
+// Update a redundancy group.
+func (transitGatewayApis *TransitGatewayApisV1) UpdateRedundancyGroup(updateRedundancyGroupOptions *UpdateRedundancyGroupOptions) (result *RedundancyGroup, response *core.DetailedResponse, err error) {
+	result, response, err = transitGatewayApis.UpdateRedundancyGroupWithContext(context.Background(), updateRedundancyGroupOptions)
+	err = core.RepurposeSDKProblem(err, "")
+	return
+}
+
+// UpdateRedundancyGroupWithContext is an alternate form of the UpdateRedundancyGroup method which supports a Context parameter
+func (transitGatewayApis *TransitGatewayApisV1) UpdateRedundancyGroupWithContext(ctx context.Context, updateRedundancyGroupOptions *UpdateRedundancyGroupOptions) (result *RedundancyGroup, response *core.DetailedResponse, err error) {
+	err = core.ValidateNotNil(updateRedundancyGroupOptions, "updateRedundancyGroupOptions cannot be nil")
+	if err != nil {
+		err = core.SDKErrorf(err, "", "unexpected-nil-param", common.GetComponentInfo())
+		return
+	}
+	err = core.ValidateStruct(updateRedundancyGroupOptions, "updateRedundancyGroupOptions")
+	if err != nil {
+		err = core.SDKErrorf(err, "", "struct-validation-error", common.GetComponentInfo())
+		return
+	}
+
+	pathParamsMap := map[string]string{
+		"id": *updateRedundancyGroupOptions.ID,
+	}
+
+	builder := core.NewRequestBuilder(core.PATCH)
+	builder = builder.WithContext(ctx)
+	builder.EnableGzipCompression = transitGatewayApis.GetEnableGzipCompression()
+	_, err = builder.ResolveRequestURL(transitGatewayApis.Service.Options.URL, `/redundancy_groups/{id}`, pathParamsMap)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "url-resolve-error", common.GetComponentInfo())
+		return
+	}
+
+	sdkHeaders := common.GetSdkHeaders("transit_gateway_apis", "V1", "UpdateRedundancyGroup")
+	for headerName, headerValue := range sdkHeaders {
+		builder.AddHeader(headerName, headerValue)
+	}
+
+	for headerName, headerValue := range updateRedundancyGroupOptions.Headers {
+		builder.AddHeader(headerName, headerValue)
+	}
+	builder.AddHeader("Accept", "application/json")
+	builder.AddHeader("Content-Type", "application/merge-patch+json")
+
+	builder.AddQuery("version", fmt.Sprint(*transitGatewayApis.Version))
+
+	_, err = builder.SetBodyContentJSON(updateRedundancyGroupOptions.RedundancyGroupPatch)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "set-json-body-error", common.GetComponentInfo())
+		return
+	}
+
+	request, err := builder.Build()
+	if err != nil {
+		err = core.SDKErrorf(err, "", "build-error", common.GetComponentInfo())
+		return
+	}
+
+	var rawResponse map[string]json.RawMessage
+	response, err = transitGatewayApis.Service.Request(request, &rawResponse)
+	if err != nil {
+		core.EnrichHTTPProblem(err, "update_redundancy_group", getServiceComponentInfo())
+		err = core.SDKErrorf(err, "", "http-request-err", common.GetComponentInfo())
+		return
+	}
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalRedundancyGroup)
+		if err != nil {
+			err = core.SDKErrorf(err, "", "unmarshal-resp-error", common.GetComponentInfo())
+			return
+		}
+		response.Result = result
+	}
+
+	return
+}
 func getServiceComponentInfo() *core.ProblemComponent {
 	return core.NewProblemComponent(DefaultServiceName, "__VERSION__")
 }
@@ -2423,9 +2668,10 @@ type CreateTransitGatewayConnectionOptions struct {
 	// `vpc`, `power_virtual_server`, `vpn_gateway` and `gre_tunnel` connections.
 	BaseNetworkType *string `json:"base_network_type,omitempty"`
 
-	// network_type 'vpn_gateway' connections use 'cidr' to specify the CIDR to use for the VPN GRE tunnels.
+	// network_type `vpn_gateway` connections use `cidr` to specify the CIDR to use for the VPN gateway GRE tunnels.
 	//
-	// This field is required for network type `vpn_gateway` connections.
+	// This field is optional for network type `vpn_gateway` connections. If unspecified, the default value is
+	// 198.19.174.0/23.
 	//
 	// This field is required to be unspecified for network type `classic`, `directlink`, `vpc`, `power_virtual_server`,
 	// `gre_tunnel`, `unbound_gre_tunnel`, and `redundant_gre` connections.
@@ -2460,11 +2706,11 @@ type CreateTransitGatewayConnectionOptions struct {
 	// than the gateway.
 	NetworkAccountID *string `json:"network_account_id,omitempty"`
 
-	// The ID of the network being connected via this connection. For network types `vpc`,`power_virtual_server`,
-	// `directlink` and `vpn_gateway` this is the CRN of the VPC / PowerVS / VDC / Direct Link / VPN gateway respectively.
-	// This field is required for network type `vpc`, `power_virtual_server`, `vpn_gateway`, and `directlink` connections.
-	// It is also required for `redundant_gre` connections when the base_network_type is set to VPC. This field is required
-	// to be unspecified for network type `classic`, `gre_tunnel` and `unbound_gre_tunnel` connections.
+	// The ID of the network being connected via this connection. For network types `vpc`, `vpn_gateway`,
+	// `power_virtual_server` and `directlink` this is the CRN of the VPC / VPN / PowerVS / Direct Link gateway
+	// respectively. This field is required for network type `vpc`, `power_virtual_server`, `vpn_gateway` and `directlink`
+	// connections.  It is also required for `redundant_gre` connections when the base_network_type is set to VPC. This
+	// field is required to be unspecified for network type `classic`, `gre_tunnel` and `unbound_gre_tunnel` connections.
 	NetworkID *string `json:"network_id,omitempty"`
 
 	// Array of prefix route filters for a transit gateway connection. Prefix filters can be specified for netowrk type
@@ -2481,9 +2727,9 @@ type CreateTransitGatewayConnectionOptions struct {
 	// connections.
 	PrefixFiltersDefault *string `json:"prefix_filters_default,omitempty"`
 
-	// Remote network BGP ASN. The following ASN values are reserved and unavailable 0, 13884, 36351, 64512-64513, 65100,
-	// 65200-65234, 65402-65433, 65500 and 4201065000-4201065999. If `remote_bgp_asn` is omitted on gre_tunnel or
-	// unbound_gre_tunnel connection create requests IBM will assign an ASN.
+	// Remote network BGP ASN. The following ASN values are reserved and unavailable 0, 13884, 36351, 64512, 64513, 65100,
+	// 65200-65234, 65402-65433, 65500, 65516, 65519, 65521, 65531 and 4201065000-4201065999. If `remote_bgp_asn` is
+	// omitted on gre_tunnel or unbound_gre_tunnel connection create requests IBM will assign an ASN.
 	//
 	// This field is optional for network type `gre_tunnel` and `unbound_gre_tunnel` connections.
 	//
@@ -2505,14 +2751,16 @@ type CreateTransitGatewayConnectionOptions struct {
 	// `vpn_gateway` and `redundant_gre` connections.
 	RemoteTunnelIp *string `json:"remote_tunnel_ip,omitempty"`
 
-	// Array of GRE tunnels for a transit gateway `redundant_gre` and `vpn_gateway` connections.  This field is required
-	// for `redundant_gre` and `vpn_gateway` connections.
+	// Array of GRE tunnels for a transit gateway `redundant_gre` connections.  This field is required for `redundant_gre`
+	// connections.
 	Tunnels []TransitGatewayTunnelTemplate `json:"tunnels,omitempty"`
 
 	// Specify the connection's location.  The specified availability zone must reside in the gateway's region.
 	// Use the IBM Cloud global catalog to list zones within the desired region.
 	//
-	// This field is required for network type `gre_tunnel`, `unbound_gre_tunnel` and `vpn_gateway` connections.
+	// This field is required for network type `gre_tunnel`, and `unbound_gre_tunnel` connections.
+	//
+	// This field is optional for network type `vpn_gateway` connections.
 	//
 	// This field is required to be unspecified for network type `classic`, `directlink`, `vpc`, `power_virtual_server` and
 	// `redundant_gre` connections.
@@ -2812,9 +3060,9 @@ type CreateTransitGatewayGreTunnelOptions struct {
 	// Use the IBM Cloud global catalog to list zones within the desired region.
 	Zone ZoneIdentityIntf `json:"zone" validate:"required"`
 
-	// Remote network BGP ASN. The following ASN values are reserved and unavailable 0, 13884, 36351, 64512-64513, 65100,
-	// 65200-65234, 65402-65433, 65500 and 4201065000-4201065999. If `remote_bgp_asn` is omitted on create requests, IBM
-	// will assign an ASN.
+	// Remote network BGP ASN. The following ASN values are reserved and unavailable 0, 13884, 36351, 64512, 64513, 65100,
+	// 65200-65234, 65402-65433, 65500, 65516, 65519, 65521, 65531 and 4201065000-4201065999 If `remote_bgp_asn` is omitted
+	// on create requests, IBM will assign an ASN.
 	RemoteBgpAsn *int64 `json:"remote_bgp_asn,omitempty"`
 
 	// Allows users to set headers on API requests.
@@ -2906,8 +3154,21 @@ type CreateTransitGatewayOptions struct {
 	// Allow global routing for a Transit Gateway. If unspecified, the default value is false.
 	Global *bool `json:"global,omitempty"`
 
-	// Allow GRE Enhanced Route Propagation on this gateway.
+	// Allow route propagation across all GREs connected to the same transit gateway. This affects connections on the
+	// gateway of type `redundant_gre`, `unbound_gre_tunnel` and `gre_tunnel`.
 	GreEnhancedRoutePropagation *bool `json:"gre_enhanced_route_propagation,omitempty"`
+
+	// Include the global transit gateway in this redundancy group. When set, this transit gateway will be redundant to
+	// other transit gateways in this redundancy group. If this redundancy group doesn't exist in the account, it will be
+	// created. This property can only be set for global transit gateways and the transit gateway cannot be in a location
+	// already used by a global transit gateway in this redundancy group. If specified, `redundancy_group_id` cannot also
+	// be specified.
+	RedundancyGroup *string `json:"redundancy_group,omitempty"`
+
+	// Include the transit gateway in an existing redundancy group in the account. This property can only be set for global
+	// transit gateways and the transit gateway cannot be in a location already used by a global transit gateway in this
+	// redundancy group. If specified, `redundancy_group` cannot also be specified.
+	RedundancyGroupID *string `json:"redundancy_group_id,omitempty"`
 
 	// The resource group to use. If unspecified, the account's [default resource
 	// group](https://console.bluemix.net/apidocs/resource-manager#introduction) is used.
@@ -2946,6 +3207,18 @@ func (_options *CreateTransitGatewayOptions) SetGlobal(global bool) *CreateTrans
 // SetGreEnhancedRoutePropagation : Allow user to set GreEnhancedRoutePropagation
 func (_options *CreateTransitGatewayOptions) SetGreEnhancedRoutePropagation(greEnhancedRoutePropagation bool) *CreateTransitGatewayOptions {
 	_options.GreEnhancedRoutePropagation = core.BoolPtr(greEnhancedRoutePropagation)
+	return _options
+}
+
+// SetRedundancyGroup : Allow user to set RedundancyGroup
+func (_options *CreateTransitGatewayOptions) SetRedundancyGroup(redundancyGroup string) *CreateTransitGatewayOptions {
+	_options.RedundancyGroup = core.StringPtr(redundancyGroup)
+	return _options
+}
+
+// SetRedundancyGroupID : Allow user to set RedundancyGroupID
+func (_options *CreateTransitGatewayOptions) SetRedundancyGroupID(redundancyGroupID string) *CreateTransitGatewayOptions {
+	_options.RedundancyGroupID = core.StringPtr(redundancyGroupID)
 	return _options
 }
 
@@ -3213,6 +3486,34 @@ func (_options *GetGatewayLocationOptions) SetName(name string) *GetGatewayLocat
 
 // SetHeaders : Allow user to set Headers
 func (options *GetGatewayLocationOptions) SetHeaders(param map[string]string) *GetGatewayLocationOptions {
+	options.Headers = param
+	return options
+}
+
+// GetRedundancyGroupOptions : The GetRedundancyGroup options.
+type GetRedundancyGroupOptions struct {
+	// The redundancy group identifier.
+	ID *string `json:"id" validate:"required,ne="`
+
+	// Allows users to set headers on API requests.
+	Headers map[string]string
+}
+
+// NewGetRedundancyGroupOptions : Instantiate GetRedundancyGroupOptions
+func (*TransitGatewayApisV1) NewGetRedundancyGroupOptions(id string) *GetRedundancyGroupOptions {
+	return &GetRedundancyGroupOptions{
+		ID: core.StringPtr(id),
+	}
+}
+
+// SetID : Allow user to set ID
+func (_options *GetRedundancyGroupOptions) SetID(id string) *GetRedundancyGroupOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
+}
+
+// SetHeaders : Allow user to set Headers
+func (options *GetRedundancyGroupOptions) SetHeaders(param map[string]string) *GetRedundancyGroupOptions {
 	options.Headers = param
 	return options
 }
@@ -3488,6 +3789,32 @@ func (options *ListGatewayLocationsOptions) SetHeaders(param map[string]string) 
 	return options
 }
 
+// ListRedundancyGroupsOptions : The ListRedundancyGroups options.
+type ListRedundancyGroupsOptions struct {
+	// Filter the list of redundancy groups by name.
+	Name *string `json:"name,omitempty"`
+
+	// Allows users to set headers on API requests.
+	Headers map[string]string
+}
+
+// NewListRedundancyGroupsOptions : Instantiate ListRedundancyGroupsOptions
+func (*TransitGatewayApisV1) NewListRedundancyGroupsOptions() *ListRedundancyGroupsOptions {
+	return &ListRedundancyGroupsOptions{}
+}
+
+// SetName : Allow user to set Name
+func (_options *ListRedundancyGroupsOptions) SetName(name string) *ListRedundancyGroupsOptions {
+	_options.Name = core.StringPtr(name)
+	return _options
+}
+
+// SetHeaders : Allow user to set Headers
+func (options *ListRedundancyGroupsOptions) SetHeaders(param map[string]string) *ListRedundancyGroupsOptions {
+	options.Headers = param
+	return options
+}
+
 // ListTransitGatewayConnectionPrefixFiltersOptions : The ListTransitGatewayConnectionPrefixFilters options.
 type ListTransitGatewayConnectionPrefixFiltersOptions struct {
 	// The Transit Gateway identifier.
@@ -3655,6 +3982,9 @@ type ListTransitGatewaysOptions struct {
 	// A server supplied token determining which resource to start the page on.
 	Start *string `json:"start,omitempty"`
 
+	// Filter the list of transit gateways by redundancy group name.
+	RedundancyGroup *string `json:"redundancy_group,omitempty"`
+
 	// Allows users to set headers on API requests.
 	Headers map[string]string
 }
@@ -3673,6 +4003,12 @@ func (_options *ListTransitGatewaysOptions) SetLimit(limit int64) *ListTransitGa
 // SetStart : Allow user to set Start
 func (_options *ListTransitGatewaysOptions) SetStart(start string) *ListTransitGatewaysOptions {
 	_options.Start = core.StringPtr(start)
+	return _options
+}
+
+// SetRedundancyGroup : Allow user to set RedundancyGroup
+func (_options *ListTransitGatewaysOptions) SetRedundancyGroup(redundancyGroup string) *ListTransitGatewaysOptions {
+	_options.RedundancyGroup = core.StringPtr(redundancyGroup)
 	return _options
 }
 
@@ -3933,6 +4269,94 @@ func UnmarshalPrefixFilterCust(m map[string]json.RawMessage, result interface{})
 	return
 }
 
+// RedundancyGroup : A redundancy group.
+type RedundancyGroup struct {
+	// The date and time that this redundancy group was created.
+	CreatedAt *strfmt.DateTime `json:"created_at" validate:"required"`
+
+	// The unique identifier for this redundancy group.
+	ID *string `json:"id" validate:"required"`
+
+	// The redundancy group name.
+	Name *string `json:"name" validate:"required"`
+
+	// The date and time that this redundancy group was last updated.
+	UpdatedAt *strfmt.DateTime `json:"updated_at,omitempty"`
+}
+
+// UnmarshalRedundancyGroup unmarshals an instance of RedundancyGroup from the specified map of raw messages.
+func UnmarshalRedundancyGroup(m map[string]json.RawMessage, result interface{}) (err error) {
+	obj := new(RedundancyGroup)
+	err = core.UnmarshalPrimitive(m, "created_at", &obj.CreatedAt)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "created_at-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "id", &obj.ID)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "id-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "name", &obj.Name)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "name-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "updated_at", &obj.UpdatedAt)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "updated_at-error", common.GetComponentInfo())
+		return
+	}
+	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
+	return
+}
+
+// RedundancyGroupCollection : A list of redundancy groups.
+type RedundancyGroupCollection struct {
+	// Collection of redundancy groups.
+	RedundancyGroups []RedundancyGroup `json:"redundancy_groups" validate:"required"`
+}
+
+// UnmarshalRedundancyGroupCollection unmarshals an instance of RedundancyGroupCollection from the specified map of raw messages.
+func UnmarshalRedundancyGroupCollection(m map[string]json.RawMessage, result interface{}) (err error) {
+	obj := new(RedundancyGroupCollection)
+	err = core.UnmarshalModel(m, "redundancy_groups", &obj.RedundancyGroups, UnmarshalRedundancyGroup)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "redundancy_groups-error", common.GetComponentInfo())
+		return
+	}
+	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
+	return
+}
+
+// RedundancyGroupPatch : An update template for a redundancy group.
+type RedundancyGroupPatch struct {
+	// The new name for the redundancy group.
+	Name *string `json:"name,omitempty"`
+}
+
+// UnmarshalRedundancyGroupPatch unmarshals an instance of RedundancyGroupPatch from the specified map of raw messages.
+func UnmarshalRedundancyGroupPatch(m map[string]json.RawMessage, result interface{}) (err error) {
+	obj := new(RedundancyGroupPatch)
+	err = core.UnmarshalPrimitive(m, "name", &obj.Name)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "name-error", common.GetComponentInfo())
+		return
+	}
+	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
+	return
+}
+
+// AsPatch returns a generic map representation of the RedundancyGroupPatch
+func (redundancyGroupPatch *RedundancyGroupPatch) AsPatch() (_patch map[string]interface{}, err error) {
+	_patch = map[string]interface{}{}
+	if !core.IsNil(redundancyGroupPatch.Name) {
+		_patch["name"] = redundancyGroupPatch.Name
+	}
+
+	return
+}
+
 // ResourceGroupIdentity : The resource group to use. If unspecified, the account's [default resource
 // group](https://console.bluemix.net/apidocs/resource-manager#introduction) is used.
 type ResourceGroupIdentity struct {
@@ -4080,7 +4504,7 @@ func UnmarshalRouteReportCollection(m map[string]json.RawMessage, result interfa
 // RouteReportConnection : route report connection.
 type RouteReportConnection struct {
 	// Array of connection's bgps.
-	Bgps []RouteReportConnectionBgp `json:"bgps,omitempty"`
+	Bgps []RouteReportConnectionBgp `json:"bgps" validate:"required"`
 
 	// connection ID.
 	ID *string `json:"id,omitempty"`
@@ -4089,7 +4513,7 @@ type RouteReportConnection struct {
 	Name *string `json:"name,omitempty"`
 
 	// Array of connection's routes.
-	Routes []RouteReportConnectionRoute `json:"routes,omitempty"`
+	Routes []RouteReportConnectionRoute `json:"routes" validate:"required"`
 
 	// connection type.
 	Type *string `json:"type,omitempty"`
@@ -4133,7 +4557,7 @@ type RouteReportConnectionBgp struct {
 	AsPath *string `json:"as_path,omitempty"`
 
 	// Indicates whether current route is used or not.
-	IsUsed *bool `json:"is_used,omitempty"`
+	IsUsed *bool `json:"is_used" validate:"required"`
 
 	// local preference.
 	LocalPreference *string `json:"local_preference,omitempty"`
@@ -4216,7 +4640,7 @@ func UnmarshalRouteReportOverlappingRoute(m map[string]json.RawMessage, result i
 // RouteReportOverlappingRouteGroup : Collection of overlapping route.
 type RouteReportOverlappingRouteGroup struct {
 	// Array of overlapping connection/prefix pairs.
-	Routes []RouteReportOverlappingRoute `json:"routes,omitempty"`
+	Routes []RouteReportOverlappingRoute `json:"routes" validate:"required"`
 }
 
 // UnmarshalRouteReportOverlappingRouteGroup unmarshals an instance of RouteReportOverlappingRouteGroup from the specified map of raw messages.
@@ -4258,7 +4682,7 @@ type TSLocalLocation struct {
 	Name *string `json:"name" validate:"required"`
 
 	// Array of supported connection types.
-	SupportedConnectionTypes []string `json:"supported_connection_types,omitempty"`
+	SupportedConnectionTypes []string `json:"supported_connection_types" validate:"required"`
 
 	// The type of the location, determining is this a multi-zone region, a single data center, or a point of presence. The
 	// list of enumerated values for this property may expand in the future. Code and processes using this field must
@@ -4395,8 +4819,8 @@ type TransitConnection struct {
 	Name *string `json:"name" validate:"required"`
 
 	// The ID of the network being connected via this connection. This field is required for some types, such as `vpc`,
-	// `power_virtual_server`, `directlink`, `vpn_gateway` and `redundant_gre`. For network types `vpc`, `redundant_gre`,
-	// `power_virtual_server` and `directlink` this is the CRN of the VPC  / PowerVS / VDC / Direct Link gateway
+	// `power_virtual_server`, `directlink`, `vpn_gateway` and `redundant_gre`. For network types `vpc`, `vpn_gateway`,
+	// `power_virtual_server` and `directlink` this is the CRN of the VPC / VPN / PowerVS / Direct Link gateway
 	// respectively.
 	NetworkID *string `json:"network_id,omitempty"`
 
@@ -4413,6 +4837,9 @@ type TransitConnection struct {
 	// This field only applies to and is required for network type `gre_tunnel` connections.
 	// Deprecated: this field is deprecated and may be removed in a future release.
 	BaseConnectionID *string `json:"base_connection_id,omitempty"`
+
+	// network_type `vpn_gateway` connections use `cidr` to specify the CIDR to use for the `VPN gateway` GRE tunnels.
+	Cidr *string `json:"cidr,omitempty"`
 
 	// The date and time that this connection was created.
 	CreatedAt *strfmt.DateTime `json:"created_at" validate:"required"`
@@ -4568,6 +4995,11 @@ func UnmarshalTransitConnection(m map[string]json.RawMessage, result interface{}
 		err = core.SDKErrorf(err, "", "base_connection_id-error", common.GetComponentInfo())
 		return
 	}
+	err = core.UnmarshalPrimitive(m, "cidr", &obj.Cidr)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "cidr-error", common.GetComponentInfo())
+		return
+	}
 	err = core.UnmarshalPrimitive(m, "created_at", &obj.CreatedAt)
 	if err != nil {
 		err = core.SDKErrorf(err, "", "created_at-error", common.GetComponentInfo())
@@ -4713,7 +5145,7 @@ type TransitGateway struct {
 	ConnectionCount *int64 `json:"connection_count,omitempty"`
 
 	// Indicates if this Transit Gateway has a connection that needs attention (Such as cross account approval).
-	ConnectionNeedsAttention *bool `json:"connection_needs_attention,omitempty"`
+	ConnectionNeedsAttention *bool `json:"connection_needs_attention" validate:"required"`
 
 	// The date and time that this gateway was created.
 	CreatedAt *strfmt.DateTime `json:"created_at" validate:"required"`
@@ -4724,8 +5156,9 @@ type TransitGateway struct {
 	// Allow global routing for a Transit Gateway.
 	Global *bool `json:"global" validate:"required"`
 
-	// Allow GRE Enhanced Route Propagation on this gateway.
-	GreEnhancedRoutePropagation *bool `json:"gre_enhanced_route_propagation,omitempty"`
+	// Allow route propagation across all GREs connected to the same transit gateway. This affects connections on the
+	// gateway of type `redundant_gre`, `unbound_gre_tunnel` and `gre_tunnel`.
+	GreEnhancedRoutePropagation *bool `json:"gre_enhanced_route_propagation" validate:"required"`
 
 	// A unique identifier for this transit gateway.
 	ID *string `json:"id" validate:"required"`
@@ -4735,6 +5168,13 @@ type TransitGateway struct {
 
 	// A human readable name for the transit gateway.
 	Name *string `json:"name" validate:"required"`
+
+	// The redundancy group for this global transit gateway. The global transit gateways in this redundancy group will be
+	// redundant to each other.
+	RedundancyGroup *string `json:"redundancy_group,omitempty"`
+
+	// The unique identifier of the redundancy group for this global transit gateway.
+	RedundancyGroupID *string `json:"redundancy_group_id,omitempty"`
 
 	// The resource group to use. If unspecified, the account's [default resource
 	// group](https://console.bluemix.net/apidocs/resource-manager#introduction) is used.
@@ -4806,6 +5246,16 @@ func UnmarshalTransitGateway(m map[string]json.RawMessage, result interface{}) (
 	err = core.UnmarshalPrimitive(m, "name", &obj.Name)
 	if err != nil {
 		err = core.SDKErrorf(err, "", "name-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "redundancy_group", &obj.RedundancyGroup)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "redundancy_group-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "redundancy_group_id", &obj.RedundancyGroupID)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "redundancy_group_id-error", common.GetComponentInfo())
 		return
 	}
 	err = core.UnmarshalModel(m, "resource_group", &obj.ResourceGroup, UnmarshalResourceGroupReference)
@@ -4952,7 +5402,7 @@ type TransitGatewayConnectionCust struct {
 	// `vpc`, `power_virtual_server`, `vpn_gateway` and `gre_tunnel` connections.
 	BaseNetworkType *string `json:"base_network_type,omitempty"`
 
-	// network_type 'vpn_gateway' connections use 'cidr' to specify the CIDR to use for the VPN GRE tunnels.
+	// network_type `vpn_gateway` connections use `cidr` to specify the CIDR to use for the `VPN gateway` GRE tunnels.
 	Cidr *string `json:"cidr,omitempty"`
 
 	// The date and time that this connection was created.
@@ -4987,11 +5437,11 @@ type TransitGatewayConnectionCust struct {
 	// Cloud account than the gateway.
 	NetworkAccountID *string `json:"network_account_id,omitempty"`
 
-	// The ID of the network being connected via this connection. For network types `vpc`,`power_virtual_server`,
-	// `directlink` and `vpn_gateway` this is the CRN of the VPC / PowerVS / VDC / Direct Link / VPN gateway respectively.
-	// This field is required for network type `vpc`, `power_virtual_server`, `vpn_gateway`, and `directlink` connections.
-	// It is also required for `redundant_gre` connections when the base_network_type is set to VPC. This field is required
-	// to be unspecified for network type `classic`, `gre_tunnel` and `unbound_gre_tunnel` connections.
+	// The ID of the network being connected via this connection. For network types `vpc`, `vpn_gateway`,
+	// `power_virtual_server` and `directlink` this is the CRN of the VPC / VPN / PowerVS / Direct Link gateway
+	// respectively. This field is required for network type `vpc`, `power_virtual_server`, `vpn_gateway` and `directlink`
+	// connections.  It is also required for `redundant_gre` connections when the base_network_type is set to VPC. This
+	// field is required to be unspecified for network type `classic`, `gre_tunnel` and `unbound_gre_tunnel` connections.
 	NetworkID *string `json:"network_id,omitempty"`
 
 	// Defines what type of network is connected via this connection.
@@ -5032,7 +5482,8 @@ type TransitGatewayConnectionCust struct {
 	// The date and time that this connection was last updated.
 	UpdatedAt *strfmt.DateTime `json:"updated_at" validate:"required"`
 
-	// Location of GRE tunnel. This field is required for network type `gre_tunnel` and `vpn_gateway` connections.
+	// Location of GRE tunnel. This field is required for network type `gre_tunnel` and `unbound_gre_tunnel` connections.
+	// This field is optional for network type `vpn_gateway` connections.
 	Zone *ZoneReference `json:"zone,omitempty"`
 }
 
@@ -5430,7 +5881,7 @@ type TransitGatewayTunnel struct {
 	LocalTunnelIp *string `json:"local_tunnel_ip" validate:"required"`
 
 	// GRE tunnel MTU.
-	Mtu *int64 `json:"mtu" validate:"required"`
+	Mtu *int64 `json:"mtu,omitempty"`
 
 	// The user-defined name for this tunnel.
 	Name *string `json:"name" validate:"required"`
@@ -5470,7 +5921,6 @@ type TransitGatewayTunnel struct {
 const (
 	TransitGatewayTunnel_BaseNetworkType_Classic = "classic"
 	TransitGatewayTunnel_BaseNetworkType_Vpc     = "vpc"
-	TransitGatewayTunnel_BaseNetworkType_Vpn     = "vpn"
 )
 
 // Constants associated with the TransitGatewayTunnel.Status property.
@@ -5632,9 +6082,9 @@ type TransitGatewayTunnelTemplate struct {
 	// The user-defined name for this tunnel connection.
 	Name *string `json:"name" validate:"required"`
 
-	// Remote network BGP ASN. The following ASN values are reserved and unavailable 0, 13884, 36351, 64512-64513, 65100,
-	// 65200-65234, 65402-65433, 65500 and 4201065000-4201065999. If `remote_bgp_asn` is omitted on create requests, IBM
-	// will assign an ASN.
+	// Remote network BGP ASN. The following ASN values are reserved and unavailable 0, 13884, 36351, 64512, 64513, 65100,
+	// 65200-65234, 65402-65433, 65500, 65516, 65519, 65521, 65531 and 4201065000-4201065999 If `remote_bgp_asn` is omitted
+	// on create requests, IBM will assign an ASN.
 	RemoteBgpAsn *int64 `json:"remote_bgp_asn,omitempty"`
 
 	// Remote gateway IP address.
@@ -5706,6 +6156,44 @@ func UnmarshalTransitGatewayTunnelTemplate(m map[string]json.RawMessage, result 
 	}
 	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
 	return
+}
+
+// UpdateRedundancyGroupOptions : The UpdateRedundancyGroup options.
+type UpdateRedundancyGroupOptions struct {
+	// The redundancy group identifier.
+	ID *string `json:"id" validate:"required,ne="`
+
+	// The redundancy group update template.
+	RedundancyGroupPatch map[string]interface{} `json:"redundancy_group_patch" validate:"required"`
+
+	// Allows users to set headers on API requests.
+	Headers map[string]string
+}
+
+// NewUpdateRedundancyGroupOptions : Instantiate UpdateRedundancyGroupOptions
+func (*TransitGatewayApisV1) NewUpdateRedundancyGroupOptions(id string, redundancyGroupPatch map[string]interface{}) *UpdateRedundancyGroupOptions {
+	return &UpdateRedundancyGroupOptions{
+		ID:                   core.StringPtr(id),
+		RedundancyGroupPatch: redundancyGroupPatch,
+	}
+}
+
+// SetID : Allow user to set ID
+func (_options *UpdateRedundancyGroupOptions) SetID(id string) *UpdateRedundancyGroupOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
+}
+
+// SetRedundancyGroupPatch : Allow user to set RedundancyGroupPatch
+func (_options *UpdateRedundancyGroupOptions) SetRedundancyGroupPatch(redundancyGroupPatch map[string]interface{}) *UpdateRedundancyGroupOptions {
+	_options.RedundancyGroupPatch = redundancyGroupPatch
+	return _options
+}
+
+// SetHeaders : Allow user to set Headers
+func (options *UpdateRedundancyGroupOptions) SetHeaders(param map[string]string) *UpdateRedundancyGroupOptions {
+	options.Headers = param
+	return options
 }
 
 // UpdateTransitGatewayConnectionOptions : The UpdateTransitGatewayConnection options.
@@ -5952,14 +6440,22 @@ type UpdateTransitGatewayOptions struct {
 	// The Transit Gateway identifier.
 	ID *string `json:"id" validate:"required,ne="`
 
-	// Allow global routing for a Transit Gateway.
+	// Allow global routing for a Transit Gateway. This property cannot be changed if the transit gateway has
+	// redundancy_group set.
 	Global *bool `json:"global,omitempty"`
 
-	// Allow GRE Enhanced Route Propagation on this gateway.
+	// Allow route propagation across all GREs connected to the same transit gateway. This affects connections on the
+	// gateway of type `redundant_gre`, `unbound_gre_tunnel` and `gre_tunnel`. It takes a few minutes for the change to
+	// take effect.
 	GreEnhancedRoutePropagation *bool `json:"gre_enhanced_route_propagation,omitempty"`
 
 	// A human readable name for a resource.
 	Name *string `json:"name,omitempty"`
+
+	// Create a new redundancy group with this name and add the gateway to it. This property is only valid when the gateway
+	// is global (or `global` is set to `true` in the same request), the gateway is not already a member of a redundancy
+	// group, and no redundancy group with this name already exists in the account.
+	RedundancyGroup *string `json:"redundancy_group,omitempty"`
 
 	// Allows users to set headers on API requests.
 	Headers map[string]string
@@ -5993,6 +6489,12 @@ func (_options *UpdateTransitGatewayOptions) SetGreEnhancedRoutePropagation(greE
 // SetName : Allow user to set Name
 func (_options *UpdateTransitGatewayOptions) SetName(name string) *UpdateTransitGatewayOptions {
 	_options.Name = core.StringPtr(name)
+	return _options
+}
+
+// SetRedundancyGroup : Allow user to set RedundancyGroup
+func (_options *UpdateTransitGatewayOptions) SetRedundancyGroup(redundancyGroup string) *UpdateTransitGatewayOptions {
+	_options.RedundancyGroup = core.StringPtr(redundancyGroup)
 	return _options
 }
 
