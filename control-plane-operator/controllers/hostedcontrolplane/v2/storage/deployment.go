@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -14,6 +15,7 @@ import (
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		proxy.SetEnvVars(&c.Env)
 		envReplacer := newEnvironmentReplacer(cpContext.ReleaseImageProvider, cpContext.UserReleaseImageProvider)
 		envReplacer.replaceEnvVars(c.Env)
 
