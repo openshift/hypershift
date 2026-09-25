@@ -87,9 +87,6 @@ spec:
             file:
               credentialsSecretName: ""
               objectEncoding: utf-8
-            imageRegistry:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
             ingress:
               credentialsSecretName: ""
               objectEncoding: utf-8
@@ -105,7 +102,6 @@ spec:
           dataPlane:
             diskMSIClientID: ""
             fileMSIClientID: ""
-            imageRegistryMSIClientID: ""
       location: fakeLocation
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID

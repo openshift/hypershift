@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -25,6 +26,16 @@ const (
 	VirtualNetworkLinkLocation        = "global"
 	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
 )
+
+var supportedDisabledClusterCapabilities = []string{
+	string(hyperv1.ImageRegistryCapability),
+	string(hyperv1.OpenShiftSamplesCapability),
+	string(hyperv1.InsightsCapability),
+	string(hyperv1.BaremetalCapability),
+	string(hyperv1.ConsoleCapability),
+	string(hyperv1.NodeTuningCapability),
+	string(hyperv1.IngressCapability),
+}
 
 // NewCreateCommand creates a new cobra command for creating Azure infrastructure resources for a HostedCluster
 func NewCreateCommand() *cobra.Command {
@@ -354,6 +365,19 @@ func (o *CreateInfraOptions) Validate() error {
 		return fmt.Errorf("--dns-zone-rg-name is required when --assign-identity-roles or --assign-custom-hcp-roles is set")
 	}
 
+	if err := validateDisabledClusterCapabilities(o.DisableClusterCapabilities); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateDisabledClusterCapabilities(disabledCapabilities []string) error {
+	for _, capability := range disabledCapabilities {
+		if !slices.Contains(supportedDisabledClusterCapabilities, capability) {
+			return fmt.Errorf("unknown disabled capability: %s, accepted values are: %v", capability, supportedDisabledClusterCapabilities)
+		}
+	}
 	return nil
 }
 
