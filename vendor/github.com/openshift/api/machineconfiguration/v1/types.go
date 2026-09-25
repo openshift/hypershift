@@ -1035,11 +1035,13 @@ const (
 
 // StorePath is an absolute filesystem path used by additional container storage configurations.
 // The path must be between 1 and 256 characters long, begin with a forward slash, and only contain
-// the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes are not permitted.
+// the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes and '..'
+// directory traversal components are not permitted.
 // +kubebuilder:validation:MinLength=1
 // +kubebuilder:validation:MaxLength=256
 // +kubebuilder:validation:XValidation:rule="self.matches('^/[a-zA-Z0-9/._-]+$')",message="path must be absolute and contain only alphanumeric characters, '/', '.', '_', and '-'"
 // +kubebuilder:validation:XValidation:rule="!self.contains('//')",message="path must not contain consecutive forward slashes"
+// +kubebuilder:validation:XValidation:rule="self.split('/').filter(s, s == '..').size() == 0",message="path must not contain '..' components"
 type StorePath string
 
 // AdditionalLayerStore defines a read-only storage location for Open Container Initiative (OCI) container image layers.
@@ -1050,7 +1052,7 @@ type AdditionalLayerStore struct {
 	// retrieving from the registry.
 	// The path is required and must be between 1 and 256 characters long, begin with a forward slash,
 	// and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'.
-	// Consecutive forward slashes are not permitted.
+	// Consecutive forward slashes and '..' directory traversal components are not permitted.
 	// +required
 	Path StorePath `json:"path,omitempty"`
 }
@@ -1063,7 +1065,7 @@ type AdditionalImageStore struct {
 	// retrieving from the registry.
 	// The path is required and must be between 1 and 256 characters long, begin with a forward slash,
 	// and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'.
-	// Consecutive forward slashes are not permitted.
+	// Consecutive forward slashes and '..' directory traversal components are not permitted.
 	// +required
 	Path StorePath `json:"path,omitempty"`
 }
@@ -1076,7 +1078,7 @@ type AdditionalArtifactStore struct {
 	// retrieving from the registry.
 	// The path is required and must be between 1 and 256 characters long, begin with a forward slash,
 	// and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'.
-	// Consecutive forward slashes are not permitted.
+	// Consecutive forward slashes and '..' directory traversal components are not permitted.
 	// +required
 	Path StorePath `json:"path,omitempty"`
 }
