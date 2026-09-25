@@ -1026,13 +1026,16 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		}
 		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 			hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
-			// If Azure or Kubevirt on Azure we get the SVC handling the LB.
-			// TODO(alberto): remove this hack when having proper traffic management for Azure.
+			// Azure or KubeVirt-on-Azure uses a dedicated kube-apiserverlb service.
 			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 			port = config.KASSVCLBAzurePort
 		}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			return fmt.Errorf("failed to get kube apiserver service: %w", err)
+		}
+		// If the Service has a dedicated PIP (new clusters), use standard port 6443.
+		if _, hasPIP := svc.Annotations[hyperazureutil.PIPNameAnnotation]; hasPIP {
+			port = config.KASSVCPort
 		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
 			msg, err := k8sutil.CollectLBMessageIfNotProvisioned(svc, events.NewMessageCollector(ctx, r.Client))

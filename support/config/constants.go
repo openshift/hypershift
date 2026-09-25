@@ -29,9 +29,12 @@ const (
 	DefaultAdvertiseIPv6Address  = "fd00::1"
 	DefaultEtcdURL               = "https://etcd-client:2379"
 	EtcdClientPort               = 2379
-	// KASSVCLBAzurePort is needed because for Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
+	// KASSVCLBAzurePort was the port used for Azure KAS LB Services when port 6443
+	// collided with the management cluster's KAS on the shared LB frontend.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
-	// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
+	// Deprecated: Public LB Services now use a dedicated Azure Public IP (azure-pip-name
+	// annotation) with standard port 6443. This constant is still used for the private
+	// (ILB) path until a dedicated ILB frontend is implemented.
 	KASSVCLBAzurePort           = 7443
 	KASSVCPort                  = 6443
 	KASPodDefaultPort           = 6443

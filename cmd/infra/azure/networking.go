@@ -354,6 +354,66 @@ func (n *NetworkManager) CreatePublicIPAddressForLB(ctx context.Context, resourc
 	return result, nil
 }
 
+// CreatePublicIPAddressForKAS creates a dedicated Azure Public IP for the hosted
+// cluster's kube-apiserver LoadBalancer frontend. This allows the KAS Service to
+// use the standard port 6443 without colliding with the management cluster's KAS,
+// which also uses 6443 on the default LB frontend. The PIP name follows the
+// convention "{infraID}-kas-pip" to match the annotation set in ReconcileService.
+func (n *NetworkManager) CreatePublicIPAddressForKAS(ctx context.Context, resourceGroupName string, infraID string, location string) (*armnetwork.PublicIPAddress, error) {
+	log := ctrl.LoggerFrom(ctx)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	publicIPAddressClient, err := armnetwork.NewPublicIPAddressesClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create public IP address client, %w", err)
+	}
+
+	// Use "{infraID}-kas-pip" naming convention, matching the annotation in ReconcileService.
+	pipName := infraID + "-kas-pip"
+	publicIPAddress := NewPublicIPAddress(pipName, location)
+
+	backoff := wait.Backoff{
+		Steps:    5,
+		Duration: 5 * time.Second,
+		Factor:   2.0,
+		Jitter:   0.1,
+	}
+
+	var result *armnetwork.PublicIPAddress
+	err = retry.OnError(backoff, isAzureConflictError, func() error {
+		pollerResp, err := publicIPAddressClient.BeginCreateOrUpdate(
+			ctx,
+			resourceGroupName,
+			pipName,
+			publicIPAddress,
+			nil,
+		)
+		if err != nil {
+			if isAzureConflictError(err) {
+				log.Info("Transient error creating KAS public IP address, will retry", "error", err)
+			}
+			return err
+		}
+
+		resp, err := pollerResp.PollUntilDone(ctx, nil)
+		if err != nil {
+			if isAzureConflictError(err) {
+				log.Info("Transient error waiting for KAS public IP address creation, will retry", "error", err)
+			}
+			return err
+		}
+		result = &resp.PublicIPAddress
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create KAS public IP address: %w", err)
+	}
+	log.Info("Created dedicated KAS public IP", "name", pipName)
+	return result, nil
+}
+
 // newFrontendIPConfiguration creates a frontend IP configuration for a load balancer.
 // The frontend configuration defines the public-facing IP address that clients connect to.
 // It uses dynamic private IP allocation and associates with the provided public IP address.
