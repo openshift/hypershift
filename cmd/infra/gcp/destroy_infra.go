@@ -68,7 +68,7 @@ func (o *DestroyInfraOptions) Validate() error {
 
 // Run executes the infrastructure destruction
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
-	logger.Info("Destroying GCP infrastructure", "projectID", o.ProjectID, "region", o.Region, "infraID", o.InfraID)
+	logger.Info("Destroying GCP infrastructure")
 
 	// Initialize network manager
 	networkManager, err := NewNetworkManager(ctx, o.ProjectID, o.InfraID, o.Region, logger)
