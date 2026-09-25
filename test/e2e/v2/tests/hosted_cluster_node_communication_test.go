@@ -111,7 +111,7 @@ func EnsureGCPWorkerFirewallTest(getTestCtx internal.TestContextGetter) {
 			getTestCtx().SkipIfNotPlatform(hyperv1.GCPPlatform)
 		})
 
-		It("should reconcile the worker firewall rule and allow cross-node worker traffic", Label("gcp-worker-firewall"), func() {
+		It("should reconcile the worker firewall rule and allow cross-node worker traffic", Label("lifecycle", "gcp-worker-firewall"), func() {
 			tc := getTestCtx()
 
 			hc, err := tc.GetHostedCluster()
