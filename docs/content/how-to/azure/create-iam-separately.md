@@ -127,6 +127,29 @@ Running this command creates:
     - Control Plane Operator
 * Federated Identity Credentials for each identity, configured with the OIDC issuer
 
+### Disabling the Image Registry Capability
+
+When the hosted cluster disables the `ImageRegistry` capability, omit its Azure identity and
+federated credentials by passing the same capability flag to each creation step:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --disable-cluster-capabilities ImageRegistry
+```
+
+The output omits `imageRegistry`, and HyperShift does not create its managed identity or
+federated credentials. Also pass `--disable-cluster-capabilities ImageRegistry` to
+`create infra azure` so registry RBAC assignments are skipped, and to `create cluster azure`
+so the HostedCluster declares the capability disabled. If the capability is enabled,
+`workloadIdentities.imageRegistry` is required by HostedCluster admission.
+
 ### Enabling KMS Identity
 
 To also create a KMS identity for Azure Key Vault etcd encryption at rest, add the `--enable-kms` flag:
@@ -285,6 +308,7 @@ Both the managed identities and their federated credentials are removed.
 | `--location` | Azure region for identities | `eastus` |
 | `--cloud` | Azure cloud environment | `AzurePublicCloud` |
 | `--enable-kms` | Create KMS identity for etcd encryption | `false` |
+| `--disable-cluster-capabilities` | Omit identities for disabled capabilities, such as `ImageRegistry` | None |
 
 ### Required Flags for `destroy iam azure`
 
