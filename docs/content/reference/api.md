@@ -706,7 +706,6 @@ changed.</p>
 This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
--kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -9976,7 +9975,6 @@ changed.</p>
 This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
--kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;</p>
 </td>
 </tr>
 <tr>

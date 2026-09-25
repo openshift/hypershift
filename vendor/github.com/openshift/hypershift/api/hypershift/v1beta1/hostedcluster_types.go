@@ -527,11 +527,11 @@ type Capabilities struct {
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
-// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
-// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'APIServer')",message="Services list must contain an APIServer service"
-// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'OAuthServer')",message="Services list must contain an OAuthServer service"
-// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'Konnectivity')",message="Services list must contain a Konnectivity service"
-// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' || self.services.exists(s, s.service == 'Ignition')",message="Services list must contain an Ignition service"
+// + optionalOldSelf grandfathers legacy objects. CRD ratcheting does not apply to these spec-level rules when a sibling field such as release.image changes.
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'APIServer') || (oldSelf.hasValue() && !oldSelf.value().services.exists(s, s.service == 'APIServer'))",message="Services list must contain an APIServer service",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'OAuthServer') || (oldSelf.hasValue() && !oldSelf.value().services.exists(s, s.service == 'OAuthServer'))",message="Services list must contain an OAuthServer service",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'Konnectivity') || (oldSelf.hasValue() && !oldSelf.value().services.exists(s, s.service == 'Konnectivity'))",message="Services list must contain a Konnectivity service",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' || self.services.exists(s, s.service == 'Ignition') || (oldSelf.hasValue() && !(oldSelf.value().platform.type == 'IBMCloud' || oldSelf.value().services.exists(s, s.service == 'Ignition')))",message="Services list must contain an Ignition service",optionalOldSelf=true
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route")`,message="Azure managed platform (ARO HCP) requires OAuthServer to use Route"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") != "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && (s.servicePublishingStrategy.type == "Route" || s.servicePublishingStrategy.type == "LoadBalancer"))`,message="Self-managed Azure requires OAuthServer to use Route or LoadBalancer"

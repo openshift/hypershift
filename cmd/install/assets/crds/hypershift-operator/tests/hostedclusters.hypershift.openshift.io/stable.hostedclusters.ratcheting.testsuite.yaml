@@ -214,10 +214,12 @@ tests:
 
   - name: When updating release image on a legacy HostedCluster without Ignition it should pass
     initialCRDPatches:
-      # Remove required-types CEL so the initial object can be created without Ignition
-      # (pre-OCPBUGS-126614 schema). Index 1 is the spec-level services required-types rule.
+      # Drop the Ignition required-type rule so a pre-existing HostedCluster
+      # without Ignition can be created. After the CRD is restored, updating
+      # release.image must ratchet. Spec-level order is 0 APIServer, 1 OAuthServer,
+      # 2 Konnectivity, 3 Ignition.
       - op: remove
-        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/1
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/3
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
@@ -341,10 +343,12 @@ tests:
 
   - name: When updating release image on a legacy IBMCloud HostedCluster without Konnectivity it should pass
     initialCRDPatches:
-      # Remove required-types CEL so the initial object can be created without Konnectivity.
-      # Index 1 is the spec-level services required-types rule.
+      # Drop the Konnectivity required-type rule so a pre-existing IBMCloud
+      # HostedCluster without Konnectivity can be created. After the CRD is
+      # restored, updating release.image must ratchet. Index 2 is Konnectivity
+      # (0 APIServer, 1 OAuthServer, 2 Konnectivity, 3 Ignition).
       - op: remove
-        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/1
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/2
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster

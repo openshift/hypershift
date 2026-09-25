@@ -7113,14 +7113,22 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: Services list must contain an APIServer service
-              rule: self.services.exists(s, s.service == 'APIServer')
+              optionalOldSelf: true
+              rule: self.services.exists(s, s.service == 'APIServer') || (oldSelf.hasValue()
+                && !oldSelf.value().services.exists(s, s.service == 'APIServer'))
             - message: Services list must contain an OAuthServer service
-              rule: self.services.exists(s, s.service == 'OAuthServer')
+              optionalOldSelf: true
+              rule: self.services.exists(s, s.service == 'OAuthServer') || (oldSelf.hasValue()
+                && !oldSelf.value().services.exists(s, s.service == 'OAuthServer'))
             - message: Services list must contain a Konnectivity service
-              rule: self.services.exists(s, s.service == 'Konnectivity')
+              optionalOldSelf: true
+              rule: self.services.exists(s, s.service == 'Konnectivity') || (oldSelf.hasValue()
+                && !oldSelf.value().services.exists(s, s.service == 'Konnectivity'))
             - message: Services list must contain an Ignition service
+              optionalOldSelf: true
               rule: self.platform.type == 'IBMCloud' || self.services.exists(s, s.service
-                == 'Ignition')
+                == 'Ignition') || (oldSelf.hasValue() && !(oldSelf.value().platform.type
+                == 'IBMCloud' || oldSelf.value().services.exists(s, s.service == 'Ignition')))
             - message: disableMultiNetwork can only be set to true when networkType
                 is 'Other'
               rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)
