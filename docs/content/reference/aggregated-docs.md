@@ -10065,6 +10065,29 @@ Running this command creates:
     - Control Plane Operator
 * Federated Identity Credentials for each identity, configured with the OIDC issuer
 
+### Disabling the Image Registry Capability
+
+When the hosted cluster disables the `ImageRegistry` capability, omit its Azure identity and
+federated credentials by passing the same capability flag to each creation step:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --disable-cluster-capabilities ImageRegistry
+```
+
+The output omits `imageRegistry`, and HyperShift does not create its managed identity or
+federated credentials. Also pass `--disable-cluster-capabilities ImageRegistry` to
+`create infra azure` so registry RBAC assignments are skipped, and to `create cluster azure`
+so the HostedCluster declares the capability disabled. If the capability is enabled,
+`workloadIdentities.imageRegistry` is required by HostedCluster admission.
+
 ### Enabling KMS Identity
 
 To also create a KMS identity for Azure Key Vault etcd encryption at rest, add the `--enable-kms` flag:
@@ -10223,6 +10246,7 @@ Both the managed identities and their federated credentials are removed.
 | `--location` | Azure region for identities | `eastus` |
 | `--cloud` | Azure cloud environment | `AzurePublicCloud` |
 | `--enable-kms` | Create KMS identity for etcd encryption | `false` |
+| `--disable-cluster-capabilities` | Omit identities for disabled capabilities, such as `ImageRegistry` | None |
 
 ### Required Flags for `destroy iam azure`
 
@@ -10466,6 +10490,14 @@ where:
 
 * `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
 * `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
+
+When `ImageRegistry` is disabled, also pass `--disable-cluster-capabilities ImageRegistry`.
+This skips registry role assignment for self-managed workload identities and for both the
+control-plane and data-plane identities used by managed Azure. Only when the capability is
+disabled, the file passed to `--workload-identities-file` may omit its top-level `imageRegistry`
+key, the file passed to `--managed-identities-file` may omit its top-level `imageRegistry` key,
+and the file passed to `--data-plane-identities-file` may omit its top-level
+`imageRegistryMSIClientID` key.
 
 ## Creating Infrastructure for Private Clusters
 
@@ -46408,7 +46440,7 @@ needing to authenticate with Azure&rsquo;s API.</p>
 <tbody>
 <tr>
 <td>
-<code>imageRegistry</code></br>
+<code>imageRegistry,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
 WorkloadIdentity
@@ -46416,8 +46448,10 @@ WorkloadIdentity
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>imageRegistry is the client ID of a federated managed identity, associated with cluster-image-registry-operator, used in
-workload identity authentication.</p>
+workload identity authentication.
+This field is required when the ImageRegistry capability is enabled.</p>
 </td>
 </tr>
 <tr>
@@ -48175,7 +48209,7 @@ ManagedIdentity
 </tr>
 <tr>
 <td>
-<code>imageRegistry</code></br>
+<code>imageRegistry,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
 ManagedIdentity
@@ -48184,7 +48218,8 @@ ManagedIdentity
 </td>
 <td>
 <em>(Optional)</em>
-<p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.</p>
+<p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
+This field is required when the ImageRegistry capability is enabled.</p>
 </td>
 </tr>
 <tr>
@@ -48565,8 +48600,9 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
-registry controller.</p>
+registry controller. This field is required when the ImageRegistry capability is enabled.</p>
 </td>
 </tr>
 <tr>
@@ -64271,6 +64307,10 @@ The control plane identities are provided in a JSON file with the following form
 }
 ```
 
+The control-plane `imageRegistry` identity and data-plane `imageRegistryMSIClientID` are
+required when the `ImageRegistry` capability is enabled. When it is disabled, both fields may
+be omitted and HyperShift skips their Azure role assignments and runtime registry resources.
+
 ### Data Plane Identities
 
 Data plane identities are Azure managed identities with federated credentials for components running on worker nodes. Each managed identity is assigned an Azure built-in role that grants the specific permissions required by that component:
@@ -64584,7 +64624,7 @@ ccoctl azure create-oidc-issuer \
 
 ### Workload Identities
 
-Self-managed Azure requires 7 managed identities with federated credentials for OpenShift components:
+By default, `hypershift create iam azure` creates 8 managed identities with federated credentials for OpenShift components:
 
 | Identity | Operator | Service Accounts | Azure Role |
 |----------|----------|------------------|------------|
@@ -64595,6 +64635,14 @@ Self-managed Azure requires 7 managed identities with federated credentials for 
 | **Cloud Provider** | Azure Cloud Provider | `azure-cloud-provider` | Cloud Provider Role (`a1f96423-95ce-4224-ab27-4e3dc72facd4`) |
 | **Node Pool Management** | Cluster API Provider Azure | `capi-provider` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
 | **Network** | Cloud Network Config Controller | `cloud-network-config-controller` | Network Role (`be7a6435-15ae-4171-8f30-4a343eff9e8f`) |
+| **Control Plane Operator** | Control Plane Operator | `control-plane-operator` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
+
+The Image Registry identity is conditional. When the HostedCluster disables the
+`ImageRegistry` capability, `hypershift create iam azure --disable-cluster-capabilities ImageRegistry`
+creates 7 identities by omitting that managed identity and its federated credentials. Use the same
+flag with the infra and cluster creation commands so RBAC assignment and admission requirements
+remain aligned. The Control Plane Operator identity is always created; public clusters do not use
+it, but private clusters use it for Azure Private Link Service operations.
 
 Each identity is configured with:
 
@@ -64746,7 +64794,7 @@ Self-managed Azure deployments use multiple resource groups with different lifec
 ```
 Persistent Resource Group (e.g., os4-common)
 ├── OIDC Issuer Storage Account
-├── Workload Identities (7 managed identities)
+├── Workload Identities (8 by default; 7 when ImageRegistry is disabled)
 ├── Federated Identity Credentials
 └── DNS Zones (optional, for External DNS)
 ```

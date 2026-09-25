@@ -304,6 +304,10 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 		// Create credentials for each control plane operator using workload identity client IDs
 		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
+		imageRegistryClientID := ""
+		if workloadIdentities.ImageRegistry.ClientID != "" {
+			imageRegistryClientID = string(workloadIdentities.ImageRegistry.ClientID)
+		}
 
 		// Define credential configurations for the utility function
 		// NOTE: CSI driver credentials (disk/file) are managed by control-plane-operator, not here
@@ -320,7 +324,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 			{
 				Name:              "image-registry",
 				ManifestFunc:      func() *corev1.Secret { return manifests.AzureImageRegistryCredentials(controlPlaneNamespace) },
-				ClientID:          string(workloadIdentities.ImageRegistry.ClientID),
+				ClientID:          imageRegistryClientID,
 				CapabilityChecker: capabilities.IsImageRegistryCapabilityEnabled,
 				ErrorContext:      "image registry credentials",
 			},

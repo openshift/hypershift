@@ -49,17 +49,18 @@ type CreateInfraOutput struct {
 
 // CreateIAMOptions holds options for creating Azure IAM resources (managed identities and federated credentials)
 type CreateIAMOptions struct {
-	Name              string
-	Location          string
-	InfraID           string
-	CredentialsFile   string
-	Credentials       *util.AzureCreds
-	ResourceGroupName string
-	OIDCIssuerURL     string
-	OutputFile        string
-	Cloud             string
-	EnableKMS         bool
-	EnableKarpenter   bool
+	Name                       string
+	Location                   string
+	InfraID                    string
+	CredentialsFile            string
+	Credentials                *util.AzureCreds
+	ResourceGroupName          string
+	OIDCIssuerURL              string
+	OutputFile                 string
+	Cloud                      string
+	EnableKMS                  bool
+	EnableKarpenter            bool
+	DisableClusterCapabilities []string
 }
 
 // DestroyIAMOptions holds options for destroying Azure IAM resources

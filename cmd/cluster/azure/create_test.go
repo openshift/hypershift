@@ -178,7 +178,14 @@ func setupAzureTestFixtures(t *testing.T) (credentialsFile, infraFile, pullSecre
 		BootImageID:       "fakeBootImageID",
 		InfraID:           "fakeInfraID",
 		SecurityGroupID:   "fakeSecurityGroupID",
-		ControlPlaneMIs:   &hyperv1.AzureResourceManagedIdentities{},
+		ControlPlaneMIs: &hyperv1.AzureResourceManagedIdentities{
+			ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+				ImageRegistry: hyperv1.ManagedIdentity{ObjectEncoding: ObjectEncoding},
+			},
+		},
+		DataPlaneIdentities: hyperv1.DataPlaneManagedIdentities{
+			ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789012",
+		},
 		KarpenterClientID: "12345678-1234-1234-1234-123456789012",
 	})
 	if err != nil {
@@ -278,6 +285,34 @@ func TestCreateCluster(t *testing.T) {
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
+	selfManagedInfra, err := json.Marshal(&azureinfra.CreateInfraOutput{
+		BaseDomain:        "fakeBaseDomain",
+		PublicZoneID:      "fakePublicZoneID",
+		PrivateZoneID:     "fakePrivateZoneID",
+		Location:          "fakeLocation",
+		ResourceGroupName: "fakeResourceGroupName",
+		VNetID:            "fakeVNetID",
+		SubnetID:          "fakeSubnetID",
+		BootImageID:       "fakeBootImageID",
+		InfraID:           "fakeInfraID",
+		SecurityGroupID:   "fakeSecurityGroupID",
+		WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+			Ingress:              hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000001"},
+			File:                 hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000002"},
+			Disk:                 hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000003"},
+			NodePoolManagement:   hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000004"},
+			CloudProvider:        hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000005"},
+			Network:              hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000006"},
+			ControlPlaneOperator: hyperv1.WorkloadIdentity{ClientID: "00000000-0000-0000-0000-000000000007"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal self-managed infra: %v", err)
+	}
+	selfManagedInfraFile := filepath.Join(tempDir, "self-managed-infra.json")
+	if err := os.WriteFile(selfManagedInfraFile, selfManagedInfra, 0600); err != nil {
+		t.Fatalf("failed to write self-managed infra: %v", err)
+	}
 
 	for _, testCase := range []struct {
 		name string
@@ -465,6 +500,18 @@ func TestCreateCluster(t *testing.T) {
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--auto-node",
+			},
+		},
+		{
+			name: "When self-managed Azure disables ImageRegistry, it should omit the workload identity",
+			args: []string{
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + selfManagedInfraFile,
+				"--render-sensitive",
+				"--oidc-issuer-url=https://issuer.example.com",
+				"--disable-cluster-capabilities=ImageRegistry",
 			},
 		},
 	} {

@@ -7418,8 +7418,9 @@ spec:
                                     - objectEncoding
                                     type: object
                                   imageRegistry:
-                                    description: imageRegistry is a pre-existing managed
-                                      identity associated with the cluster-image-registry-operator.
+                                    description: |-
+                                      imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
+                                      This field is required when the ImageRegistry capability is enabled.
                                     properties:
                                       clientID:
                                         description: |-
@@ -7680,13 +7681,13 @@ spec:
                                   imageRegistryMSIClientID:
                                     description: |-
                                       imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
-                                      registry controller.
+                                      registry controller. This field is required when the ImageRegistry capability is enabled.
                                     maxLength: 255
+                                    minLength: 1
                                     type: string
                                 required:
                                 - diskMSIClientID
                                 - fileMSIClientID
-                                - imageRegistryMSIClientID
                                 type: object
                             required:
                             - controlPlane
@@ -7788,6 +7789,7 @@ spec:
                                 description: |-
                                   imageRegistry is the client ID of a federated managed identity, associated with cluster-image-registry-operator, used in
                                   workload identity authentication.
+                                  This field is required when the ImageRegistry capability is enabled.
                                 properties:
                                   clientID:
                                     description: clientID is client ID of a federated
@@ -7872,7 +7874,6 @@ spec:
                             - cloudProvider
                             - disk
                             - file
-                            - imageRegistry
                             - ingress
                             - network
                             - nodePoolManagement
@@ -10404,6 +10405,24 @@ spec:
                 strategy
               rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
                 == "Ignition" && s.servicePublishingStrategy.type == "Route") : true'
+            - message: Azure managedIdentities.controlPlane.imageRegistry is required
+                when the ImageRegistry capability is enabled
+              rule: self.platform.type != "Azure" || (has(self.capabilities) && has(self.capabilities.disabled)
+                && self.capabilities.disabled.exists(c, c == "ImageRegistry")) ||
+                self.platform.azure.azureAuthenticationConfig.azureAuthenticationConfigType
+                != "ManagedIdentities" || has(self.platform.azure.azureAuthenticationConfig.managedIdentities.controlPlane.imageRegistry)
+            - message: Azure managedIdentities.dataPlane.imageRegistryMSIClientID
+                is required when the ImageRegistry capability is enabled
+              rule: self.platform.type != "Azure" || (has(self.capabilities) && has(self.capabilities.disabled)
+                && self.capabilities.disabled.exists(c, c == "ImageRegistry")) ||
+                self.platform.azure.azureAuthenticationConfig.azureAuthenticationConfigType
+                != "ManagedIdentities" || has(self.platform.azure.azureAuthenticationConfig.managedIdentities.dataPlane.imageRegistryMSIClientID)
+            - message: Azure workloadIdentities.imageRegistry is required when the
+                ImageRegistry capability is enabled
+              rule: self.platform.type != "Azure" || (has(self.capabilities) && has(self.capabilities.disabled)
+                && self.capabilities.disabled.exists(c, c == "ImageRegistry")) ||
+                self.platform.azure.azureAuthenticationConfig.azureAuthenticationConfigType
+                != "WorkloadIdentities" || has(self.platform.azure.azureAuthenticationConfig.workloadIdentities.imageRegistry)
             - message: If serviceAccountSigningKey is set, issuerURL must be set
               rule: has(self.issuerURL) || !has(self.serviceAccountSigningKey)
             - message: APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]
