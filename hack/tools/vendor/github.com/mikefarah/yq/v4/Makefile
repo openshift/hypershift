@@ -35,13 +35,14 @@ clean:
 ## prefix before other make targets to run in your local dev environment
 local: | quiet
 	@$(eval ENGINERUN= )
+	@$(eval GOFLAGS="$(GOFLAGS)" )
 	@mkdir -p tmp
 	@touch tmp/dev_image_id
 quiet: # this is silly but shuts up 'Nothing to be done for `local`'
 	@:
 
 prepare: tmp/dev_image_id
-tmp/dev_image_id: Dockerfile.dev scripts/devtools.sh
+tmp/dev_image_id: Dockerfile.dev scripts/devtools.sh _typos.toml
 	@mkdir -p tmp
 	@${ENGINE} rmi -f ${DEV_IMAGE} > /dev/null 2>&1 || true
 	@${ENGINE} build -t ${DEV_IMAGE} -f Dockerfile.dev .
