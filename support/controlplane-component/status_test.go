@@ -32,6 +32,7 @@ func TestReconcileComponentStatus(t *testing.T) {
 	testCases := []struct {
 		name                    string
 		deployment              *appsv1.Deployment
+		unmetPreconditions      []Precondition
 		unavailableDependencies []string
 		reconciliationError     error
 		expectedConditions      []metav1.Condition
@@ -184,6 +185,189 @@ func TestReconcileComponentStatus(t *testing.T) {
 			},
 			expectedVersion: "",
 		},
+		{
+			name: "should block rollout with precondition message when precondition is unmet",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 3,
+					ReadyReplicas:     3,
+					Replicas:          3,
+					UpdatedReplicas:   3,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			unmetPreconditions: []Precondition{
+				{
+					ConditionType: hyperv1.ConfigOperatorReconciliationSucceeded,
+					Context:       "initialKMSKeyARN is configured",
+				},
+			},
+			reconciliationError: nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.WaitingForPreconditionsReason,
+					Message: "Waiting for HCP conditions: ConfigOperatorReconciliationSucceeded (initialKMSKeyARN is configured)",
+				},
+			},
+			expectedVersion: "",
+		},
+		{
+			name: "should omit context from precondition message when context is empty",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 3,
+					ReadyReplicas:     3,
+					Replicas:          3,
+					UpdatedReplicas:   3,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			unmetPreconditions: []Precondition{
+				{
+					ConditionType: hyperv1.ConfigOperatorReconciliationSucceeded,
+				},
+			},
+			reconciliationError: nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.WaitingForPreconditionsReason,
+					Message: "Waiting for HCP conditions: ConfigOperatorReconciliationSucceeded",
+				},
+			},
+			expectedVersion: "",
+		},
+		{
+			name: "precondition takes priority over unavailable dependency in message",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 3,
+					ReadyReplicas:     3,
+					Replicas:          3,
+					UpdatedReplicas:   3,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			unmetPreconditions: []Precondition{
+				{
+					ConditionType: hyperv1.ConfigOperatorReconciliationSucceeded,
+					Context:       "initialKMSKeyARN is configured",
+				},
+			},
+			unavailableDependencies: []string{"some-dependency"},
+			reconciliationError:     nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.WaitingForPreconditionsReason,
+					Message: "Waiting for HCP conditions: ConfigOperatorReconciliationSucceeded (initialKMSKeyARN is configured)",
+				},
+			},
+			expectedVersion: "",
+		},
+		{
+			name: "should join all unmet preconditions in the message",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 3,
+					ReadyReplicas:     3,
+					Replicas:          3,
+					UpdatedReplicas:   3,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			unmetPreconditions: []Precondition{
+				{
+					ConditionType: hyperv1.ConfigOperatorReconciliationSucceeded,
+					Context:       "initialKMSKeyARN is configured",
+				},
+				{
+					ConditionType: hyperv1.EtcdSnapshotRestored,
+				},
+			},
+			reconciliationError: nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.WaitingForPreconditionsReason,
+					Message: "Waiting for HCP conditions: ConfigOperatorReconciliationSucceeded (initialKMSKeyARN is configured), EtcdSnapshotRestored",
+				},
+			},
+			expectedVersion: "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -220,7 +404,7 @@ func TestReconcileComponentStatus(t *testing.T) {
 			}
 
 			// Run reconcileComponentStatus
-			err := workload.reconcileComponentStatus(cpContext, componentStatus, tc.unavailableDependencies, tc.reconciliationError)
+			err := workload.reconcileComponentStatus(cpContext, componentStatus, tc.unmetPreconditions, tc.unavailableDependencies, tc.reconciliationError)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			// Check conditions

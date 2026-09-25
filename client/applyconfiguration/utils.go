@@ -87,6 +87,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSCloudProviderConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSClusterResourceTag"):
 		return &hypershiftv1beta1.AWSClusterResourceTagApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSCSIDriverConfig"):
+		return &hypershiftv1beta1.AWSCSIDriverConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
 		return &hypershiftv1beta1.AWSKMSAuthSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSKeyEntry"):
@@ -179,6 +181,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ControlPlaneVersionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CPUOptions"):
 		return &hypershiftv1beta1.CPUOptionsApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CSIDriverOperatorConfig"):
+		return &hypershiftv1beta1.CSIDriverOperatorConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
 		return &hypershiftv1beta1.DataPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):

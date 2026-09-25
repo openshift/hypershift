@@ -1684,11 +1684,9 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
-		desiredCaps := capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities)
-		desiredCaps = capabilities.FilterByKnownCapabilities(desiredCaps, clusterVersion.Status.Capabilities.KnownCapabilities)
 		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-			AdditionalEnabledCapabilities: desiredCaps,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
 		}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel
@@ -3518,6 +3516,16 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		driver := manifests.ClusterCSIDriver(driverName)
 		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
+			// For AWS EBS, apply the set-once storage driver config guard.
+			// This uses CreationTimestamp to detect first-pass (create) vs update
+			// and writes the KMS key only on create if configured.
+			if driverName == operatorv1.AWSEBSCSIDriver {
+				kmsKeyARN := ""
+				if hcp.Spec.OperatorConfiguration != nil {
+					kmsKeyARN = hcp.Spec.OperatorConfiguration.CSIDriverConfig.AWS.InitialKMSKeyARN
+				}
+				storage.ReconcileClusterCSIDriverKMSKey(driver, kmsKeyARN)
+			}
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile ClusterCSIDriver %s: %w", driver.Name, err))

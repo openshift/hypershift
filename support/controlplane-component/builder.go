@@ -118,6 +118,16 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts Ser
 	return b
 }
 
+// WithPreconditions gates component reconciliation on the specified HCP conditions.
+// The component will not create its workload or report RolloutComplete=True until
+// all listed conditions are True on the HostedControlPlane. Use this when a
+// component depends on cluster-level state (an HCP condition) rather than another
+// component's operand readiness.
+func (b *controlPlaneWorkloadBuilder[T]) WithPreconditions(preconditions ...Precondition) *controlPlaneWorkloadBuilder[T] {
+	b.workload.preconditions = append(b.workload.preconditions, preconditions...)
+	return b
+}
+
 // WithCustomOperandsRolloutCheckFunc allows to set a custom function to check the rollout status of operands.
 // This function should return true if the operands are ready, false otherwise.
 // TODO: This is a temporary solution, should be replaced by MonitorOperandsRolloutStatus() once we enforce a common label/annotation on all operands to provide more generic rollout check.

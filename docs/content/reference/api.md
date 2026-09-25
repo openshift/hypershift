@@ -1544,6 +1544,51 @@ If the platform does not support LoadBalancerSourceRanges, this field may have n
 </tr>
 </tbody>
 </table>
+###AWSCSIDriverConfig { #hypershift.openshift.io/v1beta1.AWSCSIDriverConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorConfig">CSIDriverOperatorConfig</a>)
+</p>
+<p>
+<p>AWSCSIDriverConfig specifies configuration for the AWS EBS CSI driver.
+Once initialKMSKeyARN is set, it cannot be removed from this struct.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>initialKMSKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+created by the default StorageClass. When set, new PersistentVolumes
+provisioned by the default StorageClass are encrypted with this key
+instead of the AWS account&rsquo;s default EBS encryption key.</p>
+<p>When omitted, no KMS encryption is configured on the default StorageClass.
+EBS volumes use the AWS account&rsquo;s default encryption settings.</p>
+<p>The value may be either the ARN or Alias ARN of a KMS key in the format:
+arn:<partition>:kms:<region>:<account-id>:(key|alias)/<resource-id></p>
+<p>When set, must be between 1 and 2048 characters.</p>
+<p>This field is applied at cluster creation time only and is immutable
+once set. Day-2 changes to storage encryption should be made directly
+on the ClusterCSIDriver resource in the guest cluster.</p>
+<p>The StorageARN role in AWSRolesRef must have kms:Decrypt,
+kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+permissions on the specified key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSCloudProviderConfig { #hypershift.openshift.io/v1beta1.AWSCloudProviderConfig }
 <p>
 (<em>Appears on:</em>
@@ -5346,6 +5391,43 @@ NestedVirtualizationPolicy
 <p>nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
 Supported on C8i, M8i, and R8i instance families.
 When omitted, nested virtualization is not enabled (AWS default behavior).</p>
+</td>
+</tr>
+</tbody>
+</table>
+###CSIDriverOperatorConfig { #hypershift.openshift.io/v1beta1.CSIDriverOperatorConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>CSIDriverOperatorConfig specifies configuration for the CSI driver operator
+in the hosted cluster. Platform-specific configuration is nested inside
+the operator&rsquo;s config, following the ingress operator pattern where
+platform branching is inside the operator&rsquo;s own struct.
+Once the aws field is set, it cannot be removed.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSCSIDriverConfig">
+AWSCSIDriverConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws specifies configuration for the AWS EBS CSI driver operator.
+Once set, this field cannot be removed.</p>
 </td>
 </tr>
 </tbody>
@@ -16139,7 +16221,8 @@ This value must be a valid IPv4 or IPv6 address.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>OperatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+<p>OperatorConfiguration specifies configuration for individual OCP operators in the cluster.
+Once the csiDriverConfig field is set, it cannot be removed.</p>
 </p>
 <table>
 <thead>
@@ -16336,6 +16419,23 @@ Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
 The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>csiDriverConfig,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorConfig">
+CSIDriverOperatorConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>csiDriverConfig specifies configuration for the CSI driver operator in the hosted cluster.
+This allows configuring platform-specific CSI driver behavior such as KMS encryption
+for the default StorageClass.
+Once set, this field cannot be removed.</p>
 </td>
 </tr>
 </tbody>
