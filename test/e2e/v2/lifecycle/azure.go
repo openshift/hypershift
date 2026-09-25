@@ -115,7 +115,7 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 	return "hcp-sm-azure.azure.devcluster.openshift.com"
 }
 
-func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+func (a *AzurePlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Image string) []ClusterSpec {
 	destroyArgs := []string{
 		"--azure-creds=" + a.creds,
 		"--location=" + a.location,

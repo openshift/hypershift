@@ -43,7 +43,7 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 		creds:     "/etc/hypershift-ci-jobs-self-managed-azure/credentials.json",
 		location:  "centralus",
 		dnsZoneRG: "os4-common",
-	}).ClusterSpecs("release-image", "n1-image")
+	}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 	specsByVariant := make(map[string]ClusterSpec, len(specs))
 	for _, spec := range specs {
 		specsByVariant[spec.Variant] = spec
@@ -128,7 +128,7 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 func TestAzureOAuthLBPrivateCreateArgs(t *testing.T) {
 	t.Parallel()
 
-	specs := (&AzurePlatformConfig{}).ClusterSpecs("release-image", "n1-image")
+	specs := (&AzurePlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 	var spec *ClusterSpec
 	for i := range specs {
 		if specs[i].Variant == "oauth-lb-private" {

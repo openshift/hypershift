@@ -11,7 +11,11 @@ import (
 	"strings"
 	"time"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -60,7 +64,27 @@ func (a *AWSPlatformConfig) DefaultBaseDomain() string {
 	return "ci.hypershift.devcluster.openshift.com"
 }
 
-func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+// ClusterSpecs returns the AWS cluster variants to create for the e2e-v2 run,
+// one per test group.
+//
+// Arguments:
+//   - ctx:          used for cancellable setup I/O (e.g. resolving a KMS key alias to an ARN).
+//   - releaseImage: pullspec of the current release under test (a tag or digest
+//     reference such as quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64,
+//     not an OCP version string).
+//   - n1Image:      pullspec of the N-1 release used as the upgrade starting point.
+//
+// Variants:
+//   - public:           default target for non-lifecycle tests.
+//   - upgrade:          starts on n1Image, upgraded to releaseImage.
+//   - karpenter:        AutoNode/Karpenter node provisioning.
+//   - karpenter-upgrade: karpenter, starting on n1Image.
+//
+// Environment inputs:
+//   - EXTRA_ARGS:                       whitespace-split, appended to every variant.
+//   - HYPERSHIFT_STORAGE_KMS_KEY_ALIAS: resolved to an ARN and passed as
+//     --initial-storage-volumes-kms-key on the public variant (for the storage-kms test).
+func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Image string) []ClusterSpec {
 	baseDomain := envOrDefault("HYPERSHIFT_BASE_DOMAIN", a.DefaultBaseDomain())
 	destroyArgs := []string{
 		"--region=" + a.region,
@@ -91,14 +115,37 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		return slices.Concat(commonArgs, extraArgs, args)
 	}
 	oneInitialReplica := 1
+
+	// The storage-kms test runs on the public cluster and requires the cluster
+	// to be created with a KMS key. HYPERSHIFT_STORAGE_KMS_KEY_ALIAS carries a
+	// pre-provisioned CI KMS key alias (e.g. alias/hypershift-ci), resolved here
+	// to its ARN and passed to the create command. The variable is only wired on
+	// jobs whose release supports the --initial-storage-volumes-kms-key flag; when
+	// unset the flag is omitted and the storage-kms test skips itself (it gates on
+	// the running HostedCluster version via SkipIfVersionBelow).
+	publicArgs := []string{
+		"--public-only",
+		"--feature-set=TechPreviewNoUpgrade",
+	}
+	if alias := os.Getenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS"); alias != "" {
+		arn, err := a.resolveKMSKeyARN(ctx, alias)
+		if err != nil {
+			// The variable is set, so this job expects a KMS-encrypted cluster.
+			// Failing to resolve it would silently drop coverage (the cluster
+			// would be created without a key and the storage-kms test would
+			// skip), so die early. This runs before create-guests provisions
+			// anything, so nothing is left behind.
+			panic(fmt.Sprintf("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS is set but alias %q could not be resolved to an ARN: %v", alias, err))
+		}
+		log.Printf("Resolved storage KMS key alias %q to ARN %q", alias, arn)
+		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
+	}
+
 	return []ClusterSpec{
 		{
 			Variant:     "public",
 			DestroyArgs: destroyArgs,
-			CreateArgs: clusterArgs(
-				"--public-only",
-				"--feature-set=TechPreviewNoUpgrade",
-			),
+			CreateArgs:  clusterArgs(publicArgs...),
 		},
 		{
 			Variant:      "upgrade",
@@ -225,7 +272,7 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
 							"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
 							"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
-							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
+							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || storage-kms",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
@@ -302,4 +349,28 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {
 	setupExternalOIDCTestEnv(sharedDir)
+}
+
+// resolveKMSKeyARN resolves a KMS key alias (e.g. "alias/hypershift-ci") to its
+// full key ARN using DescribeKey. AWS credentials are sourced from the SDK default
+// credential chain (shared config/credentials files, environment variables, and
+// instance/role providers).
+func (a *AWSPlatformConfig) resolveKMSKeyARN(ctx context.Context, alias string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	awsConfig := awsutil.NewSession(ctx, "e2e-storage-kms", "", "", "", a.region)
+	retryer := awsutil.NewConfig()
+	kmsClient := kms.NewFromConfig(*awsConfig, func(o *kms.Options) {
+		o.Retryer = retryer()
+	})
+
+	out, err := kmsClient.DescribeKey(ctx, &kms.DescribeKeyInput{KeyId: aws.String(alias)})
+	if err != nil {
+		return "", fmt.Errorf("describing KMS key %q: %w", alias, err)
+	}
+	if out.KeyMetadata == nil || out.KeyMetadata.Arn == nil {
+		return "", fmt.Errorf("KMS key with alias %q has no ARN", alias)
+	}
+	return *out.KeyMetadata.Arn, nil
 }

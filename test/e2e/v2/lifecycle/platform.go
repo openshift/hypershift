@@ -170,9 +170,13 @@ type PlatformConfig interface {
 	DefaultBaseDomain() string
 
 	// ClusterSpecs returns the cluster variants this platform creates.
-	// The releaseImage and n1Image are the current and N-1 release
-	// images from the CI environment.
-	ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
+	//
+	// Arguments:
+	//   - ctx:          used for cancellable setup I/O (e.g. resolving a KMS key alias to an ARN).
+	//   - releaseImage: pullspec of the current release under test (a tag or digest
+	//     reference, not an OCP version string).
+	//   - n1Image:      pullspec of the N-1 release used as the upgrade starting point.
+	ClusterSpecs(ctx context.Context, releaseImage, n1Image string) []ClusterSpec
 
 	// PreCreate runs platform-specific setup before clusters are
 	// created (e.g., deploying OIDC providers that must be ready

@@ -11,7 +11,7 @@ import (
 func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 	t.Run("When AWS cluster specs are built, it should omit Azure dump credentials for every variant", func(t *testing.T) {
 		g := NewWithT(t)
-		specs := (&AWSPlatformConfig{}).ClusterSpecs("release-image", "n1-image")
+		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 		g.Expect(specs).NotTo(BeEmpty())
 		for _, spec := range specs {
 			g.Expect(spec.DumpArgs).To(BeEmpty(), "variant %s", spec.Variant)
