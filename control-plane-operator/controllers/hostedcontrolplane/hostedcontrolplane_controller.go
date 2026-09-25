@@ -2920,6 +2920,10 @@ func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx conte
 	}
 
 	logger.Info("Reconciling GCP worker firewall rules")
+	// Captured before NewFirewallManager evaluates hcp.Spec, so the guard below
+	// can detect a concurrent spec change across the PatchStatus refetch instead
+	// of stamping a stale error with the refetched object's generation.
+	evaluatedGeneration := hcp.Generation
 	manager, err := cloudgcp.NewFirewallManager(hcp, logger)
 	if err != nil {
 		// Missing GCP platform spec on a GCP HCP is a configuration problem, not a
@@ -2931,6 +2935,9 @@ func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx conte
 			Message: err.Error(),
 		}
 		if patchErr := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+			if hcp.Generation != evaluatedGeneration {
+				return fmt.Errorf("hcp generation changed from %d to %d while validating GCP platform spec, requeueing to re-evaluate", evaluatedGeneration, hcp.Generation)
+			}
 			result.ObservedGeneration = hcp.Generation
 			meta.SetStatusCondition(&hcp.Status.Conditions, result)
 			return nil
@@ -2942,7 +2949,6 @@ func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx conte
 
 	// The result below is derived from the spec at this generation (project, VPC,
 	// network type, infra ID). If the spec changes before we patch, re-evaluate.
-	evaluatedGeneration := hcp.Generation
 	result := manager.Reconcile(ctx)
 	condition := result.Condition(evaluatedGeneration)
 
