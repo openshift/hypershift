@@ -9603,3 +9603,172 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcilePullSecretSync(t *testing.T) {
+	t.Parallel()
+
+	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+
+	tests := []struct {
+		name                     string
+		existingObjects          []crclient.Object
+		interceptorFuncs         *interceptor.Funcs
+		expectErr                bool
+		errContains              string
+		expectCombinedSecretData bool
+		combinedAlreadyExists    bool
+	}{
+		{
+			name: "When pull secret exists with valid data, it should create both secrets",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			expectCombinedSecretData: true,
+		},
+		{
+			name: "When combined-pull-secret already exists, it should not overwrite it",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: "cp-ns"},
+					Type:       corev1.SecretTypeDockerConfigJson,
+					Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"merged.io":{"auth":"bWVyZ2Vk"}}}`)},
+				},
+			},
+			combinedAlreadyExists:    true,
+			expectCombinedSecretData: true,
+		},
+		{
+			name:        "When pull secret does not exist, it should return error",
+			expectErr:   true,
+			errContains: "pull secret",
+		},
+		{
+			name: "When pull secret is missing .dockerconfigjson key, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{},
+				},
+			},
+			expectErr:   true,
+			errContains: ".dockerconfigjson",
+		},
+		{
+			name: "When ensureReferencedResourceAnnotation fails, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Update: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "pull-secret" {
+						return fmt.Errorf("annotation update failed")
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "referenced resource annotation",
+		},
+		{
+			name: "When createOrUpdate for pull-secret fails, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "pull-secret" {
+						return fmt.Errorf("create pull-secret failed")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "create pull-secret failed",
+		},
+		{
+			name: "When combined-pull-secret Create fails with non-AlreadyExists error, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
+						return fmt.Errorf("forbidden")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "bootstrap combined pull secret",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...)
+			if tc.interceptorFuncs != nil {
+				builder = builder.WithInterceptorFuncs(*tc.interceptorFuncs)
+			}
+			client := builder.Build()
+
+			r := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			err := r.reconcilePullSecretSync(t.Context(), hcluster, ctrl.CreateOrUpdate, "cp-ns")
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				}
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			pullSecret := controlplaneoperator.PullSecret("cp-ns")
+			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
+			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+
+			combinedSecret := controlplaneoperator.CombinedPullSecret("cp-ns")
+			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(combinedSecret), combinedSecret)).To(Succeed())
+
+			if tc.combinedAlreadyExists {
+				g.Expect(combinedSecret.Data[".dockerconfigjson"]).To(Equal([]byte(`{"auths":{"merged.io":{"auth":"bWVyZ2Vk"}}}`)),
+					"combined-pull-secret should not be overwritten when it already exists")
+			} else {
+				g.Expect(combinedSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret),
+					"combined-pull-secret should contain original pull secret data on first creation")
+			}
+		})
+	}
+}

@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -156,6 +157,94 @@ func getFakeVolumeProjectionImageRegistryCAs() corev1.VolumeProjection {
 			},
 		},
 	}
+}
+
+func TestAdaptCombinedPullSecret(t *testing.T) {
+	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+	mergedData := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"},"custom.io":{"auth":"Y3VzdG9t"}}}`)
+
+	tests := []struct {
+		name           string
+		existingData   []byte
+		pullSecretData []byte
+		expectedData   []byte
+	}{
+		{
+			name:           "Upgrade skew: combined-pull-secret absent, should bootstrap from pull-secret",
+			pullSecretData: validPullSecret,
+			expectedData:   validPullSecret,
+		},
+		{
+			name:         "Steady state: HCCO has merged additional credentials, should preserve them",
+			existingData: mergedData,
+			expectedData: mergedData,
+		},
+		{
+			name:           "Upgrade skew with empty pull-secret data, should set empty data",
+			pullSecretData: []byte(`{}`),
+			expectedData:   []byte(`{}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: "test-ns",
+				},
+			}
+
+			fakeObjects := []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: tt.pullSecretData},
+				},
+			}
+
+			cpContext := component.WorkloadContext{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build(),
+				HCP:    hcp,
+			}
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: "test-ns"},
+			}
+			if tt.existingData != nil {
+				secret.Data = map[string][]byte{corev1.DockerConfigJsonKey: tt.existingData}
+			}
+
+			err := adaptCombinedPullSecret(cpContext, secret)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(secret.Data[corev1.DockerConfigJsonKey]).To(Equal(tt.expectedData))
+		})
+	}
+}
+
+func TestAdaptCombinedPullSecretMissingPullSecret(t *testing.T) {
+	g := NewWithT(t)
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "test-ns",
+		},
+	}
+
+	cpContext := component.WorkloadContext{
+		Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		HCP:    hcp,
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: "test-ns"},
+	}
+
+	err := adaptCombinedPullSecret(cpContext, secret)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to get pull-secret"))
 }
 
 func TestResolveOAPIVerbosity(t *testing.T) {
