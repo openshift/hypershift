@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,7 +16,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -24,14 +23,121 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type installerFlagPolicy uint8
+
 const (
-	installerNamespace = "hypershift"
-	installerName      = "hypershift-installer"
-	// Explicit list of flags that might be skipped by the installer if not supported by older images.
-	// This is to prevent situation that unsupported flags are arbitrarily skipped by the installer
-	// because this could change the nature of the test unexpectedly.
-	externalDNSIntervalFlag = "--external-dns-interval"
+	installerFlagRequired installerFlagPolicy = iota
+	installerFlagOptionalOnOlderImages
 )
+
+const (
+	installerNamespace        = "hypershift"
+	installerName             = "hypershift-installer"
+	optionalInstallerFlagsEnv = "HYPERSHIFT_OPTIONAL_INSTALLER_FLAGS"
+	installerBinaryEnv        = "HYPERSHIFT_INSTALLER_BINARY"
+)
+
+// Every flag emitted by buildInstallerArgs must have an explicit compatibility
+// policy. The installer wrapper skips only flags marked optional when the
+// target image does not advertise them.
+var installerFlagPolicies = map[string]installerFlagPolicy{
+	"--hypershift-image":                           installerFlagRequired,
+	"--wait-until-available":                       installerFlagRequired,
+	"--platform-monitoring":                        installerFlagRequired,
+	"--enable-ci-debug-output":                     installerFlagRequired,
+	"--enable-size-tagging":                        installerFlagRequired,
+	"--enable-cpo-overrides":                       installerFlagRequired,
+	"--disable-capi-migration":                     installerFlagRequired,
+	"--enable-dedicated-request-serving-isolation": installerFlagRequired,
+	"--enable-etcd-recovery":                       installerFlagRequired,
+	"--oidc-storage-provider-s3-bucket-name":       installerFlagRequired,
+	"--oidc-storage-provider-s3-region":            installerFlagRequired,
+	"--oidc-storage-provider-s3-secret":            installerFlagRequired,
+	"--private-platform":                           installerFlagRequired,
+	"--aws-private-secret":                         installerFlagRequired,
+	"--aws-private-region":                         installerFlagRequired,
+	"--external-dns-provider":                      installerFlagRequired,
+	"--external-dns-domain-filter":                 installerFlagRequired,
+	"--external-dns-interval":                      installerFlagOptionalOnOlderImages,
+	"--external-dns-secret":                        installerFlagRequired,
+	"--azure-private-secret":                       installerFlagRequired,
+	"--azure-pls-resource-group":                   installerFlagRequired,
+	"--gcp-project":                                installerFlagRequired,
+	"--gcp-region":                                 installerFlagRequired,
+	"--external-dns-google-project":                installerFlagRequired,
+}
+
+// The wrapper discovers capabilities and filters args in the same container
+// that performs installation, avoiding a separate probe Job.
+const installerFlagFilterScript = `set -euo pipefail
+
+HYPERSHIFT=${HYPERSHIFT_INSTALLER_BINARY:-/usr/bin/hypershift}
+subcommand=${1:?missing installer subcommand}
+shift
+if [[ "$subcommand" != "install" ]]; then
+  echo "installer wrapper only supports install" >&2
+  exit 2
+fi
+
+if ! INSTALL_HELP=$("$HYPERSHIFT" "$subcommand" --help 2>&1); then
+  echo "failed to inspect installer flags" >&2
+  exit 1
+fi
+
+has_flag() {
+  local flag=$1
+  [[ "$flag" =~ ^--[[:alnum:]][[:alnum:]-]*$ ]] || return 1
+  grep -Eq -- "(^|[[:space:],])${flag}([[:space:],=]|$)" <<< "$INSTALL_HELP"
+}
+
+declare -A optional_flags=()
+while IFS= read -r flag; do
+  [[ -n "$flag" ]] && optional_flags["$flag"]=1
+done <<< "${HYPERSHIFT_OPTIONAL_INSTALLER_FLAGS:-}"
+
+is_optional_flag() {
+  [[ ${optional_flags["$1"]+present} ]]
+}
+
+filtered_args=()
+while (($#)); do
+  arg=$1
+  shift
+
+  case "$arg" in
+    --*=*)
+      flag=${arg%%=*}
+      if has_flag "$flag"; then
+        filtered_args+=("$arg")
+      elif ! is_optional_flag "$flag"; then
+        echo "target installer does not support a required flag" >&2
+        exit 1
+      fi
+      ;;
+    --*)
+      if has_flag "$arg"; then
+        filtered_args+=("$arg")
+        if (($#)) && [[ $1 != --* ]]; then
+          filtered_args+=("$1")
+          shift
+        fi
+      elif is_optional_flag "$arg"; then
+        if (($#)) && [[ $1 != --* ]]; then
+          shift
+        fi
+      else
+        echo "target installer does not support a required flag" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      filtered_args+=("$arg")
+      ;;
+  esac
+done
+
+exec "$HYPERSHIFT" "$subcommand" "${filtered_args[@]}"
+`
 
 // installViaOperatorImage creates a Kubernetes Job that runs `hypershift install`
 // from the operator image itself. This ensures the CLI binary and embedded CRDs
@@ -57,12 +163,7 @@ func installViaOperatorImage(ctx context.Context, opts HyperShiftOperatorInstall
 	}
 	defer cleanupInstaller(ctx, client)
 
-	supportedFlags, err := discoverInstallerFlags(ctx, client, opts.HyperShiftOperatorLatestImage)
-	if err != nil {
-		return fmt.Errorf("discovering installer flags from image: %w", err)
-	}
-
-	args, err := buildInstallerArgs(opts, secretNames, supportedFlags)
+	args, err := buildInstallerArgs(opts, secretNames)
 	if err != nil {
 		return fmt.Errorf("building installer arguments: %w", err)
 	}
@@ -236,7 +337,7 @@ func ensureInstallerRBAC(ctx context.Context, client crclient.Client) error {
 	return nil
 }
 
-func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credentialSecretNames, supportedFlags map[string]struct{}) ([]string, error) {
+func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credentialSecretNames) ([]string, error) {
 	args := []string{
 		"install",
 		"--hypershift-image", opts.HyperShiftOperatorLatestImage,
@@ -286,10 +387,8 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
+				"--external-dns-interval", "3m",
 			)
-			if _, supported := supportedFlags[externalDNSIntervalFlag]; supported {
-				args = append(args, externalDNSIntervalFlag, "3m")
-			}
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
 			}
@@ -308,10 +407,8 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
+				"--external-dns-interval", "3m",
 			)
-			if _, supported := supportedFlags[externalDNSIntervalFlag]; supported {
-				args = append(args, externalDNSIntervalFlag, "3m")
-			}
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
 			}
@@ -330,10 +427,8 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
+				"--external-dns-interval", "3m",
 			)
-			if _, supported := supportedFlags[externalDNSIntervalFlag]; supported {
-				args = append(args, externalDNSIntervalFlag, "3m")
-			}
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
 			}
@@ -351,78 +446,34 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 		}
 	}
 
-	if err := validateInstallerArgs(args, supportedFlags); err != nil {
+	if err := validateInstallerArgs(args); err != nil {
 		return nil, err
 	}
 	return args, nil
 }
 
-func validateInstallerArgs(args []string, supportedFlags map[string]struct{}) error {
+func validateInstallerArgs(args []string) error {
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "--") {
 			continue
 		}
 		flag := strings.SplitN(arg, "=", 2)[0]
-		if _, supported := supportedFlags[flag]; !supported {
-			return fmt.Errorf("target image does not advertise requested installer flag %s", flag)
+		if _, registered := installerFlagPolicies[flag]; !registered {
+			return fmt.Errorf("installer flag %s has no compatibility policy", flag)
 		}
 	}
 	return nil
 }
 
-var installerHelpFlagLine = regexp.MustCompile(`(?:^|,\s*)(--[A-Za-z0-9][A-Za-z0-9-]*)(?:[=\s]|$)`)
-
-func parseInstallerHelpFlags(help string) (map[string]struct{}, error) {
-	flags := make(map[string]struct{})
-	inFlagSection := false
-	for _, line := range strings.Split(help, "\n") {
-		trimmed := strings.TrimSpace(line)
-		switch trimmed {
-		case "Flags:", "Global Flags:":
-			inFlagSection = true
-			continue
-		}
-		if !inFlagSection || trimmed == "" {
-			continue
-		}
-		if strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(trimmed, "-") {
-			inFlagSection = false
-			continue
-		}
-		for _, match := range installerHelpFlagLine.FindAllStringSubmatch(trimmed, -1) {
-			flags[match[1]] = struct{}{}
+func optionalInstallerFlags() []string {
+	flags := make([]string, 0)
+	for flag, policy := range installerFlagPolicies {
+		if policy == installerFlagOptionalOnOlderImages {
+			flags = append(flags, flag)
 		}
 	}
-	if len(flags) == 0 {
-		return nil, fmt.Errorf("help output did not contain any advertised flags")
-	}
-	return flags, nil
-}
-
-func discoverInstallerFlags(ctx context.Context, client crclient.Client, image string) (map[string]struct{}, error) {
-	probeJobName := fmt.Sprintf("%s-probe-%s", installerName, uuid.NewUUID())
-	if err := createNamedInstallerJob(ctx, client, probeJobName, image, []string{"install", "--help"}); err != nil {
-		return nil, fmt.Errorf("creating help probe job: %w", err)
-	}
-	defer deleteInstallerJob(ctx, client, probeJobName)
-
-	waitErr := waitForNamedInstallerJob(ctx, client, probeJobName)
-	helpOutput, logErr := getInstallerPodOutput(ctx, probeJobName)
-	if waitErr != nil {
-		if logErr != nil {
-			return nil, fmt.Errorf("help probe job failed: %w; retrieving probe logs: %v", waitErr, logErr)
-		}
-		return nil, fmt.Errorf("help probe job failed: %w; output:\n%s", waitErr, helpOutput)
-	}
-	if logErr != nil {
-		return nil, fmt.Errorf("retrieving help probe output: %w", logErr)
-	}
-
-	flags, err := parseInstallerHelpFlags(helpOutput)
-	if err != nil {
-		return nil, fmt.Errorf("parsing help output: %w; output:\n%s", err, helpOutput)
-	}
-	return flags, nil
+	sort.Strings(flags)
+	return flags
 }
 
 func createInstallerJob(ctx context.Context, client crclient.Client, image string, args []string) error {
@@ -471,8 +522,12 @@ func createNamedInstallerJob(ctx context.Context, client crclient.Client, jobNam
 						{
 							Name:    "installer",
 							Image:   image,
-							Command: []string{"/usr/bin/hypershift"},
-							Args:    args,
+							Command: []string{"/bin/bash", "-c"},
+							Args:    append([]string{installerFlagFilterScript, "installer-wrapper"}, args...),
+							Env: []corev1.EnvVar{{
+								Name:  optionalInstallerFlagsEnv,
+								Value: strings.Join(optionalInstallerFlags(), "\n"),
+							}},
 						},
 					},
 				},
@@ -515,28 +570,22 @@ func waitForNamedInstallerJob(ctx context.Context, client crclient.Client, jobNa
 }
 
 func logInstallerPodOutput(ctx context.Context) {
-	if _, err := getInstallerPodOutput(ctx, installerName); err != nil {
-		fmt.Printf("Failed to retrieve installer pod output: %v\n", err)
-	}
-}
-
-func getInstallerPodOutput(ctx context.Context, jobName string) (string, error) {
 	cfg, err := GetConfig()
 	if err != nil {
-		return "", fmt.Errorf("getting config for installer logs: %w", err)
+		fmt.Printf("Failed to get config for installer logs: %v\n", err)
+		return
 	}
 	kubeClient, err := kubeclient.NewForConfig(cfg)
 	if err != nil {
-		return "", fmt.Errorf("creating client for installer logs: %w", err)
+		fmt.Printf("Failed to create client for installer logs: %v\n", err)
+		return
 	}
 	pods, err := kubeClient.CoreV1().Pods(installerNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "job-name=" + jobName,
+		LabelSelector: "job-name=" + installerName,
 	})
-	if err != nil {
-		return "", fmt.Errorf("listing pods for job %s: %w", jobName, err)
-	}
-	if len(pods.Items) == 0 {
-		return "", fmt.Errorf("no pods found for job %s", jobName)
+	if err != nil || len(pods.Items) == 0 {
+		fmt.Printf("No installer pods found for log retrieval\n")
+		return
 	}
 
 	artifactDir := os.Getenv("ARTIFACT_DIR")
@@ -549,22 +598,15 @@ func getInstallerPodOutput(ctx context.Context, jobName string) (string, error) 
 		}
 	}
 
-	var output strings.Builder
-	var firstLogErr error
 	for _, pod := range pods.Items {
 		for _, container := range pod.Spec.Containers {
 			req := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name})
 			logs, err := req.DoRaw(ctx)
 			if err != nil {
 				fmt.Printf("Failed to get logs from pod %s container %s: %v\n", pod.Name, container.Name, err)
-				if firstLogErr == nil {
-					firstLogErr = fmt.Errorf("getting logs from pod %s container %s: %w", pod.Name, container.Name, err)
-				}
 				continue
 			}
 			fmt.Printf("=== Installer pod %s/%s logs ===\n%s\n", pod.Name, container.Name, string(logs))
-			output.Write(logs)
-			output.WriteByte('\n')
 			if logsDir != "" {
 				logFile := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name))
 				if writeErr := os.WriteFile(logFile, logs, 0644); writeErr != nil {
@@ -573,10 +615,6 @@ func getInstallerPodOutput(ctx context.Context, jobName string) (string, error) 
 			}
 		}
 	}
-	if firstLogErr != nil {
-		return output.String(), firstLogErr
-	}
-	return output.String(), nil
 }
 
 func deleteInstallerJob(ctx context.Context, client crclient.Client, jobName string) {
