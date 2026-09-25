@@ -91,6 +91,15 @@ func NewRBACManager(subscriptionID string, creds azcore.TokenCredential) *RBACMa
 
 // AssignControlPlaneRoles assigns roles to control plane managed identities
 func (r *RBACManager) AssignControlPlaneRoles(ctx context.Context, opts *CreateInfraOptions, controlPlaneMIs *hyperv1.AzureResourceManagedIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
+	components, err := controlPlaneRoleComponents(opts, controlPlaneMIs)
+	if err != nil {
+		return err
+	}
+
+	return r.assignRolesForComponents(ctx, opts, components, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName)
+}
+
+func controlPlaneRoleComponents(opts *CreateInfraOptions, controlPlaneMIs *hyperv1.AzureResourceManagedIdentities) (map[string]hyperv1.AzureClientID, error) {
 	components := map[string]hyperv1.AzureClientID{
 		config.CPO:           controlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
 		config.NodePoolMgmt:  controlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
@@ -102,14 +111,26 @@ func (r *RBACManager) AssignControlPlaneRoles(ctx context.Context, opts *CreateI
 	}
 
 	if !slices.Contains(opts.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)) {
+		if controlPlaneMIs.ControlPlane.ImageRegistry.CredentialsSecretName == "" {
+			return nil, fmt.Errorf("control plane image registry managed identity is required when the ImageRegistry capability is enabled")
+		}
 		components[config.CIRO] = controlPlaneMIs.ControlPlane.ImageRegistry.ClientID
+	}
+
+	return components, nil
+}
+
+// AssignWorkloadIdentities assigns roles to workload identity managed identities
+func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *CreateInfraOptions, workloadIdentities *hyperv1.AzureWorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
+	components, err := workloadIdentityRoleComponents(opts, workloadIdentities)
+	if err != nil {
+		return err
 	}
 
 	return r.assignRolesForComponents(ctx, opts, components, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName)
 }
 
-// AssignWorkloadIdentities assigns roles to workload identity managed identities
-func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *CreateInfraOptions, workloadIdentities *hyperv1.AzureWorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
+func workloadIdentityRoleComponents(opts *CreateInfraOptions, workloadIdentities *hyperv1.AzureWorkloadIdentities) (map[string]hyperv1.AzureClientID, error) {
 	components := map[string]hyperv1.AzureClientID{
 		config.NodePoolMgmt:  workloadIdentities.NodePoolManagement.ClientID,
 		config.CloudProvider: workloadIdentities.CloudProvider.ClientID,
@@ -120,6 +141,9 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 	}
 
 	if !slices.Contains(opts.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)) {
+		if workloadIdentities.ImageRegistry.ClientID == "" {
+			return nil, fmt.Errorf("image registry workload identity is required when the ImageRegistry capability is enabled")
+		}
 		components[config.CIRO] = workloadIdentities.ImageRegistry.ClientID
 	}
 
@@ -127,7 +151,7 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 		components[config.CPO] = workloadIdentities.ControlPlaneOperator.ClientID
 	}
 
-	return r.assignRolesForComponents(ctx, opts, components, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName)
+	return components, nil
 }
 
 // AssignKarpenterRoles grants Karpenter the built-in Azure roles needed to provision VMs.
@@ -191,6 +215,11 @@ func (r *RBACManager) assignRolesForComponents(ctx context.Context, opts *Create
 
 // AssignDataPlaneRoles assigns roles to data plane managed identities
 func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfraOptions, dataPlaneIdentities hyperv1.DataPlaneManagedIdentities, resourceGroupName string) error {
+	assignments, err := dataPlaneRoleAssignments(opts, dataPlaneIdentities)
+	if err != nil {
+		return err
+	}
+
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, resourceGroupName)
 
 	// Get an access token for Microsoft Graph API for getting the object IDs
@@ -204,35 +233,49 @@ func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfr
 		return fmt.Errorf("failed to create role assignments client: %w", err)
 	}
 
-	// Setup Data Plane MI role assignments
-	objectID, err := r.getObjectIDFromClientID(ctx, dataPlaneIdentities.ImageRegistryMSIClientID, token)
-	if err != nil {
-		return err
-	}
-	err = r.assignRole(ctx, raClient, opts.InfraID, config.CIRO+"WI", objectID, config.ImageRegistryRoleDefinitionID, managedRG)
-	if err != nil {
-		return err
-	}
-
-	objectID, err = r.getObjectIDFromClientID(ctx, dataPlaneIdentities.DiskMSIClientID, token)
-	if err != nil {
-		return err
-	}
-	err = r.assignRole(ctx, raClient, opts.InfraID, config.AzureDisk+"WI", objectID, config.AzureDiskRoleDefinitionID, managedRG)
-	if err != nil {
-		return err
-	}
-
-	objectID, err = r.getObjectIDFromClientID(ctx, dataPlaneIdentities.FileMSIClientID, token)
-	if err != nil {
-		return err
-	}
-	err = r.assignRole(ctx, raClient, opts.InfraID, config.AzureFile+"WI", objectID, config.AzureFileRoleDefinitionID, managedRG)
-	if err != nil {
-		return err
+	for _, assignment := range assignments {
+		objectID, err := r.getObjectIDFromClientID(ctx, assignment.clientID, token)
+		if err != nil {
+			return err
+		}
+		if err := r.assignRole(ctx, raClient, opts.InfraID, assignment.component, objectID, assignment.role, managedRG); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+type dataPlaneRoleAssignment struct {
+	component string
+	clientID  string
+	role      string
+}
+
+func dataPlaneRoleAssignments(opts *CreateInfraOptions, identities hyperv1.DataPlaneManagedIdentities) ([]dataPlaneRoleAssignment, error) {
+	assignments := []dataPlaneRoleAssignment{}
+	if !slices.Contains(opts.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)) {
+		if identities.ImageRegistryMSIClientID == "" {
+			return nil, fmt.Errorf("data plane image registry client ID is required when the ImageRegistry capability is enabled")
+		}
+		assignments = append(assignments, dataPlaneRoleAssignment{
+			component: config.CIRO + "WI",
+			clientID:  identities.ImageRegistryMSIClientID,
+			role:      config.ImageRegistryRoleDefinitionID,
+		})
+	}
+	return append(assignments,
+		dataPlaneRoleAssignment{
+			component: config.AzureDisk + "WI",
+			clientID:  identities.DiskMSIClientID,
+			role:      config.AzureDiskRoleDefinitionID,
+		},
+		dataPlaneRoleAssignment{
+			component: config.AzureFile + "WI",
+			clientID:  identities.FileMSIClientID,
+			role:      config.AzureFileRoleDefinitionID,
+		},
+	), nil
 }
 
 // assignRole assigns a scoped role to the service principal assignee

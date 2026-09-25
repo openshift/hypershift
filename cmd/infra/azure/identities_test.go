@@ -57,6 +57,19 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"network",
 			},
 		},
+		"When ImageRegistry is disabled it should omit the registry identity definition": {
+			clusterName:   "test-cluster",
+			opts:          WorkloadIdentityOptions{Topology: "Public", DisableImageRegistry: true},
+			expectedCount: 6,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+			},
+		},
 		"When private topology without KMS it should return 8 identity definitions with controlPlaneOperator": {
 			clusterName:   "test-cluster",
 			opts:          WorkloadIdentityOptions{Topology: "Private"},
