@@ -271,7 +271,6 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
-				"--external-dns-interval", "3m",
 			)
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
@@ -291,7 +290,6 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
-				"--external-dns-interval", "3m",
 			)
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)
@@ -311,7 +309,6 @@ func buildInstallerArgs(opts HyperShiftOperatorInstallOptions, secrets *credenti
 			args = append(args,
 				"--external-dns-provider", opts.ExternalDNSProvider,
 				"--external-dns-domain-filter", opts.ExternalDNSDomainFilter,
-				"--external-dns-interval", "3m",
 			)
 			if secrets.externalDNS != "" {
 				args = append(args, "--external-dns-secret", secrets.externalDNS)

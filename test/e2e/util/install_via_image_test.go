@@ -78,7 +78,6 @@ func TestBuildInstallerArgs(t *testing.T) {
 				{"--external-dns-provider", "aws"},
 				{"--external-dns-domain-filter", "example.com"},
 				{"--external-dns-secret", "hypershift-installer-external-dns"},
-				{"--external-dns-interval", "3m"},
 				{"--platform-monitoring", "All"},
 			},
 		},
@@ -123,7 +122,6 @@ func TestBuildInstallerArgs(t *testing.T) {
 				{"--azure-pls-resource-group", "my-rg"},
 				{"--external-dns-provider", "azure"},
 				{"--external-dns-secret", "hypershift-installer-external-dns"},
-				{"--external-dns-interval", "3m"},
 			},
 			notExpectFlags: []string{
 				"--oidc-storage-provider-s3-secret",
@@ -152,7 +150,6 @@ func TestBuildInstallerArgs(t *testing.T) {
 				{"--external-dns-provider", "google"},
 				{"--external-dns-secret", "hypershift-installer-external-dns"},
 				{"--external-dns-google-project", "dns-project"},
-				{"--external-dns-interval", "3m"},
 			},
 			notExpectFlags: []string{
 				"--oidc-storage-provider-s3-secret",
