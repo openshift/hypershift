@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -177,6 +178,9 @@ type WorkloadIdentityOptions struct {
 	// IncludeKarpenter controls whether the Karpenter workload identity is included.
 	// Set to true when AutoNode/Karpenter is enabled for the cluster.
 	IncludeKarpenter bool
+
+	// DisableImageRegistry excludes the image registry identity and its federated credentials.
+	DisableImageRegistry bool
 }
 
 // GetWorkloadIdentityDefinitions returns all workload identity definitions for a cluster.
@@ -287,6 +291,15 @@ func GetWorkloadIdentityDefinitions(clusterName string, opts WorkloadIdentityOpt
 			},
 		},
 	}
+	if opts.DisableImageRegistry {
+		filtered := definitions[:0]
+		for _, definition := range definitions {
+			if definition.ComponentName != "imageRegistry" {
+				filtered = append(filtered, definition)
+			}
+		}
+		definitions = filtered
+	}
 
 	if opts.Topology != string(hyperv1.AzureTopologyPublic) {
 		definitions = append(definitions, WorkloadIdentityDefinition{
@@ -389,8 +402,9 @@ type IAMOutput struct {
 func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Context, l logr.Logger, opts *CreateIAMOptions, resourceGroupName string) (*IAMOutput, error) {
 	output := &IAMOutput{}
 	definitions := GetWorkloadIdentityDefinitions(opts.Name, WorkloadIdentityOptions{
-		IncludeKMS:       opts.EnableKMS,
-		IncludeKarpenter: opts.EnableKarpenter,
+		IncludeKMS:           opts.EnableKMS,
+		IncludeKarpenter:     opts.EnableKarpenter,
+		DisableImageRegistry: slices.Contains(opts.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)),
 	})
 
 	for _, def := range definitions {
@@ -410,7 +424,7 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 		case "file":
 			output.File.ClientID = hyperv1.AzureClientID(clientID)
 		case "imageRegistry":
-			output.ImageRegistry.ClientID = hyperv1.AzureClientID(clientID)
+			output.ImageRegistry = hyperv1.WorkloadIdentity{ClientID: hyperv1.AzureClientID(clientID)}
 		case "ingress":
 			output.Ingress.ClientID = hyperv1.AzureClientID(clientID)
 		case "cloudProvider":
