@@ -1923,13 +1923,6 @@ func (r *HostedControlPlaneReconciler) reconcileGCPPlatformCerts(ctx context.Con
 		return fmt.Errorf("failed to reconcile gcp pd csi driver controller metrics serving cert: %w", err)
 	}
 
-	gcpLBServiceAnnotationsWebhookServingCert := manifests.GCPLBServiceAnnotationsWebhookServingCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, gcpLBServiceAnnotationsWebhookServingCert, func() error {
-		return pki.ReconcileGCPLBServiceAnnotationsWebhookServingCert(gcpLBServiceAnnotationsWebhookServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile %s secret: %w", gcpLBServiceAnnotationsWebhookServingCert.Name, err)
-	}
-
 	return nil
 }
 

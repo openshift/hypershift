@@ -21,7 +21,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
-	gcplbserviceannotations "github.com/openshift/hypershift/control-plane-operator/webhooks/gcp-lb-service-annotations"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/dnsresolver"
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
@@ -173,7 +172,6 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(konnectivityhttpsproxy.NewStartCommand())
 	cmd.AddCommand(availabilityprober.NewStartCommand())
 	cmd.AddCommand(tokenminter.NewStartCommand())
-	cmd.AddCommand(gcplbserviceannotations.NewStartCommand())
 	cmd.AddCommand(ignitionserver.NewStartCommand())
 	cmd.AddCommand(etcddefrag.NewStartCommand())
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())

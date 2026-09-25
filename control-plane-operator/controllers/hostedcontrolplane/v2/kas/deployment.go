@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -42,10 +41,6 @@ const (
 
 	azureWorkloadIdentityWebhookServingCertVolumeName = "azure-wi-webhook-serving-certs"
 	azureWorkloadIdentityWebhookKubeconfigVolumeName  = "azure-wi-webhook-kubeconfig"
-
-	gcpLBServiceAnnotationsWebhookServingCertVolumeName = "gcp-lb-service-annotations-webhook-serving-certs"
-	gcpLBServiceAnnotationsWebhookPort                  = 8443
-	gcpLBServiceAnnotationsWebhookHealthProbePort       = 8082
 )
 
 var azureWorkloadIdentityWebhookWaitForKASVersionTemplate = template.Must(template.New("azure-workload-identity-webhook").Parse(`set -u
@@ -357,8 +352,6 @@ func applyPlatformSpecificContainers(podSpec *corev1.PodSpec, hcp *hyperv1.Hoste
 		if err := applyAzureWorkloadIdentityWebhookContainer(podSpec, hcp); err != nil {
 			return fmt.Errorf("apply Azure workload identity webhook container: %w", err)
 		}
-	case hyperv1.GCPPlatform:
-		applyGCPLBServiceAnnotationsWebhookContainer(podSpec, hcp)
 	}
 	return nil
 }
@@ -517,87 +510,6 @@ func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hy
 		},
 	)
 	return nil
-}
-
-// applyGCPLBServiceAnnotationsWebhookContainer adds the gcp-lb-service-annotations-webhook sidecar to the KAS pod.
-// The sidecar listens on 127.0.0.1:8443 and mutates Service{type: LoadBalancer}
-// objects to inject the cloud.google.com/load-balancer-resource-labels annotation,
-// so the GCP CCM applies HCP resource labels to the forwarding rules it creates.
-func applyGCPLBServiceAnnotationsWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
-	labels := gcputil.LBResourceLabelsAnnotationValue(gcputil.ResourceLabels(hcp))
-
-	cpoImage := podspec.CPOImageName
-
-	podSpec.Containers = append(podSpec.Containers, corev1.Container{
-		Name:            "gcp-lb-service-annotations-webhook",
-		Image:           cpoImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command: []string{
-			"/usr/bin/control-plane-operator",
-			"gcp-lb-service-annotations-webhook",
-			fmt.Sprintf("--labels=%s", labels),
-			fmt.Sprintf("--port=%d", gcpLBServiceAnnotationsWebhookPort),
-			"--tls-cert=/var/run/app/certs/tls.crt",
-			"--tls-key=/var/run/app/certs/tls.key",
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("5m"),
-				corev1.ResourceMemory: resource.MustParse("20Mi"),
-			},
-		},
-		Ports: []corev1.ContainerPort{
-			{
-				Name:          "healthz",
-				ContainerPort: gcpLBServiceAnnotationsWebhookHealthProbePort,
-				Protocol:      corev1.ProtocolTCP,
-			},
-		},
-		StartupProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromString("healthz"),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			PeriodSeconds:    10,
-			FailureThreshold: 30,
-		},
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromString("healthz"),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			PeriodSeconds: 20,
-		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/readyz",
-					Port:   intstr.FromString("healthz"),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			InitialDelaySeconds: 5,
-			PeriodSeconds:       10,
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: gcpLBServiceAnnotationsWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},
-		},
-	})
-
-	podSpec.Volumes = append(podSpec.Volumes,
-		corev1.Volume{
-			Name: gcpLBServiceAnnotationsWebhookServingCertVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: manifests.GCPLBServiceAnnotationsWebhookServingCert("").Name},
-			},
-		},
-	)
 }
 
 func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) corev1.Volume {
