@@ -17,6 +17,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,6 +56,13 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 			},
 		}
 		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(svc), svc); err != nil {
+			if apierrors.IsNotFound(err) {
+				// A Route can legitimately exist before its backing Service does.
+				// Skip it rather than failing the whole reconcile, which would
+				// prevent the router from serving any of the other routes.
+				// generateRouterConfig tolerates a missing entry in this map.
+				continue
+			}
 			return err
 		}
 
