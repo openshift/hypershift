@@ -49,6 +49,7 @@ const (
 type LoadBalancerLabelsComputeClient interface {
 	ListForwardingRules(ctx context.Context, project, region, filter string) ([]*compute.ForwardingRule, error)
 	SetForwardingRuleLabels(ctx context.Context, project, region, name string, labels *compute.RegionSetLabelsRequest) (*compute.Operation, error)
+	WaitForRegionalOperation(ctx context.Context, project, region, operation string) (*compute.Operation, error)
 }
 
 type loadBalancerLabelsComputeServiceAdapter struct {
@@ -69,6 +70,10 @@ func (a *loadBalancerLabelsComputeServiceAdapter) ListForwardingRules(ctx contex
 
 func (a *loadBalancerLabelsComputeServiceAdapter) SetForwardingRuleLabels(ctx context.Context, project, region, name string, labels *compute.RegionSetLabelsRequest) (*compute.Operation, error) {
 	return a.svc.ForwardingRules.SetLabels(project, region, name, labels).Context(ctx).Do()
+}
+
+func (a *loadBalancerLabelsComputeServiceAdapter) WaitForRegionalOperation(ctx context.Context, project, region, operation string) (*compute.Operation, error) {
+	return a.svc.RegionOperations.Wait(project, region, operation).Context(ctx).Do()
 }
 
 // GCPLoadBalancerLabelsReconciler applies HostedControlPlane resource labels to
@@ -209,11 +214,8 @@ func (r *GCPLoadBalancerLabelsReconciler) reconcileRouterServices(ctx context.Co
 			if err != nil {
 				return false, false, fmt.Errorf("set labels on forwarding rule %s: %w", forwardingRule.Name, err)
 			}
-			if operation == nil {
-				return false, false, fmt.Errorf("set labels operation for forwarding rule %s returned no operation", forwardingRule.Name)
-			}
-			if operation.Error != nil {
-				return false, false, fmt.Errorf("set labels operation for forwarding rule %s failed: %v", forwardingRule.Name, operation.Error.Errors)
+			if err := waitForForwardingRuleLabelOperation(ctx, r.GcpClient, r.ProjectID, r.Region, forwardingRule.Name, operation); err != nil {
+				return false, false, err
 			}
 			updated = true
 		}
@@ -222,6 +224,40 @@ func (r *GCPLoadBalancerLabelsReconciler) reconcileRouterServices(ctx context.Co
 		}
 	}
 	return pending, updated, nil
+}
+
+// waitForForwardingRuleLabelOperation waits for a setLabels operation to complete
+// and returns its terminal error, if any.
+func waitForForwardingRuleLabelOperation(ctx context.Context, gcpClient LoadBalancerLabelsComputeClient, project, region, forwardingRuleName string, operation *compute.Operation) error {
+	if operation == nil {
+		return fmt.Errorf("set labels operation for forwarding rule %s returned no operation", forwardingRuleName)
+	}
+	if operation.Error != nil {
+		return fmt.Errorf("set labels operation for forwarding rule %s failed: %v", forwardingRuleName, operation.Error.Errors)
+	}
+	if operation.Status == "DONE" {
+		return nil
+	}
+	if operation.Name == "" {
+		return fmt.Errorf("set labels operation for forwarding rule %s is not complete and has no name", forwardingRuleName)
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer cancel()
+	completed, err := gcpClient.WaitForRegionalOperation(waitCtx, project, region, operation.Name)
+	if err != nil {
+		return fmt.Errorf("wait for set labels operation for forwarding rule %s: %w", forwardingRuleName, err)
+	}
+	if completed == nil {
+		return fmt.Errorf("wait for set labels operation for forwarding rule %s returned no operation", forwardingRuleName)
+	}
+	if completed.Error != nil {
+		return fmt.Errorf("set labels operation for forwarding rule %s failed: %v", forwardingRuleName, completed.Error.Errors)
+	}
+	if completed.Status != "DONE" {
+		return fmt.Errorf("set labels operation for forwarding rule %s did not complete, status: %s", forwardingRuleName, completed.Status)
+	}
+	return nil
 }
 
 func (r *GCPLoadBalancerLabelsReconciler) mapRouterServiceToHostedControlPlane(ctx context.Context, obj client.Object) []reconcile.Request {

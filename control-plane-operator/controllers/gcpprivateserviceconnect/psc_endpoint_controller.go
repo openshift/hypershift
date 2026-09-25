@@ -989,8 +989,6 @@ func waitForRegionalOperation(ctx context.Context, svc *compute.Service, project
 	return nil
 }
 
-// mergeResourceLabels preserves labels not managed by HyperShift while applying
-// the labels requested by the HostedControlPlane.
 // getHostedControlPlane retrieves the HostedControlPlane from the CR's owner reference
 func (r *GCPPrivateServiceConnectReconciler) getHostedControlPlane(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (*hyperv1.HostedControlPlane, error) {
 	// Find HCP from owner reference

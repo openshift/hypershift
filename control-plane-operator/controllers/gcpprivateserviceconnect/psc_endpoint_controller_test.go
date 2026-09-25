@@ -16,6 +16,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -85,6 +86,83 @@ func TestReconcileForwardingRuleLabels(t *testing.T) {
 			assert.Equal(t, tt.wantSetLabelCall, setLabelCalls)
 		})
 	}
+}
+
+func TestReconcilePSCEndpointCreatesThenLabelsForwardingRule(t *testing.T) {
+	const (
+		customerProject       = "customer-project"
+		region                = "us-central1"
+		serviceAttachmentName = "private-router-psc-sa"
+		endpointName          = serviceAttachmentName + "-endpoint"
+	)
+
+	var (
+		getCalls      int
+		insertedRule  compute.ForwardingRule
+		setLabelCalls int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/forwardingRules/"+endpointName):
+			getCalls++
+			if getCalls == 1 {
+				http.Error(w, `{"error":{"code":404,"message":"not found"}}`, http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(`{"name":"private-router-psc-sa-endpoint","IPAddress":"10.0.0.10","target":"projects/management-project/regions/us-central1/serviceAttachments/private-router-psc-sa","labelFingerprint":"fingerprint"}`))
+		case req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/forwardingRules"):
+			require.NoError(t, json.NewDecoder(req.Body).Decode(&insertedRule))
+			assert.Nil(t, insertedRule.Labels, "PSC forwarding rules must be created without labels")
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		case req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/forwardingRules/"+endpointName+"/setLabels"):
+			setLabelCalls++
+			var labels compute.RegionSetLabelsRequest
+			require.NoError(t, json.NewDecoder(req.Body).Decode(&labels))
+			assert.Equal(t, "fingerprint", labels.LabelFingerprint)
+			assert.Equal(t, map[string]string{"managed": "new"}, labels.Labels)
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	gcpService, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, hyperv1.AddToScheme(scheme))
+	gcpPSC := &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{Name: "psc", Namespace: "clusters-example"},
+		Status: hyperv1.GCPPrivateServiceConnectStatus{
+			ServiceAttachmentName: serviceAttachmentName,
+			ServiceAttachmentURI:  "projects/management-project/regions/us-central1/serviceAttachments/" + serviceAttachmentName,
+		},
+	}
+	reconciler := &GCPPrivateServiceConnectReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gcpPSC).WithObjects(gcpPSC).Build(),
+	}
+	hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
+		GCP: &hyperv1.GCPPlatformSpec{NetworkConfig: hyperv1.GCPNetworkConfig{
+			Network:                     hyperv1.GCPResourceReference{Name: "customer-network"},
+			PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "psc-subnet"},
+		}},
+	}}}
+
+	result, err := reconciler.reconcilePSCEndpoint(context.Background(), gcpPSC, hcp, gcpService, customerProject, region, map[string]string{"managed": "new"}, nil, logr.Discard())
+	require.NoError(t, err)
+	assert.True(t, result.IsZero())
+	assert.Equal(t, 2, getCalls)
+	assert.Equal(t, 1, setLabelCalls)
+	assert.Equal(t, endpointName, insertedRule.Name)
+	assert.Equal(t, "projects/customer-project/global/networks/customer-network", insertedRule.Network)
+	assert.Equal(t, "projects/customer-project/regions/us-central1/subnetworks/psc-subnet", insertedRule.Subnetwork)
+	assert.Equal(t, "projects/customer-project/regions/us-central1/addresses/private-router-psc-sa-ip", insertedRule.IPAddress)
+	assert.Equal(t, gcpPSC.Status.ServiceAttachmentURI, insertedRule.Target)
+
+	updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+	require.NoError(t, reconciler.Get(context.Background(), client.ObjectKeyFromObject(gcpPSC), updatedPSC))
+	assert.Equal(t, metav1.ConditionTrue, meta.FindStatusCondition(updatedPSC.Status.Conditions, string(hyperv1.GCPEndpointAvailable)).Status)
 }
 
 func TestReconcileAddressLabels(t *testing.T) {

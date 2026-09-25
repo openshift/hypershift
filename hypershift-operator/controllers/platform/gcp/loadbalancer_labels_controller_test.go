@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,7 +36,11 @@ type fakeLoadBalancerLabelsComputeClient struct {
 	forwardingRuleFilter string
 	listErr              error
 	setErr               error
+	setOperation         *compute.Operation
 	setCalls             []setForwardingRuleLabelsCall
+	waitErr              error
+	waitOperation        *compute.Operation
+	waitCalls            []string
 }
 
 func (f *fakeLoadBalancerLabelsComputeClient) ListForwardingRules(_ context.Context, _, _, filter string) ([]*compute.ForwardingRule, error) {
@@ -45,7 +50,18 @@ func (f *fakeLoadBalancerLabelsComputeClient) ListForwardingRules(_ context.Cont
 
 func (f *fakeLoadBalancerLabelsComputeClient) SetForwardingRuleLabels(_ context.Context, _, _, name string, labels *compute.RegionSetLabelsRequest) (*compute.Operation, error) {
 	f.setCalls = append(f.setCalls, setForwardingRuleLabelsCall{name: name, labels: labels})
+	if f.setOperation != nil {
+		return f.setOperation, f.setErr
+	}
 	return &compute.Operation{Status: "DONE"}, f.setErr
+}
+
+func (f *fakeLoadBalancerLabelsComputeClient) WaitForRegionalOperation(_ context.Context, _, _, operation string) (*compute.Operation, error) {
+	f.waitCalls = append(f.waitCalls, operation)
+	if f.waitOperation != nil {
+		return f.waitOperation, f.waitErr
+	}
+	return &compute.Operation{Status: "DONE"}, f.waitErr
 }
 
 func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
@@ -59,14 +75,56 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 		labels           []hyperv1.GCPResourceLabel
 		annotations      map[string]string
 		service          *corev1.Service
+		privateService   *corev1.Service
 		forwardingRules  []*compute.ForwardingRule
 		wantSetCalls     int
+		wantSetCallNames []string
 		wantLabels       map[string]string
 		wantFilter       string
 		checkFilter      bool
 		wantRequeueAfter time.Duration
 		wantPaused       bool
 	}{
+		{
+			name: "When private-router Service has a forwarding rule, it should apply HCP labels",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "goog-partner-solution", Value: ptr.To("isol_psn_0014m00001h31bnqaq_openshift")},
+			},
+			privateService: routerServiceNamed(namespace, privateRouterServiceName, "k8s2-example-private-router-abc123"),
+			forwardingRules: []*compute.ForwardingRule{{
+				Name:             "private-router-forwarding-rule",
+				BackendService:   "https://www.googleapis.com/compute/v1/projects/project/regions/us-east1/backendServices/k8s2-example-private-router-abc123",
+				LabelFingerprint: "fingerprint",
+			}},
+			wantSetCalls:     1,
+			wantSetCallNames: []string{"private-router-forwarding-rule"},
+			wantLabels:       map[string]string{"goog-partner-solution": "isol_psn_0014m00001h31bnqaq_openshift"},
+			wantRequeueAfter: labelOperationRetry,
+		},
+		{
+			name: "When router and private-router Services have forwarding rules, it should apply HCP labels to both",
+			labels: []hyperv1.GCPResourceLabel{
+				{Key: "goog-partner-solution", Value: ptr.To("isol_psn_0014m00001h31bnqaq_openshift")},
+			},
+			service:        routerService(namespace, backendServiceName),
+			privateService: routerServiceNamed(namespace, privateRouterServiceName, "k8s2-example-private-router-abc123"),
+			forwardingRules: []*compute.ForwardingRule{
+				{
+					Name:             "router-forwarding-rule",
+					BackendService:   "https://www.googleapis.com/compute/v1/projects/project/regions/us-east1/backendServices/" + backendServiceName,
+					LabelFingerprint: "fingerprint",
+				},
+				{
+					Name:             "private-router-forwarding-rule",
+					BackendService:   "https://www.googleapis.com/compute/v1/projects/project/regions/us-east1/backendServices/k8s2-example-private-router-abc123",
+					LabelFingerprint: "fingerprint",
+				},
+			},
+			wantSetCalls:     2,
+			wantSetCallNames: []string{"router-forwarding-rule", "private-router-forwarding-rule"},
+			wantLabels:       map[string]string{"goog-partner-solution": "isol_psn_0014m00001h31bnqaq_openshift"},
+			wantRequeueAfter: labelOperationRetry,
+		},
 		{
 			name:       "When HostedControlPlane reconciliation is paused, it should requeue without updating labels",
 			wantPaused: true,
@@ -158,6 +216,9 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			if tt.service != nil {
 				objects = append(objects, tt.service)
 			}
+			if tt.privateService != nil {
+				objects = append(objects, tt.privateService)
+			}
 			gcpClient := &fakeLoadBalancerLabelsComputeClient{forwardingRules: tt.forwardingRules}
 			reconciler := &GCPLoadBalancerLabelsReconciler{
 				Client:    fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(objects...).Build(),
@@ -181,11 +242,16 @@ func TestGCPLoadBalancerLabelsReconciler(t *testing.T) {
 			if len(gcpClient.setCalls) != tt.wantSetCalls {
 				t.Fatalf("SetForwardingRuleLabels calls = %d, want %d", len(gcpClient.setCalls), tt.wantSetCalls)
 			}
-			if tt.wantSetCalls != 0 && !maps.Equal(gcpClient.setCalls[0].labels.Labels, tt.wantLabels) {
-				t.Fatalf("labels = %#v, want %#v", gcpClient.setCalls[0].labels.Labels, tt.wantLabels)
-			}
-			if tt.wantSetCalls != 0 && gcpClient.setCalls[0].labels.LabelFingerprint != "fingerprint" {
-				t.Fatalf("label fingerprint = %q, want fingerprint", gcpClient.setCalls[0].labels.LabelFingerprint)
+			for i, setCall := range gcpClient.setCalls {
+				if !maps.Equal(setCall.labels.Labels, tt.wantLabels) {
+					t.Fatalf("SetForwardingRuleLabels call %d labels = %#v, want %#v", i, setCall.labels.Labels, tt.wantLabels)
+				}
+				if setCall.labels.LabelFingerprint != "fingerprint" {
+					t.Fatalf("SetForwardingRuleLabels call %d label fingerprint = %q, want fingerprint", i, setCall.labels.LabelFingerprint)
+				}
+				if len(tt.wantSetCallNames) != 0 && setCall.name != tt.wantSetCallNames[i] {
+					t.Fatalf("SetForwardingRuleLabels call %d name = %q, want %q", i, setCall.name, tt.wantSetCallNames[i])
+				}
 			}
 			if tt.checkFilter && gcpClient.forwardingRuleFilter != tt.wantFilter {
 				t.Fatalf("forwarding rule filter = %q, want %q", gcpClient.forwardingRuleFilter, tt.wantFilter)
@@ -232,8 +298,79 @@ func TestLoadBalancerLabelsComputeServiceAdapterListForwardingRules(t *testing.T
 	}
 }
 
+func TestWaitForForwardingRuleLabelOperation(t *testing.T) {
+	tests := []struct {
+		name              string
+		operation         *compute.Operation
+		waitOperation     *compute.Operation
+		waitErr           error
+		wantErr           string
+		wantWaitOperation string
+	}{
+		{
+			name: "When the set labels operation is pending and completes after waiting, it should succeed",
+			operation: &compute.Operation{
+				Name:   "set-labels",
+				Status: "PENDING",
+			},
+			waitOperation:     &compute.Operation{Status: "DONE"},
+			wantWaitOperation: "set-labels",
+		},
+		{
+			name: "When the set labels operation has a terminal error, it should return the error without waiting",
+			operation: &compute.Operation{
+				Status: "DONE",
+				Error:  &compute.OperationError{Errors: []*compute.OperationErrorErrors{{Message: "permission denied"}}},
+			},
+			wantErr: "failed",
+		},
+		{
+			name: "When waiting for the set labels operation fails, it should return the wait error",
+			operation: &compute.Operation{
+				Name:   "set-labels",
+				Status: "RUNNING",
+			},
+			waitErr:           fmt.Errorf("wait failed"),
+			wantErr:           "wait failed",
+			wantWaitOperation: "set-labels",
+		},
+		{
+			name:      "When the set labels operation is not complete and has no name, it should return an error without waiting",
+			operation: &compute.Operation{Status: "RUNNING"},
+			wantErr:   "has no name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gcpClient := &fakeLoadBalancerLabelsComputeClient{
+				waitOperation: tt.waitOperation,
+				waitErr:       tt.waitErr,
+			}
+
+			err := waitForForwardingRuleLabelOperation(context.Background(), gcpClient, "project", "us-east1", "router-forwarding-rule", tt.operation)
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("wait for forwarding rule label operation: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("error = %v, want error containing %q", err, tt.wantErr)
+			}
+			if tt.wantWaitOperation == "" && len(gcpClient.waitCalls) != 0 {
+				t.Fatalf("WaitForRegionalOperation calls = %#v, want no calls", gcpClient.waitCalls)
+			}
+			if tt.wantWaitOperation != "" && (len(gcpClient.waitCalls) != 1 || gcpClient.waitCalls[0] != tt.wantWaitOperation) {
+				t.Fatalf("WaitForRegionalOperation calls = %#v, want %q", gcpClient.waitCalls, tt.wantWaitOperation)
+			}
+		})
+	}
+}
+
 func routerService(namespace, backendService string) *corev1.Service {
-	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: routerServiceName}}
+	return routerServiceNamed(namespace, routerServiceName, backendService)
+}
+
+func routerServiceNamed(namespace, name, backendService string) *corev1.Service {
+	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
 	if backendService != "" {
 		service.Annotations = map[string]string{backendServiceAnnotation: backendService}
 	}
