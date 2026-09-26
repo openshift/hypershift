@@ -63,7 +63,7 @@ type CompletedGCPNodePoolCreateOptions struct {
 
 func BindDeveloperOptions(opts *RawGCPNodePoolCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.MachineType, "machine-type", opts.MachineType, util.GCPMachineTypeHelp)
-	flags.StringVar(&opts.Zone, "zone", opts.Zone, "The GCP zone for node instances (e.g. us-central1-a)")
+	flags.StringVar(&opts.Zone, "zone", opts.Zone, "(Required) GCP zone for node instances (e.g. us-central1-a)")
 	flags.StringVar(&opts.Subnet, "subnet", opts.Subnet, "The subnet name for node instances")
 	flags.Int32Var(&opts.BootDiskSize, "boot-disk-size", opts.BootDiskSize, "The size of the boot disk in GB (minimum 20)")
 	flags.StringVar(&opts.BootDiskType, "boot-disk-type", opts.BootDiskType, "The type of the boot disk (e.g. pd-standard, pd-ssd)")
@@ -81,6 +81,10 @@ func (o *RawGCPNodePoolCreateOptions) Validate(_ context.Context, _ *core.Create
 	// 1-19 will be rejected by API validation (minimum 20GB)
 	if o.BootDiskSize < 0 {
 		return nil, fmt.Errorf("boot disk size cannot be negative: %d", o.BootDiskSize)
+	}
+
+	if err := util.ValidateRequiredOption("zone", o.Zone); err != nil {
+		return nil, err
 	}
 
 	return &ValidatedGCPNodePoolCreateOptions{
