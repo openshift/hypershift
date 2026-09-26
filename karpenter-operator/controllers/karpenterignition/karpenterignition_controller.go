@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/ntotuning"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -54,6 +55,7 @@ const (
 	nodePoolAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
 
 	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
+	tuningConfigFinalizer  = "hypershift.openshift.io/karpenter-tuning-config-finalizer"
 )
 
 type KarpenterIgnitionReconciler struct {
@@ -162,33 +164,16 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		skewErr = detectVersionSkew(hostedCluster, version)
 	}
 
-	// If spec.kubelet is configured, add a finalizer to clean up the configmap. We can't just use owner
-	// references because this is cross cluster (the configmap lives in the control plane)
-	if !openshiftEC2NodeClass.Spec.Kubelet.IsZero() {
-
-		if !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
-			original := openshiftEC2NodeClass.DeepCopy()
-			controllerutil.AddFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
-			if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
-				client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to add kubelet config finalizer: %w", err)
-			}
-		}
+	if err := r.reconcileFinalizers(ctx, openshiftEC2NodeClass); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileKubeletConfigMap(ctx, hcp, openshiftEC2NodeClass); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile kubelet config configmap: %w", err)
 	}
 
-	// The reconcile will have deleted the configmap if we make it here, so we can
-	// remove the finalizer
-	if openshiftEC2NodeClass.Spec.Kubelet.IsZero() && controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
-		original := openshiftEC2NodeClass.DeepCopy()
-		controllerutil.RemoveFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
-		if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
-			client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to remove kubelet config finalizer: %w", err)
-		}
+	if err := r.reconcileTuningConfigs(ctx, hcp, openshiftEC2NodeClass); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile tuning configs: %w", err)
 	}
 
 	if err := r.reconcileNodeClassToken(ctx, hcp, hostedCluster, openshiftEC2NodeClass, releaseImage); err != nil {
@@ -219,6 +204,48 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	return ctrl.Result{}, nil
 }
 
+// reconcileFinalizers adds or removes kubelet and tuning config finalizers
+// depending on whether the respective spec fields are populated.
+func (r *KarpenterIgnitionReconciler) reconcileFinalizers(
+	ctx context.Context,
+	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
+) error {
+	// Add finalizers for cross-cluster resources that need cleanup on deletion.
+	needsKubelet := !openshiftEC2NodeClass.Spec.Kubelet.IsZero() && !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+	needsTuning := len(openshiftEC2NodeClass.Spec.TuningConfig) > 0 && !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, tuningConfigFinalizer)
+	if needsKubelet || needsTuning {
+		original := openshiftEC2NodeClass.DeepCopy()
+		if needsKubelet {
+			controllerutil.AddFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+		}
+		if needsTuning {
+			controllerutil.AddFinalizer(openshiftEC2NodeClass, tuningConfigFinalizer)
+		}
+		if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+			client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to add finalizers: %w", err)
+		}
+	}
+
+	// Remove finalizers when their respective configs are cleared.
+	removeKubelet := openshiftEC2NodeClass.Spec.Kubelet.IsZero() && controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+	removeTuning := len(openshiftEC2NodeClass.Spec.TuningConfig) == 0 && controllerutil.ContainsFinalizer(openshiftEC2NodeClass, tuningConfigFinalizer)
+	if removeKubelet || removeTuning {
+		original := openshiftEC2NodeClass.DeepCopy()
+		if removeKubelet {
+			controllerutil.RemoveFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+		}
+		if removeTuning {
+			controllerutil.RemoveFinalizer(openshiftEC2NodeClass, tuningConfigFinalizer)
+		}
+		if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+			client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to remove finalizers: %w", err)
+		}
+	}
+	return nil
+}
+
 // reconcileDeletedNodeClass handles cleanup when an OpenshiftEC2NodeClass is being deleted.
 // It deletes the kubelet ConfigMap from the management cluster and removes the finalizer
 // to allow the NodeClass deletion to proceed.
@@ -229,31 +256,42 @@ func (r *KarpenterIgnitionReconciler) reconcileDeletedNodeClass(
 ) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	if !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
+	hasKubeletFinalizer := controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+	hasTuningFinalizer := controllerutil.ContainsFinalizer(openshiftEC2NodeClass, tuningConfigFinalizer)
+	if !hasKubeletFinalizer && !hasTuningFinalizer {
 		return ctrl.Result{}, nil
 	}
 
-	// Delete the kubelet ConfigMap from the management cluster
-	configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
-			Namespace: hcp.Namespace,
-		},
+	if hasKubeletFinalizer {
+		configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      configMapName,
+				Namespace: hcp.Namespace,
+			},
+		}
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.ManagementClient, cm); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete kubelet config configmap %s: %w", configMapName, err)
+		}
+		log.Info("Deleted kubelet config ConfigMap", "name", configMapName)
 	}
-	if _, err := k8sutil.DeleteIfNeeded(ctx, r.ManagementClient, cm); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to delete kubelet config configmap %s: %w", configMapName, err)
-	}
-	log.Info("Deleted kubelet config ConfigMap", "name", configMapName)
 
-	// Remove the finalizer to allow NodeClass deletion to proceed
+	if hasTuningFinalizer {
+		nodePoolName := karpenterutil.KarpenterNodePoolName(openshiftEC2NodeClass)
+		if err := ntotuning.DeleteTuningOutputs(ctx, r.ManagementClient, hcp.Namespace, nodePoolName); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete tuning output configs: %w", err)
+		}
+		log.Info("Deleted tuning output ConfigMaps", "nodePool", nodePoolName)
+	}
+
 	original := openshiftEC2NodeClass.DeepCopy()
 	controllerutil.RemoveFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+	controllerutil.RemoveFinalizer(openshiftEC2NodeClass, tuningConfigFinalizer)
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
 		client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to remove kubelet config finalizer: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to remove finalizers: %w", err)
 	}
-	log.Info("Removed kubelet config finalizer from OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
+	log.Info("Removed finalizers from OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
 
 	return ctrl.Result{}, nil
 }

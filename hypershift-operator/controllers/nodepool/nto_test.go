@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/ntotuning"
 	"github.com/openshift/hypershift/support/upsert"
 
 	performanceprofilev2 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2"
@@ -229,7 +230,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: tuned1,
+						ntotuning.ConfigKey: tuned1,
 					},
 					BinaryData: nil,
 				},
@@ -263,7 +264,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: tuned1,
+						ntotuning.ConfigKey: tuned1,
 					},
 				},
 				&corev1.ConfigMap{
@@ -272,7 +273,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: tuned2,
+						ntotuning.ConfigKey: tuned2,
 					},
 				},
 			},
@@ -323,7 +324,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: perfprofOne,
+						ntotuning.ConfigKey: perfprofOne,
 					},
 					BinaryData: nil,
 				},
@@ -358,7 +359,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: perfprofOne,
+						ntotuning.ConfigKey: perfprofOne,
 					},
 				},
 				&corev1.ConfigMap{
@@ -367,7 +368,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: perfprofTwo,
+						ntotuning.ConfigKey: perfprofTwo,
 					},
 				},
 			},
@@ -423,7 +424,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: tuned1,
+						ntotuning.ConfigKey: tuned1,
 					},
 				},
 				&corev1.ConfigMap{
@@ -432,7 +433,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: tuned2,
+						ntotuning.ConfigKey: tuned2,
 					},
 				},
 				&corev1.ConfigMap{
@@ -441,7 +442,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tuningConfigKey: perfprofOne,
+						ntotuning.ConfigKey: perfprofOne,
 					},
 				},
 			},
@@ -456,11 +457,9 @@ status: {}
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			r := NodePoolReconciler{
-				Client: fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build(),
-			}
+			c := fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build()
 
-			td, pp, ppName, err := r.getTuningConfig(t.Context(), tc.nodePool)
+			td, pp, ppName, err := ntotuning.GetTuningConfig(t.Context(), c, tc.nodePool.Namespace, tc.nodePool.Spec.TuningConfig)
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
