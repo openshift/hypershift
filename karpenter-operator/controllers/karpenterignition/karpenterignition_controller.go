@@ -56,6 +56,11 @@ const (
 	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
 )
 
+// AzureUserDataSecretName is the fixed name of the single userData secret generated
+// for Azure clusters. Unlike AWS (one secret per OpenshiftEC2NodeClass), Azure uses
+// one ignition config per cluster until an OpenshiftAzureNodeClass wrapper is introduced.
+const AzureUserDataSecretName = "karpenter-azure-userdata"
+
 type KarpenterIgnitionReconciler struct {
 	ManagementClient        client.Client
 	GuestClient             client.Client
@@ -65,6 +70,7 @@ type KarpenterIgnitionReconciler struct {
 	HypershiftOperatorImage string
 	IgnitionEndpoint        string
 	Namespace               string
+	Platform                hyperv1.PlatformType
 	upsert.CreateOrUpdateProvider
 }
 
@@ -75,23 +81,40 @@ func (r *KarpenterIgnitionReconciler) SetupWithManager(mgr ctrl.Manager, managem
 
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		Named("karpenter-ignition-controller").
-		// Watch OpenshiftEC2NodeClass in the guest cluster (main manager)
-		For(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
-		// Watch HostedControlPlane in the management cluster
-		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{},
-			handler.EnqueueRequestsFromMapFunc(r.mapToOpenshiftEC2NodeClasses),
-			r.hcpPredicate())).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		})
+
+	switch r.Platform {
+	case hyperv1.AWSPlatform:
+		// AWS: watch OpenshiftEC2NodeClass in the guest cluster (one ignition config per nodeclass).
+		// HCP changes fan out to all existing nodeclass reconcile requests.
+		bldr = bldr.
+			For(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{},
+				handler.EnqueueRequestsFromMapFunc(r.mapToOpenshiftEC2NodeClasses),
+				r.hcpPredicate()))
+	case hyperv1.AzurePlatform:
+		// Azure: one ignition config per cluster, triggered by HCP changes and
+		// management-cluster Secret changes (so deleted/modified secrets are repaired).
+		// No guest-cluster nodeclass watch (no OpenshiftAzureNodeClass yet).
+		bldr = bldr.
+			WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{},
+				handler.EnqueueRequestsFromMapFunc(r.mapToAzureIgnitionRequest),
+				r.hcpPredicate())).
+			WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
+				handler.EnqueueRequestsFromMapFunc(r.mapToAzureIgnitionRequest),
+				r.managedByKarpenterSecretPredicate()))
+	default:
+		return fmt.Errorf("unsupported platform %q for karpenter ignition controller", r.Platform)
+	}
 
 	return bldr.Complete(r)
 }
 
 func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling Karpenter ignition config for OpenshiftEC2NodeClass", "nodeclass", req.Name)
 
 	hcp, err := karpenterutil.GetHCP(ctx, r.ManagementClient, r.Namespace)
 	if err != nil {
@@ -108,6 +131,21 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		log.Info("Karpenter is not enabled, skipping reconcile")
 		return ctrl.Result{}, nil
 	}
+
+	switch r.Platform {
+	case hyperv1.AWSPlatform:
+		return r.reconcileAWS(ctx, req, hcp)
+	case hyperv1.AzurePlatform:
+		return r.reconcileAzure(ctx, hcp)
+	default:
+		return ctrl.Result{}, fmt.Errorf("unsupported platform %q", r.Platform)
+	}
+}
+
+// reconcileAWS handles per-OpenshiftEC2NodeClass ignition reconciliation for AWS.
+func (r *KarpenterIgnitionReconciler) reconcileAWS(ctx context.Context, req ctrl.Request, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling Karpenter ignition config for OpenshiftEC2NodeClass", "nodeclass", req.Name)
 
 	openshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 	if err := r.GuestClient.Get(ctx, req.NamespacedName, openshiftEC2NodeClass); err != nil {
@@ -217,6 +255,82 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileAzure generates a single ignition config + userData secret per cluster.
+// No per-nodeclass watches exist for Azure yet. The reconcile is triggered by HCP changes.
+func (r *KarpenterIgnitionReconciler) reconcileAzure(ctx context.Context, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling Karpenter Azure ignition config")
+
+	hostedCluster, err := hostedClusterFromHCP(hcp, r.IgnitionEndpoint)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to build HostedCluster from HCP: %w", err)
+	}
+
+	releaseImage, _, requeue := currentClusterRelease(hostedCluster)
+	if requeue {
+		log.Info("No version history available, requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+	if releaseImage == "" {
+		log.Info("Release image not yet available, requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	np := r.createInMemoryAzureNodePool(hcp, releaseImage)
+
+	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to build config generator: %w", err)
+	}
+
+	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
+		DecompressAndDecodeConfig: true,
+	})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
+	}
+
+	if err := token.Reconcile(ctx); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile token: %w", err)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// createInMemoryAzureNodePool builds a minimal in-memory NodePool for Azure token generation.
+func (r *KarpenterIgnitionReconciler) createInMemoryAzureNodePool(
+	hcp *hyperv1.HostedControlPlane,
+	releaseImage string,
+) *hyperv1.NodePool {
+	return &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        AzureUserDataSecretName,
+			Namespace:   hcp.Namespace,
+			Annotations: map[string]string{},
+			Labels: map[string]string{
+				karpenterutil.ManagedByKarpenterLabel: "true",
+			},
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcp.Name,
+			Replicas:    ptr.To[int32](0),
+			Release: hyperv1.Release{
+				Image: releaseImage,
+			},
+			Config: []corev1.LocalObjectReference{
+				{Name: karpenterutil.KarpenterTaintConfigMapName},
+			},
+			Arch: hyperv1.ArchitectureAMD64,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzureNodePoolPlatform{
+					Image: hyperv1.AzureVMImage{},
+				},
+			},
+		},
+	}
 }
 
 // reconcileDeletedNodeClass handles cleanup when an OpenshiftEC2NodeClass is being deleted.
@@ -789,9 +903,30 @@ func (r *KarpenterIgnitionReconciler) mapToOpenshiftEC2NodeClasses(ctx context.C
 	return requests
 }
 
+// mapToAzureIgnitionRequest maps HCP events to a single fixed reconcile request for Azure.
+func (r *KarpenterIgnitionReconciler) mapToAzureIgnitionRequest(_ context.Context, _ client.Object) []reconcile.Request {
+	return []reconcile.Request{
+		{NamespacedName: client.ObjectKey{Name: AzureUserDataSecretName}},
+	}
+}
+
 // hcpPredicate filters HCP events to only watch HCPs in our namespace.
 func (r *KarpenterIgnitionReconciler) hcpPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		return obj.GetNamespace() == r.Namespace
+	})
+}
+
+// managedByKarpenterSecretPredicate filters Secret events to only include
+// secrets in our namespace that carry the ManagedByKarpenterLabel. This is
+// used for the Azure path so that deleted or modified userData secrets
+// trigger re-reconciliation.
+func (r *KarpenterIgnitionReconciler) managedByKarpenterSecretPredicate() predicate.Predicate {
+	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		if obj.GetNamespace() != r.Namespace {
+			return false
+		}
+		labels := obj.GetLabels()
+		return labels != nil && labels[karpenterutil.ManagedByKarpenterLabel] == "true"
 	})
 }

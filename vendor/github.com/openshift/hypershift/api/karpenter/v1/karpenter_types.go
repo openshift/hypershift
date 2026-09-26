@@ -23,6 +23,13 @@ const (
 	// UserDataAMILabel is a label set in the userData secret generated for karpenter instances.
 	UserDataAMILabel = "hypershift.openshift.io/ami"
 
+	// Azure Marketplace image labels are set on the userData secret so the downstream
+	// nodeclass reconciler can project them onto AKSNodeClass.Spec.MarketplaceImage.
+	UserDataAzureMarketplacePublisherLabel = "hypershift.openshift.io/azure-marketplace-publisher"
+	UserDataAzureMarketplaceOfferLabel     = "hypershift.openshift.io/azure-marketplace-offer"
+	UserDataAzureMarketplaceSKULabel       = "hypershift.openshift.io/azure-marketplace-sku"
+	UserDataAzureMarketplaceVersionLabel   = "hypershift.openshift.io/azure-marketplace-version"
+
 	// ConditionTypeReady is the top-level readiness condition for the OpenshiftEC2NodeClass.
 	// It is computed atomically by the EC2 node class controller, combining the upstream
 	// EC2NodeClass readiness with the VersionResolved condition status.

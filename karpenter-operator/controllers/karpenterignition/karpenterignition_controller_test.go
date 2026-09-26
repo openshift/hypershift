@@ -230,6 +230,7 @@ kind: Config`),
 		HypershiftOperatorImage: "test-hypershift-operator-image",
 		IgnitionEndpoint:        testIgnitionEndpoint,
 		Namespace:               testNamespace,
+		Platform:                hyperv1.AWSPlatform,
 	}
 
 	ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -543,6 +544,7 @@ kind: Config`),
 			HypershiftOperatorImage: "test-hypershift-operator-image",
 			IgnitionEndpoint:        testIgnitionEndpoint,
 			Namespace:               testNamespace,
+			Platform:                hyperv1.AWSPlatform,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -588,6 +590,7 @@ kind: Config`),
 			HypershiftOperatorImage: "test-hypershift-operator-image",
 			IgnitionEndpoint:        testIgnitionEndpoint,
 			Namespace:               testNamespace,
+			Platform:                hyperv1.AWSPlatform,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -634,6 +637,7 @@ kind: Config`),
 			HypershiftOperatorImage: "test-hypershift-operator-image",
 			IgnitionEndpoint:        testIgnitionEndpoint,
 			Namespace:               testNamespace,
+			Platform:                hyperv1.AWSPlatform,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -694,6 +698,7 @@ kind: Config`),
 			HypershiftOperatorImage: "test-hypershift-operator-image",
 			IgnitionEndpoint:        testIgnitionEndpoint,
 			Namespace:               testNamespace,
+			Platform:                hyperv1.AWSPlatform,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -1756,6 +1761,7 @@ kind: Config`),
 			HypershiftOperatorImage: "test-hypershift-operator-image",
 			IgnitionEndpoint:        testIgnitionEndpoint,
 			Namespace:               testNamespace,
+			Platform:                hyperv1.AWSPlatform,
 			CreateOrUpdateProvider:  upsert.New(false),
 		}
 		return r, fakeGuestClient

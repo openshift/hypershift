@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenterignition"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 
@@ -17,12 +19,14 @@ import (
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -110,9 +114,17 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create guest kubeconfig: %w", err)
 	}
 
+	// Detect the platform type from the HCP so platform-dependent setup
+	// (CRD wait list, controller watches) uses the right resources.
+	platform, err := detectPlatform(ctx, managementKubeconfig, scheme)
+	if err != nil {
+		return fmt.Errorf("failed to detect platform from HostedControlPlane: %w", err)
+	}
+	setupLog.Info("detected platform", "platform", platform)
+
 	if standaloneAdapter {
 		// In standalone mode the standalone karpenter-operator reconciles the Karpenter CRDs we need
-		if err := waitForKarpenterCRDs(ctx, guestKubeconfig); err != nil {
+		if err := waitForKarpenterCRDs(ctx, guestKubeconfig, platform); err != nil {
 			return fmt.Errorf("failed waiting for standalone Karpenter CRDs: %w", err)
 		}
 	}
@@ -203,6 +215,7 @@ func run(ctx context.Context) error {
 		HypershiftOperatorImage: hypershiftOperatorImage,
 		IgnitionEndpoint:        ignitionEndpoint,
 		Namespace:               namespace,
+		Platform:                platform,
 	}
 	if err := kir.SetupWithManager(mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup karpenter ignition controller with manager: %w", err)
@@ -227,4 +240,20 @@ func kubeconfigFromFile(path string) (*rest.Config, error) {
 		return nil, fmt.Errorf("failed to construct kubeconfig from path %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// detectPlatform reads the HostedControlPlane in the operator namespace and
+// returns its platform type. This is called once at startup.
+func detectPlatform(ctx context.Context, cfg *rest.Config, scheme *runtime.Scheme) (hyperv1.PlatformType, error) {
+	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return "", fmt.Errorf("failed to create client: %w", err)
+	}
+
+	hcp, err := karpenterutil.GetHCP(ctx, c, namespace)
+	if err != nil {
+		return "", err
+	}
+
+	return hcp.Spec.Platform.Type, nil
 }
