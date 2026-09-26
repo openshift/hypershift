@@ -741,6 +741,10 @@ type HostedClusterSpec struct {
 	// configuration API.
 	//
 	// +optional
+	// serviceAccountIssuer is ignored; use spec.issuerURL instead.
+	// Declare this validation on the HostedCluster-specific field so it does not
+	// also constrain ClusterConfiguration when it is used by HostedControlPlane.
+	// +kubebuilder:validation:XValidation:rule="!has(self.authentication) || !has(self.authentication.serviceAccountIssuer) || self.authentication.serviceAccountIssuer == '' || (oldSelf.hasValue() && has(oldSelf.value().authentication) && has(oldSelf.value().authentication.serviceAccountIssuer) && self.authentication.serviceAccountIssuer == oldSelf.value().authentication.serviceAccountIssuer)",message="serviceAccountIssuer is ignored by HyperShift; set spec.issuerURL instead and leave this field unset",fieldPath=".authentication.serviceAccountIssuer",optionalOldSelf=true
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
