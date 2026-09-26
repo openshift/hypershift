@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
@@ -35,7 +36,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -246,6 +246,91 @@ func TestReconcileErrorHandling(t *testing.T) {
 	}
 }
 
+func TestReconcileRBAC(t *testing.T) {
+	tests := []struct {
+		name           string
+		ingressEnabled bool
+		isAROHCP       bool
+		wantIngress    bool
+		wantARO        bool
+		wantError      bool
+	}{
+		{
+			name:           "When ingress is enabled for a non-ARO HCP, it should reconcile base and ingress RBAC",
+			ingressEnabled: true,
+			wantIngress:    true,
+		},
+		{
+			name:           "When ingress is disabled, it should preserve existing ingress RBAC reconciliation behavior",
+			ingressEnabled: false,
+			wantIngress:    true,
+		},
+		{
+			name:           "When the HCP is ARO, it should reconcile the ARO-only RBAC resources",
+			ingressEnabled: true,
+			isAROHCP:       true,
+			wantIngress:    true,
+			wantARO:        true,
+		},
+		{
+			name:      "When CreateOrUpdate fails, it should return the reconciliation error",
+			wantError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := fakeHCP()
+			if !tc.ingressEnabled {
+				hcp.Spec.Capabilities = &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability}}
+			}
+			if tc.isAROHCP {
+				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+				hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					},
+				}
+			}
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			createOrUpdateProvider := upsert.CreateOrUpdateProvider(&simpleCreateOrUpdater{})
+			if tc.wantError {
+				createOrUpdateProvider = &errorCreateOrUpdater{err: fmt.Errorf("injected CreateOrUpdate failure")}
+			}
+			r := &reconciler{
+				client:                 guestClient,
+				CreateOrUpdateProvider: createOrUpdateProvider,
+			}
+			err := r.reconcileRBAC(t.Context(), hcp)
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "injected CreateOrUpdate failure") {
+					t.Fatalf("expected CreateOrUpdate error, got: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			assertRBACObjectExists := func(obj client.Object, wantExists bool) {
+				err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)
+				if wantExists && err != nil {
+					t.Fatalf("expected %T %s to exist: %v", obj, obj.GetName(), err)
+				}
+				if !wantExists && !apierrors.IsNotFound(err) {
+					t.Fatalf("expected %T %s to be absent, got: %v", obj, obj.GetName(), err)
+				}
+			}
+			assertRBACObjectExists(manifests.CSRApproverClusterRole(), true)
+			assertRBACObjectExists(manifests.IngressToRouteControllerClusterRole(), tc.wantIngress)
+			assertRBACObjectExists(manifests.IngressToRouteControllerRole(), tc.wantIngress)
+			assertRBACObjectExists(manifests.IngressToRouteControllerClusterRoleBinding(), tc.wantIngress)
+			assertRBACObjectExists(manifests.IngressToRouteControllerRoleBinding(), tc.wantIngress)
+			assertRBACObjectExists(manifests.AzureDiskCSIDriverNodeServiceAccountRole(), tc.wantARO)
+		})
+	}
+}
+
 func TestReconcileOLM(t *testing.T) {
 	t.Parallel()
 	var errs []error
@@ -365,6 +450,14 @@ type simpleCreateOrUpdater struct{}
 
 func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 	return controllerutil.CreateOrUpdate(ctx, c, obj, f)
+}
+
+type errorCreateOrUpdater struct {
+	err error
+}
+
+func (p *errorCreateOrUpdater) CreateOrUpdate(context.Context, client.Client, client.Object, controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	return controllerutil.OperationResultNone, p.err
 }
 
 func TestReconcileIngressControllerCertSource(t *testing.T) {
@@ -745,8 +838,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 		})
 	}
 }
-
-var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
 	t.Parallel()
