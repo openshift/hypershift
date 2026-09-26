@@ -12,6 +12,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -33,7 +34,7 @@ func TestIgnitionServiceReconcile(t *testing.T) {
 					Service: hyperv1.Ignition,
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type:     hyperv1.NodePort,
-						NodePort: &hyperv1.NodePortPublishingStrategy{Port: 1125},
+						NodePort: &hyperv1.NodePortPublishingStrategy{Port: ptr.To(int32(1125))},
 					},
 				},
 			},
