@@ -30,7 +30,7 @@ func TestReconcileGCPLoadBalancerServiceAnnotations(t *testing.T) {
 		want    map[string]string
 	}{
 		{
-			name: "merges HCP labels into a legacy CCM Service",
+			name: "When a legacy CCM Service has service-owned labels, it should merge HCP labels",
 			service: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test", Annotations: map[string]string{
 					gcputil.LBResourceLabelsAnnotation: "team=payments",
@@ -44,7 +44,7 @@ func TestReconcileGCPLoadBalancerServiceAnnotations(t *testing.T) {
 			},
 		},
 		{
-			name: "removes only withdrawn HCP labels",
+			name: "When HCP labels are withdrawn, it should remove only those labels",
 			service: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test", Annotations: map[string]string{
 					gcputil.LBResourceLabelsAnnotation:        "env=prod,team=payments",
@@ -58,7 +58,7 @@ func TestReconcileGCPLoadBalancerServiceAnnotations(t *testing.T) {
 			},
 		},
 		{
-			name: "does not manage a Service owned by another controller",
+			name: "When a Service is owned by another controller, it should not manage it",
 			service: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test"},
 				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &otherClass},
@@ -67,7 +67,7 @@ func TestReconcileGCPLoadBalancerServiceAnnotations(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "merges multiple labels and resolves an HCP owned key conflict",
+			name: "When HCP labels conflict with managed labels, it should resolve the conflict",
 			service: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "test", Annotations: map[string]string{
 					gcputil.LBResourceLabelsAnnotation:        "env=service,team=payments,zone=east",
@@ -108,14 +108,14 @@ func TestIsLegacyGCPLoadBalancerService(t *testing.T) {
 		service *corev1.Service
 		want    bool
 	}{
-		{name: "default class LoadBalancer", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: true},
-		{name: "legacy external class", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyExternal}}, want: true},
-		{name: "legacy internal class", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyInternal}}, want: true},
-		{name: "unrelated class", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &otherClass}}, want: false},
-		{name: "RBS annotation", service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{l4RBSAnnotation: l4RBSEnabled}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: false},
-		{name: "RBS v2 finalizer", service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{Finalizers: []string{netLBFinalizerV2}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: false},
-		{name: "RBS v3 finalizer", service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{Finalizers: []string{netLBFinalizerV3}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: false},
-		{name: "ClusterIP Service", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}}, want: false},
+		{name: "When a LoadBalancer has no class, it should be legacy", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: true},
+		{name: "When a LoadBalancer has the legacy external class, it should be legacy", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyExternal}}, want: true},
+		{name: "When a LoadBalancer has the legacy internal class, it should be legacy", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &legacyInternal}}, want: true},
+		{name: "When a LoadBalancer has an unrelated class, it should not be legacy", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: &otherClass}}, want: false},
+		{name: "When a LoadBalancer has the RBS annotation, it should not be legacy", service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{l4RBSAnnotation: l4RBSEnabled}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: false},
+		{name: "When a LoadBalancer has the RBS v2 finalizer, it should not be legacy", service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{Finalizers: []string{netLBFinalizerV2}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: false},
+		{name: "When a LoadBalancer has the RBS v3 finalizer, it should not be legacy", service: &corev1.Service{ObjectMeta: metav1.ObjectMeta{Finalizers: []string{netLBFinalizerV3}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}, want: false},
+		{name: "When a Service is ClusterIP, it should not be legacy", service: &corev1.Service{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}}, want: false},
 	}
 
 	for _, tt := range tests {

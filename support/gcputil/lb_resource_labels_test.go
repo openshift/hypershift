@@ -15,7 +15,7 @@ func TestReconcileLBResourceLabelAnnotations(t *testing.T) {
 		changed     bool
 	}{
 		{
-			name: "preserves service-owner labels while adding HCP labels",
+			name: "When adding HCP labels, it should preserve service-owner labels",
 			annotations: map[string]string{
 				LBResourceLabelsAnnotation: "team=payments",
 			},
@@ -27,7 +27,7 @@ func TestReconcileLBResourceLabelAnnotations(t *testing.T) {
 			changed: true,
 		},
 		{
-			name: "updates HCP labels while preserving service-owner labels",
+			name: "When updating HCP labels, it should preserve service-owner labels",
 			annotations: map[string]string{
 				LBResourceLabelsAnnotation:        "env=dev,team=payments",
 				ManagedLBResourceLabelsAnnotation: "env",
@@ -40,7 +40,7 @@ func TestReconcileLBResourceLabelAnnotations(t *testing.T) {
 			changed: true,
 		},
 		{
-			name: "removes only withdrawn HCP labels",
+			name: "When HCP labels are withdrawn, it should remove only those labels",
 			annotations: map[string]string{
 				LBResourceLabelsAnnotation:        "env=prod,team=payments",
 				ManagedLBResourceLabelsAnnotation: "env",
@@ -51,7 +51,7 @@ func TestReconcileLBResourceLabelAnnotations(t *testing.T) {
 			changed: true,
 		},
 		{
-			name: "clears native annotation after final HCP label is withdrawn",
+			name: "When the final HCP label is withdrawn, it should clear the native annotation",
 			annotations: map[string]string{
 				LBResourceLabelsAnnotation:        "env=prod",
 				ManagedLBResourceLabelsAnnotation: "env",
@@ -62,7 +62,7 @@ func TestReconcileLBResourceLabelAnnotations(t *testing.T) {
 			changed: true,
 		},
 		{
-			name: "leaves an unmanaged annotation unchanged without HCP labels",
+			name: "When there are no HCP labels, it should leave an unmanaged annotation unchanged",
 			annotations: map[string]string{
 				LBResourceLabelsAnnotation: "team=payments",
 			},
