@@ -356,6 +356,83 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                "When KubeVirt with OVNKubernetes has user-specified MTU, it should apply both KubeVirt defaults and MTU",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				MTU: 1300,
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort:       &genevePort,
+							V4InternalSubnet: v4InternalSubnet,
+							MTU:              ptr.To(uint32(1300)),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When OVN config has MTU set, it should propagate MTU to network operator",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				MTU: 1400,
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							MTU: ptr.To(uint32(1400)),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When OVN config has MTU and IPv4 subnets, it should propagate both",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				MTU: 8901,
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "192.168.1.0/24",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							MTU: ptr.To(uint32(8901)),
+							IPv4: &operatorv1.IPv4OVNKubernetesConfig{
+								InternalJoinSubnet: "192.168.1.0/24",
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testsCases {
