@@ -319,6 +319,82 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                   "When Azure platform has Internal LB scope annotation it should set Internal scope on default IngressController",
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputPlatformType:      hyperv1.AzurePlatform,
+			inputReplicas:          fakeInputReplicas,
+			inputIsIBMCloudUPI:     false,
+			inputIsPrivate:         false,
+			inputLoadBalancerScope: operatorv1.InternalLoadBalancer,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type: operatorv1.LoadBalancerServiceStrategyType,
+						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							Scope: operatorv1.InternalLoadBalancer,
+						},
+					},
+					DefaultCertificate: &corev1.LocalObjectReference{
+						Name: manifests.IngressDefaultIngressControllerCert().Name,
+					},
+				},
+			},
+		},
+		{
+			name:                   "When Azure platform has External LB scope it should set External scope on default IngressController",
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputPlatformType:      hyperv1.AzurePlatform,
+			inputReplicas:          fakeInputReplicas,
+			inputIsIBMCloudUPI:     false,
+			inputIsPrivate:         false,
+			inputLoadBalancerScope: operatorv1.ExternalLoadBalancer,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type: operatorv1.LoadBalancerServiceStrategyType,
+						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							Scope: operatorv1.ExternalLoadBalancer,
+						},
+					},
+					DefaultCertificate: &corev1.LocalObjectReference{
+						Name: manifests.IngressDefaultIngressControllerCert().Name,
+					},
+				},
+			},
+		},
+		{
+			name:                   "When Azure platform has private annotation it should use Private publishing strategy",
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputPlatformType:      hyperv1.AzurePlatform,
+			inputReplicas:          fakeInputReplicas,
+			inputIsIBMCloudUPI:     false,
+			inputIsPrivate:         true,
+			inputLoadBalancerScope: operatorv1.InternalLoadBalancer,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type:    operatorv1.PrivateStrategyType,
+						Private: &operatorv1.PrivateStrategy{},
+					},
+					DefaultCertificate: &corev1.LocalObjectReference{
+						Name: manifests.IngressDefaultIngressControllerCert().Name,
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
