@@ -1,12 +1,16 @@
 package machineapprover
 
 import (
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/testutil"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -140,44 +144,98 @@ func TestAdaptDeployment(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
+		for _, release := range []struct {
+			version string
+			tls     bool
+		}{
+			{version: "4.21.32-candidate"},
+			{version: "4.21.32"},
+			{version: "4.22.0"},
+			{version: "4.23.0-rc.0", tls: true},
+			{version: "4.23.0", tls: true},
+			{version: "5.0.0", tls: true},
+			{version: "invalid"},
+			{version: ""},
+		} {
+			for _, profile := range []struct {
+				name  string
+				value *configv1.TLSSecurityProfile
+				min   string
+			}{
+				{name: "default", min: "VersionTLS12"},
+				{name: "Modern", value: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, min: "VersionTLS13"},
+				{name: "invalid", value: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType}},
+			} {
+				t.Run(fmt.Sprintf("%s/%s/%s", tc.name, release.version, profile.name), func(t *testing.T) {
+					t.Parallel()
+					g := NewWithT(t)
 
-			hcp := &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-hcp",
-					Namespace: tc.namespace,
-				},
-			}
-
-			containers := make([]corev1.Container, len(tc.initialContainers))
-			for i := range tc.initialContainers {
-				containers[i] = *tc.initialContainers[i].DeepCopy()
-			}
-
-			deployment := &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-deployment",
-					Namespace: tc.namespace,
-				},
-				Spec: appsv1.DeploymentSpec{
-					Template: corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{
-							Containers: containers,
+					hcp := &hyperv1.HostedControlPlane{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-hcp",
+							Namespace: tc.namespace,
 						},
-					},
-				},
+						Spec: hyperv1.HostedControlPlaneSpec{
+							Configuration: &hyperv1.ClusterConfiguration{APIServer: &configv1.APIServerSpec{
+								TLSSecurityProfile: profile.value,
+							}},
+						},
+					}
+
+					containers := make([]corev1.Container, len(tc.initialContainers))
+					for i := range tc.initialContainers {
+						containers[i] = *tc.initialContainers[i].DeepCopy()
+					}
+
+					deployment := &appsv1.Deployment{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-deployment",
+							Namespace: tc.namespace,
+						},
+						Spec: appsv1.DeploymentSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: containers,
+								},
+							},
+						},
+					}
+
+					cpContext := component.WorkloadContext{
+						HCP:                      hcp,
+						ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion(release.version)),
+						UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion("4.23.0")),
+					}
+
+					err := adaptDeployment(cpContext, deployment)
+					if release.version == "invalid" || release.version == "" {
+						g.Expect(err).To(MatchError(ContainSubstring("failed to parse control plane release version")))
+						return
+					}
+					if profile.name == "invalid" {
+						g.Expect(err).To(HaveOccurred())
+						return
+					}
+
+					g.Expect(err).ToNot(HaveOccurred())
+					tc.validate(t, deployment)
+					for _, container := range deployment.Spec.Template.Spec.Containers {
+						if container.Name != ComponentName {
+							continue
+						}
+						if release.tls {
+							g.Expect(container.Args).To(ContainElement("--tls-min-version=" + profile.min))
+							if profile.name == "Modern" {
+								g.Expect(container.Args).NotTo(ContainElement(ContainSubstring("--tls-cipher-suites=")))
+							} else {
+								g.Expect(container.Args).To(ContainElement(ContainSubstring("--tls-cipher-suites=")))
+							}
+						} else {
+							g.Expect(container.Args).NotTo(ContainElement(ContainSubstring("--tls-")))
+						}
+					}
+				})
 			}
-
-			cpContext := component.WorkloadContext{
-				HCP: hcp,
-			}
-
-			err := adaptDeployment(cpContext, deployment)
-
-			g.Expect(err).ToNot(HaveOccurred())
-			tc.validate(t, deployment)
-		})
+		}
 	}
 }

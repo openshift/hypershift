@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: f59359e836ccfdfadaba3f41ad37d60d4757299a74b0659eef9572b9147c97d2
+    hypershift.openshift.io/desired-state-hash: 35e3215f698013d1fef5187e122e3b7f4bf8f302d300a09fde2bb9c62ce086b6
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-image-registry-operator
@@ -90,7 +90,7 @@ spec:
           done
 
           exec /usr/bin/cluster-image-registry-operator \
-            --config=/var/run/configmaps/image-registry-controller-config/config.yaml \
+             \
             --files=/var/run/configmaps/image-registry-controller-config/config.yaml \
             --files="/etc/secrets/tls.crt" \
             --files="/etc/secrets/tls.key"
