@@ -7,6 +7,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/cmd/log"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -334,6 +336,125 @@ func TestValidateBackupExistsNotFound(t *testing.T) {
 		if !strings.Contains(err.Error(), "not found") {
 			t.Errorf("error should mention 'not found', got: %v", err)
 		}
+	}
+}
+
+// TestValidateBackupNamespaceMatch verifies that validateBackupExists detects when
+// the restore's --hc-name/--hc-namespace do not match the backup's includedNamespaces,
+// preventing silently partial restores. See OCPBUGS-87162.
+func TestValidateBackupNamespaceMatch(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name             string
+		hcName           string
+		hcNamespace      string
+		backupNamespaces []interface{}
+		renderMode       bool
+		shouldError      bool
+		errorSubstring   string
+	}{
+		{
+			name:             "When backup includes expected control plane namespace it should pass",
+			hcName:           "example",
+			hcNamespace:      "clusters",
+			backupNamespaces: []interface{}{"clusters", "clusters-example"},
+			renderMode:       false,
+			shouldError:      false,
+		},
+		{
+			name:             "When hc-name does not match backup namespaces it should fail",
+			hcName:           "restore-example",
+			hcNamespace:      "clusters",
+			backupNamespaces: []interface{}{"clusters", "clusters-example"},
+			renderMode:       false,
+			shouldError:      true,
+			errorSubstring:   "does not contain the expected control plane namespace 'clusters-restore-example'",
+		},
+		{
+			name:             "When hc-namespace does not match backup namespaces it should fail",
+			hcName:           "example",
+			hcNamespace:      "other-ns",
+			backupNamespaces: []interface{}{"clusters", "clusters-example"},
+			renderMode:       false,
+			shouldError:      true,
+			errorSubstring:   "does not contain the expected control plane namespace 'other-ns-example'",
+		},
+		{
+			name:             "When namespaces mismatch in render mode it should warn without failing",
+			hcName:           "restore-example",
+			hcNamespace:      "clusters",
+			backupNamespaces: []interface{}{"clusters", "clusters-example"},
+			renderMode:       true,
+			shouldError:      false,
+		},
+		{
+			name:             "When backup has no includedNamespaces it should skip namespace validation",
+			hcName:           "any-name",
+			hcNamespace:      "any-ns",
+			backupNamespaces: nil,
+			renderMode:       false,
+			shouldError:      false,
+		},
+		{
+			name:             "When expected namespace exists among additional namespaces it should pass",
+			hcName:           "prod",
+			hcNamespace:      "hcp",
+			backupNamespaces: []interface{}{"hcp", "hcp-prod", "agent-ns"},
+			renderMode:       false,
+			shouldError:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backupObj := map[string]interface{}{
+				"apiVersion": "velero.io/v1",
+				"kind":       "Backup",
+				"metadata": map[string]interface{}{
+					"name":      "test-backup",
+					"namespace": "openshift-adp",
+				},
+				"spec": map[string]interface{}{},
+				"status": map[string]interface{}{
+					"phase": "Completed",
+				},
+			}
+			if tt.backupNamespaces != nil {
+				backupObj["spec"].(map[string]interface{})["includedNamespaces"] = tt.backupNamespaces
+			}
+
+			backup := &unstructured.Unstructured{Object: backupObj}
+
+			scheme := runtime.NewScheme()
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(backup).
+				Build()
+
+			opts := &CreateOptions{
+				HCName:        tt.hcName,
+				HCNamespace:   tt.hcNamespace,
+				BackupName:    "test-backup",
+				OADPNamespace: "openshift-adp",
+				Client:        fakeClient,
+				Log:           log.Log,
+			}
+
+			err := opts.validateBackupExists(ctx, tt.renderMode)
+
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("expected error for hcName=%q hcNamespace=%q, but got none", tt.hcName, tt.hcNamespace)
+				} else if tt.errorSubstring != "" && !strings.Contains(err.Error(), tt.errorSubstring) {
+					t.Errorf("expected error to contain %q, got: %v", tt.errorSubstring, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("expected no error, but got: %v", err)
+				}
+			}
+		})
 	}
 }
 
