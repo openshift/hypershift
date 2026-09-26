@@ -27,18 +27,15 @@ limitations under the License.
 // - listType=map: Elements are identified by specific key fields for granular updates
 //
 // Important Note on listType=set:
-// The use of listType=set is discouraged for object arrays due to Server-Side Apply
-// compatibility issues. When multiple controllers attempt to apply changes to an object
-// array with listType=set, the merge behavior can be unpredictable and may lead to
-// data loss or unexpected conflicts. For object arrays, use listType=atomic for simple
-// replacement semantics or listType=map for granular field-level merging.
-// listType=set is safe to use with primitive arrays (strings, integers, etc.).
+// listType=set is only supported on slices of scalar elements. Slices of
+// structs, slices, and maps cannot be represented by Server-Side Apply. For
+// those fields, use listType=atomic or listType=map.
 //
 // The analyzer checks for:
 //
 // 1. Missing listType markers on array fields
 // 2. Invalid listType values (must be atomic, set, or map)
-// 3. Usage of listType=set on object arrays (discouraged due to compatibility issues)
+// 3. Usage of listType=set on slices of structs, slices, and maps
 // 4. Missing listMapKey markers for listType=map arrays
 // 5. Incorrect usage of listType=map on primitive arrays
 //

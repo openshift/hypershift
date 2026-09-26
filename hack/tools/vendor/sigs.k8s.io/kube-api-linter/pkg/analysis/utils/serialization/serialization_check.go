@@ -18,6 +18,7 @@ package serialization
 import (
 	"fmt"
 	"go/ast"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
@@ -304,6 +305,31 @@ func hasExplicitZeroMinValidation(pass *analysis.Pass, field *ast.Field, underly
 		// Check for explicit MinItems=0
 		return fieldMarkers.HasWithValue(markers.KubebuilderMinItemsMarker + "=0")
 	case *ast.MapType:
+		// Check for explicit MinProperties=0
+		return fieldMarkers.HasWithValue(markers.KubebuilderMinPropertiesMarker + "=0")
+	case *ast.Ident, *ast.SelectorExpr:
+		// For named types (local or from external packages), check if the underlying type is a slice or map.
+		return hasExplicitZeroMinValidationForNamedType(pass, underlying, fieldMarkers)
+	}
+
+	return false
+}
+
+// hasExplicitZeroMinValidationForNamedType checks if a named type (like a type alias to slice/map)
+// has an explicit MinItems=0 or MinProperties=0 marker.
+func hasExplicitZeroMinValidationForNamedType(pass *analysis.Pass, underlying ast.Expr, fieldMarkers markershelper.MarkerSet) bool {
+	typeOf := pass.TypesInfo.TypeOf(underlying)
+	if typeOf == nil {
+		return false
+	}
+
+	underlyingType := typeOf.Underlying()
+
+	switch underlyingType.(type) {
+	case *types.Slice:
+		// Check for explicit MinItems=0
+		return fieldMarkers.HasWithValue(markers.KubebuilderMinItemsMarker + "=0")
+	case *types.Map:
 		// Check for explicit MinProperties=0
 		return fieldMarkers.HasWithValue(markers.KubebuilderMinPropertiesMarker + "=0")
 	}

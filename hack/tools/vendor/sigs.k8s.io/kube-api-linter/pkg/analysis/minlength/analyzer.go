@@ -196,7 +196,7 @@ func checkStructType(pass *analysis.Pass, structType *ast.StructType, node ast.N
 	}
 
 	// The field does not have a min properties, and does not have any required fields.
-	pass.Reportf(node.Pos(), "%s must have a minimum properties, add %s marker", prefix, markers.KubebuilderMinPropertiesMarker)
+	pass.Reportf(node.Pos(), "%s must have either a required field or a minimum properties, add %s marker", prefix, markers.KubebuilderMinPropertiesMarker)
 }
 
 func getCombinedMarkers(markersAccess markershelper.Markers, node ast.Node, aliases []*ast.TypeSpec) markershelper.MarkerSet {

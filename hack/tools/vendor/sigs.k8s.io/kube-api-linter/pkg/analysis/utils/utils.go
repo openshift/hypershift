@@ -29,7 +29,10 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/markers"
 )
 
-const stringTypeName = "string"
+const (
+	stringTypeName       = "string"
+	minMaxValidationHint = "minimum/maximum"
+)
 
 // IsBasicType checks if the type of the given identifier is a basic type.
 // Basic types are types like int, string, bool, etc.
@@ -110,13 +113,39 @@ func IsPointerType(pass *analysis.Pass, expr ast.Expr) bool {
 		// If the ident is a type alias, keep checking until we find the underlying type.
 		typeSpec, ok := LookupTypeSpec(pass, t)
 		if !ok {
-			return false
+			// Fallback to using types info if we can't find the type spec.
+			// This can happen for types defined in external packages.
+			return isNilableType(pass, expr)
 		}
 
 		return IsPointerType(pass, typeSpec.Type)
+	case *ast.SelectorExpr:
+		// For qualified identifiers (e.g., corev1.ResourceList), use type info
+		// since we cannot look up the AST for external packages.
+		return isNilableType(pass, expr)
 	default:
 		return false
 	}
+}
+
+// isNilableType checks if the underlying type is nilable (pointer, slice, or map)
+// using Go's type system (types.TypeInfo).
+// This is used for types that cannot be resolved via AST lookups, such as types
+// from external packages.
+func isNilableType(pass *analysis.Pass, expr ast.Expr) bool {
+	typeOf := pass.TypesInfo.TypeOf(expr)
+	if typeOf == nil {
+		return false
+	}
+
+	underlying := typeOf.Underlying()
+
+	switch underlying.(type) {
+	case *types.Pointer, *types.Slice, *types.Map:
+		return true
+	}
+
+	return false
 }
 
 // LookupTypeSpec is used to search for the type spec of a given identifier.

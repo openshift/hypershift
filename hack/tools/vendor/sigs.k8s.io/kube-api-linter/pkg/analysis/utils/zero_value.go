@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/types"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -57,10 +59,141 @@ func IsZeroValueValid(pass *analysis.Pass, field *ast.Field, typeExpr ast.Expr, 
 		return isArrayZeroValueValid(pass, field, t, markersAccess)
 	case *ast.StarExpr:
 		return IsZeroValueValid(pass, field, t.X, markersAccess, considerOmitzero, qualifiedFieldName)
+	case *ast.SelectorExpr:
+		// For qualified identifiers (e.g., corev1.ResourceList), use type info
+		// since we cannot look up the AST for external packages.
+		return isSelectorExprZeroValueValid(pass, field, t, markersAccess, qualifiedFieldName)
 	}
 
 	// We don't know what the type is so can't assert the zero value is valid.
 	return false, false
+}
+
+// isSelectorExprZeroValueValid checks if a qualified identifier (external package type) has a valid zero value.
+// It uses Go's type system to determine the underlying type.
+func isSelectorExprZeroValueValid(pass *analysis.Pass, field *ast.Field, selector *ast.SelectorExpr, markersAccess markershelper.Markers, qualifiedFieldName string) (bool, bool) {
+	typeOf := pass.TypesInfo.TypeOf(selector)
+	if typeOf == nil {
+		return false, false
+	}
+
+	underlying := typeOf.Underlying()
+
+	switch t := underlying.(type) {
+	case *types.Slice:
+		return isArrayZeroValueValidFromMarkers(pass, field, markersAccess)
+	case *types.Map:
+		return isMapZeroValueValid(pass, field, markersAccess)
+	case *types.Basic:
+		return isBasicTypeZeroValueValid(pass, field, t, markersAccess, qualifiedFieldName)
+	case *types.Struct:
+		// For external structs, inspect fields via Go's type system.
+		return isExternalStructZeroValueValid(pass, field, t, markersAccess)
+	}
+
+	return false, false
+}
+
+// isBasicTypeZeroValueValid checks if a basic type (string, int, float, bool) has a valid zero value.
+// This is used for external package type aliases to basic types.
+func isBasicTypeZeroValueValid(pass *analysis.Pass, field *ast.Field, basicType *types.Basic, markersAccess markershelper.Markers, qualifiedFieldName string) (bool, bool) {
+	//nolint:exhaustive // We only handle common basic types; other types fall through to default.
+	switch basicType.Kind() {
+	case types.String:
+		return isStringZeroValueValid(pass, field, markersAccess)
+	case types.Bool:
+		// For bool, we can always use a zero value (false is valid).
+		return true, true
+	case types.Int, types.Int8, types.Int16, types.Int32, types.Int64,
+		types.Uint, types.Uint8, types.Uint16, types.Uint32, types.Uint64:
+		return isNumericZeroValueValid[int](pass, field, markersAccess, qualifiedFieldName)
+	case types.Float32, types.Float64:
+		return isNumericZeroValueValid[float64](pass, field, markersAccess, qualifiedFieldName)
+	default:
+		// For other basic types (complex, unsafe pointer, untyped, etc.), we can't determine validity.
+		return false, false
+	}
+}
+
+// isExternalStructZeroValueValid checks if an external struct type has a valid zero value.
+// It inspects the struct fields via Go's type system to count non-omitted fields,
+// similar to how local structs are validated.
+func isExternalStructZeroValueValid(pass *analysis.Pass, field *ast.Field, structType *types.Struct, markersAccess markershelper.Markers) (bool, bool) {
+	fieldMarkers := TypeAwareMarkerCollectionForField(pass, markersAccess, field)
+
+	minProperties, err := GetMinProperties(fieldMarkers)
+	if err != nil {
+		pass.Reportf(field.Pos(), "struct %s has an invalid minProperties marker: %v", FieldName(field), err)
+		return false, false
+	}
+
+	// Count non-omitted fields by inspecting the struct's fields via the type system.
+	nonOmittedFields := countNonOmittedFieldsInExternalStruct(structType)
+
+	zeroValueValid := minProperties == nil || *minProperties <= nonOmittedFields
+
+	// All fields have omitempty/omitzero - zero value is {} but validation is incomplete.
+	completeValidation := minProperties != nil || nonOmittedFields > 0
+
+	return zeroValueValid, completeValidation
+}
+
+// countNonOmittedFieldsInExternalStruct counts fields in an external struct
+// that would be marshalled in the zero value (i.e., fields without omitempty or omitzero).
+func countNonOmittedFieldsInExternalStruct(structType *types.Struct) int {
+	count := 0
+
+	for i := range structType.NumFields() {
+		f := structType.Field(i)
+
+		// Skip unexported and embedded fields.
+		if !f.Exported() || f.Embedded() {
+			continue
+		}
+
+		tag := structType.Tag(i)
+		if isFieldOmittedByTag(tag) {
+			continue
+		}
+
+		count++
+	}
+
+	return count
+}
+
+// isFieldOmittedByTag checks if a struct field would be omitted in the zero value
+// based on its struct tag. It checks for json:"-", omitempty, omitzero, and inline.
+func isFieldOmittedByTag(tag string) bool {
+	jsonTag, ok := reflect.StructTag(tag).Lookup("json")
+	if !ok {
+		return false
+	}
+
+	// Ignored field (json:"-")
+	if jsonTag == "-" {
+		return true
+	}
+
+	parts := strings.Split(jsonTag, ",")
+	for _, part := range parts[1:] {
+		if part == "omitempty" || part == "omitzero" || part == "inline" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isArrayZeroValueValidFromMarkers checks if an array/slice field can have a zero value based on markers only.
+// This is used for external package types where we can't inspect the AST.
+func isArrayZeroValueValidFromMarkers(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers) (bool, bool) {
+	fieldMarkers := TypeAwareMarkerCollectionForField(pass, markersAccess, field)
+
+	hasMinItemsMarker := fieldMarkers.Has(markers.KubebuilderMinItemsMarker)
+	minItemsMarkerIsZero := fieldMarkers.HasWithValue(fmt.Sprintf("%s=0", markers.KubebuilderMinItemsMarker))
+
+	return !hasMinItemsMarker || minItemsMarkerIsZero, hasMinItemsMarker
 }
 
 // getUnderlyingType returns the underlying type of the expression.
@@ -119,25 +252,38 @@ func isStructZeroValueValid(pass *analysis.Pass, field *ast.Field, structType *a
 
 	markerSet := TypeAwareMarkerCollectionForField(pass, markersAccess, field)
 
+	structZeroValid, completeStructValidation := checkStructMinProperties(pass, field, markerSet, structType, markersAccess, nonOmittedFields)
+	if !structZeroValid {
+		zeroValueValid = false
+	}
+
+	return zeroValueValid, completeStructValidation
+}
+
+// checkStructMinProperties checks if the struct's zero value satisfies min-properties constraints.
+// It considers both explicit minProperties markers and union markers (ExactlyOneOf/AtLeastOneOf),
+// which implicitly require at least one field to be set.
+// Returns (zeroValueValid, completeValidation).
+func checkStructMinProperties(pass *analysis.Pass, field *ast.Field, markerSet markershelper.MarkerSet, structType *ast.StructType, markersAccess markershelper.Markers, nonOmittedFields int) (bool, bool) {
 	minProperties, err := GetMinProperties(markerSet)
 	if err != nil {
 		pass.Reportf(field.Pos(), "struct %s has an invalid minProperties marker: %v", FieldName(field), err)
 		return false, false
 	}
 
-	if minProperties != nil && *minProperties > nonOmittedFields {
-		// The struct requires more properties than would be marshalled in the zero value of the struct.
-		zeroValueValid = false
+	// Union markers (ExactlyOneOf/AtLeastOneOf) implicitly require at least one field,
+	// equivalent to minProperties=1.
+	structMarkerSet := markersAccess.StructMarkers(structType)
+	if minProperties == nil && (structMarkerSet.Has(markers.KubebuilderExactlyOneOf) || structMarkerSet.Has(markers.KubebuilderAtLeastOneOfMarker)) {
+		minProperties = ptr.To(1)
 	}
 
-	var completeStructValidation = true
-	if minProperties == nil && nonOmittedFields == 0 {
-		// If the struct has no non-omitted fields, then the zero value of the struct is `{}`.
-		// This generally means that the validation is incomplete as the difference between omitting the field and not omitting is not clear.
-		completeStructValidation = false
-	}
+	zeroValueValid := minProperties == nil || *minProperties <= nonOmittedFields
+	// If the struct has no non-omitted fields and no min-properties constraint, then the zero value
+	// is `{}` and the validation is incomplete.
+	completeValidation := minProperties != nil || nonOmittedFields > 0
 
-	return zeroValueValid, completeStructValidation
+	return zeroValueValid, completeValidation
 }
 
 // areStructFieldZeroValuesValid checks if all non-omitted fields within a struct accept their zero values.
@@ -349,6 +495,113 @@ func GetTypedZeroValue(pass *analysis.Pass, expr ast.Expr) string {
 		return "[]"
 	case *ast.MapType:
 		return "{}"
+	case *ast.SelectorExpr:
+		return getSelectorExprZeroValue(pass, t)
+	default:
+		return ""
+	}
+}
+
+// getSelectorExprZeroValue returns the zero value for a qualified identifier (external package type).
+func getSelectorExprZeroValue(pass *analysis.Pass, selector *ast.SelectorExpr) string {
+	typeOf := pass.TypesInfo.TypeOf(selector)
+	if typeOf == nil {
+		return ""
+	}
+
+	underlying := typeOf.Underlying()
+
+	switch t := underlying.(type) {
+	case *types.Slice:
+		return "[]"
+	case *types.Map:
+		return "{}"
+	case *types.Struct:
+		return getExternalStructZeroValue(t)
+	case *types.Basic:
+		return getBasicTypeZeroValue(t)
+	default:
+		return ""
+	}
+}
+
+// getExternalStructZeroValue returns the zero value for an external struct type.
+// It constructs a json-like representation including only non-omitted fields.
+func getExternalStructZeroValue(structType *types.Struct) string {
+	value := "{"
+
+	for i := range structType.NumFields() {
+		f := structType.Field(i)
+
+		if !f.Exported() || f.Embedded() {
+			continue
+		}
+
+		tag := structType.Tag(i)
+		if isFieldOmittedByTag(tag) {
+			continue
+		}
+
+		jsonName := getJSONFieldName(tag, f.Name())
+		zeroVal := getTypesTypeZeroValue(f.Type())
+		value += fmt.Sprintf("%q: %s, ", jsonName, zeroVal)
+	}
+
+	value = strings.TrimSuffix(value, ", ")
+	value += "}"
+
+	return value
+}
+
+// getJSONFieldName extracts the JSON field name from a struct tag.
+// Falls back to the Go field name if no json tag is present.
+func getJSONFieldName(tag string, fieldName string) string {
+	jsonTag, ok := reflect.StructTag(tag).Lookup("json")
+	if !ok || jsonTag == "" {
+		return fieldName
+	}
+
+	parts := strings.Split(jsonTag, ",")
+	if parts[0] != "" {
+		return parts[0]
+	}
+
+	return fieldName
+}
+
+// getTypesTypeZeroValue returns the zero value string for a types.Type.
+func getTypesTypeZeroValue(t types.Type) string {
+	underlying := t.Underlying()
+
+	switch basicType := underlying.(type) {
+	case *types.Basic:
+		return getBasicTypeZeroValue(basicType)
+	case *types.Slice:
+		return "[]"
+	case *types.Map:
+		return "{}"
+	case *types.Struct:
+		return "{}"
+	case *types.Pointer:
+		return "null"
+	default:
+		return ""
+	}
+}
+
+// getBasicTypeZeroValue returns the zero value for a basic type.
+func getBasicTypeZeroValue(basicType *types.Basic) string {
+	//nolint:exhaustive // We only handle common basic types; other types fall through to default.
+	switch basicType.Kind() {
+	case types.String:
+		return `""`
+	case types.Bool:
+		return "false"
+	case types.Int, types.Int8, types.Int16, types.Int32, types.Int64,
+		types.Uint, types.Uint8, types.Uint16, types.Uint32, types.Uint64:
+		return "0"
+	case types.Float32, types.Float64:
+		return "0.0"
 	default:
 		return ""
 	}
@@ -418,6 +671,48 @@ func GetTypedValidationHint(pass *analysis.Pass, expr ast.Expr) string {
 		return "min items"
 	case *ast.MapType:
 		return "min properties"
+	case *ast.SelectorExpr:
+		return getSelectorExprValidationHint(pass, t)
+	default:
+		return ""
+	}
+}
+
+// getSelectorExprValidationHint returns a validation hint for a qualified identifier (external package type).
+func getSelectorExprValidationHint(pass *analysis.Pass, selector *ast.SelectorExpr) string {
+	typeOf := pass.TypesInfo.TypeOf(selector)
+	if typeOf == nil {
+		return ""
+	}
+
+	underlying := typeOf.Underlying()
+
+	switch t := underlying.(type) {
+	case *types.Slice:
+		return "min items"
+	case *types.Map:
+		return "min properties"
+	case *types.Struct:
+		return "min properties/adding required fields"
+	case *types.Basic:
+		return getBasicTypeValidationHint(t)
+	default:
+		return ""
+	}
+}
+
+// getBasicTypeValidationHint returns a validation hint for a basic type.
+func getBasicTypeValidationHint(basicType *types.Basic) string {
+	//nolint:exhaustive // We only handle common basic types; other types fall through to default.
+	switch basicType.Kind() {
+	case types.String:
+		return "minimum length"
+	case types.Bool:
+		return ""
+	case types.Int, types.Int8, types.Int16, types.Int32, types.Int64,
+		types.Uint, types.Uint8, types.Uint16, types.Uint32, types.Uint64,
+		types.Float32, types.Float64:
+		return minMaxValidationHint
 	default:
 		return ""
 	}
@@ -427,13 +722,13 @@ func GetTypedValidationHint(pass *analysis.Pass, expr ast.Expr) string {
 func getIdentValidationHint(pass *analysis.Pass, ident *ast.Ident) string {
 	switch {
 	case isIntegerIdent(ident):
-		return "minimum/maximum"
+		return minMaxValidationHint
 	case isStringIdent(ident):
 		return "minimum length"
 	case isBoolIdent(ident):
 		return ""
 	case isFloatIdent(ident):
-		return "minimum/maximum"
+		return minMaxValidationHint
 	}
 
 	typeSpec, ok := LookupTypeSpec(pass, ident)
