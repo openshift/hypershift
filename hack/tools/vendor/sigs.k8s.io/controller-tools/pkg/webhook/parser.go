@@ -19,18 +19,23 @@ limitations under the License.
 //
 // The markers take the form:
 //
-//	+kubebuilder:webhook:webhookVersions=<[]string>,failurePolicy=<string>,matchPolicy=<string>,groups=<[]string>,resources=<[]string>,verbs=<[]string>,versions=<[]string>,name=<string>,path=<string>,mutating=<bool>,sideEffects=<string>,timeoutSeconds=<int>,admissionReviewVersions=<[]string>,reinvocationPolicy=<string>
+//	+kubebuilder:webhook:webhookVersions=<[]string>,failurePolicy=<string>,matchPolicy=<string>,groups=<[]string>,resources=<[]string>,verbs=<[]string>,versions=<[]string>,name=<string>,path=<string>,mutating=<bool>,sideEffects=<string>,timeoutSeconds=<int>,admissionReviewVersions=<[]string>,reinvocationPolicy=<string>,patch=<string>
 package webhook
 
 import (
+	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	admissionregv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	kjson "sigs.k8s.io/json"
+
 	"sigs.k8s.io/controller-tools/pkg/genall"
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
@@ -58,6 +63,14 @@ func supportedWebhookVersions() []string {
 
 // +controllertools:marker:generateHelp
 
+// WebhookConfig specifies the configuration for a MutatingWebhookConfiguration or ValidatingWebhookConfiguration.
+//
+// This marker configures the webhook configuration object itself, not the individual webhooks.
+//
+// Example:
+//
+//	// +kubebuilder:webhookconfiguration:mutating=true,name=my-mutating-webhook-configuration
+//	package v1
 type WebhookConfig struct {
 	// Mutating marks this as a mutating webhook (it's validating only if false)
 	//
@@ -65,7 +78,9 @@ type WebhookConfig struct {
 	// and are called *before* all validating webhooks.  Mutating webhooks may
 	// choose to reject an object, similarly to a validating webhook.
 	Mutating bool
+
 	// Name indicates the name of the K8s MutatingWebhookConfiguration or ValidatingWebhookConfiguration object.
+	// If not specified, the name will be auto-generated based on the webhook names.
 	Name string `marker:"name,optional"`
 }
 
@@ -75,6 +90,14 @@ type WebhookConfig struct {
 //
 // It specifies only the details that are intrinsic to the application serving
 // it (e.g. the resources it can handle, or the path it serves on).
+//
+// Example (Validating Webhook):
+//
+//	// +kubebuilder:webhook:path=/validate-mygroup-v1-myresource,mutating=false,failurePolicy=fail,sideEffects=None,groups=mygroup.example.com,resources=myresources,verbs=create;update,versions=v1,name=myresource.kb.io,admissionReviewVersions=v1
+//
+// Example (Mutating Webhook):
+//
+//	// +kubebuilder:webhook:path=/mutate-mygroup-v1-myresource,mutating=true,failurePolicy=fail,sideEffects=None,groups=mygroup.example.com,resources=myresources,verbs=create;update,versions=v1,name=myresource.kb.io,admissionReviewVersions=v1
 type Config struct {
 	// Mutating marks this as a mutating webhook (it's validating only if false)
 	//
@@ -82,22 +105,29 @@ type Config struct {
 	// and are called *before* all validating webhooks.  Mutating webhooks may
 	// choose to reject an object, similarly to a validating webhook.
 	Mutating bool
+
 	// FailurePolicy specifies what should happen if the API server cannot reach the webhook.
 	//
 	// It may be either "ignore" (to skip the webhook and continue on) or "fail" (to reject
-	// the object in question).
+	// the object in question). Most webhooks should use "fail" to ensure the webhook logic
+	// is always executed.
 	FailurePolicy string
+
 	// MatchPolicy defines how the "rules" list is used to match incoming requests.
 	// Allowed values are "Exact" (match only if it exactly matches the specified rule)
 	// or "Equivalent" (match a request if it modifies a resource listed in rules, even via another API group or version).
+	// Defaults to "Equivalent" if not specified.
 	MatchPolicy string `marker:",optional"`
+
 	// SideEffects specify whether calling the webhook will have side effects.
 	// This has an impact on dry runs and `kubectl diff`: if the sideEffect is "Unknown" (the default) or "Some", then
 	// the API server will not call the webhook on a dry-run request and fails instead.
 	// If the value is "None", then the webhook has no side effects and the API server will call it on dry-run.
 	// If the value is "NoneOnDryRun", then the webhook is responsible for inspecting the "dryRun" property of the
 	// AdmissionReview sent in the request, and avoiding side effects if that value is "true."
+	// Most webhooks should use "None".
 	SideEffects string `marker:",optional"`
+
 	// TimeoutSeconds allows configuring how long the API server should wait for a webhook to respond before treating the call as a failure.
 	// If the timeout expires before the webhook responds, the webhook call will be ignored or the API call will be rejected based on the failure policy.
 	// The timeout value must be between 1 and 30 seconds.
@@ -105,24 +135,37 @@ type Config struct {
 	TimeoutSeconds int `marker:",optional"`
 
 	// Groups specifies the API groups that this webhook receives requests for.
+	// Use "*" to match all groups. Multiple groups are separated by semicolons.
+	// Example: "apps;batch" or "*".
 	Groups []string
+
 	// Resources specifies the API resources that this webhook receives requests for.
+	// Use "*" to match all resources. Multiple resources are separated by semicolons.
+	// Example: "deployments;pods" or "*".
 	Resources []string
+
 	// Verbs specifies the Kubernetes API verbs that this webhook receives requests for.
 	//
 	// Only modification-like verbs may be specified.
 	// May be "create", "update", "delete", "connect", or "*" (for all).
+	// Multiple verbs are separated by semicolons. Example: "create;update".
 	Verbs []string
+
 	// Versions specifies the API versions that this webhook receives requests for.
+	// Use "*" to match all versions. Multiple versions are separated by semicolons.
+	// Example: "v1;v1beta1" or "*".
 	Versions []string
 
 	// Name indicates the name of this webhook configuration. Should be a domain with at least three segments separated by dots
+	// Example: "myresource.mygroup.example.com".
 	Name string
 
 	// ServiceName indicates the name of the K8s Service the webhook uses.
+	// Defaults to "webhook-service" if not specified.
 	ServiceName string `marker:"serviceName,optional"`
 
 	// ServiceNamespace indicates the namespace of the K8s Service the webhook uses.
+	// Defaults to "system" if not specified.
 	ServiceNamespace string `marker:"serviceNamespace,optional"`
 
 	// Path specifies that path that the API server should connect to this webhook on. Must be
@@ -133,7 +176,8 @@ type Config struct {
 	// /validate-batch-tutorial-kubebuilder-io-v1-cronjob
 	Path string `marker:"path,optional"`
 
-	// ServicePort indicates the port of the K8s Service the webhook uses
+	// ServicePort indicates the port of the K8s Service the webhook uses.
+	// Defaults to 443 if not specified.
 	ServicePort *int32 `marker:"servicePort,optional"`
 
 	// WebhookVersions specifies the target API versions of the {Mutating,Validating}WebhookConfiguration objects
@@ -141,15 +185,17 @@ type Config struct {
 	WebhookVersions []string `marker:"webhookVersions,optional"`
 
 	// AdmissionReviewVersions is an ordered list of preferred `AdmissionReview`
-	// versions the Webhook expects.
+	// versions the Webhook expects. The API server will try to use the first version
+	// in the list which it supports. If none of the versions specified are supported,
+	// the API call will fail. Common values: "v1" or "v1;v1beta1".
 	AdmissionReviewVersions []string `marker:"admissionReviewVersions"`
 
-	// ReinvocationPolicy allows mutating webhooks to request reinvocation after other mutations
+	// ReinvocationPolicy allows mutating webhooks to request reinvocation after other mutations.
 	//
 	// To allow mutating admission plugins to observe changes made by other plugins,
 	// built-in mutating admission plugins are re-run if a mutating webhook modifies
 	// an object, and mutating webhooks can specify a reinvocationPolicy to control
-	// whether they are reinvoked as well.
+	// whether they are reinvoked as well. May be "Never" or "IfNeeded". Defaults to "Never".
 	ReinvocationPolicy string `marker:"reinvocationPolicy,optional"`
 
 	// URL allows mutating webhooks configuration to specify an external URL when generating
@@ -159,6 +205,45 @@ type Config struct {
 	// The URL configuration should be between quotes.
 	// `url` cannot be specified when `path` is specified.
 	URL string `marker:"url,optional"`
+
+	// Patch applies a strategic merge patch to customize the generated webhook configuration.
+	//
+	// This allows you to set any webhook field that isn't directly exposed as a marker parameter,
+	// such as namespaceSelector, objectSelector, or matchConditions. The patch is a JSON object
+	// that follows Kubernetes strategic merge patch semantics and is applied to the webhook
+	// configuration after all other marker parameters are processed.
+	//
+	// Use backticks to avoid escaping quotes in the JSON.
+	//
+	// Common use cases:
+	// - Limit webhook scope to specific namespaces using namespaceSelector
+	// - Filter webhook invocations by object labels using objectSelector
+	// - Combine multiple customizations in a single patch
+	//
+	// Example (limit to labeled namespaces):
+	//
+	//	// +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,...,patch=`{"namespaceSelector":{"matchLabels":{"webhook-enabled":"true"}}}`
+	//
+	// Example (filter by object labels with matchExpressions):
+	//
+	//	// +kubebuilder:webhook:path=/validate-v1-deployment,...,patch=`{"objectSelector":{"matchExpressions":[{"key":"tier","operator":"In","values":["frontend","backend"]}]}}`
+	//
+	// Example (combine namespace and object selectors):
+	//
+	//	// +kubebuilder:webhook:...,patch=`{"namespaceSelector":{"matchLabels":{"env":"production"}},"objectSelector":{"matchLabels":{"managed-by":"my-operator"}}}`
+	//
+	// Example (override timeout):
+	//
+	//	// +kubebuilder:webhook:...,patch=`{"timeoutSeconds":25}`
+	//
+	// Example (remove a field by setting it to null):
+	//
+	//	// +kubebuilder:webhook:...,patch=`{"timeoutSeconds":null}`
+	//
+	// Setting a field to null removes it. Patching a list field without a merge key,
+	// such as rules, replaces the whole list. Field names are case-sensitive and unknown
+	// fields in the patch cause an error.
+	Patch string `marker:"patch,optional"`
 }
 
 // verbToAPIVariant converts a marker's verb to the proper value for the API.
@@ -178,6 +263,159 @@ func verbToAPIVariant(verbRaw string) admissionregv1.OperationType {
 	default:
 		return admissionregv1.OperationType(verbRaw)
 	}
+}
+
+// applyPatch applies a strategic merge patch to a webhook object.
+// The patch is provided as a JSON string and is applied using Kubernetes strategic merge patch logic.
+func applyPatch[T any](webhook *T, patchStr string) error {
+	if patchStr == "" {
+		return nil
+	}
+
+	if err := validatePatch(patchStr, webhook); err != nil {
+		return fmt.Errorf("failed to validate strategic merge patch: %w", err)
+	}
+
+	webhookJSON, err := json.Marshal(webhook)
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook: %w", err)
+	}
+
+	patchedJSON, err := strategicpatch.StrategicMergePatch(webhookJSON, []byte(patchStr), webhook)
+	if err != nil {
+		return fmt.Errorf("failed to apply strategic merge patch: %w", err)
+	}
+
+	// A fresh object drops values the patch removed; strict decoding rejects unknown or miscased keys.
+	var patched T
+	strictErrs, err := kjson.UnmarshalStrict(patchedJSON, &patched)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal patched webhook: %w", err)
+	}
+	if len(strictErrs) > 0 {
+		return fmt.Errorf("invalid patch: %w", kerrors.NewAggregate(strictErrs))
+	}
+	*webhook = patched
+
+	return nil
+}
+
+// validatePatch validates the patch before strategic merge patching can discard
+// unknown fields whose values are null. Strategic merge directives are removed
+// before strict decoding because they are not fields on the webhook object.
+func validatePatch[T any](patchStr string, webhook *T) error {
+	var patch map[string]any
+	strictErrs, err := kjson.UnmarshalStrict([]byte(patchStr), &patch)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal patch: %w", err)
+	}
+	if len(strictErrs) > 0 {
+		return fmt.Errorf("invalid patch: %w", kerrors.NewAggregate(strictErrs))
+	}
+
+	schema, err := strategicpatch.NewPatchMetaFromStruct(webhook)
+	if err != nil {
+		return fmt.Errorf("failed to inspect webhook type: %w", err)
+	}
+	if err := cleanPatchMap(patch, schema); err != nil {
+		return err
+	}
+
+	cleanPatch, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("failed to marshal validated patch: %w", err)
+	}
+	var validated T
+	strictErrs, err = kjson.UnmarshalStrict(cleanPatch, &validated)
+	if err != nil {
+		return fmt.Errorf("failed to validate patch fields: %w", err)
+	}
+	if len(strictErrs) > 0 {
+		return fmt.Errorf("invalid patch fields: %w", kerrors.NewAggregate(strictErrs))
+	}
+
+	return nil
+}
+
+// cleanPatchMap validates fields in a strategic merge patch and removes the
+// directives understood by strategicpatch before the patch is decoded into a
+// typed object. A non-struct schema represents a map with arbitrary keys, so
+// only directives are interpreted at that level.
+func cleanPatchMap(patch map[string]any, schema strategicpatch.LookupPatchMeta) error {
+	for key, value := range patch {
+		switch {
+		case key == "$patch":
+			if directive, ok := value.(string); ok && (directive == "delete" || directive == "replace") {
+				delete(patch, key)
+			}
+			continue
+		case key == "$retainKeys":
+			if _, ok := value.([]any); ok {
+				delete(patch, key)
+			}
+			continue
+		case strings.HasPrefix(key, "$setElementOrder/"):
+			fieldName := strings.TrimPrefix(key, "$setElementOrder/")
+			if _, _, err := schema.LookupPatchMetadataForSlice(fieldName); err != nil {
+				return fmt.Errorf("invalid $setElementOrder directive: %w", err)
+			}
+			if _, ok := value.([]any); ok {
+				delete(patch, key)
+			}
+			continue
+		case strings.HasPrefix(key, "$deleteFromPrimitiveList/"):
+			fieldName := strings.TrimPrefix(key, "$deleteFromPrimitiveList/")
+			if _, _, err := schema.LookupPatchMetadataForSlice(fieldName); err != nil {
+				return fmt.Errorf("invalid $deleteFromPrimitiveList directive: %w", err)
+			}
+			if _, ok := value.([]any); ok {
+				delete(patch, key)
+			}
+			continue
+		case strings.HasPrefix(key, "$"):
+			// Leave unknown or malformed directives in the patch so strict
+			// decoding rejects them, while strategicpatch preserves its error
+			// handling for malformed supported directives.
+			continue
+		}
+
+		if !isObjectSchema(schema) {
+			continue
+		}
+
+		switch value := value.(type) {
+		case map[string]any:
+			subschema, _, err := schema.LookupPatchMetadataForStruct(key)
+			if err != nil {
+				return fmt.Errorf("invalid patch field %q: %w", key, err)
+			}
+			if err := cleanPatchMap(value, subschema); err != nil {
+				return err
+			}
+		case []any:
+			subschema, _, err := schema.LookupPatchMetadataForSlice(key)
+			if err != nil {
+				return fmt.Errorf("invalid patch field %q: %w", key, err)
+			}
+			for _, item := range value {
+				if item, ok := item.(map[string]any); ok {
+					if err := cleanPatchMap(item, subschema); err != nil {
+						return err
+					}
+				}
+			}
+		default:
+			if _, _, err := schema.LookupPatchMetadataForStruct(key); err != nil {
+				return fmt.Errorf("invalid patch field %q: %w", key, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func isObjectSchema(schema strategicpatch.LookupPatchMeta) bool {
+	return schema.Name() == "struct" || schema.Name() == "ptr"
 }
 
 // ToMutatingWebhookConfiguration converts this WebhookConfig to its Kubernetes API form.
@@ -222,7 +460,7 @@ func (c Config) ToMutatingWebhook() (admissionregv1.MutatingWebhook, error) {
 		return admissionregv1.MutatingWebhook{}, err
 	}
 
-	return admissionregv1.MutatingWebhook{
+	webhook := admissionregv1.MutatingWebhook{
 		Name:                    c.Name,
 		Rules:                   c.rules(),
 		FailurePolicy:           c.failurePolicy(),
@@ -232,7 +470,14 @@ func (c Config) ToMutatingWebhook() (admissionregv1.MutatingWebhook, error) {
 		TimeoutSeconds:          c.timeoutSeconds(),
 		AdmissionReviewVersions: c.AdmissionReviewVersions,
 		ReinvocationPolicy:      c.reinvocationPolicy(),
-	}, nil
+	}
+
+	// Apply strategic merge patch if provided
+	if err := applyPatch(&webhook, c.Patch); err != nil {
+		return admissionregv1.MutatingWebhook{}, fmt.Errorf("failed to apply patch: %w", err)
+	}
+
+	return webhook, nil
 }
 
 // ToValidatingWebhook converts this rule to its Kubernetes API form.
@@ -251,7 +496,7 @@ func (c Config) ToValidatingWebhook() (admissionregv1.ValidatingWebhook, error) 
 		return admissionregv1.ValidatingWebhook{}, err
 	}
 
-	return admissionregv1.ValidatingWebhook{
+	webhook := admissionregv1.ValidatingWebhook{
 		Name:                    c.Name,
 		Rules:                   c.rules(),
 		FailurePolicy:           c.failurePolicy(),
@@ -260,7 +505,14 @@ func (c Config) ToValidatingWebhook() (admissionregv1.ValidatingWebhook, error) 
 		SideEffects:             c.sideEffects(),
 		TimeoutSeconds:          c.timeoutSeconds(),
 		AdmissionReviewVersions: c.AdmissionReviewVersions,
-	}, nil
+	}
+
+	// Apply strategic merge patch if provided
+	if err := applyPatch(&webhook, c.Patch); err != nil {
+		return admissionregv1.ValidatingWebhook{}, fmt.Errorf("failed to apply patch: %w", err)
+	}
+
+	return webhook, nil
 }
 
 // rules returns the configuration of what operations on what
@@ -483,8 +735,8 @@ func (g Generator) Generate(ctx *genall.GenerationContext) error {
 		}
 
 		cfgs := markerSet[ConfigDefinition.Name]
-		sort.SliceStable(cfgs, func(i, j int) bool {
-			return cfgs[i].(Config).Name < cfgs[j].(Config).Name
+		slices.SortStableFunc(cfgs, func(a, b any) int {
+			return strings.Compare(a.(Config).Name, b.(Config).Name)
 		})
 
 		for _, cfg := range cfgs {
@@ -513,9 +765,13 @@ func (g Generator) Generate(ctx *genall.GenerationContext) error {
 		}
 	}
 
-	versionedWebhooks := make(map[string][]interface{}, len(supportedWebhookVersions))
+	versionedWebhooks := make(map[string][]any, len(supportedWebhookVersions))
+	//nolint:dupl
 	for _, version := range supportedWebhookVersions {
 		if cfgs, ok := mutatingCfgs[version]; ok {
+			slices.SortFunc(cfgs, func(a, b admissionregv1.MutatingWebhook) int {
+				return strings.Compare(a.Name, b.Name)
+			})
 			var objRaw *admissionregv1.MutatingWebhookConfiguration
 			if mutatingWebhookCfgs.Name != "" {
 				objRaw = &mutatingWebhookCfgs
@@ -553,6 +809,9 @@ func (g Generator) Generate(ctx *genall.GenerationContext) error {
 		}
 
 		if cfgs, ok := validatingCfgs[version]; ok {
+			slices.SortFunc(cfgs, func(a, b admissionregv1.ValidatingWebhook) int {
+				return strings.Compare(a.Name, b.Name)
+			})
 			var objRaw *admissionregv1.ValidatingWebhookConfiguration
 			if validatingWebhookCfgs.Name != "" {
 				objRaw = &validatingWebhookCfgs

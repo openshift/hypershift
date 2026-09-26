@@ -18,8 +18,9 @@ package markers
 
 import (
 	"fmt"
+	"slices"
 
-	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
 
@@ -42,6 +43,14 @@ var TopologyMarkers = []*definitionWithHelp{
 		WithHelp(StructType("").Help()),
 	must(markers.MakeDefinition("structType", markers.DescribesType, StructType(""))).
 		WithHelp(StructType("").Help()),
+	must(markers.MakeDefinition("k8s:listType", markers.DescribesField, ListType(""))).
+		WithHelp(ListType("").Help()),
+	must(markers.MakeDefinition("k8s:listType", markers.DescribesType, ListType(""))).
+		WithHelp(ListType("").Help()),
+	must(markers.MakeDefinition("k8s:listMapKey", markers.DescribesField, ListMapKey(""))).
+		WithHelp(ListMapKey("").Help()),
+	must(markers.MakeDefinition("k8s:listMapKey", markers.DescribesType, ListMapKey(""))).
+		WithHelp(ListMapKey("").Help()),
 }
 
 func init() {
@@ -52,6 +61,8 @@ func init() {
 
 // ListType specifies the type of data-structure that the list
 // represents (map, set, atomic).
+//
+// This is important for Server-Side Apply to correctly merge list updates.
 //
 // Possible data-structure types of a list are:
 //
@@ -64,6 +75,21 @@ func init() {
 //
 //   - "atomic": All the fields in the list are treated as a single value,
 //     are typically manipulated together by the same actor.
+//
+// Examples:
+//
+//	// Map list (associative list) - items are merged by key
+//	// +listType=map
+//	// +listMapKey=name
+//	Containers []Container
+//
+//	// Set list - items must be unique scalars
+//	// +listType=set
+//	Tags []string
+//
+//	// Atomic list - entire list is replaced on update
+//	// +listType=atomic
+//	Args []string
 type ListType string
 
 const (
@@ -83,6 +109,19 @@ const (
 // It indicates the index of a map list. They can be repeated if multiple keys
 // must be used. It can only be used when ListType is set to map, and the keys
 // should be scalar types.
+//
+// Examples:
+//
+//	// Single key
+//	// +listType=map
+//	// +listMapKey=name
+//	Containers []Container
+//
+//	// Composite key (multiple keys)
+//	// +listType=map
+//	// +listMapKey=name
+//	// +listMapKey=protocol
+//	Ports []Port
 type ListMapKey string
 
 // +controllertools:marker:generateHelp:category="CRD processing"
@@ -90,6 +129,8 @@ type ListMapKey string
 // MapType specifies the level of atomicity of the map;
 // i.e. whether each item in the map is independent of the others,
 // or all fields are treated as a single unit.
+//
+// This is important for Server-Side Apply to correctly merge map updates.
 //
 // Possible values:
 //
@@ -99,6 +140,16 @@ type ListMapKey string
 //
 //   - "atomic": all fields are treated as one unit.
 //     Any changes have to replace the entire map.
+//
+// Examples:
+//
+//	// Granular map (default) - individual keys can be updated independently
+//	// +mapType=granular
+//	Labels map[string]string
+//
+//	// Atomic map - entire map is replaced on update
+//	// +mapType=atomic
+//	Config map[string]string
 type MapType string
 
 // +controllertools:marker:generateHelp:category="CRD processing"
@@ -106,6 +157,8 @@ type MapType string
 // StructType specifies the level of atomicity of the struct;
 // i.e. whether each field in the struct is independent of the others,
 // or all fields are treated as a single unit.
+//
+// This is important for Server-Side Apply to correctly merge struct updates.
 //
 // Possible values:
 //
@@ -115,9 +168,25 @@ type MapType string
 //
 //   - "atomic": all fields are treated as one unit.
 //     Any changes have to replace the entire struct.
+//
+// Examples:
+//
+//	// Granular struct (default) - individual fields can be updated independently
+//	// +structType=granular
+//	type Config struct {
+//	    Host string
+//	    Port int
+//	}
+//
+//	// Atomic struct - entire struct is replaced on update
+//	// +structType=atomic
+//	type Credentials struct {
+//	    Username string
+//	    Password string
+//	}
 type StructType string
 
-func (l ListType) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (l ListType) ApplyToSchema(ctx *SchemaContext, schema *apiextensionsv1.JSONSchemaProps) error {
 	if schema.Type != string(Array) {
 		return fmt.Errorf("must apply listType to an array, found %s", schema.Type)
 	}
@@ -133,18 +202,25 @@ func (l ListType) ApplyPriority() ApplyPriority {
 	return ApplyPriorityDefault - 1
 }
 
-func (l ListMapKey) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (l ListMapKey) ApplyToSchema(ctx *SchemaContext, schema *apiextensionsv1.JSONSchemaProps) error {
 	if schema.Type != string(Array) {
 		return fmt.Errorf("must apply listMapKey to an array, found %s", schema.Type)
 	}
 	if schema.XListType == nil || *schema.XListType != string(Map) {
 		return fmt.Errorf("must apply listMapKey to an associative-list")
 	}
-	schema.XListMapKeys = append(schema.XListMapKeys, string(l))
+	key := string(l)
+	// Deduplicate: k8s.io/api v0.37.0 has some types with both +listMapKey and
+	// +k8s:listMapKey annotations on the same field, producing duplicate entries.
+	// Kubernetes API Server rejects CRDs with duplicate x-kubernetes-list-map-keys.
+	if slices.Contains(schema.XListMapKeys, key) {
+		return nil
+	}
+	schema.XListMapKeys = append(schema.XListMapKeys, key)
 	return nil
 }
 
-func (m MapType) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (m MapType) ApplyToSchema(ctx *SchemaContext, schema *apiextensionsv1.JSONSchemaProps) error {
 	if schema.Type != string(Object) {
 		return fmt.Errorf("must apply mapType to an object")
 	}
@@ -159,7 +235,7 @@ func (m MapType) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
 	return nil
 }
 
-func (s StructType) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+func (s StructType) ApplyToSchema(ctx *SchemaContext, schema *apiextensionsv1.JSONSchemaProps) error {
 	if schema.Type != string(Object) && schema.Type != "" {
 		return fmt.Errorf("must apply structType to an object; either explicitly set or defaulted through an empty schema type")
 	}
