@@ -2608,13 +2608,8 @@ sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
 # sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
 ## explicit; go 1.25.0
-sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/rosa/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta1
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2
 sigs.k8s.io/cluster-api-provider-aws/v2/feature
-sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1
 # sigs.k8s.io/cluster-api-provider-azure v1.26.0
 ## explicit; go 1.25.0
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
@@ -2624,7 +2619,6 @@ sigs.k8s.io/cluster-api-provider-azure/util/azure
 sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1
 # sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 ## explicit; go 1.24.0
-sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
 # sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
 ## explicit; go 1.24.0

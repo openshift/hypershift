@@ -65,7 +65,10 @@ make api                      # Regenerate all CRDs, deepcopy, clients
 make api-lint-fix             # Run API linter and auto-fix violations
 make generate                 # Run go generate (regenerates *_mock.go files in place)
 make clients                  # Update generated clients
-make update                   # Full update (api-deps, workspace-sync, deps, api, api-docs, clients, docs-aggregate)
+make update                   # Full update (api-deps, workspace-sync, capi-sync, deps, api, ...)
+make capi-sync                # Sync CAPI provider types (incremental)
+make capi-sync-force          # Force re-sync all CAPI providers
+make verify-capi-sync         # Verify CAPI sync is clean (CI target)
 ```
 
 ## Development Patterns
@@ -92,10 +95,36 @@ This repository contains **multiple Go modules**. The `api/` directory is a **se
 This means:
 
 - Edits to files under `api/` (e.g. `api/hypershift/v1beta1/`) are **not visible** to the main module until the vendored copy is updated.
-- After modifying any types, constants, or functions in `api/`, you **must** run `make update` to regenerate CRDs, revendor dependencies, and sync everything. `make update` runs the full sequence: `api-deps` → `workspace-sync` → `deps` → `api` → `api-docs` → `clients` → `docs-aggregate`. Without this, the main module build will fail with `undefined` errors for any new symbols added in `api/`.
+- After modifying any types, constants, or functions in `api/`, you **must** run `make update` to regenerate CRDs, revendor dependencies, and sync everything. `make update` runs the full sequence: `api-deps` → `workspace-sync` → `capi-sync` → `deps` → `api` → `api-docs` → `clients` → `docs-aggregate`. Without this, the main module build will fail with `undefined` errors for any new symbols added in `api/`.
 - **Do not modify `vendor/` directories directly.** The `vendor/` directories are managed by `go mod vendor` (via `make deps` and `make api-deps`). Always use `make update` to keep them in sync.
 - Running `go build ./...` or `go vet ./...` from the repository root will **not** compile the `api/` module — it is a separate module. To build/vet the API module, run commands from within the `api/` directory.
 - The `hack/workspace/` directory contains a Go workspace configuration (`go.work`) that can be used for local development across both modules.
+
+### CAPI Provider Types
+
+Upstream CAPI infrastructure provider types (e.g. `sigs.k8s.io/cluster-api-provider-aws/v2`) are **not vendored directly**. Instead, they are copied into local `pkg/capi/<provider>/` modules using an AST-based tool that strips declarations depending on banned imports. This decouples HyperShift's `go.mod` from the full transitive dependency tree of each CAPI provider.
+
+Each `pkg/capi/<provider>/` directory is a separate Go module with its own `go.mod`. The main module consumes them via `replace` directives in `go.mod`.
+
+Key commands:
+
+```bash
+make capi-sync                # Sync all CAPI provider types (incremental, stamp-based)
+make capi-sync-force          # Force re-sync all providers from scratch
+make cluster-api-provider-aws # Generate CRDs for a specific CAPI provider
+```
+
+The sync process (`hack/capi-sync-provider.sh`) for each provider:
+1. Downloads the upstream module into the Go module cache via `go mod download`
+2. Copies types from the cached module into `pkg/capi/<provider>/` using `hack/copy-capi-types/main.go`, which strips functions and types that reference banned imports (e.g. controller-runtime, cloud SDKs)
+3. Generates deepcopy functions using `controller-gen` inside a temporary Go workspace
+
+CRD generation (`hack/capi-workspace-run.sh`) similarly creates a temporary `go.work` on the fly to resolve types across the main module and `pkg/capi/<provider>` modules. No committed workspace file is required.
+
+To add a new CAPI provider or update an existing one:
+1. Create or update `hack/capi-vendor/<provider>/go.mod` with the desired upstream version
+2. Run `make capi-sync-force` to download the module and regenerate all local copies
+3. Run `make verify-capi-sync` to confirm the sync is clean
 
 ## Pre-PR Gate
 
