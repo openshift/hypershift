@@ -43,7 +43,7 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 
 	availabilityProberOpts := hccpAvailabilityProberOpts(caps)
 
-	return component.NewDeploymentComponent(ComponentName, hcco).
+	builder := component.NewDeploymentComponent(ComponentName, hcco).
 		WithAdaptFunction(hcco.adaptDeployment).
 		WithManifestAdapter(
 			"podmonitor.yaml",
@@ -53,8 +53,14 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 			"role.yaml",
 			component.WithAdaptFunction(adaptRole),
 		).
-		InjectAvailabilityProberContainer(availabilityProberOpts).
-		Build()
+		InjectAvailabilityProberContainer(availabilityProberOpts)
+	return builder.InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+		TokenType:               component.CloudToken,
+		ServiceAccountName:      "kube-controller-manager",
+		ServiceAccountNameSpace: "kube-system",
+		PlatformTypes:           []hyperv1.PlatformType{hyperv1.AWSPlatform},
+		KubeconfingVolumeName:   "kubeconfig",
+	}).WithSafeToEvictLocalVolumeExclusions("cloud-token").Build()
 }
 
 func hccpAvailabilityProberOpts(caps *hyperv1.Capabilities) podspec.AvailabilityProberOpts {

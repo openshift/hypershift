@@ -245,6 +245,9 @@ func (c *controlPlaneWorkload[T]) setAnnotations(podTemplate *corev1.PodTemplate
 	localStorageVolumes := make([]string, 0)
 	for _, volume := range podTemplate.Spec.Volumes {
 		if volume.EmptyDir != nil || volume.HostPath != nil {
+			if _, excluded := c.safeToEvictLocalVolumeExclusions[volume.Name]; excluded {
+				continue
+			}
 			localStorageVolumes = append(localStorageVolumes, volume.Name)
 		}
 	}

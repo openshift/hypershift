@@ -18,6 +18,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
+	awsapi "github.com/openshift/hypershift/support/awsapi"
+	awsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -31,6 +33,10 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -56,6 +62,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -1058,6 +1065,352 @@ func TestDestroyCloudResources(t *testing.T) {
 			} else {
 				verifyNotDoneCond(g, cpClient)
 			}
+		})
+	}
+}
+
+func TestDestroyCloudResources_WhenPlatformIsAWS_ItShouldUseDirectLoadBalancerCleanup(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.CloudResourcesDestroyed),
+					Status: metav1.ConditionFalse,
+				},
+			},
+		},
+	}
+
+	lbService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-loadbalancer",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeLoadBalancer,
+		},
+	}
+
+	guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(lbService).Build()
+	kasDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: fakeHCP.Namespace,
+		},
+	}
+	cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP, kasDeployment).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	cleanupCalled := false
+
+	r := &reconciler{
+		client:                 guestClient,
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		cpClient:               cpClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		cleanupTracker:         supportutil.NewCleanupTracker(),
+		awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+			cleanupCalled = true
+			return true, nil
+		},
+	}
+
+	remaining, _, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(remaining.Has("loadbalancers")).To(BeFalse(), "AWS should not track loadbalancers in remaining set")
+	g.Expect(cleanupCalled).To(BeTrue())
+
+	// AWS cleanup should not wait for a cloud-controller finalizer on the Service.
+	svc := &corev1.Service{}
+	err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(lbService), svc)
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+}
+
+func TestNewAWSLoadBalancerClients(t *testing.T) {
+	tests := []struct {
+		name              string
+		platform          *hyperv1.AWSPlatformSpec
+		wantError         string
+		wantELBEndpoint   *string
+		wantELBV2Endpoint *string
+	}{
+		{
+			name:      "When AWS configuration is missing, it should return an error",
+			wantError: "AWS platform configuration is missing",
+		},
+		{
+			name: "When region is missing, it should return an error",
+			platform: &hyperv1.AWSPlatformSpec{
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+			wantError: "AWS region cannot be empty",
+		},
+		{
+			name: "When cloud controller role is missing, it should return an error",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+			},
+			wantError: "AWS role ARN cannot be empty",
+		},
+		{
+			name: "When both roles are configured, it should create clients with default endpoints",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+		},
+		{
+			name: "When AWS service endpoints are configured, it should apply them to the clients",
+			platform: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+				ServiceEndpoints: []hyperv1.AWSServiceEndpoint{
+					{Name: awsElasticLoadBalancingServiceName, URL: "https://elb.example.com"},
+				},
+				RolesRef: hyperv1.AWSRolesRef{
+					KubeCloudControllerARN: "arn:aws:iam::123456789012:role/cloud-controller",
+				},
+			},
+			wantELBEndpoint:   ptr.To("https://elb.example.com"),
+			wantELBV2Endpoint: ptr.To("https://elb.example.com"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{}
+			if test.platform != nil {
+				hcp.Spec.Platform.AWS = test.platform
+			}
+			clients, err := newAWSLoadBalancerClients(t.Context(), hcp)
+			if test.wantError != "" {
+				NewGomegaWithT(t).Expect(err).To(MatchError(ContainSubstring(test.wantError)))
+				return
+			}
+
+			g := NewGomegaWithT(t)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(clients.ELB).ToNot(BeNil())
+			g.Expect(clients.ELBV2).ToNot(BeNil())
+			g.Expect(clients.ELB.(*elasticloadbalancing.Client).Options().BaseEndpoint).To(Equal(test.wantELBEndpoint))
+			g.Expect(clients.ELBV2.(*elasticloadbalancingv2.Client).Options().BaseEndpoint).To(Equal(test.wantELBV2Endpoint))
+		})
+	}
+}
+
+func TestAWSServiceEndpoint(t *testing.T) {
+	tests := []struct {
+		name        string
+		endpoints   []hyperv1.AWSServiceEndpoint
+		serviceName string
+		want        string
+	}{
+		{
+			name:        "When the service is present, it should return its URL",
+			serviceName: "service-a",
+			endpoints: []hyperv1.AWSServiceEndpoint{
+				{Name: "service-a", URL: "https://service-a.example.com"},
+			},
+			want: "https://service-a.example.com",
+		},
+		{
+			name:        "When the service is absent, it should return an empty URL",
+			serviceName: "service-b",
+			endpoints: []hyperv1.AWSServiceEndpoint{
+				{Name: "service-a", URL: "https://service-a.example.com"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(awsServiceEndpoint(test.endpoints, test.serviceName)).To(Equal(test.want))
+		})
+	}
+}
+
+func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "infra-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-owned"},
+				},
+			},
+		},
+	}
+
+	t.Run("When clients are not configured, it should return an error", func(t *testing.T) {
+		removed, err := (&reconciler{}).ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS load balancer clients are not configured"))
+	})
+
+	t.Run("When AWS cleanup fails, it should retain load balancer Services for retry", func(t *testing.T) {
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		r := &reconciler{
+			client: guestClient,
+			awsLoadBalancerCleanup: func(context.Context, *hyperv1.HostedControlPlane) (bool, error) {
+				return false, fmt.Errorf("AWS cleanup failed")
+			},
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS cleanup failed"))
+		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
+	})
+
+	t.Run("When no load balancer Services exist, it should report cleanup complete", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+
+		r := &reconciler{
+			client: guestClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB:   awsapi.NewMockELBAPI(ctrl),
+				ELBV2: awsapi.NewMockELBV2API(ctrl),
+			},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+	})
+
+	t.Run("When a load balancer Service has no hostname, it should delete the Service without AWS lookup", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "pending", Namespace: "default"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		elbClient := awsapi.NewMockELBAPI(ctrl)
+		elbv2Client := awsapi.NewMockELBV2API(ctrl)
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		r := &reconciler{
+			client:                 guestClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
+	})
+
+	t.Run("When one Service is pending, it should still delete known load balancers", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		knownService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "known", Namespace: "default"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		pendingService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "pending", Namespace: "default"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(knownService, pendingService).Build()
+		elbClient := awsapi.NewMockELBAPI(ctrl)
+		elbv2Client := awsapi.NewMockELBV2API(ctrl)
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancing.DescribeLoadBalancersInput{
+			LoadBalancerNames: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancing.DescribeLoadBalancersOutput{
+			LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{{LoadBalancerName: ptr.To("cluster-lb"), VPCId: ptr.To("vpc-owned")}},
+		}, nil)
+		elbClient.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancing.DescribeTagsInput{
+			LoadBalancerNames: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
+			TagDescriptions: []elbtypes.TagDescription{{
+				LoadBalancerName: ptr.To("cluster-lb"),
+				Tags:             []elbtypes.Tag{{Key: ptr.To("kubernetes.io/cluster/infra-id")}},
+			}},
+		}, nil)
+		elbClient.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancing.DeleteLoadBalancerInput{
+			LoadBalancerName: ptr.To("cluster-lb"),
+		}, gomock.Any()).Return(&elasticloadbalancing.DeleteLoadBalancerOutput{}, nil)
+		elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancing.DescribeLoadBalancersInput{
+			LoadBalancerNames: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancing.DescribeLoadBalancersOutput{}, nil)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+			Names: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil)
+		elbv2Client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+			Names: []string{"cluster-lb"},
+		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil)
+
+		r := &reconciler{
+			client: guestClient,
+			awsLoadBalancerClients: awsutil.LoadBalancerClients{
+				ELB:   elbClient,
+				ELBV2: elbv2Client,
+			},
+		}
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeTrue())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(knownService), &corev1.Service{}))).To(BeTrue())
+		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(pendingService), &corev1.Service{}))).To(BeTrue())
+	})
+}
+
+func TestLoadBalancerNamesFromServices(t *testing.T) {
+	tests := []struct {
+		name     string
+		services []corev1.Service
+		want     []string
+		pending  bool
+	}{
+		{
+			name: "When Services have AWS hostnames, it should return unique load balancer names",
+			services: []corev1.Service{
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "internal-cluster-lb-123.us-east-1.elb.amazonaws.com"}}}}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "cluster-lb-456.us-east-1.elb.amazonaws.com"}}}}},
+				{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-lb-789.us-east-1.elb.amazonaws.com"}}}}},
+				{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-label-lb-789.us-east-1.elb.amazonaws.com"}}}}},
+			},
+			want: []string{"cluster-lb"},
+		},
+		{
+			name:     "When a LoadBalancer Service has no hostname, it should report pending cleanup",
+			services: []corev1.Service{{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}},
+			pending:  true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			names, pending := loadBalancerNamesFromServices(test.services)
+			NewGomegaWithT(t).Expect(names).To(ConsistOf(test.want))
+			NewGomegaWithT(t).Expect(pending).To(Equal(test.pending))
 		})
 	}
 }

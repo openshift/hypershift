@@ -104,10 +104,21 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectAvailabilityProberContainer(opts 
 	return b
 }
 
-// InjectTokenMinterContainer will injecta sidecar container which mints ServiceAccount tokens in the tenant cluster for the given named service account,
+// InjectTokenMinterContainer will inject a sidecar container which mints ServiceAccount tokens in the tenant cluster for the given named service account,
 // and then make it available for the main container with a volume mount.
 func (b *controlPlaneWorkloadBuilder[T]) InjectTokenMinterContainer(opts TokenMinterContainerOptions) *controlPlaneWorkloadBuilder[T] {
 	b.workload.tokenMinterContainerOpts = &opts
+	return b
+}
+
+// WithSafeToEvictLocalVolumeExclusions excludes named volumes from the generated safe-to-evict-local-volumes annotation.
+func (b *controlPlaneWorkloadBuilder[T]) WithSafeToEvictLocalVolumeExclusions(volumeNames ...string) *controlPlaneWorkloadBuilder[T] {
+	if b.workload.safeToEvictLocalVolumeExclusions == nil {
+		b.workload.safeToEvictLocalVolumeExclusions = make(map[string]struct{})
+	}
+	for _, volumeName := range volumeNames {
+		b.workload.safeToEvictLocalVolumeExclusions[volumeName] = struct{}{}
+	}
 	return b
 }
 

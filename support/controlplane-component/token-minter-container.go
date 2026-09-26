@@ -36,6 +36,8 @@ type TokenMinterContainerOptions struct {
 	ServiceAccountName string
 	// ServiceAccountNameSpace is the namespace of the service account for which to mint a token.
 	ServiceAccountNameSpace string
+	// PlatformTypes limits cloud-token injection to the listed platforms. An empty list preserves the default behavior.
+	PlatformTypes []hyperv1.PlatformType
 
 	// KubeconfingVolumeName is the volume name which contains the kubeconfig used to mint the token in the target cluster.
 	// defaults to 'kubeconfig'
@@ -56,8 +58,7 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 	image := cpContext.ReleaseImageProvider.GetImage("token-minter")
 
 	// We mint cloud tokens for AWS, self-managed Azure, and GCP.
-	if (opts.TokenType == CloudToken || opts.TokenType == CloudAndAPIServerToken) &&
-		(cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform || azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) || cpContext.HCP.Spec.Platform.Type == hyperv1.GCPPlatform) {
+	if (opts.TokenType == CloudToken || opts.TokenType == CloudAndAPIServerToken) && opts.supportsCloudTokenPlatform(cpContext.HCP.Spec.Platform.Type) {
 		tokenVolume := opts.buildVolume(string(CloudToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
@@ -72,6 +73,19 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 		container := opts.buildContainer(cpContext.HCP, KubeAPIServerToken, image, tokenVolume)
 		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, kubeAPITokenFileMountPath, tokenVolume.Name)
 	}
+}
+
+func (opts TokenMinterContainerOptions) supportsCloudTokenPlatform(platformType hyperv1.PlatformType) bool {
+	if len(opts.PlatformTypes) > 0 {
+		for _, supportedPlatform := range opts.PlatformTypes {
+			if supportedPlatform == platformType {
+				return true
+			}
+		}
+		return false
+	}
+
+	return platformType == hyperv1.AWSPlatform || azureutil.IsSelfManagedAzure(platformType) || platformType == hyperv1.GCPPlatform
 }
 
 // injectContainer adds the token-minter container to the pod spec.

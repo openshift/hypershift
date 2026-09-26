@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d19c238f09d6e3b9a486100719aa9e4c9b6f73d7070a200caa982990fe96ef7b
+    hypershift.openshift.io/desired-state-hash: 344f846a276dbe83bfb15db78128dcef1bc17d09055d162c18d809805d26a19d
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: hosted-cluster-config-operator
@@ -143,6 +143,8 @@ spec:
         - mountPath: /etc/pki/ca-trust/extracted/pem
           name: openshift-config-managed-trusted-ca-bundle
           readOnly: true
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
@@ -179,6 +181,37 @@ spec:
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=kube-system
+        - --service-account-name=kube-controller-manager
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /var/run/secrets/openshift/serviceaccount/token
+          failureThreshold: 30
+          periodSeconds: 1
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
       priorityClassName: hypershift-control-plane
       schedulerName: default-scheduler
       serviceAccount: hosted-cluster-config-operator
@@ -213,6 +246,9 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
       - emptyDir: {}
         name: tmp-dir
 status: {}
