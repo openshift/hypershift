@@ -131,6 +131,7 @@ The metrics-proxy dynamically discovers all ServiceMonitors and PodMonitors in t
 | kube-apiserver | 6443 | `apiserver_request_total`, `apiserver_request_duration_seconds` |
 | etcd | 2381 | `etcd_server_has_leader`, `etcd_disk_wal_fsync_duration_seconds` |
 | kube-controller-manager | 10257 | `workqueue_depth`, `node_collector_evictions_total` |
+| kube-scheduler | 10259 | `scheduler_schedule_attempts_total`, `scheduler_pending_pods` |
 | openshift-apiserver | 8443 | `apiserver_request_total` (OpenShift API) |
 | openshift-controller-manager | 8443 | Controller workqueue and sync metrics |
 | openshift-route-controller-manager | 8443 | Route controller metrics |
@@ -201,6 +202,7 @@ The configurable components are:
 - `etcd`
 - `kubeAPIServer`
 - `kubeControllerManager`
+- `kubeScheduler`
 - `openshiftAPIServer`
 - `openshiftControllerManager`
 - `openshiftRouteControllerManager`
@@ -228,7 +230,7 @@ A sample Grafana dashboard JSON is available at [`contrib/metrics/guest-control-
 | **API Server** | Request rate by verb, error rate by resource, inflight requests, request latency (p50/p99), storage objects | `apiserver_request_total`, `apiserver_request_duration_seconds_bucket`, `apiserver_current_inflight_requests`, `apiserver_storage_objects` |
 | **etcd** | Database size, WAL fsync / backend commit latency (p99), peer RTT (p99), leader changes, has-leader status | `etcd_mvcc_db_total_size_in_bytes`, `etcd_disk_wal_fsync_duration_seconds_bucket`, `etcd_disk_backend_commit_duration_seconds_bucket`, `etcd_network_peer_round_trip_time_seconds_bucket`, `etcd_server_leader_changes_seen_total`, `etcd_server_has_leader` |
 | **Cluster Operators & CVO** | Operator up/down status, operator conditions table, cluster version | `cluster_operator_up`, `cluster_operator_conditions`, `cluster_version` |
-| **Scheduler** | Scheduling rate & results, pending pods by queue | `scheduler_schedule_attempts_total`, `scheduler_pending_pods` |
+| **Scheduler** | Scheduling rate & results, pending pods by queue | `scheduler_scheduling_attempt_duration_seconds_count`, `scheduler_schedule_attempts_total`, `scheduler_pending_pods` |
 | **Controller Manager** | Work queue depth, work queue add rate | `workqueue_depth`, `workqueue_adds_total` |
 | **OLM** | ClusterServiceVersion status | `csv_succeeded` |
 
@@ -266,7 +268,11 @@ Using `METRICS_SET=SRE` lets you forward exactly the metrics the dashboard needs
         kubeControllerManager:
           - action: keep
             sourceLabels: ["__name__"]
-            regex: "(workqueue_depth|workqueue_adds_total|scheduler_e2e_scheduling_duration_seconds_count|scheduler_schedule_attempts_total|scheduler_pending_pods)"
+            regex: "(workqueue_depth|workqueue_adds_total)"
+        kubeScheduler:
+          - action: keep
+            sourceLabels: ["__name__"]
+            regex: "(scheduler_scheduling_attempt_duration_seconds_count|scheduler_schedule_attempts_total|scheduler_pending_pods)"
         cvo:
           - action: keep
             sourceLabels: ["__name__"]
@@ -277,7 +283,7 @@ Using `METRICS_SET=SRE` lets you forward exactly the metrics the dashboard needs
             regex: "(csv_succeeded)"
     ```
 
-    This forwards only the 20 metric names used by the dashboard across 5 components. Components not listed (openshift-apiserver, openshift-controller-manager, etc.) will have no metrics forwarded, which is fine since the dashboard doesn't use them.
+    This forwards only the metric names used by the dashboard across 6 components. Components not listed (openshift-apiserver, openshift-controller-manager, etc.) will have no metrics forwarded, which is fine since the dashboard doesn't use them.
 
     !!! tip
         You can extend this ConfigMap over time. For example, to add etcd proposal metrics for a new panel, append `|etcd_server_proposals_.*` to the etcd regex. The dashboard will pick up the new metrics on the next scrape cycle.
