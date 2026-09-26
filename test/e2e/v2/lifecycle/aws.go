@@ -11,6 +11,7 @@ import (
 	"time"
 
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -108,6 +109,20 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 				"--endpoint-access=PublicAndPrivate",
 				"--control-plane-availability-policy=HighlyAvailable",
 			}...),
+		},
+		// Etcd sharding can only be configured at creation time, so it needs a
+		// dedicated cluster. This variant is deliberately absent from
+		// TestMatrix(): it is selected by the etcd sharding test plan
+		// (test/e2e/v2/testplans/aws-etcd-sharding.yaml) so the regular AWS job
+		// does not pay for an extra cluster. It also requires the HyperShift
+		// Operator to be installed with --tech-preview-no-upgrade.
+		{
+			Variant: "etcd-sharded",
+			ExtraArgs: append(append(extraArgs, []string{
+				"--public-only",
+				// Shards run 3 replicas, which needs an HA control plane.
+				"--control-plane-availability-policy=HighlyAvailable",
+			}...), e2eutil.EtcdShardingCreateArgs("")...),
 		},
 	}
 }
