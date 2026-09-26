@@ -46,12 +46,10 @@ import (
 
 const (
 	openshiftEC2NodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
-	openshiftEC2NodeClassAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodeClassCurrentRolloutConfig"
 
 	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
 	// It's used to track the current config version for outdated token cleanup
 	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
-	nodePoolAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
 
 	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
 )
@@ -282,29 +280,21 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to create token: %w", err)
 	}
 
-	// Populate the in-memory NodePool annotations and status from the stored nodeclass
-	// state so that Token.isOutdated() can correctly detect config/version changes.
-	// On first reconcile (no stored state), leave annotations absent so isOutdated()
-	// returns true and creates the initial secrets.
+	// Get the current config version from OpenshiftEC2NodeClass to track outdated tokens
 	currentConfigVersion := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentConfigVersion]
-	currentRolloutConfig := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentRolloutConfig]
-	if currentConfigVersion != "" {
-		np.Annotations[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
-		if currentRolloutConfig != "" {
-			np.Annotations[nodePoolAnnotationCurrentRolloutConfig] = currentRolloutConfig
-		}
-		if openshiftEC2NodeClass.Status.Version != "" {
-			np.Status.Version = openshiftEC2NodeClass.Status.Version
-		}
+	if currentConfigVersion == "" {
+		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = cg.Hash()
+	} else {
+		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
 	}
 
 	if err := token.Reconcile(ctx); err != nil {
 		return fmt.Errorf("failed to reconcile token: %w", err)
 	}
 
-	// Update the OpenshiftEC2NodeClass annotations if the config hash changed
-	if currentConfigVersion != cg.Hash() || currentRolloutConfig != cg.RolloutHashWithoutVersion() {
-		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, cg.Hash(), cg.RolloutHashWithoutVersion()); err != nil {
+	// Update the OpenshiftEC2NodeClass annotation if the config hash changed
+	if currentConfigVersion != cg.Hash() {
+		if err := r.updateConfigVersionAnnotation(ctx, openshiftEC2NodeClass, cg.Hash()); err != nil {
 			return err
 		}
 		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", cg.Hash())
@@ -689,15 +679,14 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 	return hc, nil
 }
 
-func (r *KarpenterIgnitionReconciler) updateConfigAnnotations(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, configVersion, rolloutConfig string) error {
+func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, newVersion string) error {
 	original := openshiftEC2NodeClass.DeepCopy()
 	if openshiftEC2NodeClass.Annotations == nil {
 		openshiftEC2NodeClass.Annotations = make(map[string]string)
 	}
-	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = configVersion
-	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentRolloutConfig] = rolloutConfig
+	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = newVersion
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to update config annotations on OpenshiftEC2NodeClass: %w", err)
+		return fmt.Errorf("failed to update config version annotation on OpenshiftEC2NodeClass: %w", err)
 	}
 	return nil
 }
