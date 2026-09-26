@@ -287,6 +287,13 @@ linters:
         path: hypershift/v1beta1/hostedcluster_types.go
         text: 'nonullable: field ClusterVersionStatus.AvailableUpdates has forbidden marker "nullable"'
 
+      # Preserve the upstream ingress API: this older linter does not recognize
+      # omitzero on optional value structs.
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'optionalfields: field DefaultCertificate should (be a pointer|have the omitempty tag)'
+
       # optionalfields (138 issues)
       - linters:
           - kubeapilinter
