@@ -750,9 +750,11 @@ func TestTokenReconcile(t *testing.T) {
 		configGenerator *ConfigGenerator
 		cpoCapabilities *CPOCapabilities
 		fakeObjects     []crclient.Object
+		seedRolloutOnly bool
 	}{
 		{
-			name: "when all input is given it should create the token and user data secrets successfully",
+			name:            "When the rollout annotation exists but the current config version is empty, it should create token and user data Secrets",
+			seedRolloutOnly: true,
 			configGenerator: &ConfigGenerator{
 				hostedCluster: &hyperv1.HostedCluster{
 					ObjectMeta: metav1.ObjectMeta{
@@ -883,6 +885,13 @@ func TestTokenReconcile(t *testing.T) {
 
 			token, err := NewToken(t.Context(), tc.configGenerator, tc.cpoCapabilities)
 			g.Expect(err).To(Not(HaveOccurred()))
+			if tc.seedRolloutOnly {
+				tc.configGenerator.nodePool.Annotations = map[string]string{
+					nodePoolAnnotationCurrentConfigVersion: "",
+					nodePoolAnnotationCurrentRolloutConfig: token.RolloutHashWithoutVersion(),
+				}
+				g.Expect(token.isOutdated()).To(BeTrue(), "missing config version requires initial Secret creation")
+			}
 
 			err = token.Reconcile(t.Context())
 			g.Expect(err).ToNot(HaveOccurred())
@@ -1010,6 +1019,15 @@ func TestTokenReconcile(t *testing.T) {
 }
 
 func TestRefreshUserDataAuthorization(t *testing.T) {
+	t.Run("When the Authorization token matches, it should preserve the opaque Ignition bytes", func(t *testing.T) {
+		g := NewWithT(t)
+		tokenBytes := []byte("current-token")
+		original := []byte(`{ "ignition": {"config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"Bearer ` + base64.StdEncoding.EncodeToString(tokenBytes) + `"}],"unknown":{"keep":true}}]}},"extra": [1,  2] }`)
+		updated, changed, err := refreshUserDataAuthorization(original, tokenBytes)
+		g.Expect(err).ToNot(HaveOccurred(), "matching Authorization should be accepted")
+		g.Expect(changed).To(BeFalse(), "matching token should not rewrite Ignition")
+		g.Expect(updated).To(Equal(original), "opaque Ignition bytes should remain untouched")
+	})
 	t.Run("When merge sources and unknown Ignition members exist, it should update only Authorization headers", func(t *testing.T) {
 		g := NewWithT(t)
 		original := []byte(`{"unrecognized":{"keep":true},"ignition":{"unknown":"retained","config":{"merge":[{"source":"https://other.example","httpHeaders":[{"name":"Accept","value":"text/plain"}],"extra":1},{"source":"https://ignition.example","httpHeaders":[{"name":"Authorization","value":"Bearer old","extra":"retained"}]}],"unknownConfig":[1,2]}},"storage":{"files":[{"path":"/etc/example"}]}}`)

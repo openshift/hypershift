@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	stdjson "encoding/json"
 	"fmt"
@@ -177,14 +178,13 @@ func (t *Token) getIgnitionCACert(ctx context.Context) ([]byte, error) {
 // bumps) return false — existing secrets remain valid and the MachineDeployment
 // continues to reference them.
 func (t *Token) isOutdated() bool {
+	if t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] == "" {
+		return true
+	}
 	currentRolloutConfig := t.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
 	if currentRolloutConfig == "" {
-		// Annotation absent: either a new NodePool (need to create secrets) or
-		// an existing NodePool after operator upgrade (secrets already exist).
-		if _, hasOldAnnotation := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]; hasOldAnnotation {
-			return false
-		}
-		return true
+		// Existing NodePools after operator upgrade have secrets but no rollout annotation.
+		return false
 	}
 	versionChanged := t.Version() != t.nodePool.Status.Version
 	configChanged := t.RolloutHashWithoutVersion() != currentRolloutConfig
@@ -357,7 +357,7 @@ func refreshUserDataAuthorization(value, tokenBytes []byte) ([]byte, bool, error
 				continue
 			}
 			found = true
-			if string(header["value"]) != string(encodedValue) {
+			if subtle.ConstantTimeCompare(header["value"], encodedValue) != 1 {
 				header["value"] = encodedValue
 				sourceChanged = true
 			}

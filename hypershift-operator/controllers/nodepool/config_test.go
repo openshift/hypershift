@@ -1277,10 +1277,36 @@ func TestIsOutdated(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "When the rollout hash matches but the current config version is absent, it should create Secrets",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{Version: "4.18.0"},
+			}),
+			expected: true,
+		},
+		{
+			name: "When the rollout hash matches but the current config version is empty, it should create Secrets",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: "",
+						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{Version: "4.18.0"},
+			}),
+			expected: true,
+		},
+		{
 			name: "When rollout hash matches and version matches, it should not be outdated",
 			token: makeToken("4.18.0", &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: "current-hash",
 						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
 					},
 				},
@@ -1295,6 +1321,7 @@ func TestIsOutdated(t *testing.T) {
 			token: makeToken("4.19.0", &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: "current-hash",
 						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
 					},
 				},
@@ -1309,6 +1336,7 @@ func TestIsOutdated(t *testing.T) {
 			token: makeToken("4.18.0", &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: "current-hash",
 						nodePoolAnnotationCurrentRolloutConfig: "stale-rollout-hash",
 					},
 				},
