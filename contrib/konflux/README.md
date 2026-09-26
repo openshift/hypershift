@@ -59,6 +59,8 @@ connect to the cluster:
 
 ## Creating a new CPO release
 
+Standard OCP minor CPO streams must use `hypershift-cpo-template`, whose Component git `revision` is `release-{{.version}}`. Leave that pin unchanged so the stream builds from the minor's release branch. Hotfix CPO streams use `hypershift-cpo-hotfix-template` instead. For the alignment rule this enforces and the payload mapping, see [Versioning and support: CPO](../../docs/content/reference/versioning-support.md#cpo).
+
 For each managed deliverable, after branching happens, we should:
 
 1. Create a ProjectDevelopmentStream that references the appropriate
