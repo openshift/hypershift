@@ -2728,7 +2728,7 @@ func TestPause(t *testing.T) {
 	err = capi.Client.Create(t.Context(), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	// Test Pause
+	// Test Pause without AutoRepair — MHC should not be required
 	err = capi.Pause(t.Context())
 	g.Expect(err).NotTo(HaveOccurred())
 
@@ -2738,6 +2738,36 @@ func TestPause(t *testing.T) {
 	g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 
 	// Verify MachineSet is paused
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+	// Test Pause with AutoRepair — MHC should also be paused
+	nodePool.Spec.Management.AutoRepair = true
+	mhc := capi.machineHealthCheck()
+	err = capi.Client.Create(t.Context(), mhc)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Remove pause annotations to re-test
+	delete(md.Annotations, capiv1.PausedAnnotation)
+	err = capi.Client.Update(t.Context(), md)
+	g.Expect(err).NotTo(HaveOccurred())
+	delete(ms.Annotations, capiv1.PausedAnnotation)
+	err = capi.Client.Update(t.Context(), ms)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	err = capi.Pause(t.Context())
+	g.Expect(err).NotTo(HaveOccurred())
+
+	// Verify MachineHealthCheck is paused
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(mhc), mhc)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(mhc.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+	// Verify MD/MS are still paused
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(md), md)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
@@ -4264,6 +4294,11 @@ func TestPauseUnpauseCycle(t *testing.T) {
 			}
 			g.Expect(c.Create(t.Context(), ms)).To(Succeed())
 
+			// Create MachineHealthCheck (AutoRepair enabled for this test).
+			nodePool.Spec.Management.AutoRepair = true
+			mhc := capiObj.machineHealthCheck()
+			g.Expect(c.Create(t.Context(), mhc)).To(Succeed())
+
 			// Step 1: Pause.
 			g.Expect(capiObj.Pause(t.Context())).To(Succeed())
 
@@ -4272,6 +4307,10 @@ func TestPauseUnpauseCycle(t *testing.T) {
 
 			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)).To(Succeed())
 			g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
+
+			// Verify MachineHealthCheck is paused.
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(mhc), mhc)).To(Succeed())
+			g.Expect(mhc.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 
 			// Step 2: Simulate replica drift while paused (e.g. CAS decrementing via Scale subresource).
 			if tc.upgradeType == hyperv1.UpgradeTypeReplace {
