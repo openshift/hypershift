@@ -302,7 +302,7 @@ func (t *Token) reconcileCurrentUserData(ctx context.Context) error {
 	if err := t.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret); err != nil {
 		return fmt.Errorf("failed to get current user data Secret: %w", err)
 	}
-	updatedValue, changed, err := refreshUserDataAuthorization(userDataSecret.Data["value"], tokenBytes)
+	updatedValue, changed, err := refreshUserDataAuthorization(userDataSecret.Data["value"], tokenBytes, fmt.Sprintf("https://%s/ignition", t.userData.ignitionServerEndpoint))
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func (t *Token) reconcileCurrentUserData(ctx context.Context) error {
 	return nil
 }
 
-func refreshUserDataAuthorization(value, tokenBytes []byte) ([]byte, bool, error) {
+func refreshUserDataAuthorization(value, tokenBytes []byte, ignitionSource string) ([]byte, bool, error) {
 	var document map[string]stdjson.RawMessage
 	if err := stdjson.Unmarshal(value, &document); err != nil || document == nil {
 		return nil, false, fmt.Errorf("invalid current user data Ignition config")
@@ -342,6 +342,10 @@ func refreshUserDataAuthorization(value, tokenBytes []byte) ([]byte, bool, error
 		var source map[string]stdjson.RawMessage
 		if err := stdjson.Unmarshal(rawSource, &source); err != nil || source == nil {
 			return nil, false, fmt.Errorf("invalid current user data Ignition merge source")
+		}
+		var sourceURL string
+		if err := stdjson.Unmarshal(source["source"], &sourceURL); err != nil || sourceURL != ignitionSource {
+			continue
 		}
 		if _, hasHeaders := source["httpHeaders"]; !hasHeaders {
 			continue

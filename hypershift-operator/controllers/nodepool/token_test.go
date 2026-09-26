@@ -611,7 +611,7 @@ func TestTokenReconcile(t *testing.T) {
 				}},
 			},
 		}
-		token := &Token{ConfigGenerator: config}
+		token := &Token{ConfigGenerator: config, userData: &userData{ignitionServerEndpoint: "ignition.example.com"}}
 		originalHash := token.Hash()
 		nodePool.Status.Version = token.Version()
 		nodePool.Annotations = map[string]string{
@@ -1022,16 +1022,16 @@ func TestRefreshUserDataAuthorization(t *testing.T) {
 	t.Run("When the Authorization token matches, it should preserve the opaque Ignition bytes", func(t *testing.T) {
 		g := NewWithT(t)
 		tokenBytes := []byte("current-token")
-		original := []byte(`{ "ignition": {"config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"Bearer ` + base64.StdEncoding.EncodeToString(tokenBytes) + `"}],"unknown":{"keep":true}}]}},"extra": [1,  2] }`)
-		updated, changed, err := refreshUserDataAuthorization(original, tokenBytes)
+		original := []byte(`{ "ignition": {"config":{"merge":[{"source":"https://ignition.example.com/ignition","httpHeaders":[{"name":"Authorization","value":"Bearer ` + base64.StdEncoding.EncodeToString(tokenBytes) + `"}],"unknown":{"keep":true}}]}},"extra": [1,  2] }`)
+		updated, changed, err := refreshUserDataAuthorization(original, tokenBytes, "https://ignition.example.com/ignition")
 		g.Expect(err).ToNot(HaveOccurred(), "matching Authorization should be accepted")
 		g.Expect(changed).To(BeFalse(), "matching token should not rewrite Ignition")
 		g.Expect(updated).To(Equal(original), "opaque Ignition bytes should remain untouched")
 	})
 	t.Run("When merge sources and unknown Ignition members exist, it should update only Authorization headers", func(t *testing.T) {
 		g := NewWithT(t)
-		original := []byte(`{"unrecognized":{"keep":true},"ignition":{"unknown":"retained","config":{"merge":[{"source":"https://other.example","httpHeaders":[{"name":"Accept","value":"text/plain"}],"extra":1},{"source":"https://ignition.example","httpHeaders":[{"name":"Authorization","value":"Bearer old","extra":"retained"}]}],"unknownConfig":[1,2]}},"storage":{"files":[{"path":"/etc/example"}]}}`)
-		updated, changed, err := refreshUserDataAuthorization(original, []byte("new-token"))
+		original := []byte(`{"unrecognized":{"keep":true},"ignition":{"unknown":"retained","config":{"merge":[{"source":"https://other.example","httpHeaders":[{"name":"Accept","value":"text/plain"},{"name":"Authorization","value":"Bearer external"}],"extra":1},{"source":"https://ignition.example.com/ignition","httpHeaders":[{"name":"Authorization","value":"Bearer old","extra":"retained"}]}],"unknownConfig":[1,2]}},"storage":{"files":[{"path":"/etc/example"}]}}`)
+		updated, changed, err := refreshUserDataAuthorization(original, []byte("new-token"), "https://ignition.example.com/ignition")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(changed).To(BeTrue())
 		g.Expect(string(updated)).To(ContainSubstring(`"unknownConfig":[1,2]`))
@@ -1039,17 +1039,27 @@ func TestRefreshUserDataAuthorization(t *testing.T) {
 		g.Expect(string(updated)).To(ContainSubstring(`"storage":{"files":[{"path":"/etc/example"}]}`))
 		g.Expect(string(updated)).To(ContainSubstring(`"value":"Bearer ` + base64.StdEncoding.EncodeToString([]byte("new-token")) + `"`))
 		g.Expect(string(updated)).To(ContainSubstring(`"value":"text/plain"`))
-		unchanged, changed, err := refreshUserDataAuthorization(updated, []byte("new-token"))
+		g.Expect(string(updated)).To(ContainSubstring(`"value":"Bearer external"`), "unrelated source Authorization must remain unchanged")
+		unchanged, changed, err := refreshUserDataAuthorization(updated, []byte("new-token"), "https://ignition.example.com/ignition")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(changed).To(BeFalse())
 		g.Expect(unchanged).To(Equal(updated))
 	})
 	t.Run("When no Authorization header exists, it should fail without returning token contents", func(t *testing.T) {
 		g := NewWithT(t)
-		_, _, err := refreshUserDataAuthorization([]byte(`{"ignition":{"config":{"merge":[{"httpHeaders":[{"name":"Accept"}]}]}}}`), []byte("private-token"))
+		_, _, err := refreshUserDataAuthorization([]byte(`{"ignition":{"config":{"merge":[{"source":"https://ignition.example.com/ignition","httpHeaders":[{"name":"Accept"}]}]}}}`), []byte("private-token"), "https://ignition.example.com/ignition")
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).NotTo(ContainSubstring("private-token"))
 		g.Expect(strings.Contains(err.Error(), "Authorization")).To(BeTrue())
+	})
+	t.Run("When only another source has Authorization, it should not send the token to that source", func(t *testing.T) {
+		g := NewWithT(t)
+		original := []byte(`{"ignition":{"config":{"merge":[{"source":"https://other.example/ignition","httpHeaders":[{"name":"Authorization","value":"Bearer external"}]}]}}}`)
+		updated, changed, err := refreshUserDataAuthorization(original, []byte("private-token"), "https://ignition.example.com/ignition")
+		g.Expect(err).To(HaveOccurred(), "the intended Ignition source is missing")
+		g.Expect(err.Error()).NotTo(ContainSubstring("private-token"))
+		g.Expect(changed).To(BeFalse())
+		g.Expect(updated).To(BeNil(), "the other source must not be overwritten")
 	})
 }
 
@@ -1104,7 +1114,7 @@ func TestReconcileCurrentUserData(t *testing.T) {
 				Name: "workers", Namespace: "clusters",
 				Annotations: map[string]string{nodePoolAnnotationCurrentConfigVersion: testCase.currentHash},
 			}}
-			token := &Token{ConfigGenerator: &ConfigGenerator{nodePool: nodePool, controlplaneNamespace: "control-plane"}}
+			token := &Token{ConfigGenerator: &ConfigGenerator{nodePool: nodePool, controlplaneNamespace: "control-plane"}, userData: &userData{ignitionServerEndpoint: "ignition.example.com"}}
 			var objects []crclient.Object
 			if testCase.includeToken {
 				secret := token.outdatedTokenSecret()

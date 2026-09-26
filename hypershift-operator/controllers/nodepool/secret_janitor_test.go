@@ -482,7 +482,7 @@ spec:
 				}},
 			},
 		}
-		token := &Token{ConfigGenerator: config, CreateOrUpdateProvider: r.CreateOrUpdateProvider}
+		token := &Token{ConfigGenerator: config, CreateOrUpdateProvider: r.CreateOrUpdateProvider, userData: &userData{ignitionServerEndpoint: "ignition.example.com"}}
 		token.Client = c
 		originalHash := token.Hash()
 		currentNodePool.Annotations = map[string]string{
@@ -496,7 +496,7 @@ spec:
 		g.Expect(c.Create(ctx, originalToken)).To(Succeed())
 		userData := token.UserDataSecret()
 		userData.Annotations = originalToken.Annotations
-		userData.Data = map[string][]byte{"value": []byte(`{"ignition":{"config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"Bearer old"}]}]}}}`)}
+		userData.Data = map[string][]byte{"value": []byte(`{"ignition":{"config":{"merge":[{"source":"https://ignition.example.com/ignition","httpHeaders":[{"name":"Authorization","value":"Bearer old"}]}]}}}`)}
 		g.Expect(c.Create(ctx, userData)).To(Succeed())
 		config.mcoRawConfig = "changed-management-content"
 		g.Expect(token.Hash()).NotTo(Equal(originalHash))
