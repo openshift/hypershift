@@ -1668,6 +1668,99 @@ key.</p>
 </tr>
 </tbody>
 </table>
+###AWSDNSZoneStatus { #hypershift.openshift.io/v1beta1.AWSDNSZoneStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformStatus">AWSPlatformStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>zoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>zoneID is the Route53 hosted zone ID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zoneType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneType">
+AWSDNSZoneType
+</a>
+</em>
+</td>
+<td>
+<p>zoneType indicates the purpose of the zone.
+Valid values are:
+&ldquo;PublicIngress&rdquo;: the public Route53 zone holding the publicly resolvable
+ingress DNS records (e.g. *.apps and the console) and ACME certificate
+validation records.
+&ldquo;PrivateIngress&rdquo;: the private Route53 zone serving VPC-internal ingress
+DNS resolution for the guest cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the DNS name of the hosted zone.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nameServers</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nameServers are the authoritative name servers for this zone.
+Used for NS delegation when external-dns is not available.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSDNSZoneType { #hypershift.openshift.io/v1beta1.AWSDNSZoneType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">AWSDNSZoneStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneType defines the purpose of a managed DNS zone.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;PrivateIngress&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;PublicIngress&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###AWSEndpointAccessType { #hypershift.openshift.io/v1beta1.AWSEndpointAccessType }
 <p>
 (<em>Appears on:</em>
@@ -1862,6 +1955,104 @@ AWSKMSAuthSpec
 </td>
 <td>
 <p>auth defines metadata about the management of credentials used to interact with AWS KMS</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSManagedDNSDelegationSpec { #hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSSpec">AWSManagedDNSSpec</a>)
+</p>
+<p>
+<p>AWSManagedDNSDelegationSpec configures service-side DNS delegation for
+certificate generation. When set, the ControlPlaneOperator creates an ACME
+DNS01 challenge CNAME in the public ingress zone pointing back to the parent
+zone, and handles NS delegation based on the nsDelegationMode.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nsDelegationMode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NSDelegationMode">
+NSDelegationMode
+</a>
+</em>
+</td>
+<td>
+<p>nsDelegationMode specifies how NS delegation records are created in the parent zone.
+&ldquo;ExternalDNS&rdquo;: the ControlPlaneOperator creates a DNSEndpoint CR in the control plane namespace;
+external-dns creates NS records in the parent zone.
+&ldquo;Manual&rdquo;: the consuming platform handles NS delegation using nameservers
+reported in HostedCluster status.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSManagedDNSSpec { #hypershift.openshift.io/v1beta1.AWSManagedDNSSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSManagedDNSSpec configures ControlPlaneOperator-managed Route53 DNS zones
+for ingress. When set, the ControlPlaneOperator creates public and private
+ingress Route53 zones in the customer&rsquo;s AWS account using ingressDomainPrefix
+to form the zone domain name.
+Delegation (ACME CNAME + NS records) is configured separately via the
+delegation field.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ingressDomainPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
+The zone is created as {ingressDomainPrefix}.{clusterBaseDomain}, where
+{clusterBaseDomain} is the cluster base domain configured via the HostedCluster
+spec.dns (baseDomainPrefix and baseDomain).
+When delegation is configured, this prefix creates a DNS delegation boundary
+that separates the ingress zone from the cluster domain, enabling ACME
+challenge CNAME delegation back to the parent zone.
+Must be 1-63 characters, consist only of lowercase alphanumeric characters or
+hyphens, and must start and end with an alphanumeric character.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delegation,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec">
+AWSManagedDNSDelegationSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delegation configures service-side DNS delegation for certificate generation.
+When set, the ControlPlaneOperator creates an ACME DNS01 challenge CNAME in the
+public ingress zone and handles NS delegation based on the nsDelegationMode.
+When absent, only zones are created and the consuming platform handles
+delegation and certificate management.</p>
 </td>
 </tr>
 </tbody>
@@ -2282,6 +2473,28 @@ before they are terminated, providing a best effort for graceful shutdown.</p>
 <p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>managedDNS,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSSpec">
+AWSManagedDNSSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedDNS configures managed Route53 DNS zones for this cluster.
+Managed DNS is enabled when this field is set, which requires
+ingressDomainPrefix. When enabled, the control plane operator creates and
+reconciles the cluster&rsquo;s DNS zones in the customer&rsquo;s AWS account instead of
+requiring them to be pre-created externally and passed in as zone IDs.
+For standard clusters this covers the .hypershift.local private zone and
+the public and private ingress zones. For shared VPC clusters only the
+public ingress zone is managed, since the .hypershift.local and private
+ingress zones are owned by the VPC owner.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
@@ -2312,6 +2525,20 @@ string
 <p>defaultWorkerSecurityGroupID is the ID of a security group created by
 the control plane operator. It is always added to worker machines in
 addition to any security groups specified in the NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZones</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">
+[]AWSDNSZoneStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZones contains DNS zone information for zones managed by the control plane operator.</p>
 </td>
 </tr>
 </tbody>
@@ -6374,6 +6601,11 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AWSManagedDNSAvailable&#34;</p></td>
+<td><p>AWSManagedDNSAvailable indicates whether the managed DNS configuration
+has been successfully created for the hosted cluster. This condition is
+only set when spec.platform.aws.managedDNS is configured.</p>
 </td>
 </tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
 <td><p>AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.
@@ -14269,6 +14501,27 @@ which produces significantly higher metrics volume.</p>
 <tbody><tr><td><p>&#34;Disable&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Enable&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
+###NSDelegationMode { #hypershift.openshift.io/v1beta1.NSDelegationMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec">AWSManagedDNSDelegationSpec</a>)
+</p>
+<p>
+<p>NSDelegationMode specifies how NS delegation is performed for managed DNS zones.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ExternalDNS&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Manual&#34;</p></td>
 <td></td>
 </tr></tbody>
 </table>
