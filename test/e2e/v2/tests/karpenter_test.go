@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/pkg/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -522,6 +523,11 @@ func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+
+			// Verify global-pull-secret-syncer DaemonSet pod is scheduled and running on the Karpenter node
+			Expect(nodes[0].Labels).NotTo(HaveKey("hypershift.openshift.io/nodepool-globalps-enabled"),
+				"Karpenter node should not have legacy globalps workaround label")
+			waitForGlobalPSSyncerOnNode(ctx, hcClient, nodes[0].Name)
 
 			// Verify EC2 instances have the correct instance profile
 			ec2client := newEC2Client(awsCredsFile, awsRegion)
@@ -1727,11 +1733,6 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 				ConsolidateAfter: karpenterv1.MustParseNillableDuration("60s"),
 			},
 			Template: karpenterv1.NodeClaimTemplate{
-				ObjectMeta: karpenterv1.ObjectMeta{
-					Labels: map[string]string{
-						"hypershift.openshift.io/nodepool-globalps-enabled": "true",
-					},
-				},
 				Spec: karpenterv1.NodeClaimTemplateSpec{
 					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 						{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
@@ -1973,4 +1974,46 @@ func getVCPUsMetric(ctx context.Context, mgtClient crclient.Client, hostedCluste
 		}
 	}
 	return 0, false
+}
+
+// waitForGlobalPSSyncerOnNode verifies that the global-pull-secret-syncer DaemonSet pod is running on the specified node.
+func waitForGlobalPSSyncerOnNode(ctx context.Context, client crclient.Client, nodeName string) {
+	// Inspect DaemonSet nodeAffinity. External or older release payloads run unpatched CPO images
+	// that lack the Karpenter nodeAffinity.
+	ds := &appsv1.DaemonSet{}
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: hccomanifests.GlobalPullSecretNamespace, Name: hccomanifests.GlobalPullSecretDSName}, ds); err != nil {
+		GinkgoWriter.Printf("global-pull-secret-syncer DaemonSet not found in %s, skipping syncer node check: %v\n", hccomanifests.GlobalPullSecretNamespace, err)
+		return
+	}
+	hasKarpenterAffinity := false
+	if ds.Spec.Template.Spec.Affinity != nil &&
+		ds.Spec.Template.Spec.Affinity.NodeAffinity != nil &&
+		ds.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		for _, term := range ds.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
+			for _, expr := range term.MatchExpressions {
+				if expr.Key == karpenterv1.NodePoolLabelKey {
+					hasKarpenterAffinity = true
+					break
+				}
+			}
+		}
+	}
+	if !hasKarpenterAffinity {
+		GinkgoWriter.Println("Skipping syncer pod check: global-pull-secret-syncer DaemonSet does not have karpenter.sh/nodepool affinity (running unpatched CPO payload)")
+		return
+	}
+
+	GinkgoWriter.Println("Waiting for global-pull-secret-syncer pod to be running on Karpenter node")
+	Eventually(func(g Gomega) {
+		pods := &corev1.PodList{}
+		g.Expect(client.List(ctx, pods, crclient.InNamespace(hccomanifests.GlobalPullSecretNamespace), crclient.MatchingLabels{"name": hccomanifests.GlobalPullSecretDSName})).To(Succeed(), "failed to list global-pull-secret-syncer pods in kube-system")
+		found := false
+		for i := range pods.Items {
+			if pods.Items[i].Spec.NodeName == nodeName && pods.Items[i].Status.Phase == corev1.PodRunning {
+				found = true
+				break
+			}
+		}
+		g.Expect(found).To(BeTrue(), "expected global-pull-secret-syncer pod running on Karpenter node")
+	}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 }
