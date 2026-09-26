@@ -83,7 +83,7 @@ graph LR
 ```
 
 - `controlPlaneRelease`: allows patching management-side components without touching the data plane
-- NodePool releases can be updated independently (within N-2 y-stream skew)
+- NodePool releases can be updated independently (within N-3 y-stream skew)
 
 ### Deletion
 
