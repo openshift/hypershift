@@ -66,6 +66,8 @@ func hasStatusCapacity(template client.Object) bool {
 		return len(t.Status.Capacity) > 0
 	case *capiazure.AzureMachineTemplate:
 		return len(t.Status.Capacity) > 0
+	case *capigcp.GCPMachineTemplate:
+		return len(t.Status.Capacity) > 0
 	}
 	return false
 }
