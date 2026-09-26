@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -769,7 +770,6 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 		}
 	} else {
 		// Aggregate conditions.
-		// TODO (alberto): consider bubbling failureReason / failureMessage.
 		// This a rudimentary approach which aggregates every Machine, until
 		// https://github.com/kubernetes-sigs/cluster-api/pull/6218 and
 		// https://github.com/kubernetes-sigs/cluster-api/pull/6025
@@ -779,8 +779,31 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 
 		numNotReady := 0
 		messageMap := make(map[string][]string)
+		hasInfraFailure := false
 
 		for _, machine := range machines {
+			// Check Machine.Status.Deprecated.V1Beta1.FailureReason / FailureMessage first.
+			// These deprecated-but-still-populated CAPI fields carry terminal
+			// infrastructure errors (e.g. quota, capacity, credentials).
+			if deprecated := machine.Status.Deprecated; deprecated != nil && deprecated.V1Beta1 != nil &&
+				(deprecated.V1Beta1.FailureReason != nil || deprecated.V1Beta1.FailureMessage != nil) {
+				status = corev1.ConditionFalse
+				numNotReady++
+				hasInfraFailure = true
+
+				failReason := "MachineFailure"
+				if deprecated.V1Beta1.FailureReason != nil {
+					failReason = string(*deprecated.V1Beta1.FailureReason)
+				}
+				failMsg := failReason
+				if deprecated.V1Beta1.FailureMessage != nil {
+					failMsg = *deprecated.V1Beta1.FailureMessage
+				}
+				mapMessage := fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, failReason, failMsg)
+				messageMap[failReason] = append(messageMap[failReason], mapMessage)
+				continue
+			}
+
 			readyCond := findMachineStatusCondition(machine, string(capiv1.ReadyCondition))
 			if readyCond == nil {
 				// Ready condition not yet reported; treat as not ready.
@@ -814,11 +837,18 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 					}
 				}
 
+				if isPersistentFailureReason(mapReason, mapMessage) {
+					hasInfraFailure = true
+				}
+
 				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
 			}
 		}
 		if numNotReady > 0 {
 			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotReady, aggregatorMachineStateReady)
+			if hasInfraFailure {
+				reason = hyperv1.NodePoolInfrastructureFailureReason
+			}
 		}
 	}
 
@@ -831,6 +861,41 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+}
+
+// isPersistentFailureReason returns true if the ReadyCondition reason
+// and message indicate a terminal infrastructure failure that likely
+// requires manual intervention.
+func isPersistentFailureReason(reason, message string) bool {
+	switch reason {
+	case capiv1.MachineHasFailureV1Beta1Reason:
+		return true
+	case "InstanceProvisionFailed":
+		return containsTerminalSubstring(message)
+	}
+	return false
+}
+
+// terminalSubstrings lists known cloud-provider error substrings that
+// indicate a persistent infrastructure failure requiring user action.
+var terminalSubstrings = []string{
+	"InsufficientInstanceCapacity",
+	"Unsupported",
+	"UnauthorizedAccess",
+	"InvalidCredentials",
+	"QuotaExceeded",
+	"VCPULimitExceeded",
+}
+
+// containsTerminalSubstring checks whether the message contains a
+// known terminal infrastructure error substring.
+func containsTerminalSubstring(message string) bool {
+	for _, s := range terminalSubstrings {
+		if strings.Contains(message, s) {
+			return true
+		}
+	}
+	return false
 }
 
 type cidrConflictEntry struct {

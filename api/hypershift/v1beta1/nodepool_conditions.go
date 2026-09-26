@@ -148,4 +148,11 @@ const (
 	AWSResourceTagConflictDetectedReason  = "TagConflictDetected"
 	AWSResourceTagNoConflictReason        = "NoTagConflict"
 	ManagementConfigDriftReason           = "ManagementConfigDrift"
+
+	// NodePoolInfrastructureFailureReason is used on the AllMachinesReady
+	// condition when one or more Machines have persistent infrastructure
+	// failures that likely require manual intervention — for example
+	// cloud-provider quota exhaustion, invalid credentials, or an instance
+	// type that does not exist in the target region.
+	NodePoolInfrastructureFailureReason = "InfrastructureFailure"
 )
