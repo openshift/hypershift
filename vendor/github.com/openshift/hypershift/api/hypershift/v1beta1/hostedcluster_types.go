@@ -348,6 +348,11 @@ const (
 	// It is not set by the end-user.
 	DisableAWSNodeTerminationHandlerAnnotation = "hypershift.openshift.io/disable-aws-node-termination-handler"
 
+	// DisableGCPNodeTerminationHandlerAnnotation allows disabling the GCP Node Termination Handler for a hosted cluster.
+	// This is an internal HostedControlPlane annotation managed by the hypershift-operator.
+	// HostedCluster annotations with this key are ignored; HostedControlPlane values are reconciled from the current platform and NodePool state.
+	DisableGCPNodeTerminationHandlerAnnotation = "hypershift.openshift.io/disable-gcp-node-termination-handler"
+
 	// AroHCP represents the ARO HCP managed service offering
 	AroHCP = "ARO-HCP"
 
