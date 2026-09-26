@@ -4213,6 +4213,124 @@ func TestComputeAWSDefaultSGDeletedCondition(t *testing.T) {
 	}
 }
 
+func TestDeleteAWSEndpointServices(t *testing.T) {
+	const cpoFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+	namespace := "test-cp-ns"
+
+	newAEPS := func(deletionAge *time.Duration) *hyperv1.AWSEndpointService {
+		ep := &hyperv1.AWSEndpointService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-aeps",
+				Namespace:  namespace,
+				Finalizers: []string{cpoFinalizer},
+			},
+		}
+		if deletionAge != nil {
+			ts := metav1.NewTime(time.Now().Add(-*deletionAge))
+			ep.DeletionTimestamp = &ts
+		}
+		return ep
+	}
+
+	hcWithConditions := func(conditions ...metav1.Condition) *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hc", Namespace: "clusters"},
+			Status:     hyperv1.HostedClusterStatus{Conditions: conditions},
+		}
+	}
+
+	validConditions := []metav1.Condition{
+		{Type: string(hyperv1.ValidOIDCConfiguration), Status: metav1.ConditionTrue, Reason: "AsExpected"},
+		{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionTrue, Reason: "AsExpected"},
+	}
+	invalidConditions := []metav1.Condition{
+		{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse, Reason: "Invalid"},
+	}
+
+	withinGrace := awsEndpointDeletionGracePeriod / 2
+	pastGrace := awsEndpointDeletionGracePeriod + time.Minute
+
+	tests := []struct {
+		name              string
+		endpoint          *hyperv1.AWSEndpointService
+		hc                *hyperv1.HostedCluster
+		wantExists        bool
+		wantFinalizerKept bool
+	}{
+		{
+			name:              "When the endpoint service is not yet deleting, it should send a delete request and report existence",
+			endpoint:          newAEPS(nil),
+			hc:                hcWithConditions(validConditions...),
+			wantExists:        true,
+			wantFinalizerKept: true,
+		},
+		{
+			name:              "When credentials are unknown within the grace period, it should keep the finalizer",
+			endpoint:          newAEPS(&withinGrace),
+			hc:                hcWithConditions(),
+			wantExists:        true,
+			wantFinalizerKept: true,
+		},
+		{
+			name:              "When credentials are unknown past the grace period, it should force-remove the finalizer",
+			endpoint:          newAEPS(&pastGrace),
+			hc:                hcWithConditions(),
+			wantExists:        true,
+			wantFinalizerKept: false,
+		},
+		{
+			name:              "When credentials are invalid within the grace period, it should force-remove the finalizer immediately",
+			endpoint:          newAEPS(&withinGrace),
+			hc:                hcWithConditions(invalidConditions...),
+			wantExists:        true,
+			wantFinalizerKept: false,
+		},
+		{
+			name:              "When credentials are valid within the grace period, it should keep the finalizer",
+			endpoint:          newAEPS(&withinGrace),
+			hc:                hcWithConditions(validConditions...),
+			wantExists:        true,
+			wantFinalizerKept: true,
+		},
+		{
+			name:       "When there are no endpoint services, it should report no existence",
+			endpoint:   nil,
+			hc:         hcWithConditions(validConditions...),
+			wantExists: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tt.endpoint != nil {
+				builder = builder.WithObjects(tt.endpoint)
+			}
+			c := builder.Build()
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			exists, err := deleteAWSEndpointServices(ctx, c, tt.hc, namespace)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(exists).To(Equal(tt.wantExists))
+
+			if tt.endpoint == nil {
+				return
+			}
+
+			got := &hyperv1.AWSEndpointService{}
+			getErr := c.Get(ctx, crclient.ObjectKeyFromObject(tt.endpoint), got)
+			if tt.wantFinalizerKept {
+				g.Expect(getErr).ToNot(HaveOccurred())
+				g.Expect(got.Finalizers).To(ContainElement(cpoFinalizer))
+			} else {
+				// Removing the only finalizer lets the fake client complete deletion.
+				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue())
+			}
+		})
+	}
+}
+
 func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -8319,6 +8437,93 @@ func TestDeleteOrcImagesDuringHostedClusterDeletion(t *testing.T) {
 			g.Expect(done).To(Equal(tc.wantDone))
 		})
 	}
+}
+
+// TestDeleteAWSEndpointServiceOrderingDuringHostedClusterDeletion drives the full
+// HostedCluster deletion path across two reconcile passes and asserts the
+// cross-controller ordering contract end to end: HC deletion requests
+// AWSEndpointService removal, waits while the CPO-owned finalizer is still held,
+// and only proceeds to delete the HostedControlPlane once that finalizer clears.
+// This protects the endpoint-first ordering across version skew and future
+// refactors, which the isolated deleteAWSEndpointServices tests do not cover.
+//
+// The finalizer clearing between passes stands in for the CPO's awsprivatelink
+// controller finishing endpoint teardown; that controller's real finalizer removal
+// is covered by TestReconcileDeletion in the awsprivatelink package.
+func TestDeleteAWSEndpointServiceOrderingDuringHostedClusterDeletion(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	const (
+		hcNamespace  = "test-namespace"
+		hcName       = "test-cluster"
+		cpoFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+	)
+	cpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{}},
+		},
+	}
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: cpNamespace},
+	}
+	// The AWSEndpointService carries the CPO-owned finalizer, mirroring the real
+	// contract: the CPO holds this finalizer until it has finished tearing down the
+	// endpoint, so HC deletion must wait for it to clear.
+	aeps := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: cpNamespace, Finalizers: []string{cpoFinalizer}},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hc, hcp, aeps).Build()
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+	}
+	ctx := context.Background()
+
+	hcKey := crclient.ObjectKey{Namespace: hcNamespace, Name: hcName}
+	hcpKey := crclient.ObjectKey{Namespace: cpNamespace, Name: hcName}
+	aepsKey := crclient.ObjectKey{Namespace: cpNamespace, Name: "svc"}
+	getHC := func() *hyperv1.HostedCluster {
+		got := &hyperv1.HostedCluster{}
+		g.Expect(fakeClient.Get(ctx, hcKey, got)).To(Succeed())
+		return got
+	}
+
+	// Pass 1: the AWSEndpointService still holds the CPO finalizer. delete() must
+	// request its removal and wait; it must not touch the HostedControlPlane yet.
+	done, err := r.delete(ctx, getHC())
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(done).To(BeFalse())
+
+	// AEPS deletion was requested, but the CPO finalizer keeps it around: HC deletion
+	// is blocked waiting on the CPO to finish cleanup.
+	gotAEPS := &hyperv1.AWSEndpointService{}
+	g.Expect(fakeClient.Get(ctx, aepsKey, gotAEPS)).To(Succeed())
+	g.Expect(gotAEPS.DeletionTimestamp).ToNot(BeNil(), "AWSEndpointService deletion should have been requested")
+	g.Expect(controllerutil.ContainsFinalizer(gotAEPS, cpoFinalizer)).To(BeTrue(), "CPO finalizer should still be held: HC deletion is waiting on it")
+
+	// The HostedControlPlane must be untouched while the endpoint service exists.
+	gotHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(fakeClient.Get(ctx, hcpKey, gotHCP)).To(Succeed(), "HostedControlPlane must not be deleted while an AWSEndpointService still exists")
+	g.Expect(gotHCP.DeletionTimestamp).To(BeNil(), "HostedControlPlane deletion must not be requested while an AWSEndpointService still exists")
+
+	// Simulate the CPO finishing endpoint teardown by clearing its finalizer, which
+	// lets the fake client finalize the already-requested deletion.
+	controllerutil.RemoveFinalizer(gotAEPS, cpoFinalizer)
+	g.Expect(fakeClient.Update(ctx, gotAEPS)).To(Succeed())
+	g.Expect(errors2.IsNotFound(fakeClient.Get(ctx, aepsKey, &hyperv1.AWSEndpointService{}))).To(BeTrue(), "AWSEndpointService should be gone once the CPO finalizer clears")
+
+	// Pass 2: with the endpoint service gone, delete() may now proceed to delete the
+	// HostedControlPlane.
+	done, err = r.delete(ctx, getHC())
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(done).To(BeFalse())
+	g.Expect(errors2.IsNotFound(fakeClient.Get(ctx, hcpKey, &hyperv1.HostedControlPlane{}))).To(BeTrue(), "HostedControlPlane should be deleted once endpoint services are gone")
 }
 
 func TestKasServingCertHashFromEndpoint(t *testing.T) {

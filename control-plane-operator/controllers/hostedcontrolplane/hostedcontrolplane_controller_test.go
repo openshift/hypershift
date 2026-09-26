@@ -2751,7 +2751,7 @@ func TestEtcdStatefulSetCondition(t *testing.T) {
 	}
 }
 
-func TestRemoveCloudResources(t *testing.T) {
+func TestRemoveGuestCloudResources(t *testing.T) {
 	t.Parallel()
 	testNamespace := "test-namespace"
 
@@ -3012,7 +3012,7 @@ func TestRemoveCloudResources(t *testing.T) {
 			}
 
 			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
-			done, err := r.removeCloudResources(ctx, tc.hcp)
+			done, err := r.removeGuestCloudResources(ctx, tc.hcp)
 
 			if tc.expectedError {
 				g.Expect(err).To(HaveOccurred())
@@ -4753,6 +4753,403 @@ func TestReconcileDeletion(t *testing.T) {
 			cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
 			g.Expect(cond).ToNot(BeNil())
 			g.Expect(cond.Status).To(Equal(tt.wantCondStatus))
+		})
+	}
+}
+
+func TestAWSIdentityProviderInvalid(t *testing.T) {
+	newHCP := func(platform hyperv1.PlatformType, cond *metav1.ConditionStatus) *hyperv1.HostedControlPlane {
+		hcp := &hyperv1.HostedControlPlane{
+			Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{Type: platform}},
+		}
+		if cond != nil {
+			hcp.Status.Conditions = []metav1.Condition{{
+				Type:   string(hyperv1.ValidAWSIdentityProvider),
+				Status: *cond,
+			}}
+		}
+		return hcp
+	}
+
+	tests := []struct {
+		name     string
+		platform hyperv1.PlatformType
+		cond     *metav1.ConditionStatus
+		want     bool
+	}{
+		{name: "When platform is not AWS, it should report not invalid", platform: hyperv1.NonePlatform, cond: nil, want: false},
+		{name: "When AWS has no identity provider condition, it should report not invalid", platform: hyperv1.AWSPlatform, cond: nil, want: false},
+		{name: "When AWS identity provider is True, it should report not invalid", platform: hyperv1.AWSPlatform, cond: ptr.To(metav1.ConditionTrue), want: false},
+		{name: "When AWS identity provider is Unknown, it should report not invalid so teardown retries", platform: hyperv1.AWSPlatform, cond: ptr.To(metav1.ConditionUnknown), want: false},
+		{name: "When AWS identity provider is False, it should report invalid", platform: hyperv1.AWSPlatform, cond: ptr.To(metav1.ConditionFalse), want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(awsIdentityProviderInvalid(newHCP(tt.platform, tt.cond))).To(Equal(tt.want))
+		})
+	}
+}
+
+func TestEnsureAWSEndpointServicesRemoved(t *testing.T) {
+	namespace := "test-ns"
+	const cpoFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+
+	newAEPS := func(name string, deleting bool) *hyperv1.AWSEndpointService {
+		ep := &hyperv1.AWSEndpointService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       name,
+				Namespace:  namespace,
+				Finalizers: []string{cpoFinalizer},
+			},
+		}
+		if deleting {
+			ts := metav1.Now()
+			ep.DeletionTimestamp = &ts
+		}
+		return ep
+	}
+
+	tests := []struct {
+		name     string
+		existing []client.Object
+		wantDone bool
+	}{
+		{
+			name:     "When there are no endpoint services, it should report done",
+			existing: nil,
+			wantDone: true,
+		},
+		{
+			name:     "When the endpoint service is not yet deleting, it should send a delete request and report not done",
+			existing: []client.Object{newAEPS("svc", false)},
+			wantDone: false,
+		},
+		{
+			name:     "When the endpoint service is already deleting, it should wait and report not done",
+			existing: []client.Object{newAEPS("svc", true)},
+			wantDone: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tt.existing) > 0 {
+				builder = builder.WithObjects(tt.existing...)
+			}
+			fakeClient := builder.Build()
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: namespace}}
+			r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+
+			done, err := r.ensureAWSEndpointServicesRemoved(ctx, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(done).To(Equal(tt.wantDone))
+
+			// Any endpoint service in the namespace should carry a deletion timestamp
+			// after the call: existing ones keep theirs, and not-yet-deleting ones get
+			// one because they hold the CPO finalizer.
+			var list hyperv1.AWSEndpointServiceList
+			g.Expect(fakeClient.List(ctx, &list, client.InNamespace(namespace))).To(Succeed())
+			for i := range list.Items {
+				g.Expect(list.Items[i].DeletionTimestamp).ToNot(BeNil())
+			}
+		})
+	}
+}
+
+// TestReconcileDeletionAWS covers the AWS teardown branch of reconcileDeletion:
+// skipping cleanup on an invalid identity provider, holding the finalizer while
+// guest-resource cleanup or endpoint-service removal is in progress, and letting
+// the grace period bound the wait so deletion eventually proceeds.
+func TestReconcileDeletionAWS(t *testing.T) {
+	const cpoFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+	namespace := "test-ns"
+
+	withinGrace := time.Minute
+	pastGrace := cloudResourceCleanupGracePeriod + time.Minute
+
+	sgDependencyViolation := func(ctrl *gomock.Controller) *awsapi.MockEC2API {
+		m := awsapi.NewMockEC2API(ctrl)
+		m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{
+			SecurityGroups: []ec2types.SecurityGroup{{GroupId: aws.String("sg-123")}},
+		}, nil)
+		m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil,
+			&smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has dependent object"})
+		return m
+	}
+	sgAlreadyGone := func(ctrl *gomock.Controller) *awsapi.MockEC2API {
+		m := awsapi.NewMockEC2API(ctrl)
+		m.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{}, nil)
+		return m
+	}
+	noEC2Calls := func(ctrl *gomock.Controller) *awsapi.MockEC2API {
+		return awsapi.NewMockEC2API(ctrl) // no EXPECT: any EC2 call fails the test
+	}
+
+	tests := []struct {
+		name              string
+		cleanupAnnotation bool
+		idpCond           *metav1.ConditionStatus
+		extraConditions   []metav1.Condition
+		deletionAge       *time.Duration
+		setupEC2          func(*gomock.Controller) *awsapi.MockEC2API
+		withAEPS          bool
+		wantRequeue       bool
+		wantFinalizer     bool
+		verify            func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane)
+	}{
+		{
+			name:              "When the identity provider is invalid, it should skip cloud cleanup and remove the finalizer",
+			cleanupAnnotation: true,
+			idpCond:           ptr.To(metav1.ConditionFalse),
+			setupEC2:          noEC2Calls,
+			wantRequeue:       false,
+			wantFinalizer:     false,
+			verify: func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
+				g.Expect(meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))).To(BeNil())
+			},
+		},
+		{
+			name:              "When the default security group deletion hits a dependency violation, it should hold the finalizer and not yet touch endpoint services",
+			cleanupAnnotation: true,
+			// Guest cleanup is already complete, so the retry is driven solely by the
+			// security group DependencyViolation.
+			extraConditions: []metav1.Condition{{Type: string(hyperv1.CloudResourcesDestroyed), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason}},
+			deletionAge:     &withinGrace,
+			setupEC2:        sgDependencyViolation,
+			withAEPS:        true,
+			wantRequeue:     true,
+			wantFinalizer:   true,
+			verify: func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				// Security group is not gone, so endpoint service teardown must not start.
+				var list hyperv1.AWSEndpointServiceList
+				g.Expect(c.List(context.Background(), &list, client.InNamespace(namespace))).To(Succeed())
+				g.Expect(list.Items).To(HaveLen(1))
+				g.Expect(list.Items[0].DeletionTimestamp).To(BeNil())
+			},
+		},
+		{
+			name:              "When guest resource cleanup is still in progress, it should hold the finalizer and not yet touch endpoint services",
+			cleanupAnnotation: true,
+			// CVO is already scaled down and CloudResourcesDestroyed has not been reported
+			// yet, so removeGuestCloudResources is waiting for HCCO to finish destroying the
+			// guest resources (load balancers, volumes) and reports not done. The security
+			// group is already gone, so guest cleanup is the sole reason for the retry.
+			extraConditions: []metav1.Condition{{Type: string(hyperv1.CVOScaledDown), Status: metav1.ConditionTrue, Reason: "CVOScaledDown", LastTransitionTime: metav1.Now()}},
+			deletionAge:     &withinGrace,
+			setupEC2:        sgAlreadyGone,
+			withAEPS:        true,
+			wantRequeue:     true,
+			wantFinalizer:   true,
+			verify: func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
+				// Security group deletion succeeded.
+				cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				// Guest cleanup has not finished, so endpoint service teardown must not start.
+				var list hyperv1.AWSEndpointServiceList
+				g.Expect(c.List(context.Background(), &list, client.InNamespace(namespace))).To(Succeed())
+				g.Expect(list.Items).To(HaveLen(1))
+				g.Expect(list.Items[0].DeletionTimestamp).To(BeNil())
+			},
+		},
+		{
+			name:          "When endpoint service cleanup stays within grace, it should hold the finalizer and requeue",
+			deletionAge:   &withinGrace,
+			withAEPS:      true,
+			wantRequeue:   true,
+			wantFinalizer: true,
+		},
+		{
+			name:          "When endpoint service cleanup exceeds grace, it should proceed and remove the finalizer",
+			deletionAge:   &pastGrace,
+			withAEPS:      true,
+			wantRequeue:   false,
+			wantFinalizer: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  namespace,
+					Finalizers: []string{finalizer},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:  "test-infra",
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{}},
+				},
+			}
+			if tt.cleanupAnnotation {
+				hcp.Annotations = map[string]string{hyperv1.CleanupCloudResourcesAnnotation: "true"}
+			}
+			if tt.deletionAge != nil {
+				ts := metav1.NewTime(time.Now().Add(-*tt.deletionAge))
+				hcp.DeletionTimestamp = &ts
+			}
+			hcp.Status.Conditions = append(hcp.Status.Conditions, tt.extraConditions...)
+			if tt.idpCond != nil {
+				hcp.Status.Conditions = append(hcp.Status.Conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidAWSIdentityProvider),
+					Status: *tt.idpCond,
+					Reason: hyperv1.InvalidIdentityProvider,
+				})
+			}
+
+			objs := []client.Object{hcp}
+			if tt.withAEPS {
+				objs = append(objs, &hyperv1.AWSEndpointService{
+					ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: namespace, Finalizers: []string{cpoFinalizer}},
+				})
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+			r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+			if tt.setupEC2 != nil {
+				r.ec2Client = tt.setupEC2(gomock.NewController(t))
+			}
+
+			res, err := r.reconcileDeletion(ctx, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(res.RequeueAfter > 0).To(Equal(tt.wantRequeue))
+
+			updated := &hyperv1.HostedControlPlane{}
+			getErr := fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)
+			switch {
+			case tt.wantFinalizer:
+				g.Expect(getErr).ToNot(HaveOccurred())
+				g.Expect(controllerutil.ContainsFinalizer(updated, finalizer)).To(BeTrue())
+			case getErr == nil:
+				// No DeletionTimestamp (or not yet finalized): object stays, finalizer gone.
+				g.Expect(controllerutil.ContainsFinalizer(updated, finalizer)).To(BeFalse())
+			default:
+				// Removing the last finalizer lets the fake client finalize the delete.
+				g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue())
+			}
+
+			if tt.verify != nil && getErr == nil {
+				tt.verify(g, fakeClient, updated)
+			}
+		})
+	}
+}
+
+// TestReconcileDeletionNonAWS covers the non-AWS branch of reconcileDeletion:
+// guest cloud resource cleanup (load balancers, volumes) still runs when opted in
+// via the annotation, while AWS-only teardown (default security group,
+// AWSEndpointServices) is never triggered.
+func TestReconcileDeletionNonAWS(t *testing.T) {
+	const cpoFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+	namespace := "test-ns"
+
+	tests := []struct {
+		name              string
+		cleanupAnnotation bool
+		withAEPS          bool
+		wantRequeue       bool
+		wantFinalizer     bool
+		verify            func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane)
+	}{
+		{
+			name:              "When cleanup is requested and in progress, it should scale down CVO, hold the finalizer, and leave AWS resources untouched",
+			cleanupAnnotation: true,
+			withAEPS:          true,
+			wantRequeue:       true,
+			wantFinalizer:     true,
+			verify: func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
+				// removeGuestCloudResources ran: it scaled down the CVO.
+				g.Expect(meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))).To(BeTrue())
+				// AWS-only teardown did not run.
+				g.Expect(meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))).To(BeNil())
+				var list hyperv1.AWSEndpointServiceList
+				g.Expect(c.List(context.Background(), &list, client.InNamespace(namespace))).To(Succeed())
+				g.Expect(list.Items).To(HaveLen(1))
+				g.Expect(list.Items[0].DeletionTimestamp).To(BeNil())
+			},
+		},
+		{
+			name:              "When cleanup is not requested, it should remove the finalizer without touching cloud resources",
+			cleanupAnnotation: false,
+			wantRequeue:       false,
+			wantFinalizer:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			ts := metav1.NewTime(time.Now())
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-hcp",
+					Namespace:         namespace,
+					Finalizers:        []string{finalizer},
+					DeletionTimestamp: &ts,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:  "test-infra",
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform, Azure: &hyperv1.AzurePlatformSpec{}},
+				},
+			}
+			if tt.cleanupAnnotation {
+				hcp.Annotations = map[string]string{hyperv1.CleanupCloudResourcesAnnotation: "true"}
+			}
+
+			objs := []client.Object{hcp}
+			if tt.withAEPS {
+				objs = append(objs, &hyperv1.AWSEndpointService{
+					ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: namespace, Finalizers: []string{cpoFinalizer}},
+				})
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+			// No ec2Client is set: any AWS call would panic, proving the AWS path is not taken.
+			r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+
+			res, err := r.reconcileDeletion(ctx, hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(res.RequeueAfter > 0).To(Equal(tt.wantRequeue))
+
+			updated := &hyperv1.HostedControlPlane{}
+			getErr := fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)
+			if tt.wantFinalizer {
+				g.Expect(getErr).ToNot(HaveOccurred())
+				g.Expect(controllerutil.ContainsFinalizer(updated, finalizer)).To(BeTrue())
+			} else {
+				// Removing the last finalizer lets the fake client finalize the delete.
+				g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue())
+			}
+
+			if tt.verify != nil && getErr == nil {
+				tt.verify(g, fakeClient, updated)
+			}
 		})
 	}
 }
