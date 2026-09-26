@@ -1005,8 +1005,43 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 	hcNamespace := "clusters"
 	hcName := "example"
 	hcKey := hcNamespace + "/" + hcName
+	policyJSON := `{"defaultRequests":{"cpu":"100m","memory":"128Mi"},"goMemoryLimitPercent":80,"memoryLimitMultiplier":2}`
 
 	tests := []testCase{
+		{
+			name: "When container resource policy is enabled, it should mirror alongside legacy KAS settings",
+			hcAnnotations: map[string]string{
+				hyperv1.ContainerResourcePolicyAnnotation:    policyJSON,
+				hyperv1.KubeAPIServerGOMemoryLimitAnnotation: "1GiB",
+			},
+			expectedAnnotations: map[string]string{
+				hyperv1.ContainerResourcePolicyAnnotation:          policyJSON,
+				hyperv1.KubeAPIServerGOMemoryLimitAnnotation:       "1GiB",
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:           "When container resource policy changes, it should replace the HCP annotation",
+			hcAnnotations:  map[string]string{hyperv1.ContainerResourcePolicyAnnotation: policyJSON},
+			hcpAnnotations: map[string]string{hyperv1.ContainerResourcePolicyAnnotation: `{"defaultRequests":{"cpu":"50m","memory":"64Mi"}}`},
+			expectedAnnotations: map[string]string{
+				hyperv1.ContainerResourcePolicyAnnotation:          policyJSON,
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:           "When container resource policy is removed, it should delete the stale HCP annotation",
+			hcpAnnotations: map[string]string{hyperv1.ContainerResourcePolicyAnnotation: policyJSON},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
 		{
 			name: "When Swift annotation is set on HC it should mirror to HCP",
 			hcAnnotations: map[string]string{

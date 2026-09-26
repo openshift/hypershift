@@ -415,12 +415,15 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	var res reconcile.Result
-	if r.overwriteReconcile != nil {
-		res, err = r.overwriteReconcile(ctx, req, log, hcluster)
-	} else if r.ReconcileLegacy {
-		res, err = r.reconcileLegacy(ctx, req, log, hcluster)
-	} else {
-		res, err = r.reconcile(ctx, req, log, hcluster)
+	// Fail closed before either reconcile path creates HCP or operator workloads.
+	if err = r.bootstrapContainerResourcePolicy(ctx, hcluster); err == nil {
+		if r.overwriteReconcile != nil {
+			res, err = r.overwriteReconcile(ctx, req, log, hcluster)
+		} else if r.ReconcileLegacy {
+			res, err = r.reconcileLegacy(ctx, req, log, hcluster)
+		} else {
+			res, err = r.reconcile(ctx, req, log, hcluster)
+		}
 	}
 
 	condition := metav1.Condition{
@@ -2869,6 +2872,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.OLMCatalogsISRegistryOverridesAnnotation,
 		hyperv1.KubeAPIServerGOGCAnnotation,
 		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
+		hyperv1.ContainerResourcePolicyAnnotation,
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
 		hyperv1.AWSLoadBalancerSubnetsAnnotation,
 		hyperv1.AWSLoadBalancerTargetNodesAnnotation,

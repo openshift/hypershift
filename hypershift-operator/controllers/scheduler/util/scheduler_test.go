@@ -356,6 +356,59 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			g.Expect(updatedHC).To(Equal(tt.expectedHC))
 		})
 	}
+
+	policy := schedulingv1alpha1.ContainerResourcePolicy{
+		DefaultRequests: schedulingv1alpha1.ContainerRequests{
+			CPU: resource.MustParse("100m"), Memory: resource.MustParse("128Mi"),
+		},
+		GoMemoryLimitPercent:  80,
+		MemoryLimitMultiplier: 2,
+		Containers: []schedulingv1alpha1.ContainerResources{{
+			Workload: "kube-apiserver", Container: "kube-apiserver",
+			Requests: schedulingv1alpha1.ContainerRequests{
+				CPU: resource.MustParse("2"), Memory: resource.MustParse("4Gi"),
+			},
+			GoMemoryLimitPercent: ptr.To[int32](0), GoMaxProcs: 4,
+		}},
+	}
+	policyJSON := `{"defaultRequests":{"cpu":"100m","memory":"128Mi"},"goMemoryLimitPercent":80,"memoryLimitMultiplier":2,"containers":[{"workload":"kube-apiserver","container":"kube-apiserver","requests":{"cpu":"2","memory":"4Gi"},"goMemoryLimitPercent":0,"goMaxProcs":4}]}`
+	for _, tt := range []struct {
+		name     string
+		existing string
+		effects  *schedulingv1alpha1.Effects
+		want     string
+	}{
+		{name: "When a policy is enabled, it should publish the complete policy alongside legacy KAS settings", effects: &schedulingv1alpha1.Effects{ContainerResourcePolicy: policy, KASGoMemLimit: ptr.To("1GiB")}, want: policyJSON},
+		{name: "When a policy changes, it should replace the previous annotation", existing: `{"defaultRequests":{"cpu":"50m","memory":"64Mi"}}`, effects: &schedulingv1alpha1.Effects{ContainerResourcePolicy: policy}, want: policyJSON},
+		{name: "When a policy is removed, it should remove the stale annotation", existing: policyJSON, effects: &schedulingv1alpha1.Effects{}},
+		{name: "When effects are removed, it should remove the stale policy annotation", existing: policyJSON},
+		{name: "When no policy is configured, it should leave legacy sizing unchanged", effects: &schedulingv1alpha1.Effects{KASGoMemLimit: ptr.To("1GiB")}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			if tt.existing != "" {
+				hc.Annotations = map[string]string{hyperv1.ContainerResourcePolicyAnnotation: tt.existing}
+			}
+			config := &schedulingv1alpha1.ClusterSizingConfiguration{Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+				Sizes: []schedulingv1alpha1.SizeConfiguration{{Name: "small", Effects: tt.effects}},
+			}}
+			_, err := setHostedClusterSchedulingAnnotations(hc, "small", config, nil)
+			g.Expect(err).NotTo(HaveOccurred())
+			if tt.want == "" {
+				g.Expect(hc.Annotations).NotTo(HaveKey(hyperv1.ContainerResourcePolicyAnnotation))
+			} else {
+				g.Expect(hc.Annotations[hyperv1.ContainerResourcePolicyAnnotation]).To(MatchJSON(tt.want))
+			}
+			if tt.effects != nil && tt.effects.KASGoMemLimit != nil {
+				g.Expect(hc.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation]).To(Equal(*tt.effects.KASGoMemLimit))
+			}
+			before := hc.DeepCopy()
+			_, err = setHostedClusterSchedulingAnnotations(hc, "small", config, nil)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(hc).To(Equal(before), "reconciling the same policy should be idempotent")
+		})
+	}
 }
 
 func TestResourceRequestsToOverrideAnnotations(t *testing.T) {
