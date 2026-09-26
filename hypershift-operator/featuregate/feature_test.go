@@ -87,6 +87,46 @@ func TestGCPPlatformFeatureGate(t *testing.T) {
 	}
 }
 
+func TestOCIPlatformFeatureGate(t *testing.T) {
+	testcases := []struct {
+		name                string
+		featureSet          configv1.FeatureSet
+		expectedOCIPlatform bool
+	}{
+		{
+			name:                "Default feature set should disable OCIPlatform",
+			featureSet:          configv1.Default,
+			expectedOCIPlatform: false,
+		},
+		{
+			name:                "TechPreviewNoUpgrade feature set should enable OCIPlatform",
+			featureSet:          configv1.TechPreviewNoUpgrade,
+			expectedOCIPlatform: true,
+		},
+		{
+			name:                "DevPreviewNoUpgrade feature set should disable OCIPlatform",
+			featureSet:          configv1.DevPreviewNoUpgrade,
+			expectedOCIPlatform: false,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Configure the feature set
+			featuregate.ConfigureFeatureSet(string(tc.featureSet))
+
+			// Check if OCIPlatform feature gate is enabled/disabled as expected
+			actualOCIPlatform := featuregate.Gate().Enabled(featuregate.OCIPlatform)
+			assert.Equal(t, tc.expectedOCIPlatform, actualOCIPlatform,
+				"OCIPlatform feature gate enabled state should match expected value for feature set %s", tc.featureSet)
+
+			// Verify the feature set is correctly configured
+			assert.Equal(t, tc.featureSet, featuregate.FeatureSet(),
+				"Feature set should be correctly configured")
+		})
+	}
+}
+
 func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 	testcases := []struct {
 		name       string
@@ -103,6 +143,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
 				"OSStreams":               true,
+				"OCIPlatform":             false,
 			},
 		},
 		{
@@ -115,6 +156,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           true,
 				"KarpenterOperator":       true,
 				"OSStreams":               true,
+				"OCIPlatform":             true,
 			},
 		},
 		{
@@ -127,6 +169,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
 				"OSStreams":               false,
+				"OCIPlatform":             false,
 			},
 		},
 	}
@@ -171,6 +214,12 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			assert.Equal(t, tc.expected["OSStreams"], actualOSStreams,
 				"OSStreams should be %v for feature set %s",
 				tc.expected["OSStreams"], tc.featureSet)
+
+			// Test OCIPlatform
+			actualOCIPlatform := featuregate.Gate().Enabled(featuregate.OCIPlatform)
+			assert.Equal(t, tc.expected["OCIPlatform"], actualOCIPlatform,
+				"OCIPlatform should be %v for feature set %s",
+				tc.expected["OCIPlatform"], tc.featureSet)
 		})
 	}
 }
@@ -183,4 +232,5 @@ func TestFeatureGateConstants(t *testing.T) {
 	assert.Equal(t, "HCPEtcdBackup", string(featuregate.HCPEtcdBackup))
 	assert.Equal(t, "KarpenterOperator", string(featuregate.KarpenterOperator))
 	assert.Equal(t, "OSStreams", string(featuregate.OSStreams))
+	assert.Equal(t, "OCIPlatform", string(featuregate.OCIPlatform))
 }
