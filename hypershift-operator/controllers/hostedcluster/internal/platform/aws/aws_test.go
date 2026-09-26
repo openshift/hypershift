@@ -317,7 +317,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 			expectedArgs:   defaultArgs,
 		},
 		{
-			name: "When version is 4.23 and HCP has Modern TLS profile it should append min-version only",
+			name: "When version is 4.23 and HCP has Modern TLS profile it should append min-version and curve preferences",
 			hcp: buildAWSHostedControlPlane(&configv1.TLSSecurityProfile{
 				Type: configv1.TLSProfileModernType,
 			}),
@@ -325,6 +325,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 			expectedImage:  defaultImage,
 			expectedArgs: append(defaultArgs,
 				"--tls-min-version=VersionTLS13",
+				"--tls-curve-preferences=4588,29,23,24",
 			),
 		},
 		{

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: fa9d53842d3e010153f3d10b7c290d1bfb64b622be24d1a1053740626dcf397d
+    hypershift.openshift.io/desired-state-hash: 62d2825b074bfadc3b599480cb845983fb356288b730fe44728c30629a8923c2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kubevirt-cloud-controller-manager
@@ -88,6 +88,7 @@ spec:
         - --authentication-skip-lookup
         - --cluster-name=cluster_name
         - --tls-min-version=VersionTLS13
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /bin/kubevirt-cloud-controller-manager
         image: kubevirt-cloud-controller-manager

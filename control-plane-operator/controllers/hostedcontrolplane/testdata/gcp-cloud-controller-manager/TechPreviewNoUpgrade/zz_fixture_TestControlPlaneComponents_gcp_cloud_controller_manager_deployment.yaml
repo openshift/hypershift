@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 961d7646f48fe4d7eb8a46c98ccb033fc2b647deec41bbab7c599f0b2c7decb4
+    hypershift.openshift.io/desired-state-hash: ede48174219605a2b1e9e47f3b09aa7be1d7a706c92763b12f115df9d2242a93
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: gcp-cloud-controller-manager
@@ -77,6 +77,7 @@ spec:
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /bin/gcp-cloud-controller-manager
         env:

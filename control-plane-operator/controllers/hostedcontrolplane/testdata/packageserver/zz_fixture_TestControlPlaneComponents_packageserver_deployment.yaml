@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2bf9a9bd1eea1169cec6f2ae99779253664d5580d212fbc4ad0aa9756fc6ce0f
+    hypershift.openshift.io/desired-state-hash: 345abc596520f9d09071c50b27d653ecb289b70c5a8557eebcac6aa4c8b53452
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: packageserver
@@ -92,6 +92,7 @@ spec:
         - /etc/openshift/kubeconfig/kubeconfig
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /bin/package-server
         env:
