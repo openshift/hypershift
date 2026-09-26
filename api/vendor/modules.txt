@@ -1,17 +1,17 @@
-# github.com/aws/aws-sdk-go-v2 v1.38.0
-## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.3
-## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.3
-## explicit; go 1.22
+# github.com/aws/aws-sdk-go-v2 v1.46.0
+## explicit; go 1.24
+# github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.2
+## explicit; go 1.24
+# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.2
+## explicit; go 1.24
 # github.com/aws/aws-sdk-go-v2/service/ec2 v1.233.0
 ## explicit; go 1.22
 # github.com/aws/aws-sdk-go-v2/service/eks v1.64.0
 ## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.0
-## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.3
-## explicit; go 1.22
+# github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19
+## explicit; go 1.24
+# github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.2
+## explicit; go 1.24
 # github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8
 ## explicit; go 1.22
 # github.com/aws/aws-sdk-go-v2/service/ssm v1.59.1
@@ -175,13 +175,14 @@ go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.4
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
-# golang.org/x/net v0.48.0
+# golang.org/x/net v0.49.0 => github.com/openshift-sustaining/net v0.50.0-sec.4
 ## explicit; go 1.24.0
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
 golang.org/x/net/internal/httpcommon
+golang.org/x/net/internal/httpsfv
 # golang.org/x/oauth2 v0.34.0
 ## explicit; go 1.24.0
 golang.org/x/oauth2
@@ -189,15 +190,15 @@ golang.org/x/oauth2/internal
 # golang.org/x/sync v0.19.0
 ## explicit; go 1.24.0
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.39.0
+# golang.org/x/sys v0.41.0
 ## explicit; go 1.24.0
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/term v0.38.0
+# golang.org/x/term v0.40.0
 ## explicit; go 1.24.0
 golang.org/x/term
-# golang.org/x/text v0.32.0
+# golang.org/x/text v0.34.0
 ## explicit; go 1.24.0
 golang.org/x/text/cases
 golang.org/x/text/internal
@@ -756,3 +757,4 @@ sigs.k8s.io/structured-merge-diff/v6/value
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+# golang.org/x/net => github.com/openshift-sustaining/net v0.50.0-sec.4
