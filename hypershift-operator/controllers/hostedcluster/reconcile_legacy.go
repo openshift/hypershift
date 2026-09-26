@@ -746,8 +746,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
-	// Set Ignition Server endpoint
-	{
+	// Set Ignition Server endpoint. Skip when the ignition server is disabled via
+	// the DisableIgnitionServerAnnotation, as its route/service are never created.
+	if !isIgnitionServerDisabled(hcluster) {
 		serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
 		if serviceStrategy == nil {
 			// We don't return the error here as reconciling won't solve the input problem.
@@ -817,7 +818,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// Set the ignition server availability condition by checking its deployment.
-	{
+	// Skip when the ignition server is disabled via the DisableIgnitionServerAnnotation,
+	// as its deployment is never created and the condition would be misleading.
+	if !isIgnitionServerDisabled(hcluster) {
 		// Assume the server is unavailable unless proven otherwise.
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.IgnitionEndpointAvailable),
