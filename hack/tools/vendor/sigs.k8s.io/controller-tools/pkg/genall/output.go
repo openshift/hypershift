@@ -130,10 +130,9 @@ func (o outputToStdout) Open(_ *loader.Package, _ string) (io.WriteCloser, error
 // OutputArtifacts outputs artifacts to different locations, depending on
 // whether they're package-associated or not.
 //
-// Non-package associated artifacts
-// are output to the Config directory, while package-associated ones are output
-// to their package's source files' directory, unless an alternate path is
-// specified in Code.
+// Non-package associated artifacts are output to the Config directory,
+// while package-associated ones are output to their package's source
+// files' directory, unless an alternate path is specified in Code.
 type OutputArtifacts struct {
 	// Config points to the directory to which to write configuration.
 	Config OutputToDirectory
@@ -154,6 +153,12 @@ func (o OutputArtifacts) Open(pkg *loader.Package, itemPath string) (io.WriteClo
 		return nil, fmt.Errorf("cannot output to a package with no path on disk")
 	}
 	outDir := filepath.Dir(pkg.CompiledGoFiles[0])
+	if _, err := os.Stat(outDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(outDir, os.ModePerm); err != nil {
+			return nil, err
+		}
+	}
+
 	outPath := filepath.Join(outDir, itemPath)
 	return os.Create(outPath)
 }
