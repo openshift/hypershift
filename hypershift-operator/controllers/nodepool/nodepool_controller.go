@@ -462,6 +462,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 2. - Reconcile towards expected state of the world.
+	secretsCreated := token.isOutdated()
 	if err := token.Reconcile(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -477,20 +478,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
-		targetConfigHash := token.HashWithoutVersion()
-		targetPayloadConfigHash := token.Hash()
-		targetRolloutConfigHash := token.RolloutHashWithoutVersion()
-		nodePool.Status.Version = releaseImage.Version()
-		if nodePool.Annotations == nil {
-			nodePool.Annotations = make(map[string]string)
-		}
-		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
-			log.Info("Config update complete",
-				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
-			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
-		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
-		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
+		reconcileNonAutomatedNodePool(ctx, nodePool, token, secretsCreated)
 		return ctrl.Result{}, nil
 	}
 
@@ -521,6 +509,24 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func reconcileNonAutomatedNodePool(ctx context.Context, nodePool *hyperv1.NodePool, token *Token, secretsCreated bool) {
+	targetConfigHash := token.HashWithoutVersion()
+	targetRolloutConfigHash := token.RolloutHashWithoutVersion()
+	nodePool.Status.Version = token.Version()
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+	if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
+		ctrl.LoggerFrom(ctx).Info("Config update complete",
+			"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
+		nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+	}
+	if secretsCreated {
+		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = token.Hash()
+	}
+	nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {

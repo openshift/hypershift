@@ -156,6 +156,14 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	}
 	cleanup := synchronousCleanup
 	var names []string
+	if nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] != "" {
+		names = append(names, token.outdatedTokenSecret().Name, token.outdatedUserDataSecret().Name)
+	}
+	for _, name := range names {
+		if secret.Name == name {
+			valid = true
+		}
+	}
 	for _, option := range options {
 		names = append(names, option.expectedName)
 		if secret.Name == option.expectedName {

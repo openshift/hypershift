@@ -1,6 +1,8 @@
 package nodepool
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	"github.com/openshift/api/image/docker10"
+	imageapi "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -464,6 +467,48 @@ spec:
 		if !apierrors.IsNotFound(err) {
 			t.Errorf("expected userdata secret to be deleted, got error: %v", err)
 		}
+	})
+
+	t.Run("When a token rotates after a management-only config change, it should retain the referenced user data", func(t *testing.T) {
+		g := NewWithT(t)
+		currentNodePool := &hyperv1.NodePool{}
+		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(nodePool), currentNodePool)).To(Succeed())
+		config := &ConfigGenerator{
+			nodePool: currentNodePool, controlplaneNamespace: "myns-cluster-name",
+			rolloutConfig: &rolloutConfig{
+				mcoRawConfig: "original", rolloutMcoRawConfig: "unchanged",
+				releaseImage: &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
+				}},
+			},
+		}
+		token := &Token{ConfigGenerator: config, CreateOrUpdateProvider: r.CreateOrUpdateProvider, userData: &userData{ignitionServerEndpoint: "ignition.example.com"}}
+		token.Client = c
+		originalHash := token.Hash()
+		currentNodePool.Annotations = map[string]string{
+			nodePoolAnnotationCurrentConfigVersion: originalHash,
+			nodePoolAnnotationCurrentRolloutConfig: config.RolloutHashWithoutVersion(),
+		}
+		g.Expect(c.Update(ctx, currentNodePool)).To(Succeed())
+		originalToken := token.TokenSecret()
+		originalToken.Annotations = map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(currentNodePool).String()}
+		originalToken.Data = map[string][]byte{TokenSecretTokenKey: []byte("rotated-token")}
+		g.Expect(c.Create(ctx, originalToken)).To(Succeed())
+		userData := token.UserDataSecret()
+		userData.Annotations = originalToken.Annotations
+		userData.Data = map[string][]byte{"value": []byte(`{"ignition":{"config":{"merge":[{"source":"https://ignition.example.com/ignition","httpHeaders":[{"name":"Authorization","value":"Bearer old"}]}]}}}`)}
+		g.Expect(c.Create(ctx, userData)).To(Succeed())
+		config.mcoRawConfig = "changed-management-content"
+		g.Expect(token.Hash()).NotTo(Equal(originalHash))
+		g.Expect(token.isOutdated()).To(BeFalse())
+		g.Expect(token.Reconcile(ctx)).To(Succeed())
+		result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(userData)})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+		retained := &corev1.Secret{}
+		g.Expect(c.Get(ctx, client.ObjectKeyFromObject(userData), retained)).To(Succeed())
+		g.Expect(string(retained.Data["value"])).To(ContainSubstring(base64.StdEncoding.EncodeToString(originalToken.Data[TokenSecretTokenKey])))
+		g.Expect(json.Valid(retained.Data["value"])).To(BeTrue())
 	})
 }
 

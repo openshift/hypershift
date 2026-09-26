@@ -2,7 +2,9 @@ package nodepool
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
+	stdjson "encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -176,14 +178,13 @@ func (t *Token) getIgnitionCACert(ctx context.Context) ([]byte, error) {
 // bumps) return false — existing secrets remain valid and the MachineDeployment
 // continues to reference them.
 func (t *Token) isOutdated() bool {
+	if t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] == "" {
+		return true
+	}
 	currentRolloutConfig := t.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
 	if currentRolloutConfig == "" {
-		// Annotation absent: either a new NodePool (need to create secrets) or
-		// an existing NodePool after operator upgrade (secrets already exist).
-		if _, hasOldAnnotation := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]; hasOldAnnotation {
-			return false
-		}
-		return true
+		// Existing NodePools after operator upgrade have secrets but no rollout annotation.
+		return false
 	}
 	versionChanged := t.Version() != t.nodePool.Status.Version
 	configChanged := t.RolloutHashWithoutVersion() != currentRolloutConfig
@@ -248,12 +249,9 @@ func (t *Token) Reconcile(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	if !t.isOutdated() {
-		// Rollout hash and version unchanged. Existing secrets are valid and
-		// the MachineDeployment continues to reference them. Skip secret
-		// creation and cleanup to prevent orphaned secrets on management-side
-		// config changes (e.g. HAProxy image bumps).
-		log.V(4).Info("Token secrets up to date, skipping reconciliation")
-		return nil
+		// Keep the referenced user data in sync with the rotating token without
+		// creating secrets or changing the MachineDeployment bootstrap reference.
+		return t.reconcileCurrentUserData(ctx)
 	}
 
 	if err := t.cleanupOutdated(ctx); err != nil {
@@ -284,6 +282,120 @@ func (t *Token) Reconcile(ctx context.Context) error {
 		log.Info("Reconciled user data Secret", "result", result)
 	}
 	return nil
+}
+
+func (t *Token) reconcileCurrentUserData(ctx context.Context) error {
+	if t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] == "" {
+		return fmt.Errorf("current NodePool config version is missing")
+	}
+
+	tokenSecret := t.outdatedTokenSecret()
+	if err := t.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+		return fmt.Errorf("failed to get current token Secret: %w", err)
+	}
+	tokenBytes := tokenSecret.Data[TokenSecretTokenKey]
+	if len(tokenBytes) == 0 {
+		return fmt.Errorf("current token Secret has no active token")
+	}
+
+	userDataSecret := t.outdatedUserDataSecret()
+	if err := t.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret); err != nil {
+		return fmt.Errorf("failed to get current user data Secret: %w", err)
+	}
+	updatedValue, changed, err := refreshUserDataAuthorization(userDataSecret.Data["value"], tokenBytes, fmt.Sprintf("https://%s/ignition", t.userData.ignitionServerEndpoint))
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	userDataSecret.Data["value"] = updatedValue
+	if err := t.Update(ctx, userDataSecret); err != nil {
+		return fmt.Errorf("failed to update current user data Secret: %w", err)
+	}
+	return nil
+}
+
+func refreshUserDataAuthorization(value, tokenBytes []byte, ignitionSource string) ([]byte, bool, error) {
+	var document map[string]stdjson.RawMessage
+	if err := stdjson.Unmarshal(value, &document); err != nil || document == nil {
+		return nil, false, fmt.Errorf("invalid current user data Ignition config")
+	}
+	var ignition map[string]stdjson.RawMessage
+	if err := stdjson.Unmarshal(document["ignition"], &ignition); err != nil || ignition == nil {
+		return nil, false, fmt.Errorf("invalid current user data Ignition config")
+	}
+	var config map[string]stdjson.RawMessage
+	if err := stdjson.Unmarshal(ignition["config"], &config); err != nil || config == nil {
+		return nil, false, fmt.Errorf("invalid current user data Ignition config")
+	}
+	var merge []stdjson.RawMessage
+	if err := stdjson.Unmarshal(config["merge"], &merge); err != nil {
+		return nil, false, fmt.Errorf("invalid current user data Ignition merge sources")
+	}
+	changed, found := false, false
+	encodedValue, err := stdjson.Marshal("Bearer " + base64.StdEncoding.EncodeToString(tokenBytes))
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to encode current user data Authorization header: %w", err)
+	}
+	for sourceIndex, rawSource := range merge {
+		var source map[string]stdjson.RawMessage
+		if err := stdjson.Unmarshal(rawSource, &source); err != nil || source == nil {
+			return nil, false, fmt.Errorf("invalid current user data Ignition merge source")
+		}
+		var sourceURL string
+		if err := stdjson.Unmarshal(source["source"], &sourceURL); err != nil || sourceURL != ignitionSource {
+			continue
+		}
+		if _, hasHeaders := source["httpHeaders"]; !hasHeaders {
+			continue
+		}
+		var headers []map[string]stdjson.RawMessage
+		if err := stdjson.Unmarshal(source["httpHeaders"], &headers); err != nil {
+			return nil, false, fmt.Errorf("invalid current user data Ignition HTTP headers")
+		}
+		sourceChanged := false
+		for _, header := range headers {
+			var name string
+			if err := stdjson.Unmarshal(header["name"], &name); err != nil || name != "Authorization" {
+				continue
+			}
+			found = true
+			if subtle.ConstantTimeCompare(header["value"], encodedValue) != 1 {
+				header["value"] = encodedValue
+				sourceChanged = true
+			}
+		}
+		if sourceChanged {
+			if source["httpHeaders"], err = stdjson.Marshal(headers); err != nil {
+				return nil, false, fmt.Errorf("failed to encode current user data HTTP headers: %w", err)
+			}
+			if merge[sourceIndex], err = stdjson.Marshal(source); err != nil {
+				return nil, false, fmt.Errorf("failed to encode current user data merge source: %w", err)
+			}
+			changed = true
+		}
+	}
+	if !found {
+		return nil, false, fmt.Errorf("current user data Ignition config has no Authorization header")
+	}
+	if !changed {
+		return value, false, nil
+	}
+	if config["merge"], err = stdjson.Marshal(merge); err != nil {
+		return nil, false, fmt.Errorf("failed to encode current user data merge sources: %w", err)
+	}
+	if ignition["config"], err = stdjson.Marshal(config); err != nil {
+		return nil, false, fmt.Errorf("failed to encode current user data config: %w", err)
+	}
+	if document["ignition"], err = stdjson.Marshal(ignition); err != nil {
+		return nil, false, fmt.Errorf("failed to encode current user data ignition: %w", err)
+	}
+	updatedValue, err := stdjson.Marshal(document)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal current user data Ignition config: %w", err)
+	}
+	return updatedValue, true, nil
 }
 
 const UserDataSecrePrefix = "user-data"
