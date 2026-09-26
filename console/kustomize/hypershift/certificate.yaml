@@ -1,0 +1,26 @@
+# NOT from upstream. Upstream relies on the OpenShift service-ca operator
+# (Service annotation `service.beta.openshift.io/serving-cert-secret-name`,
+# stripped in deployment.yaml's patch below) to mint the console's serving
+# cert — but that operator does not exist on GKE HCP management clusters, and
+# its cert is internal-CA-signed anyway (browsers wouldn't trust it; see
+# CONSOLE_CONTROL_PLANE_STUDY.md D3). Instead, provision a dedicated
+# cert-manager Certificate here (option (b) in the plan).
+#
+# Skip/remove this resource in the per-cluster overlay if instead reusing an
+# existing api-server wildcard secret (option (a), the OAuth named-cert
+# pattern) — in that case point the Deployment's `serving-cert` volume at the
+# existing wildcard secret name instead.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: console-serving-cert
+  labels:
+    app: console
+spec:
+  secretName: console-serving-cert # produces a kubernetes.io/tls secret
+  dnsNames:
+    - REPLACE_CONSOLE_HOST
+  issuerRef:
+    name: public-issuer
+    kind: ClusterIssuer
+  # DNS01 solver config lives on the ClusterIssuer (assumed configured).

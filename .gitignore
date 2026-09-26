@@ -52,6 +52,12 @@ tools/bin
 # dev
 /dev/
 
+# Console control-plane-side spike: local research clones of upstream repos
+# (full openshift/console + console-operator checkouts, own .git). Referenced
+# for citations/patching, not part of this repo.
+/_console-research/
+/_console-operator-research/
+
 # Python
 __pycache__/
 *.py[cod]

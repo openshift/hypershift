@@ -436,6 +436,11 @@ spec:
                       Once set, this field cannot be changed.
 
                       Note: Disabling 'openshift-samples','Insights', 'Console', 'NodeTuning', 'Ingress' are only supported in OpenShift versions 4.20 and above.
+
+                      NOTE: The "Ingress capability can only be disabled if Console capability is also disabled" rule
+                      is enforced at the HostedClusterSpec level (see HostedClusterSpec) so it can be relaxed for the
+                      GCP platform, where the console runs control-plane-side and guest Ingress is intentionally absent
+                      (GCP-1219 console control-plane-side study). Field-level CEL here cannot see spec.platform.type.
                     items:
                       enum:
                       - ImageRegistry
@@ -453,10 +458,6 @@ spec:
                     - message: Disabled is immutable. Changes might result in unpredictable
                         and disruptive behavior.
                       rule: self == oldSelf
-                    - message: Ingress capability can only be disabled if Console
-                        capability is also disabled
-                      rule: '!self.exists(cap, cap == ''Ingress'') || self.exists(cap,
-                        cap == ''Console'')'
                   enabled:
                     description: |-
                       enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
@@ -6015,6 +6016,7 @@ spec:
                                   - roles/dns.admin (DNS Admin - for managing DNS records)
                                   - roles/compute.networkAdmin (Compute Network Admin - for network management)
                                   - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
+                                  - roles/compute.securityAdmin (Security Admin - for managing worker firewall rules)
                                   See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
                                   Format: service-account-name@project-id.iam.gserviceaccount.com
 

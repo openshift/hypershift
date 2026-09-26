@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Vendored, UNMODIFIED copies of the upstream console-operator static assets
+# that describe the "console" AND "downloads" operands
+# (github.com/openshift/console-operator @
+# 7fa0a807acb45ccb18f3ce8b8f32d588ccdc469e, bindata/assets/{deployments,
+# services,routes,pdb,serviceaccounts}/{console,downloads}-*.yaml).
+# Byte-identical to upstream (the downloads assets keep their upstream header
+# comments verbatim; the console assets did too).
+#
+# Purpose: give the `../hypershift` overlay a diffable, cited starting point
+# so every departure from stock OpenShift is visible as an explicit patch
+# instead of being buried in a hand-written manifest. This directory is NOT
+# meant to be applied directly:
+#   - `image: ${IMAGE}` is a literal placeholder normally substituted by the
+#     operator's Go code (subresource/deployment/deployment.go), not by CVO.
+#   - The operator injects `spec.replicas` (withReplicas), all
+#     volumes/volumeMounts (withConsoleVolumes: console-serving-cert secret,
+#     console-oauth-config secret, console-config + service-ca configmaps,
+#     tmp emptyDir), and the Route's `spec.host` at reconcile time — none of
+#     that exists in the static YAML, so `kustomize build` here will produce
+#     an incomplete (non-functional) Deployment/Route by design.
+#   - There is no operator in Phase 1 (see ../hypershift), so these
+#     operator-injected pieces are replaced with a static, off-cluster
+#     equivalent in the next layer rather than reproduced here.
+#
+# See ../README.md for the 3-layer model (origin -> hypershift -> pat-console).
+
+resources:
+  # console operand
+  - deployment.yaml
+  - service.yaml
+  - route.yaml
+  - pdb.yaml
+  - serviceaccount.yaml
+  # downloads operand (CLI download server for the console UI's
+  # "Command Line Tools" links). Same operator-only caveats apply
+  # (`image: ${IMAGE}`, guest master nodeSelector/tolerations, etc.).
+  - downloads-deployment.yaml
+  - downloads-service.yaml
+  - downloads-route.yaml
+  - downloads-pdb.yaml
+  - downloads-serviceaccount.yaml

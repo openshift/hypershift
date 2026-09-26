@@ -136,6 +136,33 @@ func OauthServerExternalPrivateService(hostedClusterNamespace string) *corev1.Se
 	}
 }
 
+// ConsoleExternalPrivateService is the ExternalName Service that publishes the
+// hand-applied "console" Route's hostname to external-dns under Private
+// endpointAccess (Phase 1 console spike), mirroring the api/oauth
+// private-external services. Unlike those, "console" is not a HyperShift
+// service type, so its hostname is read from the console Route rather than a
+// ServicePublishingStrategy.
+func ConsoleExternalPrivateService(hostedClusterNamespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "console-private-external",
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
+// DownloadsExternalPrivateService is the ExternalName Service that publishes the
+// hand-applied "downloads" Route's hostname to external-dns under Private
+// endpointAccess (Phase 1 console spike). See ConsoleExternalPrivateService.
+func DownloadsExternalPrivateService(hostedClusterNamespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "downloads-private-external",
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
 func KonnectivityServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

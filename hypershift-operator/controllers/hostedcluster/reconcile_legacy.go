@@ -498,6 +498,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			hyperv1.DataPlaneConnectionAvailable,
 			hyperv1.ControlPlaneConnectionAvailable,
 			hyperv1.EtcdBackupSucceeded,
+			hyperv1.GCPFirewallRulesReady,
 		}
 
 		for _, conditionType := range hcpConditions {

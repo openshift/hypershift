@@ -1,0 +1,299 @@
+# Default 'downloads' deployment manifest.
+# Serves the `oc`/CLI download page + archives over plain HTTP:8080.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: downloads
+  namespace: openshift-console
+  labels:
+    app: console
+    component: downloads
+  annotations: {}
+spec:
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: console
+      component: downloads
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      name: downloads
+      labels:
+        app: console
+        component: downloads
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        openshift.io/required-scc: restricted-v2
+    spec:
+      dnsPolicy: ClusterFirst
+      serviceAccountName: downloads
+      serviceAccount: downloads
+      nodeSelector:
+        kubernetes.io/os: linux
+        node-role.kubernetes.io/master: ""
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - resources:
+            requests:
+              cpu: 10m
+              memory: 50Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          name: download-server
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+          command:
+            - /bin/sh
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          image: ${IMAGE}
+          args:
+            - '-c'
+            - |
+              cat <<EOF >/tmp/serve.py
+              import errno, http.server, os, re, shutil, signal, socket, sys, tarfile, tempfile, threading, time, zipfile
+
+              def shutdown_handler(signum, frame):
+                print("Received signal {}, shutting down...".format(signum), flush=True)
+                os._exit(0)
+              signal.signal(signal.SIGTERM, shutdown_handler)
+
+              def write_index(path, message):
+                with open(path, 'wb') as f:
+                  f.write('\n'.join([
+                    '<!doctype html>',
+                    '<html lang="en">',
+                    '<head>',
+                    '  <meta charset="utf-8">',
+                    '</head>',
+                    '<body>',
+                    '  {}'.format(message),
+                    '</body>',
+                    '</html>',
+                    '',
+                  ]).encode('utf-8'))
+
+              # Launch multiple listeners as threads
+              class Thread(threading.Thread):
+                def __init__(self, i, socket):
+                  threading.Thread.__init__(self)
+                  self.i = i
+                  self.socket = socket
+                  self.daemon = True
+                  self.start()
+
+                def run(self):
+                  server = http.server.SimpleHTTPRequestHandler
+                  server.server_version = "OpenShift Downloads Server"
+                  server.sys_version = ""
+                  httpd = http.server.HTTPServer(addr, server, False)
+
+                  # Prevent the HTTP server from re-binding every handler.
+                  # https://stackoverflow.com/questions/46210672/
+                  httpd.socket = self.socket
+                  httpd.server_bind = self.server_close = lambda self: None
+
+                  httpd.serve_forever()
+
+              print('Starting downloads server...', flush=True)
+
+              # Clean up any existing download-* directories
+              TEMP_DIR_PREFIX = 'download-'
+              tmp_base = tempfile.gettempdir()
+              print('Cleaning up old temp directories in {}...'.format(tmp_base), flush=True)
+              for item in os.listdir(tmp_base):
+                if item.startswith(TEMP_DIR_PREFIX):
+                  old_dir = os.path.join(tmp_base, item)
+                  try:
+                    if os.path.isdir(old_dir):
+                      print('  Removing old directory: {}'.format(old_dir), flush=True)
+                      shutil.rmtree(old_dir)
+                  except Exception as e:
+                    print('  WARNING: Failed to remove {}: {}'.format(old_dir, str(e)), flush=True)
+
+              temp_dir = tempfile.mkdtemp(prefix=TEMP_DIR_PREFIX)
+              print('Serving from: {}'.format(temp_dir), flush=True)
+              os.chdir(temp_dir)
+              
+              print('Creating arch directories...', flush=True)
+              for arch in ['amd64', 'arm64', 'ppc64le', 's390x']:
+                os.mkdir(arch)
+              
+              content = ['<a href="oc-license">license</a>']
+              print('Creating license symlink...', flush=True)
+              os.symlink('/usr/share/openshift/LICENSE', 'oc-license')
+
+              # Function to create archives in background
+              def create_archives_async(arch, operating_system, path, basename, archive_path_root):
+                try:
+                  print('  [Background] Creating archives for {} {}...'.format(arch, operating_system), flush=True)
+                  
+                  print('    [Background] Creating tar archive...', flush=True)
+                  with tarfile.open('{}.tar'.format(archive_path_root), 'w') as tar:
+                    tar.add(path, basename)
+                  
+                  print('    [Background] Creating zip archive...', flush=True)
+                  with zipfile.ZipFile('{}.zip'.format(archive_path_root), 'w') as zip:
+                    zip.write(path, basename)
+                  
+                  print('  [Background] Done with archives for {} {}'.format(arch, operating_system), flush=True)
+                except Exception as e:
+                  print('  [Background] ERROR creating archives for {} {}: {}'.format(arch, operating_system, str(e)), flush=True)
+
+              print('Creating oc binary symlinks (archives will be created asynchronously)...', flush=True)
+              archive_threads = []
+              
+              for arch, operating_system, path in [
+                  ('amd64', 'linux', '/usr/share/openshift/linux_amd64/oc'),
+                  ('amd64', 'linux', '/usr/share/openshift/linux_amd64/oc.rhel8'),
+                  ('amd64', 'linux', '/usr/share/openshift/linux_amd64/oc.rhel9'),
+                  ('amd64', 'mac', '/usr/share/openshift/mac/oc'),
+                  ('amd64', 'windows', '/usr/share/openshift/windows/oc.exe'),
+                  ('arm64', 'linux', '/usr/share/openshift/linux_arm64/oc'),
+                  ('arm64', 'linux', '/usr/share/openshift/linux_arm64/oc.rhel8'),
+                  ('arm64', 'linux', '/usr/share/openshift/linux_arm64/oc.rhel9'),
+                  ('arm64', 'mac', '/usr/share/openshift/mac_arm64/oc'),
+                  ('ppc64le', 'linux', '/usr/share/openshift/linux_ppc64le/oc'),
+                  ('ppc64le', 'linux', '/usr/share/openshift/linux_ppc64le/oc.rhel8'),
+                  ('ppc64le', 'linux', '/usr/share/openshift/linux_ppc64le/oc.rhel9'),
+                  ('s390x', 'linux', '/usr/share/openshift/linux_s390x/oc'),
+                  ('s390x', 'linux', '/usr/share/openshift/linux_s390x/oc.rhel8'),
+                  ('s390x', 'linux', '/usr/share/openshift/linux_s390x/oc.rhel9'),
+                  ]:
+                try:
+                  print('  Processing {} {} ({})...'.format(arch, operating_system, path), flush=True)
+                  
+                  # Check if source file exists
+                  if not os.path.exists(path):
+                    print('    WARNING: {} does not exist, skipping'.format(path), flush=True)
+                    continue
+                  
+                  file_size = os.path.getsize(path)
+                  print('    Source file size: {} MB'.format(file_size // (1024*1024)), flush=True)
+                  
+                  basename = os.path.basename(path)
+                  target_path = os.path.join(arch, operating_system, basename)
+                  
+                  print('    Creating directory...', flush=True)
+                  os.makedirs(os.path.join(arch, operating_system), exist_ok=True)
+                  
+                  print('    Creating symlink...', flush=True)
+                  os.symlink(path, target_path)
+                  
+                  # Only strip .exe extension, keep everything else (e.g., oc.rhel8 stays oc.rhel8)
+                  if basename.endswith('.exe'):
+                    base_root = basename[:-4]
+                  else:
+                    base_root = basename
+                  archive_path_root = os.path.join(arch, operating_system, base_root)
+                  
+                  # Start background thread to create archives
+                  archive_thread = threading.Thread(
+                    target=create_archives_async,
+                    args=(arch, operating_system, path, basename, archive_path_root),
+                    daemon=True
+                  )
+                  archive_thread.start()
+                  archive_threads.append(archive_thread)
+                  
+                  content.append(
+                    '<a href="{0}">oc ({1} {2})</a> (<a href="{3}.tar">tar</a> <a href="{3}.zip">zip</a>)'.format(
+                      target_path, arch, operating_system, archive_path_root
+                    )
+                  )
+                  print('  Done with {} {} (archives creating in background)'.format(arch, operating_system), flush=True)
+                except Exception as e:
+                  print('  ERROR processing {} {}: {}'.format(arch, operating_system, str(e)), flush=True)
+              
+              print('All symlinks created. {} background threads creating archives...'.format(len(archive_threads)), flush=True)
+
+              for root, directories, filenames in os.walk(temp_dir):
+                root_link = os.path.relpath(temp_dir, os.path.join(root, 'child')).replace(os.path.sep, '/')
+                for directory in directories:
+                  write_index(
+                    path=os.path.join(root, directory, 'index.html'),
+                    message='<p>Directory listings are disabled.  See <a href="{}">here</a> for available content.</p>'.format(root_link),
+                  )
+
+              write_index(
+                path=os.path.join(temp_dir, 'index.html'),
+                message='\n'.join(
+                  ['<p><em>Note: Archive files (.tar, .zip) are generated on server startup and may take a few moments to become available.</em></p>'] +
+                  ['<ul>'] +
+                  ['  <li>{}</li>'.format(entry) for entry in content] +
+                  ['</ul>']
+                ),
+              )
+
+              # Create socket
+              # IPv6 should handle IPv4 passively so long as it is not bound to a
+              # specific address or set to IPv6_ONLY
+              # https://stackoverflow.com/questions/25817848/python-3-does-http-server-support-ipv6
+              try:
+                addr = ('::', 8080)
+                sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+              except socket.error as err:
+                # errno.EAFNOSUPPORT is "socket.error: [Errno 97] Address family not supported by protocol"
+                # When IPv6 is disabled, socket will bind using IPv4.
+                if err.errno == errno.EAFNOSUPPORT:
+                  addr = ('', 8080)
+                  sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                else:
+                  raise    
+              sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+              print('Binding to {}...'.format(addr), flush=True)
+              sock.bind(addr)
+              sock.listen(5)
+
+              print('Starting 100 worker threads...', flush=True)
+              [Thread(i, socket=sock) for i in range(100)]
+              print('Server ready on port 8080!', flush=True)
+              time.sleep(9e9)
+              EOF
+              exec python3 /tmp/serve.py
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 120
+      priorityClassName: system-cluster-critical

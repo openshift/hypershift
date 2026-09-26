@@ -1,0 +1,55 @@
+# oc-cli-downloads ConsoleCLIDownload for the pat-console guest cluster.
+#
+# Hand-applied equivalent of what the console-operator's CLIDownloadsSyncController
+# would generate (PlatformBasedOCConsoleCLIDownloads,
+# _console-operator-research/pkg/console/controllers/clidownloads/controller.go),
+# with the download host pointing at our control-plane-side downloads server.
+# We run without console-operator, so nothing creates this CR automatically; the
+# console UI's "Command Line Tools" page reads it (browser-side watch through the
+# bridge's /api/kubernetes proxy).
+#
+# Host = downloads.<user-domain> (derived from the api host, same as CPO does for
+# the downloads Route). Update if the cluster's api domain changes.
+apiVersion: console.openshift.io/v1
+kind: ConsoleCLIDownload
+metadata:
+  name: oc-cli-downloads
+spec:
+  displayName: oc - OpenShift Command Line Interface (CLI)
+  description: |
+    With the OpenShift command line interface, you can create applications and manage OpenShift projects from a terminal.
+
+    The oc binary offers the same capabilities as the kubectl binary, but it is further extended to natively support OpenShift Container Platform features. You can download oc using the following links.
+  links:
+    - text: Download oc for Linux for x86_64
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/amd64/linux/oc.tar
+    - text: Download oc for Linux for x86_64 - RHEL 8
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/amd64/linux/oc.rhel8.tar
+    - text: Download oc for Linux for x86_64 - RHEL 9
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/amd64/linux/oc.rhel9.tar
+    - text: Download oc for Mac for x86_64
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/amd64/mac/oc.zip
+    - text: Download oc for Windows for x86_64
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/amd64/windows/oc.zip
+    - text: Download oc for Linux for ARM 64
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/arm64/linux/oc.tar
+    - text: Download oc for Linux for ARM 64 - RHEL 8
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/arm64/linux/oc.rhel8.tar
+    - text: Download oc for Linux for ARM 64 - RHEL 9
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/arm64/linux/oc.rhel9.tar
+    - text: Download oc for Mac for ARM 64
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/arm64/mac/oc.zip
+    - text: Download oc for Linux for IBM Power, little endian
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/ppc64le/linux/oc.tar
+    - text: Download oc for Linux for IBM Power, little endian - RHEL 8
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/ppc64le/linux/oc.rhel8.tar
+    - text: Download oc for Linux for IBM Power, little endian - RHEL 9
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/ppc64le/linux/oc.rhel9.tar
+    - text: Download oc for Linux for IBM Z
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/s390x/linux/oc.tar
+    - text: Download oc for Linux for IBM Z - RHEL 8
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/s390x/linux/oc.rhel8.tar
+    - text: Download oc for Linux for IBM Z - RHEL 9
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/s390x/linux/oc.rhel9.tar
+    - text: LICENSE
+      href: https://downloads.pat-console-user.us-central1-p0917-1.dev.gcp-hcp.devshift.net/oc-license
