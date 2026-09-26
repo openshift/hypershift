@@ -103,6 +103,7 @@ const (
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
 	HypershiftOperatorName                = "operator"
+	HypershiftOperatorHealthProbePort     = 8081
 	ExternalDNSDeploymentName             = "external-dns"
 	HyperShiftInstallCLIVersionAnnotation = "hypershift.openshift.io/install-cli-version"
 )
@@ -776,8 +777,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/metrics",
-										Port:   intstr.FromInt(9000),
+										Path:   "/healthz",
+										Port:   intstr.FromInt(HypershiftOperatorHealthProbePort),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
@@ -790,8 +791,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/metrics",
-										Port:   intstr.FromInt(9000),
+										Path:   "/readyz",
+										Port:   intstr.FromInt(HypershiftOperatorHealthProbePort),
 										Scheme: corev1.URISchemeHTTP,
 									},
 								},
@@ -810,6 +811,11 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								{
 									Name:          "manager",
 									ContainerPort: 9443,
+									Protocol:      corev1.ProtocolTCP,
+								},
+								{
+									Name:          "health",
+									ContainerPort: HypershiftOperatorHealthProbePort,
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},

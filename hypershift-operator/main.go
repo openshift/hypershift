@@ -23,6 +23,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/install/assets"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/auditlogpersistence"
@@ -71,6 +72,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -223,9 +225,14 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		LeaseDuration:                 &leaseDuration,
 		RenewDeadline:                 &renewDeadline,
 		RetryPeriod:                   &retryPeriod,
+		HealthProbeBindAddress:        fmt.Sprintf(":%d", assets.HypershiftOperatorHealthProbePort),
 	})
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
+	}
+
+	if err := setupHealthChecks(mgr, opts.CertDir != ""); err != nil {
+		return err
 	}
 
 	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
@@ -659,5 +666,27 @@ func reconcileDeprecationValidatingAdmissionPolicy(ctx context.Context, client c
 	}
 
 	log.Info("Successfully reconciled deprecation ValidatingAdmissionPolicy")
+	return nil
+}
+
+type healthCheckManager interface {
+	AddHealthzCheck(string, healthz.Checker) error
+	AddReadyzCheck(string, healthz.Checker) error
+	GetWebhookServer() webhook.Server
+}
+
+func setupHealthChecks(mgr healthCheckManager, webhookEnabled bool) error {
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		return fmt.Errorf("unable to set up health check: %w", err)
+	}
+	readyCheck := healthz.Ping
+	if webhookEnabled {
+		// Conversion webhooks must be reachable before caches can sync resources
+		// requested in a version different from their storage version.
+		readyCheck = mgr.GetWebhookServer().StartedChecker()
+	}
+	if err := mgr.AddReadyzCheck("readyz", readyCheck); err != nil {
+		return fmt.Errorf("unable to set up ready check: %w", err)
+	}
 	return nil
 }
