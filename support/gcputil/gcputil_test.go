@@ -6,7 +6,47 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	"k8s.io/utils/ptr"
 )
+
+func TestResourceLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		hcp  *hyperv1.HostedControlPlane
+		want map[string]string
+	}{
+		{
+			name: "When the HostedControlPlane has no GCP platform configuration, it should return no labels",
+			hcp:  &hyperv1.HostedControlPlane{},
+		},
+		{
+			name: "When the HostedControlPlane has no GCP resource labels, it should return no labels",
+			hcp: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{GCP: &hyperv1.GCPPlatformSpec{}},
+			}},
+		},
+		{
+			name: "When GCP resource labels include an unset value, it should use an empty value",
+			hcp: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{GCP: &hyperv1.GCPPlatformSpec{
+					ResourceLabels: []hyperv1.GCPResourceLabel{
+						{Key: "environment", Value: ptr.To("production")},
+						{Key: "empty"},
+					},
+				}},
+			}},
+			want: map[string]string{"environment": "production", "empty": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(ResourceLabels(tt.hcp)).To(Equal(tt.want))
+		})
+	}
+}
 
 const (
 	testImageRegistryGSA = "image-registry@test-project.iam.gserviceaccount.com"
@@ -94,6 +134,28 @@ func TestBuildWorkloadIdentityCredentialsValidation(t *testing.T) {
 				g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestLBResourceLabelsAnnotationValue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   string
+	}{
+		{name: "When no labels are configured, it should return an empty value", want: ""},
+		{name: "When labels are configured, it should sort them by key", labels: map[string]string{"z": "last", "a": "first"}, want: "a=first,z=last"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := LBResourceLabelsAnnotationValue(tt.labels); got != tt.want {
+				t.Errorf("LBResourceLabelsAnnotationValue() = %q, want %q", got, tt.want)
 			}
 		})
 	}

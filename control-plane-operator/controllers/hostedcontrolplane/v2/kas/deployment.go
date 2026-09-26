@@ -127,18 +127,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, portieris)
 	}
 
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		if err := applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
-			return fmt.Errorf("failed to apply AWS pod identity webhook container: %w", err)
-		}
-	case hyperv1.AzurePlatform:
-		if hcp.Spec.Platform.Azure == nil {
-			return fmt.Errorf("azure platform type requires spec.platform.azure")
-		}
-		if err := applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp); err != nil {
-			return fmt.Errorf("failed to create azure workload identity webhook container: %w", err)
-		}
+	if err := applyPlatformSpecificContainers(&deployment.Spec.Template.Spec, hcp); err != nil {
+		return err
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -346,6 +336,23 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 		)
 	})
 
+	return nil
+}
+
+func applyPlatformSpecificContainers(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if err := applyAWSPodIdentityWebhookContainer(podSpec, hcp); err != nil {
+			return fmt.Errorf("apply AWS pod identity webhook container: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		if hcp.Spec.Platform.Azure == nil {
+			return fmt.Errorf("azure platform type requires spec.platform.azure")
+		}
+		if err := applyAzureWorkloadIdentityWebhookContainer(podSpec, hcp); err != nil {
+			return fmt.Errorf("apply Azure workload identity webhook container: %w", err)
+		}
+	}
 	return nil
 }
 
