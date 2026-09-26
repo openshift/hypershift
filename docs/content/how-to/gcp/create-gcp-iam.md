@@ -53,7 +53,7 @@ The `hypershift create iam gcp` command creates WIF resources in the hosted clus
 - **Workload Identity Pool** — Container for workload identity providers
 - **OIDC Provider** — Links the hosted cluster's Kubernetes OIDC issuer to GCP IAM
 - **Service Accounts** — GCP service accounts for hosted cluster components:
-  - `controlplane` — Control Plane Operator (DNS admin, network admin)
+  - `ctrlplane-op` — Control Plane Operator (DNS admin, network admin, security admin, compute viewer). The `roles/compute.securityAdmin` role lets CPO reconcile the worker firewall rule (`<infra-id>-internal-cluster`).
   - `nodepool` — CAPG controller (compute instance admin, network admin)
   - `cloud-controller` — Cloud Controller Manager (load balancer admin, security admin, compute viewer)
   - `storage` — GCP PD CSI Driver (storage admin, instance admin)

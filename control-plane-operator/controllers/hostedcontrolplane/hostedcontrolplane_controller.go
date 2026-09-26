@@ -20,6 +20,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	cloudgcp "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/gcp"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -423,6 +424,15 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		}
 		if !done {
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+
+		// Guest cloud-resource cleanup has reached its terminal outcome. Tear down
+		// the managed GCP worker firewall rule before removing the finalizer, so it
+		// is gone before the CLI deletes the VPC network. Recoverable failures
+		// (including WIF not yet available) retain the finalizer and retry; an
+		// ownership conflict is a terminal skip so finalization is not blocked.
+		if err := r.destroyGCPWorkerFirewallRules(ctx, hostedControlPlane); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete GCP worker firewall rules: %w", err)
 		}
 	}
 
@@ -1220,6 +1230,15 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	var errs []error
 	if err := r.reconcileCPOV2(ctx, hostedControlPlane, infraStatus, releaseImageProvider, userReleaseImageProvider); err != nil {
+		errs = append(errs, err)
+	}
+
+	// Reconcile the managed GCP worker firewall rule after CPOv2. Only genuine
+	// hard errors are appended to the aggregate; expected recoverable states
+	// (missing WIF creds, missing IAM role, unresolvable infra, conflicts) are
+	// reported via the GCPFirewallRulesReady condition and converge on the next
+	// periodic reconcile without failing the overall HCP reconcile.
+	if err := r.reconcileGCPWorkerFirewallRules(ctx, hostedControlPlane); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -2899,6 +2918,93 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 	}
 
 	return creationErr
+}
+
+// reconcileGCPWorkerFirewallRules reconciles the managed GCP worker firewall
+// rule (<infra-id>-internal-cluster) and records the outcome on the HCP's
+// GCPFirewallRulesReady condition.
+//
+// It follows the "degrade, don't wedge" contract: expected recoverable states
+// (missing WIF credentials, insufficient IAM permissions, unresolvable
+// project/VPC, ownership conflicts, in-flight operations) set the condition to
+// False with an actionable message and return nil, so the overall HCP reconcile
+// is not marked failed and component deployment/bootstrap is never blocked. Only
+// genuinely unexpected failures return an error into the reconcile aggregate.
+func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	logger := ctrl.LoggerFrom(ctx)
+	if hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
+		return nil
+	}
+
+	logger.Info("Reconciling GCP worker firewall rules")
+	// Captured before NewFirewallManager evaluates hcp.Spec, so the guard below
+	// can detect a concurrent spec change across the PatchStatus refetch instead
+	// of stamping a stale error with the refetched object's generation.
+	evaluatedGeneration := hcp.Generation
+	manager, err := cloudgcp.NewFirewallManager(hcp, logger)
+	if err != nil {
+		// Missing GCP platform spec on a GCP HCP is a configuration problem, not a
+		// transient state: report it but do not wedge the reconcile.
+		result := metav1.Condition{
+			Type:    string(hyperv1.GCPFirewallRulesReady),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.GCPFirewallWaitingForInfra,
+			Message: err.Error(),
+		}
+		if patchErr := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+			if hcp.Generation != evaluatedGeneration {
+				return fmt.Errorf("hcp generation changed from %d to %d while validating GCP platform spec, requeueing to re-evaluate", evaluatedGeneration, hcp.Generation)
+			}
+			result.ObservedGeneration = hcp.Generation
+			meta.SetStatusCondition(&hcp.Status.Conditions, result)
+			return nil
+		}); patchErr != nil {
+			return fmt.Errorf("failed to update GCPFirewallRulesReady status: %w", patchErr)
+		}
+		return nil
+	}
+
+	// The result below is derived from the spec at this generation (project, VPC,
+	// network type, infra ID). If the spec changes before we patch, re-evaluate.
+	result := manager.Reconcile(ctx)
+	condition := result.Condition(evaluatedGeneration)
+
+	if patchErr := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+		if hcp.Generation != evaluatedGeneration {
+			return fmt.Errorf("hcp generation changed from %d to %d while reconciling worker firewall rules, requeueing to re-evaluate", evaluatedGeneration, hcp.Generation)
+		}
+		condition.ObservedGeneration = hcp.Generation
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return nil
+	}); patchErr != nil {
+		return fmt.Errorf("failed to update GCPFirewallRulesReady status: %w", patchErr)
+	}
+
+	// Only hard errors enter the reconcile aggregate; degraded/pending outcomes
+	// are communicated by the condition alone.
+	if result.Status == cloudgcp.OutcomeError {
+		return result.Err
+	}
+	return nil
+}
+
+// destroyGCPWorkerFirewallRules deletes the managed GCP worker firewall rule
+// during HCP deletion. A missing rule is success, and an ownership conflict is a
+// terminal skip (the unowned rule is left untouched so finalization can
+// proceed). Any other failure (including WIF credentials not yet being
+// available) returns an error so the caller retains the HCP finalizer and
+// retries.
+func (r *HostedControlPlaneReconciler) destroyGCPWorkerFirewallRules(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
+		return nil
+	}
+
+	logger := ctrl.LoggerFrom(ctx)
+	manager, err := cloudgcp.NewFirewallManager(hcp, logger)
+	if err != nil {
+		return fmt.Errorf("failed to build GCP firewall manager: %w", err)
+	}
+	return manager.Delete(ctx)
 }
 
 func awsSecurityGroupFilters(infraID string) []ec2types.Filter {
