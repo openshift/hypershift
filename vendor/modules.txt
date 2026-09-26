@@ -1435,8 +1435,8 @@ go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.4
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
-# golang.org/x/crypto v0.46.0
-## explicit; go 1.24.0
+# golang.org/x/crypto v0.46.0 => github.com/openshift-sustaining/crypto v0.33.0-sec.3
+## explicit; go 1.20
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
 golang.org/x/crypto/blowfish
@@ -2759,3 +2759,4 @@ sigs.k8s.io/yaml/kyaml
 # sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 # github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
 # k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+# golang.org/x/crypto => github.com/openshift-sustaining/crypto v0.33.0-sec.3
